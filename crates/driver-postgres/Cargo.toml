@@ -1,0 +1,17 @@
+[package]
+name = "choscordb-driver-postgres"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+choscordb-driver-api = { path = "../driver-api" }
+choscordb-postgres-values = { path = "../postgres-values" }
+async-trait = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+tokio-postgres = "0.7"
+postgres-native-tls = "0.5"
+native-tls = "0.2"
+futures-util = "0.3"
+tempfile = "3"

@@ -1,0 +1,11 @@
+[package]
+name = "choscordb-result-cache"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+choscordb-driver-api = { path = "../driver-api" }
+
+[dev-dependencies]
+proptest = "1"

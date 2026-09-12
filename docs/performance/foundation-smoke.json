@@ -1,0 +1,28 @@
+{
+  "date": "2026-09-10",
+  "os": "macOS-26.5-arm64-arm-64bit-Mach-O",
+  "cpu": "Apple M4",
+  "memory_bytes": 25769803776,
+  "build": "CMake Release; Qt 6.11.2; QScintilla 2.14.1; Rust1.97.1",
+  "method": "Fresh offscreen process; --smoke-test includes a 100ms post-show timer and shutdown. Caches are not flushed. This is a smoke baseline, not cold startup/idle or connected memory/latency certification.",
+  "runs": [
+    {
+      "iteration": 1,
+      "elapsed_seconds": 1.128,
+      "max_rss_bytes": 52772864,
+      "exit_code": 0
+    },
+    {
+      "iteration": 2,
+      "elapsed_seconds": 0.238,
+      "max_rss_bytes": 53051392,
+      "exit_code": 0
+    },
+    {
+      "iteration": 3,
+      "elapsed_seconds": 0.2511,
+      "max_rss_bytes": 53198848,
+      "exit_code": 0
+    }
+  ]
+}

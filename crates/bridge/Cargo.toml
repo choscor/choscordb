@@ -1,0 +1,20 @@
+[package]
+name = "choscordb-bridge"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+[lib]
+crate-type = ["staticlib", "rlib"]
+[dependencies]
+choscordb-credentials = { path = "../credentials" }
+choscordb-core = { path = "../core" }
+choscordb-driver-api = { path = "../driver-api" }
+choscordb-driver-sqlite = { path = "../driver-sqlite" }
+choscordb-driver-postgres = { path = "../driver-postgres" }
+choscordb-sql-language = { path = "../sql-language" }
+cxx = "1"
+[build-dependencies]
+cxx-build = "1"
+
+[dev-dependencies]
+tempfile = "3"

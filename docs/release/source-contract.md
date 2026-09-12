@@ -1,0 +1,9 @@
+# Source candidate archive
+
+PRD §17 requires a source archive and checksums. This local preparation step produces a reviewable source candidate; it does not publish, sign, or claim completion of platform packaging.
+
+The archive includes the root build/toolchain/license/readme files and source trees `.github`, `cmake`, `crates`, `desktop`, `docs`, `scripts` and `tests`. Explicitly exclude build outputs, Cargo target directories, Python caches, virtual environments, local databases, environment files, credential files, logs, PNG screenshots, editor backups and repository metadata. Reject symlinks rather than following them outside the source root. Preserve source code including Rust build.rs files and design documents; referenced PNG captures remain local artifacts. Fail if required source roots or build/lock/license files are missing.
+
+Use sorted paths, normalized archive ownership and timestamps, a stable top-level choscordb-source directory, and deterministic gzip headers. Emit a manifest with every included path, size and SHA-256 and a SHA256SUMS file covering archive and manifest. Record source Git revision when available and that this is a working-tree snapshot; do not describe uncommitted contents as an exact committed release. No source path may be absolute or escape the archive root. The output directory must be outside included source trees, and existing outputs must not be silently overwritten.
+
+Verification must unpack or inspect the produced archive independently, check every file against its manifest and checksums, demonstrate byte-identical archives for unchanged input, and prove build/local-database/symlink exclusions. A candidate may be generated from the current untracked workspace. Release publication still requires version/revision provenance, dependency notices/SBOM, packaging and platform validation.

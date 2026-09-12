@@ -1,0 +1,11 @@
+[package]
+name = "choscordb-sql-language"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tree-sitter = "0.25"
+tree-sitter-sequel = "=0.3.11"
+regex = "1"

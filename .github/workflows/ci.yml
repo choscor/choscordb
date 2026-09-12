@@ -1,0 +1,64 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    name: Native and Rust (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, windows-2022, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+      # Match Rust's native C/C++ build scripts and the CMake deployment target.
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c # v1.13.0
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+      - name: Install Linux Qt runtime and compiler dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libdbus-1-dev libssl-dev libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
+      - name: Install pinned Python build tools
+        run: python -m pip install -r scripts/ci/requirements.txt
+      - name: Verify bootstrap archive validation
+        run: python -m unittest discover -s scripts/ci -p "test_*.py"
+      - name: Rust format, Clippy, tests, and CXX generation
+        run: python scripts/ci/desktop.py rust
+      - name: Install Qt and build verified QScintilla sources
+        run: python scripts/ci/desktop.py dependencies
+      - name: Build C++ application, tests, and Rust/CXX bridge
+        run: python scripts/ci/desktop.py build
+      - name: Run native tests using Qt offscreen platform
+        run: python scripts/ci/desktop.py test
+  licenses:
+    name: Cargo license policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install pinned cargo-deny
+        run: cargo install cargo-deny --version 0.20.2 --locked
+      - name: Check all resolved Cargo dependency licenses
+        run: cargo deny --locked check licenses

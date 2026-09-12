@@ -1,0 +1,11 @@
+[package]
+name = "choscordb-result-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+choscordb-driver-api = { path = "../driver-api" }
+tempfile = "3"
+crc32fast = "1"
+thiserror = "2"

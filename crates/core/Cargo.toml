@@ -1,0 +1,24 @@
+[package]
+name = "choscordb-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fs2 = "0.4"
+choscordb-credentials = { path = "../credentials" }
+uuid = { version = "1", features = ["v4"] }
+choscordb-storage = { path = "../storage" }
+async-trait = "0.1"
+choscordb-export = { path = "../export" }
+choscordb-result-cache = { path = "../result-cache" }
+choscordb-result-store = { path = "../result-store" }
+choscordb-driver-api = { path = "../driver-api" }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+thiserror = "2"
+
+[dev-dependencies]
+choscordb-driver-postgres = { path = "../driver-postgres" }
+choscordb-driver-sqlite = { path = "../driver-sqlite" }
+rusqlite = { version = "0.37", features = ["bundled"] }
+tempfile = "3"

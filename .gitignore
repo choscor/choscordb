@@ -1,0 +1,32 @@
+target/
+/build/
+/dist/
+.DS_Store
+*.user
+
+# Local Python environments and caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local configuration, credentials, logs, and databases
+.env
+.env.*
+*.[lL][oO][gG]
+*.key
+*.pem
+*.p12
+*.pfx
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-*
+*.sqlite3-*
+*.db-*
+
+# Local screenshots (all PNG files)
+*.[pP][nN][gG]

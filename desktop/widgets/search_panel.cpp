@@ -1,0 +1,293 @@
+#include "search_panel.h"
+#include "bridge/engine_adapter.h"
+#include "widgets/sql_editor.h"
+#include <QCheckBox>
+#include <QFutureWatcher>
+#include <QHideEvent>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QShortcut>
+#include <QVBoxLayout>
+#include <QtConcurrent/QtConcurrentRun>
+#include <algorithm>
+namespace choscordb {
+SearchPanel::SearchPanel(std::function<SqlEditor*()> currentEditor, QWidget* parent)
+    : QWidget(parent), currentEditor_(std::move(currentEditor)) {
+    setObjectName("searchPanel");
+    setAccessibleName(tr("Search and replace"));
+    auto* layout = new QVBoxLayout(this);
+    auto* first = new QHBoxLayout;
+    needle_ = new QLineEdit(this);
+    needle_->setObjectName("searchNeedle");
+    needle_->setAccessibleName(tr("Find text"));
+    needle_->setMaxLength(16 * 1024 + 1);
+    needle_->setPlaceholderText(tr("Find text"));
+    auto* previous = new QPushButton(tr("Previous"), this);
+    auto* next = new QPushButton(tr("Next"), this);
+    next->setObjectName("searchNext");
+    case_ = new QCheckBox(tr("Match case"), this);
+    case_->setObjectName("searchCase");
+    word_ = new QCheckBox(tr("Whole word"), this);
+    word_->setObjectName("searchWord");
+    auto* close = new QPushButton(tr("Close"), this);
+    close->setObjectName("searchClose");
+    first->addWidget(needle_, 1);
+    first->addWidget(previous);
+    first->addWidget(next);
+    first->addWidget(case_);
+    first->addWidget(word_);
+    first->addWidget(close);
+    layout->addLayout(first);
+    replacementRow_ = new QWidget(this);
+    auto* second = new QHBoxLayout(replacementRow_);
+    second->setContentsMargins(0, 0, 0, 0);
+    replacement_ = new QLineEdit(this);
+    replacement_->setObjectName("searchReplacement");
+    replacement_->setAccessibleName(tr("Replacement text"));
+    replacement_->setMaxLength(16 * 1024 * 1024 + 1);
+    replacement_->setPlaceholderText(tr("Replace with"));
+    auto* replace = new QPushButton(tr("Replace"), this);
+    replace->setObjectName("searchReplace");
+    replaceAll_ = new QPushButton(tr("Replace all"), this);
+    replaceAll_->setObjectName("searchReplaceAll");
+    second->addWidget(replacement_, 1);
+    second->addWidget(replace);
+    second->addWidget(replaceAll_);
+    layout->addWidget(replacementRow_);
+    status_ = new QLabel(this);
+    status_->setObjectName("searchStatus");
+    status_->setTextFormat(Qt::PlainText);
+    status_->setWordWrap(true);
+    layout->addWidget(status_);
+    connect(next, &QPushButton::clicked, this, &SearchPanel::findNext);
+    connect(previous, &QPushButton::clicked, this, &SearchPanel::findPrevious);
+    connect(needle_, &QLineEdit::returnPressed, this, &SearchPanel::findNext);
+    connect(replace, &QPushButton::clicked, this, &SearchPanel::replaceOne);
+    connect(replaceAll_, &QPushButton::clicked, this, &SearchPanel::replaceAll);
+    connect(close, &QPushButton::clicked, this, [this] {
+        hide();
+        if (auto* e = currentEditor_())
+            e->setFocus();
+    });
+    auto* escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+    escape->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(escape, &QShortcut::activated, close, &QPushButton::click);
+    connect(needle_, &QLineEdit::textChanged, this, [this] { invalidate(); });
+    connect(replacement_, &QLineEdit::textChanged, this, [this] { ++generation_; });
+    connect(case_, &QCheckBox::toggled, this, [this] { invalidate(); });
+    connect(word_, &QCheckBox::toggled, this, [this] { invalidate(); });
+    hide();
+}
+void SearchPanel::showFind() {
+    if (auto* editor = editable(false)) {
+        const auto start = editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONSTART);
+        const auto end = editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONEND);
+        if (end > start && end - start <= 16 * 1024)
+            needle_->setText(editor->selectedText());
+    }
+    show();
+    replacementRow_->hide();
+    needle_->setFocus();
+}
+void SearchPanel::showReplace() {
+    showFind();
+    replacementRow_->show();
+}
+void SearchPanel::findNext() {
+    find(false);
+}
+void SearchPanel::findPrevious() {
+    find(true);
+}
+void SearchPanel::editorChanged() {
+    invalidate();
+}
+void SearchPanel::hideEvent(QHideEvent* event) {
+    invalidate();
+    QWidget::hideEvent(event);
+}
+void SearchPanel::invalidate() {
+    hasMatch_ = false;
+    ++generation_;
+}
+SqlEditor* SearchPanel::editable(bool mutation) const {
+    auto* editor = currentEditor_();
+    return editor && editor->isEnabled() && (!mutation || !editor->isReadOnly()) &&
+                   !editor->isIoBusy()
+               ? editor
+               : nullptr;
+}
+void SearchPanel::setPending(bool pending) {
+    pending_ = pending;
+    for (auto* button : findChildren<QPushButton*>())
+        if (button->objectName() != "searchClose")
+            button->setEnabled(!pending);
+}
+void SearchPanel::find(bool backwards) {
+    if (isHidden()) {
+        show();
+        replacementRow_->hide();
+    }
+    auto* editor = editable(false);
+    if (!editor) {
+        status_->setText(tr("The editor is unavailable."));
+        return;
+    }
+    if (pending_) {
+        status_->setText(tr("A search operation is still running."));
+        return;
+    }
+    if (editor->SendScintilla(QsciScintilla::SCI_GETLENGTH) > 16 * 1024 * 1024) {
+        status_->setText(tr("Search supports documents up to 16 MiB."));
+        return;
+    }
+    const quint64 cursor = editor->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS);
+    const quint64 anchor = editor->SendScintilla(QsciScintilla::SCI_GETANCHOR);
+    const quint64 revision = editor->revision();
+    const quint64 request = ++generation_;
+    const quint64 start = backwards ? std::min(cursor, anchor) : std::max(cursor, anchor);
+    QPointer<SqlEditor> target(editor);
+    const auto source = editor->text();
+    const auto needle = needle_->text();
+    const bool caseSensitive = case_->isChecked(), wholeWord = word_->isChecked();
+    hasMatch_ = false;
+    setPending(true);
+    status_->setText(tr("Searching…"));
+    auto* watcher = new QFutureWatcher<TextMatch>(this);
+    connect(watcher, &QFutureWatcher<TextMatch>::finished, this,
+            [this, watcher, target, revision, request, cursor, anchor] {
+                const auto result = watcher->result();
+                watcher->deleteLater();
+                setPending(false);
+                if (!target || editable(false) != target || target->revision() != revision ||
+                    request != generation_ || !isVisible() ||
+                    quint64(target->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS)) != cursor ||
+                    quint64(target->SendScintilla(QsciScintilla::SCI_GETANCHOR)) != anchor) {
+                    status_->setText(tr("Search discarded because the editor or search changed."));
+                    return;
+                }
+                if (!result.valid) {
+                    status_->setText(result.error);
+                    return;
+                }
+                if (!result.found) {
+                    status_->setText(tr("No match found."));
+                    return;
+                }
+                target->SendScintilla(QsciScintilla::SCI_SETSEL,
+                                      static_cast<unsigned long>(result.start),
+                                      static_cast<long>(result.end));
+                matchedEditor_ = target;
+                matchRevision_ = revision;
+                matchStart_ = result.start;
+                matchEnd_ = result.end;
+                hasMatch_ = true;
+                status_->setText(result.wrapped ? tr("Search wrapped around the document.")
+                                                : tr("Match found."));
+            });
+    watcher->setFuture(QtConcurrent::run([source, needle, start, backwards, caseSensitive,
+                                          wholeWord] {
+        return EngineAdapter::findText(source, needle, start, backwards, caseSensitive, wholeWord);
+    }));
+}
+void SearchPanel::replaceOne() {
+    auto* editor = editable();
+    if (!editor) {
+        status_->setText(tr("The editor cannot be changed."));
+        return;
+    }
+    if (pending_)
+        return;
+    if (!hasMatch_ || matchedEditor_ != editor || editor->revision() != matchRevision_ ||
+        quint64(editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONSTART)) != matchStart_ ||
+        quint64(editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONEND)) != matchEnd_) {
+        find(false);
+        return;
+    }
+    const auto length = editor->SendScintilla(QsciScintilla::SCI_GETLENGTH);
+    if (length > 16 * 1024 * 1024 || replacement_->text().size() > 16 * 1024 * 1024) {
+        status_->setText(tr("Replacement output exceeds 16 MiB."));
+        return;
+    }
+    if (!replacement_->text().isValidUtf16()) {
+        status_->setText(tr("Replacement input is not valid Unicode."));
+        return;
+    }
+    const auto bytes = replacement_->text().toUtf8();
+    if (quint64(length) - (matchEnd_ - matchStart_) + quint64(bytes.size()) > 16 * 1024 * 1024) {
+        status_->setText(tr("Replacement output exceeds 16 MiB."));
+        return;
+    }
+    const auto start = matchStart_;
+    editor->SendScintilla(QsciScintilla::SCI_BEGINUNDOACTION);
+    editor->SendScintilla(QsciScintilla::SCI_SETTARGETSTART,
+                          static_cast<unsigned long>(matchStart_));
+    editor->SendScintilla(QsciScintilla::SCI_SETTARGETEND, static_cast<unsigned long>(matchEnd_));
+    editor->SendScintilla(QsciScintilla::SCI_REPLACETARGET,
+                          static_cast<unsigned long>(bytes.size()), bytes.constData());
+    editor->SendScintilla(QsciScintilla::SCI_ENDUNDOACTION);
+    editor->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(start),
+                          static_cast<long>(start + bytes.size()));
+    invalidate();
+    status_->setText(tr("Replaced one match."));
+}
+void SearchPanel::replaceAll() {
+    auto* editor = editable();
+    if (!editor) {
+        status_->setText(tr("The editor cannot be changed."));
+        return;
+    }
+    if (pending_)
+        return;
+    if (editor->SendScintilla(QsciScintilla::SCI_GETLENGTH) > 16 * 1024 * 1024) {
+        status_->setText(tr("Search supports documents up to 16 MiB."));
+        return;
+    }
+    const quint64 revision = editor->revision(), request = ++generation_;
+    QPointer<SqlEditor> target(editor);
+    const auto source = editor->text(), needle = needle_->text(),
+               replacement = replacement_->text();
+    const bool caseSensitive = case_->isChecked(), wholeWord = word_->isChecked();
+    hasMatch_ = false;
+    setPending(true);
+    status_->setText(tr("Replacing…"));
+    auto* watcher = new QFutureWatcher<TextReplacement>(this);
+    connect(
+        watcher, &QFutureWatcher<TextReplacement>::finished, this,
+        [this, watcher, target, revision, request] {
+            const auto result = watcher->result();
+            watcher->deleteLater();
+            setPending(false);
+            if (!target || editable() != target || target->revision() != revision ||
+                request != generation_ || !isVisible()) {
+                status_->setText(tr("Replacement discarded because the editor or search changed."));
+                return;
+            }
+            if (!result.valid) {
+                status_->setText(result.error);
+                return;
+            }
+            if (result.count != 0) {
+                const auto bytes = result.text.toUtf8();
+                if (bytes.size() > 16 * 1024 * 1024) {
+                    status_->setText(tr("Replacement output exceeds 16 MiB."));
+                    return;
+                }
+                target->SendScintilla(QsciScintilla::SCI_BEGINUNDOACTION);
+                target->SendScintilla(QsciScintilla::SCI_SETTARGETSTART, 0UL);
+                target->SendScintilla(QsciScintilla::SCI_SETTARGETEND,
+                                      static_cast<unsigned long>(
+                                          target->SendScintilla(QsciScintilla::SCI_GETLENGTH)));
+                target->SendScintilla(QsciScintilla::SCI_REPLACETARGET,
+                                      static_cast<unsigned long>(bytes.size()), bytes.constData());
+                target->SendScintilla(QsciScintilla::SCI_ENDUNDOACTION);
+            }
+            invalidate();
+            status_->setText(tr("Replaced %1 matches.").arg(result.count));
+        });
+    watcher->setFuture(QtConcurrent::run([source, needle, replacement, caseSensitive, wholeWord] {
+        return EngineAdapter::replaceAllText(source, needle, replacement, caseSensitive, wholeWord);
+    }));
+}
+} // namespace choscordb
