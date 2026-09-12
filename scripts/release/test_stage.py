@@ -57,6 +57,12 @@ class StageTest(unittest.TestCase):
             (app / "Resources/licenses").mkdir(parents=True)
             if not self.omit_license:
                 (app / "Resources/licenses/LICENSE").write_text("ChoscorDB license")
+                (app / "Resources/licenses/LICENSE-LUCIDE").write_text("Lucide license")
+                (app / "Resources/licenses/SOURCE-LUCIDE.json").write_text("{}")
+            icons = app / "Resources/icons"
+            icons.mkdir(parents=True)
+            for name in ["app-mark.svg", "play.svg", "square.svg", "plus.svg"]:
+                (icons / name).write_text("svg")
         elif Path(argv[0]).name == "macdeployqt":
             if self.omit_plugin:
                 return ""

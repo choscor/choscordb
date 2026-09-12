@@ -1,8 +1,14 @@
 //! Synchronous local metadata persistence. Call only from a dedicated blocking worker.
 //! Recovery returns inert editor data: this crate has no driver or execution dependency.
 
+mod appearance;
 mod preferences;
 mod query_preferences;
+pub use appearance::{
+    APPEARANCE_LAYOUT_VERSION, Accent, AccentPreset, AppearanceLayout, Density,
+    MAX_APPEARANCE_LAYOUT_BYTES, MAX_SCREEN_NAME_BYTES, MAX_WINDOW_DIMENSION, MIN_WINDOW_HEIGHT,
+    MIN_WINDOW_WIDTH, ThemeMode, WindowGeometry, WorkspaceLayout,
+};
 pub use choscordb_driver_api::TlsMode;
 use choscordb_driver_api::{ConnectionOptions, Secret};
 pub use preferences::{
@@ -23,6 +29,12 @@ pub enum StorageError {
     InvalidPreferences,
     #[error("invalid query preferences")]
     InvalidQueryPreferences,
+    #[error("invalid appearance or layout preferences")]
+    InvalidAppearance,
+    #[error("stored appearance or layout preferences are corrupt")]
+    CorruptAppearance,
+    #[error("stored appearance or layout version {0} is unsupported")]
+    UnsupportedAppearanceVersion(u64),
     #[error("local database operation failed: {0}")]
     Database(#[from] rusqlite::Error),
     #[error("stored data encoding is invalid: {0}")]
@@ -149,7 +161,7 @@ impl Storage {
             [],
             |r| r.get(0),
         )?;
-        if version > 2 {
+        if version > 3 {
             return Err(StorageError::NewerSchema);
         }
         if version == 0 {
@@ -161,6 +173,15 @@ impl Storage {
                 "CREATE TABLE pending_credential_cleanup(reference TEXT PRIMARY KEY NOT NULL);",
             )?;
             tx.execute("INSERT INTO schema_migrations(version) VALUES (2)", [])?;
+        }
+        if version < 3 {
+            tx.execute_batch(
+                "CREATE TABLE IF NOT EXISTS appearance_layout(\
+                    singleton INTEGER PRIMARY KEY NOT NULL CHECK(singleton=1),\
+                    value TEXT NOT NULL\
+                );",
+            )?;
+            tx.execute("INSERT INTO schema_migrations(version) VALUES (3)", [])?;
         }
         tx.commit()?;
         let mut store = Self { db };
@@ -301,7 +322,11 @@ impl Storage {
     }
     /// Application-owned preferences only. Never pass credentials or connection strings.
     pub fn set_setting<T: Serialize>(&mut self, key: &str, value: &T) -> Result<()> {
-        if key == "history_policy" || key == "editor_preferences" || key == "query_preferences" {
+        if key == "history_policy"
+            || key == "editor_preferences"
+            || key == "query_preferences"
+            || key == "appearance_layout"
+        {
             return Err(StorageError::ReservedSetting);
         }
         self.db.execute("INSERT INTO settings(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key, encode_bounded(value, MAX_SETTING_BYTES)?])?;

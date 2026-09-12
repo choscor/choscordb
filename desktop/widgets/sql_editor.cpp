@@ -1,5 +1,6 @@
 #include "widgets/sql_editor.h"
 #include "bridge/engine_adapter.h"
+#include "design_system/theme.h"
 #include <QEvent>
 #include <QFontDatabase>
 #include <QFutureWatcher>
@@ -26,7 +27,7 @@ class KeywordApis final : public QsciAbstractAPIs {
 SqlEditor::SqlEditor(QWidget* parent) : QsciScintilla(parent) {
     setUtf8(true);
     setAccessibleName(tr("SQL editor"));
-    const auto font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    const auto font = design::resolveTypography(design::TypographyRole::Monospace);
     setFont(font);
     setMarginsFont(font);
     setMarginType(0, QsciScintilla::NumberMargin);
@@ -159,19 +160,25 @@ void SqlEditor::saveFile(const QString& path) {
 void SqlEditor::applyPalette() {
     const auto base = palette().color(QPalette::Base);
     const auto foreground = palette().color(QPalette::Text);
-    const bool dark = base.lightness() < 128;
     setPaper(base);
     setColor(foreground);
     lexer()->setDefaultPaper(base);
     lexer()->setDefaultColor(foreground);
     lexer()->setPaper(base, -1);
     lexer()->setColor(foreground, -1);
-    lexer()->setColor(dark ? QColor("#8ec9ff") : QColor("#164c8c"), QsciLexerSQL::Keyword);
-    lexer()->setColor(dark ? QColor("#a8d5a2") : QColor("#286032"),
-                      QsciLexerSQL::SingleQuotedString);
+    auto keyword = palette().color(QPalette::Link);
+    auto string = palette().color(QPalette::LinkVisited);
+    if (base.lightness() < 128) {
+        if (keyword.lightness() <= 128)
+            keyword = foreground;
+        if (string.lightness() <= 128)
+            string = foreground;
+    }
+    lexer()->setColor(keyword, QsciLexerSQL::Keyword);
+    lexer()->setColor(string, QsciLexerSQL::SingleQuotedString);
     for (const auto style :
          {QsciLexerSQL::Comment, QsciLexerSQL::CommentLine, QsciLexerSQL::CommentDoc})
-        lexer()->setColor(dark ? QColor("#b5bac2") : QColor("#535c68"), style);
+        lexer()->setColor(palette().color(QPalette::PlaceholderText), style);
     setMarginsBackgroundColor(palette().color(QPalette::AlternateBase));
     setMarginsForegroundColor(foreground);
     setCaretForegroundColor(foreground);

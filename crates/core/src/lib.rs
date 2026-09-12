@@ -13,12 +13,14 @@ mod recovery;
 pub use profiles::CredentialUpdate;
 mod protocol;
 pub use choscordb_storage::{
-    ConnectionProfile, DEFAULT_EDITOR_FONT_SIZE, EDITOR_PREFERENCES_VERSION, EditorDocument,
-    EditorPreferences, HistoryEntry, HistoryPolicy, HistoryStatus, MAX_COLLECTION_BYTES,
-    MAX_EDITOR_FONT_SIZE, MAX_FONT_FAMILY_BYTES, MAX_QUERY_TIMEOUT_SECONDS,
-    MAX_SHORTCUT_SEQUENCE_BYTES, MAX_SQL_BYTES, MAX_WORKSPACE_DOCUMENTS, MIN_EDITOR_FONT_SIZE,
+    APPEARANCE_LAYOUT_VERSION, Accent, AccentPreset, AppearanceLayout, ConnectionProfile,
+    DEFAULT_EDITOR_FONT_SIZE, Density, EDITOR_PREFERENCES_VERSION, EditorDocument,
+    EditorPreferences, HistoryEntry, HistoryPolicy, HistoryStatus, MAX_APPEARANCE_LAYOUT_BYTES,
+    MAX_COLLECTION_BYTES, MAX_EDITOR_FONT_SIZE, MAX_FONT_FAMILY_BYTES, MAX_QUERY_TIMEOUT_SECONDS,
+    MAX_SCREEN_NAME_BYTES, MAX_SHORTCUT_SEQUENCE_BYTES, MAX_SQL_BYTES, MAX_WINDOW_DIMENSION,
+    MAX_WORKSPACE_DOCUMENTS, MIN_EDITOR_FONT_SIZE, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH,
     PostgresTls, ProfileConfiguration, QUERY_PREFERENCES_VERSION, QueryPreferences,
-    ShortcutCommand, ShortcutOverride,
+    ShortcutCommand, ShortcutOverride, ThemeMode, WindowGeometry, WorkspaceLayout,
 };
 mod store;
 use choscordb_driver_api::*;
@@ -492,6 +494,7 @@ impl Engine {
             &event,
             Event::QueryPreferences { .. }
                 | Event::EditorPreferences { .. }
+                | Event::AppearanceLayout { .. }
                 | Event::HistoryFlushed { .. }
                 | Event::WorkspaceSaved { .. }
                 | Event::WorkspaceRestored { .. }

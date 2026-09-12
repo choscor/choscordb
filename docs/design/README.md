@@ -2,11 +2,16 @@
 
 Open `workspace.html` in a browser for the visual reference. Native Qt Widgets must reproduce this layout; HTML is not shipped as the application. The design is established before implementation.
 
+The developer gallery and reproducible native capture commands are documented in
+[`modern-ui-evidence.md`](modern-ui-evidence.md).
+
 PNG screenshots referenced in these documents are local verification artifacts. They are ignored by Git and excluded from source archives; a fresh checkout does not include them.
 
 ## Layout and visual language
 
-Use a QMainWindow with menu bar, left navigator dock (245 px initial width), central editor tabs, query toolbar, vertical editor/results splitter, and status bar. Minimum useful window size is 960 × 640; splitter sizes and dock visibility persist. Default size is 1280 × 900. Use platform fonts, 13 px interface text, 14 px monospace SQL, 8 px spacing increments, restrained borders, and a muted teal accent. Honor system light/dark palette and increased contrast; color never conveys state alone. Native focus indicators, accessible names, keyboard navigation, scalable icons, and screen-reader labels are required.
+Use a QMainWindow with native menu bar, left navigator dock (245 px initial width), central editor tabs, stable query actions, vertical editor/results splitter, and status bar. Minimum useful window size is 960 × 640; valid splitter sizes, dock visibility, and window placement persist. Default size is 1280 × 900. All app-owned presentation resolves through the typed desktop design system: a 4 px grid, compact 32 px controls and 28–30 px data rows by default, optional comfortable 38–40 px controls and 34–36 px rows, 6 px control radii, and a cobalt/azure identity seeded by `#2F7DD3`. Use platform UI and monospace fonts. System, Light, and Dark modes update open surfaces live; forced contrast and reduced motion take precedence without replacing saved choices. Color never conveys state alone. Visible focus, accessible names, keyboard navigation, scalable licensed icons, and screen-reader status labels are required.
+
+The workspace uses flat layered surfaces and restrained 1 px separators. Shadows are limited to floating menus, dialogs, and the single replacing toast region. Editor, result, table, and dock boundaries stay square. Primary and unfamiliar actions use icon and text; compact icon-only actions retain a tooltip, accessible name, focus path, and keyboard path.
 
 ## Interaction contract
 

@@ -13,7 +13,7 @@ quint64 nextToken() {
 }
 } // namespace
 QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent)
-    : QDialog(parent), adapter_(adapter) {
+    : DialogShell(parent), adapter_(adapter) {
     setObjectName("querySettingsDialog");
     setWindowTitle(tr("Query settings"));
     auto* layout = new QFormLayout(this);
@@ -27,12 +27,10 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     timeout_->setSpecialValueText(tr("No timeout"));
     layout->addRow(tr("Rows per page"), pageSize_);
     layout->addRow(tr("Statement timeout (seconds)"), timeout_);
-    auto* explanation = new QLabel(
+    auto* explanation = createDescription(
         tr("Applies to new queries. Existing results keep their page size and timeout."), this);
-    explanation->setWordWrap(true);
-    explanation->setTextFormat(Qt::PlainText);
     layout->addRow(explanation);
-    status_ = new QLabel(this);
+    status_ = createInlineStatus(this);
     status_->setObjectName("querySettingsStatus");
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);

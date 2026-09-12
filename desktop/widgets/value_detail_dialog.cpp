@@ -1,6 +1,7 @@
 #include "widgets/value_detail_dialog.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/theme.h"
 #include "models/value_preview_model.h"
 #include <QCloseEvent>
 #include <QDialogButtonBox>
@@ -21,13 +22,13 @@ QString text(const rust::String& value) {
 constexpr quint32 ChunkBytes = 65536;
 } // namespace
 ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
-    : QDialog(parent), adapter_(adapter), model_(new ValuePreviewModel(this)),
-      table_(new QTableView(this)), status_(new QLabel(this)),
+    : DialogShell(parent), adapter_(adapter), model_(new ValuePreviewModel(this)),
+      table_(new QTableView(this)), status_(createInlineStatus(this)),
       previous_(new QPushButton(tr("Previous"), this)), next_(new QPushButton(tr("Next"), this)) {
     setObjectName("valueDetail");
     setWindowTitle(tr("Value detail"));
     setModal(false);
-    resize(760, 480);
+    resize(design::dialogInitialSize(design::DialogSize::Detail));
     status_->setObjectName("valueStatus");
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
@@ -43,6 +44,8 @@ ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     buttons->addButton(previous_, QDialogButtonBox::ActionRole);
     buttons->addButton(next_, QDialogButtonBox::ActionRole);
     auto* layout = new QVBoxLayout(this);
+    layout->addWidget(
+        createDescription(tr("Inspect a bounded window of a large text or binary value."), this));
     layout->addWidget(status_);
     layout->addWidget(table_);
     layout->addWidget(buttons);

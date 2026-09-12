@@ -1,5 +1,6 @@
 #include "widgets/profile_dialog.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/theme.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFileDialog>
@@ -16,18 +17,21 @@
 #include <QVBoxLayout>
 namespace choscordb {
 ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
-    : QDialog(parent), adapter_(adapter) {
+    : DialogShell(parent), adapter_(adapter) {
     setObjectName("profileDialog");
     setWindowTitle(tr("Connection profiles"));
     setModal(false);
-    resize(780, 540);
+    resize(design::dialogInitialSize(design::DialogSize::Profiles));
     auto* outer = new QVBoxLayout(this);
+    outer->addWidget(createDescription(
+        tr("Save reusable SQLite or PostgreSQL connection details. Passwords use the operating "
+           "system credential store."),
+        this));
     auto* columns = new QHBoxLayout;
     outer->addLayout(columns);
     list_ = new QListWidget(this);
     list_->setObjectName("profileList");
     list_->setAccessibleName(tr("Saved connection profiles"));
-    list_->setMinimumWidth(190);
     columns->addWidget(list_, 1);
     form_ = new QWidget(this);
     columns->addWidget(form_, 2);
@@ -99,7 +103,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     rootCertificate_ = line("profileRootCertificate");
     pg->addRow(tr("Root &certificate"), rootCertificate_);
     formLayout->addRow(postgresFields_);
-    status_ = new QLabel(this);
+    status_ = createInlineStatus(this);
     status_->setObjectName("profileStatus");
     status_->setWordWrap(true);
     status_->setTextFormat(Qt::PlainText);

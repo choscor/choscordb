@@ -1,6 +1,6 @@
 #pragma once
 #include "models/shortcut_catalog.h"
-#include <QDialog>
+#include "widgets/dialog_shell.h"
 #include <QPointer>
 class QCheckBox;
 class QFontComboBox;
@@ -8,13 +8,17 @@ class QKeySequenceEdit;
 class QLabel;
 class QPushButton;
 class QSpinBox;
+class QComboBox;
+class QLineEdit;
 namespace choscordb {
 class SqlEditor;
-class PreferencesDialog final : public QDialog {
+class AppearanceController;
+class PreferencesDialog final : public DialogShell {
     Q_OBJECT
   public:
     explicit PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescriptor> catalog,
-                               QWidget* parent = nullptr);
+                               QWidget* parent = nullptr,
+                               AppearanceController* appearance = nullptr);
 
   signals:
     void preferencesSaveSubmitted(quint64 token);
@@ -24,9 +28,11 @@ class PreferencesDialog final : public QDialog {
     EditorPreferences draft() const;
     void fill(const EditorPreferences& preferences);
     void updatePreview();
+    void updateAppearanceStatus();
     void apply();
     void setBusy(bool busy);
     QPointer<EngineAdapter> adapter_;
+    QPointer<AppearanceController> appearance_;
     QList<ShortcutDescriptor> catalog_;
     QList<QKeySequenceEdit*> sequences_;
     QFontComboBox* font_;
@@ -35,8 +41,13 @@ class PreferencesDialog final : public QDialog {
     SqlEditor* preview_;
     QWidget* pages_;
     QLabel* status_;
+    QLabel* appearanceStatus_ = nullptr;
+    QString appearanceWarning_;
+    bool forcedContrast_ = false;
+    QComboBox *theme_ = nullptr, *density_ = nullptr, *accent_ = nullptr;
+    QLineEdit* customAccent_ = nullptr;
     QPushButton *apply_, *reset_;
     quint64 token_ = 0;
-    bool busy_ = false, ready_ = false, saving_ = false;
+    bool busy_ = false, ready_ = false, saving_ = false, appearanceValid_ = true;
 };
 } // namespace choscordb

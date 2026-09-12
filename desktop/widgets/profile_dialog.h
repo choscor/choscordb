@@ -1,6 +1,6 @@
 #pragma once
 #include "bridge/engine_adapter.h"
-#include <QDialog>
+#include "widgets/dialog_shell.h"
 #include <QPointer>
 class QComboBox;
 class QLabel;
@@ -10,7 +10,7 @@ class QPushButton;
 class QCheckBox;
 class QSpinBox;
 namespace choscordb {
-class ProfileDialog final : public QDialog {
+class ProfileDialog final : public DialogShell {
     Q_OBJECT
   public:
     explicit ProfileDialog(EngineAdapter* adapter, QWidget* parent = nullptr);

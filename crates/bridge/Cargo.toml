@@ -19,4 +19,5 @@ cxx = "1"
 cxx-build = "1"
 
 [dev-dependencies]
+rusqlite = { version = "0.37", features = ["bundled"] }
 tempfile = "3"

@@ -6,3 +6,4 @@ CREATE INDEX query_history_timestamp ON query_history(timestamp);
 CREATE TABLE metadata_cache(profile_id TEXT NOT NULL, object_id TEXT NOT NULL, data TEXT NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY(profile_id,object_id));
 CREATE TABLE settings(key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
 CREATE TABLE recent_items(kind TEXT NOT NULL, item TEXT NOT NULL, last_used INTEGER NOT NULL, PRIMARY KEY(kind,item));
+CREATE TABLE appearance_layout(singleton INTEGER PRIMARY KEY NOT NULL CHECK(singleton=1), value TEXT NOT NULL);

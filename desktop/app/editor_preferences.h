@@ -8,6 +8,7 @@ class QAction;
 class QMainWindow;
 namespace choscordb {
 class PreferencesDialog;
+class AppearanceController;
 class SqlEditor;
 class EditorPreferencesController final : public QObject {
     Q_OBJECT
@@ -16,6 +17,7 @@ class EditorPreferencesController final : public QObject {
     void addAction(const QString& id, QAction* action, bool configurable = true);
     void addEditor(SqlEditor* editor);
     void initialize(EngineAdapter* adapter);
+    void setAppearanceController(AppearanceController* appearance) { appearance_ = appearance; }
     void open();
 
   protected:
@@ -27,6 +29,7 @@ class EditorPreferencesController final : public QObject {
     QMainWindow* window_;
     QPointer<EngineAdapter> adapter_;
     QPointer<PreferencesDialog> dialog_;
+    QPointer<AppearanceController> appearance_;
     QList<ShortcutDescriptor> catalog_;
     QHash<QString, QAction*> actions_;
     QList<QPointer<SqlEditor>> editors_;

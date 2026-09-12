@@ -1,0 +1,12 @@
+{
+  "source": "https://github.com/lucide-icons/lucide",
+  "version": "1.27.0",
+  "commit": "4aec3f8",
+  "icons": {
+    "play.svg": "0768356979f97d6bfe7e15f1cf1cb1b83235af619610b58d902882b8fe836f81",
+    "plus.svg": "953f772bcb213f466e8a69a2a65362b38d39b59a77c635ab5361e92a89dc6ed4",
+    "square.svg": "4d6b8dc9b4dc5e95e32d4a881359de077c7b53ae4e02e623b588c558739158e1"
+  },
+  "license": "ISC AND MIT",
+  "note": "Hashes cover the reviewed repository adaptations, not pristine upstream files."
+}

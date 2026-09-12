@@ -4,6 +4,9 @@ use choscordb_driver_api::{DriverError, ErrorKind};
 use choscordb_storage::{Storage, StorageError};
 
 pub(crate) enum Command {
+    AppearanceLayout(u64),
+    SetAppearanceLayout(crate::AppearanceLayout, u64),
+    ResetAppearanceLayout(u64),
     QueryPreferences(u64),
     SetQueryPreferences(crate::QueryPreferences, u64),
     EditorPreferences(u64),
@@ -20,7 +23,10 @@ pub(crate) enum Command {
 impl Command {
     pub(crate) fn token(&self) -> u64 {
         match self {
-            Self::QueryPreferences(t)
+            Self::AppearanceLayout(t)
+            | Self::SetAppearanceLayout(_, t)
+            | Self::ResetAppearanceLayout(t)
+            | Self::QueryPreferences(t)
             | Self::SetQueryPreferences(_, t)
             | Self::EditorPreferences(t)
             | Self::SetEditorPreferences(_, t)
@@ -42,6 +48,27 @@ fn invalid(error: StorageError) -> SubmitError {
     }
 }
 fn failure(error: StorageError) -> DriverError {
+    match error {
+        StorageError::CorruptAppearance => {
+            return DriverError::new(
+                ErrorKind::InvalidInput,
+                "Stored appearance and layout preferences are corrupt",
+            );
+        }
+        StorageError::UnsupportedAppearanceVersion(version) => {
+            return DriverError::new(
+                ErrorKind::Unsupported,
+                format!("Stored appearance and layout preference version {version} is unsupported"),
+            );
+        }
+        StorageError::InvalidAppearance => {
+            return DriverError::new(
+                ErrorKind::InvalidInput,
+                "Appearance and layout preferences are invalid",
+            );
+        }
+        _ => {}
+    }
     let kind = match error {
         StorageError::ResourceLimit => ErrorKind::ResourceLimit,
         StorageError::InvalidQueryPreferences
@@ -59,6 +86,26 @@ fn failure(error: StorageError) -> DriverError {
 pub(crate) fn execute(storage: &mut Storage, command: Command) -> Result<Event, DriverError> {
     let request_token = command.token();
     Ok(match command {
+        Command::AppearanceLayout(_) => Event::AppearanceLayout {
+            request_token,
+            appearance: storage.appearance_layout().map_err(failure)?,
+        },
+        Command::SetAppearanceLayout(appearance, _) => {
+            storage
+                .set_appearance_layout(&appearance)
+                .map_err(failure)?;
+            Event::AppearanceLayout {
+                request_token,
+                appearance: Some(appearance),
+            }
+        }
+        Command::ResetAppearanceLayout(_) => {
+            storage.reset_appearance_layout().map_err(failure)?;
+            Event::AppearanceLayout {
+                request_token,
+                appearance: None,
+            }
+        }
         Command::QueryPreferences(_) => Event::QueryPreferences {
             request_token,
             preferences: storage.query_preferences().map_err(failure)?,
@@ -129,6 +176,20 @@ pub(crate) fn execute(storage: &mut Storage, command: Command) -> Result<Event, 
     })
 }
 impl Engine {
+    pub fn appearance_layout_get(&self, token: u64) -> Result<(), SubmitError> {
+        self.submit_recovery(Command::AppearanceLayout(token))
+    }
+    pub fn appearance_layout_set(
+        &self,
+        appearance: crate::AppearanceLayout,
+        token: u64,
+    ) -> Result<(), SubmitError> {
+        self.submit_recovery(Command::SetAppearanceLayout(appearance, token))
+    }
+    pub fn appearance_layout_reset(&self, token: u64) -> Result<(), SubmitError> {
+        self.submit_recovery(Command::ResetAppearanceLayout(token))
+    }
+
     pub fn query_preferences_get(&self, token: u64) -> Result<(), SubmitError> {
         self.submit_recovery(Command::QueryPreferences(token))
     }
@@ -166,6 +227,7 @@ impl Engine {
             )
             .map_err(|_| SubmitError::QueueFull)?;
         let validation = match &command {
+            Command::SetAppearanceLayout(appearance, _) => appearance.validate(),
             Command::SetQueryPreferences(preferences, _) => preferences.validate(),
             Command::SetEditorPreferences(preferences, _) => preferences.validate(),
             Command::Save(documents, _) => choscordb_storage::validate_workspace(documents),

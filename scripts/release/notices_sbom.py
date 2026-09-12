@@ -13,6 +13,11 @@ import uuid
 from prepare_qt_notices import SHA256 as QTBASE_SHA256, SVG_SHA256 as QTSVG_SHA256
 
 QT_SOURCE_HASHES = {"qtbase": QTBASE_SHA256, "qtsvg": QTSVG_SHA256}
+LUCIDE_ICON_HASHES = {
+    "play.svg": "0768356979f97d6bfe7e15f1cf1cb1b83235af619610b58d902882b8fe836f81",
+    "plus.svg": "953f772bcb213f466e8a69a2a65362b38d39b59a77c635ab5361e92a89dc6ed4",
+    "square.svg": "4d6b8dc9b4dc5e95e32d4a881359de077c7b53ae4e02e623b588c558739158e1",
+}
 
 QT_PLUGINS = {
     "platforms/libqcocoa.dylib",
@@ -249,6 +254,33 @@ def generate(
     ]
     if len(app_licenses) != 1:
         raise ValueError("ChoscorDB license is missing or ambiguous")
+    lucide_licenses = [
+        name for name in payload if name.endswith("/Resources/licenses/LICENSE-LUCIDE")
+    ]
+    if len(lucide_licenses) != 1:
+        raise ValueError("Lucide icon license is missing or ambiguous")
+    lucide_sources = [
+        name
+        for name in payload
+        if name.endswith("/Resources/licenses/SOURCE-LUCIDE.json")
+    ]
+    if len(lucide_sources) != 1:
+        raise ValueError("Lucide icon provenance is missing or ambiguous")
+    lucide_record = json.loads(payload[lucide_sources[0]])
+    if (
+        lucide_record.get("version") != "1.27.0"
+        or lucide_record.get("commit") != "4aec3f8"
+        or lucide_record.get("license") != "ISC AND MIT"
+        or lucide_record.get("source") != "https://github.com/lucide-icons/lucide"
+        or lucide_record.get("icons") != LUCIDE_ICON_HASHES
+    ):
+        raise ValueError("Lucide icon provenance does not match the reviewed source")
+    for icon, expected in LUCIDE_ICON_HASHES.items():
+        matches = [
+            name for name in payload if name.endswith("/Resources/icons/" + icon)
+        ]
+        if len(matches) != 1 or digest(payload[matches[0]]) != expected:
+            raise ValueError("Lucide icon does not match reviewed adaptation: " + icon)
 
     packages, package_ids, license_outputs = [], {}, {}
 
@@ -308,6 +340,15 @@ def generate(
         text_files(stage / PurePosixPath(qsci_path).parent),
         qsci_record.get("url"),
     )
+    lucide_id = package(
+        "lucide-icons",
+        "Lucide Icons",
+        lucide_record["version"],
+        lucide_record["license"],
+        {"LICENSE": payload[lucide_licenses[0]]},
+        "https://github.com/lucide-icons/lucide",
+    )
+    packages[-1]["sourceInfo"] = "Reviewed source commit " + lucide_record["commit"]
     metadata = json.loads(cargo_metadata.read_bytes())
     cargo_ids, proc_macro_ids = [], []
     selected = normal_dependency_packages(metadata, cargo_root_package)
@@ -437,7 +478,7 @@ def generate(
         ],
     )
     relationships.extend(sqlite_relationships)
-    for package_id in [qt_id, qsci_id, *cargo_ids]:
+    for package_id in [qt_id, qsci_id, lucide_id, *cargo_ids]:
         relationships.append(
             {
                 "spdxElementId": app_id,
@@ -466,7 +507,14 @@ def generate(
         file_id = identifier("File", name)
         if "/PlugIns/" in name and name.split("/PlugIns/", 1)[1] not in QT_PLUGINS:
             raise ValueError("Unknown Qt plugin ownership: " + name)
-        if "qscintilla" in name.lower():
+        if name.endswith(
+            (
+                "/Resources/licenses/LICENSE-LUCIDE",
+                "/Resources/licenses/SOURCE-LUCIDE.json",
+            )
+        ) or re.search(r"/Resources/icons/(play|square|plus)\.svg$", name):
+            owner = lucide_id
+        elif "qscintilla" in name.lower():
             owner = qsci_id
         elif (
             re.search(r"/Qt[^/]+\.framework/", name)

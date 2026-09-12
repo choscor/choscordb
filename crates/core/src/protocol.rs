@@ -57,6 +57,10 @@ pub type ExportId = Handle;
 pub use choscordb_export::{ExportFormat, SqlDialect};
 
 pub enum Event {
+    AppearanceLayout {
+        request_token: u64,
+        appearance: Option<crate::AppearanceLayout>,
+    },
     QueryPreferences {
         request_token: u64,
         preferences: crate::QueryPreferences,

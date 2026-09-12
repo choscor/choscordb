@@ -1,5 +1,5 @@
 #pragma once
-#include <QDialog>
+#include "widgets/dialog_shell.h"
 #include <QPointer>
 #include <optional>
 
@@ -10,7 +10,7 @@ namespace choscordb {
 class EngineAdapter;
 class ValuePreviewModel;
 struct BridgeEvent;
-class ValueDetailDialog final : public QDialog {
+class ValueDetailDialog final : public DialogShell {
     Q_OBJECT
   public:
     explicit ValueDetailDialog(EngineAdapter* adapter, QWidget* parent = nullptr);

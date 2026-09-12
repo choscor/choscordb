@@ -56,7 +56,6 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     table_->setColumnWidth(3, 100);
     table_->setColumnWidth(4, 100);
     table_->setColumnWidth(5, 80);
-    table_->verticalHeader()->setDefaultSectionSize(26);
     layout->addWidget(table_);
     previewNotice_ = new QLabel(body);
     previewNotice_->setObjectName("historyPreviewNotice");
@@ -74,7 +73,6 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     preview_ = new QPlainTextEdit(body);
     preview_->setObjectName("historyPreview");
     preview_->setReadOnly(true);
-    preview_->setMaximumHeight(130);
     layout->addWidget(preview_);
     auto* footer = new QHBoxLayout;
     previous_ = new QPushButton(tr("Previous"), body);

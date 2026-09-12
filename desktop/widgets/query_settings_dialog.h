@@ -1,12 +1,12 @@
 #pragma once
 #include "bridge/engine_adapter.h"
-#include <QDialog>
+#include "widgets/dialog_shell.h"
 #include <QPointer>
 class QSpinBox;
 class QPushButton;
 class QLabel;
 namespace choscordb {
-class QuerySettingsDialog final : public QDialog {
+class QuerySettingsDialog final : public DialogShell {
     Q_OBJECT
   public:
     explicit QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent = nullptr);

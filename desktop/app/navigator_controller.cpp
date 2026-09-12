@@ -2,11 +2,14 @@
 #include "bridge/engine_adapter.h"
 #include "bridge/template_service.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/theme.h"
 #include "models/navigator_model.h"
+#include "widgets/dialog_shell.h"
 #include <QApplication>
 #include <QClipboard>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPersistentModelIndex>
@@ -22,8 +25,9 @@ QString text(const rust::String& s) {
 } // namespace
 NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree, QLineEdit* filter,
                                          QWidget* dialogParent)
-    : QObject(tree), model_(new NavigatorModel(this)), engine_(engine) {
-    auto* proxy = new QSortFilterProxyModel(this);
+    : QObject(tree), model_(new NavigatorModel(this)), engine_(engine), tree_(tree),
+      proxy_(new QSortFilterProxyModel(this)) {
+    auto* proxy = proxy_;
     proxy->setSourceModel(model_);
     proxy->setRecursiveFilteringEnabled(true);
     proxy->setFilterCaseSensitivity(Qt::CaseInsensitive);
@@ -51,11 +55,14 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
             } else if (kind == "metadata_failed")
                 model_->failChildren(e.id, text(e.parent), e.request_token, text(e.error));
             else if (kind == "ddl") {
-                auto* dialog = new QDialog(dialogParent);
+                auto* dialog = new DialogShell(dialogParent);
                 dialog->setAttribute(Qt::WA_DeleteOnClose);
                 dialog->setWindowTitle(tr("Object DDL"));
-                dialog->resize(700, 500);
+                dialog->resize(design::dialogInitialSize(design::DialogSize::Ddl));
                 auto* layout = new QVBoxLayout(dialog);
+                layout->addWidget(dialog->createDescription(
+                    tr("Review the database definition reported by the active connection."),
+                    dialog));
                 auto* editor = new QPlainTextEdit;
                 editor->setReadOnly(true);
                 editor->setPlainText(text(e.ddl));
@@ -77,6 +84,16 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
                 populateContextMenu(&menu, index);
                 menu.exec(tree->viewport()->mapToGlobal(point));
             });
+}
+void NavigatorController::refreshCurrent() {
+    const auto source = proxy_->mapToSource(tree_->currentIndex());
+    if (source.isValid())
+        model_->refresh(source);
+}
+void NavigatorController::disconnectCurrent() {
+    const auto source = proxy_->mapToSource(tree_->currentIndex());
+    if (source.isValid() && source.data(NavigatorModel::KindRole).toString() == "connection")
+        emit disconnectRequested(source.data(NavigatorModel::ConnectionRole).toULongLong());
 }
 void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex) {
     if (!menu || !sourceIndex.isValid() || sourceIndex.model() != model_)

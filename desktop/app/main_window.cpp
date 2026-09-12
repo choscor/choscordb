@@ -1,54 +1,201 @@
 #include "app/main_window.h"
+#include "app/appearance_controller.h"
 #include "app/editor_preferences.h"
 #include "app/navigator_controller.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/icons.h"
+#include "design_system/platform_accessibility.h"
+#include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
 #include "widgets/editor_completion.h"
 #include "widgets/history_dock.h"
 #include "widgets/search_panel.h"
 #include "widgets/sql_editor.h"
+#include "widgets/toast_region.h"
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDockWidget>
+#include <QEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QStyle>
+#include <QStyleHints>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTableView>
+#include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QTreeView>
 #include <QVBoxLayout>
+
+#include <utility>
+
+int qInitResources_resources();
+
 namespace choscordb {
+
+namespace {
+
+class ContextualActionVisibility final : public QObject {
+  public:
+    ContextualActionVisibility(QWidget* region, QList<QWidget*> actions)
+        : QObject(region), region_(region), actions_(std::move(actions)) {
+        region_->installEventFilter(this);
+        connect(qApp, &QApplication::focusChanged, this,
+                [this](QWidget*, QWidget*) { updateForCurrentInput(); });
+        setActionsVisible(false);
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == region_) {
+            if (event->type() == QEvent::Enter) {
+                setActionsVisible(true);
+            } else if (event->type() == QEvent::Leave) {
+                QTimer::singleShot(0, this, [this] { updateForCurrentInput(); });
+            }
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    void updateForCurrentInput() {
+        auto* focused = QApplication::focusWidget();
+        setActionsVisible(region_->underMouse() || focused == region_ ||
+                          (focused != nullptr && region_->isAncestorOf(focused)));
+    }
+
+    void setActionsVisible(bool visible) {
+        for (auto* action : actions_) {
+            action->setVisible(visible);
+        }
+    }
+
+    QWidget* region_;
+    QList<QWidget*> actions_;
+};
+
+class ResponsiveQueryToolbar final : public QObject {
+  public:
+    ResponsiveQueryToolbar(QWidget* window, design::ThemeManager* theme,
+                           QList<QWidget*> secondaryActions, QWidget* overflow)
+        : QObject(window), window_(window), theme_(theme), secondaryActions_(secondaryActions),
+          overflow_(overflow) {
+        window_->installEventFilter(this);
+        connect(theme_, &design::ThemeManager::metricsChanged, this, [this] { updateForWidth(); });
+        updateForWidth();
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == window_ &&
+            (event->type() == QEvent::Resize || event->type() == QEvent::Show)) {
+            updateForWidth();
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    void updateForWidth() {
+        const bool narrow = window_->width() <= theme_->metrics().narrowWorkspaceWidth;
+        for (auto* action : secondaryActions_) {
+            action->setVisible(!narrow);
+        }
+        overflow_->setVisible(narrow);
+    }
+
+    QWidget* window_;
+    design::ThemeManager* theme_;
+    QList<QWidget*> secondaryActions_;
+    QWidget* overflow_;
+};
+
+class HoveredTabCloseVisibility final : public QObject {
+  public:
+    explicit HoveredTabCloseVisibility(QTabBar* tabs) : QObject(tabs), tabs_(tabs) {
+        tabs_->setMouseTracking(true);
+        tabs_->installEventFilter(this);
+        connect(tabs_, &QTabBar::currentChanged, this, [this] { updateButtons(-1); });
+        QTimer::singleShot(0, this, [this] { updateButtons(-1); });
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched != tabs_) {
+            return QObject::eventFilter(watched, event);
+        }
+        if (event->type() == QEvent::MouseMove) {
+            const auto* mouse = static_cast<QMouseEvent*>(event);
+            updateButtons(tabs_->tabAt(mouse->position().toPoint()));
+        } else if (event->type() == QEvent::Leave) {
+            updateButtons(-1);
+        } else if (event->type() == QEvent::ChildAdded || event->type() == QEvent::LayoutRequest) {
+            QTimer::singleShot(0, this, [this] { updateButtons(-1); });
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    void updateButtons(int hovered) {
+        const auto side = static_cast<QTabBar::ButtonPosition>(
+            tabs_->style()->styleHint(QStyle::SH_TabBar_CloseButtonPosition, nullptr, tabs_));
+        for (int index = 0; index < tabs_->count(); ++index) {
+            if (auto* button = tabs_->tabButton(index, side)) {
+                button->setVisible(index == tabs_->currentIndex() || index == hovered);
+            }
+        }
+    }
+
+    QTabBar* tabs_;
+};
+
+} // namespace
+
 MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindow(parent) {
+    ::qInitResources_resources();
+    theme_ = new design::ThemeManager(this);
+    theme_->setSystemPalette(qApp->palette());
+    theme_->setSystemAppearance(qApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark
+                                    ? design::ResolvedAppearance::Dark
+                                    : design::ResolvedAppearance::Light);
+    theme_->installOn(qApp);
+    platformAccessibility_ = new design::PlatformAccessibilityMonitor(theme_, this);
+    connect(qApp->styleHints(), &QStyleHints::colorSchemeChanged, theme_,
+            [this](Qt::ColorScheme scheme) {
+                theme_->setSystemAppearance(scheme == Qt::ColorScheme::Dark
+                                                ? design::ResolvedAppearance::Dark
+                                                : design::ResolvedAppearance::Light);
+            });
     preferences_ = new EditorPreferencesController(this);
     completion_ = new EditorCompletionController(this);
     setWindowTitle(tr("ChoscorDB"));
-    resize(1280, 900);
-    setMinimumSize(960, 640);
-    setStyleSheet(QStringLiteral(
-        "QToolBar { spacing: 8px; padding: 8px; border-bottom: 1px solid palette(mid); }"
-        "QTabBar::tab { padding: 10px 16px; }"
-        "QDockWidget::title { padding: 10px; }"
-        "QTreeView::item { min-height: 28px; }"
-        "QHeaderView::section { padding: 8px 12px; }"
-        "QToolButton#runStatementButton:enabled { background: #83d4b1; color: #112b21; padding: "
-        "6px 12px; border-radius: 4px; }"));
+    setWindowIcon(design::themedIcon(design::Icon::AppMark, theme_->resolvedTheme().colors.action,
+                                     theme_->metrics().iconLarge));
+    const auto initialMetrics = theme_->metrics();
+    resize(initialMetrics.defaultWorkspaceWidth, initialMetrics.defaultWorkspaceHeight);
+    setMinimumSize(initialMetrics.minimumWorkspaceWidth, initialMetrics.minimumWorkspaceHeight);
     auto* fileMenu = menuBar()->addMenu(tr("&File"));
     auto* newQuery = fileMenu->addAction(tr("New query"));
+    newQuery->setObjectName("newQuery");
     newQuery->setShortcut(QKeySequence::New);
     auto* open = fileMenu->addAction(tr("Open SQL file…"));
     open->setShortcut(QKeySequence::Open);
@@ -90,8 +237,33 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     auto* viewMenu = menuBar()->addMenu(tr("&View"));
     auto* navigator = new QDockWidget(tr("Connections"), this);
     navigator->setObjectName("navigator");
+    navigator->toggleViewAction()->setText(tr("Connections"));
+    navigator->setTitleBarWidget(new QWidget(navigator));
     auto* navBody = new QWidget(navigator);
     auto* navLayout = new QVBoxLayout(navBody);
+    auto* navHeader = new QHBoxLayout;
+    auto* navTitle = new QLabel(tr("Connections"), navBody);
+    navTitle->setObjectName("navigatorTitle");
+    auto* addConnection = new QPushButton(tr("+"), navBody);
+    addConnection->setObjectName("navigatorAddConnection");
+    addConnection->setAccessibleName(tr("New connection"));
+    addConnection->setToolTip(tr("New connection"));
+    auto* refreshNavigator = new QPushButton(tr("↻"), navBody);
+    refreshNavigator->setObjectName("navigatorRefresh");
+    refreshNavigator->setAccessibleName(tr("Refresh selected database object"));
+    refreshNavigator->setToolTip(tr("Refresh selected database object"));
+    refreshNavigator->setEnabled(false);
+    auto* disconnectNavigator = new QPushButton(tr("×"), navBody);
+    disconnectNavigator->setObjectName("navigatorDisconnect");
+    disconnectNavigator->setAccessibleName(tr("Disconnect selected session"));
+    disconnectNavigator->setToolTip(tr("Disconnect selected session"));
+    disconnectNavigator->setEnabled(false);
+    navHeader->addWidget(navTitle);
+    navHeader->addStretch();
+    navHeader->addWidget(refreshNavigator);
+    navHeader->addWidget(disconnectNavigator);
+    navHeader->addWidget(addConnection);
+    navLayout->addLayout(navHeader);
     auto* filter = new QLineEdit;
     filter->setPlaceholderText(tr("Filter objects…"));
     filter->setAccessibleName(tr("Filter database objects"));
@@ -100,28 +272,40 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     tree->setAccessibleName(tr("Database navigator"));
     tree->setHeaderHidden(true);
     navLayout->addWidget(tree);
+    auto* navigatorStatus = new QLabel(tr("Disconnected"), navBody);
+    navigatorStatus->setObjectName("navigatorStatus");
+    navigatorStatus->setAccessibleName(tr("Navigator connection status: Disconnected"));
+    navLayout->addWidget(navigatorStatus);
+    new ContextualActionVisibility(navBody, {refreshNavigator, disconnectNavigator});
     navigator->setWidget(navBody);
     addDockWidget(Qt::LeftDockWidgetArea, navigator);
-    resizeDocks({navigator}, {245}, Qt::Horizontal);
+    resizeDocks({navigator}, {initialMetrics.initialNavigatorWidth}, Qt::Horizontal);
     viewMenu->addAction(navigator->toggleViewAction());
+    auto* resetLayout = viewMenu->addAction(tr("Reset layout"));
+    resetLayout->setObjectName("resetLayout");
     auto* central = new QWidget;
     auto* layout = new QVBoxLayout(central);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     auto* toolbar = new QToolBar(tr("Query controls"));
-    toolbar->setIconSize(QSize(16, 16));
+    toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     auto* connections = new QComboBox;
     connections->setObjectName("connectionSelector");
     connections->addItem(tr("No active connection"));
     connections->setEnabled(false);
     toolbar->addWidget(connections);
-    auto* run = toolbar->addAction(tr("▶ Run statement"));
+    auto runIcon = design::themedIcon(design::Icon::Run, theme_->resolvedTheme().colors.action,
+                                      theme_->metrics().iconSmall);
+    auto* run = toolbar->addAction(runIcon, tr("Run statement"));
     run->setObjectName("runStatement");
     run->setShortcut(QKeySequence("Ctrl+Return"));
     run->setEnabled(false);
     queryMenu->addAction(run);
     toolbar->widgetForAction(run)->setObjectName("runStatementButton");
-    auto* cancel = toolbar->addAction(tr("Cancel"));
+    toolbar->widgetForAction(run)->setProperty("primary", true);
+    auto cancelIcon = design::themedIcon(design::Icon::Cancel, theme_->resolvedTheme().colors.text,
+                                         theme_->metrics().iconSmall);
+    auto* cancel = toolbar->addAction(cancelIcon, tr("Cancel"));
     cancel->setEnabled(false);
     queryMenu->addAction(cancel);
     toolbar->addSeparator();
@@ -135,10 +319,42 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     auto* rollbackAction = toolbar->addAction(tr("Rollback"));
     rollbackAction->setEnabled(false);
     queryMenu->addAction(rollbackAction);
+    auto* queryOverflow = new QToolButton(toolbar);
+    queryOverflow->setObjectName("queryToolbarOverflow");
+    queryOverflow->setText(tr("More"));
+    queryOverflow->setAccessibleName(tr("More query actions"));
+    queryOverflow->setToolTip(tr("More query actions"));
+    queryOverflow->setPopupMode(QToolButton::InstantPopup);
+    auto* queryOverflowMenu = new QMenu(queryOverflow);
+    queryOverflowMenu->addAction(commitAction);
+    queryOverflowMenu->addAction(rollbackAction);
+    queryOverflow->setMenu(queryOverflowMenu);
+    toolbar->addWidget(queryOverflow);
+    new ResponsiveQueryToolbar(
+        this, theme_,
+        {toolbar->widgetForAction(commitAction), toolbar->widgetForAction(rollbackAction)},
+        queryOverflow);
     preferences_->addAction("run_statement", run);
     preferences_->addAction("cancel_query", cancel);
     preferences_->addAction("commit", commitAction);
     preferences_->addAction("rollback", rollbackAction);
+    const auto refreshIcons = [this, run, cancel, addConnection, toolbar] {
+        const auto resolved = theme_->resolvedTheme();
+        const auto metrics = theme_->metrics();
+        toolbar->setIconSize(QSize(metrics.iconSmall, metrics.iconSmall));
+        setWindowIcon(
+            design::themedIcon(design::Icon::AppMark, resolved.colors.action, metrics.iconLarge));
+        run->setIcon(
+            design::themedIcon(design::Icon::Run, resolved.colors.actionText, metrics.iconSmall));
+        cancel->setIcon(
+            design::themedIcon(design::Icon::Cancel, resolved.colors.text, metrics.iconSmall));
+        addConnection->setText({});
+        addConnection->setIcon(
+            design::themedIcon(design::Icon::Add, resolved.colors.text, metrics.iconSmall));
+    };
+    connect(theme_, &design::ThemeManager::themeChanged, this, refreshIcons);
+    connect(theme_, &design::ThemeManager::metricsChanged, this, refreshIcons);
+    refreshIcons();
     layout->addWidget(toolbar);
     auto* splitter = new QSplitter(Qt::Vertical);
     editors_ = new QTabWidget;
@@ -151,13 +367,53 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     editors_->setTabsClosable(true);
     editors_->setMovable(true);
     editors_->setDocumentMode(true);
+    editors_->tabBar()->setUsesScrollButtons(true);
+    editors_->tabBar()->setElideMode(Qt::ElideRight);
+    new HoveredTabCloseVisibility(editors_->tabBar());
+    auto* listTabs = viewMenu->addAction(tr("Editor tabs…"));
+    listTabs->setObjectName("listEditorTabs");
+    listTabs->setShortcut(QKeySequence("Ctrl+Shift+L"));
+    connect(listTabs, &QAction::triggered, this, [this] {
+        auto* menu = new QMenu(this);
+        menu->setObjectName("editorTabOverflow");
+        menu->setAccessibleName(tr("Open editor tab"));
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        for (int index = 0; index < editors_->count(); ++index) {
+            auto* action = menu->addAction(editors_->tabText(index));
+            action->setCheckable(true);
+            action->setChecked(index == editors_->currentIndex());
+            connect(action, &QAction::triggered, editors_, [this, index] {
+                editors_->setCurrentIndex(index);
+                if (auto* editor = editors_->currentWidget())
+                    editor->setFocus();
+            });
+        }
+        menu->popup(editors_->tabBar()->mapToGlobal(editors_->tabBar()->rect().bottomLeft()));
+    });
     splitter->addWidget(editors_);
     auto* results = new QTabWidget;
     auto* resultBody = new QWidget;
     auto* resultLayout = new QVBoxLayout(resultBody);
-    auto* empty = new QLabel(tr("Connect to a database and run a statement to view results."));
-    empty->setAlignment(Qt::AlignCenter);
+    auto* empty = new QLabel(tr("○ Disconnected · Connect and run a statement to view results."));
+    empty->setObjectName("executionSummary");
+    empty->setProperty("state", "disconnected");
+    empty->setAccessibleName(tr("Execution status: disconnected"));
     resultLayout->addWidget(empty);
+    auto* emptyActions = new QWidget(resultBody);
+    emptyActions->setObjectName("emptyWorkspaceActions");
+    auto* emptyActionsLayout = new QHBoxLayout(emptyActions);
+    auto* emptyConnect = new QPushButton(tr("Connect"), emptyActions);
+    emptyConnect->setObjectName("emptyConnect");
+    auto* emptyOpen = new QPushButton(tr("Open SQL file"), emptyActions);
+    emptyOpen->setObjectName("emptyOpenSql");
+    auto* emptyNew = new QPushButton(tr("New query"), emptyActions);
+    emptyNew->setObjectName("emptyNewQuery");
+    emptyActionsLayout->addStretch();
+    emptyActionsLayout->addWidget(emptyConnect);
+    emptyActionsLayout->addWidget(emptyOpen);
+    emptyActionsLayout->addWidget(emptyNew);
+    emptyActionsLayout->addStretch();
+    resultLayout->addWidget(emptyActions);
     auto* grid = new QTableView;
     grid->setObjectName("queryResults");
     grid->setAccessibleName(tr("Query results"));
@@ -185,7 +441,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     results->addTab(resultBody, tr("Results"));
     results->addTab(messages, tr("Messages"));
     splitter->addWidget(results);
-    splitter->setSizes({420, 340});
+    splitter->setSizes({initialMetrics.initialEditorHeight, initialMetrics.initialResultsHeight});
     layout->addWidget(splitter);
     search_ = new SearchPanel(
         [this] { return qobject_cast<SqlEditor*>(editors_->currentWidget()); }, this);
@@ -231,6 +487,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             &EditorPreferencesController::open);
     connect(editors_, &QTabWidget::currentChanged, search_, &SearchPanel::editorChanged);
     setCentralWidget(central);
+    auto* toast = new ToastRegion(this);
+    statusBar()->addWidget(toast, 1);
     statusBar()->showMessage(tr("Disconnected · No background queries"));
     statusBar()->addPermanentWidget(new QLabel(tr("UTF-8   SQL")));
     auto* completionNote = new QLabel(tr("Loaded objects"));
@@ -242,6 +500,10 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     connect(completion_, &EditorCompletionController::partialCatalog, completionNote,
             &QWidget::setVisible);
     connect(newQuery, &QAction::triggered, this, [this] { addEditor(); });
+    connect(emptyNew, &QPushButton::clicked, newQuery, &QAction::trigger);
+    connect(emptyOpen, &QPushButton::clicked, open, &QAction::trigger);
+    connect(emptyConnect, &QPushButton::clicked, newConnection, &QAction::trigger);
+    connect(addConnection, &QPushButton::clicked, newConnection, &QAction::trigger);
     connect(editors_, &QTabWidget::tabCloseRequested, this, [this](int index) {
         auto* editor = qobject_cast<SqlEditor*>(editors_->widget(index));
         if (editor->isModified() &&
@@ -289,19 +551,32 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     preferences_->initialize(workspace_->adapter());
     connect(
         workspace_->adapter(), &EngineAdapter::eventReady, this,
-        [this, connections](const BridgeEvent& event) {
+        [this, connections, navigatorStatus](const BridgeEvent& event) {
             const auto kind =
                 QString::fromUtf8(event.kind.data(), static_cast<qsizetype>(event.kind.size()));
-            if (kind == "connected")
+            if (kind == "connected") {
                 statusBar()->showMessage(tr("Connected"));
-            else if (kind == "disconnected")
+                navigatorStatus->setText(tr("● Connected"));
+                navigatorStatus->setProperty("state", "success");
+            } else if (kind == "disconnected") {
                 statusBar()->showMessage(connections->currentData().isValid() ? tr("Connected")
                                                                               : tr("Disconnected"));
-            else if (kind == "query_state")
+                const bool connected = connections->currentData().isValid();
+                navigatorStatus->setText(connected ? tr("● Connected") : tr("○ Disconnected"));
+                navigatorStatus->setProperty("state", connected ? "success" : "disconnected");
+            } else if (kind == "connection_failed") {
+                navigatorStatus->setText(tr("! Connection failed"));
+                navigatorStatus->setProperty("state", "error");
+            } else if (kind == "query_state") {
                 statusBar()->showMessage(
                     tr("Query · %1")
                         .arg(QString::fromUtf8(event.state.data(),
                                                static_cast<qsizetype>(event.state.size()))));
+            }
+            navigatorStatus->setAccessibleName(
+                tr("Navigator connection status: %1").arg(navigatorStatus->text()));
+            navigatorStatus->style()->unpolish(navigatorStatus);
+            navigatorStatus->style()->polish(navigatorStatus);
         },
         Qt::DirectConnection);
     if (!storagePath.isEmpty()) {
@@ -367,8 +642,10 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                         recovery_->retry();
                     else if (box.clickedButton() == discardButton)
                         recovery_->closeWithoutRecovery();
-                    else
+                    else {
+                        appearanceCloseApproved_ = false;
                         recovery_->cancelClose();
+                    }
                 });
             });
         connect(recovery_, &WorkspaceRecoveryController::closeReady, this, [this] {
@@ -385,11 +662,26 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     connect(history_, &QDockWidget::visibilityChanged, this,
             [this, sized = false](bool visible) mutable {
                 if (visible && !sized) {
-                    resizeDocks({history_}, {360}, Qt::Vertical);
+                    resizeDocks({history_}, {theme_->metrics().initialHistoryHeight}, Qt::Vertical);
                     sized = true;
                 }
             });
     viewMenu->addAction(history_->toggleViewAction());
+    appearance_ = new AppearanceController(theme_, workspace_->adapter(), this, navigator, splitter,
+                                           history_);
+    preferences_->setAppearanceController(appearance_);
+    connect(resetLayout, &QAction::triggered, appearance_, &AppearanceController::resetLayout);
+    connect(appearance_, &AppearanceController::warningChanged, this,
+            [toast](const QString& warning) {
+                if (warning.isEmpty())
+                    toast->clearNotice();
+                else
+                    toast->showPersistent(warning);
+            });
+    connect(appearance_, &AppearanceController::flushReady, this, [this] {
+        appearanceCloseApproved_ = true;
+        QTimer::singleShot(0, this, [this] { close(); });
+    });
     if (recovery_) {
         history_->setEnabled(recovery_->isReady() && !recovery_->isClosing());
         connect(recovery_, &WorkspaceRecoveryController::mutationEnabled, history_,
@@ -445,6 +737,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                         QTimer::singleShot(0, this, [this] { close(); });
                     } else {
                         databaseClosePending_ = false;
+                        appearanceCloseApproved_ = false;
                         recoveryCloseApproved_ = false;
                         if (recovery_)
                             recovery_->cancelClose();
@@ -454,12 +747,43 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 });
             });
     auto* navigatorController = new NavigatorController(workspace_->adapter(), tree, filter, this);
+    auto* refreshNavigatorAction = new QAction(tr("Refresh selected object"), tree);
+    refreshNavigatorAction->setObjectName("navigatorRefreshAction");
+    refreshNavigatorAction->setEnabled(false);
+    auto* disconnectNavigatorAction = new QAction(tr("Disconnect selected session"), tree);
+    disconnectNavigatorAction->setObjectName("navigatorDisconnectAction");
+    disconnectNavigatorAction->setEnabled(false);
+    tree->addAction(newConnection);
+    tree->addAction(refreshNavigatorAction);
+    tree->addAction(disconnectNavigatorAction);
+    connect(refreshNavigatorAction, &QAction::triggered, navigatorController,
+            &NavigatorController::refreshCurrent);
+    connect(disconnectNavigatorAction, &QAction::triggered, navigatorController,
+            &NavigatorController::disconnectCurrent);
+    connect(refreshNavigator, &QPushButton::clicked, refreshNavigatorAction, &QAction::trigger);
+    connect(disconnectNavigator, &QPushButton::clicked, disconnectNavigatorAction,
+            &QAction::trigger);
+    connect(tree->selectionModel(), &QItemSelectionModel::currentChanged, this,
+            [tree, refreshNavigator, disconnectNavigator, refreshNavigatorAction,
+             disconnectNavigatorAction](const QModelIndex& current) {
+                const bool canRefresh = current.isValid();
+                const bool canDisconnect =
+                    current.data(NavigatorModel::KindRole).toString() == "connection";
+                refreshNavigator->setEnabled(canRefresh);
+                disconnectNavigator->setEnabled(canDisconnect);
+                refreshNavigatorAction->setEnabled(canRefresh);
+                disconnectNavigatorAction->setEnabled(canDisconnect);
+                tree->setAccessibleDescription(
+                    current.isValid()
+                        ? QObject::tr("Context actions are available in the navigator header.")
+                        : QString{});
+            });
     connect(navigatorController, &NavigatorController::disconnectRequested, workspace_,
             &QueryWorkspace::disconnectConnection);
     connect(navigatorController, &NavigatorController::generationFailed, this,
-            [this](const QString& error) { statusBar()->showMessage(error); });
+            [toast](const QString& error) { toast->showNotice(error); });
     connect(navigatorController, &NavigatorController::sqlGenerated, this,
-            [this, connections](quint64 connection, const QString& sql) {
+            [this, connections, toast](quint64 connection, const QString& sql) {
                 if (databaseClosePending_ || !editors_->isEnabled() ||
                     (recovery_ && (!recovery_->isReady() || recovery_->isClosing())))
                     return;
@@ -491,6 +815,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 editors_->setTabText(editors_->indexOf(editor), tr("Generated SQL •"));
                 editor->setFocus();
                 statusBar()->showMessage(tr("SQL generated. Review the draft before running."));
+                toast->showNotice(tr("SQL generated. Review the draft before running."));
                 if (recovery_)
                     recovery_->changed();
             });
@@ -524,6 +849,10 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             });
 }
 void MainWindow::closeEvent(QCloseEvent* event) {
+    if (appearance_ && !appearanceCloseApproved_ && !appearance_->flush()) {
+        event->ignore();
+        return;
+    }
     if (databaseCloseApproved_) {
         event->accept();
         return;
@@ -545,6 +874,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
                     this, tr("Close workspace"), tr("Discard unsaved changes in the workspace?"),
                     QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
                 if (answer != QMessageBox::Discard) {
+                    appearanceCloseApproved_ = false;
                     event->ignore();
                     return;
                 }
@@ -553,6 +883,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
         }
     }
     if (workspace_ && !workspace_->confirmShutdown()) {
+        appearanceCloseApproved_ = false;
         recoveryCloseApproved_ = false;
         if (recovery_)
             recovery_->cancelClose();

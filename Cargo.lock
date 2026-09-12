@@ -296,6 +296,7 @@ dependencies = [
  "choscordb-sql-language",
  "cxx",
  "cxx-build",
+ "rusqlite",
  "tempfile",
 ]
 

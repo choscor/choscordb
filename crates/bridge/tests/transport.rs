@@ -344,6 +344,95 @@ fn recovery_transport_preserves_typed_documents_and_policy_without_connecting() 
 }
 
 #[test]
+fn appearance_transport_preserves_typed_values_missing_and_reset() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("appearance.sqlite");
+    let mut engine = new_engine_with_storage(path.to_str().unwrap());
+
+    assert!(appearance_layout_get(&mut engine, 900).accepted);
+    let missing = await_event(&mut engine, "appearance_layout");
+    assert_eq!(missing.request_token, 900);
+    assert!(!missing.has_appearance);
+    assert_eq!(missing.appearance_layout.version, 1);
+    assert_eq!(missing.appearance_layout.theme, "system");
+    assert_eq!(missing.appearance_layout.density, "compact");
+    assert_eq!(missing.appearance_layout.width, 1280);
+    assert_eq!(missing.appearance_layout.height, 900);
+
+    let expected = ffi::AppearanceLayoutDto {
+        version: 1,
+        theme: "dark".into(),
+        density: "comfortable".into(),
+        accent_kind: "custom".into(),
+        accent: "#1267A8".into(),
+        navigator_width: 312,
+        editor_results_split: 575,
+        history_height: 244,
+        navigator_visible: true,
+        history_visible: true,
+        x: -720,
+        y: 48,
+        width: 1440,
+        height: 960,
+        maximized: false,
+        has_screen_name: true,
+        screen_name: "Left display".into(),
+    };
+    assert!(appearance_layout_set(&mut engine, expected, 901).accepted);
+    let saved = await_event(&mut engine, "appearance_layout");
+    assert_eq!(saved.request_token, 901);
+    assert!(saved.has_appearance);
+    assert_eq!(saved.appearance_layout.theme, "dark");
+    assert_eq!(saved.appearance_layout.density, "comfortable");
+    assert_eq!(saved.appearance_layout.accent_kind, "custom");
+    assert_eq!(saved.appearance_layout.accent, "#1267A8");
+    assert_eq!(saved.appearance_layout.navigator_width, 312);
+    assert_eq!(saved.appearance_layout.editor_results_split, 575);
+    assert_eq!(saved.appearance_layout.x, -720);
+    assert_eq!(saved.appearance_layout.screen_name, "Left display");
+
+    let invalid = ffi::AppearanceLayoutDto {
+        version: 1,
+        theme: "sepia".into(),
+        ..Default::default()
+    };
+    assert!(!appearance_layout_set(&mut engine, invalid, 902).accepted);
+    assert!(appearance_layout_reset(&mut engine, 903).accepted);
+    let reset = await_event(&mut engine, "appearance_layout");
+    assert_eq!(reset.request_token, 903);
+    assert!(!reset.has_appearance);
+}
+
+#[test]
+fn appearance_corruption_is_user_visible_and_reset_releases_the_queue() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("appearance-corrupt.sqlite");
+    let mut initialized = new_engine_with_storage(path.to_str().unwrap());
+    assert!(appearance_layout_get(&mut initialized, 909).accepted);
+    await_event(&mut initialized, "appearance_layout");
+    drop(initialized);
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute(
+        "INSERT INTO appearance_layout(singleton,value) VALUES (1,?1)",
+        ["{private malformed appearance"],
+    )
+    .unwrap();
+    drop(db);
+
+    let mut engine = new_engine_with_storage(path.to_str().unwrap());
+    assert!(appearance_layout_get(&mut engine, 910).accepted);
+    let failed = await_event(&mut engine, "recovery_failed");
+    assert_eq!(failed.request_token, 910);
+    assert_eq!(failed.error_kind, "InvalidInput");
+    assert!(failed.error.contains("corrupt"));
+    assert!(!failed.error.contains("private"));
+    assert!(appearance_layout_reset(&mut engine, 911).accepted);
+    let reset = await_event(&mut engine, "appearance_layout");
+    assert_eq!(reset.request_token, 911);
+    assert!(!reset.has_appearance);
+}
+
+#[test]
 fn recovery_transport_rejects_invalid_offsets_and_retention_without_losing_snapshot() {
     let mut engine = new_engine();
     let bad = ffi::EditorDocumentDto {

@@ -38,6 +38,7 @@ fn migrations_and_profiles_survive_restart() {
         "settings",
         "recent_items",
         "pending_credential_cleanup",
+        "appearance_layout",
     ] {
         assert!(db.prepare(&format!("SELECT * FROM {table}")).is_ok());
     }
@@ -45,7 +46,7 @@ fn migrations_and_profiles_survive_restart() {
         db.query_row("SELECT count(*) FROM schema_migrations", [], |r| r
             .get::<_, i64>(0))
             .unwrap(),
-        2
+        3
     );
 }
 

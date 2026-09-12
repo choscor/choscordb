@@ -46,6 +46,17 @@ struct QueryPreferences {
 struct QueryPreferenceLimits {
     quint32 version, minPageSize, maxPageSize, defaultPageSize, maxTimeoutSeconds;
 };
+struct AppearanceLayout {
+    quint32 version = 1;
+    QString theme = "system", density = "compact", accentKind = "preset", accent = "cobalt";
+    quint32 navigatorWidth = 280, historyHeight = 220;
+    quint16 editorResultsSplit = 600;
+    bool navigatorVisible = true, historyVisible = false;
+    qint32 x = 0, y = 0;
+    quint32 width = 1280, height = 900;
+    bool maximized = false, hasScreenName = false;
+    QString screenName;
+};
 struct RecoveryLimits {
     quint64 maxDocuments, maxSqlBytes, maxCollectionBytes;
 };
@@ -96,6 +107,9 @@ class EngineAdapter final : public QObject {
     static EditorPreferenceLimits editorPreferenceLimits();
     bool getEditorPreferences(quint64 token);
     bool setEditorPreferences(const EditorPreferences& preferences, quint64 token);
+    bool getAppearanceLayout(quint64 token);
+    bool setAppearanceLayout(const AppearanceLayout& appearance, quint64 token);
+    bool resetAppearanceLayout(quint64 token);
     static QStringList keywordCompletions(const QString& prefix);
     static TextMatch findText(const QString& source, const QString& needle, quint64 start,
                               bool backwards, bool caseSensitive, bool wholeWord);
@@ -151,6 +165,8 @@ class EngineAdapter final : public QObject {
     void historyListed(quint64 token, const QList<choscordb::SavedHistoryEntry>& entries);
     void historyCleared(quint64 token);
     void editorPreferencesReady(quint64 token, const choscordb::EditorPreferences& preferences);
+    void appearanceLayoutReady(quint64 token, bool hasSavedValue,
+                               const choscordb::AppearanceLayout& appearance);
     void historyPolicyReady(quint64 token, const choscordb::HistoryPolicy& policy);
     void workspaceRestored(quint64 token, const QList<choscordb::SavedEditorDocument>& documents);
     void workspaceSaved(quint64 token);
@@ -192,3 +208,4 @@ Q_DECLARE_METATYPE(choscordb::HistoryPolicy)
 Q_DECLARE_METATYPE(choscordb::EditorPreferences)
 
 Q_DECLARE_METATYPE(choscordb::QueryPreferences)
+Q_DECLARE_METATYPE(choscordb::AppearanceLayout)

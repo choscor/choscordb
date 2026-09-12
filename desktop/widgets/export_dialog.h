@@ -1,5 +1,5 @@
 #pragma once
-#include <QDialog>
+#include "widgets/dialog_shell.h"
 #include <QPointer>
 #include <QStringList>
 #include <optional>
@@ -11,7 +11,7 @@ class QPushButton;
 namespace choscordb {
 class EngineAdapter;
 struct BridgeEvent;
-class ExportDialog final : public QDialog {
+class ExportDialog final : public DialogShell {
     Q_OBJECT
   public:
     explicit ExportDialog(EngineAdapter* adapter, QWidget* parent = nullptr);

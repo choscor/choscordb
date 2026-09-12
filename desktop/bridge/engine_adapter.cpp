@@ -51,6 +51,46 @@ SavedProfile savedProfile(const ProfileDto& dto) {
     value.credentialRef = string(dto.credential_ref);
     return value;
 }
+AppearanceLayout appearanceLayout(const AppearanceLayoutDto& dto) {
+    return {dto.version,
+            string(dto.theme),
+            string(dto.density),
+            string(dto.accent_kind),
+            string(dto.accent),
+            dto.navigator_width,
+            dto.history_height,
+            dto.editor_results_split,
+            dto.navigator_visible,
+            dto.history_visible,
+            dto.x,
+            dto.y,
+            dto.width,
+            dto.height,
+            dto.maximized,
+            dto.has_screen_name,
+            string(dto.screen_name)};
+}
+AppearanceLayoutDto appearanceDto(const AppearanceLayout& value) {
+    AppearanceLayoutDto dto;
+    dto.version = value.version;
+    dto.theme = rustString(value.theme);
+    dto.density = rustString(value.density);
+    dto.accent_kind = rustString(value.accentKind);
+    dto.accent = rustString(value.accent);
+    dto.navigator_width = value.navigatorWidth;
+    dto.editor_results_split = value.editorResultsSplit;
+    dto.history_height = value.historyHeight;
+    dto.navigator_visible = value.navigatorVisible;
+    dto.history_visible = value.historyVisible;
+    dto.x = value.x;
+    dto.y = value.y;
+    dto.width = value.width;
+    dto.height = value.height;
+    dto.maximized = value.maximized;
+    dto.has_screen_name = value.hasScreenName;
+    dto.screen_name = rustString(value.screenName);
+    return dto;
+}
 } // namespace
 QueryPreferences::QueryPreferences() {
     const auto limits = query_preference_limits();
@@ -128,7 +168,7 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                                       kind == "recovery_failed" || kind == "history_listed" ||
                                       kind == "history_cleared" || kind == "history_policy" ||
                                       kind == "history_flushed" || kind == "editor_preferences" ||
-                                      kind == "query_preferences";
+                                      kind == "query_preferences" || kind == "appearance_layout";
         if (recoveryTerminal && d_->activeRecovery == event.request_token) {
             const auto token = event.request_token;
             QTimer::singleShot(0, this, [this, token] {
@@ -144,6 +184,9 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             preferences.pageSize = event.query_preferences.page_size;
             preferences.timeoutSeconds = event.query_preferences.timeout_seconds;
             emit queryPreferencesReady(event.request_token, preferences);
+        } else if (kind == "appearance_layout") {
+            emit appearanceLayoutReady(event.request_token, event.has_appearance,
+                                       appearanceLayout(event.appearance_layout));
         } else if (kind == "editor_preferences") {
             const auto& value = event.editor_preferences;
             EditorPreferences preferences;
@@ -432,6 +475,64 @@ bool EngineAdapter::setEditorPreferences(const EditorPreferences& preferences, q
             return editor_preferences_set(*d_->engine, std::move(dto), token);
         },
         9216);
+}
+bool EngineAdapter::getAppearanceLayout(quint64 token) {
+    return queueRecovery(token,
+                         [this, token] { return appearance_layout_get(*d_->engine, token); });
+}
+bool EngineAdapter::setAppearanceLayout(const AppearanceLayout& appearance, quint64 token) {
+    const auto member = [](const QString& value, std::initializer_list<QStringView> choices) {
+        return std::ranges::any_of(choices,
+                                   [&value](QStringView choice) { return value == choice; });
+    };
+    if (!appearance.theme.isValidUtf16() || !appearance.density.isValidUtf16() ||
+        !appearance.accentKind.isValidUtf16() || !appearance.accent.isValidUtf16() ||
+        !appearance.screenName.isValidUtf16() || appearance.theme.size() > 16 ||
+        appearance.density.size() > 16 || appearance.accentKind.size() > 16 ||
+        appearance.accent.size() > 16 || appearance.screenName.size() > 256) {
+        emit recoveryFailed(token, tr("Invalid appearance or layout settings."));
+        return false;
+    }
+    const bool preset = appearance.accentKind == "preset";
+    const bool validCustom =
+        appearance.accent.size() == 7 && appearance.accent.front() == '#' &&
+        std::ranges::all_of(appearance.accent.sliced(1), [](QChar value) {
+            const auto c = value.unicode();
+            return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+        });
+    const auto screenBytes = appearance.screenName.toUtf8();
+    const quint64 retainedBytes = static_cast<quint64>(appearance.theme.toUtf8().size()) +
+                                  static_cast<quint64>(appearance.density.toUtf8().size()) +
+                                  static_cast<quint64>(appearance.accentKind.toUtf8().size()) +
+                                  static_cast<quint64>(appearance.accent.toUtf8().size()) +
+                                  static_cast<quint64>(screenBytes.size());
+    if (appearance.version != 1 || !member(appearance.theme, {u"system", u"light", u"dark"}) ||
+        !member(appearance.density, {u"compact", u"comfortable"}) ||
+        !member(appearance.accentKind, {u"preset", u"custom"}) ||
+        (preset && !member(appearance.accent, {u"cobalt", u"azure", u"violet", u"teal", u"green",
+                                               u"orange", u"rose"})) ||
+        (!preset && !validCustom) || appearance.navigatorWidth < 96 ||
+        appearance.navigatorWidth > 2048 || appearance.editorResultsSplit < 100 ||
+        appearance.editorResultsSplit > 900 || appearance.historyHeight < 80 ||
+        appearance.historyHeight > 4096 || appearance.width < 960 || appearance.height < 640 ||
+        appearance.width > 16384 || appearance.height > 16384 || appearance.x < -1000000 ||
+        appearance.x > 1000000 || appearance.y < -1000000 || appearance.y > 1000000 ||
+        screenBytes.size() > 256 ||
+        (appearance.hasScreenName && (screenBytes.isEmpty() || screenBytes.contains('\0'))) ||
+        retainedBytes > 4096) {
+        emit recoveryFailed(token, tr("Invalid appearance or layout settings."));
+        return false;
+    }
+    return queueRecovery(
+        token,
+        [this, appearance, token] {
+            return appearance_layout_set(*d_->engine, appearanceDto(appearance), token);
+        },
+        static_cast<quint64>(retainedBytes));
+}
+bool EngineAdapter::resetAppearanceLayout(quint64 token) {
+    return queueRecovery(token,
+                         [this, token] { return appearance_layout_reset(*d_->engine, token); });
 }
 bool EngineAdapter::restoreWorkspace(quint64 token) {
     return queueRecovery(token, [this, token] { return workspace_restore(*d_->engine, token); });

@@ -67,6 +67,7 @@ class QueryWorkspace final : public QObject {
     bool queryAvailable() const;
     bool workInFlight() const;
     void message(const QString& text);
+    void setExecutionState(const QString& state, const QString& detail = {});
     std::optional<quint64> selectedConnection() const;
     Widgets widgets_;
     EngineAdapter* adapter_;

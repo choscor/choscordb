@@ -101,6 +101,16 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
     let mut transfer = None;
     let mut e = ffi::BridgeEvent::default();
     e.kind = match event {
+        Event::AppearanceLayout {
+            request_token,
+            appearance,
+        } => {
+            e.request_token = request_token;
+            e.has_appearance = appearance.is_some();
+            e.appearance_layout =
+                super::appearance::dto(appearance.unwrap_or_else(Default::default));
+            "appearance_layout"
+        }
         Event::QueryPreferences {
             request_token,
             preferences,

@@ -1,4 +1,6 @@
 //! Typed, nonblocking CXX transport. Application policy remains in core services.
+mod appearance;
+pub use appearance::{appearance_layout_get, appearance_layout_reset, appearance_layout_set};
 mod completion;
 mod convert;
 pub use completion::*;
@@ -141,6 +143,26 @@ pub mod ffi {
         page_size: u32,
         timeout_seconds: u32,
     }
+    #[derive(Default)]
+    struct AppearanceLayoutDto {
+        version: u32,
+        theme: String,
+        density: String,
+        accent_kind: String,
+        accent: String,
+        navigator_width: u32,
+        editor_results_split: u16,
+        history_height: u32,
+        navigator_visible: bool,
+        history_visible: bool,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+        maximized: bool,
+        has_screen_name: bool,
+        screen_name: String,
+    }
     struct QueryPreferenceLimitsDto {
         version: u32,
         min_page_size: u32,
@@ -210,6 +232,8 @@ pub mod ffi {
         history_policy: HistoryPolicyDto,
         editor_preferences: EditorPreferencesDto,
         query_preferences: QueryPreferencesDto,
+        has_appearance: bool,
+        appearance_layout: AppearanceLayoutDto,
         history_recorded: bool,
         object: String,
         ddl: String,
@@ -311,6 +335,13 @@ pub mod ffi {
         fn workspace_restore(engine: &mut BridgeEngine, token: u64) -> Submit;
         fn history_list(engine: &mut BridgeEngine, limit: u32, offset: u32, token: u64) -> Submit;
         fn query_preference_limits() -> QueryPreferenceLimitsDto;
+        fn appearance_layout_get(engine: &mut BridgeEngine, token: u64) -> Submit;
+        fn appearance_layout_set(
+            engine: &mut BridgeEngine,
+            appearance: AppearanceLayoutDto,
+            token: u64,
+        ) -> Submit;
+        fn appearance_layout_reset(engine: &mut BridgeEngine, token: u64) -> Submit;
         fn query_preferences_get(engine: &mut BridgeEngine, token: u64) -> Submit;
         fn query_preferences_set(
             engine: &mut BridgeEngine,

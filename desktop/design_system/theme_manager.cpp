@@ -1,0 +1,155 @@
+#include "design_system/theme_manager.h"
+
+#include <QApplication>
+#include <QWidget>
+
+namespace choscordb::design {
+
+ThemeManager::ThemeManager(QObject* parent)
+    : QObject(parent), resolvedTheme_(resolveTheme()), metrics_(resolveMetrics(density_, false)) {}
+
+ThemeMode ThemeManager::mode() const {
+    return mode_;
+}
+Density ThemeManager::density() const {
+    return density_;
+}
+Accent ThemeManager::accent() const {
+    return accent_;
+}
+ResolvedTheme ThemeManager::resolvedTheme() const {
+    return resolvedTheme_;
+}
+DesignMetrics ThemeManager::metrics() const {
+    return metrics_;
+}
+bool ThemeManager::forcedContrast() const {
+    return forcedContrast_;
+}
+bool ThemeManager::reducedMotion() const {
+    return reducedMotion_;
+}
+
+void ThemeManager::setMode(ThemeMode mode) {
+    if (mode_ == mode) {
+        return;
+    }
+    mode_ = mode;
+    refreshTheme();
+}
+
+void ThemeManager::setDensity(Density density) {
+    if (density_ == density) {
+        return;
+    }
+    density_ = density;
+    metrics_ = resolveMetrics(density_, reducedMotion_);
+    if (application_ != nullptr) {
+        applyTo(*application_);
+    }
+    emit metricsChanged(metrics_);
+}
+
+AccentValidation ThemeManager::setAccent(const Accent& accent) {
+    const auto appearance =
+        mode_ == ThemeMode::System
+            ? systemAppearance_
+            : (mode_ == ThemeMode::Dark ? ResolvedAppearance::Dark : ResolvedAppearance::Light);
+    auto validation = validateAccent(accent, appearance);
+    if (validation.accepted && accent.isCustom()) {
+        const auto otherAppearance = appearance == ResolvedAppearance::Light
+                                         ? ResolvedAppearance::Dark
+                                         : ResolvedAppearance::Light;
+        validation = validateAccent(accent, otherAppearance);
+    }
+    if (!validation.accepted || accent_ == accent) {
+        return validation;
+    }
+    accent_ = accent;
+    refreshTheme();
+    return validation;
+}
+
+void ThemeManager::setSystemAppearance(ResolvedAppearance appearance) {
+    if (systemAppearance_ == appearance) {
+        return;
+    }
+    systemAppearance_ = appearance;
+    if (mode_ == ThemeMode::System) {
+        refreshTheme();
+    }
+}
+
+void ThemeManager::setSystemPalette(const QPalette& palette) {
+    if (systemPalette_ == palette) {
+        return;
+    }
+    systemPalette_ = palette;
+    if (forcedContrast_) {
+        refreshTheme();
+    }
+}
+
+void ThemeManager::setForcedContrast(bool enabled) {
+    if (forcedContrast_ == enabled) {
+        return;
+    }
+    forcedContrast_ = enabled;
+    refreshTheme();
+    emit accessibilityPolicyChanged(forcedContrast_, reducedMotion_);
+}
+
+void ThemeManager::setReducedMotion(bool enabled) {
+    if (reducedMotion_ == enabled) {
+        return;
+    }
+    reducedMotion_ = enabled;
+    metrics_ = resolveMetrics(density_, reducedMotion_);
+    if (application_ != nullptr) {
+        applyTo(*application_);
+    }
+    emit metricsChanged(metrics_);
+    emit accessibilityPolicyChanged(forcedContrast_, reducedMotion_);
+}
+
+void ThemeManager::applyTo(QApplication& application) const {
+    application.setPalette(applicationPalette(resolvedTheme_));
+    application.setStyleSheet(applicationStyleSheet(resolvedTheme_, metrics_));
+}
+
+void ThemeManager::applyTo(QWidget& topLevelWidget) const {
+    topLevelWidget.setPalette(applicationPalette(resolvedTheme_));
+    topLevelWidget.setStyleSheet(applicationStyleSheet(resolvedTheme_, metrics_));
+}
+
+void ThemeManager::installOn(QApplication* application) {
+    application_ = application;
+    if (application_ != nullptr) {
+        applyTo(*application_);
+    }
+}
+
+ResolvedTheme ThemeManager::resolveTheme() const {
+    const auto appearance =
+        mode_ == ThemeMode::System
+            ? systemAppearance_
+            : (mode_ == ThemeMode::Dark ? ResolvedAppearance::Dark : ResolvedAppearance::Light);
+    return {appearance,
+            forcedContrast_ ? resolveForcedContrastColors(systemPalette_)
+                            : resolveColors(appearance, accent_),
+            forcedContrast_};
+}
+
+void ThemeManager::refreshTheme() {
+    const auto updated = resolveTheme();
+    if (updated == resolvedTheme_) {
+        return;
+    }
+    resolvedTheme_ = updated;
+    if (application_ != nullptr) {
+        applyTo(*application_);
+    }
+    emit themeChanged(resolvedTheme_);
+}
+
+} // namespace choscordb::design

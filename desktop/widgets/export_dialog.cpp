@@ -1,6 +1,7 @@
 #include "widgets/export_dialog.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/theme.h"
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -23,15 +24,15 @@ QString text(const rust::String& value) {
 }
 } // namespace
 ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
-    : QDialog(parent), adapter_(adapter), format_(new QComboBox(this)),
+    : DialogShell(parent), adapter_(adapter), format_(new QComboBox(this)),
       dialect_(new QComboBox(this)), destination_(new QLineEdit(this)),
       schema_(new QLineEdit(this)), table_(new QLineEdit(this)), sqlFields_(new QWidget(this)),
       browse_(new QPushButton(tr("&Browse…"), this)), start_(new QPushButton(tr("&Export"), this)),
-      cancel_(new QPushButton(tr("Cancel export"), this)), status_(new QLabel(this)) {
+      cancel_(new QPushButton(tr("Cancel export"), this)), status_(createInlineStatus(this)) {
     setObjectName("exportDialog");
     setWindowTitle(tr("Export results"));
     setModal(false);
-    resize(560, 300);
+    resize(design::dialogInitialSize(design::DialogSize::Short));
     format_->setObjectName("exportFormat");
     destination_->setObjectName("exportDestination");
     schema_->setObjectName("exportSchema");
@@ -56,14 +57,12 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     destinationRow->addWidget(destination_);
     destinationRow->addWidget(browse_);
     auto* form = new QFormLayout;
-    form->setSpacing(8);
     form->addRow(tr("&Format:"), format_);
     auto* destinationLabel = new QLabel(tr("&Destination:"), this);
     destinationLabel->setBuddy(destination_);
     form->addRow(destinationLabel, destinationRow);
     auto* sqlForm = new QFormLayout(sqlFields_);
     sqlForm->setContentsMargins(0, 0, 0, 0);
-    sqlForm->setSpacing(8);
     sqlForm->addRow(tr("SQL &dialect:"), dialect_);
     sqlForm->addRow(tr("&Schema:"), schema_);
     sqlForm->addRow(tr("&Table:"), table_);
@@ -71,7 +70,8 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     buttons->addButton(start_, QDialogButtonBox::ActionRole);
     buttons->addButton(cancel_, QDialogButtonBox::ActionRole);
     auto* layout = new QVBoxLayout(this);
-    layout->setSpacing(8);
+    layout->addWidget(createDescription(
+        tr("Export the current result without loading the complete result into memory."), this));
     layout->addLayout(form);
     layout->addWidget(sqlFields_);
     layout->addWidget(status_);

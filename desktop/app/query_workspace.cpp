@@ -297,6 +297,14 @@ std::optional<quint64> QueryWorkspace::selectedConnection() const {
 void QueryWorkspace::message(const QString& value) {
     widgets_.messages->appendPlainText(value);
 }
+void QueryWorkspace::setExecutionState(const QString& state, const QString& detail) {
+    widgets_.summary->setProperty("state", state);
+    const auto label = detail.isEmpty() ? state : detail;
+    widgets_.summary->setText(label);
+    widgets_.summary->setAccessibleName(tr("Execution status: %1").arg(label));
+    widgets_.summary->style()->unpolish(widgets_.summary);
+    widgets_.summary->style()->polish(widgets_.summary);
+}
 void QueryWorkspace::updateActions() {
     const auto selected = selectedConnection();
     const bool connected = selected && connectionAvailable(*selected);
@@ -305,6 +313,8 @@ void QueryWorkspace::updateActions() {
     widgets_.mode->setEnabled(connected && !inFlight);
     widgets_.run->setEnabled(connected && !inFlight && querySettings_->isReady());
     widgets_.cancel->setEnabled(query_.has_value() && busy_ && queryAvailable());
+    widgets_.cancel->setText(widgets_.summary->property("state") == "cancelling" ? tr("Cancelling…")
+                                                                                 : tr("Cancel"));
     if (widgets_.exportResult)
         widgets_.exportResult->setEnabled(query_ && currentPage_ && !inFlight && queryAvailable());
     const bool manual = widgets_.mode->currentIndex() == 1;
@@ -362,7 +372,8 @@ void QueryWorkspace::execute() {
     fetching_ = false;
     busy_ = query_.has_value();
     executionFinished_ = !query_.has_value();
-    widgets_.summary->setText(busy_ ? tr("Queued") : tr("Submission failed"));
+    setExecutionState(busy_ ? QStringLiteral("queued") : QStringLiteral("failed"),
+                      busy_ ? tr("◷ Queued") : tr("! Submission failed"));
     updateActions();
 }
 void QueryWorkspace::handleEvent(const BridgeEvent& e) {
@@ -405,7 +416,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             query_.reset();
             queryConnection_.reset();
             currentPage_.reset();
-            widgets_.summary->setText(tr("Disconnected"));
+            setExecutionState(QStringLiteral("disconnected"), tr("○ Disconnected"));
         }
         updateActions();
         return;
@@ -431,7 +442,11 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         busy_ = state == "queued" || state == "running" || state == "cancelling";
         if (state == "completed" || state == "failed" || state == "disconnected")
             executionFinished_ = true;
-        widgets_.summary->setText(state);
+        const QString icon = state == "completed"      ? QStringLiteral("✓ ")
+                             : state == "failed"       ? QStringLiteral("! ")
+                             : state == "disconnected" ? QStringLiteral("○ ")
+                                                       : QStringLiteral("◷ ");
+        setExecutionState(state, icon + state);
         updateActions();
         if (state == "cancelling")
             widgets_.cancel->setEnabled(false);
@@ -504,10 +519,11 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             visibleLease_ = e.lease_id;
             currentPage_ = e.page_index;
             hasMore_ = e.has_more;
-            widgets_.summary->setText(tr("Page %1 · %2 rows · %3 KiB visible")
-                                          .arg(e.page_index + 1)
-                                          .arg(e.row_count)
-                                          .arg(model_->residentBytes() / 1024));
+            setExecutionState(QStringLiteral("completed"),
+                              tr("✓ Completed · Page %1 · %2 rows · %3 KiB visible")
+                                  .arg(e.page_index + 1)
+                                  .arg(e.row_count)
+                                  .arg(model_->residentBytes() / 1024));
         }
         busy_ = false;
         updateActions();
@@ -526,6 +542,16 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                                           .arg(e.duration_ms)
                                           .arg(e.affected_rows)
                                     : tr("Completed in %1 ms.").arg(e.duration_ms));
+        QString summary = e.has_affected_rows ? tr("✓ Completed · %1 ms · %2 rows affected")
+                                                    .arg(e.duration_ms)
+                                                    .arg(e.affected_rows)
+                                              : tr("✓ Completed · %1 ms").arg(e.duration_ms);
+        if (currentPage_)
+            summary += tr(" · Page %1 · %2 rows · %3 KiB visible")
+                           .arg(*currentPage_ + 1)
+                           .arg(model_->rowCount())
+                           .arg(model_->residentBytes() / 1024);
+        setExecutionState(QStringLiteral("completed"), summary);
         updateActions();
     } else if (kind == "query_failed") {
         executionFinished_ = true;
@@ -534,7 +560,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         hasMore_ = false;
         message(text(e.error) +
                 (e.vendor_code.empty() ? QString{} : tr(" [Code: %1]").arg(text(e.vendor_code))));
-        widgets_.summary->setText(tr("Failed"));
+        setExecutionState(QStringLiteral("failed"), tr("! Failed"));
         updateActions();
     }
 }

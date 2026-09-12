@@ -13,11 +13,35 @@ class NoticesTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.addCleanup(
+            lambda previous=generator.LUCIDE_ICON_HASHES: setattr(
+                generator, "LUCIDE_ICON_HASHES", previous
+            )
+        )
+        generator.LUCIDE_ICON_HASHES = {
+            "play.svg": hashlib.sha256(b"lucide play").hexdigest(),
+            "square.svg": hashlib.sha256(b"lucide square").hexdigest(),
+            "plus.svg": hashlib.sha256(b"lucide plus").hexdigest(),
+        }
         self.stage = self.root / "stage"
         self.stage.mkdir()
         payload = {
             "choscordb.app/Contents/MacOS/choscordb": b"application",
             "choscordb.app/Contents/Resources/licenses/LICENSE": b"application GPL",
+            "choscordb.app/Contents/Resources/licenses/LICENSE-LUCIDE": b"Lucide ISC and Feather MIT",
+            "choscordb.app/Contents/Resources/licenses/SOURCE-LUCIDE.json": json.dumps(
+                {
+                    "source": "https://github.com/lucide-icons/lucide",
+                    "version": "1.27.0",
+                    "commit": "4aec3f8",
+                    "license": "ISC AND MIT",
+                    "icons": generator.LUCIDE_ICON_HASHES,
+                }
+            ).encode(),
+            "choscordb.app/Contents/Resources/icons/app-mark.svg": b"original mark",
+            "choscordb.app/Contents/Resources/icons/play.svg": b"lucide play",
+            "choscordb.app/Contents/Resources/icons/square.svg": b"lucide square",
+            "choscordb.app/Contents/Resources/icons/plus.svg": b"lucide plus",
             "choscordb.app/Contents/Resources/licenses/QScintilla/LICENSE": b"qscintilla GPL",
             "choscordb.app/Contents/Resources/licenses/QScintilla/source.json": json.dumps(
                 {
@@ -254,8 +278,12 @@ class NoticesTest(unittest.TestCase):
         document = json.loads((self.generate() / "sbom.spdx.json").read_text())
         self.assertEqual(
             {p["name"] for p in document["packages"]},
-            {"ChoscorDB", "Qt", "QScintilla", "dependency"},
+            {"ChoscorDB", "Qt", "QScintilla", "Lucide Icons", "dependency"},
         )
+        lucide = next(p for p in document["packages"] if p["name"] == "Lucide Icons")
+        self.assertEqual(lucide["versionInfo"], "1.27.0")
+        self.assertEqual(lucide["licenseDeclared"], "ISC AND MIT")
+        self.assertIn("4aec3f8", lucide["sourceInfo"])
         self.cargo["packages"][0]["name"] = "different-root"
         self.metadata.write_text(json.dumps(self.cargo))
         with self.assertRaisesRegex(ValueError, "root"):

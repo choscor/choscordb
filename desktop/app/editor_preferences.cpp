@@ -1,4 +1,6 @@
 #include "editor_preferences.h"
+#include "app/appearance_controller.h"
+#include "design_system/theme.h"
 #include "widgets/preferences_dialog.h"
 #include "widgets/sql_editor.h"
 #include <QAction>
@@ -58,7 +60,7 @@ bool EditorPreferencesController::eventFilter(QObject* watched, QEvent* event) {
     return QObject::eventFilter(watched, event);
 }
 void EditorPreferencesController::applyFont(SqlEditor* editor) {
-    auto font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    auto font = design::resolveTypography(design::TypographyRole::Monospace);
     if (!preferences_.fontFamily.isEmpty())
         font.setFamily(preferences_.fontFamily);
     font.setPointSize(preferences_.fontSize);
@@ -107,7 +109,7 @@ void EditorPreferencesController::open() {
     if (!adapter_)
         return;
     if (!dialog_) {
-        dialog_ = new PreferencesDialog(adapter_, catalog_, window_);
+        dialog_ = new PreferencesDialog(adapter_, catalog_, window_, appearance_);
         dialog_->setAttribute(Qt::WA_DeleteOnClose);
         connect(dialog_, &PreferencesDialog::preferencesSaveSubmitted, this,
                 [this](quint64 token) { pendingSaves_.insert(token); });
