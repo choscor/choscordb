@@ -61,7 +61,7 @@ class QueryWorkspace final : public QObject {
   private:
     void execute();
     void clearResult();
-    void event(const BridgeEvent& event);
+    void handleEvent(const BridgeEvent& event);
     void updateActions();
     bool connectionAvailable(quint64 connection) const;
     bool queryAvailable() const;

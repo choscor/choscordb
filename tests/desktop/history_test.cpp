@@ -64,9 +64,11 @@ class HistoryTest : public QObject {
     void dockLoadsEmptyPolicyAndOpensFullSqlWithoutExecution() {
         choscordb::EngineAdapter adapter;
         QSignalSpy policies(&adapter, &choscordb::EngineAdapter::historyPolicyReady);
+        QSignalSpy listed(&adapter, &choscordb::EngineAdapter::historyListed);
         choscordb::HistoryDock dock(&adapter);
         dock.show();
         QTRY_VERIFY(!policies.isEmpty());
+        QTRY_COMPARE(listed.count(), 1);
         auto* record = dock.findChild<QCheckBox*>("recordHistory");
         QTRY_VERIFY(record->isEnabled());
         QVERIFY(record->isChecked());

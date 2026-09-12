@@ -1,6 +1,21 @@
 # Continuous integration
 
-`.github/workflows/ci.yml` runs for every pull request, pushes to `main`/`master`, and manual dispatch. Each native matrix entry runs Rust format, strict Clippy, workspace tests, a release CMake/Ninja build, and all registered CTest tests. Building the desktop compiles the generated CXX translation unit and links the Rust static library into C++; this is the bridge compile check. A separate job applies the Cargo dependency license policy.
+The checked-in workflows run on pull requests, pushes to `main`/`master`, and
+manual dispatch. Superseded runs are cancelled, matrix fail-fast is disabled,
+jobs have explicit timeouts, checkout credentials are not persisted, and
+permissions default to read-only.
+
+The merge-blocking layer is deterministic quality (format, Ruff, actionlint and
+both Python suites), the four-platform Rust/native matrix, PostgreSQL 17
+integration, full cargo-deny policy, and pull-request dependency review.
+Clang-tidy and CodeQL are introduced as baseline-first gates: existing findings
+must be reviewed before their analysis policy is made required. The initial
+clang-tidy workflow step is therefore explicitly nonblocking while still
+reporting all findings as errors inside the stage. Rust and C++
+coverage generate separate artifact-only reports with no numeric threshold.
+ASan+UBSan and timing-stress checks run weekly and manually; after stable runs,
+the latest successful default-branch result is a release prerequisite. IWYU is
+advisory.
 
 | Runner | Architecture | Qt package | Compiler |
 |---|---|---|---|
@@ -9,7 +24,13 @@
 | `macos-15` | arm64 | Qt 6.8.3 `clang_64` universal package | Apple Clang |
 | `macos-15-intel` | x64 | Qt 6.8.3 `clang_64` universal package | Apple Clang |
 
-These explicit labels follow [GitHub's hosted-runner architecture table](https://docs.github.com/en/actions/reference/runners/github-hosted-runners). They avoid architecture changes behind `macos-latest`. The runner image supplies Rustup and the system compiler; Rust itself is installed from `rust-toolchain.toml`. The workflow uses Python 3.12, aqtinstall 3.3.0, CMake 3.31.6, Ninja 1.11.1.4, and cargo-deny 0.20.2. Python build-tool versions live in `scripts/ci/requirements.txt`. Transitive Python requirements are resolved by pip and are not fully locked.
+These labels avoid architecture changes behind `macos-latest`. Rust 1.97.1 is
+the sole supported Rust toolchain for this phase. CI uses Python 3.12, Qt 6.8.3,
+QScintilla 2.14.1, LLVM major 23, Ruff 0.16.7, aqtinstall 3.3.0, CMake 3.31.6,
+Ninja 1.11.1.4, actionlint 1.7.7, and cargo-deny 0.20.2. Patch updates to LLVM
+23 are allowed after their output is reviewed. Coverage uses cargo-llvm-cov
+0.6.21 and lcov2xml 1.0.9. Python tool pins live in
+`scripts/ci/requirements.txt`.
 
 Qt installation uses the project's [documented aqt CLI](https://aqtinstall.readthedocs.io/en/v3.3.0/cli.html). Architecture names were checked against live `aqt list-qt ... --arch 6.8.3` metadata for all three hosts. macOS QScintilla is compiled only for the runner's native architecture. `MACOSX_DEPLOYMENT_TARGET=13.0` is shared by Rust's native dependencies, qmake, and CMake in CI. This is a build setting, not evidence of an installation smoke test on macOS 13.
 
@@ -45,16 +66,96 @@ Install Python 3.12+, Rustup, the native C++ toolchain, and the Linux packages l
 
 ```sh
 python -m pip install -r scripts/ci/requirements.txt
-python -m unittest discover -s scripts/ci -p 'test_*.py'
-python scripts/ci/desktop.py rust
-python scripts/ci/desktop.py dependencies
-python scripts/ci/desktop.py build
-python scripts/ci/desktop.py test
+python scripts/ci/quality.py fast
+python scripts/ci/quality.py native-dependencies
+python scripts/ci/quality.py full
 cargo install cargo-deny --version 0.20.2 --locked
-cargo deny --locked check licenses
+cargo deny --locked check
 ```
 
+The focused deterministic stages are `cpp-format`, `python-lint`,
+`python-format`, `actionlint`, `python-tests`, `rust-format`, `rust-check`,
+`rust-clippy`, `rust-tests`, and `cargo-deny`. Native stages are
+`native-dependencies`, `native-build`, and `native-tests`. Every command prints
+the subprocess it invokes and returns
+nonzero with installation guidance when a required tool or dependency is
+missing.
+
+Native analysis can be reproduced with the named CMake presets and targets:
+
+```sh
+cmake --preset clang-tidy
+cmake --build --preset clang-tidy --target choscordb-clang-tidy choscordb-header-check
+cmake --preset sanitizers && cmake --build --preset sanitizers
+ctest --preset sanitizers
+cmake --preset coverage && cmake --build --preset coverage
+cmake --build --preset coverage --target choscordb-cpp-coverage
+cmake --preset iwyu && cmake --build --preset iwyu --target choscordb-iwyu
+```
+
+LLVM stages reject any major other than 23. Sanitizers instrument first-party
+C++ only; linked Rust, Qt, QScintilla, and other third-party libraries are not
+claimed as sanitizer-covered.
+
 The desktop helper keeps Qt, QScintilla, and the native build beneath `build/ci`; it never reuses `build/dev`. Its compiler and test subprocesses receive explicit Qt runtime paths. Source checkouts and dependencies must be available over HTTPS on a first build. Action dependencies are pinned to full commits, `persist-credentials` is disabled, and workflow permissions are read-only. No publishing/signing secrets are used.
+
+## First-party scope and exclusions
+
+Rust checks cover every workspace crate, target, and feature. C/C++ formatting,
+warnings, clang-tidy, headers, sanitizers, and coverage cover handwritten files
+under `desktop/` and `tests/`, including headers. Ruff covers repository-owned
+Python under `scripts/`. Generated CXX and Qt/MOC output, Qt, QScintilla,
+vendored/dependency sources, `build/`, `target/`, release artifacts, historical
+JSON evidence, Markdown prose, and other generated trees are excluded. External
+include paths are treated as system includes so dependency diagnostics do not
+become first-party failures.
+
+Strict native compilation uses `/W4 /WX` on MSVC and `-Wall -Wextra -Wpedantic
+-Werror` on GCC/Clang. The blocking clang-tidy profile is limited to analyzer,
+bugprone, performance, portability, and reviewed modernize/core-guideline
+checks; naming/readability policy is not imported wholesale.
+
+## PostgreSQL integration
+
+The Linux integration job installs PostgreSQL 17, starts the repository-owned
+fixture, exports its TLS/SCRAM environment, and runs the ignored driver and core
+suites plus native CTest sequentially. The restart suite has exclusive fixture
+control. It preserves TLS, cancellation, restart, and cleanup evidence and
+always attempts to stop the marked cluster. Reproduce it exactly using
+[`docs/testing/postgres.md`](testing/postgres.md). The native credential-store
+round trip remains manual because unattended OS keychains may prompt or be
+unavailable.
+
+## Coverage artifacts
+
+`coverage.yml` uploads separate LCOV artifacts for Rust and first-party C++.
+Each job parses the LCOV and rejects an empty report or one without first-party
+`SF:` records. Do not combine their percentages: the toolchains, source sets,
+and instrumentation boundaries differ. Coverage generation failing is a gate;
+coverage percentage is not. A later decision may ratchet separate baselines.
+
+## Suppressions and accepted findings
+
+Warnings and analyzer findings should be fixed. Any exception must identify a
+single diagnostic at the narrowest location and explain the invariant. Broad
+`NOLINT`, blanket directory exclusions, automatic retries, and arbitrary
+timeout increases are forbidden. Handwritten Rust unsafe code is denied; a
+future exception needs a documented safety invariant and focused tests. The
+current `cxx::bridge` macro has the sole narrow exception for generated ABI
+glue, whose layouts/signatures are compiler-checked and transport-tested.
+
+Cargo-deny checks advisories, bans, licenses, registries, and Git sources over
+the locked graph. Exceptions are exact and documented. Dependabot proposes
+weekly grouped Cargo, pip, and GitHub Actions updates; it never auto-merges.
+
+## Optional repository rules
+
+After the first remote runs establish stable names, the owner may configure a
+GitHub ruleset for `main`/`master` requiring the green deterministic-quality
+(including Cargo policy), four platform, PostgreSQL integration, and dependency-review
+checks. Do not require an approving review while there is one contributor.
+Repository settings are owner-applied; workflow files do not claim to change
+them.
 
 ## License check scope
 
@@ -62,11 +163,12 @@ The desktop helper keeps Qt, QScintilla, and the native build beneath `build/ci`
 
 This check covers Cargo packages, including build and test dependencies. It does not discover native libraries obtained outside Cargo or certify distribution compliance. QScintilla 2.14.1's source header specifies GPL version 3 without an “or later” clause; its source is identified here as GPL-3.0-only. The combined distribution must account for that restriction even though ChoscorDB's own source is GPL-3.0-or-later. Qt has module-specific licensing and third-party notices described in [Qt 6.8's licensing documentation](https://doc.qt.io/qt-6.8/licensing.html). Qt and QScintilla remain dynamically linked. Packaging still needs license texts, source obligations, notices, and an SBOM checked for the actual shipped artifacts; this foundation makes no legal-review, installer, signing, or notarization claim.
 
-## Verification evidence and remaining gates
+## Verification boundaries
 
-Locally verified on macOS arm64: official source digest; aqt's three host architecture lists; Python script compilation; three archive-validation regression tests; actionlint 1.7.12; cargo-deny 0.20.2 (`licenses ok`); and a complete QScintilla 2.14.1 source build against installed Qt 6.11.2, including successful repeated bootstrap into `build/ci/qscintilla-local`.
-
-The local bootstrap first exposed the macOS `DESTDIR` post-link failure; the corrected bootstrap then built and installed successfully. These checks do not prove that all GitHub matrix jobs pass. No workflow has been pushed or dispatched as part of this change. Windows, Linux, Intel macOS, and the exact Qt 6.8.3 native builds remain remotely unverified until the workflow runs. Installation smoke tests, release artifacts, performance measurements, and signed packages remain separate release gates from PRD §17.
+Local success does not prove that GitHub's Windows, Linux, Intel macOS, arm64
+macOS, PostgreSQL, CodeQL, coverage, or scheduled jobs passed. Until these files
+are pushed, remote execution awaits a maintainer run. Preserve that distinction
+in release notes and handoffs.
 
 The Linux Secret Service backend introduces `subtle` 2.6.1 through its cryptographic dependencies. Its packaged license was reviewed as BSD-3-Clause; `deny.toml` allows that exact crate/version. GNU lists the [modified BSD license as GPL-compatible](https://www.gnu.org/licenses/license-list.en.html#ModifiedBSD). Release artifacts still need the dependency's copyright, conditions, and disclaimer in third-party notices. This exception does not approve other unreviewed versions or licenses.
 

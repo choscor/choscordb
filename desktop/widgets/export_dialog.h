@@ -32,7 +32,7 @@ class ExportDialog final : public QDialog {
     void updateActions();
     void start();
     void cancel();
-    void event(const BridgeEvent& event);
+    void handleEvent(const BridgeEvent& event);
     void finish(const QString& message, bool failed);
     QPointer<EngineAdapter> adapter_;
     std::optional<quint64> query_;

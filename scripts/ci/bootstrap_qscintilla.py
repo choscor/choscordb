@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build the pinned QScintilla Qt 6 shared library in an isolated prefix."""
+
 import argparse
 import hashlib
 import json
@@ -18,13 +19,17 @@ SHA256 = "dfe13c6acc9d85dfcba76ccc8061e71a223957a6c02f3c343b30a9d43a4cdd4d"
 
 
 def run(command, **kwargs):
-    print("Running:", subprocess.list2cmdline([str(arg) for arg in command]), flush=True)
+    print(
+        "Running:", subprocess.list2cmdline([str(arg) for arg in command]), flush=True
+    )
     return subprocess.run(command, check=True, **kwargs)
 
 
 def verify_archive(path):
     if hashlib.sha256(path.read_bytes()).hexdigest() != SHA256:
-        raise ValueError("QScintilla source SHA-256 mismatch; refusing to extract or execute it")
+        raise ValueError(
+            "QScintilla source SHA-256 mismatch; refusing to extract or execute it"
+        )
 
 
 def extract_archive(archive, destination):
@@ -33,7 +38,9 @@ def extract_archive(archive, destination):
     with tarfile.open(archive) as source:
         for member in source.getmembers():
             target = (destination / member.name).resolve()
-            if not target.is_relative_to(destination.resolve()) or not (member.isfile() or member.isdir()):
+            if not target.is_relative_to(destination.resolve()) or not (
+                member.isfile() or member.isdir()
+            ):
                 raise ValueError(f"Unsafe source archive member: {member.name!r}")
         source.extractall(destination, filter="data")
 
@@ -57,21 +64,38 @@ def main():
     parser.add_argument("--qmake", required=True, type=Path)
     parser.add_argument("--prefix", required=True, type=Path)
     parser.add_argument("--work", required=True, type=Path)
-    parser.add_argument("--archive", type=Path, help="Use a previously downloaded archive; SHA-256 is still enforced")
+    parser.add_argument(
+        "--archive",
+        type=Path,
+        help="Use a previously downloaded archive; SHA-256 is still enforced",
+    )
     parser.add_argument("--jobs", type=int, default=2)
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error("--jobs must be positive")
-    qmake, prefix, work = args.qmake.resolve(), args.prefix.resolve(), args.work.resolve()
-    version = subprocess.check_output([str(qmake), "-query", "QT_VERSION"], text=True).strip()
+    qmake, prefix, work = (
+        args.qmake.resolve(),
+        args.prefix.resolve(),
+        args.work.resolve(),
+    )
+    version = subprocess.check_output(
+        [str(qmake), "-query", "QT_VERSION"], text=True
+    ).strip()
     if tuple(map(int, version.split(".")[:2])) < (6, 8):
         raise ValueError("Qt 6.8 or newer is required")
     work.mkdir(parents=True, exist_ok=True)
     prefix.mkdir(parents=True, exist_ok=True)
-    archive = args.archive.resolve() if args.archive else work / f"QScintilla_src-{VERSION}.tar.gz"
+    archive = (
+        args.archive.resolve()
+        if args.archive
+        else work / f"QScintilla_src-{VERSION}.tar.gz"
+    )
     if not archive.exists():
         temporary = archive.with_suffix(".download")
-        with urllib.request.urlopen(URL, timeout=120) as response, temporary.open("wb") as output:
+        with (
+            urllib.request.urlopen(URL, timeout=120) as response,
+            temporary.open("wb") as output,
+        ):
             shutil.copyfileobj(response, output)
         verify_archive(temporary)
         temporary.replace(archive)
@@ -81,7 +105,12 @@ def main():
     build.mkdir(exist_ok=True)
     library = prefix / "lib"
     library.mkdir(exist_ok=True)
-    command = [str(qmake), str(source / "src/qscintilla.pro"), "CONFIG+=release", "CONFIG-=debug debug_and_release"]
+    command = [
+        str(qmake),
+        str(source / "src/qscintilla.pro"),
+        "CONFIG+=release",
+        "CONFIG-=debug debug_and_release",
+    ]
     without_agl = False
     if platform.system() == "Darwin":
         command.append(f"QMAKE_APPLE_DEVICE_ARCHS={platform.machine()}")
@@ -90,7 +119,9 @@ def main():
         command.extend(overrides)
         without_agl = bool(overrides)
         if os.environ.get("MACOSX_DEPLOYMENT_TARGET"):
-            command.append(f"QMAKE_MACOSX_DEPLOYMENT_TARGET={os.environ['MACOSX_DEPLOYMENT_TARGET']}")
+            command.append(
+                f"QMAKE_MACOSX_DEPLOYMENT_TARGET={os.environ['MACOSX_DEPLOYMENT_TARGET']}"
+            )
     run(command, cwd=build)
     if without_agl:
         remove_missing_agl_from_makefile(build / "Makefile")
@@ -102,7 +133,9 @@ def main():
     # Keep qmake's default output directory: upstream's macOS post-link command
     # addresses the library by basename and breaks when DESTDIR is overridden.
     for artifact in build.rglob("*qscintilla*"):
-        if artifact.is_file() and (artifact.suffix in {".dylib", ".dll", ".lib"} or ".so" in artifact.name):
+        if artifact.is_file() and (
+            artifact.suffix in {".dylib", ".dll", ".lib"} or ".so" in artifact.name
+        ):
             destination = library / artifact.name
             destination.unlink(missing_ok=True)
             shutil.copy2(artifact, destination, follow_symlinks=False)
@@ -114,7 +147,20 @@ def main():
     notices = prefix / "share/licenses/QScintilla"
     notices.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source / "LICENSE", notices / "LICENSE")
-    (notices / "source.json").write_text(json.dumps({"version": VERSION, "url": URL, "sha256": SHA256, "license": "GPL-3.0-only", "qt_version": version}, indent=2) + "\n", encoding="utf-8")
+    (notices / "source.json").write_text(
+        json.dumps(
+            {
+                "version": VERSION,
+                "url": URL,
+                "sha256": SHA256,
+                "license": "GPL-3.0-only",
+                "qt_version": version,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     if not any(library.glob("*qscintilla*")):
         raise RuntimeError("QScintilla build produced no library")
     print(f"QScintilla installed into {prefix}")

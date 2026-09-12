@@ -14,12 +14,19 @@
 #include <QTableView>
 #include <QTimer>
 #include <QtTest>
+namespace {
+choscordb::ResultColumn column(const QString& name) {
+    choscordb::ResultColumn value{};
+    value.name = name;
+    return value;
+}
+} // namespace
 class ResultCopyWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
     void rowAndPageScopesPreserveValuesAndBounds() {
         choscordb::ResultTableModel model;
-        QVERIFY(model.setPage({{"a", {}}, {"b", {}}},
+        QVERIFY(model.setPage({column("a"), column("b")},
                               {{std::monostate{}, QString{}},
                                {QString("a\tb"), QByteArray::fromHex("00ff")},
                                {qint64(3), QString("\"x\"")}},
@@ -29,10 +36,10 @@ class ResultCopyWorkspaceTest : public QObject {
                  QString("NULL\t\n3\t\"\"\"x\"\"\""));
         QVERIFY(error.isEmpty());
         QCOMPARE(model.copyPage(&error), QString("NULL\t\n\"a\tb\"\t0x00ff\n3\t\"\"\"x\"\"\""));
-        QVERIFY(model.setPage({{"a", {}}}, {{choscordb::DeferredValue{1, 90000, "text"}}}, 0));
+        QVERIFY(model.setPage({column("a")}, {{choscordb::DeferredValue{1, 90000, "text"}}}, 0));
         QVERIFY(model.copyPage(&error).isEmpty());
         QVERIFY(error.contains("Export"));
-        QVERIFY(model.setPage({{"a", {}}}, {{QString(1024, QChar('"'))}}, 0));
+        QVERIFY(model.setPage({column("a")}, {{QString(1024, QChar('"'))}}, 0));
         QVERIFY(model.setByteBudget(model.residentBytes()));
         QVERIFY(model.copyRows({model.index(0, 0)}, &error).isEmpty());
         QVERIFY(!error.isEmpty());
@@ -48,14 +55,26 @@ class ResultCopyWorkspaceTest : public QObject {
         QPlainTextEdit messages;
         QTableView grid;
         choscordb::SqlEditor editor;
-        choscordb::QueryWorkspace workspace({&connections, &mode, &run, &cancel, &commit, &rollback,
-                                             &newConnection, &next, &summary, &messages, &grid,
-                                             [&] { return &editor; }, &window, &previous,
-                                             &exportResult},
+        choscordb::QueryWorkspace workspace({&connections,
+                                             &mode,
+                                             &run,
+                                             &cancel,
+                                             &commit,
+                                             &rollback,
+                                             &newConnection,
+                                             &next,
+                                             &summary,
+                                             &messages,
+                                             &grid,
+                                             [&] { return &editor; },
+                                             &window,
+                                             &previous,
+                                             &exportResult,
+                                             {}},
                                             &window);
         auto* model = qobject_cast<choscordb::ResultTableModel*>(grid.model());
         QVERIFY(model);
-        QVERIFY(model->setPage({{"a", {}}, {"b", {}}},
+        QVERIFY(model->setPage({column("a"), column("b")},
                                {{qint64(1), QString("first")}, {qint64(2), QString("second")}}, 0));
         grid.selectionModel()->select(model->index(1, 0), QItemSelectionModel::Select);
         int queryEvents = 0;
@@ -104,14 +123,14 @@ class ResultCopyWorkspaceTest : public QObject {
                 menu->close();
                 QFAIL("missing cells action");
             }
-            QVERIFY(model->setPage({{"replacement", {}}}, {{qint64(99)}}, 0));
+            QVERIFY(model->setPage({column("replacement")}, {{qint64(99)}}, 0));
             action->trigger();
             menu->close();
         });
         emit grid.customContextMenuRequested(QPoint());
         QCOMPARE(QApplication::clipboard()->text(), QString("keep on stale selection"));
         QVERIFY(
-            model->setPage({{"large", {}}}, {{choscordb::DeferredValue{8, 100000, "text"}}}, 0));
+            model->setPage({column("large")}, {{choscordb::DeferredValue{8, 100000, "text"}}}, 0));
         QTimer::singleShot(0, &window, [&] {
             auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
             QVERIFY(menu);

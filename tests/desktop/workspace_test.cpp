@@ -42,9 +42,22 @@ struct WorkspaceFixture {
     choscordb::SqlEditor editor;
     choscordb::QueryWorkspace workspace;
     WorkspaceFixture()
-        : workspace({&connections, &mode, &run, &cancel, &commit, &rollback, &newConnection, &next,
-                     &summary, &messages, &grid, [this] { return &editor; }, &parent, &previous,
-                     &exportResult}) {
+        : workspace({&connections,
+                     &mode,
+                     &run,
+                     &cancel,
+                     &commit,
+                     &rollback,
+                     &newConnection,
+                     &next,
+                     &summary,
+                     &messages,
+                     &grid,
+                     [this] { return &editor; },
+                     &parent,
+                     &previous,
+                     &exportResult,
+                     {}}) {
         mode.addItems({"Auto-commit", "Manual"});
         connections.setEnabled(false);
         mode.setEnabled(false);
@@ -68,7 +81,7 @@ class WorkspaceTest : public QObject {
         QSignalSpy saved(&adapter, &choscordb::EngineAdapter::workspaceSaved);
         QList<choscordb::SavedEditorDocument> documents;
         for (int i = 0; i < 129; ++i)
-            documents.push_back({QString::number(i), "Query", "SELECT 1"});
+            documents.push_back({QString::number(i), "Query", "SELECT 1", {}, {}, 0, 0, false});
         QVERIFY(!adapter.saveWorkspace(documents, 91));
         QCOMPARE(failures.count(), 1);
         QCOMPARE(failures.at(0).at(0).toULongLong(), quint64(91));
@@ -129,27 +142,36 @@ class WorkspaceTest : public QObject {
         f.execute("SELECT 1");
         QTRY_VERIFY(f.run.isEnabled());
         bool cancelled = false;
-        QTimer::singleShot(0, &f.parent, [&] {
+        QTimer cancelChooser;
+        cancelChooser.setInterval(5);
+        connect(&cancelChooser, &QTimer::timeout, &f.parent, [&] {
             for (auto* widget : QApplication::topLevelWidgets())
                 if (auto* box = qobject_cast<QMessageBox*>(widget)) {
                     cancelled = true;
+                    cancelChooser.stop();
                     box->button(QMessageBox::Cancel)->click();
+                    return;
                 }
         });
+        cancelChooser.start();
         QVERIFY(!f.workspace.confirmShutdown());
         QVERIFY(cancelled);
         QVERIFY(f.run.isEnabled());
         bool approved = false;
-        QTimer::singleShot(0, &f.parent, [&] {
+        QTimer approveChooser;
+        approveChooser.setInterval(5);
+        connect(&approveChooser, &QTimer::timeout, &f.parent, [&] {
             for (auto* widget : QApplication::topLevelWidgets())
                 if (auto* box = qobject_cast<QMessageBox*>(widget))
                     for (auto* button : box->buttons())
                         if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
                             approved = true;
+                            approveChooser.stop();
                             button->click();
-                            break;
+                            return;
                         }
         });
+        approveChooser.start();
         QVERIFY(f.workspace.confirmShutdown());
         QVERIFY(approved);
         f.rollback.trigger();

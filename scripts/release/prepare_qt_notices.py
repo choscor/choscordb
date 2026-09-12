@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Prepare pinned Qt source license metadata for release staging and SBOM generation."""
+
 import argparse
 import hashlib
 import json
@@ -10,8 +11,10 @@ import tarfile
 import urllib.request
 
 VERSION = "6.8.3"
-URL = ("https://download.qt.io/archive/qt/6.8/6.8.3/submodules/"
-       "qtbase-everywhere-src-6.8.3.tar.xz")
+URL = (
+    "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/"
+    "qtbase-everywhere-src-6.8.3.tar.xz"
+)
 SHA256 = "56001b905601bb9023d399f3ba780d7fa940f3e4861e496a7c490331f49e0b80"
 ROOT = f"qtbase-everywhere-src-{VERSION}"
 SVG_SHA256 = "35eb516460f00f264eb504baa253432384351cf23fb9980a5857190e8deef438"
@@ -57,13 +60,23 @@ def prepare(archive, output, svg_archive=None):
                 members = {}
                 for member in source.getmembers():
                     path = PurePosixPath(member.name)
-                    if path.is_absolute() or ".." in path.parts or not path.parts or path.parts[0] != root or "\\" in member.name:
+                    if (
+                        path.is_absolute()
+                        or ".." in path.parts
+                        or not path.parts
+                        or path.parts[0] != root
+                        or "\\" in member.name
+                    ):
                         raise ValueError(f"Unsafe Qt source member: {member.name!r}")
                     relative = PurePosixPath(*path.parts[1:]).as_posix()
                     if relative in members:
                         raise ValueError("Duplicate Qt source member")
                     members[relative] = member
-                selected = {name: selected_path(name) for name in members if selected_path(name) is not None}
+                selected = {
+                    name: selected_path(name)
+                    for name in members
+                    if selected_path(name) is not None
+                }
                 for name in list(selected):
                     if not name.endswith("qt_attribution.json"):
                         continue
@@ -80,9 +93,17 @@ def prepare(archive, output, svg_archive=None):
                         for ref in refs:
                             if PurePosixPath(ref).is_absolute() or "\\" in ref:
                                 raise ValueError("Unsafe attribution license reference")
-                            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(name), ref))
-                            if resolved == ".." or resolved.startswith("../") or resolved not in members:
-                                raise ValueError("Missing or escaping attribution license reference")
+                            resolved = posixpath.normpath(
+                                posixpath.join(posixpath.dirname(name), ref)
+                            )
+                            if (
+                                resolved == ".."
+                                or resolved.startswith("../")
+                                or resolved not in members
+                            ):
+                                raise ValueError(
+                                    "Missing or escaping attribution license reference"
+                                )
                             selected[resolved] = Path("referenced", resolved)
                 for name, destination in sorted(selected.items()):
                     member = members[name]
@@ -99,13 +120,29 @@ def prepare(archive, output, svg_archive=None):
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(data)
                     copied[destination.as_posix()] = hashlib.sha256(data).hexdigest()
-                if not any(name.startswith(("LICENSES/", module + "/LICENSES/")) for name in copied):
+                if not any(
+                    name.startswith(("LICENSES/", module + "/LICENSES/"))
+                    for name in copied
+                ):
                     raise ValueError("Qt source contains no usable LICENSES files")
-            modules[module] = {"version": VERSION, "url": url, "sha256": checksum,
-                               "copied_files": [{"path": name, "sha256": digest} for name, digest in sorted(copied.items())]}
-        record = {"version": VERSION, "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
-                  "url": URL, "modules": modules}
-        (output / "source.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            modules[module] = {
+                "version": VERSION,
+                "url": url,
+                "sha256": checksum,
+                "copied_files": [
+                    {"path": name, "sha256": digest}
+                    for name, digest in sorted(copied.items())
+                ],
+            }
+        record = {
+            "version": VERSION,
+            "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+            "url": URL,
+            "modules": modules,
+        }
+        (output / "source.json").write_text(
+            json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
     except BaseException:
         shutil.rmtree(output)
         raise
@@ -123,7 +160,10 @@ def main():
         archive = args.output.parent / f"qtbase-everywhere-src-{VERSION}.tar.xz"
         if not archive.exists():
             temporary = archive.with_suffix(".download")
-            with urllib.request.urlopen(URL, timeout=120) as response, temporary.open("wb") as target:
+            with (
+                urllib.request.urlopen(URL, timeout=120) as response,
+                temporary.open("wb") as target,
+            ):
                 shutil.copyfileobj(response, target)
             verify_archive(temporary)
             temporary.replace(archive)
@@ -132,7 +172,10 @@ def main():
         svg = args.output.parent / f"qtsvg-everywhere-src-{VERSION}.tar.xz"
         if not svg.exists():
             temporary = svg.with_suffix(".download")
-            with urllib.request.urlopen(SVG_URL, timeout=120) as response, temporary.open("wb") as target:
+            with (
+                urllib.request.urlopen(SVG_URL, timeout=120) as response,
+                temporary.open("wb") as target,
+            ):
                 shutil.copyfileobj(response, target)
             verify_archive(temporary, SVG_SHA256)
             temporary.replace(svg)

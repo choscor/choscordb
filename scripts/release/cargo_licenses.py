@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Collect license texts for the normal Rust dependency closure into a local sidecar."""
+
 import argparse
 import hashlib
 import json
@@ -16,8 +17,11 @@ def license_files(root):
         return []
     result = []
     for path in sorted(root.iterdir(), key=lambda item: item.name.lower()):
-        if (path.is_file() and not path.is_symlink() and
-                path.name.lower().startswith(LICENSE_PREFIXES)):
+        if (
+            path.is_file()
+            and not path.is_symlink()
+            and path.name.lower().startswith(LICENSE_PREFIXES)
+        ):
             data = path.read_bytes()
             if not data.strip():
                 raise ValueError(f"Empty Cargo license text: {path.name}")
@@ -40,7 +44,11 @@ def collect(metadata_path, fallback, output, root_package):
         coordinate = package["name"] + "@" + package["version"]
         relative(coordinate)
         manifest = Path(package["manifest_path"])
-        if not manifest.is_absolute() or manifest.is_symlink() or not manifest.is_file():
+        if (
+            not manifest.is_absolute()
+            or manifest.is_symlink()
+            or not manifest.is_file()
+        ):
             raise ValueError(f"Cargo manifest is missing or unsafe: {coordinate}")
         texts = license_files(manifest.parent)
         origin = "cargo-package"
@@ -54,19 +62,30 @@ def collect(metadata_path, fallback, output, root_package):
             verification = json.loads(source_record.read_text())
             expected = verification.get("files")
             actual = {name: hashlib.sha256(data).hexdigest() for name, data in texts}
-            if (verification.get("coordinate") != coordinate or expected != actual or
-                    not str(verification.get("url", "")).startswith("https://")):
-                raise ValueError(f"Verified fallback digest or source mismatch for {coordinate}")
+            if (
+                verification.get("coordinate") != coordinate
+                or expected != actual
+                or not str(verification.get("url", "")).startswith("https://")
+            ):
+                raise ValueError(
+                    f"Verified fallback digest or source mismatch for {coordinate}"
+                )
             origin = "verified-fallback"
         prepared.append((coordinate, texts))
-        rows.append({
-            "name": package["name"], "version": package["version"],
-            "license": package.get("license"), "source": package.get("source"),
-            "origin": origin,
-            "verification": verification,
-            "files": [{"path": name, "sha256": hashlib.sha256(data).hexdigest()}
-                      for name, data in texts],
-        })
+        rows.append(
+            {
+                "name": package["name"],
+                "version": package["version"],
+                "license": package.get("license"),
+                "source": package.get("source"),
+                "origin": origin,
+                "verification": verification,
+                "files": [
+                    {"path": name, "sha256": hashlib.sha256(data).hexdigest()}
+                    for name, data in texts
+                ],
+            }
+        )
     output.mkdir(parents=True, exist_ok=False)
     try:
         for coordinate, texts in prepared:
@@ -75,9 +94,14 @@ def collect(metadata_path, fallback, output, root_package):
             for name, data in texts:
                 (directory / name).write_bytes(data)
         (output / "index.json").write_text(
-            json.dumps({"format_version": 1, "root_package": root_package,
-                        "packages": rows}, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8")
+            json.dumps(
+                {"format_version": 1, "root_package": root_package, "packages": rows},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     except BaseException:
         shutil.rmtree(output)
         raise
@@ -91,8 +115,11 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cargo-root-package", required=True)
     args = parser.parse_args()
-    print(collect(args.cargo_metadata, args.fallback, args.output,
-                  args.cargo_root_package))
+    print(
+        collect(
+            args.cargo_metadata, args.fallback, args.output, args.cargo_root_package
+        )
+    )
 
 
 if __name__ == "__main__":

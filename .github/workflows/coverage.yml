@@ -1,0 +1,73 @@
+name: Coverage
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: coverage-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  rust:
+    name: Rust LCOV
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust coverage tool
+        run: |
+          cargo install cargo-llvm-cov --version 0.6.21 --locked
+          cargo install lcov2xml --version 1.0.9 --locked
+      - name: Generate and validate first-party Rust LCOV
+        run: |
+          mkdir -p build/coverage
+          cargo llvm-cov --workspace --all-features --locked --lcov --output-path build/coverage/rust.lcov
+          lcov2xml build/coverage/rust.lcov --output build/coverage/rust-validation.xml
+          grep --extended-regexp --quiet '^SF:.*/crates/[^/]+/src/' build/coverage/rust.lcov
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rust-lcov
+          path: build/coverage/rust.lcov
+          if-no-files-found: error
+          retention-days: 14
+  cpp:
+    name: C++ LCOV (LLVM 23)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      CMAKE_PREFIX_PATH: ${{ github.workspace }}/build/ci/qt/6.8.3/gcc_64;${{ github.workspace }}/build/ci/qscintilla
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Install native and LLVM 23 coverage tools
+        run: |
+          python -m pip install --requirement scripts/ci/requirements.txt
+          sudo apt-get update
+          sudo apt-get install --yes build-essential pkg-config libdbus-1-dev libssl-dev libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
+          curl --fail --show-error --silent https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor --yes --output /usr/share/keyrings/apt.llvm.org.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/apt.llvm.org.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' | sudo tee /etc/apt/sources.list.d/llvm23.list
+          sudo apt-get update
+          sudo apt-get install --yes clang-23 llvm-23
+          cargo install lcov2xml --version 1.0.9 --locked
+      - name: Generate and validate first-party C++ LCOV
+        run: |
+          python scripts/ci/quality.py native-dependencies
+          cmake --preset coverage
+          cmake --build --preset coverage --target choscordb-cpp-coverage
+          lcov2xml build/coverage/cpp.lcov --output build/coverage/cpp-validation.xml
+          grep --extended-regexp --quiet '^SF:.*/(desktop|tests)/' build/coverage/cpp.lcov
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cpp-lcov
+          path: build/coverage/cpp.lcov
+          if-no-files-found: error
+          retention-days: 14

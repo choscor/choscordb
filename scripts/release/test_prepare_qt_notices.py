@@ -31,13 +31,19 @@ class QtNoticesTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             archive = self.fixture(directory)
             output = Path(directory) / "notices"
-            with patch.object(notices, "SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()):
+            with patch.object(
+                notices, "SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
+            ):
                 notices.prepare(archive, output)
             record = json.loads((output / "source.json").read_text())
             self.assertEqual(record["version"], notices.VERSION)
             self.assertTrue((output / "LICENSES/LGPL-3.0-only.txt").is_file())
             self.assertTrue((output / "reuse/dep5").is_file())
-            self.assertTrue((output / "attributions/src/3rdparty/demo/qt_attribution.json").is_file())
+            self.assertTrue(
+                (
+                    output / "attributions/src/3rdparty/demo/qt_attribution.json"
+                ).is_file()
+            )
             with self.assertRaises(FileExistsError):
                 notices.prepare(archive, output)
 
@@ -62,29 +68,52 @@ class QtNoticesTest(unittest.TestCase):
                 member = tarfile.TarInfo(f"{notices.ROOT}/src/qt_attribution.json")
                 member.size = len(data)
                 target.addfile(member, io.BytesIO(data))
-            with patch.object(notices, "SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()):
+            with patch.object(
+                notices, "SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
+            ):
                 with self.assertRaisesRegex(ValueError, "LICENSES"):
                     notices.prepare(archive, Path(directory) / "notices")
 
     def test_svg_module_and_referenced_attribution_license_are_hashed(self):
         with tempfile.TemporaryDirectory() as directory:
-            base = self.fixture(directory, {
-                f"{notices.ROOT}/src/3rdparty/demo/qt_attribution.json": b'{"LicenseFile":"COPYING"}',
-                f"{notices.ROOT}/src/3rdparty/demo/COPYING": b"upstream copyright"})
+            base = self.fixture(
+                directory,
+                {
+                    f"{notices.ROOT}/src/3rdparty/demo/qt_attribution.json": b'{"LicenseFile":"COPYING"}',
+                    f"{notices.ROOT}/src/3rdparty/demo/COPYING": b"upstream copyright",
+                },
+            )
             svg = Path(directory) / "svg.tar.xz"
             with tarfile.open(svg, "w:xz") as archive:
                 data = b"svg license"
-                member = tarfile.TarInfo(f"qtsvg-everywhere-src-{notices.VERSION}/LICENSES/license.txt")
+                member = tarfile.TarInfo(
+                    f"qtsvg-everywhere-src-{notices.VERSION}/LICENSES/license.txt"
+                )
                 member.size = len(data)
                 archive.addfile(member, io.BytesIO(data))
-            with patch.object(notices, "SHA256", hashlib.sha256(base.read_bytes()).hexdigest()), patch.object(notices, "SVG_SHA256", hashlib.sha256(svg.read_bytes()).hexdigest()):
+            with (
+                patch.object(
+                    notices, "SHA256", hashlib.sha256(base.read_bytes()).hexdigest()
+                ),
+                patch.object(
+                    notices, "SVG_SHA256", hashlib.sha256(svg.read_bytes()).hexdigest()
+                ),
+            ):
                 output = notices.prepare(base, Path(directory) / "notices", svg)
             record = json.loads((output / "source.json").read_text())
             self.assertEqual(set(record["modules"]), {"qtbase", "qtsvg"})
-            self.assertEqual((output / "referenced/src/3rdparty/demo/COPYING").read_bytes(), b"upstream copyright")
+            self.assertEqual(
+                (output / "referenced/src/3rdparty/demo/COPYING").read_bytes(),
+                b"upstream copyright",
+            )
             for module in record["modules"].values():
                 for entry in module["copied_files"]:
-                    self.assertEqual(entry["sha256"], hashlib.sha256((output / entry["path"]).read_bytes()).hexdigest())
+                    self.assertEqual(
+                        entry["sha256"],
+                        hashlib.sha256(
+                            (output / entry["path"]).read_bytes()
+                        ).hexdigest(),
+                    )
 
 
 if __name__ == "__main__":

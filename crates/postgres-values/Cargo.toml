@@ -3,7 +3,9 @@ name = "choscordb-postgres-values"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-rust-version.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 choscordb-driver-api = { path = "../driver-api" }

@@ -27,7 +27,7 @@ class ValueDetailDialog final : public QDialog {
     void request(quint64 offset, quint32 maxBytes = 65536);
     void previousChunk();
     void sizeVisibleColumns();
-    void event(const BridgeEvent& event);
+    void handleEvent(const BridgeEvent& event);
     void dropChunk();
     void fail(const QString& error);
     void updateActions();

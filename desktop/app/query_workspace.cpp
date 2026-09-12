@@ -80,7 +80,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     };
     connect(widgets_.grid, &QTableView::doubleClicked, this, openDetail);
     connect(widgets_.grid, &QTableView::activated, this, openDetail);
-    connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::event);
+    connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleEvent);
     connect(adapter_, &EngineAdapter::commandFailed, this, [this](const QString& error) {
         if (fetching_) {
             busy_ = false;
@@ -365,7 +365,7 @@ void QueryWorkspace::execute() {
     widgets_.summary->setText(busy_ ? tr("Queued") : tr("Submission failed"));
     updateActions();
 }
-void QueryWorkspace::event(const BridgeEvent& e) {
+void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     const auto kind = text(e.kind);
     if (kind == "connected") {
         const auto name = pendingConnections_.take(e.id);

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run the release desktop probe and record externally observed process timings."""
+
 import argparse
 import json
 from pathlib import Path
@@ -14,8 +15,10 @@ def run(binary, destination, timeout):
         report = Path(directory) / "probe.json"
         started = time.perf_counter_ns()
         process = subprocess.Popen(
-            [str(binary), str(report)], stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, text=True,
+            [str(binary), str(report)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         markers = {}
         diagnostics = []
@@ -37,7 +40,10 @@ def run(binary, destination, timeout):
                 if len(diagnostics) > 32:
                     del diagnostics[0]
 
-        readers = [threading.Thread(target=read_output), threading.Thread(target=read_errors)]
+        readers = [
+            threading.Thread(target=read_output),
+            threading.Thread(target=read_errors),
+        ]
         for reader in readers:
             reader.start()
         try:
@@ -45,7 +51,9 @@ def run(binary, destination, timeout):
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
-            raise RuntimeError("Desktop probe exceeded its execution deadline") from None
+            raise RuntimeError(
+                "Desktop probe exceeded its execution deadline"
+            ) from None
         finally:
             exited = time.perf_counter_ns()
             for reader in readers:
@@ -62,7 +70,7 @@ def run(binary, destination, timeout):
             "process_to_ready_ms": (markers["ready"] - started) / 1e6,
             "shutdown_marker_to_exit_ms": (exited - markers["shutdown_started"]) / 1e6,
             "total_process_ms": (exited - started) / 1e6,
-            "limitations": "Pipe receipt can shorten observed shutdown time; wait observation can lengthen it. Fresh profile is not cold OS cache."
+            "limitations": "Pipe receipt can shorten observed shutdown time; wait observation can lengthen it. Fresh profile is not cold OS cache.",
         }
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(json.dumps(data, indent=2) + "\n")

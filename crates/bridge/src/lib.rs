@@ -19,6 +19,13 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+// SAFETY: cxx generates the unsafe ABI glue for this one declarative boundary. The bridge's
+// generated static assertions validate the shared layouts and signatures, while transport tests
+// exercise every public message family across the boundary. Hand-written unsafe remains denied.
+#[allow(
+    unsafe_code,
+    reason = "audited cxx::bridge expansion is the sole generated FFI boundary"
+)]
 #[cxx::bridge(namespace = "choscordb")]
 pub mod ffi {
     #[derive(Default)]

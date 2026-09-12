@@ -33,7 +33,8 @@ class StageTest(unittest.TestCase):
         self.source_manifest = self.root / "source-manifest.json"
         self.source_manifest.write_text(
             '{"format_version":1,"source_kind":"working-tree snapshot",'
-            '"git_revision":null,"files":[]}\n')
+            '"git_revision":null,"files":[]}\n'
+        )
         self.calls = []
         self.bad_dependency = False
         self.omit_plugin = False
@@ -64,7 +65,11 @@ class StageTest(unittest.TestCase):
             plugin.write_bytes(MACH)
         elif argv[0] == "otool":
             if argv[1] == "-L":
-                dependency = "/missing/build/liboops.dylib" if self.bad_dependency else "/usr/lib/libSystem.B.dylib"
+                dependency = (
+                    "/missing/build/liboops.dylib"
+                    if self.bad_dependency
+                    else "/usr/lib/libSystem.B.dylib"
+                )
                 return f"{argv[-1]}:\n\t{dependency} (compatibility version 1.0.0, current version 1.0.0)\n"
             return ""
         elif argv[-1] == "--smoke-test":
@@ -83,29 +88,49 @@ class StageTest(unittest.TestCase):
 
     def execute(self):
         with patch.object(stage, "run", side_effect=self.run_tool):
-            return stage.create_stage(self.build, self.output, self.qt, self.qsci,
-                                      self.source_manifest, adapter=stage.MacOSAdapter())
+            return stage.create_stage(
+                self.build,
+                self.output,
+                self.qt,
+                self.qsci,
+                self.source_manifest,
+                adapter=stage.MacOSAdapter(),
+            )
 
     def test_manifest_install_deploy_smoke_and_no_overwrite(self):
-        with patch.dict(os.environ, {"DYLD_LIBRARY_PATH": "development", "QT_PLUGIN_PATH": "development"}):
+        with patch.dict(
+            os.environ,
+            {"DYLD_LIBRARY_PATH": "development", "QT_PLUGIN_PATH": "development"},
+        ):
             self.execute()
         manifest = json.loads((self.output / "manifest.json").read_text())
         self.assertEqual(
             manifest["source_candidate"]["manifest_sha256"],
-            hashlib.sha256(self.source_manifest.read_bytes()).hexdigest())
-        self.assertEqual(manifest["source_candidate"]["source_kind"],
-                         "working-tree snapshot")
+            hashlib.sha256(self.source_manifest.read_bytes()).hexdigest(),
+        )
+        self.assertEqual(
+            manifest["source_candidate"]["source_kind"], "working-tree snapshot"
+        )
         paths = [entry["path"] for entry in manifest["files"]]
         self.assertEqual(paths, sorted(paths))
         for entry in manifest["files"]:
             data = (self.output / entry["path"]).read_bytes()
             self.assertEqual(entry["size"], len(data))
             self.assertEqual(entry["sha256"], hashlib.sha256(data).hexdigest())
-        self.assertIn("choscordb.app/Contents/Resources/licenses/QScintilla/source.json", paths)
+        self.assertIn(
+            "choscordb.app/Contents/Resources/licenses/QScintilla/source.json", paths
+        )
         checksum = (self.output / "SHA256SUMS").read_text().split()[0]
-        self.assertEqual(checksum, hashlib.sha256((self.output / "manifest.json").read_bytes()).hexdigest())
-        self.assertTrue(any(args[:2] == ["cmake", "--install"] for args, _ in self.calls))
-        self.assertTrue(any(Path(args[0]).name == "macdeployqt" for args, _ in self.calls))
+        self.assertEqual(
+            checksum,
+            hashlib.sha256((self.output / "manifest.json").read_bytes()).hexdigest(),
+        )
+        self.assertTrue(
+            any(args[:2] == ["cmake", "--install"] for args, _ in self.calls)
+        )
+        self.assertTrue(
+            any(Path(args[0]).name == "macdeployqt" for args, _ in self.calls)
+        )
         self.assertTrue(any(args[-1] == "--smoke-test" for args, _ in self.calls))
         smoke = next(args for args, _ in self.calls if args[-1] == "--smoke-test")
         self.assertTrue(Path(smoke[0]).resolve().is_relative_to(self.output.resolve()))
@@ -183,11 +208,17 @@ class StageTest(unittest.TestCase):
             if str(argv[1]) == "-l":
                 return "cmd LC_RPATH\npath @executable_path/../Frameworks (offset 12)\n"
             if Path(argv[-1]).resolve() == executable.resolve():
-                return "binary:\n\t@rpath/libfixture.dylib (compatibility version 1.0.0)\n"
-            return "binary:\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)\n"
+                return (
+                    "binary:\n\t@rpath/libfixture.dylib (compatibility version 1.0.0)\n"
+                )
+            return (
+                "binary:\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)\n"
+            )
 
         with patch.object(stage, "run", side_effect=inspect):
-            self.assertEqual(stage.MacOSAdapter().validate(prefix), executable.resolve())
+            self.assertEqual(
+                stage.MacOSAdapter().validate(prefix), executable.resolve()
+            )
             library.write_text("not an actual dylib")
             with self.assertRaisesRegex(ValueError, "Unresolved"):
                 stage.MacOSAdapter().validate(prefix)
@@ -206,7 +237,6 @@ class StageTest(unittest.TestCase):
         self.run_tool(["cmake", "--install", self.build, "--prefix", prefix])
         app = prefix / "choscordb.app"
         self.run_tool([self.qt / "macdeployqt", app])
-        executable = app / "Contents/MacOS/choscordb"
 
         def inspect(argv, **kwargs):
             if str(argv[1]) == "-l":

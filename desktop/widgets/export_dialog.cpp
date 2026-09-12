@@ -90,7 +90,7 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
         if (!path.isEmpty())
             destination_->setText(path);
     });
-    connect(adapter, &EngineAdapter::eventReady, this, &ExportDialog::event);
+    connect(adapter, &EngineAdapter::eventReady, this, &ExportDialog::handleEvent);
     connect(adapter, &EngineAdapter::exportSubmissionFailed, this,
             [this](quint64 query, const QString& error) {
                 if (submitting_ && query_ == query)
@@ -229,7 +229,7 @@ void ExportDialog::cancel() {
     updateActions();
     adapter_->cancelExport(*export_);
 }
-void ExportDialog::event(const BridgeEvent& value) {
+void ExportDialog::handleEvent(const BridgeEvent& value) {
     if (!export_ || *export_ != value.id || !query_ || *query_ != value.query_id)
         return;
     const auto kind = text(value.kind);

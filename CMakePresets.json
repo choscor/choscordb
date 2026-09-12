@@ -18,6 +18,50 @@
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_TESTING": "OFF"
       }
+    },
+    {
+      "name": "strict",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/strict",
+      "cacheVariables": {
+        "CHOSCORDB_ENABLE_STRICT_WARNINGS": "ON"
+      }
+    },
+    {
+      "name": "clang-tidy",
+      "inherits": "strict",
+      "binaryDir": "${sourceDir}/build/clang-tidy",
+      "cacheVariables": {
+        "CHOSCORDB_ENABLE_CLANG_TIDY": "ON"
+      }
+    },
+    {
+      "name": "sanitizers",
+      "inherits": "strict",
+      "binaryDir": "${sourceDir}/build/sanitizers",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-23",
+        "CMAKE_CXX_COMPILER": "clang++-23",
+        "CHOSCORDB_ENABLE_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "coverage",
+      "inherits": "strict",
+      "binaryDir": "${sourceDir}/build/coverage",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-23",
+        "CMAKE_CXX_COMPILER": "clang++-23",
+        "CHOSCORDB_ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "iwyu",
+      "inherits": "strict",
+      "binaryDir": "${sourceDir}/build/iwyu",
+      "cacheVariables": {
+        "CHOSCORDB_ENABLE_IWYU": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -28,6 +72,34 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "strict",
+      "configurePreset": "strict"
+    },
+    {
+      "name": "header-check",
+      "configurePreset": "strict",
+      "targets": ["choscordb-header-check"]
+    },
+    {
+      "name": "clang-tidy",
+      "configurePreset": "clang-tidy",
+      "targets": ["choscordb-clang-tidy"]
+    },
+    {
+      "name": "sanitizers",
+      "configurePreset": "sanitizers"
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage",
+      "targets": ["choscordb-cpp-coverage"]
+    },
+    {
+      "name": "iwyu",
+      "configurePreset": "iwyu",
+      "targets": ["choscordb-iwyu"]
     }
   ],
   "testPresets": [
@@ -37,6 +109,16 @@
       "output": {
         "outputOnFailure": true
       }
+    },
+    {
+      "name": "strict",
+      "inherits": "dev",
+      "configurePreset": "strict"
+    },
+    {
+      "name": "sanitizers",
+      "inherits": "dev",
+      "configurePreset": "sanitizers"
     }
   ]
 }

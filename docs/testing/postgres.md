@@ -18,7 +18,10 @@ values = json.loads(subprocess.check_output([
     'python3', 'scripts/integration/postgres_fixture.py', 'env']))
 env = dict(os.environ, **values, CARGO_INCREMENTAL='0', QT_QPA_PLATFORM='offscreen')
 subprocess.run(['cargo', 'test', '-p', 'choscordb-driver-postgres', '--locked',
-                '--', '--include-ignored'], env=env, check=True)
+                '--', '--include-ignored', '--test-threads=1'], env=env, check=True)
+subprocess.run(['cargo', 'test', '-p', 'choscordb-core',
+                '--test', 'postgres_disconnect', '--locked', '--',
+                '--include-ignored', '--test-threads=1'], env=env, check=True)
 subprocess.run(['ctest', '--preset', 'dev', '--output-on-failure'], env=env, check=True)
 PYTEST
 ```

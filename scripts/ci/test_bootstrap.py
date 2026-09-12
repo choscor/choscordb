@@ -1,4 +1,5 @@
 """Security regression tests for the source bootstrap, without network or compilers."""
+
 import hashlib
 import io
 from pathlib import Path
@@ -14,7 +15,9 @@ class ArchiveTest(unittest.TestCase):
     def test_macos_without_agl_clears_obsolete_qmake_opengl_libraries(self):
         with tempfile.TemporaryDirectory() as temporary:
             sdk = Path(temporary)
-            self.assertEqual(bootstrap.macos_qmake_overrides(sdk), ["QMAKE_LIBS_OPENGL="])
+            self.assertEqual(
+                bootstrap.macos_qmake_overrides(sdk), ["QMAKE_LIBS_OPENGL="]
+            )
             (sdk / "System/Library/Frameworks/AGL.framework").mkdir(parents=True)
             self.assertEqual(bootstrap.macos_qmake_overrides(sdk), [])
 
@@ -67,7 +70,9 @@ class ArchiveTest(unittest.TestCase):
                 member.type = tarfile.SYMTYPE
                 member.linkname = "/tmp"
                 output.addfile(member)
-            with patch.object(bootstrap, "SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()):
+            with patch.object(
+                bootstrap, "SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
+            ):
                 with self.assertRaisesRegex(ValueError, "Unsafe"):
                     bootstrap.extract_archive(archive, Path(temporary) / "extract")
 

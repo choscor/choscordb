@@ -25,10 +25,23 @@ struct Fixture {
     QPlainTextEdit messages;
     QTableView grid;
     choscordb::SqlEditor editor;
-    choscordb::QueryWorkspace workspace{
-        {&connections, &mode, &run, &cancel, &commit, &rollback, &newConnection, &next, &summary,
-         &messages, &grid, [this] { return &editor; }, &window, &previous, &exportResult},
-        &window};
+    choscordb::QueryWorkspace workspace{{&connections,
+                                         &mode,
+                                         &run,
+                                         &cancel,
+                                         &commit,
+                                         &rollback,
+                                         &newConnection,
+                                         &next,
+                                         &summary,
+                                         &messages,
+                                         &grid,
+                                         [this] { return &editor; },
+                                         &window,
+                                         &previous,
+                                         &exportResult,
+                                         {}},
+                                        &window};
     Fixture() { mode.addItems({"Auto", "Manual"}); }
 };
 void answer(QObject* context, bool accept, bool* rollbackNotice = nullptr) {
@@ -189,7 +202,7 @@ class DisconnectWorkspaceTest : public QObject {
         QTRY_COMPARE(connected.count(), 1);
         const auto id = connected.first().at(0).toULongLong();
         f.editor.setText("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE "
-                         "x<100000000) SELECT x FROM n");
+                         "x<1000000) SELECT x FROM n");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         f.run.trigger();
         QTRY_COMPARE(f.grid.model()->rowCount(), 1000);

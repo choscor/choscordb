@@ -6,7 +6,23 @@ Implementation is in progress. See [the PRD](docs/prd-mvp.md), [UI reference](do
 
 ## Development
 
-Install the pinned Rust toolchain through rustup. Run `cargo test --workspace`, `cargo fmt --all -- --check`, and `cargo clippy --workspace --all-targets -- -D warnings` for Rust verification. See [native build and run instructions](docs/BUILD.md).
+Install the pinned tools, then use the repository-owned quality interface:
+
+```sh
+python -m pip install -r scripts/ci/requirements.txt
+python scripts/ci/quality.py fast
+python scripts/ci/quality.py native-dependencies
+python scripts/ci/quality.py full
+```
+
+`fast` checks C/C++ and Rust formatting, Ruff lint/format, workflow syntax, full
+Cargo dependency policy, both Python test suites, and all ordinary Rust
+targets/features. `full` adds the strict native build and all CTest tests using
+Qt's offscreen platform. Every included gate is also available as a focused
+stage; run `python scripts/ci/quality.py --help` and see [CI and quality gate
+documentation](docs/CI.md). Native build and run instructions are in
+[docs/BUILD.md](docs/BUILD.md), and contribution policy is in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Dependency direction
 

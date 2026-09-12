@@ -51,7 +51,7 @@ ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     connect(table_->verticalScrollBar(), &QScrollBar::valueChanged, this,
             [this] { sizeVisibleColumns(); });
     connect(next_, &QPushButton::clicked, this, [this] { request(nextOffset_); });
-    connect(adapter, &EngineAdapter::eventReady, this, &ValueDetailDialog::event);
+    connect(adapter, &EngineAdapter::eventReady, this, &ValueDetailDialog::handleEvent);
     connect(adapter, &EngineAdapter::valueChunkSubmissionFailed, this,
             [this](quint64 query, quint64 handle, quint64 offset, const QString& error) {
                 if (loading_ && query_ == query && handle_ == handle && offset_ == offset)
@@ -150,7 +150,7 @@ void ValueDetailDialog::fail(const QString& error) {
     status_->setText(tr("Unable to load value: %1").arg(error.left(1024)));
     updateActions();
 }
-void ValueDetailDialog::event(const BridgeEvent& event) {
+void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
     if (!loading_ || !query_ || event.id != *query_ || event.value_handle != handle_ ||
         event.chunk_offset != offset_)
         return;

@@ -4,6 +4,14 @@
 #include <QAbstractItemModelTester>
 #include <QtTest>
 using namespace choscordb;
+namespace {
+ResultColumn column(const QString& name, const QString& databaseType) {
+    ResultColumn value{};
+    value.name = name;
+    value.databaseType = databaseType;
+    return value;
+}
+} // namespace
 class ResultModelTest : public QObject {
     Q_OBJECT
   private slots:
@@ -11,12 +19,13 @@ class ResultModelTest : public QObject {
         ResultTableModel model;
         QAbstractItemModelTester tester(&model,
                                         QAbstractItemModelTester::FailureReportingMode::QtTest);
-        QVERIFY(model.setPage({{"value", "text"}}, {{std::monostate{}}, {QString("")}}, 1000));
+        QVERIFY(
+            model.setPage({column("value", "text")}, {{std::monostate{}}, {QString("")}}, 1000));
         QCOMPARE(model.rowCount(), 2);
         QCOMPARE(model.data(model.index(0, 0)).toString(), QString("NULL"));
         QCOMPARE(model.data(model.index(1, 0)).toString(), QString(""));
         QCOMPARE(model.headerData(0, Qt::Vertical).toULongLong(), quint64(1001));
-        QVERIFY(model.setPage({{"value", "text"}}, {{QString("next")}}, 2000));
+        QVERIFY(model.setPage({column("value", "text")}, {{QString("next")}}, 2000));
         QCOMPARE(model.rowCount(), 1);
     }
     void columnMetadataIsPreservedAndExposed() {
@@ -71,7 +80,7 @@ class ResultModelTest : public QObject {
     void binaryCopyIsCompleteAndSparseCopyPreservesCoordinates() {
         ResultTableModel model;
         const QByteArray binary(100, char(0xab));
-        QVERIFY(model.setPage({{"a", "blob"}, {"b", "text"}, {"c", "text"}},
+        QVERIFY(model.setPage({column("a", "blob"), column("b", "text"), column("c", "text")},
                               {{binary, QString("b"), QString("c")},
                                {QString("d"), QString("e"), QString("f")},
                                {QString("g"), QString("h"), QString("i")}},
@@ -82,14 +91,14 @@ class ResultModelTest : public QObject {
     }
     void deferredCopyReportsAnError() {
         ResultTableModel model;
-        QVERIFY(model.setPage({{"blob", "blob"}}, {{DeferredValue{1, 500000, "blob"}}}, 0));
+        QVERIFY(model.setPage({column("blob", "blob")}, {{DeferredValue{1, 500000, "blob"}}}, 0));
         QString error;
         QVERIFY(model.copyCells({model.index(0, 0)}, &error).isEmpty());
         QVERIFY(!error.isEmpty());
     }
     void allocationBudgetIncludesCapacityAndRejectsAtomically() {
         ResultTableModel model(nullptr, 4096);
-        QVERIFY(model.setPage({{"a", "text"}}, {{QString("kept")}}, 0));
+        QVERIFY(model.setPage({column("a", "text")}, {{QString("kept")}}, 0));
         const auto previous = model.residentBytes();
         QVERIFY(previous >=
                 sizeof(ResultColumn) + sizeof(ResultTableModel::Row) + sizeof(Cell) + 10);
@@ -100,7 +109,7 @@ class ResultModelTest : public QObject {
         reserved.reserve(10000);
         std::vector<ResultTableModel::Row> rows;
         rows.push_back({std::move(reserved)});
-        QVERIFY(!model.setPage({{"a", "text"}}, std::move(rows), 0));
+        QVERIFY(!model.setPage({column("a", "text")}, std::move(rows), 0));
         QCOMPARE(reset.count(), 0);
         QCOMPARE(model.residentBytes(), previous);
         QCOMPARE(model.data(model.index(0, 0)).toString(), QString("kept"));
@@ -117,21 +126,21 @@ class ResultModelTest : public QObject {
         blob.reserve(10000);
         std::vector<ResultTableModel::Row> rows;
         rows.push_back({std::move(blob)});
-        QVERIFY(!model.setPage({{"a", "blob"}}, std::move(rows), 0));
+        QVERIFY(!model.setPage({column("a", "blob")}, std::move(rows), 0));
         QString type("blob");
         type.reserve(10000);
         rows.push_back({DeferredValue{1, 500000, std::move(type)}});
-        QVERIFY(!model.setPage({{"a", "blob"}}, std::move(rows), 0));
-        QVERIFY(model.setPage({{"a", "blob"}}, {{DeferredValue{1, 500000, "blob"}}}, 0));
+        QVERIFY(!model.setPage({column("a", "blob")}, std::move(rows), 0));
+        QVERIFY(model.setPage({column("a", "blob")}, {{DeferredValue{1, 500000, "blob"}}}, 0));
         QVERIFY(model.residentBytes() < 4096);
     }
     void copyingPreservesExactDecimalsAndEscapesTsv() {
         ResultTableModel model;
-        QVERIFY(model.setPage({{"amount", "numeric"}, {"note", "text"}},
+        QVERIFY(model.setPage({column("amount", "numeric"), column("note", "text")},
                               {{QString("12345678901234567890.001"), QString("a\tb\n\"c\"")}}, 0));
         QCOMPARE(model.copyCells({model.index(0, 1), model.index(0, 0)}),
                  QString("12345678901234567890.001\t\"a\tb\n\"\"c\"\"\""));
-        QVERIFY(!model.setPage({{"one", "text"}}, {{QString("a"), QString("b")}}, 0));
+        QVERIFY(!model.setPage({column("one", "text")}, {{QString("a"), QString("b")}}, 0));
         QCOMPARE(model.columnCount(), 2);
     }
 };

@@ -10,18 +10,43 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  native:
-    name: Native and Rust (${{ matrix.runner }})
+  quality:
+    name: Deterministic quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Install pinned quality tools
+        run: |
+          python -m pip install --requirement scripts/ci/requirements.txt
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          cargo install cargo-deny --version 0.20.2 --locked
+          curl --fail --show-error --silent https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor --yes --output /usr/share/keyrings/apt.llvm.org.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/apt.llvm.org.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' | sudo tee /etc/apt/sources.list.d/llvm23.list
+          sudo apt-get update
+          sudo apt-get install --yes clang-format-23
+      - name: Run fast repository quality gates
+        run: python scripts/ci/quality.py fast
+  platform:
+    name: Rust and native (${{ matrix.runner }})
     strategy:
       fail-fast: false
       matrix:
         runner: [ubuntu-24.04, windows-2022, macos-15, macos-15-intel]
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       CARGO_TERM_COLOR: always
-      # Match Rust's native C/C++ build scripts and the CMake deployment target.
+      RUSTFLAGS: -D warnings
       MACOSX_DEPLOYMENT_TARGET: '13.0'
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -33,32 +58,109 @@ jobs:
         if: runner.os == 'Windows'
         with:
           arch: x64
-      - name: Install Linux Qt runtime and compiler dependencies
+      - name: Install Linux native dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libdbus-1-dev libssl-dev libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
+          sudo apt-get install --yes build-essential pkg-config libdbus-1-dev libssl-dev libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
       - name: Install pinned Python build tools
-        run: python -m pip install -r scripts/ci/requirements.txt
-      - name: Verify bootstrap archive validation
-        run: python -m unittest discover -s scripts/ci -p "test_*.py"
-      - name: Rust format, Clippy, tests, and CXX generation
-        run: python scripts/ci/desktop.py rust
-      - name: Install Qt and build verified QScintilla sources
-        run: python scripts/ci/desktop.py dependencies
-      - name: Build C++ application, tests, and Rust/CXX bridge
-        run: python scripts/ci/desktop.py build
-      - name: Run native tests using Qt offscreen platform
-        run: python scripts/ci/desktop.py test
-  licenses:
-    name: Cargo license policy
+        run: python -m pip install --requirement scripts/ci/requirements.txt
+      - name: Check all Rust targets and features
+        run: python scripts/ci/quality.py rust-check
+      - name: Run strict Clippy on all targets and features
+        run: python scripts/ci/quality.py rust-clippy
+      - name: Test all Rust features
+        run: python scripts/ci/quality.py rust-tests
+      - name: Install Qt and verified QScintilla sources
+        run: python scripts/ci/quality.py native-dependencies
+      - name: Strict native build
+        run: python scripts/ci/quality.py native-build
+      - name: Run all native tests offscreen
+        run: python scripts/ci/quality.py native-tests
+  native-static-analysis:
+    name: Native static analysis (LLVM 23)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 60
+    env:
+      QT_QPA_PLATFORM: offscreen
+      CMAKE_PREFIX_PATH: ${{ github.workspace }}/build/ci/qt/6.8.3/gcc_64;${{ github.workspace }}/build/ci/qscintilla
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Install pinned cargo-deny
-        run: cargo install cargo-deny --version 0.20.2 --locked
-      - name: Check all resolved Cargo dependency licenses
-        run: cargo deny --locked check licenses
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Install native and LLVM 23 tools
+        run: |
+          python -m pip install --requirement scripts/ci/requirements.txt
+          sudo apt-get update
+          sudo apt-get install --yes build-essential pkg-config libdbus-1-dev libssl-dev libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
+          curl --fail --show-error --silent https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor --yes --output /usr/share/keyrings/apt.llvm.org.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/apt.llvm.org.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' | sudo tee /etc/apt/sources.list.d/llvm23.list
+          sudo apt-get update
+          sudo apt-get install --yes clang-23 clang-tidy-23 iwyu
+      - name: Install Qt and verified QScintilla sources
+        run: python scripts/ci/quality.py native-dependencies
+      - name: Configure LLVM analysis
+        run: cmake --preset clang-tidy
+      - name: Baseline strict clang-tidy profile
+        # Baseline-only until the first LLVM 23 result is reviewed and green.
+        continue-on-error: true
+        run: cmake --build --preset clang-tidy --target choscordb-clang-tidy
+      - name: Compile self-contained public headers
+        run: cmake --build --preset clang-tidy --target choscordb-header-check
+      - name: Run advisory Include-What-You-Use
+        continue-on-error: true
+        run: |
+          cmake --preset iwyu
+          cmake --build --preset iwyu --target choscordb-iwyu
+  postgres-integration:
+    name: PostgreSQL 17 integration (sequential)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      max-parallel: 1
+    env:
+      CARGO_INCREMENTAL: '0'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Install PostgreSQL 17 and native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-common build-essential pkg-config libdbus-1-dev libssl-dev libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install --yes postgresql-17
+          sudo systemctl stop postgresql.service
+          python -m pip install --requirement scripts/ci/requirements.txt
+      - name: Build native integration tests
+        run: |
+          python scripts/ci/quality.py native-dependencies
+          python scripts/ci/quality.py native-build
+      - name: Start owned PostgreSQL fixture
+        run: |
+          python scripts/integration/postgres_fixture.py start --bin-dir /usr/lib/postgresql/17/bin
+          python scripts/integration/postgres_fixture.py env | jq --raw-output 'to_entries[] | "\(.key)=\(.value)"' >> "$GITHUB_ENV"
+      - name: Run ignored driver integration suites sequentially
+        run: cargo test -p choscordb-driver-postgres --locked -- --include-ignored --test-threads=1
+      - name: Run ignored core integration suite sequentially
+        run: cargo test -p choscordb-core --test postgres_disconnect --locked -- --include-ignored --test-threads=1
+      - name: Run native PostgreSQL coverage sequentially
+        run: python scripts/ci/quality.py native-tests
+      - name: Preserve PostgreSQL failure logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: postgres-17-logs
+          path: build/integration/postgres/server.log
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Stop owned PostgreSQL fixture
+        if: always()
+        run: python scripts/integration/postgres_fixture.py stop

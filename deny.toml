@@ -1,5 +1,19 @@
 # Mechanical Cargo dependency license policy, not a distribution/legal approval.
 # Qt and QScintilla are audited separately: see docs/CI.md.
+[advisories]
+yanked = "deny"
+unmaintained = "workspace"
+ignore = []
+
+[bans]
+multiple-versions = "warn"
+# Versionless dependencies are repository-local workspace paths; their source is
+# controlled by this checkout. Registry dependencies remain locked in Cargo.lock.
+wildcards = "allow"
+highlight = "all"
+skip = []
+skip-tree = []
+
 [licenses]
 allow = ["Apache-2.0", "GPL-3.0-or-later", "MIT", "Unicode-3.0", "Zlib"]
 confidence-threshold = 0.95
@@ -10,3 +24,9 @@ confidence-threshold = 0.95
 name = "subtle"
 version = "=2.6.1"
 allow = ["BSD-3-Clause"]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
