@@ -74,7 +74,8 @@ class DisconnectWorkspaceTest : public QObject {
                          "x<1001) SELECT x FROM n");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         f.run.trigger();
-        QTRY_COMPARE(f.grid.model()->rowCount(), 1000);
+        // Cold hosted macOS workers can exceed Qt Test's five-second default here.
+        QTRY_COMPARE_WITH_TIMEOUT(f.grid.model()->rowCount(), 1000, 30000);
         QTRY_VERIFY(f.run.isEnabled());
         answer(&f.window, false);
         QVERIFY(!f.workspace.confirmShutdown());
@@ -205,7 +206,8 @@ class DisconnectWorkspaceTest : public QObject {
                          "x<1000000) SELECT x FROM n");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         f.run.trigger();
-        QTRY_COMPARE(f.grid.model()->rowCount(), 1000);
+        // Generating the first page can exceed Qt Test's default on hosted macOS.
+        QTRY_COMPARE_WITH_TIMEOUT(f.grid.model()->rowCount(), 1000, 30000);
         QTRY_VERIFY(f.exportResult.isEnabled());
         f.exportResult.click();
         auto* dialog = f.window.findChild<choscordb::ExportDialog*>("exportDialog");

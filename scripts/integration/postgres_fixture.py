@@ -76,6 +76,16 @@ def main():
             ).returncode
         )
     if args.action == "stop":
+        if (
+            subprocess.run(
+                [str(binaries / "pg_ctl"), "-D", str(data), "status"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode
+            != 0
+        ):
+            print("Fixture is not running")
+            return
         run([binaries / "pg_ctl", "-D", data, "-m", "fast", "-w", "stop"])
         return
     if not (data / "PG_VERSION").exists():
@@ -99,6 +109,10 @@ def main():
             )
         finally:
             password_file.unlink(missing_ok=True)
+
+    def literal(path):
+        return str(path).replace("'", "''")
+
     if config.get("tls_version") != 2:
         openssl = shutil.which("openssl")
         if not openssl:
@@ -174,15 +188,17 @@ def main():
         (root / "server.key").chmod(0o600)
         (root / "ca.key").chmod(0o600)
 
-        def literal(path):
-            return str(path).replace("'", "''")
-
         with (data / "postgresql.conf").open("a") as stream:
             stream.write(f"\nlisten_addresses = '127.0.0.1'\nport = {config['port']}\n")
             stream.write("shared_buffers = '16MB'\nmax_connections = 20\nssl = on\n")
             stream.write(f"ssl_cert_file = '{literal(root / 'server.crt')}'\n")
             stream.write(f"ssl_key_file = '{literal(root / 'server.key')}'\n")
         config["tls_version"] = 2
+        marker.write_text(json.dumps(config, indent=2) + "\n")
+    if config.get("socket_config_version") != 1:
+        with (data / "postgresql.conf").open("a") as stream:
+            stream.write(f"unix_socket_directories = '{literal(root)}'\n")
+        config["socket_config_version"] = 1
         marker.write_text(json.dumps(config, indent=2) + "\n")
     if (
         subprocess.run(

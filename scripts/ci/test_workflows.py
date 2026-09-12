@@ -61,6 +61,7 @@ def validate_ci(ci):
         (
             "quality.py fast",
             "github.com/rhysd/actionlint/cmd/actionlint@v1.7.7",
+            'echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"',
             "cargo install cargo-deny --version 0.20.2 --locked",
             "clang-format-23",
         ),
@@ -144,6 +145,8 @@ def validate_coverage(coverage):
         )
     if re.search(r"fail-under|threshold", coverage, re.IGNORECASE):
         raise AssertionError("coverage is artifact-only during baseline collection")
+    rust = yaml_block(coverage, "rust", 2)
+    require_values(rust, ("pkg-config", "libdbus-1-dev", "libssl-dev"))
 
 
 class WorkflowPolicyTests(unittest.TestCase):
@@ -187,6 +190,17 @@ class WorkflowPolicyTests(unittest.TestCase):
         stress = yaml_block(dynamic, "stress", 2)
         require_values(stress, ("--repeat until-fail:20", "stop on the first failure"))
         self.assertNotRegex(dynamic.lower(), r"retry|rerun-failed")
+
+    def test_linux_cmake_prefix_paths_use_platform_separator(self):
+        for name in ("ci.yml", "coverage.yml", "dynamic-analysis.yml"):
+            with self.subTest(workflow=name):
+                values = re.findall(
+                    r"^\s*CMAKE_PREFIX_PATH:\s*(.+)$", self.files[name], re.MULTILINE
+                )
+                self.assertTrue(values)
+                for value in values:
+                    self.assertIn("gcc_64:${{ github.workspace }}", value)
+                    self.assertNotIn("gcc_64;${{ github.workspace }}", value)
 
     def test_dependabot_and_cargo_policy_cover_all_dependency_classes(self):
         dependabot = (ROOT / ".github" / "dependabot.yml").read_text()

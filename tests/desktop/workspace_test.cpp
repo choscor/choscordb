@@ -142,36 +142,27 @@ class WorkspaceTest : public QObject {
         f.execute("SELECT 1");
         QTRY_VERIFY(f.run.isEnabled());
         bool cancelled = false;
-        QTimer cancelChooser;
-        cancelChooser.setInterval(5);
-        connect(&cancelChooser, &QTimer::timeout, &f.parent, [&] {
-            for (auto* widget : QApplication::topLevelWidgets())
-                if (auto* box = qobject_cast<QMessageBox*>(widget)) {
-                    cancelled = true;
-                    cancelChooser.stop();
-                    box->button(QMessageBox::Cancel)->click();
-                    return;
-                }
+        QTimer::singleShot(0, &f.parent, [&] {
+            auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            QVERIFY(box);
+            cancelled = true;
+            box->button(QMessageBox::Cancel)->click();
         });
-        cancelChooser.start();
         QVERIFY(!f.workspace.confirmShutdown());
         QVERIFY(cancelled);
         QVERIFY(f.run.isEnabled());
         bool approved = false;
-        QTimer approveChooser;
-        approveChooser.setInterval(5);
-        connect(&approveChooser, &QTimer::timeout, &f.parent, [&] {
-            for (auto* widget : QApplication::topLevelWidgets())
-                if (auto* box = qobject_cast<QMessageBox*>(widget))
-                    for (auto* button : box->buttons())
-                        if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
-                            approved = true;
-                            approveChooser.stop();
-                            button->click();
-                            return;
-                        }
+        QTimer::singleShot(0, &f.parent, [&] {
+            auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            QVERIFY(box);
+            for (auto* button : box->buttons())
+                if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+                    approved = true;
+                    button->click();
+                    return;
+                }
+            QFAIL("missing close action");
         });
-        approveChooser.start();
         QVERIFY(f.workspace.confirmShutdown());
         QVERIFY(approved);
         f.rollback.trigger();

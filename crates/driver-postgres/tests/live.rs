@@ -5,9 +5,16 @@ fn settings() -> ConnectionOptions {
         .expect("CHOSCORDB_TEST_POSTGRES must name a disposable fixture")
         .parse()
         .unwrap();
-    let host = match config.get_hosts().first().expect("fixture TCP host") {
+    let fixture_host = config.get_hosts().first().expect("fixture TCP host");
+    #[cfg(unix)]
+    let host = match fixture_host {
         tokio_postgres::config::Host::Tcp(host) => host.clone(),
-        _ => panic!("fixture requires TCP"),
+        tokio_postgres::config::Host::Unix(_) => panic!("fixture requires TCP"),
+    };
+    #[cfg(not(unix))]
+    let host = {
+        let tokio_postgres::config::Host::Tcp(host) = fixture_host;
+        host.clone()
     };
     ConnectionOptions::Postgres {
         host,

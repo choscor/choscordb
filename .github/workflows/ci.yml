@@ -27,6 +27,7 @@ jobs:
         run: |
           python -m pip install --requirement scripts/ci/requirements.txt
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           cargo install cargo-deny --version 0.20.2 --locked
           curl --fail --show-error --silent https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor --yes --output /usr/share/keyrings/apt.llvm.org.gpg
           echo 'deb [signed-by=/usr/share/keyrings/apt.llvm.org.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' | sudo tee /etc/apt/sources.list.d/llvm23.list
@@ -83,7 +84,7 @@ jobs:
     timeout-minutes: 60
     env:
       QT_QPA_PLATFORM: offscreen
-      CMAKE_PREFIX_PATH: ${{ github.workspace }}/build/ci/qt/6.8.3/gcc_64;${{ github.workspace }}/build/ci/qscintilla
+      CMAKE_PREFIX_PATH: ${{ github.workspace }}/build/ci/qt/6.8.3/gcc_64:${{ github.workspace }}/build/ci/qscintilla
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

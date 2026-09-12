@@ -18,6 +18,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - name: Install Rust native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes pkg-config libdbus-1-dev libssl-dev
       - name: Install pinned Rust coverage tool
         run: |
           cargo install cargo-llvm-cov --version 0.6.21 --locked
@@ -39,7 +43,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
-      CMAKE_PREFIX_PATH: ${{ github.workspace }}/build/ci/qt/6.8.3/gcc_64;${{ github.workspace }}/build/ci/qscintilla
+      CMAKE_PREFIX_PATH: ${{ github.workspace }}/build/ci/qt/6.8.3/gcc_64:${{ github.workspace }}/build/ci/qscintilla
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
