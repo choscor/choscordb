@@ -37,8 +37,8 @@ class QualityCommandTest(unittest.TestCase):
         self.assertEqual(
             commands[1:],
             [
-                ["ruff", "check", "scripts"],
-                ["ruff", "format", "--check", "scripts"],
+                ["ruff", "check", "scripts", "examples"],
+                ["ruff", "format", "--check", "scripts", "examples"],
                 [
                     "actionlint",
                     "-color",

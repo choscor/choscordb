@@ -113,14 +113,14 @@ def python_lint():
     ruff = require_tool(
         "ruff", install=f"{PYTHON} -m pip install -r scripts/ci/requirements.txt"
     )
-    run_command([ruff, "check", "scripts"])
+    run_command([ruff, "check", "scripts", "examples"])
 
 
 def python_format():
     ruff = require_tool(
         "ruff", install=f"{PYTHON} -m pip install -r scripts/ci/requirements.txt"
     )
-    run_command([ruff, "format", "--check", "scripts"])
+    run_command([ruff, "format", "--check", "scripts", "examples"])
 
 
 def actionlint_tool():

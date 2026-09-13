@@ -4,6 +4,9 @@ A native, cross-platform SQL client built with Qt 6 Widgets and a Qt-independent
 
 Implementation is in progress. See [the PRD](docs/prd-mvp.md), [UI reference](docs/design/README.md), and [verification status](docs/architecture/implementation-status.md). The visual reference is a design artifact, not a working desktop application.
 
+To try the application with sample data, use the runnable
+[PostgreSQL and SQLite examples](examples/databases/README.md).
+
 ## Development
 
 Install the pinned tools, then use the repository-owned quality interface:
