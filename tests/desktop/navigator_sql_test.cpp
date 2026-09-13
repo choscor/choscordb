@@ -73,6 +73,7 @@ class NavigatorSqlTest : public QObject {
         controller.addConnection(9, "Fixture");
         const auto root = model->index(0, 0);
         model->fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
         QVERIFY(model->applyChildren(9, "", requested.last().at(2).toULongLong(),
                                      {{"table", "table", "\"main\".\"table\"", "table", true}}));
         const auto table = model->index(0, 0, root);
@@ -83,6 +84,7 @@ class NavigatorSqlTest : public QObject {
         unloaded.findChild<QAction*>("generate_select")->trigger();
         QCOMPARE(generated.count(), 1);
         model->fetchMore(table);
+        QTRY_COMPARE(requested.count(), 2);
         QVERIFY(
             model->applyChildren(9, "table", requested.last().at(2).toULongLong(),
                                  {{"col", "a.b", "\"main\".\"table\".\"a.b\"", "column", false}}));

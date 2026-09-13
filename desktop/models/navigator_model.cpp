@@ -1,5 +1,6 @@
 #include "models/navigator_model.h"
 #include <QSet>
+#include <QTimer>
 #include <algorithm>
 #include <limits>
 namespace choscordb {
@@ -202,7 +203,16 @@ void NavigatorModel::fetchMore(const QModelIndex& parent) {
     value->children.push_back(std::move(loading));
     endInsertRows();
     emit dataChanged(parent, parent, {ErrorRole, ChildrenLoadedRole});
-    emit childrenRequested(value->connection, value->object.id, value->token);
+    const auto connection = value->connection;
+    const auto objectId = value->object.id;
+    const auto token = value->token;
+    // QTreeView calls fetchMore() from inside its expansion layout. Defer the
+    // request boundary so even an immediate reply cannot mutate rows reentrantly.
+    QTimer::singleShot(0, this, [this, connection, objectId, token] {
+        const auto* current = find(connection, objectId);
+        if (current && current->state == Node::Loading && current->token == token)
+            emit childrenRequested(connection, objectId, token);
+    });
 }
 NavigatorModel::Node* NavigatorModel::find(quint64 connection, const QString& id) const {
     const auto root = std::find_if(roots_.begin(), roots_.end(), [connection](const auto& n) {

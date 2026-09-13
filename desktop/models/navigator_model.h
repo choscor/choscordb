@@ -51,6 +51,8 @@ class NavigatorModel final : public QAbstractItemModel {
                                           quint64 maxUtf8Bytes) const;
   signals:
     void completionChanged(quint64 connection);
+    // Dispatched on the next event-loop turn so fetchMore callers cannot be
+    // reentered by a synchronous metadata provider.
     void childrenRequested(quint64 connection, const QString& parentObjectId, quint64 requestToken);
 
   private:
