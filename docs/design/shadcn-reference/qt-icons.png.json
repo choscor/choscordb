@@ -1,0 +1,15 @@
+{
+    "fixture": "synthetic; initial state; no focus; reduced motion",
+    "font": "Geist",
+    "logicalHeight": 900,
+    "logicalWidth": 1280,
+    "os": "macOS 26.5",
+    "platform": "offscreen",
+    "qt": "6.8.3",
+    "scale": 1,
+    "section": "Icons",
+    "source": "desktop/design_system/icons.cpp",
+    "specimen": "icons",
+    "surface": "inline",
+    "themes": "Light / Dark"
+}

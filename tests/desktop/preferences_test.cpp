@@ -1,5 +1,6 @@
 #include "models/shortcut_catalog.h"
 #include "widgets/preferences_dialog.h"
+#include <QComboBox>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QPushButton>
@@ -8,6 +9,20 @@
 class PreferencesTest : public QObject {
     Q_OBJECT
   private slots:
+    void appearanceOffersOnlySystemLightAndDark() {
+        choscordb::EngineAdapter adapter;
+        choscordb::PreferencesDialog dialog(&adapter, {});
+        auto* theme = dialog.findChild<QComboBox*>("appearanceTheme");
+        QVERIFY(theme != nullptr);
+        QCOMPARE(theme->count(), 3);
+        QCOMPARE(theme->itemData(0).toString(), QString("system"));
+        QCOMPARE(theme->itemData(1).toString(), QString("light"));
+        QCOMPARE(theme->itemData(2).toString(), QString("dark"));
+        QVERIFY(dialog.findChild<QWidget*>("appearanceDensity") == nullptr);
+        QVERIFY(dialog.findChild<QWidget*>("appearanceAccent") == nullptr);
+        QVERIFY(dialog.findChild<QWidget*>("appearanceCustomAccent") == nullptr);
+    }
+
     void loadFailureRequiresDeliberateResetBeforeApplyingDefaults() {
         choscordb::EngineAdapter adapter;
         adapter.shutdown();

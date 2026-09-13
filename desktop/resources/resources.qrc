@@ -1,8 +1,28 @@
 <RCC>
   <qresource prefix="/icons">
+    <file alias="refresh-cw.svg">icons/refresh-cw.svg</file>
+    <file alias="x.svg">icons/x.svg</file>
+    <file alias="chevron-down.svg">icons/chevron-down.svg</file>
+    <file alias="chevron-right.svg">icons/chevron-right.svg</file>
+    <file alias="chevron-left.svg">icons/chevron-left.svg</file>
+    <file alias="search.svg">icons/search.svg</file>
+    <file alias="database.svg">icons/database.svg</file>
+    <file alias="check.svg">icons/check.svg</file>
+    <file alias="triangle-alert.svg">icons/triangle-alert.svg</file>
+    <file alias="circle-alert.svg">icons/circle-alert.svg</file>
+    <file alias="loader-circle.svg">icons/loader-circle.svg</file>
+    <file alias="copy.svg">icons/copy.svg</file>
+    <file alias="download.svg">icons/download.svg</file>
+
     <file alias="app-mark.svg">icons/app-mark.svg</file>
     <file alias="play.svg">icons/play.svg</file>
     <file alias="square.svg">icons/square.svg</file>
     <file alias="plus.svg">icons/plus.svg</file>
+  </qresource>
+  <qresource prefix="/fonts">
+    <file alias="Geist-Regular.ttf">fonts/Geist-Regular.ttf</file>
+    <file alias="Geist-Medium.ttf">fonts/Geist-Medium.ttf</file>
+    <file alias="Geist-SemiBold.ttf">fonts/Geist-SemiBold.ttf</file>
+    <file alias="Geist-Bold.ttf">fonts/Geist-Bold.ttf</file>
   </qresource>
 </RCC>

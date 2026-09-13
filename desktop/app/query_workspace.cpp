@@ -3,6 +3,7 @@
 #include "bridge/engine_adapter.h"
 #include "bridge/result_column_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "widgets/confirmation_dialog.h"
 #include "widgets/export_dialog.h"
 #include "widgets/profile_dialog.h"
 #include "widgets/sql_editor.h"
@@ -13,7 +14,6 @@
 #include <QComboBox>
 #include <QLabel>
 #include <QMenu>
-#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QShortcut>
@@ -250,8 +250,8 @@ void QueryWorkspace::disconnectConnection(quint64 connection) {
         tr("Disconnect %1? Any uncommitted transaction will be rolled back.").arg(label);
     if (active)
         notice += tr(" Active query, fetch, or export work will be cancelled.");
-    QMessageBox box(QMessageBox::Warning, tr("Disconnect database session"), notice,
-                    QMessageBox::NoButton, widgets_.dialogParent);
+    ConfirmationDialog box(QMessageBox::Warning, tr("Disconnect database session"), notice,
+                           QMessageBox::NoButton, widgets_.dialogParent);
     box.setTextFormat(Qt::PlainText);
     auto* accept = box.addButton(transaction ? tr("Roll back and disconnect") : tr("Disconnect"),
                                  QMessageBox::DestructiveRole);
@@ -341,9 +341,9 @@ void QueryWorkspace::execute() {
         return;
     }
     if (range.confirmation) {
-        QMessageBox box(QMessageBox::Warning, tr("Confirm SQL execution"),
-                        tr("This statement may change or delete data. Execute it?"),
-                        QMessageBox::Yes | QMessageBox::Cancel, widgets_.dialogParent);
+        ConfirmationDialog box(QMessageBox::Warning, tr("Confirm SQL execution"),
+                               tr("This statement may change or delete data. Execute it?"),
+                               QMessageBox::Yes | QMessageBox::Cancel, widgets_.dialogParent);
         box.setTextFormat(Qt::PlainText);
         box.setDefaultButton(QMessageBox::Cancel);
         if (box.exec() != QMessageBox::Yes)
@@ -569,7 +569,7 @@ bool QueryWorkspace::confirmShutdown() {
     const bool active = busy_ || fetching_ || exporting_ || (query_ && !executionFinished_);
     if (!transaction && !active)
         return true;
-    QMessageBox box(
+    ConfirmationDialog box(
         QMessageBox::Warning, tr("Close database sessions"),
         transaction
             ? tr("Uncommitted transactions will be rolled back and active work cancelled.")

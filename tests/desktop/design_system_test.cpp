@@ -3,8 +3,12 @@
 #include "design_system/theme_manager.h"
 
 #include <QApplication>
+#include <QDir>
 #include <QEnterEvent>
 #include <QFile>
+#include <QFileInfo>
+#include <QFontDatabase>
+#include <QFontInfo>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QStyleOptionButton>
@@ -45,12 +49,93 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(changed.count(), explicitThemeNotifications);
     }
 
-    void densityResolvesTheWholeMetricFamily() {
+    void bundledUiTypographyUsesReferenceFontAndPreservesMonospace() {
+        using namespace choscordb::design;
+        const auto ui = resolveTypography(TypographyRole::Ui);
+        QVERIFY(bundledFontsAvailable());
+        QCOMPARE(ui.family(), QString("Geist"));
+        QCOMPARE(QFontInfo(ui).family(), QString("Geist"));
+        QCOMPARE(ui.pixelSize(), 14);
+        QCOMPARE(ui.weight(), QFont::Normal);
+        const auto heading = resolveTypography(TypographyRole::Heading);
+        QCOMPARE(heading.family(), QString("Geist"));
+        QCOMPARE(heading.pixelSize(), 16);
+        QCOMPARE(heading.weight(), QFont::Medium);
+        QVERIFY(QFile::exists(":/fonts/Geist-Regular.ttf"));
+        QCOMPARE(resolveTypography(TypographyRole::Monospace),
+                 QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    }
+
+    void tokensExposeCopyableReferenceValuesAndDefinitionSources() {
+        using namespace choscordb::design;
+        const auto tokens = designTokens(ResolvedAppearance::Light);
+        const auto value = [&tokens](const QString& name) {
+            for (const auto& token : tokens) {
+                if (token.name == name) {
+                    return token.value;
+                }
+            }
+            return QString{};
+        };
+        QCOMPARE(value("color.background"), QString("#ffffff"));
+        QCOMPARE(value("radius.lg"), QString("10px"));
+        QCOMPARE(value("radius.xl"), QString("14px"));
+        QCOMPARE(value("spacing.2.5"), QString("10px"));
+        QCOMPARE(value("focus.width"), QString("3px"));
+        QCOMPARE(value("motion.popup"), QString("100ms"));
+        QCOMPARE(value("typography.ui.lineHeight"), QString("20px"));
+        QCOMPARE(value("elevation.md.blur"), QString("6px"));
+        for (const auto& token : tokens) {
+            QVERIFY2(
+                QFile::exists(
+                    QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("../../" + token.source)),
+                qPrintable(token.source));
+        }
+        QCOMPARE(resolveMetrics(Density::Compact, false).controlRadius, 10);
+        QCOMPARE(resolveMetrics(Density::Comfortable, false).dialogRadius, 14);
+    }
+
+    void pinnedNeutralPaletteIgnoresLegacyAccent() {
+        using namespace choscordb::design;
+        const auto light =
+            resolveColors(ResolvedAppearance::Light, Accent::presetColor(AccentPreset::Cobalt));
+        const auto dark =
+            resolveColors(ResolvedAppearance::Dark, Accent::presetColor(AccentPreset::Rose));
+        QCOMPARE(light.canvas, QColor("#ffffff"));
+        QCOMPARE(light.text, QColor("#0a0a0a"));
+        QCOMPARE(dark.canvas, QColor("#0a0a0a"));
+        QCOMPARE(dark.surface, QColor("#171717"));
+        QCOMPARE(light,
+                 resolveColors(ResolvedAppearance::Light, Accent::custom(QColor("#2468b2"))));
+        QCOMPARE(dark, resolveColors(ResolvedAppearance::Dark,
+                                     Accent::presetColor(AccentPreset::Cobalt)));
+    }
+
+    void semanticSurfaceRolesRetainReferenceDistinctions() {
+        using namespace choscordb::design;
+        const auto light = resolveColors(ResolvedAppearance::Light, {});
+        const auto dark = resolveColors(ResolvedAppearance::Dark, {});
+        QCOMPARE(light.background, QColor("#ffffff"));
+        QCOMPARE(light.primary, QColor("#171717"));
+        QCOMPARE(light.secondary, QColor("#f5f5f5"));
+        QCOMPARE(light.ring, QColor("#a3a3a3"));
+        QCOMPARE(light.destructive, QColor("#e7000b"));
+        QCOMPARE(dark.background, QColor("#0a0a0a"));
+        QCOMPARE(dark.card, QColor("#171717"));
+        QCOMPARE(dark.muted, QColor("#262626"));
+        QCOMPARE(dark.destructive, QColor("#ff6467"));
+        QCOMPARE(dark.border, QColor(255, 255, 255, 26));
+        QCOMPARE(dark.input, QColor(255, 255, 255, 38));
+        QCOMPARE(dark.sidebarPrimary, QColor("#1447e6"));
+    }
+
+    void obsoleteDensityPreservesChoiceWithoutChangingMetrics() {
         choscordb::design::ThemeManager manager;
         const auto compact = manager.metrics();
         QCOMPARE(compact.grid, 4);
         QCOMPARE(compact.controlHeight, 32);
-        QCOMPARE(compact.dataRowHeight, 28);
+        QCOMPARE(compact.dataRowHeight, 37);
+        QCOMPARE(compact.navigationRowHeight, 28);
         QCOMPARE(compact.workspaceChromeHeight, 36);
         QCOMPARE(compact.dialogContentSpacing, 16);
         QCOMPARE(compact.narrowWorkspaceWidth, 1100);
@@ -65,10 +150,12 @@ class DesignSystemTest final : public QObject {
         QSignalSpy changed(&manager, &choscordb::design::ThemeManager::metricsChanged);
         manager.setDensity(choscordb::design::Density::Comfortable);
         const auto comfortable = manager.metrics();
-        QCOMPARE(comfortable.controlHeight, 40);
-        QCOMPARE(comfortable.dataRowHeight, 36);
-        QCOMPARE(comfortable.workspaceChromeHeight, 44);
-        QCOMPARE(comfortable.dialogContentSpacing, 20);
+        QCOMPARE(comfortable, compact);
+        QCOMPARE(manager.density(), choscordb::design::Density::Comfortable);
+        QCOMPARE(comfortable.controlHeight, 32);
+        QCOMPARE(comfortable.dataRowHeight, 37);
+        QCOMPARE(comfortable.workspaceChromeHeight, 36);
+        QCOMPARE(comfortable.dialogContentSpacing, 16);
         QCOMPARE(changed.count(), 1);
 
         manager.setDensity(choscordb::design::Density::Comfortable);
@@ -161,7 +248,7 @@ class DesignSystemTest final : public QObject {
         QVERIFY(!manager.metrics().animationsEnabled);
         QCOMPARE(manager.metrics().animationDurationMs, 0);
         QCOMPARE(manager.density(), Density::Comfortable);
-        QCOMPARE(manager.metrics().controlHeight, 40);
+        QCOMPARE(manager.metrics().controlHeight, 32);
         QCOMPARE(policyChanged.count(), 2);
 
         manager.setForcedContrast(false);
@@ -191,7 +278,7 @@ class DesignSystemTest final : public QObject {
         manager.setMode(ThemeMode::Dark);
         manager.setDensity(Density::Comfortable);
         QCOMPARE(qApp->palette().color(QPalette::Window), manager.resolvedTheme().colors.canvas);
-        QVERIFY(qApp->styleSheet().contains(QStringLiteral("min-height: 40px")));
+        QVERIFY(qApp->styleSheet().contains(QStringLiteral("min-height: 32px")));
         QVERIFY(qApp->styleSheet().contains(manager.resolvedTheme().colors.focus.name()));
 
         manager.installOn(nullptr);

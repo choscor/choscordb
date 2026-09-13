@@ -1,0 +1,14 @@
+{
+  "date": "2026-09-13",
+  "theme": "dark",
+  "logical_size": [
+    1280,
+    900
+  ],
+  "qt": "6.8.3",
+  "platform": "macOS/offscreen",
+  "scale": 1,
+  "font": "Geist",
+  "fixture": "fresh isolated disconnected workspace; no credentials",
+  "production_executable": "build/ci/native/choscordb.app/Contents/MacOS/choscordb"
+}

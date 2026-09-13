@@ -181,6 +181,7 @@ void SqlEditor::applyPalette() {
         lexer()->setColor(palette().color(QPalette::PlaceholderText), style);
     setMarginsBackgroundColor(palette().color(QPalette::AlternateBase));
     setMarginsForegroundColor(foreground);
+    setFoldMarginColors(base, base);
     setCaretForegroundColor(foreground);
     setSelectionBackgroundColor(palette().color(QPalette::Highlight));
     setSelectionForegroundColor(palette().color(QPalette::HighlightedText));

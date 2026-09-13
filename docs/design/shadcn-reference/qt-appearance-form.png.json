@@ -1,0 +1,15 @@
+{
+    "fixture": "synthetic; initial state; no focus; reduced motion",
+    "font": "Geist",
+    "logicalHeight": 900,
+    "logicalWidth": 1280,
+    "os": "macOS 26.5",
+    "platform": "offscreen",
+    "qt": "6.8.3",
+    "scale": 1,
+    "section": "Compositions",
+    "source": "desktop/design_system/theme_manager.cpp",
+    "specimen": "appearance-form",
+    "surface": "inline",
+    "themes": "Light / Dark"
+}

@@ -19,11 +19,11 @@ class AppearanceController final : public QObject {
     [[nodiscard]] AppearanceLayout persisted() const { return persisted_; }
     [[nodiscard]] AppearanceLayout current() const;
     [[nodiscard]] bool isReady() const { return loaded_; }
+    [[nodiscard]] bool canSave() const { return loaded_ && automaticAllowed_; }
     [[nodiscard]] QString currentWarning() const { return persistentWarning_; }
     [[nodiscard]] bool forcedContrast() const;
     [[nodiscard]] bool reducedMotion() const;
-    [[nodiscard]] bool preview(const QString& theme, const QString& density,
-                               const QString& accentKind, const QString& accent);
+    [[nodiscard]] bool preview(const QString& theme);
     void cancelPreview();
     void applyPreview();
     void reset();

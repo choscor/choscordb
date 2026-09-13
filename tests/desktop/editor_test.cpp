@@ -1,3 +1,4 @@
+#include "design_system/theme.h"
 #include "widgets/sql_editor.h"
 #include <QFile>
 #include <QScopeGuard>
@@ -11,6 +12,17 @@
 class EditorTest : public QObject {
     Q_OBJECT
   private slots:
+    void darkPaletteAlsoColorsTheFoldMargin() {
+        using namespace choscordb::design;
+        choscordb::SqlEditor editor;
+        editor.resize(400, 200);
+        editor.setPalette(applicationPalette(
+            {ResolvedAppearance::Dark, resolveColors(ResolvedAppearance::Dark, {}), false}));
+        editor.show();
+        QCoreApplication::processEvents();
+        const int x = editor.marginWidth(0) + editor.marginWidth(1) + editor.marginWidth(2) / 2;
+        QCOMPARE(editor.grab().toImage().pixelColor(x, 160), QColor("#171717"));
+    }
     void restoresBufferAndSelectionWithoutReadingFile() {
         choscordb::SqlEditor editor;
         const QByteArray sql = QString::fromUtf8("SELECT '🦀é';\n").toUtf8();

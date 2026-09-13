@@ -1,9 +1,14 @@
+#include "app/appearance_controller.h"
 #include "app/main_window.h"
 #include "bridge/engine_adapter.h"
+#include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/theme_manager.h"
 #include "widgets/sql_editor.h"
 #include <QAction>
+#include <QComboBox>
 #include <QDialog>
 #include <QKeySequenceEdit>
+#include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTabWidget>
@@ -13,6 +18,145 @@
 class PreferencesWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void brokenAppearanceRequiresExplicitRepair_data() {
+        QTest::addColumn<QString>("payload");
+        QTest::newRow("corrupt") << QString("{bad json");
+        QTest::newRow("unsupported") << QString("{\"version\":2}");
+    }
+    void brokenAppearanceRequiresExplicitRepair() {
+        using namespace choscordb;
+        QFETCH(QString, payload);
+        QTemporaryDir directory;
+        const auto path = directory.filePath("broken-appearance.sqlite");
+        {
+            // Seed through the real SQL adapter, without a second SQLite dependency.
+            EngineAdapter writer(nullptr, path);
+            bool connected = false, completed = false;
+            connect(&writer, &EngineAdapter::eventReady, &writer, [&](const BridgeEvent& event) {
+                const auto kind =
+                    QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
+                const auto state =
+                    QString::fromUtf8(event.state.data(), qsizetype(event.state.size()));
+                connected = connected || kind == "connected";
+                completed = completed || (kind == "query_state" && state == "completed");
+            });
+            const auto connection = writer.connectSqlite(path);
+            QVERIFY(connection.has_value());
+            QTRY_VERIFY(connected);
+            const auto query = writer.execute(
+                *connection,
+                QStringLiteral("INSERT INTO appearance_layout(singleton,value) VALUES(1,'%1')")
+                    .arg(payload));
+            QVERIFY(query.has_value());
+            writer.fetchPage(*query);
+            QTRY_VERIFY(completed);
+        }
+        MainWindow window(nullptr, path);
+        window.show();
+        auto* appearance = window.findChild<AppearanceController*>();
+        QTRY_VERIFY(appearance->isReady());
+        QVERIFY(!appearance->currentWarning().isEmpty());
+        window.findChild<QAction*>("preferences")->trigger();
+        auto* dialog = window.findChild<QDialog*>("preferencesDialog");
+        auto* apply = dialog->findChild<QPushButton*>("preferencesApply");
+        QTRY_VERIFY(dialog->findChild<QSpinBox*>("preferencesFontSize")->isEnabled());
+        QVERIFY(!apply->isEnabled());
+        auto* warning = dialog->findChild<QLabel*>("appearanceStatus");
+        QVERIFY(!warning->text().isEmpty());
+        QSignalSpy saved(appearance, &AppearanceController::saveFinished);
+        appearance->applyPreview();
+        QTRY_COMPARE(saved.count(), 1);
+        QVERIFY(!saved.first().first().toBool());
+        QSignalSpy retried(appearance, &AppearanceController::readyChanged);
+        dialog->findChild<QPushButton*>("appearanceRetry")->click();
+        QTRY_COMPARE(retried.count(), 1);
+        QVERIFY(!warning->text().isEmpty());
+        QVERIFY(!apply->isEnabled());
+        dialog->findChild<QPushButton*>("appearanceReset")->click();
+        QTRY_VERIFY(warning->text().isEmpty());
+        QTRY_VERIFY(apply->isEnabled());
+        dialog->reject();
+        window.close();
+        QTRY_VERIFY(!window.isVisible());
+    }
+
+    void invalidThemeKeepsLastValidPreview() {
+        choscordb::MainWindow window;
+        auto* appearance = window.findChild<choscordb::AppearanceController*>();
+        auto* theme = window.findChild<choscordb::design::ThemeManager*>();
+        QTRY_VERIFY(appearance->isReady());
+        QVERIFY(appearance->preview("dark"));
+        QSignalSpy warning(appearance, &choscordb::AppearanceController::warningChanged);
+        QVERIFY(!appearance->preview("sepia"));
+        QCOMPARE(theme->mode(), choscordb::design::ThemeMode::Dark);
+        QVERIFY(!warning.last().first().toString().isEmpty());
+        appearance->cancelPreview();
+        QCOMPARE(theme->mode(), choscordb::design::ThemeMode::System);
+    }
+
+    void themeOnlyApplyRetainsLegacyAppearanceAndGeometry() {
+        using namespace choscordb;
+        QTemporaryDir directory;
+        const auto path = directory.filePath("legacy.sqlite");
+        AppearanceLayout legacy;
+        legacy.theme = "dark";
+        legacy.density = "comfortable";
+        legacy.accentKind = "custom";
+        legacy.accent = "#FFFFFF";
+        legacy.width = 1100;
+        legacy.height = 760;
+        legacy.navigatorWidth = 300;
+        legacy.editorResultsSplit = 600;
+        {
+            EngineAdapter adapter(nullptr, path);
+            QSignalSpy saved(&adapter, &EngineAdapter::appearanceLayoutReady);
+            QVERIFY(adapter.setAppearanceLayout(legacy, 910));
+            QTRY_COMPARE(saved.count(), 1);
+        }
+        {
+            MainWindow window(nullptr, path);
+            window.show();
+            auto* appearance = window.findChild<AppearanceController*>();
+            auto* theme = window.findChild<design::ThemeManager*>();
+            QTRY_VERIFY(appearance->isReady());
+            QCOMPARE(appearance->current().accent, QString("#FFFFFF"));
+            QCOMPARE(appearance->current().density, QString("comfortable"));
+            QCOMPARE(appearance->persisted().editorResultsSplit, quint16(600));
+            QCOMPARE(window.size(), QSize(1100, 760));
+            window.findChild<QAction*>("preferences")->trigger();
+            auto* dialog = window.findChild<QDialog*>("preferencesDialog");
+            auto* apply = dialog->findChild<QPushButton*>("preferencesApply");
+            QTRY_VERIFY(apply->isEnabled());
+            auto* mode = dialog->findChild<QComboBox*>("appearanceTheme");
+            mode->setCurrentIndex(mode->findData("light"));
+            QCOMPARE(theme->mode(), design::ThemeMode::Light);
+            QSignalSpy saved(appearance, &AppearanceController::saveFinished);
+            apply->click();
+            QTRY_COMPARE(saved.count(), 1);
+            QVERIFY(saved.first().first().toBool());
+            QCOMPARE(appearance->persisted().theme, QString("light"));
+            QCOMPARE(appearance->persisted().accent, QString("#FFFFFF"));
+            QCOMPARE(appearance->persisted().accentKind, QString("custom"));
+            QCOMPARE(appearance->persisted().density, QString("comfortable"));
+            mode->setCurrentIndex(mode->findData("dark"));
+            dialog->reject();
+            QCOMPARE(theme->mode(), design::ThemeMode::Light);
+            window.close();
+            QTRY_VERIFY(!window.isVisible());
+        }
+        EngineAdapter restarted(nullptr, path);
+        QSignalSpy loaded(&restarted, &EngineAdapter::appearanceLayoutReady);
+        QVERIFY(restarted.getAppearanceLayout(911));
+        QTRY_COMPARE(loaded.count(), 1);
+        const auto value = qvariant_cast<AppearanceLayout>(loaded.first().at(2));
+        QCOMPARE(value.theme, QString("light"));
+        QCOMPARE(value.density, QString("comfortable"));
+        QCOMPARE(value.accentKind, QString("custom"));
+        QCOMPARE(value.accent, QString("#FFFFFF"));
+        QCOMPARE(value.width, quint32(1100));
+        QCOMPARE(value.height, quint32(760));
+    }
+
     void savedPreferencesSurviveDialogClosureAndRestart() {
         QTemporaryDir directory;
         const auto path = directory.filePath("preferences.sqlite");
@@ -147,8 +291,11 @@ class PreferencesWorkspaceTest : public QObject {
         QTRY_COMPARE(editor->lexer()->defaultFont().pointSize(), 23);
         QCOMPARE(editor->text(), QString("SELECT 1"));
         QCOMPARE(window.findChild<QAction*>("command_find")->shortcut(), QKeySequence("Ctrl+J"));
-        window.findChild<QAction*>("command_new_query")->trigger();
+        auto* newQuery = window.findChild<QAction*>("newQuery");
+        QVERIFY(newQuery != nullptr);
+        newQuery->trigger();
         auto* next = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+        QVERIFY(next != nullptr);
         QVERIFY(next != editor);
         QCOMPARE(next->lexer()->defaultFont().pointSize(), 23);
     }

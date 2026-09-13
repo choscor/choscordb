@@ -34,10 +34,16 @@ def require_release_configuration(build):
         raise ValueError("CMake Release configuration evidence is missing")
     values = {}
     for line in cache.read_text(encoding="utf-8", errors="strict").splitlines():
-        if not line.startswith(("CMAKE_BUILD_TYPE:", "CMAKE_CONFIGURATION_TYPES:")):
+        if not line.startswith(
+            ("CMAKE_BUILD_TYPE:", "CMAKE_CONFIGURATION_TYPES:", "BUILD_TESTING:")
+        ):
             continue
         key, value = line.split("=", 1)
         values[key.split(":", 1)[0]] = value
+    if values.get("BUILD_TESTING", "OFF").upper() not in {"OFF", "FALSE", "0", "NO"}:
+        raise ValueError(
+            "Release staging requires BUILD_TESTING=OFF to exclude the developer preview"
+        )
     build_type = values.get("CMAKE_BUILD_TYPE")
     configurations = values.get("CMAKE_CONFIGURATION_TYPES", "").split(";")
     if build_type != "Release" and "Release" not in configurations:

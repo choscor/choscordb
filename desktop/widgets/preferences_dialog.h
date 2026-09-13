@@ -9,7 +9,6 @@ class QLabel;
 class QPushButton;
 class QSpinBox;
 class QComboBox;
-class QLineEdit;
 namespace choscordb {
 class SqlEditor;
 class AppearanceController;
@@ -44,8 +43,7 @@ class PreferencesDialog final : public DialogShell {
     QLabel* appearanceStatus_ = nullptr;
     QString appearanceWarning_;
     bool forcedContrast_ = false;
-    QComboBox *theme_ = nullptr, *density_ = nullptr, *accent_ = nullptr;
-    QLineEdit* customAccent_ = nullptr;
+    QComboBox* theme_ = nullptr;
     QPushButton *apply_, *reset_;
     quint64 token_ = 0;
     bool busy_ = false, ready_ = false, saving_ = false, appearanceValid_ = true;

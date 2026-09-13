@@ -1,6 +1,9 @@
 #include "widgets/profile_dialog.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/components.h"
 #include "design_system/theme.h"
+#include "design_system/typography.h"
+#include "widgets/confirmation_dialog.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFileDialog>
@@ -11,6 +14,7 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QUuid>
@@ -22,20 +26,42 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     setWindowTitle(tr("Connection profiles"));
     setModal(false);
     resize(design::dialogInitialSize(design::DialogSize::Profiles));
+    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* outer = new QVBoxLayout(this);
+    outer->setSpacing(metrics.spacingLarge);
+    auto* heading = new design::Text(tr("Connection profiles"), this);
+    heading->setTypographyRole(design::TypographyRole::Heading);
+    outer->addWidget(heading);
     outer->addWidget(createDescription(
         tr("Save reusable SQLite or PostgreSQL connection details. Passwords use the operating "
            "system credential store."),
         this));
     auto* columns = new QHBoxLayout;
     outer->addLayout(columns);
-    list_ = new QListWidget(this);
+    auto* savedProfiles = new QWidget(this);
+    auto* savedLayout = new QVBoxLayout(savedProfiles);
+    savedLayout->setContentsMargins(0, 0, 0, 0);
+    savedLayout->setSpacing(metrics.spacingMedium);
+    auto* savedHeading = new design::Text(tr("Saved profiles"), savedProfiles);
+    savedHeading->setWeight(QFont::Medium);
+    savedLayout->addWidget(savedHeading);
+    list_ = new QListWidget(savedProfiles);
     list_->setObjectName("profileList");
     list_->setAccessibleName(tr("Saved connection profiles"));
-    columns->addWidget(list_, 1);
-    form_ = new QWidget(this);
-    columns->addWidget(form_, 2);
+    savedLayout->addWidget(list_, 1);
+    auto* savedActions = new QHBoxLayout;
+    savedLayout->addLayout(savedActions);
+    columns->addWidget(savedProfiles, 1);
+    auto* formScroll = new QScrollArea(this);
+    formScroll->setObjectName("profileFormScroll");
+    formScroll->setFrameShape(QFrame::NoFrame);
+    formScroll->setWidgetResizable(true);
+    form_ = new QWidget(formScroll);
+    formScroll->setWidget(form_);
+    columns->addWidget(formScroll, 2);
     auto* formLayout = new QFormLayout(form_);
+    formLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    formLayout->setSpacing(metrics.spacingMedium);
     auto line = [this](const char* object) {
         auto* edit = new QLineEdit(form_);
         edit->setObjectName(object);
@@ -60,7 +86,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     path_->setPlaceholderText(tr("Database path or :memory:"));
     auto* pathRow = new QHBoxLayout;
     pathRow->addWidget(path_);
-    auto* browse = new QPushButton(tr("Browse…"), form_);
+    auto* browse = new design::Button(tr("Browse…"), form_);
+    browse->setVariant(design::ButtonVariant::Outline);
     pathRow->addWidget(browse);
     auto* pathLabel = new QLabel(tr("Database &path"), sqliteFields_);
     pathLabel->setBuddy(path_);
@@ -112,8 +139,9 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     auto* buttons = new QHBoxLayout;
     outer->addLayout(buttons);
     auto button = [this, buttons](const QString& title, const char* object) {
-        auto* result = new QPushButton(title, this);
+        auto* result = new design::Button(title, this);
         result->setObjectName(object);
+        result->setVariant(design::ButtonVariant::Outline);
         buttons->addWidget(result);
         actions_.append(result);
         return result;
@@ -124,8 +152,19 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     auto* remove = button(tr("Delete"), "profileDelete");
     auto* test = button(tr("Test"), "profileTest");
     auto* open = button(tr("Connect"), "profileConnect");
+    buttons->removeWidget(create);
+    buttons->removeWidget(duplicate);
+    savedActions->addWidget(create);
+    savedActions->addWidget(duplicate);
+    create->setDesignIcon(design::Icon::Add);
+    duplicate->setDesignIcon(design::Icon::Copy);
+    save->setVariant(design::ButtonVariant::Secondary);
+    remove->setVariant(design::ButtonVariant::Destructive);
+    open->setVariant(design::ButtonVariant::Default);
+    open->setDesignIcon(design::Icon::Database);
     buttons->addStretch();
-    auto* close = new QPushButton(tr("Close"), this);
+    auto* close = new design::Button(tr("Close"), this);
+    close->setVariant(design::ButtonVariant::Ghost);
     buttons->addWidget(close);
     connect(close, &QPushButton::clicked, this, &QDialog::close);
     connect(browse, &QPushButton::clicked, this, [this] {
@@ -216,9 +255,9 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         const auto id = current_.id;
         const auto token = token_;
         const auto revision = revision_;
-        QMessageBox confirmation(QMessageBox::Question, tr("Delete profile"),
-                                 tr("Delete saved profile “%1”?").arg(current_.name),
-                                 QMessageBox::Yes | QMessageBox::Cancel, this);
+        ConfirmationDialog confirmation(QMessageBox::Question, tr("Delete profile"),
+                                        tr("Delete saved profile “%1”?").arg(current_.name),
+                                        QMessageBox::Yes | QMessageBox::Cancel, this);
         confirmation.setTextFormat(Qt::PlainText);
         confirmation.setDefaultButton(QMessageBox::Cancel);
         if (confirmation.exec() != QMessageBox::Yes)
@@ -464,9 +503,9 @@ bool ProfileDialog::discardChanges() {
         return true;
     const auto token = token_;
     const auto revision = revision_;
-    const auto response =
-        QMessageBox::question(this, tr("Unsaved profile"), tr("Discard changes to this profile?"),
-                              QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
+    const auto response = ConfirmationDialog::question(
+        this, tr("Unsaved profile"), tr("Discard changes to this profile?"),
+        QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
     return response == QMessageBox::Discard && !busy_ && adapter_ && token_ == token &&
            revision_ == revision;
 }

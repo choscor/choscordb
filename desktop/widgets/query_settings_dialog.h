@@ -3,9 +3,11 @@
 #include "widgets/dialog_shell.h"
 #include <QPointer>
 class QSpinBox;
-class QPushButton;
 class QLabel;
 namespace choscordb {
+namespace design {
+class Button;
+}
 class QuerySettingsDialog final : public DialogShell {
     Q_OBJECT
   public:
@@ -20,7 +22,7 @@ class QuerySettingsDialog final : public DialogShell {
     void updateControls();
     QPointer<EngineAdapter> adapter_;
     QSpinBox *pageSize_, *timeout_;
-    QPushButton *apply_, *reset_;
+    design::Button *apply_, *reset_;
     QLabel* status_;
     quint64 token_ = 0;
     bool ready_ = false, saving_ = false;

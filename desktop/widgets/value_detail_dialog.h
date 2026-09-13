@@ -4,9 +4,11 @@
 #include <optional>
 
 class QLabel;
-class QPushButton;
 class QTableView;
 namespace choscordb {
+namespace design {
+class Button;
+}
 class EngineAdapter;
 class ValuePreviewModel;
 struct BridgeEvent;
@@ -35,8 +37,8 @@ class ValueDetailDialog final : public DialogShell {
     ValuePreviewModel* model_;
     QTableView* table_;
     QLabel* status_;
-    QPushButton* previous_;
-    QPushButton* next_;
+    design::Button* previous_;
+    design::Button* next_;
     std::optional<quint64> query_;
     quint64 handle_ = 0;
     quint64 offset_ = 0;

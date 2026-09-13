@@ -30,3 +30,6 @@ venv/
 
 # Local screenshots (all PNG files)
 *.[pP][nN][gG]
+
+# Pinned design reference and reviewed comparison evidence
+!docs/design/shadcn-reference/*.png

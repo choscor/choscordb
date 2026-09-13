@@ -19,43 +19,6 @@ design::ThemeMode themeMode(const QString& value) {
         return design::ThemeMode::Light;
     return design::ThemeMode::System;
 }
-design::Density density(const QString& value) {
-    return value == "comfortable" ? design::Density::Comfortable : design::Density::Compact;
-}
-design::AccentPreset accentPreset(const QString& value) {
-    if (value == "azure")
-        return design::AccentPreset::Azure;
-    if (value == "teal")
-        return design::AccentPreset::Teal;
-    if (value == "green")
-        return design::AccentPreset::Green;
-    if (value == "violet")
-        return design::AccentPreset::Violet;
-    if (value == "orange")
-        return design::AccentPreset::Orange;
-    if (value == "rose")
-        return design::AccentPreset::Rose;
-    return design::AccentPreset::Cobalt;
-}
-QString accentName(design::AccentPreset value) {
-    switch (value) {
-    case design::AccentPreset::Teal:
-        return QStringLiteral("teal");
-    case design::AccentPreset::Azure:
-        return QStringLiteral("azure");
-    case design::AccentPreset::Green:
-        return QStringLiteral("green");
-    case design::AccentPreset::Violet:
-        return QStringLiteral("violet");
-    case design::AccentPreset::Orange:
-        return QStringLiteral("orange");
-    case design::AccentPreset::Rose:
-        return QStringLiteral("rose");
-    case design::AccentPreset::Cobalt:
-        return QStringLiteral("cobalt");
-    }
-    return QStringLiteral("cobalt");
-}
 } // namespace
 
 quint64 AppearanceController::nextToken() {
@@ -166,12 +129,8 @@ AppearanceLayout AppearanceController::current() const {
     result.theme = theme_->mode() == design::ThemeMode::Dark    ? QStringLiteral("dark")
                    : theme_->mode() == design::ThemeMode::Light ? QStringLiteral("light")
                                                                 : QStringLiteral("system");
-    result.density = theme_->density() == design::Density::Comfortable
-                         ? QStringLiteral("comfortable")
-                         : QStringLiteral("compact");
-    const auto accent = theme_->accent();
-    result.accentKind = accent.isCustom() ? QStringLiteral("custom") : QStringLiteral("preset");
-    result.accent = accent.isCustom() ? accent.customColor.name() : accentName(accent.preset);
+    // Obsolete choices remain byte-compatible in storage, but no longer
+    // participate in rendering or theme-only edits.
     result.navigatorWidth = static_cast<quint32>(
         std::max(navigator_->width(), theme_->metrics().minimumNavigatorWidth));
     const auto sizes = workspace_->sizes();
@@ -197,10 +156,17 @@ AppearanceLayout AppearanceController::current() const {
     }
     return result;
 }
-bool AppearanceController::preview(const QString& mode, const QString& densityValue,
-                                   const QString& accentKind, const QString& accentValue) {
+bool AppearanceController::preview(const QString& mode) {
+    if (mode != "system" && mode != "light" && mode != "dark") {
+        emit warningChanged(tr("Choose System, Light, or Dark."));
+        return false;
+    }
     if (!loaded_ || request_ == Request::Load || request_ == Request::Reset) {
         emit warningChanged(tr("Appearance is still loading."));
+        return false;
+    }
+    if (!canSave()) {
+        emit warningChanged(persistentWarning_);
         return false;
     }
     if (saveTimer_->isActive()) {
@@ -209,13 +175,8 @@ bool AppearanceController::preview(const QString& mode, const QString& densityVa
     }
     previewing_ = true;
     theme_->setMode(themeMode(mode));
-    theme_->setDensity(density(densityValue));
-    const auto selected = accentKind == "custom"
-                              ? design::Accent::custom(QColor(accentValue))
-                              : design::Accent::presetColor(accentPreset(accentValue));
-    const auto validation = theme_->setAccent(selected);
-    emit warningChanged(validation.accepted ? persistentWarning_ : validation.reason);
-    return validation.accepted;
+    emit warningChanged(persistentWarning_);
+    return true;
 }
 void AppearanceController::cancelPreview() {
     apply(persisted_, false);
@@ -224,6 +185,12 @@ void AppearanceController::cancelPreview() {
         scheduleSave();
 }
 void AppearanceController::applyPreview() {
+    if (!canSave()) {
+        emit saveFinished(false, persistentWarning_.isEmpty()
+                                     ? tr("Retry loading appearance or reset it before saving.")
+                                     : persistentWarning_);
+        return;
+    }
     previewing_ = false;
     dirty_ = false;
     saveTimer_->stop();
@@ -238,7 +205,7 @@ void AppearanceController::reset() {
     adapter_->resetAppearanceLayout(token_);
 }
 void AppearanceController::resetLayout() {
-    if (!loaded_ || token_ || previewing_) {
+    if (!canSave() || token_ || previewing_) {
         if (previewing_)
             emit warningChanged(
                 tr("Apply or cancel the appearance preview before resetting layout."));
@@ -272,13 +239,6 @@ void AppearanceController::retry() {
 void AppearanceController::apply(const AppearanceLayout& value, bool includeLayout) {
     applying_ = true;
     theme_->setMode(themeMode(value.theme));
-    theme_->setDensity(density(value.density));
-    const auto selected = value.accentKind == "custom"
-                              ? design::Accent::custom(QColor(value.accent))
-                              : design::Accent::presetColor(accentPreset(value.accent));
-    const auto validation = theme_->setAccent(selected);
-    if (!validation.accepted)
-        emit warningChanged(validation.reason);
     if (includeLayout) {
         if (!value.maximized && window_->isMaximized())
             window_->showNormal();

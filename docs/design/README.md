@@ -1,17 +1,33 @@
 # ChoscorDB desktop design
 
-Open `workspace.html` in a browser for the visual reference. Native Qt Widgets must reproduce this layout; HTML is not shipped as the application. The design is established before implementation.
-
-The developer gallery and reproducible native capture commands are documented in
-[`modern-ui-evidence.md`](modern-ui-evidence.md).
-
-PNG screenshots referenced in these documents are local verification artifacts. They are ignored by Git and excluded from source archives; a fresh checkout does not include them.
+The appearance contract is the pinned [Nova / Neutral reference](shadcn-reference.md).
+`workspace.html` illustrates the retained information architecture; it is not
+proof of native implementation or gallery approval. The [coverage matrix](shadcn-coverage.md)
+tracks application-owned surfaces and the required gallery checkpoint.
 
 ## Layout and visual language
 
-Use a QMainWindow with native menu bar, left navigator dock (245 px initial width), central editor tabs, stable query actions, vertical editor/results splitter, and status bar. Minimum useful window size is 960 × 640; valid splitter sizes, dock visibility, and window placement persist. Default size is 1280 × 900. All app-owned presentation resolves through the typed desktop design system: a 4 px grid, compact 32 px controls and 28–30 px data rows by default, optional comfortable 38–40 px controls and 34–36 px rows, 6 px control radii, and a cobalt/azure identity seeded by `#2F7DD3`. Use platform UI and monospace fonts. System, Light, and Dark modes update open surfaces live; forced contrast and reduced motion take precedence without replacing saved choices. Color never conveys state alone. Visible focus, accessible names, keyboard navigation, scalable licensed icons, and screen-reader status labels are required.
+Retain the native menu/title bars, left navigator dock (245 logical pixels initially),
+editor tabs, stable query actions, editor/results splitter and status bar. Default
+and minimum useful window sizes remain 1280×900 and 960×640. Preserve valid geometry,
+dock visibility and splitter placement.
 
-The workspace uses flat layered surfaces and restrained 1 px separators. Shadows are limited to floating menus, dialogs, and the single replacing toast region. Editor, result, table, and dock boundaries stay square. Primary and unfamiliar actions use icon and text; compact icon-only actions retain a tooltip, accessible name, focus path, and keyboard path.
+Shared appearance follows Base Nova / Neutral with bundled Geist, licensed Lucide
+icons, a 4-pixel spacing unit, 32-pixel default controls, explicit 24/28/36-pixel
+button variants and reference radii. Only System, Light and Dark are user-facing
+appearance choices after the gated migration; legacy density/accent records remain
+read-compatible and no longer determine rendering. SQL editor fonts remain
+user-controlled. Forced contrast, reduced motion, Unicode fallback and Qt/OS
+scaling take priority as documented in the reference exceptions.
+
+Every application-owned surface must use production components and semantic
+colors; the preview must use those same definitions. Keyboard access, visible
+focus, accessible names and non-color state descriptions remain required.
+The working gallery must be reviewed before production layout/screen migration.
+Current implementation evidence and outstanding work are recorded in the
+[gallery evidence record](shadcn-gallery-evidence.md). The user approved the
+gallery on 2026-09-13; [production migration evidence](shadcn-implementation-evidence.md)
+records the subsequent work and verification.
 
 ## Interaction contract
 
@@ -27,9 +43,12 @@ The workspace uses flat layered surfaces and restrained 1 px separators. Shadows
 
 ## Design acceptance
 
-Compare native screenshots at 1280 × 900 against the specimen for hierarchy and spacing. Exercise empty workspace, connection failure, running/cancelling query, NULL versus empty, large-value placeholder, cache eviction, export cancellation, and disconnected recovery. Validate keyboard-only workflows and both palettes. Mockup content is not evidence of implemented behavior.
+Compare individual controls in the 1280 × 900 native gallery captures against the pinned browser reference at their logical dimensions. The [coverage matrix](shadcn-coverage.md) links each comparison. Exercise empty workspace, connection failure, running/cancelling query, NULL versus empty, large-value placeholder, cache eviction, export cancellation, and disconnected recovery. Validate keyboard-only workflows and both palettes. Mockup content is not evidence of implemented behavior.
 
-## Native implementation evidence
+## Earlier native implementation evidence
+
+The images below document existing application behavior before the shadcn migration.
+They are not acceptance evidence for the new visual system.
 
 `native-workspace.png` is captured by the native MainWindow smoke test while executing a real `SELECT 3 AS result` against SQLite through CXX. It shows the system light palette and design spacing. `native-foundation.png` preserves the earlier empty-workspace render. Screenshots prove rendering only; behavior is covered by the Qt and Rust tests documented in `../BUILD.md`.
 

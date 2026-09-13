@@ -1,7 +1,10 @@
 #include "app/appearance_controller.h"
 #include "app/main_window.h"
 #include "app/query_workspace.h"
+#include "design_system/components.h"
+#include "design_system/preview_window.h"
 #include "design_system/theme_manager.h"
+#include "widgets/profile_dialog.h"
 #include "widgets/sql_editor.h"
 #include "widgets/toast_region.h"
 #include <QAction>
@@ -30,6 +33,133 @@ class ModernUiTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void connectedWorkspaceHidesOnboardingActions() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* onboarding = window.findChild<QWidget*>("emptyWorkspaceActions");
+        auto* selector = window.findChild<QComboBox*>("connectionSelector");
+        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+        QVERIFY(onboarding && selector && workspace);
+        QVERIFY(onboarding->isVisible());
+        workspace->connectSqlite(":memory:");
+        QTRY_VERIFY(selector->currentData().isValid());
+        QTRY_VERIFY(!onboarding->isVisible());
+        const int connectedIndex = selector->currentIndex();
+        selector->setCurrentIndex(0);
+        QVERIFY(onboarding->isVisible());
+        selector->setCurrentIndex(connectedIndex);
+        QVERIFY(!onboarding->isVisible());
+    }
+    void liveAppearanceReachesAlreadyOpenModelessWindowAndMenu() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* appearance = window.findChild<choscordb::AppearanceController*>();
+        QTRY_VERIFY(appearance->isReady());
+        QSignalSpy saved(appearance, &choscordb::AppearanceController::saveFinished);
+        QVERIFY(appearance->preview("light"));
+        appearance->applyPreview();
+        QTRY_COMPARE(saved.count(), 1);
+        QVERIFY(saved.at(0).at(0).toBool());
+        window.findChild<QPushButton*>("emptyConnect")->click();
+        auto* profile = window.findChild<choscordb::ProfileDialog*>();
+        QVERIFY(profile);
+        QVERIFY(profile->isVisible());
+        QVERIFY(!profile->isModal());
+        QMenu menu(&window);
+        menu.addAction("Synthetic action");
+        menu.popup(window.mapToGlobal(QPoint(300, 200)));
+        QCoreApplication::processEvents();
+        auto surface = [profile] {
+            return profile->grab().toImage().pixelColor(profile->width() - 8,
+                                                        profile->height() / 2);
+        };
+        QCOMPARE(surface(), QColor("#ffffff"));
+        QVERIFY(appearance->preview("dark"));
+        QCoreApplication::processEvents();
+        QCOMPARE(surface(), QColor("#171717"));
+        QCOMPARE(menu.palette().color(QPalette::Window), QColor("#171717"));
+        QVERIFY(profile->isVisible());
+        QVERIFY(menu.isVisible());
+        appearance->cancelPreview();
+        QCoreApplication::processEvents();
+        QCOMPARE(surface(), QColor("#ffffff"));
+        QCOMPARE(menu.palette().color(QPalette::Window), QColor("#ffffff"));
+        QVERIFY(appearance->preview("dark"));
+        appearance->applyPreview();
+        QTRY_COMPARE(saved.count(), 2);
+        QVERIFY(saved.at(1).at(0).toBool());
+        QCOMPARE(surface(), QColor("#171717"));
+        menu.hide();
+        profile->reject();
+    }
+    void minimumWorkspaceKeepsQueryControlsInsideTheWindow() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* appearance = window.findChild<choscordb::AppearanceController*>();
+        QTRY_VERIFY(appearance->isReady());
+        QVERIFY(appearance->preview("dark"));
+        window.resize(960, 640);
+        window.show();
+        QCoreApplication::processEvents();
+        auto* toolbar = window.findChild<QToolBar*>();
+        QVERIFY(toolbar);
+        toolbar->layout()->invalidate();
+        toolbar->layout()->activate();
+        QCoreApplication::processEvents();
+        const auto rendered = window.grab();
+        QVERIFY(!rendered.isNull());
+        for (auto* select : toolbar->findChildren<QComboBox*>()) {
+            QVERIFY(select->isVisible());
+            QVERIFY(!select->visibleRegion().isEmpty());
+            QVERIFY(
+                window.rect().contains(QRect(select->mapTo(&window, QPoint()), select->size())));
+        }
+        auto* more = window.findChild<QToolButton*>("queryToolbarOverflow");
+        QVERIFY(more);
+        QVERIFY(more->isVisible());
+        QVERIFY(!more->visibleRegion().isEmpty());
+        QVERIFY(window.rect().contains(QRect(more->mapTo(&window, QPoint()), more->size())));
+    }
+    void workspaceUsesApprovedButtonGeometryAndIcons() {
+        choscordb::MainWindow window;
+        window.show();
+        const QStringList iconNames{"navigatorAddConnection", "navigatorRefresh",
+                                    "navigatorDisconnect"};
+        for (const auto& name : iconNames) {
+            auto* button = window.findChild<QPushButton*>(name);
+            QVERIFY(button);
+            QVERIFY2(qobject_cast<choscordb::design::Button*>(button), qPrintable(name));
+            QVERIFY(button->text().isEmpty());
+            QVERIFY(!button->icon().isNull());
+            QCOMPARE(button->sizeHint(), QSize(28, 28));
+        }
+        for (const auto& name : {"emptyConnect", "emptyOpenSql", "emptyNewQuery", "previousPage",
+                                 "nextPage", "exportResult"}) {
+            auto* button = window.findChild<QPushButton*>(name);
+            QVERIFY(button);
+            QVERIFY2(qobject_cast<choscordb::design::Button*>(button), name);
+            QCOMPARE(button->sizeHint().height(), 32);
+        }
+        auto* previous = window.findChild<QPushButton*>("previousPage");
+        auto* next = window.findChild<QPushButton*>("nextPage");
+        QVERIFY(!previous->icon().isNull());
+        QVERIFY(!next->icon().isNull());
+        QVERIFY(!previous->isEnabled());
+        QVERIFY(!next->isEnabled());
+    }
+    void developmentMenuOpensIndependentPreview() {
+        choscordb::MainWindow window;
+        auto* action = window.findChild<QAction*>("openDesignSystemPreview");
+        QVERIFY(action);
+        const auto theme = window.findChild<choscordb::design::ThemeManager*>()->resolvedTheme();
+        action->trigger();
+        auto* preview = window.findChild<choscordb::design::PreviewWindow*>();
+        QVERIFY(preview);
+        QVERIFY(preview->isVisible());
+        QVERIFY(!preview->isModal());
+        QCOMPARE(window.findChild<choscordb::design::ThemeManager*>()->resolvedTheme(), theme);
+        preview->close();
+    }
     void workspaceProvidesDiscoverableModernControls() {
         choscordb::MainWindow window;
 
@@ -94,16 +224,18 @@ class ModernUiTest final : public QObject {
         window.resize(960, 640);
         window.show();
         QTRY_VERIFY(overflow->isVisible());
-        for (auto* action : overflow->menu()->actions()) {
-            auto* toolbarWidget = window.findChild<QToolBar*>()->widgetForAction(action);
+        for (auto* action : overflow->menu()->actions())
+            QVERIFY(action->isVisible());
+        for (const auto* name : {"commitTransactionButton", "rollbackTransactionButton"}) {
+            auto* toolbarWidget = window.findChild<QToolButton*>(name);
             QVERIFY(toolbarWidget);
             QVERIFY(!toolbarWidget->isVisible());
         }
 
         window.resize(1280, 900);
         QTRY_VERIFY(!overflow->isVisible());
-        for (auto* action : overflow->menu()->actions()) {
-            QVERIFY(window.findChild<QToolBar*>()->widgetForAction(action)->isVisible());
+        for (const auto* name : {"commitTransactionButton", "rollbackTransactionButton"}) {
+            QVERIFY(window.findChild<QToolButton*>(name)->isVisible());
         }
     }
 
@@ -195,11 +327,10 @@ class ModernUiTest final : public QObject {
             QVERIFY(theme);
             QTRY_VERIFY(appearance->isReady());
             QSignalSpy warning(appearance, &choscordb::AppearanceController::warningChanged);
-            QVERIFY(appearance->preview("dark", "comfortable", "custom", "#2468B2"));
+            QVERIFY(appearance->preview("dark"));
             QCOMPARE(theme->mode(), choscordb::design::ThemeMode::Dark);
-            QCOMPARE(theme->density(), choscordb::design::Density::Comfortable);
             const auto acceptedAccent = theme->accent();
-            QVERIFY(!appearance->preview("dark", "comfortable", "custom", "#FFFFFF"));
+            QVERIFY(!appearance->preview("sepia"));
             QCOMPARE(theme->accent(), acceptedAccent);
             QVERIFY(!warning.isEmpty());
             QVERIFY(!warning.last().at(0).toString().isEmpty());
@@ -219,8 +350,6 @@ class ModernUiTest final : public QObject {
             QVERIFY(theme);
             QTRY_VERIFY(appearance->isReady());
             QCOMPARE(theme->mode(), choscordb::design::ThemeMode::Dark);
-            QCOMPARE(theme->density(), choscordb::design::Density::Comfortable);
-            QCOMPARE(theme->accent().customColor.name(), QString("#2468b2"));
             appearance->reset();
             QTRY_COMPARE(theme->mode(), choscordb::design::ThemeMode::System);
             QCOMPARE(theme->density(), choscordb::design::Density::Compact);
@@ -247,15 +376,12 @@ class ModernUiTest final : public QObject {
         QCOMPARE(dialog->layout()->contentsMargins().left(), 16);
         QTRY_VERIFY(apply->isEnabled());
         mode->setCurrentIndex(mode->findData("dark"));
-        density->setCurrentIndex(density->findData("comfortable"));
+        QVERIFY(!density);
+        QVERIFY(!accent);
+        QVERIFY(!custom);
+        QCOMPARE(mode->count(), 3);
         QCOMPARE(theme->mode(), choscordb::design::ThemeMode::Dark);
-        QCOMPARE(theme->density(), choscordb::design::Density::Comfortable);
-        QCOMPARE(dialog->layout()->contentsMargins().left(), 20);
-        accent->setCurrentIndex(accent->findData("custom"));
-        custom->setText("#FFFFFF");
-        QVERIFY(!status->text().isEmpty());
-        QVERIFY(!apply->isEnabled());
-        custom->setText("#2468B2");
+        QCOMPARE(dialog->layout()->contentsMargins().left(), 16);
         QVERIFY(apply->isEnabled());
         theme->setForcedContrast(true);
         QVERIFY(status->text().contains("high-contrast", Qt::CaseInsensitive));

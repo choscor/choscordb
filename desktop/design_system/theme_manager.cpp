@@ -1,4 +1,5 @@
 #include "design_system/theme_manager.h"
+#include "design_system/control_style.h"
 
 #include <QApplication>
 #include <QWidget>
@@ -113,17 +114,28 @@ void ThemeManager::setReducedMotion(bool enabled) {
 }
 
 void ThemeManager::applyTo(QApplication& application) const {
+    application.setProperty("designTheme", QVariant::fromValue(resolvedTheme_));
+    application.setProperty("forcedContrast", resolvedTheme_.forcedContrast);
+    application.setFont(resolveTypography(TypographyRole::Ui));
     application.setPalette(applicationPalette(resolvedTheme_));
     application.setStyleSheet(applicationStyleSheet(resolvedTheme_, metrics_));
 }
 
 void ThemeManager::applyTo(QWidget& topLevelWidget) const {
+    topLevelWidget.setProperty("designTheme", QVariant::fromValue(resolvedTheme_));
+    topLevelWidget.setProperty("forcedContrast", resolvedTheme_.forcedContrast);
+    topLevelWidget.setFont(resolveTypography(TypographyRole::Ui));
     topLevelWidget.setPalette(applicationPalette(resolvedTheme_));
     topLevelWidget.setStyleSheet(applicationStyleSheet(resolvedTheme_, metrics_));
 }
 
 void ThemeManager::installOn(QApplication* application) {
     application_ = application;
+    if (application_ != nullptr &&
+        !application_->property("designControlStyleInstalled").toBool()) {
+        application_->setStyle(new ControlStyle);
+        application_->setProperty("designControlStyleInstalled", true);
+    }
     if (application_ != nullptr) {
         applyTo(*application_);
     }

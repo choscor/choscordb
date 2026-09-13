@@ -15,8 +15,6 @@ int main(int argc, char** argv) {
     args.addOption({"screenshot", "Save a workspace screenshot then exit.", "path"});
     args.addOption({"screenshot-theme", "Theme for a screenshot (system, light, or dark).", "theme",
                     "system"});
-    args.addOption({"screenshot-density", "Density for a screenshot (compact or comfortable).",
-                    "density", "compact"});
     args.addOption({"screenshot-size", "Window size for a screenshot, for example 960x640.", "size",
                     "1280x900"});
     args.process(app);
@@ -26,9 +24,8 @@ int main(int argc, char** argv) {
     choscordb::MainWindow window(nullptr, storagePath);
     const auto applyScreenshotOptions = [&] {
         const auto requestedTheme = args.value("screenshot-theme");
-        const auto requestedDensity = args.value("screenshot-density");
         if (auto* appearance = window.findChild<choscordb::AppearanceController*>())
-            (void)appearance->preview(requestedTheme, requestedDensity, "preset", "cobalt");
+            (void)appearance->preview(requestedTheme);
         const auto dimensions = args.value("screenshot-size").split('x');
         if (dimensions.size() == 2) {
             bool widthOk = false, heightOk = false;

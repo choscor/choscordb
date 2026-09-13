@@ -1,9 +1,12 @@
 #include "query_settings_dialog.h"
+#include "design_system/components.h"
+#include "design_system/typography.h"
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QVBoxLayout>
 #include <atomic>
 namespace choscordb {
 namespace {
@@ -16,7 +19,14 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     : DialogShell(parent), adapter_(adapter) {
     setObjectName("querySettingsDialog");
     setWindowTitle(tr("Query settings"));
-    auto* layout = new QFormLayout(this);
+    auto* layout = new QVBoxLayout(this);
+    auto* heading = new design::Text(tr("Query settings"), this);
+    heading->setTypographyRole(design::TypographyRole::Heading);
+    layout->addWidget(heading);
+    auto* form = new QFormLayout;
+    form->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    layout->addLayout(form);
     const auto limits = EngineAdapter::queryPreferenceLimits();
     pageSize_ = new QSpinBox(this);
     pageSize_->setObjectName("queryPageSize");
@@ -25,24 +35,30 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     timeout_->setObjectName("queryTimeoutSeconds");
     timeout_->setRange(0, limits.maxTimeoutSeconds);
     timeout_->setSpecialValueText(tr("No timeout"));
-    layout->addRow(tr("Rows per page"), pageSize_);
-    layout->addRow(tr("Statement timeout (seconds)"), timeout_);
+    form->addRow(tr("Rows per page"), pageSize_);
+    form->addRow(tr("Statement timeout (seconds)"), timeout_);
     auto* explanation = createDescription(
         tr("Applies to new queries. Existing results keep their page size and timeout."), this);
-    layout->addRow(explanation);
+    layout->addWidget(explanation);
     status_ = createInlineStatus(this);
     status_->setObjectName("querySettingsStatus");
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
-    layout->addRow(status_);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Cancel |
-                                             QDialogButtonBox::RestoreDefaults,
-                                         this);
-    apply_ = buttons->button(QDialogButtonBox::Apply);
+    layout->addWidget(status_);
+    auto* buttons = new QDialogButtonBox(this);
+    apply_ = new design::Button(tr("Apply"), this);
     apply_->setObjectName("querySettingsApply");
-    reset_ = buttons->button(QDialogButtonBox::RestoreDefaults);
+    reset_ = new design::Button(tr("Restore defaults"), this);
     reset_->setObjectName("querySettingsReset");
-    layout->addRow(buttons);
+    reset_->setVariant(design::ButtonVariant::Secondary);
+    auto* cancel = new design::Button(tr("Cancel"), this);
+    cancel->setObjectName("querySettingsCancel");
+    cancel->setVariant(design::ButtonVariant::Outline);
+    buttons->addButton(apply_, QDialogButtonBox::ApplyRole);
+    buttons->addButton(reset_, QDialogButtonBox::ResetRole);
+    buttons->addButton(cancel, QDialogButtonBox::RejectRole);
+    layout->addStretch();
+    layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(apply_, &QPushButton::clicked, this, &QuerySettingsDialog::apply);
     connect(reset_, &QPushButton::clicked, this, [this] {

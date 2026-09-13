@@ -1,7 +1,9 @@
 #include "widgets/value_detail_dialog.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/components.h"
 #include "design_system/theme.h"
+#include "design_system/typography.h"
 #include "models/value_preview_model.h"
 #include <QCloseEvent>
 #include <QDialogButtonBox>
@@ -24,7 +26,12 @@ constexpr quint32 ChunkBytes = 65536;
 ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter), model_(new ValuePreviewModel(this)),
       table_(new QTableView(this)), status_(createInlineStatus(this)),
-      previous_(new QPushButton(tr("Previous"), this)), next_(new QPushButton(tr("Next"), this)) {
+      previous_(new design::Button(tr("Previous"), this)),
+      next_(new design::Button(tr("Next"), this)) {
+    previous_->setVariant(design::ButtonVariant::Outline);
+    previous_->setDesignIcon(design::Icon::ChevronLeft);
+    next_->setVariant(design::ButtonVariant::Outline);
+    next_->setDesignIcon(design::Icon::ChevronRight);
     setObjectName("valueDetail");
     setWindowTitle(tr("Value detail"));
     setModal(false);
@@ -40,14 +47,21 @@ ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->horizontalHeader()->setStretchLastSection(false);
     table_->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    auto* buttons = new QDialogButtonBox(this);
+    auto* close = new design::Button(tr("Close"), this);
+    close->setObjectName("valueClose");
+    close->setVariant(design::ButtonVariant::Outline);
+    buttons->addButton(close, QDialogButtonBox::RejectRole);
     buttons->addButton(previous_, QDialogButtonBox::ActionRole);
     buttons->addButton(next_, QDialogButtonBox::ActionRole);
     auto* layout = new QVBoxLayout(this);
+    auto* heading = new design::Text(tr("Value detail"), this);
+    heading->setTypographyRole(design::TypographyRole::Heading);
+    layout->addWidget(heading);
     layout->addWidget(
         createDescription(tr("Inspect a bounded window of a large text or binary value."), this));
     layout->addWidget(status_);
-    layout->addWidget(table_);
+    layout->addWidget(table_, 1);
     layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, this, &ValueDetailDialog::reject);
     connect(previous_, &QPushButton::clicked, this, &ValueDetailDialog::previousChunk);

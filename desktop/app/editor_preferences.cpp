@@ -21,6 +21,9 @@ EditorPreferencesController::EditorPreferencesController(QMainWindow* window)
     preferences_.version = limits.version;
     preferences_.fontSize = limits.defaultFontSize;
 }
+void EditorPreferencesController::setAppearanceController(AppearanceController* appearance) {
+    appearance_ = appearance;
+}
 void EditorPreferencesController::addAction(const QString& id, QAction* action, bool configurable) {
     actions_.insert(id, action);
     if (configurable && action->objectName().isEmpty())

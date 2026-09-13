@@ -1,21 +1,24 @@
 # Modern UI verification evidence
 
-The canonical specimen is [`workspace.html`](workspace.html). The native component gallery is
+This historical report predates the approved [shadcn reference](shadcn-reference.md).
+Its performance observations remain baseline evidence; the appearance contract is
+now recorded in [gallery evidence](shadcn-gallery-evidence.md). The native component gallery is
 built as `choscordb-component-gallery` only when `BUILD_TESTING` is enabled and is not installed.
 It presents normal, selected, disabled, loading, empty, success, warning, and error vocabulary.
 
 Deterministic local reference captures can be generated without changing saved preferences:
 
 ```sh
-QT_QPA_PLATFORM=offscreen build/dev/choscordb.app/Contents/MacOS/choscordb \
-  --screenshot build/ui-evidence/workspace-light-compact.png \
-  --screenshot-theme light --screenshot-density compact
-QT_QPA_PLATFORM=offscreen build/dev/choscordb.app/Contents/MacOS/choscordb \
-  --screenshot build/ui-evidence/workspace-dark-comfortable.png \
-  --screenshot-theme dark --screenshot-density comfortable
-QT_QPA_PLATFORM=offscreen build/dev/choscordb.app/Contents/MacOS/choscordb \
+capture_profile="$(mktemp -d)"
+CFFIXED_USER_HOME="$capture_profile" QT_QPA_PLATFORM=offscreen build/dev/choscordb.app/Contents/MacOS/choscordb \
+  --screenshot build/ui-evidence/workspace-light.png \
+  --screenshot-theme light
+CFFIXED_USER_HOME="$capture_profile" QT_QPA_PLATFORM=offscreen build/dev/choscordb.app/Contents/MacOS/choscordb \
+  --screenshot build/ui-evidence/workspace-dark.png \
+  --screenshot-theme dark
+CFFIXED_USER_HOME="$capture_profile" QT_QPA_PLATFORM=offscreen build/dev/choscordb.app/Contents/MacOS/choscordb \
   --screenshot build/ui-evidence/workspace-narrow.png \
-  --screenshot-theme light --screenshot-density compact --screenshot-size 960x640
+  --screenshot-theme light --screenshot-size 960x640
 ```
 
 The capture directory is intentionally ignored: screenshots vary with platform font and native

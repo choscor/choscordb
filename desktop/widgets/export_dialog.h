@@ -7,8 +7,10 @@
 class QComboBox;
 class QLabel;
 class QLineEdit;
-class QPushButton;
 namespace choscordb {
+namespace design {
+class Button;
+}
 class EngineAdapter;
 struct BridgeEvent;
 class ExportDialog final : public DialogShell {
@@ -47,9 +49,9 @@ class ExportDialog final : public DialogShell {
     QLineEdit* schema_;
     QLineEdit* table_;
     QWidget* sqlFields_;
-    QPushButton* browse_;
-    QPushButton* start_;
-    QPushButton* cancel_;
+    design::Button* browse_;
+    design::Button* start_;
+    design::Button* cancel_;
     QLabel* status_;
 };
 } // namespace choscordb

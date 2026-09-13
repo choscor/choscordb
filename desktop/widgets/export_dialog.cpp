@@ -1,7 +1,10 @@
 #include "widgets/export_dialog.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/components.h"
 #include "design_system/theme.h"
+#include "design_system/typography.h"
+#include "widgets/confirmation_dialog.h"
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -27,8 +30,12 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter), format_(new QComboBox(this)),
       dialect_(new QComboBox(this)), destination_(new QLineEdit(this)),
       schema_(new QLineEdit(this)), table_(new QLineEdit(this)), sqlFields_(new QWidget(this)),
-      browse_(new QPushButton(tr("&Browse…"), this)), start_(new QPushButton(tr("&Export"), this)),
-      cancel_(new QPushButton(tr("Cancel export"), this)), status_(createInlineStatus(this)) {
+      browse_(new design::Button(tr("&Browse…"), this)),
+      start_(new design::Button(tr("&Export"), this)),
+      cancel_(new design::Button(tr("Cancel export"), this)), status_(createInlineStatus(this)) {
+    browse_->setVariant(design::ButtonVariant::Outline);
+    start_->setDesignIcon(design::Icon::Export);
+    cancel_->setVariant(design::ButtonVariant::Secondary);
     setObjectName("exportDialog");
     setWindowTitle(tr("Export results"));
     setModal(false);
@@ -57,6 +64,8 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     destinationRow->addWidget(destination_);
     destinationRow->addWidget(browse_);
     auto* form = new QFormLayout;
+    form->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     form->addRow(tr("&Format:"), format_);
     auto* destinationLabel = new QLabel(tr("&Destination:"), this);
     destinationLabel->setBuddy(destination_);
@@ -66,10 +75,17 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     sqlForm->addRow(tr("SQL &dialect:"), dialect_);
     sqlForm->addRow(tr("&Schema:"), schema_);
     sqlForm->addRow(tr("&Table:"), table_);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    auto* buttons = new QDialogButtonBox(this);
+    auto* close = new design::Button(tr("Close"), this);
+    close->setObjectName("exportClose");
+    close->setVariant(design::ButtonVariant::Outline);
+    buttons->addButton(close, QDialogButtonBox::RejectRole);
     buttons->addButton(start_, QDialogButtonBox::ActionRole);
     buttons->addButton(cancel_, QDialogButtonBox::ActionRole);
     auto* layout = new QVBoxLayout(this);
+    auto* heading = new design::Text(tr("Export results"), this);
+    heading->setTypographyRole(design::TypographyRole::Heading);
+    layout->addWidget(heading);
     layout->addWidget(createDescription(
         tr("Export the current result without loading the complete result into memory."), this));
     layout->addLayout(form);
@@ -180,7 +196,7 @@ void ExportDialog::startExportTo(const QString& path, const QString& format,
                 if (!adapter_ || query_ != query || submissionToken_ != token || !submitting_)
                     return;
                 if (exists) {
-                    QMessageBox confirmation(
+                    ConfirmationDialog confirmation(
                         QMessageBox::Question, tr("Replace destination?"),
                         tr("Replace the existing file after export completes?\n%1").arg(path),
                         QMessageBox::Yes | QMessageBox::No, this);

@@ -17,7 +17,7 @@ class EditorPreferencesController final : public QObject {
     void addAction(const QString& id, QAction* action, bool configurable = true);
     void addEditor(SqlEditor* editor);
     void initialize(EngineAdapter* adapter);
-    void setAppearanceController(AppearanceController* appearance) { appearance_ = appearance; }
+    void setAppearanceController(AppearanceController* appearance);
     void open();
 
   protected:

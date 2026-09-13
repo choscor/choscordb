@@ -169,6 +169,15 @@ class StageTest(unittest.TestCase):
         self.assertFalse(self.output.exists())
         self.assertFalse(list(self.root.glob(".stage-*")))
 
+    def test_release_with_developer_preview_is_rejected_before_install(self):
+        (self.build / "CMakeCache.txt").write_text(
+            "CMAKE_BUILD_TYPE:STRING=Release\nBUILD_TESTING:BOOL=ON\n"
+        )
+        with self.assertRaisesRegex(ValueError, "BUILD_TESTING=OFF"):
+            self.execute()
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.calls, [])
+
     def test_debug_build_and_missing_owned_metadata_are_rejected(self):
         (self.build / "CMakeCache.txt").write_text("CMAKE_BUILD_TYPE:STRING=Debug\n")
         with self.assertRaisesRegex(ValueError, "Release"):

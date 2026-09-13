@@ -8,14 +8,14 @@ The executable supports the current functionality-only MVP scope: SQLite and Pos
 
 - Rust 1.97.1 (pinned by `rust-toolchain.toml`; rustup installs it).
 - CMake 3.28 or newer, Ninja, and a C++23 compiler.
-- Qt 6.8+ dynamically linked Widgets, Concurrent, and Test.
+- Qt 6.8+ dynamically linked Widgets, Concurrent, Test, and Svg.
 - QScintilla built against the same Qt 6 installation.
 - Git and network access for the pinned Corrosion checkout and Cargo dependencies on the first build.
 
 On macOS with Homebrew:
 
 ```sh
-brew install qtbase qscintilla2 ninja cmake
+brew install qtbase qtsvg qscintilla2 ninja cmake
 cmake --preset dev -DCMAKE_PREFIX_PATH=/opt/homebrew
 cmake --build --preset dev
 ctest --preset dev

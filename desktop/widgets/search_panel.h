@@ -5,8 +5,10 @@
 class QCheckBox;
 class QLabel;
 class QLineEdit;
-class QPushButton;
 namespace choscordb {
+namespace design {
+class Button;
+}
 class SqlEditor;
 class SearchPanel final : public QWidget {
     Q_OBJECT
@@ -33,7 +35,7 @@ class SearchPanel final : public QWidget {
     QCheckBox *case_, *word_;
     QWidget* replacementRow_;
     QLabel* status_;
-    QPushButton* replaceAll_;
+    design::Button* replaceAll_;
     QPointer<SqlEditor> matchedEditor_;
     quint64 matchRevision_ = 0, matchStart_ = 0, matchEnd_ = 0, generation_ = 0;
     bool hasMatch_ = false, pending_ = false;

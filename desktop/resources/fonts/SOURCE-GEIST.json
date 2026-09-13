@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/vercel/geist-font",
+  "revision": "10dc7658f13c38a474cde201bb09a4617267545b",
+  "license": "SIL Open Font License 1.1",
+  "files": [
+    {
+      "path": "OFL.txt",
+      "local": "OFL.txt",
+      "sha256": "c683bfbcc7e087f5d37a54ef628f10387c451a83ddc459b151403a164ac46c90"
+    },
+    {
+      "path": "fonts/Geist/ttf/Geist-Regular.ttf",
+      "local": "Geist-Regular.ttf",
+      "sha256": "85a1c6b18a6b0a06dfe9fd4f6d6a5d4979f74ec861eaef4bc7868b5492b8a117"
+    },
+    {
+      "path": "fonts/Geist/ttf/Geist-Medium.ttf",
+      "local": "Geist-Medium.ttf",
+      "sha256": "3a3b36f0d0b981f4857f7f00eeef4a5ee123605575d362ab31ee7c19e3d11f2f"
+    },
+    {
+      "path": "fonts/Geist/ttf/Geist-SemiBold.ttf",
+      "local": "Geist-SemiBold.ttf",
+      "sha256": "b9f52322d6d20a7ff1e7fe1310ff12ec851aebb83d24f8b4f1d4149298f489b2"
+    },
+    {
+      "path": "fonts/Geist/ttf/Geist-Bold.ttf",
+      "local": "Geist-Bold.ttf",
+      "sha256": "3f21f02b827228c3f0c5fb230d027b5a1a263013618e8052bc1b3c5692812c88"
+    }
+  ]
+}

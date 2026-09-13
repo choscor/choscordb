@@ -6,6 +6,9 @@ class QLabel;
 class QShowEvent;
 
 namespace choscordb {
+namespace design {
+class DialogPresentation;
+}
 
 class DialogShell : public QDialog {
     Q_OBJECT
@@ -17,10 +20,13 @@ class DialogShell : public QDialog {
 
   protected:
     void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
 
   private:
     void applyLayoutMetrics();
     bool observingTheme_ = false;
+    design::DialogPresentation* presentation_ = nullptr;
 };
 
 } // namespace choscordb

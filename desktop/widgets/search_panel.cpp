@@ -1,5 +1,8 @@
 #include "search_panel.h"
 #include "bridge/engine_adapter.h"
+#include "design_system/components.h"
+#include "design_system/theme.h"
+#include "design_system/typography.h"
 #include "widgets/sql_editor.h"
 #include <QCheckBox>
 #include <QFutureWatcher>
@@ -16,46 +19,72 @@ SearchPanel::SearchPanel(std::function<SqlEditor*()> currentEditor, QWidget* par
     : QWidget(parent), currentEditor_(std::move(currentEditor)) {
     setObjectName("searchPanel");
     setAccessibleName(tr("Search and replace"));
+    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
+                               metrics.spacingSmall);
+    layout->setSpacing(metrics.spacingMedium);
     auto* first = new QHBoxLayout;
+    first->setSpacing(metrics.spacingMedium);
     needle_ = new QLineEdit(this);
     needle_->setObjectName("searchNeedle");
     needle_->setAccessibleName(tr("Find text"));
     needle_->setMaxLength(16 * 1024 + 1);
     needle_->setPlaceholderText(tr("Find text"));
-    auto* previous = new QPushButton(tr("Previous"), this);
-    auto* next = new QPushButton(tr("Next"), this);
+    auto* previous = new design::Button(tr("Previous"), this);
+    auto* next = new design::Button(tr("Next"), this);
     next->setObjectName("searchNext");
+    previous->setObjectName("searchPrevious");
+    previous->setVariant(design::ButtonVariant::Outline);
+    next->setVariant(design::ButtonVariant::Outline);
+    previous->setDesignIcon(design::Icon::ChevronLeft);
+    next->setDesignIcon(design::Icon::ChevronRight);
+    previous->setButtonSize(design::ButtonSize::Small);
+    next->setButtonSize(design::ButtonSize::Small);
+    auto* navigation = new design::ButtonGroup(Qt::Horizontal, this);
+    navigation->setObjectName("searchNavigation");
+    navigation->addButton(previous);
+    navigation->addButton(next);
     case_ = new QCheckBox(tr("Match case"), this);
     case_->setObjectName("searchCase");
     word_ = new QCheckBox(tr("Whole word"), this);
     word_->setObjectName("searchWord");
-    auto* close = new QPushButton(tr("Close"), this);
+    auto* close = new design::Button(tr("Close"), this);
     close->setObjectName("searchClose");
+    close->setVariant(design::ButtonVariant::Ghost);
+    close->setButtonSize(design::ButtonSize::Small);
+    close->setDesignIcon(design::Icon::Close);
     first->addWidget(needle_, 1);
-    first->addWidget(previous);
-    first->addWidget(next);
-    first->addWidget(case_);
-    first->addWidget(word_);
+    first->addWidget(navigation);
     first->addWidget(close);
     layout->addLayout(first);
+    auto* options = new QHBoxLayout;
+    options->setSpacing(metrics.spacingLarge);
+    options->addWidget(case_);
+    options->addWidget(word_);
+    options->addStretch();
+    layout->addLayout(options);
     replacementRow_ = new QWidget(this);
     auto* second = new QHBoxLayout(replacementRow_);
+    second->setSpacing(metrics.spacingMedium);
     second->setContentsMargins(0, 0, 0, 0);
     replacement_ = new QLineEdit(this);
     replacement_->setObjectName("searchReplacement");
     replacement_->setAccessibleName(tr("Replacement text"));
     replacement_->setMaxLength(16 * 1024 * 1024 + 1);
     replacement_->setPlaceholderText(tr("Replace with"));
-    auto* replace = new QPushButton(tr("Replace"), this);
+    auto* replace = new design::Button(tr("Replace"), this);
     replace->setObjectName("searchReplace");
-    replaceAll_ = new QPushButton(tr("Replace all"), this);
+    replaceAll_ = new design::Button(tr("Replace all"), this);
     replaceAll_->setObjectName("searchReplaceAll");
+    replace->setVariant(design::ButtonVariant::Outline);
+    replace->setButtonSize(design::ButtonSize::Small);
+    replaceAll_->setButtonSize(design::ButtonSize::Small);
     second->addWidget(replacement_, 1);
     second->addWidget(replace);
     second->addWidget(replaceAll_);
     layout->addWidget(replacementRow_);
-    status_ = new QLabel(this);
+    status_ = new design::Text({}, this);
     status_->setObjectName("searchStatus");
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
