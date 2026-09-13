@@ -1,15 +1,16 @@
 #include "bridge/engine_adapter.h"
-#include "design_system/components.h"
+#include "design_system/button/button.h"
+#include "design_system/button_group/button_group.h"
 #include "design_system/control_style.h"
 #include "design_system/theme_manager.h"
 #include "models/history_model.h"
-#include "widgets/export_dialog.h"
-#include "widgets/history_dock.h"
-#include "widgets/profile_dialog.h"
-#include "widgets/query_settings_dialog.h"
-#include "widgets/search_panel.h"
-#include "widgets/sql_editor.h"
-#include "widgets/value_detail_dialog.h"
+#include "widgets/export_dialog/export_dialog.h"
+#include "widgets/history_dock/history_dock.h"
+#include "widgets/profile_dialog/profile_dialog.h"
+#include "widgets/query_settings_dialog/query_settings_dialog.h"
+#include "widgets/search_panel/search_panel.h"
+#include "widgets/sql_editor/sql_editor.h"
+#include "widgets/value_detail_dialog/value_detail_dialog.h"
 #include <QTableView>
 #include <QVBoxLayout>
 #include <memory>
@@ -167,7 +168,7 @@ class SecondaryDesignTest final : public QObject {
         QImage rendered(connect->size(), QImage::Format_ARGB32_Premultiplied);
         rendered.fill(Qt::transparent);
         connect->render(&rendered);
-        QCOMPARE(rendered.pixelColor(rendered.width() / 2, 6), QColor("#171717"));
+        QCOMPARE(rendered.pixelColor(rendered.width() / 2, 6), QColor("#287f66"));
         QVERIFY(!dialog.isModal());
         dialog.findChild<QLineEdit*>("profileName")->setText("Analysis");
         dialog.findChild<QLineEdit*>("profilePath")->setText(":memory:");

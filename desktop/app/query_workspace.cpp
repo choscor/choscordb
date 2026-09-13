@@ -3,11 +3,11 @@
 #include "bridge/engine_adapter.h"
 #include "bridge/result_column_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
-#include "widgets/confirmation_dialog.h"
-#include "widgets/export_dialog.h"
-#include "widgets/profile_dialog.h"
-#include "widgets/sql_editor.h"
-#include "widgets/value_detail_dialog.h"
+#include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "widgets/export_dialog/export_dialog.h"
+#include "widgets/profile_dialog/profile_dialog.h"
+#include "widgets/sql_editor/sql_editor.h"
+#include "widgets/value_detail_dialog/value_detail_dialog.h"
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>

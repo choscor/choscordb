@@ -1,6 +1,6 @@
 #include "app/main_window.h"
 #include "app/workspace_recovery.h"
-#include "widgets/sql_editor.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QClipboard>
 #include <QComboBox>

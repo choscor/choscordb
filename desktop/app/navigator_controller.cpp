@@ -2,9 +2,9 @@
 #include "bridge/engine_adapter.h"
 #include "bridge/template_service.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/theme.h"
 #include "models/navigator_model.h"
-#include "widgets/dialog_shell.h"
 #include <QApplication>
 #include <QClipboard>
 #include <QDialog>

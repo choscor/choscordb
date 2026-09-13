@@ -37,6 +37,36 @@ class UiPolicyTest(unittest.TestCase):
         with temporary:
             self.assertEqual(ui_policy.violations(root), [])
 
+    def test_rejects_design_system_dependency_on_feature_layers(self):
+        temporary, root = self.fixture("")
+        with temporary:
+            (root / "desktop/design_system/control.cpp").write_text(
+                '#include "widgets/sql_editor/sql_editor.h"\n'
+                '#include "app/main_window.h"\n'
+                '#include "bridge/engine_adapter.h"\n'
+                '#include "models/history_model.h"\n'
+                '#include "tools/preview/preview_window.h"\n',
+                encoding="utf-8",
+            )
+            found = ui_policy.violations(root)
+        self.assertEqual(len(found), 5)
+        self.assertTrue(all("design-system dependency" in item for item in found))
+
+    def test_preview_metrics_do_not_exempt_other_tools(self):
+        temporary, root = self.fixture("")
+        with temporary:
+            preview = root / "desktop/tools/preview"
+            preview.mkdir(parents=True)
+            (preview / "preview_window.cpp").write_text(
+                "widget.resize(640, 480);\n", encoding="utf-8"
+            )
+            (preview.parent / "other.cpp").write_text(
+                "widget.resize(640, 480);\n", encoding="utf-8"
+            )
+            found = ui_policy.violations(root)
+        self.assertEqual(len(found), 1)
+        self.assertIn("tools/other.cpp", found[0])
+
 
 if __name__ == "__main__":
     unittest.main()

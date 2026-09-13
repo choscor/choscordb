@@ -174,9 +174,10 @@ bool NavigatorModel::hasChildren(const QModelIndex& parent) const {
 }
 bool NavigatorModel::canFetchMore(const QModelIndex& parent) const {
     const auto* value = node(parent);
+    // Failed nodes keep their error row until explicit refresh. An automatic
+    // retry during QTreeView expansion would remove the row being laid out.
     return value && !value->placeholder && value->object.hasChildren &&
-           (value->state == Node::Unloaded || value->state == Node::Failed) &&
-           nextToken_ < std::numeric_limits<quint64>::max();
+           value->state == Node::Unloaded && nextToken_ < std::numeric_limits<quint64>::max();
 }
 void NavigatorModel::clearChildren(Node* value) {
     if (value->children.empty())

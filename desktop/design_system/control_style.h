@@ -1,6 +1,6 @@
 #pragma once
 
-#include "design_system/theme.h"
+#include "design_system/style/control_stylesheet.h"
 
 #include <QFocusFrame>
 #include <QPointer>
@@ -19,13 +19,14 @@ class ControlStyle final : public QProxyStyle {
                        const QWidget* widget = nullptr) const override;
     [[nodiscard]] int pixelMetric(PixelMetric metric, const QStyleOption* option = nullptr,
                                   const QWidget* widget = nullptr) const override;
+    [[nodiscard]] int styleHint(StyleHint hint, const QStyleOption* option = nullptr,
+                                const QWidget* widget = nullptr,
+                                QStyleHintReturn* returnData = nullptr) const override;
 
   private:
     QPointer<QFocusFrame> focusFrame_;
     QPointer<QWidget> tooltip_;
     QPointer<QWidget> tooltipOwner_;
 };
-
-[[nodiscard]] QString controlStyleSheet(const ResolvedTheme& theme);
 
 } // namespace choscordb::design

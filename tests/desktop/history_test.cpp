@@ -1,6 +1,6 @@
 #include "bridge/engine_adapter.h"
 #include "models/history_model.h"
-#include "widgets/history_dock.h"
+#include "widgets/history_dock/history_dock.h"
 #include <QCheckBox>
 #include <QLabel>
 #include <QPlainTextEdit>

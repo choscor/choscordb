@@ -1,0 +1,127 @@
+#include "design_system/tooltip/tooltip.h"
+#include "design_system/theme.h"
+#include <QApplication>
+#include <QEvent>
+#include <QPainter>
+#include <QPainterPath>
+#include <QScreen>
+#include <QTextLayout>
+#include <QTimer>
+#include <QWidget>
+#include <QtMath>
+
+namespace choscordb::design::detail {
+class TooltipSurface final : public QWidget {
+  public:
+    TooltipSurface(const QString& text, QWidget* owner)
+        : QWidget(owner->window(), Qt::ToolTip), owner_(owner) {
+        setObjectName("designTooltip");
+        setAccessibleName(text);
+        setAttribute(Qt::WA_TranslucentBackground);
+        setAttribute(Qt::WA_ShowWithoutActivating);
+        setFont(resolveTypography(TypographyRole::Small));
+        const auto available = owner->screen()->availableGeometry();
+        const qreal contentWidth = qMax(1, qMin(296, available.width() - 40));
+        const qreal contentHeight = qMax(1, available.height() - 34);
+        textLayout_.setText(text);
+        textLayout_.setFont(font());
+        QTextOption textOption;
+        textOption.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+        textLayout_.setTextOption(textOption);
+        textLayout_.beginLayout();
+        qreal layoutHeight = 0;
+        qreal layoutWidth = 0;
+        while (true) {
+            auto line = textLayout_.createLine();
+            if (!line.isValid()) {
+                break;
+            }
+            line.setLineWidth(contentWidth);
+            if (layoutHeight + line.height() > contentHeight) {
+                line.setPosition(QPointF(0, contentHeight));
+                break;
+            }
+            line.setPosition(QPointF(0, layoutHeight));
+            layoutHeight += line.height();
+            layoutWidth = qMax(layoutWidth, line.naturalTextWidth());
+        }
+        textLayout_.endLayout();
+        resize(qCeil(layoutWidth) + 24, qCeil(layoutHeight) + 18);
+        const auto anchor = owner->mapToGlobal(QPoint(owner->width() / 2, 0));
+        int y = anchor.y() - height() - 4;
+        below_ = y < available.top();
+        if (below_) {
+            y = owner->mapToGlobal(QPoint(0, owner->height())).y() + 4;
+        }
+        const int x =
+            qBound(available.left(), anchor.x() - width() / 2, available.right() - width() + 1);
+        move(x, qBound(available.top(), y, available.bottom() - height() + 1));
+        arrowX_ = qBound(12, anchor.x() - x, width() - 12);
+        connect(owner, &QObject::destroyed, this, &QWidget::hide);
+        QTimer::singleShot(10000, this, &QWidget::hide);
+    }
+
+  protected:
+    void paintEvent(QPaintEvent*) override {
+        QVariant themeValue;
+        for (auto* ancestor = owner_.data(); ancestor; ancestor = ancestor->parentWidget()) {
+            if (ancestor->property("designTheme").isValid()) {
+                themeValue = ancestor->property("designTheme");
+                break;
+            }
+        }
+        if (!themeValue.isValid()) {
+            themeValue = qApp->property("designTheme");
+        }
+        const auto colors = themeValue.canConvert<ResolvedTheme>()
+                                ? themeValue.value<ResolvedTheme>().colors
+                                : resolveColors(palette().color(QPalette::Window).lightness() < 128
+                                                    ? ResolvedAppearance::Dark
+                                                    : ResolvedAppearance::Light,
+                                                {});
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(colors.foreground);
+        const QRectF body(0, below_ ? 6 : 0, width(), height() - 6);
+        painter.drawRoundedRect(body, 8, 8);
+        QPainterPath arrow;
+        const qreal base = below_ ? 6 : height() - 6;
+        arrow.moveTo(arrowX_ - 5, base);
+        arrow.lineTo(arrowX_, below_ ? 1 : height() - 1);
+        arrow.lineTo(arrowX_ + 5, base);
+        arrow.closeSubpath();
+        painter.drawPath(arrow);
+        painter.setPen(colors.background);
+        painter.setClipRect(body.adjusted(12, 6, -12, -6));
+        textLayout_.draw(&painter, QPointF(12, body.top() + 6));
+    }
+
+  private:
+    QTextLayout textLayout_;
+    QPointer<QWidget> owner_;
+    bool below_ = false;
+    int arrowX_ = 0;
+};
+bool handleTooltipEvent(QWidget* field, QEvent* event, QPointer<QWidget>& tooltip_,
+                        QPointer<QWidget>& tooltipOwner_) {
+    if (field && event->type() == QEvent::ToolTip && !field->toolTip().isEmpty()) {
+        if (tooltip_) {
+            delete tooltip_.data();
+        }
+        tooltip_ = new TooltipSurface(field->toolTip(), field);
+        tooltipOwner_ = field;
+        tooltip_->show();
+        event->accept();
+        return true;
+    }
+    if (tooltip_ &&
+        (event->type() == QEvent::KeyPress || event->type() == QEvent::MouseButtonPress ||
+         (field == tooltipOwner_ &&
+          (event->type() == QEvent::Leave || event->type() == QEvent::Hide)))) {
+        tooltip_->hide();
+    }
+    return false;
+}
+
+} // namespace choscordb::design::detail

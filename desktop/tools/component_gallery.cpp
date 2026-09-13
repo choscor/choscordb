@@ -1,5 +1,5 @@
 #include "design_system/control_style.h"
-#include "design_system/preview_window.h"
+#include "tools/preview/preview_window.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -22,6 +22,9 @@ int main(int argc, char** argv) {
     parser.addOption({"specimen", "Select a specimen ID (see --list).", "id"});
     parser.addOption(
         {"single", "Export only the Light specimen (640x900); default comparison is 1280x900."});
+    parser.addOption({"theme", "Export one theme: light or dark.", "name"});
+    parser.addOption({"width", "Capture width in logical pixels (320–2560).", "pixels"});
+    parser.addOption({"height", "Capture height in logical pixels (320–1800).", "pixels"});
     parser.addOption({"list", "List specimen IDs and exit."});
     parser.process(application);
     choscordb::design::PreviewWindow window;
@@ -38,7 +41,25 @@ int main(int argc, char** argv) {
         return 2;
     }
     if (parser.isSet("export")) {
-        const bool success = window.exportCapture(parser.value("export"), !parser.isSet("single"));
+        const auto theme = parser.value("theme");
+        const bool comparison = !parser.isSet("single") && !parser.isSet("theme");
+        bool widthValid = true;
+        bool heightValid = true;
+        const int width = parser.isSet("width") ? parser.value("width").toInt(&widthValid)
+                          : comparison          ? 1280
+                                                : 640;
+        const int height =
+            parser.isSet("height") ? parser.value("height").toInt(&heightValid) : 900;
+        if ((parser.isSet("theme") && theme != "light" && theme != "dark") || !widthValid ||
+            !heightValid || width < 320 || width > 2560 || height < 320 || height > 1800 ||
+            (comparison && (width < 640 || width % 2 != 0))) {
+            QTextStream(stderr) << "Invalid capture theme or dimensions. See --help.\n";
+            return 2;
+        }
+        const bool success =
+            window.exportCapture(parser.value("export"), comparison, QSize(width, height),
+                                 theme == "dark" ? choscordb::design::ResolvedAppearance::Dark
+                                                 : choscordb::design::ResolvedAppearance::Light);
         const auto* status = window.findChild<QLabel*>("previewExportStatus");
         QTextStream(success ? stdout : stderr) << status->text() << '\n';
         return success ? 0 : 1;

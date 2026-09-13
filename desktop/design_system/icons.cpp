@@ -1,4 +1,5 @@
 #include "design_system/icons.h"
+#include "design_system/theme.h"
 
 #include <QDebug>
 #include <QFile>
@@ -23,6 +24,8 @@ QByteArray themedSvg(Icon icon, const QColor& color) {
     auto svg = source.readAll();
     const auto replacement = color.name(QColor::HexRgb).toUtf8();
     svg.replace("currentColor", replacement);
+    svg.replace("stroke-width=\"2\"",
+                "stroke-width=\"" + QByteArray::number(iconStrokeWidth()) + "\"");
     svg.replace("#334155", replacement);
     svg.replace("#2F7DD3", replacement);
     return svg;
@@ -49,8 +52,10 @@ class SvgIconEngine final : public QIconEngine {
     explicit SvgIconEngine(QByteArray svg) : svg_(std::move(svg)) {}
 
     void paint(QPainter* painter, const QRect& rect, QIcon::Mode, QIcon::State) override {
-        const auto scale = painter->device()->devicePixelRatioF();
-        painter->drawPixmap(rect, renderSvg(svg_, rect.size(), scale));
+        // Render into the final paint device/transform. An intermediate pixmap
+        // cannot account for fractional painter scaling and softens SVG edges.
+        QSvgRenderer renderer(svg_);
+        renderer.render(painter, QRectF(rect));
     }
 
     QPixmap pixmap(const QSize& size, QIcon::Mode, QIcon::State) override {

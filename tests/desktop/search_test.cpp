@@ -1,5 +1,5 @@
-#include "widgets/search_panel.h"
-#include "widgets/sql_editor.h"
+#include "widgets/search_panel/search_panel.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QCheckBox>
 #include <QLabel>
 #include <QLineEdit>

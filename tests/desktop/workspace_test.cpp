@@ -4,11 +4,11 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "models/history_model.h"
-#include "widgets/export_dialog.h"
-#include "widgets/history_dock.h"
-#include "widgets/profile_dialog.h"
-#include "widgets/search_panel.h"
-#include "widgets/sql_editor.h"
+#include "widgets/export_dialog/export_dialog.h"
+#include "widgets/history_dock/history_dock.h"
+#include "widgets/profile_dialog/profile_dialog.h"
+#include "widgets/search_panel/search_panel.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>

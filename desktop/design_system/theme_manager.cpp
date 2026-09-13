@@ -125,8 +125,10 @@ void ThemeManager::applyTo(QWidget& topLevelWidget) const {
     topLevelWidget.setProperty("designTheme", QVariant::fromValue(resolvedTheme_));
     topLevelWidget.setProperty("forcedContrast", resolvedTheme_.forcedContrast);
     topLevelWidget.setFont(resolveTypography(TypographyRole::Ui));
-    topLevelWidget.setPalette(applicationPalette(resolvedTheme_));
     topLevelWidget.setStyleSheet(applicationStyleSheet(resolvedTheme_, metrics_));
+    // Replacing an existing QSS can restore its cached base palette. Apply the
+    // resolved palette afterward so scoped themes also update background paper.
+    topLevelWidget.setPalette(applicationPalette(resolvedTheme_));
 }
 
 void ThemeManager::installOn(QApplication* application) {

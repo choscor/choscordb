@@ -13,6 +13,9 @@ METRIC = re.compile(
     r"set(?:Minimum|Maximum|Fixed)(?:Width|Height|Size)|setSpacing)"
     r"\s*\(\s*[1-9][0-9]*"
 )
+FEATURE_INCLUDE = re.compile(
+    r'^\s*#\s*include\s*[<"](?:\.\./)*(?:app|widgets|bridge|models|tools)/'
+)
 REQUIRED_ICONS = {"app-mark.svg", "play.svg", "square.svg", "plus.svg"}
 
 
@@ -20,11 +23,21 @@ def violations(root=ROOT):
     problems = []
     desktop = root / "desktop"
     allowed = desktop / "design_system"
+    preview = desktop / "tools/preview"
     for path in sorted(desktop.rglob("*")):
-        if path.suffix not in {".cpp", ".h"} or allowed in path.parents:
+        if path.suffix not in {".cpp", ".h"}:
             continue
         text = path.read_text(encoding="utf-8")
         for line_number, line in enumerate(text.splitlines(), 1):
+            if allowed in path.parents:
+                if FEATURE_INCLUDE.search(line):
+                    problems.append(
+                        f"{path.relative_to(root)}:{line_number}: design-system dependency"
+                    )
+                continue
+            # Developer specimens deliberately exercise fixed reference dimensions.
+            if preview in path.parents:
+                continue
             if COLOR.search(line):
                 problems.append(
                     f"{path.relative_to(root)}:{line_number}: presentation color"

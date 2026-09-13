@@ -1,12 +1,12 @@
 #include "app/appearance_controller.h"
 #include "app/main_window.h"
 #include "app/query_workspace.h"
-#include "design_system/components.h"
-#include "design_system/preview_window.h"
+#include "design_system/button/button.h"
 #include "design_system/theme_manager.h"
-#include "widgets/profile_dialog.h"
-#include "widgets/sql_editor.h"
-#include "widgets/toast_region.h"
+#include "design_system/toast_region/toast_region.h"
+#include "tools/preview/preview_window.h"
+#include "widgets/profile_dialog/profile_dialog.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QComboBox>
 #include <QDialog>
@@ -76,8 +76,8 @@ class ModernUiTest final : public QObject {
         QCOMPARE(surface(), QColor("#ffffff"));
         QVERIFY(appearance->preview("dark"));
         QCoreApplication::processEvents();
-        QCOMPARE(surface(), QColor("#171717"));
-        QCOMPARE(menu.palette().color(QPalette::Window), QColor("#171717"));
+        QCOMPARE(surface(), QColor("#20272b"));
+        QCOMPARE(menu.palette().color(QPalette::Window), QColor("#20272b"));
         QVERIFY(profile->isVisible());
         QVERIFY(menu.isVisible());
         appearance->cancelPreview();
@@ -88,7 +88,7 @@ class ModernUiTest final : public QObject {
         appearance->applyPreview();
         QTRY_COMPARE(saved.count(), 2);
         QVERIFY(saved.at(1).at(0).toBool());
-        QCOMPARE(surface(), QColor("#171717"));
+        QCOMPARE(surface(), QColor("#20272b"));
         menu.hide();
         profile->reject();
     }
@@ -131,14 +131,16 @@ class ModernUiTest final : public QObject {
             QVERIFY2(qobject_cast<choscordb::design::Button*>(button), qPrintable(name));
             QVERIFY(button->text().isEmpty());
             QVERIFY(!button->icon().isNull());
-            QCOMPARE(button->sizeHint(), QSize(28, 28));
+            QCOMPARE(button->sizeHint(), QSize(30, 30));
         }
-        for (const auto& name : {"emptyConnect", "emptyOpenSql", "emptyNewQuery", "previousPage",
-                                 "nextPage", "exportResult"}) {
+        const QList<QPair<QString, int>> actions{{"emptyConnect", 33},  {"emptyOpenSql", 33},
+                                                 {"emptyNewQuery", 33}, {"previousPage", 36},
+                                                 {"nextPage", 36},      {"exportResult", 36}};
+        for (const auto& [name, height] : actions) {
             auto* button = window.findChild<QPushButton*>(name);
             QVERIFY(button);
-            QVERIFY2(qobject_cast<choscordb::design::Button*>(button), name);
-            QCOMPARE(button->sizeHint().height(), 32);
+            QVERIFY2(qobject_cast<choscordb::design::Button*>(button), qPrintable(name));
+            QCOMPARE(button->sizeHint().height(), height);
         }
         auto* previous = window.findChild<QPushButton*>("previousPage");
         auto* next = window.findChild<QPushButton*>("nextPage");

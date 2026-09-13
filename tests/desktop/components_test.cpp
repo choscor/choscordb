@@ -1,4 +1,5 @@
-#include "design_system/components.h"
+#include "design_system/button/button.h"
+#include "design_system/button_group/button_group.h"
 #include "design_system/icons.h"
 #include "design_system/theme_manager.h"
 #include <QHBoxLayout>
@@ -8,6 +9,97 @@
 class ComponentsTest final : public QObject {
     Q_OBJECT
   private slots:
+    void primaryKeyboardFocusContrastsWithTheActionFill_data() {
+        QTest::addColumn<bool>("dark");
+        QTest::addColumn<QColor>("expectedRing");
+        QTest::addColumn<bool>("native");
+        QTest::newRow("light") << false << QColor("#ffffff") << false;
+        QTest::newRow("native-light") << false << QColor("#ffffff") << true;
+        QTest::newRow("dark") << true << QColor("#12231b") << false;
+        QTest::newRow("native-dark") << true << QColor("#12231b") << true;
+    }
+    void primaryKeyboardFocusContrastsWithTheActionFill() {
+        QFETCH(bool, dark);
+        QFETCH(QColor, expectedRing);
+        QFETCH(bool, native);
+        using namespace choscordb::design;
+        QWidget root;
+        ThemeManager theme;
+        theme.setMode(dark ? ThemeMode::Dark : ThemeMode::Light);
+        theme.applyTo(root);
+        auto* button = native ? new QPushButton("", &root) : new Button("", &root);
+        if (native)
+            button->setProperty("variant", "default");
+        Button other("Other", &root);
+        button->resize(100, 33);
+        other.move(0, 45);
+        root.resize(160, 100);
+        root.show();
+        root.activateWindow();
+        other.setFocus(Qt::TabFocusReason);
+        QTRY_VERIFY(other.hasFocus());
+        const auto normal = button->grab().toImage();
+        button->setFocus(Qt::TabFocusReason);
+        QTRY_VERIFY(button->hasFocus());
+        const auto focused = button->grab().toImage();
+        QCOMPARE(focused.pixelColor(50, native ? 0 : 1), expectedRing);
+        QVERIFY(focused != normal);
+        QSignalSpy clicked(button, &QPushButton::clicked);
+        QTest::keyClick(button, Qt::Key_Space);
+        QCOMPARE(clicked.count(), 1);
+    }
+    void editorActionContextUsesReferenceFontAndPadding() {
+        using namespace choscordb::design;
+        Button button("Save");
+        button.setButtonSize(ButtonSize::Small);
+        const auto footerWidth = button.sizeHint().width();
+        QCOMPARE(button.font().pixelSize(), 11);
+        button.setButtonContext(ButtonContext::EditorAction);
+        QCOMPARE(button.font().pixelSize(), 12);
+        QCOMPARE(button.font().letterSpacing(), 0.0);
+        QCOMPARE(button.height(), 29);
+        QVERIFY(button.sizeHint().width() >= footerWidth + 6);
+        button.setDesignIcon(Icon::Run);
+        QCOMPARE(button.height(), 30);
+    }
+    void primaryPressDoesNotShiftReferenceGeometry() {
+        using namespace choscordb::design;
+        QWidget root;
+        ThemeManager theme;
+        theme.setMode(ThemeMode::Light);
+        theme.applyTo(root);
+        Button button("Run", &root);
+        button.setButtonSize(ButtonSize::Small);
+        button.setDesignIcon(Icon::Run);
+        button.resize(75, 30);
+        root.resize(150, 80);
+        root.show();
+        button.clearFocus();
+        QTest::mouseMove(&button, button.rect().center());
+        const auto normal = button.grab().toImage();
+        QTest::mousePress(&button, Qt::LeftButton);
+        QCOMPARE(button.grab().toImage(), normal);
+        QTest::mouseRelease(&button, Qt::LeftButton);
+    }
+    void compactIconActionsRespectReferenceLineBoxAndDispatch() {
+        using namespace choscordb::design;
+        Button button("Run");
+        button.setButtonSize(ButtonSize::Small);
+        QCOMPARE(button.height(), 29);
+        button.setDesignIcon(Icon::Run);
+        QCOMPARE(button.height(), 30);
+        button.resize(75, button.height());
+        button.show();
+        QSignalSpy clicked(&button, &QPushButton::clicked);
+        QTest::mouseClick(&button, Qt::LeftButton);
+        QCOMPARE(clicked.count(), 1);
+        button.setButtonSize(ButtonSize::Default);
+        QCOMPARE(button.height(), 36);
+        Button customIcon("Run");
+        customIcon.setButtonSize(ButtonSize::Small);
+        customIcon.setIcon(themedIcon(Icon::Run, Qt::black, 18));
+        QCOMPARE(customIcon.height(), 30);
+    }
     void semanticButtonIconFollowsLiveThemeAndVariant() {
         using namespace choscordb::design;
         QWidget host;
@@ -19,14 +111,14 @@ class ComponentsTest final : public QObject {
         button.setButtonSize(ButtonSize::Icon);
         button.setDesignIcon(Icon::Add);
         const auto light = button.grab().toImage();
-        QVERIFY(light.pixelColor(16, 16).lightness() < 100);
+        QVERIFY(light.pixelColor(18, 18).lightness() < 100);
         theme.setMode(ThemeMode::Dark);
         theme.applyTo(host);
         const auto dark = button.grab().toImage();
-        QVERIFY(dark.pixelColor(16, 16).lightness() > 180);
+        QVERIFY(dark.pixelColor(18, 18).lightness() > 180);
         button.setVariant(ButtonVariant::Default);
         const auto primary = button.grab().toImage();
-        QVERIFY(primary.pixelColor(16, 16).lightness() < 100);
+        QVERIFY(primary.pixelColor(18, 18).lightness() < 100);
     }
     void destructiveTextRemainsReadableOnItsTintedSurface() {
         using namespace choscordb::design;
@@ -75,9 +167,9 @@ class ComponentsTest final : public QObject {
         Button button("Save");
         const int normalWidth = button.sizeHint().width();
         button.setLoading(true);
-        QCOMPARE(button.sizeHint().width(), normalWidth + 22);
+        QCOMPARE(button.sizeHint().width(), normalWidth + 26);
         button.setButtonSize(ButtonSize::Icon);
-        QCOMPARE(button.sizeHint(), QSize(32, 32));
+        QCOMPARE(button.sizeHint(), QSize(36, 36));
     }
     void mouseFocusDoesNotPaintTheKeyboardRing() {
         using namespace choscordb::design;
@@ -102,7 +194,7 @@ class ComponentsTest final : public QObject {
         button.setFocus(Qt::TabFocusReason);
         QTRY_VERIFY(button.hasFocus());
         QVERIFY(button.grab().toImage() != normal);
-        QCOMPARE(button.size(), QSize(100, 32));
+        QCOMPARE(button.size(), QSize(100, 33));
     }
     void groupedActionsAreJoinedAndKeyboardAccessible() {
         using namespace choscordb::design;
@@ -139,7 +231,7 @@ class ComponentsTest final : public QObject {
         auto textPixels = [](const QImage& image) {
             int count = 0;
             for (int y = 6; y < image.height() - 6; ++y)
-                for (int x = 8; x < image.width() - 8; ++x)
+                for (int x = 4; x < image.width() - 4; ++x)
                     if (image.pixelColor(x, y).lightness() > 150)
                         ++count;
             return count;
@@ -157,7 +249,7 @@ class ComponentsTest final : public QObject {
         host.resize(300, 80);
         host.show();
         QCoreApplication::processEvents();
-        QCOMPARE(button.size(), QSize(32, 32));
+        QCOMPARE(button.size(), QSize(36, 36));
         button.setButtonSize(ButtonSize::Default);
         button.setText("A wider text action");
         QCoreApplication::processEvents();
@@ -221,30 +313,30 @@ class ComponentsTest final : public QObject {
         button.resize(100, 32);
         host.show();
         QCoreApplication::processEvents();
-        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#171717"));
+        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#287f66"));
         button.setVariant(ButtonVariant::Secondary);
-        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#f5f5f5"));
+        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#f2f5f4"));
         button.setVariant(ButtonVariant::Outline);
         QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#ffffff"));
         theme.setMode(ThemeMode::Dark);
         theme.applyTo(host);
         button.setVariant(ButtonVariant::Default);
-        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#e5e5e5"));
+        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#65b493"));
     }
     void buttonsHaveReferenceSizes() {
         using namespace choscordb::design;
         Button button("Save");
-        QCOMPARE(button.sizeHint().height(), 32);
+        QCOMPARE(button.sizeHint().height(), 33);
         button.setButtonSize(ButtonSize::ExtraSmall);
-        QCOMPARE(button.sizeHint().height(), 24);
+        QCOMPARE(button.sizeHint().height(), 25);
         button.setButtonSize(ButtonSize::Small);
-        QCOMPARE(button.sizeHint().height(), 28);
+        QCOMPARE(button.sizeHint().height(), 29);
         button.setButtonSize(ButtonSize::Large);
-        QCOMPARE(button.sizeHint().height(), 36);
+        QCOMPARE(button.sizeHint().height(), 37);
         button.setButtonSize(ButtonSize::Icon);
-        QCOMPARE(button.sizeHint(), QSize(32, 32));
-        button.setButtonSize(ButtonSize::IconLarge);
         QCOMPARE(button.sizeHint(), QSize(36, 36));
+        button.setButtonSize(ButtonSize::IconLarge);
+        QCOMPARE(button.sizeHint(), QSize(40, 40));
     }
 };
 QTEST_MAIN(ComponentsTest)

@@ -3,7 +3,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/theme_manager.h"
-#include "widgets/sql_editor.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QComboBox>
 #include <QDialog>

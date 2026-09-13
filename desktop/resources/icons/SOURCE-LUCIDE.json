@@ -3,24 +3,77 @@
   "version": "1.27.0",
   "commit": "4aec3f892fd6c23063bc2fead83c899b5d412b1c",
   "icons": {
-    "play.svg": "0768356979f97d6bfe7e15f1cf1cb1b83235af619610b58d902882b8fe836f81",
-    "plus.svg": "953f772bcb213f466e8a69a2a65362b38d39b59a77c635ab5361e92a89dc6ed4",
+    "play.svg": "0a4582d1db74520fd1fc01b5bd28dcf3568aec5d6baac2159b074010cd10e373",
+    "plus.svg": "6d2b3c7ce39df2b093505b17715364511fc646a5ceb0911fc061b9ee0d5a2dc7",
     "square.svg": "4d6b8dc9b4dc5e95e32d4a881359de077c7b53ae4e02e623b588c558739158e1",
-    "refresh-cw.svg": "2e10dd403c85a24f163d59fc6151aa21147fe9402e1305dfc8979208caee8944",
-    "x.svg": "4a9cdab38fbb96162e7dace28e33f4ca0e49d8963a6162abc3d4691b7d675117",
+    "refresh-cw.svg": "f0ec44e4e574b7856d01e77cd78fed30e4195224834a3ee38fd773683499a55f",
+    "x.svg": "809581e52b52862537048ab8fafff12e2b19c83071f46216bb235152905da91f",
     "chevron-down.svg": "66ea878e72ed3488bb3b464c39dfdccee8d1f78e560dccea40e5e12da0e87e87",
-    "chevron-right.svg": "2758143d7b2434e4aa7307dfd34405c87909ff4052f21b5f3f40d45224b4f19b",
+    "chevron-right.svg": "f1985306ef7410f06ff9a77619601fbef0ef492e63aa96e7807a40aad515fd30",
     "chevron-left.svg": "83b0681aa38bf55e9d52a1e4b4cced624abe1fe7678ecafda133a574f1161d93",
-    "search.svg": "283d371c2e433817bb9c0c8310caa6c77fa4177c0f4f1168d9c83b97af7389dc",
-    "database.svg": "471eb14bc8d144896a82dfc4aa9daf350f769f0896f4bef33e50aabdbb51130d",
-    "check.svg": "7f33acc9a77a61659531044525fc008edebe215bf4dcf1c789c8674ad3277db0",
+    "search.svg": "c3989715548e735843b3d51e60d249f122db0db1ec9399a6d812b739cb0374e8",
+    "database.svg": "4738557331d82b0eb79a8d59660da339502d9abbed9007d77bd18fbf6c97a4d5",
+    "check.svg": "84cbaa776604102cd01f5e81718d50b115b1f08fbb746773b10d9258310a5faf",
     "triangle-alert.svg": "4866f38b8560d410f21e3226413e0b77997b6dfbb6931fadfe0a0d5aef9ffeb4",
     "circle-alert.svg": "ce3e98b7a03b78c0071131df42466e4e1ff5187fccad30e739ec9ce951cf685a",
     "loader-circle.svg": "043021bb903919668804bdb6fee0342072e4ffea5f03fbd857774c440179ad3b",
     "copy.svg": "ea80e566c7a12628a447cb53179b19aea4f60b9143e2becd0d0f20bf260e5718",
-    "download.svg": "3daeee13ded5a3afa2198b1bb4e2262d163922f97d96ac6ff9953e8ed4fe039d"
+    "download.svg": "1b47be8ea4928e1b5620c22d24d6e03596dc07ae69af8b41d8ba6674d4bd5409"
   },
   "license": "ISC AND MIT",
-  "note": "play.svg, plus.svg, square.svg hashes cover existing adaptations. All other listed SVG files and LICENSE-LUCIDE are pristine upstream bytes at the full revision. app-mark.svg is original ChoscorDB identity, outside Lucide.",
-  "licenseSha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57"
+  "note": "Lucide license and original source revision retained. MVP referenceOverrides replace the named paths with the local visual authority; their original hashes are preserved below. Other listed assets remain Lucide adaptations/upstream assets. app-mark.svg is original ChoscorDB identity, outside Lucide.",
+  "licenseSha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
+  "referenceOverrides": {
+    "source": "docs/mvp-design/prototype.js",
+    "sha256": "26575530ec13a749d8ecd679384c5fc4580d44c5bad53f3f753ff3aa00b95d91",
+    "css": "docs/mvp-design/prototype.css",
+    "strokeWidth": 1.6,
+    "icons": {
+      "play.svg": {
+        "referenceKey": "play",
+        "originalLucideSha256": "0768356979f97d6bfe7e15f1cf1cb1b83235af619610b58d902882b8fe836f81",
+        "sha256": "0a4582d1db74520fd1fc01b5bd28dcf3568aec5d6baac2159b074010cd10e373"
+      },
+      "plus.svg": {
+        "referenceKey": "plus",
+        "originalLucideSha256": "953f772bcb213f466e8a69a2a65362b38d39b59a77c635ab5361e92a89dc6ed4",
+        "sha256": "6d2b3c7ce39df2b093505b17715364511fc646a5ceb0911fc061b9ee0d5a2dc7"
+      },
+      "database.svg": {
+        "referenceKey": "db",
+        "originalLucideSha256": "471eb14bc8d144896a82dfc4aa9daf350f769f0896f4bef33e50aabdbb51130d",
+        "sha256": "4738557331d82b0eb79a8d59660da339502d9abbed9007d77bd18fbf6c97a4d5"
+      },
+      "download.svg": {
+        "referenceKey": "export",
+        "originalLucideSha256": "3daeee13ded5a3afa2198b1bb4e2262d163922f97d96ac6ff9953e8ed4fe039d",
+        "sha256": "1b47be8ea4928e1b5620c22d24d6e03596dc07ae69af8b41d8ba6674d4bd5409"
+      },
+      "refresh-cw.svg": {
+        "referenceKey": "refresh",
+        "originalLucideSha256": "2e10dd403c85a24f163d59fc6151aa21147fe9402e1305dfc8979208caee8944",
+        "sha256": "f0ec44e4e574b7856d01e77cd78fed30e4195224834a3ee38fd773683499a55f"
+      },
+      "x.svg": {
+        "referenceKey": "close",
+        "originalLucideSha256": "4a9cdab38fbb96162e7dace28e33f4ca0e49d8963a6162abc3d4691b7d675117",
+        "sha256": "809581e52b52862537048ab8fafff12e2b19c83071f46216bb235152905da91f"
+      },
+      "search.svg": {
+        "referenceKey": "search",
+        "originalLucideSha256": "283d371c2e433817bb9c0c8310caa6c77fa4177c0f4f1168d9c83b97af7389dc",
+        "sha256": "c3989715548e735843b3d51e60d249f122db0db1ec9399a6d812b739cb0374e8"
+      },
+      "check.svg": {
+        "referenceKey": "check",
+        "originalLucideSha256": "7f33acc9a77a61659531044525fc008edebe215bf4dcf1c789c8674ad3277db0",
+        "sha256": "84cbaa776604102cd01f5e81718d50b115b1f08fbb746773b10d9258310a5faf"
+      },
+      "chevron-right.svg": {
+        "referenceKey": "chevron",
+        "originalLucideSha256": "2758143d7b2434e4aa7307dfd34405c87909ff4052f21b5f3f40d45224b4f19b",
+        "sha256": "f1985306ef7410f06ff9a77619601fbef0ef492e63aa96e7807a40aad515fd30"
+      }
+    }
+  }
 }

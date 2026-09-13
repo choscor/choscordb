@@ -1,8 +1,8 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
-#include "widgets/export_dialog.h"
-#include "widgets/sql_editor.h"
+#include "widgets/export_dialog/export_dialog.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QComboBox>
 #include <QDir>

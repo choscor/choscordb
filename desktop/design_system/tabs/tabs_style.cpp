@@ -1,0 +1,24 @@
+#include "design_system/tabs/tabs_style.h"
+
+namespace choscordb::design {
+QString tabsStyleSheet() {
+    return QStringLiteral(R"(QTabWidget::pane { border: 0; }
+QTabBar { background: @muted; border-radius: 0; border-bottom: 1px solid @border; }
+QTabBar[designTabVariant="document"] { border: 0; }
+QTabBar::tab { min-height: @paneTabHeight; max-height: @paneTabHeight; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 0 14px; margin: 0 0 1px 0; font-size: 11px; color: @mutedText; background: transparent; }
+QTabBar::tab:first, QTabBar::tab:only-one { margin-left: 9px; }
+QTabBar::tab:last, QTabBar::tab:only-one { margin-right: 9px; }
+QTabBar::tab:selected { background: @field; color: @foreground; border-bottom-color: @primary; }
+QTabBar[designTabVariant="document"]::tab { min-height: @documentTabHeight; max-height: @documentTabHeight; border-bottom: 0; border-top: 2px solid transparent; border-right: 1px solid @border; padding: 0 17px; margin: 0; }
+QTabBar[designTabVariant="document"]::tab:selected { border-top-color: @primary; }
+QTabBar::tab:hover { color: @foreground; }
+QTabBar::tab:disabled { color: @disabled; }
+)");
+}
+
+QString tabsApplicationStyleSheet() {
+    return QStringLiteral(
+        R"(QTabBar::tab { min-height: %14px; padding-left: %5px; padding-right: %5px; }
+)");
+}
+} // namespace choscordb::design

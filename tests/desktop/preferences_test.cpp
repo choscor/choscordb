@@ -1,5 +1,5 @@
 #include "models/shortcut_catalog.h"
-#include "widgets/preferences_dialog.h"
+#include "widgets/preferences_dialog/preferences_dialog.h"
 #include <QComboBox>
 #include <QKeySequenceEdit>
 #include <QLabel>

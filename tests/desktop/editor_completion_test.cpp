@@ -3,8 +3,8 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "models/navigator_model.h"
-#include "widgets/editor_completion.h"
-#include "widgets/sql_editor.h"
+#include "widgets/editor_completion/editor_completion.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemView>
 #include <QAction>
 #include <QComboBox>

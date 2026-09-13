@@ -4,8 +4,8 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "models/navigator_model.h"
-#include "widgets/profile_dialog.h"
-#include "widgets/sql_editor.h"
+#include "widgets/profile_dialog/profile_dialog.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QComboBox>
 #include <QListWidget>

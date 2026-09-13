@@ -1,8 +1,8 @@
 #include "editor_preferences.h"
 #include "app/appearance_controller.h"
 #include "design_system/theme.h"
-#include "widgets/preferences_dialog.h"
-#include "widgets/sql_editor.h"
+#include "widgets/preferences_dialog/preferences_dialog.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QFontDatabase>
 #include <QKeyEvent>

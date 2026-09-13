@@ -1,15 +1,18 @@
-#include "design_system/components.h"
+#include "design_system/button/button.h"
 #include "design_system/control_style.h"
-#include "design_system/preview_window.h"
+#include "tools/preview/preview_window.h"
 
+#include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "models/navigator_model.h"
 #include "models/result_table_model.h"
-#include "widgets/confirmation_dialog.h"
-#include "widgets/sql_editor.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QClipboard>
+#include <QComboBox>
 #include <QCompleter>
 #include <QDialog>
+#include <QDir>
 #include <QFile>
 #include <QImage>
 #include <QJsonDocument>
@@ -17,11 +20,18 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPainter>
 #include <QProcess>
 #include <QPushButton>
+#include <QScreen>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QSvgRenderer>
 #include <QTableView>
 #include <QTableWidget>
 #include <QTemporaryDir>
+#include <QToolBar>
+#include <QTreeView>
 #include <QtTest>
 #include <cstring>
 
@@ -99,6 +109,256 @@ class PreviewTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void galleryOpenKeepsAppModalityAndNativeCorners_data() {
+        QTest::addColumn<QString>("specimen");
+        QTest::newRow("panel") << QString("dialogs");
+        QTest::newRow("confirmation") << QString("confirmations");
+    }
+    void galleryOpenKeepsAppModalityAndNativeCorners() {
+        QFETCH(QString, specimen);
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen(specimen));
+        window.resize(1280, 900);
+        window.show();
+        window.activateWindow();
+        auto* host = window.findChild<QWidget*>("previewLight");
+        QVERIFY(host);
+        auto* open = host->findChild<QPushButton*>("previewOpenDialog");
+        auto* dialog = host->findChild<QDialog*>("previewActualDialog");
+        QVERIFY(open && dialog);
+        open->setFocus(Qt::TabFocusReason);
+        QTRY_VERIFY(open->hasFocus());
+        QSignalSpy finished(dialog, &QDialog::finished);
+        QTest::mouseClick(open, Qt::LeftButton);
+        QTRY_VERIFY(dialog->isVisible());
+        QCOMPARE(finished.count(), 0); // Opening remains asynchronous.
+        QCOMPARE(dialog->windowModality(), Qt::ApplicationModal);
+        if (QGuiApplication::platformName() == "cocoa") {
+            QVERIFY(QTest::qWaitForWindowExposed(dialog));
+            QTest::qWait(150);
+            const auto position = dialog->mapToGlobal(QPoint());
+            const auto capture = dialog->screen()->grabWindow(0, position.x(), position.y(),
+                                                              dialog->width(), dialog->height());
+            QVERIFY2(!capture.isNull(),
+                     "Actual OS-composited corner capture is required on Cocoa.");
+            const auto captureDirectory = qEnvironmentVariable("CHOSCORDB_TEST_CAPTURE_DIR");
+            if (!captureDirectory.isEmpty()) {
+                QVERIFY(QDir().mkpath(captureDirectory));
+                QVERIFY(
+                    capture.save(QDir(captureDirectory)
+                                     .filePath(QString("native-gallery-%1.png").arg(specimen))));
+            }
+            const auto pixel = capture.toImage().pixelColor(qRound(5 * capture.devicePixelRatio()),
+                                                            qRound(5 * capture.devicePixelRatio()));
+            QVERIFY2(pixel.red() > 240 && pixel.green() > 240 && pixel.blue() > 240,
+                     qPrintable(pixel.name()));
+        }
+        QTest::keyClick(dialog, Qt::Key_Escape);
+        QTRY_VERIFY(!dialog->isVisible());
+        QCOMPARE(finished.count(), 1);
+        QTRY_VERIFY(open->hasFocus());
+    }
+    void expandingFailedConnectionKeepsItsErrorVisible() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("sidebar-tree"));
+        window.resize(1280, 900);
+        window.show();
+        auto* host = window.findChild<QWidget*>("previewLight");
+        auto* tree = host->findChild<QTreeView*>();
+        auto* model = qobject_cast<choscordb::NavigatorModel*>(tree->model());
+        QVERIFY(model);
+        const auto disconnected = model->index(1, 0);
+        QTRY_COMPARE(disconnected.data(choscordb::NavigatorModel::ErrorRole).toString(),
+                     QString("Synthetic disconnected state"));
+        QSignalSpy requests(model, &choscordb::NavigatorModel::childrenRequested);
+        const auto bounds = tree->visualRect(disconnected);
+        QVERIFY(!bounds.isEmpty());
+        QTest::mouseClick(tree->viewport(), Qt::LeftButton, {},
+                          QPoint(bounds.left() - tree->indentation() / 2, bounds.center().y()));
+        QCoreApplication::processEvents();
+        QVERIFY(tree->isExpanded(disconnected));
+        QCOMPARE(model->index(0, 0, disconnected).data().toString(),
+                 QString("Failed: Synthetic disconnected state — refresh to retry"));
+        QCOMPARE(requests.count(), 0);
+    }
+    void scrollSpecimensKeepTheirIndependentThemePaper() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("selects"));
+        window.resize(1280, 900);
+        window.show();
+        QCoreApplication::processEvents();
+        for (const auto& [name, expected] : {std::pair{"previewLight", QColor("#ffffff")},
+                                             std::pair{"previewDark", QColor("#20272b")}}) {
+            auto* host = window.findChild<QWidget*>(name);
+            auto* content = host->findChild<QWidget*>("previewContent");
+            QVERIFY(content);
+            const auto snapshot = content->grab().toImage();
+            QCOMPARE(snapshot.pixelColor(snapshot.width() / 2, snapshot.height() - 20), expected);
+        }
+    }
+
+    void connectionSpecimenSwitchesDriverFieldsWithoutLosingDrafts() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("connection-form"));
+        window.show();
+        auto* light = window.findChild<QWidget*>("previewLight");
+        auto* driver = light->findChild<QComboBox*>();
+        QVERIFY(driver);
+        driver->setCurrentText("SQLite");
+        auto* file = light->findChild<QLineEdit*>("previewSqlitePath");
+        QVERIFY(file && file->isVisible());
+        QTest::keyClicks(file, "/tmp/offline-fixture.sqlite");
+        driver->setCurrentText("PostgreSQL");
+        QVERIFY(!file->isVisible());
+        driver->setCurrentText("SQLite");
+        QVERIFY(file->isVisible());
+        QCOMPARE(file->text(), QString("/tmp/offline-fixture.sqlite"));
+    }
+
+    void failedResultSpecimenRetriesWithoutInventingRowsOrTotals_data() {
+        QTest::addColumn<QString>("specimen");
+        QTest::addColumn<QString>("prefix");
+        QTest::newRow("failed") << QString("results-error") << QString("Error");
+        QTest::newRow("loading") << QString("results-loading") << QString("Loading");
+    }
+    void failedResultSpecimenRetriesWithoutInventingRowsOrTotals() {
+        QFETCH(QString, specimen);
+        QFETCH(QString, prefix);
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen(specimen));
+        auto* light = window.findChild<QWidget*>("previewLight");
+        auto* table = light->findChild<QTableView*>("previewResults");
+        QVERIFY(table);
+        QCOMPARE(table->model()->rowCount(), 0);
+        auto* status = light->findChild<QLabel*>("previewResultStatus");
+        QVERIFY(status && status->text().startsWith(prefix));
+        auto* retry = light->findChild<QPushButton*>("previewRetryResult");
+        QVERIFY(retry);
+        retry->click();
+        QCOMPARE(table->model()->rowCount(), 4);
+        QCOMPARE(table->model()->data(table->model()->index(0, 1)).toString(), QString("NULL"));
+        QCOMPARE(table->model()->data(table->model()->index(1, 1)).toString(), QString(""));
+        QVERIFY(status->text().contains("total unknown"));
+    }
+
+    void cancellationSpecimenKeepsPendingControlsUntilAcknowledged() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("query-controls"));
+        auto* light = window.findChild<QWidget*>("previewLight");
+        auto* toolbar = light->findChild<QToolBar*>();
+        QVERIFY(toolbar);
+        auto* run = toolbar->actions().at(0);
+        auto* cancel = toolbar->actions().at(1);
+        QCOMPARE(run->text(), QString("Run"));
+        QCOMPARE(cancel->text(), QString("Cancel"));
+        run->trigger();
+        cancel->trigger();
+        QVERIFY(!run->isEnabled());
+        QVERIFY(!cancel->isEnabled());
+        auto* acknowledgment = light->findChild<QPushButton*>("previewAcknowledgeCancellation");
+        QVERIFY(acknowledgment && acknowledgment->isEnabled());
+        auto* status = light->findChild<QLabel*>("previewQueryStatus");
+        QVERIFY(status);
+        QVERIFY(status->text().startsWith("Cancelling"));
+        acknowledgment->click();
+        QVERIFY(run->isEnabled());
+        QVERIFY(status->text().startsWith("Cancelled"));
+    }
+
+    void narrowGalleryKeepsNavigationAndActionsReachable() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("buttons"));
+        window.resize(960, 640);
+        window.show();
+        QCoreApplication::processEvents();
+        QCOMPARE(window.size(), QSize(960, 640));
+        auto* exportButton = window.findChild<QPushButton*>("previewExport");
+        QVERIFY(exportButton);
+        QCOMPARE(exportButton->visibleRegion(), QRegion(exportButton->rect()));
+        QVERIFY(window.rect().contains(
+            QRect(exportButton->mapTo(&window, QPoint()), exportButton->size())));
+        auto* light = window.findChild<QWidget*>("previewLight");
+        QVERIFY(light);
+        auto* scroll = light->findChild<QScrollArea*>("previewContentScroll");
+        QVERIFY2(scroll, "Overflow must scroll inside the specimen at the minimum window size.");
+        auto* last = light->findChild<QPushButton*>("button-size-icon-lg");
+        QVERIFY(last);
+        auto* previous = light->findChild<QPushButton*>("button-size-icon");
+        QVERIFY(previous);
+        previous->setFocus(Qt::TabFocusReason);
+        QTRY_VERIFY(previous->hasFocus());
+        QTest::keyClick(previous, Qt::Key_Tab);
+        QTRY_VERIFY(last->hasFocus());
+        const QRect viewport(scroll->viewport()->mapToGlobal(QPoint()), scroll->viewport()->size());
+        QVERIFY(viewport.contains(QRect(last->mapToGlobal(QPoint()), last->size())));
+        QSignalSpy clicked(last, &QPushButton::clicked);
+        QTest::keyClick(last, Qt::Key_Space);
+        QCOMPARE(clicked.count(), 1);
+    }
+
+    void standaloneCapturesRequestedThemeAndViewport_data() {
+        QTest::addColumn<QString>("theme");
+        QTest::addColumn<QSize>("viewport");
+        QTest::addColumn<QString>("specimen");
+        QTest::newRow("dark-narrow") << QString("dark") << QSize(960, 640) << QString("fields");
+        QTest::newRow("light-wide") << QString("light") << QSize(1280, 900) << QString("fields");
+        QTest::newRow("dark-modal") << QString("dark") << QSize(960, 640) << QString("dialogs");
+        QTest::newRow("dark-nested-scroll")
+            << QString("dark") << QSize(960, 640) << QString("scrolling");
+        QTest::newRow("dark-tabs") << QString("dark") << QSize(960, 640) << QString("tabs");
+        QTest::newRow("light-tabs") << QString("light") << QSize(1280, 900) << QString("tabs");
+    }
+
+    void standaloneCapturesRequestedThemeAndViewport() {
+        QFETCH(QString, theme);
+        QFETCH(QSize, viewport);
+        QFETCH(QString, specimen);
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto path = directory.filePath("viewport.png");
+        QProcess process;
+        auto environment = QProcessEnvironment::systemEnvironment();
+        environment.insert("XDG_CONFIG_HOME", directory.filePath("config"));
+        environment.insert("XDG_DATA_HOME", directory.filePath("data"));
+        process.setProcessEnvironment(environment);
+        process.start(QCoreApplication::applicationDirPath() + "/choscordb-component-gallery",
+                      {"--export", path, "--specimen", specimen, "--theme", theme, "--width",
+                       QString::number(viewport.width()), "--height",
+                       QString::number(viewport.height())});
+        QVERIFY(process.waitForStarted());
+        QVERIFY(process.waitForFinished(5000));
+        QVERIFY2(process.exitCode() == 0, process.readAllStandardError().constData());
+        const QImage capture(path);
+        QCOMPARE(capture.size(), viewport);
+        QCOMPARE(capture.pixelColor(2, 2).lightness() < 128, theme == "dark");
+        QCOMPARE(capture.pixelColor(viewport.width() / 2, viewport.height() / 2).lightness() < 128,
+                 theme == "dark");
+        QCOMPARE(capture.pixelColor(viewport.width() / 2, viewport.height() - 20).lightness() < 128,
+                 theme == "dark");
+        QFile metadata(path + ".json");
+        QVERIFY(metadata.open(QIODevice::ReadOnly));
+        const auto record = QJsonDocument::fromJson(metadata.readAll()).object();
+        QCOMPARE(record.value("themes").toString().toLower(), theme);
+        QCOMPARE(record.value("logicalWidth").toInt(), viewport.width());
+        QCOMPARE(record.value("logicalHeight").toInt(), viewport.height());
+        if (specimen == "fields" || specimen == "tabs") {
+            QRect scrollViewport, control;
+            for (const auto value : record.value("controls").toArray()) {
+                const auto item = value.toObject();
+                const QRect bounds(item.value("x").toInt(), item.value("y").toInt(),
+                                   item.value("width").toInt(), item.value("height").toInt());
+                const auto name = item.value("name").toString();
+                if (name == "qt_scrollarea_viewport" && scrollViewport.isNull())
+                    scrollViewport = bounds;
+                if (name == (specimen == "fields" ? "field-editable" : "previewObjectTabs"))
+                    control = bounds;
+            }
+            QVERIFY(!control.isNull());
+            QVERIFY2(scrollViewport.contains(control),
+                     "Export clips a field edge or tab indicator");
+        }
+    }
+
     void confirmationSpecimenUsesProductionCancellationBoundary() {
         choscordb::design::PreviewWindow window;
         QVERIFY(window.selectSpecimen("confirmations"));
@@ -128,6 +388,7 @@ class PreviewTest final : public QObject {
         QTest::newRow("menu") << QString("menus");
         QTest::newRow("completion") << QString("completion");
         QTest::newRow("tooltip") << QString("tooltip-popover");
+        QTest::newRow("selector") << QString("selects");
     }
 
     void exportedPopupContainsItsVisibleContent() {
@@ -141,7 +402,16 @@ class PreviewTest final : public QObject {
         QCoreApplication::processEvents();
         auto* light = window.findChild<QWidget*>("previewLight");
         QImage witness;
-        if (specimen == "dialogs") {
+        if (specimen == "selects") {
+            auto* select = light->findChild<QComboBox*>();
+            QVERIFY(select);
+            select->showPopup();
+            QCoreApplication::processEvents();
+            QVERIFY(select->view()->isVisible());
+            // Export uses logical pixels; native Cocoa grabs use device pixels.
+            witness = textInkPatch(select->view()->grab().toImage().scaled(select->view()->size()));
+            select->hidePopup();
+        } else if (specimen == "dialogs") {
             light->findChild<QPushButton*>("previewOpenDialog")->click();
             auto* dialog = light->findChild<QDialog*>("previewActualDialog");
             QVERIFY(dialog);
@@ -167,7 +437,8 @@ class PreviewTest final : public QObject {
             }
             QVERIFY(action);
             QCoreApplication::processEvents();
-            const auto menuSnapshot = menu->grab().toImage().convertToFormat(QImage::Format_ARGB32);
+            const auto menuSnapshot =
+                menu->grab().toImage().scaled(menu->size()).convertToFormat(QImage::Format_ARGB32);
             witness = textInkPatch(menuSnapshot.copy(menu->actionGeometry(action)));
             menu->hide();
         } else if (specimen == "completion") {
@@ -242,7 +513,11 @@ class PreviewTest final : public QObject {
         QVERIFY(metadata.open(QIODevice::ReadOnly));
         QCOMPARE(QJsonDocument::fromJson(metadata.readAll()).object().value("surface").toString(),
                  QString("modal"));
-        QCOMPARE(QImage(path).pixelColor(8, 880), QColor(229, 229, 229));
+        const auto backdrop = QImage(path).pixelColor(320, 880);
+        // Reference panel paper plus translucent tint; blur/8-bit compositing may round by two.
+        QVERIFY(qAbs(backdrop.red() - 183) <= 2);
+        QVERIFY(qAbs(backdrop.green() - 189) <= 2);
+        QVERIFY(qAbs(backdrop.blue() - 192) <= 2);
         QVERIFY(window.selectSpecimen("menus"));
         const auto menuPath = directory.filePath("menu.png");
         QVERIFY(window.exportCapture(menuPath, false));
@@ -305,6 +580,49 @@ class PreviewTest final : public QObject {
         QCOMPARE(QImage(path).size(), QSize(640, 900));
     }
 
+    void displayedIconsRasterizeAtTargetScale_data() {
+        QTest::addColumn<int>("size");
+        QTest::addColumn<qreal>("scale");
+        for (const int size : {12, 14, 16, 20, 24}) {
+            for (const qreal scale : {qreal(1), qreal(1.5), qreal(2)})
+                QTest::newRow(qPrintable(QString("%1px-%2x").arg(size).arg(scale)))
+                    << size << scale;
+        }
+    }
+    void displayedIconsRasterizeAtTargetScale() {
+        QFETCH(int, size);
+        QFETCH(qreal, scale);
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("icons"));
+        auto* host = window.findChild<QWidget*>("previewLight");
+        auto* display = host->findChild<QWidget*>(QString("icon-database-%1").arg(size));
+        QVERIFY(display);
+        display->setFixedSize(size, size);
+        display->ensurePolished();
+        const auto physical = QSizeF(size * scale, size * scale).toSize();
+        QImage actual(physical, QImage::Format_ARGB32_Premultiplied);
+        actual.setDevicePixelRatio(scale);
+        actual.fill(Qt::transparent);
+        QPainter painter(&actual);
+        display->render(&painter, QPoint{}, QRegion{}, QWidget::DrawChildren);
+        painter.end();
+        QCOMPARE(actual.pixelColor(0, 0).alpha(), 0);
+
+        QImage expected(physical, QImage::Format_ARGB32_Premultiplied);
+        expected.setDevicePixelRatio(scale);
+        expected.fill(Qt::transparent);
+        QPainter vectorPainter(&expected);
+        // Real gallery display versus the independent literal MVP database path.
+        QSvgRenderer reference(
+            QByteArrayLiteral("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" "
+                              "fill=\"none\" stroke=\"#222b32\" stroke-width=\"1.6\" "
+                              "stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\""
+                              "M4 6c0-4 16-4 16 0s-16 4-16 0m0 0v12c0 4 16 4 16 0V6"
+                              "M4 12c0 4 16 4 16 0\"/></svg>"));
+        reference.render(&vectorPainter, QRectF(0, 0, size, size));
+        vectorPainter.end();
+        QCOMPARE(actual, expected);
+    }
     void iconsShowNamedProductionAssetsAtSupportedSizes() {
         choscordb::design::PreviewWindow window;
         QVERIFY(window.selectSpecimen("icons"));
@@ -312,8 +630,8 @@ class PreviewTest final : public QObject {
         for (int size : {12, 14, 16, 20, 24}) {
             auto* icon = light->findChild<QLabel*>(QString("icon-database-%1").arg(size));
             QVERIFY(icon);
-            QVERIFY(!icon->pixmap().isNull());
-            QCOMPARE(icon->pixmap().size(), QSize(size, size));
+            QCOMPARE(icon->sizeHint(), QSize(size, size));
+            QCOMPARE(icon->accessibleName(), QString("database · %1 pixels").arg(size));
         }
     }
 
@@ -338,7 +656,7 @@ class PreviewTest final : public QObject {
         QVERIFY(darkEditor);
         QCOMPARE(lightEditor->SendScintilla(QsciScintillaBase::SCI_STYLEGETBACK, 0),
                  long(0xffffff));
-        QCOMPARE(darkEditor->SendScintilla(QsciScintillaBase::SCI_STYLEGETBACK, 0), long(0x171717));
+        QCOMPARE(darkEditor->SendScintilla(QsciScintillaBase::SCI_STYLEGETBACK, 0), long(0x2b2720));
     }
 
     void databaseFixturesRetainNullEmptyAndEditorSemantics() {
@@ -460,8 +778,9 @@ class PreviewTest final : public QObject {
         QVERIFY(copy);
         copy->click();
         QVERIFY(QApplication::clipboard()->text().contains("background"));
-        QVERIFY(QApplication::clipboard()->text().contains("#ffffff", Qt::CaseInsensitive));
-        QVERIFY(QApplication::clipboard()->text().contains("desktop/design_system/theme.cpp"));
+        QVERIFY(QApplication::clipboard()->text().contains("#f6f7f8", Qt::CaseInsensitive));
+        QVERIFY(
+            QApplication::clipboard()->text().contains("desktop/design_system/tokens/tokens.cpp"));
     }
 
     void exportsAreDeterministicAndFailuresVisible() {

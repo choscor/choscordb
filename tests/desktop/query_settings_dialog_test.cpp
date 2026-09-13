@@ -1,4 +1,4 @@
-#include "widgets/query_settings_dialog.h"
+#include "widgets/query_settings_dialog/query_settings_dialog.h"
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>

@@ -1,5 +1,5 @@
 #include "app/workspace_recovery.h"
-#include "widgets/sql_editor.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QSet>
 #include <QTabBar>
 #include <QTabWidget>

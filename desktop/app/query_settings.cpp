@@ -1,5 +1,5 @@
 #include "query_settings.h"
-#include "widgets/query_settings_dialog.h"
+#include "widgets/query_settings_dialog/query_settings_dialog.h"
 #include <QTimer>
 #include <atomic>
 namespace choscordb {

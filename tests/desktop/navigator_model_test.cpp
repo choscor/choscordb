@@ -8,6 +8,45 @@ using namespace choscordb;
 class NavigatorModelTest : public QObject {
     Q_OBJECT
   private slots:
+    void failedChildrenStayVisibleUntilExplicitRefresh() {
+        NavigatorModel model;
+        QAbstractItemModelTester tester(&model,
+                                        QAbstractItemModelTester::FailureReportingMode::QtTest);
+        tester.setUseFetchMore(false);
+        QSignalSpy requested(&model, &NavigatorModel::childrenRequested);
+        QVERIFY(model.addConnection(7, "Disconnected database"));
+        const auto root = model.index(0, 0);
+        model.fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
+        const auto failedToken = requested.last().at(2).toULongLong();
+        QVERIFY(model.failChildren(7, {}, failedToken, "Connection is disconnected"));
+        const QPersistentModelIndex failure(model.index(0, 0, root));
+        QVERIFY(failure.data().toString().contains("refresh to retry"));
+        QVERIFY(!model.canFetchMore(root));
+        QSignalSpy removed(&model, &QAbstractItemModel::rowsRemoved);
+        model.fetchMore(root); // A view probing again must not remove its error row.
+        bool nextTurn = false;
+        QTimer::singleShot(0, &model, [&nextTurn] { nextTurn = true; });
+        QTRY_VERIFY(nextTurn);
+        QCOMPARE(requested.count(), 1);
+        QCOMPARE(removed.count(), 0);
+        QVERIFY(failure.isValid());
+        QCOMPARE(failure.data(NavigatorModel::KindRole).toString(), QString("error"));
+        QCOMPARE(root.data(NavigatorModel::ErrorRole).toString(),
+                 QString("Connection is disconnected"));
+        model.refresh(failure);
+        QTRY_COMPARE(requested.count(), 2);
+        const auto retryToken = requested.last().at(2).toULongLong();
+        QVERIFY(retryToken > failedToken);
+        QVERIFY(!failure.isValid());
+        QVERIFY(!model.failChildren(7, {}, failedToken, "Late error"));
+        QVERIFY(!model.applyChildren(7, {}, failedToken, {}));
+        QVERIFY(model.applyChildren(
+            7, {}, retryToken, {{"customers", "Customers", "public.customers", "table", false}}));
+        QCOMPARE(model.index(0, 0, root).data().toString(), QString("Customers"));
+        QVERIFY(root.data(NavigatorModel::ErrorRole).toString().isEmpty());
+        QVERIFY(root.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    }
     void expandingThroughRecursiveProxyHandlesImmediateMetadata() {
         NavigatorModel model;
         QVERIFY(model.addConnection(1, "Database"));
@@ -182,7 +221,7 @@ class NavigatorModelTest : public QObject {
         QTRY_COMPARE(requested.count(), 1);
         const auto old = requested.last().at(2).toULongLong();
         QVERIFY(model.failChildren(0, "", old, "<script>error</script>"));
-        QVERIFY(model.canFetchMore(root));
+        QVERIFY(!model.canFetchMore(root));
         QCOMPARE(model.data(root, NavigatorModel::ErrorRole).toString(),
                  QString("<script>error</script>"));
         const auto failure = model.index(0, 0, root);
@@ -213,7 +252,7 @@ class NavigatorModelTest : public QObject {
         QVERIFY(!model.applyChildren(
             1, "", requested.last().at(2).toULongLong(),
             {{"a", "A", "A", "table", false}, {"a", "B", "B", "table", false}}));
-        QVERIFY(model.canFetchMore(root));
+        QVERIFY(!model.canFetchMore(root));
         QCOMPARE(model.rowCount(root), 1);
         QCOMPARE(model.data(model.index(0, 0, root), NavigatorModel::KindRole).toString(),
                  QString("error"));

@@ -2,7 +2,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "models/result_table_model.h"
-#include "widgets/sql_editor.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>

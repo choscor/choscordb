@@ -1,17 +1,39 @@
-#include "design_system/typography.h"
+#include "design_system/text/text.h"
 
 #include <QAccessible>
+#include <QFontDatabase>
 #include <QFontInfo>
 #include <QtTest>
 
 class TypographyTest final : public QObject {
     Q_OBJECT
   private slots:
+    void savedLegacySqlFontResolvesWithoutChangingPlatformUi() {
+        using namespace choscordb::design;
+        // Run first (or by this slot name in a fresh process). No test/helper
+        // registers bundled fonts: resolve the UI exactly as startup does.
+        const auto ui = resolveTypography(TypographyRole::Ui);
+        QCOMPARE(QFontInfo(ui).family(),
+                 QFontInfo(QFontDatabase::systemFont(QFontDatabase::GeneralFont)).family());
+        QVERIFY(QFontInfo(ui).family() != QString("Geist"));
+        QFont savedSqlFont("Geist");
+        savedSqlFont.setPointSize(16);
+        QCOMPARE(QFontInfo(savedSqlFont).family(), QString("Geist"));
+        QCOMPARE(savedSqlFont.pointSize(), 16);
+    }
+    void defaultMonospaceUsesControlledReferenceSize() {
+        using namespace choscordb::design;
+        Text text("SELECT 1;");
+        text.setTypographyRole(TypographyRole::Monospace);
+        QCOMPARE(text.font().pixelSize(), 13);
+        QCOMPARE(QFontInfo(text.font()).family(),
+                 QFontInfo(QFontDatabase::systemFont(QFontDatabase::FixedFont)).family());
+    }
     void renderedBaselinesFollowTheReferenceLineHeight() {
         using namespace choscordb::design;
         for (const auto& [role, expected] :
-             {std::pair{TypographyRole::Ui, 20}, std::pair{TypographyRole::Small, 16},
-              std::pair{TypographyRole::Base, 24}}) {
+             {std::pair{TypographyRole::Ui, 18}, std::pair{TypographyRole::Small, 16},
+              std::pair{TypographyRole::Base, 22}}) {
             Text text("H\nH");
             text.setTypographyRole(role);
             auto palette = text.palette();
@@ -44,8 +66,8 @@ class TypographyTest final : public QObject {
         Text text("Hello Hello");
         text.setWordWrap(true);
         QVERIFY(text.hasHeightForWidth());
-        QCOMPARE(text.heightForWidth(100), 20);
-        QCOMPARE(text.heightForWidth(40), 40);
+        QCOMPARE(text.heightForWidth(100), 18);
+        QCOMPARE(text.heightForWidth(40), 36);
         text.setTypographyRole(TypographyRole::Small);
         QCOMPARE(text.heightForWidth(35), 32);
         text.setText(QString::fromUtf8("Tiếng Việt — 日本語 — العربية"));
@@ -74,7 +96,8 @@ class TypographyTest final : public QObject {
         QImage previous;
         for (const auto weight : {QFont::Normal, QFont::Medium, QFont::DemiBold, QFont::Bold}) {
             text.setWeight(weight);
-            QCOMPARE(QFontInfo(text.font()).family(), QString("Geist"));
+            QCOMPARE(QFontInfo(text.font()).family(),
+                     QFontInfo(QFontDatabase::systemFont(QFontDatabase::GeneralFont)).family());
             QCOMPARE(QFontInfo(text.font()).weight(), weight);
             const auto rendered = text.grab().toImage();
             QVERIFY(rendered != previous);
@@ -85,18 +108,18 @@ class TypographyTest final : public QObject {
     void textUsesReferenceLineBoxesForEveryRole() {
         using namespace choscordb::design;
         Text text("Hello\nHello");
-        QCOMPARE(text.sizeHint().height(), 40);
+        QCOMPARE(text.sizeHint().height(), 36);
         text.setTypographyRole(TypographyRole::Small);
         QCOMPARE(text.sizeHint().height(), 32);
         text.setTypographyRole(TypographyRole::Heading);
-        QCOMPARE(text.sizeHint().height(), 44);
+        QCOMPARE(text.sizeHint().height(), 40);
         text.setTypographyRole(TypographyRole::Base);
-        QCOMPARE(text.sizeHint().height(), 48);
+        QCOMPARE(text.sizeHint().height(), 44);
         text.setTypographyRole(TypographyRole::DialogTitle);
-        QCOMPARE(text.sizeHint().height(), 32);
+        QCOMPARE(text.sizeHint().height(), 40);
         text.setTypographyRole(TypographyRole::Heading);
         text.setText("Hello");
-        QCOMPARE(text.sizeHint().height(), 22);
+        QCOMPARE(text.sizeHint().height(), 20);
     }
 };
 

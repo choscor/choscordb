@@ -1,5 +1,5 @@
 #include "design_system/theme.h"
-#include "widgets/sql_editor.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QFile>
 #include <QScopeGuard>
 #include <QSemaphore>
@@ -12,6 +12,61 @@
 class EditorTest : public QObject {
     Q_OBJECT
   private slots:
+    void defaultPixelFontRendersLegiblyAndCustomPointFontPreservesEditing() {
+        using namespace choscordb::design;
+        choscordb::SqlEditor editor;
+        editor.setPalette(applicationPalette(
+            {ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light, {}), false}));
+        editor.setText("MMMM\nMMMM");
+        editor.resize(500, 220);
+        editor.show();
+        editor.clearFocus();
+        QCoreApplication::processEvents();
+        const auto capHeight = [&editor] {
+            const auto capture = editor.grab();
+            const auto image = capture.toImage();
+            const auto scale = capture.devicePixelRatio();
+            const auto left = editor.SendScintilla(QsciScintilla::SCI_POINTXFROMPOSITION, 0UL, 0L);
+            const auto right = editor.SendScintilla(QsciScintilla::SCI_POINTXFROMPOSITION, 0UL, 4L);
+            const auto lineHeight = editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL);
+            int first = image.height(), last = -1;
+            for (int y = 1; y < qRound(lineHeight * scale); ++y)
+                for (int x = qRound((left + 2) * scale); x < qRound(right * scale); ++x)
+                    if (image.pixelColor(x, y).lightness() < 120) {
+                        first = qMin(first, y);
+                        last = qMax(last, y);
+                    }
+            return last < first ? 0 : qRound((last - first + 1) / scale);
+        };
+        // A 13px monospace capital must be visibly legible, not the 1pt glyph
+        // produced when QScintilla receives a pixel QFont as pointSizeF == -1.
+        const auto defaultCaps = capHeight();
+        QVERIFY2(defaultCaps >= 8, qPrintable(QString::number(defaultCaps)));
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 24L);
+        const auto defaultWidth =
+            editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH, QsciLexerSQL::Default, "MMMM");
+        // Platform fixed-font fallback differs under Qt's offscreen plugin.
+        // Its absolute advance is not a reference constant; compare actual
+        // glyph growth after the user's larger point-size preference instead.
+        auto custom = resolveTypography(TypographyRole::Monospace);
+        custom.setPointSize(22);
+        editor.setEditorFont(custom);
+        QCoreApplication::processEvents();
+        QVERIFY(capHeight() >= 16);
+        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 24L);
+        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH, QsciLexerSQL::Default, "MMMM") >
+                defaultWidth * 1.5);
+        editor.insertAt(";", 1, 4);
+        editor.setSelection(0, 1, 0, 3);
+        const auto revision = editor.revision();
+        editor.setEditorFont(resolveTypography(TypographyRole::Monospace));
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 24L);
+        QCOMPARE(editor.selectedText(), QString("MM"));
+        QCOMPARE(editor.revision(), revision);
+        QCOMPARE(editor.text(), QString("MMMM\nMMMM;"));
+        editor.undo();
+        QCOMPARE(editor.text(), QString("MMMM\nMMMM"));
+    }
     void darkPaletteAlsoColorsTheFoldMargin() {
         using namespace choscordb::design;
         choscordb::SqlEditor editor;
@@ -21,7 +76,7 @@ class EditorTest : public QObject {
         editor.show();
         QCoreApplication::processEvents();
         const int x = editor.marginWidth(0) + editor.marginWidth(1) + editor.marginWidth(2) / 2;
-        QCOMPARE(editor.grab().toImage().pixelColor(x, 160), QColor("#171717"));
+        QCOMPARE(editor.grab().toImage().pixelColor(x, 160), QColor("#20272b"));
     }
     void restoresBufferAndSelectionWithoutReadingFile() {
         choscordb::SqlEditor editor;
