@@ -29,6 +29,45 @@ class DesignSystemTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void toastVariantsHaveDistinctColoredSurfacesInBothThemes() {
+        using namespace choscordb::design;
+        ThemeManager manager;
+        for (const auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
+            manager.setMode(mode);
+            const auto sheet = applicationStyleSheet(manager.resolvedTheme(), manager.metrics());
+            const auto expected = mode == ThemeMode::Light
+                                      ? QStringList{"#eaf4ef", "#fff3d6", "#fdecea"}
+                                      : QStringList{"#283e34", "#473b22", "#492d2b"};
+            const auto borders = QStringList{manager.resolvedTheme().colors.success.name(),
+                                             manager.resolvedTheme().colors.warning.name(),
+                                             manager.resolvedTheme().colors.danger.name()};
+            int index = 0;
+            for (const auto* variant : {"success", "warning", "danger"}) {
+                const auto selector = QStringLiteral("QLabel#toastRegion[variant=\"%1\"]")
+                                          .arg(variant);
+                const auto rule = sheet.mid(sheet.indexOf(selector)).section('}', 0, 0);
+                QVERIFY2(rule.contains(QStringLiteral("background-color: %1")
+                                           .arg(expected.at(index))), qPrintable(rule));
+                QVERIFY2(rule.contains(QStringLiteral("border-left: 4px solid %1")
+                                           .arg(borders.at(index))), qPrintable(rule));
+                ++index;
+            }
+        }
+    }
+    void dockTitleUsesThemeText() {
+        using namespace choscordb::design;
+        ThemeManager manager;
+        for (const auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
+            manager.setMode(mode);
+            const auto sheet = applicationStyleSheet(manager.resolvedTheme(), manager.metrics());
+            const auto titleRule = sheet.mid(sheet.indexOf(QStringLiteral("QDockWidget::title")));
+            QVERIFY(titleRule.startsWith(QStringLiteral("QDockWidget::title")));
+            QVERIFY2(titleRule.section('}', 0, 0).contains(
+                QStringLiteral("color: %1;").arg(manager.resolvedTheme().colors.text.name())),
+                     qPrintable(titleRule.section('}', 0, 0)));
+        }
+    }
+
     void explicitAndSystemThemesResolvePredictably() {
         choscordb::design::ThemeManager manager;
 

@@ -120,7 +120,7 @@ target_link_libraries(choscordb-desktop PUBLIC choscordb-widgets)
 
 if(BUILD_TESTING)
   choscordb_add_library(choscordb-preview desktop/tools/preview/preview_window.cpp)
-  target_link_libraries(choscordb-preview PUBLIC choscordb-widgets)
+  target_link_libraries(choscordb-preview PUBLIC choscordb-design-system)
   target_link_libraries(choscordb-desktop PUBLIC choscordb-preview)
   target_compile_definitions(choscordb-desktop PRIVATE CHOSCORDB_DEVELOPMENT_PREVIEW)
 endif()

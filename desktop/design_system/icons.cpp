@@ -123,6 +123,7 @@ QList<IconDefinition> iconCatalog() {
         {Icon::Refresh, QStringLiteral("refresh-cw"),
          QStringLiteral("desktop/resources/icons/refresh-cw.svg")},
         {Icon::Close, QStringLiteral("x"), QStringLiteral("desktop/resources/icons/x.svg")},
+        {Icon::Square, QStringLiteral("square"), QStringLiteral("desktop/resources/icons/square.svg")},
         {Icon::ChevronDown, QStringLiteral("chevron-down"),
          QStringLiteral("desktop/resources/icons/chevron-down.svg")},
         {Icon::ChevronRight, QStringLiteral("chevron-right"),
@@ -174,6 +175,8 @@ QString iconResourcePath(Icon icon) {
         return QStringLiteral(":/icons/refresh-cw.svg");
     case Icon::Close:
         return QStringLiteral(":/icons/x.svg");
+    case Icon::Square:
+        return QStringLiteral(":/icons/square.svg");
     case Icon::ChevronDown:
         return QStringLiteral(":/icons/chevron-down.svg");
     case Icon::ChevronRight:

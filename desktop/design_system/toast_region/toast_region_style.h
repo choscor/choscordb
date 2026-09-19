@@ -3,5 +3,6 @@
 #include <QString>
 
 namespace choscordb::design {
-QString toastRegionApplicationStyleSheet();
+struct ResolvedTheme;
+QString toastRegionApplicationStyleSheet(const ResolvedTheme& theme);
 } // namespace choscordb::design

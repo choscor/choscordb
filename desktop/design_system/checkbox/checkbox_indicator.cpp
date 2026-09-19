@@ -9,6 +9,35 @@
 namespace choscordb::design::detail {
 bool drawCheckboxIndicator(QStyle::PrimitiveElement element, const QStyleOption* option,
                            QPainter* painter, const QWidget* widget) {
+    if (element == QStyle::PE_IndicatorRadioButton) {
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        const bool enabled = option->state.testFlag(QStyle::State_Enabled);
+        const bool checked = option->state.testFlag(QStyle::State_On);
+        const auto themeValue = scopedThemeValue(widget);
+        auto fill = option->palette.color(QPalette::Active, QPalette::Accent);
+        auto markColor = option->palette.color(QPalette::Active, QPalette::HighlightedText);
+        auto border = option->palette.color(QPalette::Mid);
+        if (themeValue.canConvert<ResolvedTheme>()) {
+            const auto colors = themeValue.value<ResolvedTheme>().colors;
+            fill = colors.primary;
+            markColor = colors.primaryForeground;
+            border = colors.input;
+        }
+        if (!enabled)
+            painter->setOpacity(0.5);
+        const auto circle = QRectF(option->rect).adjusted(0.5, 0.5, -0.5, -0.5);
+        painter->setPen(QPen(checked ? fill : border, 1));
+        painter->setBrush(enabled && checked ? QBrush(fill) : Qt::NoBrush);
+        painter->drawEllipse(circle);
+        if (checked) {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(enabled ? QBrush(markColor) : QBrush(fill));
+            painter->drawEllipse(circle.center(), 3.5, 3.5);
+        }
+        painter->restore();
+        return true;
+    }
     if (element == QStyle::PE_IndicatorCheckBox ||
         element == QStyle::PE_IndicatorItemViewItemCheck) {
         painter->save();

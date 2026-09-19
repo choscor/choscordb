@@ -4,6 +4,7 @@
 #include "tools/preview/preview_window.h"
 
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "models/result_table_model.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -12,7 +13,10 @@
 #include <QClipboard>
 #include <QComboBox>
 #include <QCompleter>
+#include <QContextMenuEvent>
 #include <QDialog>
+#include <QDockWidget>
+#include <QDoubleSpinBox>
 #include <QDir>
 #include <QFile>
 #include <QHeaderView>
@@ -25,6 +29,9 @@
 #include <QPainter>
 #include <QProcess>
 #include <QPushButton>
+#include <QGraphicsOpacityEffect>
+#include <QSpinBox>
+#include <QRadioButton>
 #include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -34,6 +41,8 @@
 #include <QTemporaryDir>
 #include <QToolBar>
 #include <QToolButton>
+#include <QTextEdit>
+#include <QTextBlock>
 #include <QTreeView>
 #include <QtTest>
 #include <cstring>
@@ -112,6 +121,83 @@ class PreviewTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void richTextParagraphsHaveCompactSpacing() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("textareas"));
+        auto* editor = window.findChild<QTextEdit*>();
+        QVERIFY(editor);
+        editor->moveCursor(QTextCursor::End);
+        QTest::keyClick(editor, Qt::Key_Return);
+        editor->insertPlainText("Next line");
+        const auto first = editor->document()->firstBlock();
+        const auto second = first.next();
+        QVERIFY(second.isValid());
+        QCOMPARE(first.blockFormat().bottomMargin(), 0.0);
+        QCOMPARE(second.blockFormat().topMargin(), 0.0);
+    }
+    void showToastOpensTransientToastAtViewportCorner() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("feedback"));
+        window.show();
+        auto* host = window.findChild<QWidget*>("previewLight");
+        QVERIFY(host);
+        auto* scroll = host->findChild<QScrollArea*>("previewContentScroll");
+        auto* toast = host->findChild<choscordb::ToastRegion*>("toastRegion");
+        auto* showToast = host->findChild<QPushButton*>("previewToast_success");
+        QVERIFY(scroll && toast && showToast);
+        QCOMPARE(showToast->text(), QString("Show success toast"));
+        QVERIFY(toast->isHidden());
+        showToast->click();
+        QTRY_VERIFY(toast->isVisible());
+        QVERIFY(toast->text().contains("Your changes have been saved."));
+        QCOMPARE(toast->parentWidget(), scroll->viewport());
+        QVERIFY(toast->geometry().right() <= scroll->viewport()->width() - 8);
+        QVERIFY(toast->geometry().bottom() <= scroll->viewport()->height() - 8);
+        QVERIFY(toast->geometry().right() > scroll->viewport()->width() / 2);
+        QVERIFY(toast->geometry().bottom() > scroll->viewport()->height() / 2);
+        window.resize(window.width() + 160, window.height() + 80);
+        QCoreApplication::processEvents();
+        QCOMPARE(toast->geometry().right(), scroll->viewport()->width() - 17);
+        QCOMPARE(toast->geometry().bottom(), scroll->viewport()->height() - 17);
+        QTRY_VERIFY_WITH_TIMEOUT(toast->isHidden(), 8000);
+    }
+    void toastVariantsShowTitleBodyAndUseConfiguredTimeout() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("feedback"));
+        window.show();
+        auto* host = window.findChild<QWidget*>("previewLight");
+        QVERIFY(host);
+        auto* toast = host->findChild<choscordb::ToastRegion*>("toastRegion");
+        auto* opacity = toast ? toast->findChild<QGraphicsOpacityEffect*>() : nullptr;
+        auto* seconds = host->findChild<QSpinBox*>("previewToastSeconds");
+        QVERIFY(toast && opacity && seconds);
+        seconds->setValue(1);
+        for (const auto& variant : {"success", "warning", "danger"}) {
+            auto* button = host->findChild<QPushButton*>(QString("previewToast_%1").arg(variant));
+            QVERIFY(button);
+            button->click();
+            QTRY_VERIFY(toast->isVisible());
+            QTRY_VERIFY(opacity->opacity() > 0.9);
+            QCOMPARE(toast->property("variant").toString(), QString(variant));
+            QVERIFY(toast->text().contains("<b>"));
+            QVERIFY(toast->text().contains("<br/>"));
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(toast->isHidden(), 2000);
+        toast->showPersistent("Plain notice");
+        QCOMPARE(toast->text(), QString("Plain notice"));
+        QCOMPARE(toast->textFormat(), Qt::PlainText);
+        QVERIFY(toast->property("variant").toString().isEmpty());
+        QTRY_VERIFY(opacity->opacity() > 0.9);
+        toast->clearNotice();
+        QTRY_VERIFY(opacity->opacity() < 0.1);
+        QTRY_VERIFY(toast->isHidden());
+        toast->showNotice("First", 5000);
+        toast->clearNotice();
+        toast->showNotice("Replacement", 5000);
+        QTRY_VERIFY(opacity->opacity() > 0.9);
+        QVERIFY(toast->isVisible());
+        QCOMPARE(toast->text(), QString("Replacement"));
+    }
     void nonmodalDialogSurfaceHasNoOutline() {
         choscordb::design::PreviewWindow window;
         QVERIFY(window.selectSpecimen("nonmodal"));
@@ -203,29 +289,7 @@ class PreviewTest final : public QObject {
         QCOMPARE(finished.count(), 1);
         QTRY_VERIFY(open->hasFocus());
     }
-    void expandingFailedConnectionKeepsItsErrorVisible() {
-        choscordb::design::PreviewWindow window;
-        QVERIFY(window.selectSpecimen("sidebar-tree"));
-        window.resize(1280, 900);
-        window.show();
-        auto* host = window.findChild<QWidget*>("previewLight");
-        auto* tree = host->findChild<QTreeView*>();
-        auto* model = qobject_cast<choscordb::NavigatorModel*>(tree->model());
-        QVERIFY(model);
-        const auto disconnected = model->index(1, 0);
-        QTRY_COMPARE(disconnected.data(choscordb::NavigatorModel::ErrorRole).toString(),
-                     QString("Synthetic disconnected state"));
-        QSignalSpy requests(model, &choscordb::NavigatorModel::childrenRequested);
-        const auto bounds = tree->visualRect(disconnected);
-        QVERIFY(!bounds.isEmpty());
-        QTest::mouseClick(tree->viewport(), Qt::LeftButton, {},
-                          QPoint(bounds.left() - tree->indentation() / 2, bounds.center().y()));
-        QCoreApplication::processEvents();
-        QVERIFY(tree->isExpanded(disconnected));
-        QCOMPARE(model->index(0, 0, disconnected).data().toString(),
-                 QString("Failed: Synthetic disconnected state — refresh to retry"));
-        QCOMPARE(requests.count(), 0);
-    }
+
     void scrollSpecimensKeepTheirIndependentThemePaper() {
         choscordb::design::PreviewWindow window;
         QVERIFY(window.selectSpecimen("selects"));
@@ -242,73 +306,12 @@ class PreviewTest final : public QObject {
         }
     }
 
-    void connectionSpecimenSwitchesDriverFieldsWithoutLosingDrafts() {
-        choscordb::design::PreviewWindow window;
-        QVERIFY(window.selectSpecimen("connection-form"));
-        window.show();
-        auto* light = window.findChild<QWidget*>("previewLight");
-        auto* driver = light->findChild<QComboBox*>();
-        QVERIFY(driver);
-        driver->setCurrentText("SQLite");
-        auto* file = light->findChild<QLineEdit*>("previewSqlitePath");
-        QVERIFY(file && file->isVisible());
-        QTest::keyClicks(file, "/tmp/offline-fixture.sqlite");
-        driver->setCurrentText("PostgreSQL");
-        QVERIFY(!file->isVisible());
-        driver->setCurrentText("SQLite");
-        QVERIFY(file->isVisible());
-        QCOMPARE(file->text(), QString("/tmp/offline-fixture.sqlite"));
-    }
 
-    void failedResultSpecimenRetriesWithoutInventingRowsOrTotals_data() {
-        QTest::addColumn<QString>("specimen");
-        QTest::addColumn<QString>("prefix");
-        QTest::newRow("failed") << QString("results-error") << QString("Error");
-        QTest::newRow("loading") << QString("results-loading") << QString("Loading");
-    }
-    void failedResultSpecimenRetriesWithoutInventingRowsOrTotals() {
-        QFETCH(QString, specimen);
-        QFETCH(QString, prefix);
-        choscordb::design::PreviewWindow window;
-        QVERIFY(window.selectSpecimen(specimen));
-        auto* light = window.findChild<QWidget*>("previewLight");
-        auto* table = light->findChild<QTableView*>("previewResults");
-        QVERIFY(table);
-        QCOMPARE(table->model()->rowCount(), 0);
-        auto* status = light->findChild<QLabel*>("previewResultStatus");
-        QVERIFY(status && status->text().startsWith(prefix));
-        auto* retry = light->findChild<QPushButton*>("previewRetryResult");
-        QVERIFY(retry);
-        retry->click();
-        QCOMPARE(table->model()->rowCount(), 4);
-        QCOMPARE(table->model()->data(table->model()->index(0, 1)).toString(), QString("NULL"));
-        QCOMPARE(table->model()->data(table->model()->index(1, 1)).toString(), QString(""));
-        QVERIFY(status->text().contains("total unknown"));
-    }
 
-    void cancellationSpecimenKeepsPendingControlsUntilAcknowledged() {
-        choscordb::design::PreviewWindow window;
-        QVERIFY(window.selectSpecimen("query-controls"));
-        auto* light = window.findChild<QWidget*>("previewLight");
-        auto* toolbar = light->findChild<QToolBar*>();
-        QVERIFY(toolbar);
-        auto* run = toolbar->actions().at(0);
-        auto* cancel = toolbar->actions().at(1);
-        QCOMPARE(run->text(), QString("Run"));
-        QCOMPARE(cancel->text(), QString("Cancel"));
-        run->trigger();
-        cancel->trigger();
-        QVERIFY(!run->isEnabled());
-        QVERIFY(!cancel->isEnabled());
-        auto* acknowledgment = light->findChild<QPushButton*>("previewAcknowledgeCancellation");
-        QVERIFY(acknowledgment && acknowledgment->isEnabled());
-        auto* status = light->findChild<QLabel*>("previewQueryStatus");
-        QVERIFY(status);
-        QVERIFY(status->text().startsWith("Cancelling"));
-        acknowledgment->click();
-        QVERIFY(run->isEnabled());
-        QVERIFY(status->text().startsWith("Cancelled"));
-    }
+
+
+
+
 
     void narrowGalleryKeepsNavigationAndActionsReachable() {
         choscordb::design::PreviewWindow window;
@@ -431,7 +434,6 @@ class PreviewTest final : public QObject {
         QTest::addColumn<QString>("specimen");
         QTest::newRow("modal") << QString("dialogs");
         QTest::newRow("menu") << QString("menus");
-        QTest::newRow("completion") << QString("completion");
         QTest::newRow("tooltip") << QString("tooltip-popover");
         QTest::newRow("selector") << QString("selects");
     }
@@ -463,7 +465,7 @@ class PreviewTest final : public QObject {
             QVERIFY(dialog->isVisible());
             QLabel* heading = nullptr;
             for (auto* label : dialog->findChildren<QLabel*>()) {
-                if (label->text() == "Connection details")
+                if (label->text() == "Panel details")
                     heading = label;
             }
             QVERIFY(heading);
@@ -486,15 +488,6 @@ class PreviewTest final : public QObject {
                 menu->grab().toImage().scaled(menu->size()).convertToFormat(QImage::Format_ARGB32);
             witness = textInkPatch(menuSnapshot.copy(menu->actionGeometry(action)));
             menu->hide();
-        } else if (specimen == "completion") {
-            light->findChild<QPushButton*>("previewOpenCompletion")->click();
-            auto* popup = light->findChild<QCompleter*>()->popup();
-            QTRY_VERIFY(popup->isVisible());
-            const auto index = popup->model()->index(0, 0);
-            QVERIFY(index.data().toString().contains("synthetic_customers"));
-            witness = textInkPatch(
-                visibleSurfaceSnapshot(*popup->viewport()).copy(popup->visualRect(index)));
-            popup->hide();
         } else {
             light->findChild<QPushButton*>("previewOpenTooltip")->click();
             auto* tooltip = window.findChild<QWidget*>("designTooltip");
@@ -533,19 +526,7 @@ class PreviewTest final : public QObject {
         QVERIFY(darkColor.lightness() > 128);
     }
 
-    void exportCapturesTheRealCompletionPopup() {
-        QTemporaryDir directory;
-        QVERIFY(directory.isValid());
-        choscordb::design::PreviewWindow window;
-        QVERIFY(window.selectSpecimen("completion"));
-        const auto path = directory.filePath("completion.png");
-        QVERIFY(window.exportCapture(path));
-        QFile metadata(path + ".json");
-        QVERIFY(metadata.open(QIODevice::ReadOnly));
-        QCOMPARE(QJsonDocument::fromJson(metadata.readAll()).object().value("surface").toString(),
-                 QString("completion-popup"));
-        QCOMPARE(QImage(path).size(), QSize(1280, 900));
-    }
+
 
     void exportsRenderActualModalAndMenuSurfaces() {
         QTemporaryDir directory;
@@ -582,26 +563,7 @@ class PreviewTest final : public QObject {
             QString("tooltip"));
     }
 
-    void completionUsesTheRealOfflinePopup() {
-        choscordb::design::PreviewWindow window;
-        window.show();
-        QVERIFY(QTest::qWaitForWindowActive(&window));
-        QVERIFY(window.selectSpecimen("completion"));
-        // Present the newly constructed editor before simulating the user's click.
-        QCoreApplication::processEvents();
-        auto* light = window.findChild<QWidget*>("previewLight");
-        auto* open = light->findChild<QPushButton*>("previewOpenCompletion");
-        QVERIFY(open);
-        open->click();
-        auto* completer = light->findChild<QCompleter*>();
-        QVERIFY(completer);
-        auto* popup = completer->popup();
-        QCOMPARE(popup->objectName(), QString("sqlCompletionPopup"));
-        QTRY_VERIFY(popup->isVisible());
-        QVERIFY(popup->model()->rowCount() > 0);
-        QTest::keyClick(popup, Qt::Key_Escape);
-        QTRY_VERIFY(!popup->isVisible());
-    }
+
 
     void standaloneExportsWithoutAProfile() {
         QTemporaryDir directory;
@@ -680,64 +642,11 @@ class PreviewTest final : public QObject {
         }
     }
 
-    void databaseEditorsUseIndependentPaperColors_data() {
-        QTest::addColumn<QString>("specimen");
-        QTest::newRow("SQL editor") << QString("sql-editor");
-        QTest::newRow("completion editor") << QString("completion");
-        QTest::newRow("editor preferences") << QString("editor-preferences");
-    }
 
-    void databaseEditorsUseIndependentPaperColors() {
-        QFETCH(QString, specimen);
-        choscordb::design::PreviewWindow window;
-        window.show();
-        QVERIFY(window.selectSpecimen(specimen));
-        QCoreApplication::processEvents();
-        auto* light = window.findChild<QWidget*>("previewLight");
-        auto* dark = window.findChild<QWidget*>("previewDark");
-        auto* lightEditor = light->findChild<choscordb::SqlEditor*>();
-        auto* darkEditor = dark->findChild<choscordb::SqlEditor*>();
-        QVERIFY(lightEditor);
-        QVERIFY(darkEditor);
-        QCOMPARE(lightEditor->SendScintilla(QsciScintillaBase::SCI_STYLEGETBACK, 0),
-                 long(0xffffff));
-        QCOMPARE(darkEditor->SendScintilla(QsciScintillaBase::SCI_STYLEGETBACK, 0), long(0x2b2720));
-    }
 
-    void databaseFixturesRetainNullEmptyAndEditorSemantics() {
-        choscordb::design::PreviewWindow window;
-        QVERIFY(window.selectSpecimen("results"));
-        auto* light = window.findChild<QWidget*>("previewLight");
-        auto* table = light->findChild<QTableView*>("previewResults");
-        QVERIFY(table);
-        QCOMPARE(table->verticalHeader()->defaultSectionSize(), 25);
-        window.show();
-        QApplication::processEvents();
-        const auto firstCell = table->visualRect(table->model()->index(0, 0));
-        const auto secondCell = table->visualRect(table->model()->index(0, 1));
-        const QPoint firstSample(firstCell.left() + 4, firstCell.center().y());
-        const QPoint secondSample(secondCell.left() + 4, secondCell.center().y());
-        const auto before = table->viewport()->grab().toImage();
-        QTest::mouseMove(table->viewport(), secondCell.center());
-        QApplication::processEvents();
-        const auto hovered = table->viewport()->grab().toImage();
-        QVERIFY(hovered.pixelColor(firstSample) != before.pixelColor(firstSample));
-        QVERIFY(hovered.pixelColor(secondSample) != before.pixelColor(secondSample));
-        auto* model = qobject_cast<choscordb::ResultTableModel*>(table->model());
-        QVERIFY(model);
-        QCOMPARE(model->data(model->index(0, 1)).toString(), QString("NULL"));
-        QCOMPARE(model->data(model->index(1, 1)).toString(), QString(""));
-        QCOMPARE(model->data(model->index(0, 1), Qt::UserRole).toBool(), true);
-        QCOMPARE(model->data(model->index(1, 1), Qt::UserRole).toBool(), false);
-        QVERIFY(model->data(model->index(2, 1)).toString().contains("open to load"));
-        QVERIFY(window.selectSpecimen("sql-editor"));
-        auto* editor = light->findChild<choscordb::SqlEditor*>("previewSqlEditor");
-        QVERIFY(editor);
-        QVERIFY(editor->text().contains("SELECT"));
-        QVERIFY(editor->text().contains("synthetic"));
-        editor->setText("SELECT 2;");
-        QCOMPARE(editor->text(), QString("SELECT 2;"));
-    }
+
+
+
 
     void examplesOpenActualDismissibleSurfaces() {
         choscordb::design::PreviewWindow window;
@@ -835,13 +744,14 @@ class PreviewTest final : public QObject {
     void individualSpecimensAreSelectableAndSearchable() {
         choscordb::design::PreviewWindow window;
         QVERIFY(window.specimenIds().contains("buttons"));
-        QVERIFY(window.specimenIds().contains("results"));
-        QVERIFY(window.specimenIds().contains("completion"));
-        QVERIFY(window.selectSpecimen("results"));
+        QVERIFY(window.specimenIds().contains("dialogs"));
+        QVERIFY(!window.specimenIds().contains("paging"));
+        QVERIFY(!window.specimenIds().contains("paging-unknown"));
+        QVERIFY(window.selectSpecimen("dialogs"));
         QVERIFY(!window.selectSpecimen("missing"));
         auto* search = window.findChild<QLineEdit*>("previewSearch");
         search->setText("password");
-        QCOMPARE(window.visibleSections(), QStringList({"Components", "Compositions"}));
+        QCOMPARE(window.visibleSections(), QStringList({"Components"}));
     }
 
     void tokensExposeCopyableValuesAndSources() {
@@ -909,16 +819,119 @@ class PreviewTest final : public QObject {
     void navigationIsSearchable() {
         choscordb::design::PreviewWindow window;
         QCOMPARE(window.visibleSections(),
-                 QStringList({"Tokens", "Typography", "Icons", "Components", "Compositions",
-                              "Database UI"}));
+                 QStringList({"Tokens", "Typography", "Icons", "Components"}));
+        QVERIFY(window.specimenIds().contains("dialogs"));
+        QVERIFY(window.specimenIds().contains("menus"));
+        QVERIFY(window.specimenIds().contains("feedback"));
+        QVERIFY(!window.specimenIds().contains("paging"));
+        QVERIFY(!window.specimenIds().contains("results"));
+        QVERIFY(!window.specimenIds().contains("connection-form"));
+        QVERIFY(!window.selectSection("Compositions"));
+        QVERIFY(!window.selectSection("Database UI"));
         auto* search = window.findChild<QLineEdit*>("previewSearch");
         QVERIFY(search);
+        search->setText("dialog");
+        QCOMPARE(window.visibleSections(), QStringList({"Components"}));
         search->setText("dataBASE");
-        QCOMPARE(window.visibleSections(), QStringList({"Database UI"}));
-        search->setText("no matching specimen");
         QVERIFY(window.visibleSections().isEmpty());
         search->clear();
-        QCOMPARE(window.visibleSections().size(), 6);
+        QCOMPARE(window.visibleSections().size(), 4);
+    }
+
+    void componentFamiliesAreRendered() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("dock"));
+        auto* light = window.findChild<QWidget*>("previewLight");
+        QVERIFY(light->findChild<QDockWidget*>());
+
+        QVERIFY(window.selectSpecimen("lists-navigation"));
+        QVERIFY(light->findChild<QTreeView*>());
+        QVERIFY(window.selectSpecimen("numeric-fields"));
+        QVERIFY(light->findChild<QDoubleSpinBox*>());
+        QVERIFY(window.selectSpecimen("textareas"));
+        QVERIFY(light->findChild<QTextEdit*>());
+        QVERIFY(window.selectSpecimen("checks-toggles"));
+        QVERIFY(light->findChild<QRadioButton*>());
+        QVERIFY(window.selectSpecimen("separators-splitters"));
+        bool hasVerticalSeparator = false;
+        for (auto* frame : light->findChildren<QFrame*>())
+            hasVerticalSeparator |= frame->frameShape() == QFrame::VLine;
+        QVERIFY(hasVerticalSeparator);
+    }
+
+    void dockSpecimenRendersThemedTitleAndButtons() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("dock"));
+        window.show();
+        QCoreApplication::processEvents();
+        for (const auto* name : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(name);
+            auto* dock = host->findChild<QDockWidget*>();
+            QVERIFY(dock);
+            auto* title = dock->findChild<QLabel*>("dockTitleLabel");
+            QVERIFY(title);
+            const auto theme = choscordb::design::resolvedThemeForWidget(*host);
+            const auto image = dock->grab().toImage();
+            QCOMPARE(image.pixelColor(image.width() / 2, image.height() / 2),
+                     theme.colors.surface);
+            for (const auto* buttonName : {"dockFloatButton", "dockCloseButton"}) {
+                auto* button = dock->findChild<QToolButton*>(buttonName);
+                QVERIFY(button);
+                QVERIFY(!button->icon().isNull());
+                const auto buttonImage = button->grab().toImage();
+                int paintedColumns = 0;
+                for (int x = 0; x < buttonImage.width(); ++x) {
+                    bool painted = false;
+                    for (int y = 0; y < buttonImage.height(); ++y)
+                        painted |= buttonImage.pixelColor(x, y) != theme.colors.surface;
+                    paintedColumns += painted;
+                }
+                QVERIFY2(paintedColumns >= 7, qPrintable(buttonName));
+            }
+        }
+    }
+
+    void navigationTreeTogglesAndRenamesFromMenu() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("lists-navigation"));
+        auto* tree = window.findChild<QWidget*>("previewLight")->findChild<QTreeView*>();
+        QVERIFY(tree);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        const auto group = tree->model()->index(0, 0);
+        const auto nested = tree->model()->index(0, 0, group);
+        QVERIFY(tree->visualRect(group).height() <= 32);
+        QVERIFY(tree->visualRect(nested).left() - tree->visualRect(group).left() <= 20);
+        const QPoint label = tree->visualRect(group).center() + QPoint(20, 0);
+        QTest::mouseClick(tree->viewport(), Qt::LeftButton, {}, label);
+        QVERIFY(!tree->isExpanded(group));
+        QTest::mouseClick(tree->viewport(), Qt::LeftButton, {}, label);
+        QVERIFY(tree->isExpanded(group));
+        QTest::mouseDClick(tree->viewport(), Qt::LeftButton, {}, label);
+        QVERIFY(!tree->findChild<QLineEdit*>());
+        QSignalSpy menuRequested(tree, &QWidget::customContextMenuRequested);
+        QContextMenuEvent contextEvent(QContextMenuEvent::Mouse, label,
+                                       tree->viewport()->mapToGlobal(label));
+        QApplication::sendEvent(tree->viewport(), &contextEvent);
+        QCOMPARE(menuRequested.size(), 1);
+        auto* menu = tree->findChild<QMenu*>();
+        QVERIFY(menu);
+        auto* rename = menu->actions().isEmpty() ? nullptr : menu->actions().first();
+        QVERIFY(rename);
+        QCOMPARE(rename->text(), QStringLiteral("Rename"));
+        const QPoint visibleMenu = menu->geometry().topLeft() +
+                                   menu->actionGeometry(rename).topLeft();
+        QVERIFY(qAbs(visibleMenu.y() - contextEvent.globalY()) <= 10);
+        rename->trigger();
+        QTRY_VERIFY(tree->findChild<QLineEdit*>());
+        auto* editor = tree->findChild<QLineEdit*>();
+        QVERIFY(editor);
+        QVERIFY(tree->isExpanded(group));
+        editor->selectAll();
+        QTest::keyClicks(editor, "Renamed group");
+        QCOMPARE(editor->text(), QStringLiteral("Renamed group"));
+        QTest::keyClick(editor, Qt::Key_Return);
+        QTRY_COMPARE(group.data().toString(), QStringLiteral("Renamed group"));
     }
 };
 

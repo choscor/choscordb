@@ -75,9 +75,42 @@ compatibility headers from the first split have been removed after verifying
 that no source, test or tool uses them. `theme.h` remains the used aggregate API
 for resolved themes and their foundation types.
 
-The gallery host and its synthetic fixtures remain in `desktop/tools/preview/`.
-They exercise these real components; their demonstrations are not production
-component implementations. Its source labels point to the owning modules.
+The gallery host is `desktop/tools/preview/`. It exposes Tokens, Typography,
+Icons, and Components. Every user-visible component family in the Ownership
+table must have a rendered control in the gallery. Several related modules may
+share one specimen; internal style, painting, and presentation helpers are
+exercised through the controls that use them. The specimens use real design
+system controls and styles with synthetic content. Source labels point to the
+owning modules.
+
+| Preview specimen | Component families shown |
+| --- | --- |
+| Typography | Text, label, keyboard hint |
+| Icons | Shared icons |
+| Buttons, Button groups | Button, button group |
+| Tool buttons and dropdowns | Tool button, toolbar |
+| Text and password fields, Shortcut entry | Field, focus indicator |
+| Numeric fields | Spin box, shared control glyphs |
+| Text areas and diagnostics | Text area |
+| Selects and popup rows | Select, shared control glyphs |
+| Checks and toggles | Checkbox, switch, radio button |
+| Lists and navigation | List, tree, shared item view styles |
+| Dock panel | Dock |
+| Tabs with close and overflow | Tabs |
+| Scroll areas and scrollbars | Scrollbar |
+| Separators and splitters | Separator, splitter |
+| Table headers, cells and selection | Table, header, shared item view styles |
+| Tooltips and popovers | Tooltip |
+| Modal panel, Nonmodal content, Destructive confirmations | Modal panel, dialog shell, confirmation dialog, shared dialog presentation |
+| Menus and submenus | Menu |
+| Feedback and toast states | Badge, progress, toast region |
+
+When adding a component family or a new stock Qt control covered by an existing
+family, add a visible Light/Dark specimen in `preview_window.cpp` and extend
+`tests/desktop/preview_test.cpp` to select it and verify the real control is
+present. Update this table in the same change. Tokens, fonts, colors, metrics,
+theme, accessibility, and stylesheet assembly are foundations used by the
+gallery; they are not separate controls.
 
 ## Verification
 

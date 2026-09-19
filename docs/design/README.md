@@ -36,7 +36,9 @@ now belong to the design system; consumers include their owning headers directly
 unchanged. Add sources through the quality helpers in the appropriate target.
 The source policy rejects dependencies from the design system to higher layers.
 
-The existing gallery contains feature specimens, so it links the widget layer.
+The design system preview exposes Tokens, Typography, Icons, and Components.
+Its specimens use the shared design-system library; app-specific screens and
+database behavior stay in the desktop app.
 Pure design and shared-modal tests link only the design-system library and
 exercise its resource registration without Rust or QScintilla.
 

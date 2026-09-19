@@ -7,6 +7,7 @@ enum class Icon {
     AppMark,
     Run,
     Cancel,
+    Square,
     Add,
     Refresh,
     Close,

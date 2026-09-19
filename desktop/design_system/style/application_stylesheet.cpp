@@ -25,7 +25,7 @@ QString applicationStyleSheet(const ResolvedTheme& theme, const DesignMetrics& m
                     tooltipApplicationStyleSheet() + tabsApplicationStyleSheet() +
                     dockApplicationStyleSheet() + dialogShellApplicationStyleSheet() +
                     buttonApplicationStateStyleSheet() + labelApplicationStateStyleSheet() +
-                    toastRegionApplicationStyleSheet();
+                    toastRegionApplicationStyleSheet(theme);
     style = style.arg(metrics.controlHeight)
                 .arg(metrics.separatorWidth)
                 .arg(colors.separator.name())

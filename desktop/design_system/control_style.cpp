@@ -123,6 +123,8 @@ void ControlStyle::drawPrimitive(PrimitiveElement element, const QStyleOption* o
 }
 int ControlStyle::pixelMetric(PixelMetric metric, const QStyleOption* option,
                               const QWidget* widget) const {
+    if (metric == PM_ExclusiveIndicatorWidth || metric == PM_ExclusiveIndicatorHeight)
+        return 18;
     // Anchor nested menus to the painted panel, excluding transparent shadow
     // padding from their separation. Qt handles the mirrored/edge placement.
     if (metric == PM_SubMenuOverlap && qobject_cast<const QMenu*>(widget))

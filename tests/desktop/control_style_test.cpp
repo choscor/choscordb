@@ -18,11 +18,13 @@
 #include <QPainter>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QScreen>
 #include <QScrollBar>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QStyleOptionButton>
+#include <QStyledItemDelegate>
 #include <QSvgRenderer>
 #include <QTabBar>
 #include <QTableWidget>
@@ -31,6 +33,18 @@
 #include <QtTest>
 
 namespace {
+class FontProbeDelegate : public QStyledItemDelegate {
+  public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+    mutable QFont::Weight paintedWeight = QFont::Bold;
+    void paint(QPainter* painter, const QStyleOptionViewItem& option,
+               const QModelIndex& index) const override {
+        QStyleOptionViewItem effective = option;
+        initStyleOption(&effective, index);
+        paintedWeight = effective.font.weight();
+        QStyledItemDelegate::paint(painter, option, index);
+    }
+};
 void saveNativeSurface(QWidget& widget, const QString& filename) {
     const auto directory = qEnvironmentVariable("CHOSCORDB_TEST_CAPTURE_DIR");
     if (directory.isEmpty() || QGuiApplication::platformName() != "cocoa")
@@ -158,6 +172,21 @@ class ControlStyleTest final : public QObject {
         QTest::keyClick(view, Qt::Key_Escape);
         QVERIFY(!view->isVisible());
         QCOMPARE(combo.currentText(), QString("SQLite"));
+    }
+    void comboPopupDelegatePaintsNormalWeight() {
+        using namespace choscordb::design;
+        QWidget root;
+        ThemeManager theme;
+        theme.applyTo(root);
+        QComboBox combo(&root);
+        combo.addItems({"PostgreSQL", "SQLite"});
+        auto* fontProbe = new FontProbeDelegate(&combo);
+        combo.setItemDelegate(fontProbe);
+        root.show();
+        combo.showPopup();
+        combo.view()->viewport()->grab();
+        QCOMPARE(fontProbe->paintedWeight, QFont::Normal);
+        combo.hidePopup();
     }
     void appMenusSuppressDuplicateNativeShadows_data() {
         QTest::addColumn<bool>("rtl");
@@ -1116,6 +1145,29 @@ class ControlStyleTest final : public QObject {
         QCOMPARE(unchecked.pixelColor(indicator.center()), QColor("#ffffff"));
         box.setCheckState(Qt::Checked);
         QVERIFY(box.grab().toImage() != mixed);
+    }
+    void checkedRadioUsesCheckboxAccentAndSize() {
+        choscordb::design::ControlStyle style;
+        QRadioButton radio("Radio option");
+        radio.setStyle(&style);
+        QPalette palette;
+        palette.setColor(QPalette::Window, Qt::white);
+        palette.setColor(QPalette::Accent, QColor("#287f66"));
+        palette.setColor(QPalette::HighlightedText, Qt::white);
+        palette.setColor(QPalette::Mid, QColor("#65b493"));
+        radio.setPalette(palette);
+        radio.resize(150, 32);
+        radio.setChecked(true);
+        radio.show();
+        QStyleOptionButton option;
+        option.initFrom(&radio);
+        const auto indicator =
+            radio.style()->subElementRect(QStyle::SE_RadioButtonIndicator, &option, &radio);
+        QCOMPARE(indicator.size(), QSize(18, 18));
+        const auto image = radio.grab().toImage();
+        QCOMPARE(image.pixelColor(indicator.center().x(), indicator.top() + 3),
+                 QColor("#287f66"));
+        QCOMPARE(image.pixelColor(indicator.center()), QColor(Qt::white));
     }
     void disabledCheckedIndicatorUsesMutedGreenOutlineAndCheck() {
         choscordb::design::ControlStyle style;

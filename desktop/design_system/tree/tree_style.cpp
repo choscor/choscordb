@@ -2,13 +2,13 @@
 
 namespace choscordb::design {
 QString treeStyleSheet() {
-    return QStringLiteral(R"(QTreeView { font-size: 12px; icon-size: 15px; }
+    return QStringLiteral(R"(QTreeView { font-size: 12px; icon-size: 15px; qproperty-indentation: 16; }
 )");
 }
 
 QString treeItemStyleSheet() {
     return QStringLiteral(
-        R"(QTreeView::item { min-height: @navigationLineHeight; padding: 9px 10px; border-radius: 0; }
+        R"(QTreeView::item { min-height: @navigationLineHeight; padding: 4px 6px; border-radius: 0; }
 )");
 }
 

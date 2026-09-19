@@ -4,43 +4,41 @@
 #include "design_system/button_group/button_group.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_shell/dialog_shell.h"
+#include "design_system/dock/dock_style.h"
 #include "design_system/icons.h"
+#include "design_system/menu/menu.h"
 #include "design_system/modal_panel/modal_panel.h"
 #include "design_system/text/text.h"
+#include "design_system/text_area/text_area_style.h"
 #include "design_system/theme_manager.h"
 #include "design_system/table/table_style.h"
 #include "design_system/toast_region/toast_region.h"
-#include "models/history_model.h"
-#include "models/navigator_model.h"
-#include "models/result_table_model.h"
-#include "models/value_preview_model.h"
-#include "widgets/editor_completion/editor_completion.h"
-#include "widgets/search_panel/search_panel.h"
-#include "widgets/sql_editor/sql_editor.h"
 
 #include <QApplication>
 #include <QCheckBox>
-#include <QFontComboBox>
+#include <QDockWidget>
+#include <QDoubleSpinBox>
 #include <QFrame>
 #include <QHelpEvent>
 #include <QKeySequenceEdit>
 #include <QPlainTextEdit>
 #include <QProgressBar>
+#include <QRadioButton>
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QSplitter>
-#include <QStackedWidget>
+#include <QStandardItemModel>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QToolBar>
 #include <QToolButton>
 #include <QToolTip>
+#include <QTextEdit>
 
 #include <QClipboard>
 #include <QComboBox>
-#include <QCompleter>
 #include <QDialogButtonBox>
-#include <QElapsedTimer>
+#include <QEvent>
 #include <QEventLoop>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -63,7 +61,6 @@
 #include <QSysInfo>
 #include <QTableView>
 #include <QTableWidget>
-#include <QTimer>
 #include <QTreeView>
 #include <QVBoxLayout>
 
@@ -98,11 +95,10 @@ QList<Specimen> specimens() {
          "desktop/design_system/select/select_popup.cpp"},
         {"Components", "checks-toggles", "Checks and toggles",
          "desktop/design_system/checkbox/checkbox_indicator.cpp"},
-        {"Components", "editor-preferences", "Editor font preferences",
-         "desktop/app/editor_preferences.cpp"},
-        {"Components", "shortcuts", "Shortcut entry", "desktop/models/shortcut_catalog.cpp"},
+        {"Components", "shortcuts", "Shortcut entry", "desktop/design_system/field/field_style.cpp"},
         {"Components", "lists-navigation", "Lists and navigation",
          "desktop/design_system/tree/tree_style.cpp"},
+        {"Components", "dock", "Dock panel", "desktop/design_system/dock/dock_style.cpp"},
         {"Components", "tabs", "Tabs with close and overflow",
          "desktop/design_system/tabs/tabs_style.cpp"},
         {"Components", "scrolling", "Scroll areas and scrollbars",
@@ -113,49 +109,15 @@ QList<Specimen> specimens() {
          "desktop/design_system/table/table_style.cpp"},
         {"Components", "tooltip-popover", "Tooltips and popovers",
          "desktop/design_system/tooltip/tooltip.cpp"},
-        {"Compositions", "dialogs", "Modal panel",
+        {"Components", "dialogs", "Modal panel",
          "desktop/design_system/modal_panel/modal_panel.cpp"},
-        {"Compositions", "nonmodal", "Nonmodal content",
+        {"Components", "nonmodal", "Nonmodal content",
          "desktop/design_system/dialog_shell/dialog_shell.cpp"},
-        {"Compositions", "confirmations", "Destructive confirmations",
+        {"Components", "confirmations", "Destructive confirmations",
          "desktop/design_system/confirmation_dialog/confirmation_dialog.cpp"},
-        {"Compositions", "menus", "Menus and submenus", "desktop/design_system/menu/menu.cpp"},
-        {"Compositions", "feedback", "Feedback and toast states",
+        {"Components", "menus", "Menus and submenus", "desktop/design_system/menu/menu.cpp"},
+        {"Components", "feedback", "Toast",
          "desktop/design_system/toast_region/toast_region.cpp"},
-        {"Compositions", "connection-form", "Synthetic connection form and password",
-         "desktop/design_system/field/field_style.cpp"},
-        {"Compositions", "connection-sqlite", "SQLite fields and retained draft",
-         "desktop/design_system/field/field_style.cpp"},
-        {"Compositions", "appearance-form", "Synthetic System Light Dark selection",
-         "desktop/design_system/theme_manager.cpp"},
-        {"Compositions", "native-exceptions", "Native shell exceptions",
-         "desktop/tools/preview/preview_window.cpp"},
-        {"Database UI", "sidebar-tree", "Navigator connection and object rows",
-         "desktop/models/navigator_model.cpp"},
-        {"Database UI", "paging", "Result paging", "desktop/models/result_table_model.cpp"},
-        {"Database UI", "paging-unknown", "Paging with unknown total",
-         "desktop/models/result_table_model.cpp"},
-        {"Database UI", "value-window", "Bounded text and binary value window",
-         "desktop/models/value_preview_model.cpp"},
-        {"Database UI", "completion", "SQL completion popup",
-         "desktop/widgets/editor_completion/editor_completion.cpp"},
-        {"Database UI", "sql-editor", "SQL editor and find/replace",
-         "desktop/widgets/sql_editor/sql_editor.cpp"},
-        {"Database UI", "query-controls", "Query and transaction controls",
-         "desktop/design_system/button/button.cpp"},
-        {"Database UI", "query-cancelling", "Pending cancellation controls",
-         "desktop/design_system/button/button.cpp"},
-        {"Database UI", "results", "Typed results, NULL, empty and large values",
-         "desktop/models/result_table_model.cpp"},
-        {"Database UI", "results-error", "Retryable result error with no stale rows",
-         "desktop/models/result_table_model.cpp"},
-        {"Database UI", "results-loading", "Loading result with unknown total",
-         "desktop/models/result_table_model.cpp"},
-        {"Database UI", "messages-summary", "Messages and execution summary",
-         "desktop/design_system/label/label_style.cpp"},
-        {"Database UI", "history", "Synthetic history records", "desktop/models/history_model.cpp"},
-        {"Database UI", "recovery", "Recovery retry and reset feedback",
-         "desktop/design_system/dialog_shell/dialog_shell.cpp"},
     };
 }
 // Forced visual options live only in the developer host. Button's production
@@ -179,96 +141,32 @@ void applySpecimenTheme(QWidget& host) {
         }
     }
 }
-void populateNavigator(QWidget* host, QVBoxLayout* layout) {
-    auto* filter = new QLineEdit(host);
-    filter->setPlaceholderText("Filter synthetic objects");
-    layout->addWidget(filter);
-    auto* tree = new QTreeView(host);
-    auto* model = new choscordb::NavigatorModel(tree);
-    QObject::connect(
-        model, &choscordb::NavigatorModel::childrenRequested, model,
-        [model](quint64 connection, const QString& object, quint64 token) {
-            if (connection == 2) {
-                (void)model->failChildren(connection, object, token,
-                                          "Synthetic disconnected state");
-            } else {
-                (void)model->applyChildren(
-                    connection, object, token,
-                    {{"customers", "customers · synthetic", "public.customers", "table", false},
-                     {"names", "Việt Nam · 日本語", "public.names", "table", false}});
-            }
-        });
-    (void)model->addConnection(1, "Synthetic SQLite");
-    (void)model->addConnection(2, "Synthetic disconnected PostgreSQL");
-    model->fetchMore(model->index(0, 0));
-    model->fetchMore(model->index(1, 0));
-    tree->setModel(model);
-    tree->setHeaderHidden(true);
-    tree->expand(model->index(0, 0));
-    QObject::connect(filter, &QLineEdit::textChanged, tree, [tree, model](const QString& value) {
-        for (int row = 0; row < model->rowCount(); ++row) {
-            tree->setRowHidden(
-                row, {},
-                !model->data(model->index(row, 0)).toString().contains(value, Qt::CaseInsensitive));
-        }
-    });
-    layout->addWidget(tree, 1);
-}
-void populateHistory(QWidget* host, QVBoxLayout* layout) {
-    layout->addWidget(new QCheckBox("Record synthetic history (local specimen only)", host));
-    auto* table = new QTableView(host);
-    auto* model = new choscordb::HistoryModel(table);
-    model->setEntries({{"sample-1", "", "SELECT 'synthetic';", 0, 12, 4, "completed", true},
-                       {"sample-2", "", "SELECT missing FROM synthetic;", 0, 2, 0, "failed", false},
-                       {"sample-3", "", "SELECT * FROM synthetic;", 0, 0, 0, "cancelled", false}});
-    table->setModel(model);
-    // Production timestamps are local-time values; hide them in the deterministic
-    // fixture so timezone differences do not masquerade as visual regressions.
-    table->hideColumn(0);
-    table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    layout->addWidget(table, 1);
-    auto* preview = new QPlainTextEdit(host);
-    preview->setReadOnly(true);
-    preview->setPlainText("Select a history row to inspect its bounded SQL excerpt.");
-    QObject::connect(table, &QTableView::clicked, preview,
-                     [model, preview](const QModelIndex& index) {
-                         if (const auto* entry = model->entry(index.row()))
-                             preview->setPlainText(entry->sql);
-                     });
-    layout->addWidget(preview);
-    layout->addWidget(new QLabel("Synthetic history · 3 records · no storage service", host));
-}
-void populateCompletion(QWidget* host, QVBoxLayout* layout) {
-    auto* editor = new choscordb::SqlEditor(host);
-    // QScintilla consumes QPalette::Base/Text rather than QSS background rules.
-    editor->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
-    editor->setText("syn");
-    editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 3);
-    editor->SendScintilla(QsciScintillaBase::SCI_SETCARETPERIOD, 0UL);
-    auto* controller = new choscordb::EditorCompletionController(host);
-    controller->setCatalog(
-        choscordb::CompletionService({{"synthetic_customers", "synthetic_customers", "table"},
-                                      {"synthetic_orders", "synthetic_orders", "table"}}));
-    controller->setEditor(editor);
-    auto* popup = controller->findChild<QCompleter*>()->popup();
-    popup->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
-    popup->setFont(host->font());
-    const auto appearance = resolvedThemeForWidget(*host).appearance;
-    ThemeManager theme;
-    theme.setMode(appearance == ResolvedAppearance::Dark ? ThemeMode::Dark : ThemeMode::Light);
-    theme.applyTo(*popup);
-    auto* open = new Button("Open real SQL completion", host);
-    open->setObjectName("previewOpenCompletion");
-    QObject::connect(open, &QPushButton::clicked, editor, [editor, controller] {
-        editor->window()->activateWindow();
-        editor->setFocus(Qt::OtherFocusReason);
-        QTimer::singleShot(0, controller, [controller] { controller->requestCompletion(true); });
-    });
-    layout->addWidget(open);
-    layout->addWidget(editor, 1);
-    layout->addWidget(
-        new QLabel("Immutable synthetic catalog; no engine or connection is accessed.", host));
-}
+class FeedbackToastAnchor final : public QObject {
+  public:
+    FeedbackToastAnchor(QWidget* viewport, choscordb::ToastRegion* toast)
+        : QObject(viewport), viewport_(viewport), toast_(toast) {
+        viewport_->installEventFilter(this);
+    }
+    void place() {
+        const int width = qMin(320, qMax(1, viewport_->width() - 32));
+        toast_->setFixedWidth(width);
+        toast_->adjustSize();
+        toast_->move(qMax(0, viewport_->width() - toast_->width() - 16),
+                     qMax(0, viewport_->height() - toast_->height() - 16));
+        toast_->raise();
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == viewport_ && event->type() == QEvent::Resize)
+            place();
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    QWidget* viewport_;
+    choscordb::ToastRegion* toast_;
+};
 void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
     if (id == "numeric-fields") {
         auto* form = new QFormLayout;
@@ -280,13 +178,14 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
             number->setProperty("invalid", QString(name) == "Invalid");
             form->addRow(name, number);
         }
+        auto* decimal = new QDoubleSpinBox(host);
+        decimal->setDecimals(2);
+        decimal->setValue(12.5);
+        form->addRow("Decimal", decimal);
         layout->addLayout(form);
-    } else if (id == "selects" || id == "appearance-form") {
+    } else if (id == "selects") {
         auto* select = new QComboBox(host);
-        select->addItems(
-            id == "appearance-form"
-                ? QStringList{"System", "Light", "Dark"}
-                : QStringList{"SQLite", "PostgreSQL", "Long Unicode value · Việt Nam · 日本語"});
+        select->addItems({"First option", "Second option", "Long Unicode value · Việt Nam · 日本語"});
         select->setAccessibleName("Synthetic selection");
         layout->addWidget(select);
         auto* status = new QLabel(
@@ -317,62 +216,30 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         lineNumbers->setProperty("designRole", "switch");
         lineNumbers->setChecked(true);
         layout->addWidget(lineNumbers);
+        auto* radio = new QRadioButton("Radio option", host);
+        radio->setChecked(true);
+        layout->addWidget(radio);
         auto* toggle = new Button("Toggle wrapping", host);
         toggle->setVariant(ButtonVariant::Outline);
         toggle->setCheckable(true);
         layout->addWidget(toggle);
-    } else if (id == "textareas" || id == "messages-summary") {
+    } else if (id == "textareas") {
         auto* text = new QPlainTextEdit(host);
         text->setPlaceholderText("Detailed diagnostics appear here…");
         text->setPlainText(
-            "Synthetic execution summary\n4 rows · 12 ms\n\nSuccess: query completed.\nWarning: "
-            "result truncated.\nError: synthetic syntax error at line 2.\nCancelled: no further "
-            "rows will arrive.\nDisconnected: reconnect before running.\nLoading: row count and "
-            "duration are not yet known.");
-        text->setReadOnly(id == "messages-summary");
+            "Read-only multiline text\n\nA short paragraph with Unicode: Việt Nam · 日本語.\n"
+            "Longer content can be scrolled and selected.");
+        text->setReadOnly(true);
         layout->addWidget(text, 1);
-    } else if (id == "editor-preferences") {
-        auto* form = new QFormLayout;
-        auto* family = new QFontComboBox(host);
-        family->setFontFilters(QFontComboBox::MonospacedFonts);
-        auto* size = new QSpinBox(host);
-        size->setRange(8, 36);
-        size->setValue(13);
-        form->addRow("Editor font", family);
-        form->addRow("Editor size", size);
-        layout->addLayout(form);
-        auto* system = new QCheckBox("Use system monospace", host);
-        system->setChecked(true);
-        layout->addWidget(system);
-        auto* editor = new choscordb::SqlEditor(host);
-        // QScintilla consumes QPalette::Base/Text rather than QSS background rules.
-        editor->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
-        editor->setText("-- synthetic editor font preview\nSELECT 'Việt Nam';");
-        editor->SendScintilla(QsciScintillaBase::SCI_SETCARETPERIOD, 0UL);
-        layout->addWidget(editor, 1);
-        QObject::connect(family, &QFontComboBox::currentFontChanged, editor,
-                         [editor, size](QFont font) {
-                             font.setPointSize(size->value());
-                             editor->setEditorFont(font);
-                         });
-        QObject::connect(size, &QSpinBox::valueChanged, editor, [editor, family](int value) {
-            auto font = family->currentFont();
-            font.setPointSize(value);
-            editor->setEditorFont(font);
-        });
-        QObject::connect(system, &QCheckBox::toggled, editor, [editor, family, size](bool checked) {
-            family->setEnabled(!checked);
-            auto font =
-                checked ? resolveTypography(TypographyRole::Monospace) : family->currentFont();
-            font.setPointSize(size->value());
-            editor->setEditorFont(font);
-        });
-        family->setEnabled(false);
+        auto* richText = new QTextEdit(host);
+        configureRichTextArea(*richText);
+        richText->setHtml("<p><b>Rich text</b> and editable content</p>");
+        layout->addWidget(richText, 1);
     } else if (id == "shortcuts") {
         auto* form = new QFormLayout;
         auto* shortcut = new QKeySequenceEdit(QKeySequence("Ctrl+Return"), host);
         auto* empty = new QKeySequenceEdit(host);
-        form->addRow("Run query", shortcut);
+        form->addRow("Primary action", shortcut);
         form->addRow("Unassigned", empty);
         layout->addLayout(form);
         auto* status =
@@ -382,25 +249,59 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         QObject::connect(empty, &QKeySequenceEdit::keySequenceChanged, status,
                          [shortcut, status](const QKeySequence& sequence) {
                              status->setText(sequence == shortcut->keySequence()
-                                                 ? "Conflict: already assigned to Run query."
+                                                 ? "Conflict: already assigned to Primary action."
                                                  : "Shortcut available.");
                          });
     } else if (id == "lists-navigation") {
         auto* list = new QListWidget(host);
-        list->addItems({"Connections", "Query history", "Việt Nam · 日本語",
+        list->addItems({"First item", "Second item", "Việt Nam · 日本語",
                         "Long navigation label that remains selectable in narrow layouts",
                         "Disabled item"});
         list->item(4)->setFlags(list->item(4)->flags() & ~Qt::ItemIsEnabled);
         list->setCurrentRow(1);
         layout->addWidget(list, 1);
+        auto* tree = new QTreeView(host);
+        auto* model = new QStandardItemModel(tree);
+        auto* parent = new QStandardItem("Navigation group");
+        parent->appendRow(new QStandardItem("Nested item"));
+        model->appendRow(parent);
+        tree->setModel(model);
+        tree->setHeaderHidden(true);
+        tree->setExpandsOnDoubleClick(false);
+        tree->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        QObject::connect(tree, &QTreeView::clicked, tree, [tree](const QModelIndex& index) {
+            if (tree->model()->hasChildren(index))
+                tree->setExpanded(index, !tree->isExpanded(index));
+        });
+        tree->setContextMenuPolicy(Qt::CustomContextMenu);
+        QObject::connect(tree, &QTreeView::customContextMenuRequested, tree,
+                         [tree](const QPoint& point) {
+                             const QModelIndex index = tree->indexAt(point);
+                             if (!index.isValid())
+                                 return;
+                             auto* menu = new QMenu(tree);
+                             menu->setAttribute(Qt::WA_DeleteOnClose);
+                             QObject::connect(menu->addAction("Rename"), &QAction::triggered, tree,
+                                              [tree, index] { tree->edit(index); });
+                             const int margin = detail::menuShadowMargin();
+                             menu->popup(tree->viewport()->mapToGlobal(point) -
+                                         QPoint(margin, margin));
+                         });
+        tree->expandAll();
+        layout->addWidget(tree, 1);
+    } else if (id == "dock") {
+        auto* dock = new QDockWidget("Dock title", host);
+        dock->setWidget(new QLabel("Dock content", dock));
+        styleDockWidget(*dock, resolvedThemeForWidget(*host));
+        layout->addWidget(dock);
     } else if (id == "tabs") {
         auto* tabs = new QTabWidget(host);
         tabs->tabBar()->setProperty("designTabVariant", "document");
         tabs->setTabsClosable(true);
         tabs->setMovable(true);
         for (int i = 0; i < 8; ++i) {
-            tabs->addTab(new QLabel("Synthetic document content", tabs),
-                         i == 0 ? "Query · modified" : QString("Long query %1 · 日本語").arg(i));
+            tabs->addTab(new QLabel("Sample document content", tabs),
+                         i == 0 ? "Document · modified" : QString("Long document %1 · 日本語").arg(i));
         }
         QObject::connect(tabs, &QTabWidget::tabCloseRequested, tabs, [tabs](int index) {
             auto* page = tabs->widget(index);
@@ -410,7 +311,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         layout->addWidget(tabs, 1);
         auto* objectTabs = new QTabBar(host);
         objectTabs->setObjectName("previewObjectTabs");
-        for (const auto* label : {"Columns", "Indexes", "Keys", "DDL", "Data"})
+        for (const auto* label : {"Overview", "Details", "Settings", "Activity", "More"})
             objectTabs->addTab(label);
         objectTabs->setExpanding(false);
         layout->addWidget(objectTabs);
@@ -433,6 +334,10 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         auto* line = new QFrame(host);
         line->setFrameShape(QFrame::HLine);
         layout->addWidget(line);
+        auto* vertical = new QFrame(host);
+        vertical->setFrameShape(QFrame::VLine);
+        vertical->setFixedHeight(48);
+        layout->addWidget(vertical);
     } else if (id == "button-groups") {
         for (const auto orientation : {Qt::Horizontal, Qt::Vertical}) {
             auto* group = new ButtonGroup(orientation, host);
@@ -443,180 +348,58 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
             }
             layout->addWidget(group);
         }
-    } else if (id == "paging" || id == "paging-unknown" || id == "query-controls" ||
-               id == "query-cancelling" || id == "tool-buttons") {
+    } else if (id == "tool-buttons") {
         auto* bar = new QToolBar(host);
         bar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        bar->setIconSize(QSize(12, 12));
-        auto* run = bar->addAction(
-            themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.foreground, 12), "Run");
-        auto* stop = bar->addAction(
-            themedIcon(Icon::Cancel, resolvedThemeForWidget(*host).colors.disabled, 12),
-            "Cancel");
-        stop->setEnabled(false);
-        bar->addSeparator();
-        auto* toggle = bar->addAction("Autocommit");
-        toggle->setCheckable(true);
-        toggle->setChecked(true);
+        bar->addAction("Primary action");
+        auto* disabled = bar->addAction("Disabled action");
+        disabled->setEnabled(false);
         auto* overflow = new QToolButton(bar);
         overflow->setProperty("designRole", "menuButton");
         overflow->setText("More");
         auto* menu = new QMenu(overflow);
-        menu->addAction("Commit");
-        menu->addAction("Rollback");
+        menu->addAction("Another action");
         overflow->setMenu(menu);
         overflow->setPopupMode(QToolButton::InstantPopup);
         bar->addWidget(overflow);
         layout->addWidget(bar);
-        auto* status = new QLabel("Ready · synthetic controls do not dispatch queries", host);
-        status->setObjectName("previewQueryStatus");
-        status->setWordWrap(true);
-        auto* acknowledge = new Button("Acknowledge synthetic cancellation", host);
-        acknowledge->setObjectName("previewAcknowledgeCancellation");
-        acknowledge->setVariant(ButtonVariant::Outline);
-        acknowledge->setEnabled(false);
-        QObject::connect(run, &QAction::triggered, status, [status, stop, run] {
-            status->setText("Running synthetic fixture · total unknown");
-            stop->setEnabled(true);
-            run->setEnabled(false);
-        });
-        QObject::connect(stop, &QAction::triggered, status, [status, stop, acknowledge] {
-            status->setText("Cancelling synthetic fixture · waiting for acknowledgment");
-            stop->setEnabled(false);
-            acknowledge->setEnabled(true);
-        });
-        QObject::connect(acknowledge, &QPushButton::clicked, status, [status, acknowledge, run] {
-            status->setText("Cancelled synthetic fixture");
-            acknowledge->setEnabled(false);
-            run->setEnabled(true);
-        });
-        layout->addWidget(status);
-        layout->addWidget(acknowledge);
-        if (id == "query-cancelling") {
-            run->trigger();
-            stop->trigger();
-        }
+    } else if (id == "feedback") {
+        auto* viewport = host->parentWidget();
+        auto* toast = new choscordb::ToastRegion(viewport);
+        auto* toastAnchor = new FeedbackToastAnchor(viewport, toast);
+        auto* duration = new QSpinBox(host);
+        duration->setObjectName("previewToastSeconds");
+        duration->setRange(1, 30);
+        duration->setValue(5);
+        duration->setSuffix(" s");
+        auto* durationRow = new QFormLayout;
+        durationRow->addRow("Auto dismiss after", duration);
+        layout->addLayout(durationRow);
         auto* actions = new QHBoxLayout;
-        auto* previous = new Button("Previous", host);
-        previous->setVariant(ButtonVariant::Outline);
-        auto* next = new Button("Next", host);
-        next->setVariant(ButtonVariant::Outline);
-        const bool unknown = id == "paging-unknown";
-        auto* range = new QLabel(unknown ? "Rows 1–4 · total unknown" : "1–4 of 8", host);
-        previous->setEnabled(false);
-        QObject::connect(next, &QPushButton::clicked, range, [previous, next, range, unknown] {
-            previous->setEnabled(true);
-            next->setEnabled(false);
-            range->setText(unknown ? "Rows 5–8 · total unknown" : "5–8 of 8");
-        });
-        QObject::connect(previous, &QPushButton::clicked, range, [previous, next, range, unknown] {
-            previous->setEnabled(false);
-            next->setEnabled(true);
-            range->setText(unknown ? "Rows 1–4 · total unknown" : "1–4 of 8");
-        });
-        actions->addWidget(previous);
-        actions->addWidget(range);
-        actions->addWidget(next);
-        layout->addLayout(actions);
-    } else if (id == "value-window") {
-        auto* format = new QComboBox(host);
-        format->setAccessibleName("Value representation");
-        format->addItems({"Text", "Binary"});
-        auto* model = new choscordb::ValuePreviewModel(host);
-        auto* table = new QTableView(host);
-        table->setObjectName("previewValueWindow");
-        table->setModel(model);
-        table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-        table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-        const auto bytes = QString("Việt Nam\n日本語").toUtf8();
-        const auto showChunk = [model, bytes](int index) {
-            (void)model->setChunk(bytes, 0, 1048576, index == 1);
+        const struct {
+            const char* name;
+            const char* title;
+            const char* body;
+            choscordb::ToastVariant variant;
+        } examples[] = {
+            {"success", "Saved", "Your changes have been saved.", choscordb::ToastVariant::Success},
+            {"warning", "Check your changes", "Some fields may need attention.",
+             choscordb::ToastVariant::Warning},
+            {"danger", "Could not save", "Please try again.", choscordb::ToastVariant::Danger},
         };
-        showChunk(0);
-        QObject::connect(format, &QComboBox::currentIndexChanged, model, showChunk);
-        layout->addWidget(format);
-        layout->addWidget(new QLabel(
-            "Synthetic bounded window · 1 MiB total; only the small displayed chunk is retained",
-            host));
-        layout->addWidget(table, 1);
-    } else if (id == "feedback" || id == "recovery") {
-        auto* badges = new QHBoxLayout;
-        for (const auto& variant : {"default", "secondary", "outline", "destructive"}) {
-            auto* badge = new QLabel(variant, host);
-            badge->setProperty("designRole", "badge");
-            badge->setProperty("variant", variant);
-            badges->addWidget(badge);
+        for (const auto& example : examples) {
+            auto* button = new Button(QString("Show %1 toast").arg(example.name), host);
+            button->setObjectName(QString("previewToast_%1").arg(example.name));
+            QObject::connect(button, &QPushButton::clicked, toast,
+                             [toast, toastAnchor, duration, example] {
+                                 toast->showToast(example.title, example.body, example.variant,
+                                                  duration->value() * 1000);
+                                 toastAnchor->place();
+                             });
+            actions->addWidget(button);
         }
-        layout->addLayout(badges);
-        auto* toast = new choscordb::ToastRegion(host);
-        toast->showPersistent("Synthetic notification · no timers in captures");
-        layout->addWidget(toast);
-        for (const auto& name : {"Empty", "Loading", "Success", "Warning", "Error", "Cancelling",
-                                 "Cancelled", "Disconnected"}) {
-            auto* label = new QLabel(QString(name) + " · synthetic state", host);
-            label->setProperty("state", QString(name).toLower());
-            layout->addWidget(label);
-        }
-        auto* progress = new QProgressBar(host);
-        progress->setValue(40);
-        progress->setAccessibleName("Known total: 40 of 100 items");
-        layout->addWidget(progress);
-        auto* unknown = new QProgressBar(host);
-        unknown->setRange(0, 0);
-        unknown->setAccessibleName("Loading: total unknown");
-        layout->addWidget(new QLabel("Loading · total unknown", host));
-        layout->addWidget(unknown);
-        layout->addWidget(
-            new QLabel("Unavailable · this database does not provide the property", host));
-        auto* retry = new Button("Retry synthetic operation", host);
-        QObject::connect(retry, &QPushButton::clicked, toast,
-                         [toast] { toast->showPersistent("Synthetic retry completed."); });
-        layout->addWidget(retry);
-    } else if (id == "connection-form" || id == "connection-sqlite") {
-        auto* engine = new QComboBox(host);
-        engine->setAccessibleName("Database type");
-        engine->addItems({"PostgreSQL", "SQLite"});
-        layout->addWidget(engine);
-        auto* pages = new QStackedWidget(host);
-        auto* postgres = new QWidget(pages);
-        auto* form = new QFormLayout(postgres);
-        for (const auto& name : {"Name", "Host", "Database", "Username", "Password"}) {
-            auto* input = new QLineEdit(host);
-            input->setPlaceholderText(QString("Synthetic %1").arg(name));
-            if (QString(name) == "Password")
-                input->setEchoMode(QLineEdit::Password);
-            form->addRow(name, input);
-        }
-        auto* port = new QSpinBox(host);
-        port->setRange(1, 65535);
-        port->setValue(5432);
-        form->addRow("Port", port);
-        auto* tls = new QComboBox(host);
-        tls->addItems({"Prefer", "Require", "Verify full"});
-        form->addRow("TLS", tls);
-        form->addRow(new QCheckBox("Remember password (synthetic; never stored)", postgres));
-        pages->addWidget(postgres);
-        auto* sqlite = new QWidget(pages);
-        auto* sqliteForm = new QFormLayout(sqlite);
-        auto* file = new QLineEdit(sqlite);
-        file->setObjectName("previewSqlitePath");
-        file->setAccessibleName("SQLite file path");
-        file->setPlaceholderText("Database file or :memory:");
-        sqliteForm->addRow("Database file", file);
-        sqliteForm->addRow(new QCheckBox("Open read-only", sqlite));
-        pages->addWidget(sqlite);
-        layout->addWidget(pages);
-        QObject::connect(engine, &QComboBox::currentIndexChanged, pages,
-                         &QStackedWidget::setCurrentIndex);
-        engine->setCurrentIndex(id == "connection-sqlite" ? 1 : 0);
-        auto* status = new QLabel("No connection will be opened.", host);
-        auto* test = new Button("Simulate validation", host);
-        QObject::connect(test, &QPushButton::clicked, status, [status] {
-            status->setText("Name is required. No connection attempted.");
-            status->setProperty("state", "error");
-        });
-        layout->addWidget(test);
-        layout->addWidget(status);
+        actions->addStretch();
+        layout->addLayout(actions);
     } else if (id == "tooltip-popover") {
         auto* help = new Button("Show tooltip", host);
         help->setToolTip("Synthetic help text · Unicode Việt Nam · no external operation.");
@@ -627,14 +410,6 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
             QApplication::sendEvent(help, &event);
         });
         layout->addWidget(help);
-    } else if (id == "native-exceptions") {
-        auto* note = new QLabel(
-            "Native title bars, OS menu bars and system file pickers retain operating-system "
-            "rendering. Application menus, forms and dialogs use the shared components. Native "
-            "accessibility and placement require real-display review.",
-            host);
-        note->setWordWrap(true);
-        layout->addWidget(note);
     }
     layout->addStretch();
 }
@@ -727,72 +502,6 @@ void populateTypography(QWidget* host, QVBoxLayout* layout) {
     layout->addWidget(keyboardHint);
     layout->addStretch();
 }
-void populateResults(QWidget* host, QVBoxLayout* layout, const QString& state = "loaded") {
-    layout->addWidget(new QLabel("Synthetic results · no database connection", host));
-    auto* table = new QTableView(host);
-    table->setObjectName("previewResults");
-    auto* model = new choscordb::ResultTableModel(table);
-    const auto load = [model] {
-        std::vector<choscordb::ResultColumn> columns(3);
-        columns[0].name = "id";
-        columns[0].databaseType = "int8";
-        columns[1].name = "value";
-        columns[1].databaseType = "text";
-        columns[2].name = "active";
-        columns[2].databaseType = "boolean";
-        return model->setPage(std::move(columns),
-                              {{qint64(1), std::monostate{}, true},
-                               {qint64(2), QString(""), false},
-                               {qint64(3), choscordb::DeferredValue{1, 1048576, "text"}, true},
-                               {qint64(4), QString("Việt Nam · 日本語 · 🙂"), false}},
-                              0);
-    };
-    const bool loaded = state == "loaded" && load();
-    table->setModel(model);
-    table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    configureResultTable(*table);
-    table->verticalHeader()->setDefaultSectionSize(25);
-    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    table->setSortingEnabled(false);
-    table->selectRow(3);
-    layout->addWidget(table, 1);
-    auto* status =
-        new QLabel(loaded ? "4 loaded rows · total unknown · NULL and empty remain distinct"
-                   : state == "loading" ? "Loading · total unknown; no rows received"
-                                        : "Error · synthetic result unavailable; retry to load",
-                   host);
-    status->setObjectName("previewResultStatus");
-    status->setWordWrap(true);
-    status->setProperty("state", loaded ? "completed" : state);
-    layout->addWidget(status);
-    auto* retry =
-        new Button(state == "loading" ? "Complete synthetic load" : "Retry synthetic result", host);
-    retry->setObjectName("previewRetryResult");
-    retry->setVariant(ButtonVariant::Outline);
-    QObject::connect(retry, &QPushButton::clicked, status, [load, status] {
-        if (load()) {
-            status->setText("4 loaded rows · total unknown · NULL and empty remain distinct");
-            status->setProperty("state", "completed");
-        }
-    });
-    layout->addWidget(retry);
-}
-void populateEditor(QWidget* host, QVBoxLayout* layout) {
-    layout->addWidget(new QLabel("Synthetic SQL · edits stay in this specimen", host));
-    auto* editor = new choscordb::SqlEditor(host);
-    // QScintilla consumes QPalette::Base/Text rather than QSS background rules.
-    editor->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
-    editor->setObjectName("previewSqlEditor");
-    editor->setText("-- synthetic offline fixture\nSELECT id, name, NULL AS missing\nFROM "
-                    "synthetic_customers\nWHERE active = true;\n");
-    editor->setEditorFont(resolveTypography(TypographyRole::Monospace));
-    // A deterministic export has no blinking insertion caret.
-    editor->SendScintilla(QsciScintillaBase::SCI_SETCARETPERIOD, 0UL);
-    auto* search = new choscordb::SearchPanel([editor] { return editor; }, host);
-    layout->addWidget(search);
-    layout->addWidget(editor, 1);
-    search->showReplace();
-}
 void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool destructive) {
     layout->addWidget(new QLabel(
         "Inspect the real window: Tab/Shift+Tab, Escape, backdrop and focus restoration.", host));
@@ -827,10 +536,10 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
     dialog->setAttribute(Qt::WA_WindowPropagation);
     dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
     dialog->setObjectName("previewActualDialog");
-    dialog->setWindowTitle("Synthetic preview · no database operations");
+    dialog->setWindowTitle("Synthetic component preview");
     auto* content = new QVBoxLayout(dialog);
     auto* heading =
-        new Text(destructive ? "Delete synthetic record?" : "Connection details", dialog);
+        new Text(destructive ? "Delete synthetic record?" : "Panel details", dialog);
     heading->setTypographyRole(TypographyRole::DialogTitle);
     content->addWidget(heading);
     auto* description =
@@ -873,7 +582,7 @@ void populateMenu(QWidget* host, QVBoxLayout* layout) {
     auto* menu = new QMenu(host);
     menu->setObjectName("previewActualMenu");
     menu->addAction(themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.foreground, 16),
-                    "Run query")
+                    "Primary action")
         ->setShortcut(QKeySequence("Ctrl+Return"));
     auto* toggle = menu->addAction("Wrap text");
     toggle->setCheckable(true);
@@ -1082,7 +791,7 @@ PreviewWindow::PreviewWindow(QWidget* parent) : QMainWindow(parent) {
     navigation_ = new QListWidget(body);
     navigation_->setObjectName("previewNavigation");
     navigation_->addItems(
-        {"Tokens", "Typography", "Icons", "Components", "Compositions", "Database UI"});
+        {"Tokens", "Typography", "Icons", "Components"});
     navigation_->setMaximumHeight(170);
     layout->addWidget(navigation_);
     specimen_ = new QComboBox(body);
@@ -1235,20 +944,17 @@ void PreviewWindow::rebuildSpecimens() {
             populateIcons(content, contentLayout);
         } else if (id == "typography") {
             populateTypography(content, contentLayout);
-        } else if (id == "sidebar-tree") {
-            populateNavigator(content, contentLayout);
-        } else if (id == "history") {
-            populateHistory(content, contentLayout);
-        } else if (id == "completion") {
-            populateCompletion(content, contentLayout);
-        } else if (id == "results" || id == "tables" || id == "results-error" ||
-                   id == "results-loading") {
-            populateResults(content, contentLayout,
-                            id == "results-error"     ? "error"
-                            : id == "results-loading" ? "loading"
-                                                      : "loaded");
-        } else if (id == "sql-editor") {
-            populateEditor(content, contentLayout);
+        } else if (id == "tables") {
+            auto* table = new QTableWidget(content);
+            table->setColumnCount(2);
+            table->setHorizontalHeaderLabels({"Name", "Value"});
+            table->setRowCount(2);
+            table->setItem(0, 0, new QTableWidgetItem("First item"));
+            table->setItem(0, 1, new QTableWidgetItem("Ready"));
+            table->setItem(1, 0, new QTableWidgetItem("Second item"));
+            table->setItem(1, 1, new QTableWidgetItem("Pending"));
+            table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+            contentLayout->addWidget(table, 1);
         } else if (id == "dialogs" || id == "nonmodal" || id == "confirmations") {
             populateDialog(content, contentLayout, id == "nonmodal", id == "confirmations");
         } else if (id == "menus") {
@@ -1296,7 +1002,7 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
     // field edge or active tab indicator beneath stale scrollbars.
     const auto id = specimen_->currentData().toString();
     // These native popups require an active, focusable owner on Cocoa.
-    fixture.setAttribute(Qt::WA_DontShowOnScreen, id != "completion" && id != "selects");
+    fixture.setAttribute(Qt::WA_DontShowOnScreen, id != "selects");
     fixture.show();
     QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     QImage image(logicalSize, QImage::Format_ARGB32_Premultiplied);
@@ -1415,32 +1121,6 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
             tooltip->hide();
         }
     }
-    if (id == "completion") {
-        surface = "completion-popup";
-        fixture.show();
-        fixture.activateWindow();
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-        const QList<QWidget*> hosts = comparison ? QList<QWidget*>{fixture.light_, fixture.dark_}
-                                                 : QList<QWidget*>{singleHost};
-        QPainter painter(&image);
-        for (int i = 0; i < hosts.size(); ++i) {
-            auto* host = hosts[i];
-            auto* completer = host->findChild<QCompleter*>();
-            auto* popup = completer->popup();
-            popup->setAttribute(Qt::WA_DontShowOnScreen);
-            host->findChild<QPushButton*>("previewOpenCompletion")->click();
-            QElapsedTimer deadline;
-            deadline.start();
-            while (!popup->isVisible() && deadline.elapsed() < 2000) {
-                QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 20);
-            }
-            if (!popup->isVisible() || popup->model()->rowCount() == 0) {
-                return fail(tr("The real completion popup did not become ready."));
-            }
-            popup->render(&painter, QPoint(i * paneWidth + 40, 180));
-            popup->hide();
-        }
-    }
     QSaveFile output(path);
     if (!output.open(QIODevice::WriteOnly)) {
         return fail(output.errorString());
@@ -1465,9 +1145,7 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
         {"qt", QT_VERSION_STR},
         {"platform", QGuiApplication::platformName()},
         {"os", QSysInfo::prettyProductName()},
-        {"fixture", surface == "completion-popup"
-                        ? "synthetic; real completion; first candidate selected; reduced motion"
-                    : surface == "inline"
+        {"fixture", surface == "inline"
                         ? "synthetic; initial state; no focus; reduced motion"
                         : "synthetic; open real surface; no action dispatched; reduced motion"}};
     QJsonArray controls;

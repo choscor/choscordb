@@ -1,11 +1,87 @@
 #include "design_system/select/select_popup.h"
 #include "design_system/theme.h"
+#include <QAbstractItemDelegate>
 #include <QAbstractItemView>
 #include <QComboBox>
+#include <QHelpEvent>
+#include <QPointer>
+#include <QStyledItemDelegate>
 
 namespace choscordb::design::detail {
+namespace {
+// Qt's private combo list view copies the combo font into every item option,
+// overriding the view font. Forward to the installed delegate so custom item
+// painting and separator behavior remain intact.
+class NormalFontPopupDelegate final : public QAbstractItemDelegate {
+  public:
+    NormalFontPopupDelegate(QAbstractItemDelegate* delegate, QObject* parent)
+        : QAbstractItemDelegate(parent), delegate_(delegate), fallback_(this) {
+        connect(delegate, &QAbstractItemDelegate::commitData, this,
+                &QAbstractItemDelegate::commitData);
+        connect(delegate, &QAbstractItemDelegate::closeEditor, this,
+                &QAbstractItemDelegate::closeEditor);
+        connect(delegate, &QAbstractItemDelegate::sizeHintChanged, this,
+                &QAbstractItemDelegate::sizeHintChanged);
+        connect(&fallback_, &QAbstractItemDelegate::commitData, this,
+                &QAbstractItemDelegate::commitData);
+        connect(&fallback_, &QAbstractItemDelegate::closeEditor, this,
+                &QAbstractItemDelegate::closeEditor);
+        connect(&fallback_, &QAbstractItemDelegate::sizeHintChanged, this,
+                &QAbstractItemDelegate::sizeHintChanged);
+    }
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option,
+               const QModelIndex& index) const override {
+        auto normal = option;
+        normal.font.setWeight(QFont::Normal);
+        activeDelegate()->paint(painter, normal, index);
+    }
+    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+        auto normal = option;
+        normal.font.setWeight(QFont::Normal);
+        return activeDelegate()->sizeHint(normal, index);
+    }
+    QWidget* createEditor(QWidget* parent, const QStyleOptionViewItem& option,
+                          const QModelIndex& index) const override {
+        return activeDelegate()->createEditor(parent, option, index);
+    }
+    void destroyEditor(QWidget* editor, const QModelIndex& index) const override {
+        activeDelegate()->destroyEditor(editor, index);
+    }
+    void setEditorData(QWidget* editor, const QModelIndex& index) const override {
+        activeDelegate()->setEditorData(editor, index);
+    }
+    void setModelData(QWidget* editor, QAbstractItemModel* model,
+                      const QModelIndex& index) const override {
+        activeDelegate()->setModelData(editor, model, index);
+    }
+    void updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option,
+                              const QModelIndex& index) const override {
+        activeDelegate()->updateEditorGeometry(editor, option, index);
+    }
+    bool editorEvent(QEvent* event, QAbstractItemModel* model,
+                     const QStyleOptionViewItem& option, const QModelIndex& index) override {
+        return activeDelegate()->editorEvent(event, model, option, index);
+    }
+    bool helpEvent(QHelpEvent* event, QAbstractItemView* view,
+                   const QStyleOptionViewItem& option, const QModelIndex& index) override {
+        return activeDelegate()->helpEvent(event, view, option, index);
+    }
+    QList<int> paintingRoles() const override { return activeDelegate()->paintingRoles(); }
+
+  private:
+    QAbstractItemDelegate* activeDelegate() const {
+        return delegate_ ? delegate_.data() : &fallback_;
+    }
+    QPointer<QAbstractItemDelegate> delegate_;
+    mutable QStyledItemDelegate fallback_;
+};
+} // namespace
+
 void prepareComboPopup(QComboBox& combo) {
     auto* view = combo.view();
+    if (!dynamic_cast<NormalFontPopupDelegate*>(view->itemDelegate()))
+        view->setItemDelegate(new NormalFontPopupDelegate(view->itemDelegate(), view));
     auto* popup = view->window();
     const auto theme = resolvedThemeForWidget(combo);
     const auto& colors = theme.colors;

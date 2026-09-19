@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     parser.addOption(
         {"export", "Write a deterministic PNG and .json metadata, then exit.", "path"});
     parser.addOption({"section",
-                      "Select Tokens, Typography, Icons, Components, Compositions, or Database UI.",
+                      "Select Tokens, Typography, Icons, or Components.",
                       "name"});
     parser.addOption({"specimen", "Select a specimen ID (see --list).", "id"});
     parser.addOption(
