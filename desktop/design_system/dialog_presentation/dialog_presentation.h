@@ -27,6 +27,6 @@ class DialogPresentation final : public QObject {
     QPointer<QWidget> previousFocus_;
 };
 
-void paintDialogSurface(QWidget& widget);
+void paintDialogSurface(QWidget& widget, bool drawBorder = true);
 
 } // namespace choscordb::design

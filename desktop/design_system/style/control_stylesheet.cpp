@@ -54,6 +54,7 @@ QString controlStyleSheet(const ResolvedTheme& theme) {
         sheet.replace(QLatin1String(name), QString::number(value) + "px");
     };
     pixels("@controlRadius", radius(Radius::Large));
+    pixels("@popoverRadius", radius(Radius::TwoExtraLarge));
     pixels("@buttonHeight", dimension(Dimension::Button) - 2);
     pixels("@inputHeight", dimension(Dimension::Input) - 2);
     pixels("@selectorHeight", dimension(Dimension::Selector) - 2);

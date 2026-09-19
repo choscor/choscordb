@@ -663,9 +663,9 @@ class ModernUiTest final : public QObject {
         QCOMPARE(grid->mapTo(sql, QPoint()).x(), 0);
         QCOMPARE(tabs->tabBar()->height(), 33);
         QVERIFY(!tabs->tabIcon(0).isNull());
-        QCOMPARE(grid->verticalHeader()->defaultSectionSize(), 43);
+        QCOMPARE(grid->verticalHeader()->defaultSectionSize(), 35);
         QCOMPARE(grid->horizontalHeader()->height(), 43);
-        QVERIFY(!grid->showGrid());
+        QVERIFY(grid->showGrid());
         QVERIFY(!grid->wordWrap());
         QVERIFY(grid->horizontalHeader()->stretchLastSection());
         auto* views = window.findChild<QComboBox*>("resultViewSelector");

@@ -14,6 +14,7 @@
 #include "design_system/platform_accessibility.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
+#include "design_system/table/table_style.h"
 #ifdef CHOSCORDB_DEVELOPMENT_PREVIEW
 #include "tools/preview/preview_window.h"
 #endif
@@ -565,7 +566,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     grid->setAccessibleName(tr("Query results"));
     grid->setAlternatingRowColors(true);
     grid->setFrameShape(QFrame::NoFrame);
-    grid->setShowGrid(false);
+    design::configureResultTable(*grid);
     grid->setWordWrap(false);
     grid->horizontalHeader()->setStretchLastSection(true);
     grid->horizontalHeader()->setResizeContentsPrecision(50);

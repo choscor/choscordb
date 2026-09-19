@@ -1,5 +1,6 @@
 #include "design_system/button/button.h"
 #include "design_system/control_style.h"
+#include "design_system/text/text.h"
 #include "tools/preview/preview_window.h"
 
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
@@ -14,6 +15,7 @@
 #include <QDialog>
 #include <QDir>
 #include <QFile>
+#include <QHeaderView>
 #include <QImage>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -110,6 +112,48 @@ class PreviewTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void nonmodalDialogSurfaceHasNoOutline() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("nonmodal"));
+        window.show();
+        auto* host = window.findChild<QWidget*>("previewLight");
+        QVERIFY(host);
+        auto* open = host->findChild<QPushButton*>("previewOpenDialog");
+        auto* dialog = host->findChild<QDialog*>("previewActualDialog");
+        QVERIFY(open && dialog);
+        open->click();
+        QTRY_VERIFY(dialog->isVisible());
+        const auto image = visibleSurfaceSnapshot(*dialog);
+        const int y = image.height() / 2;
+        QCOMPARE(image.pixelColor(0, y), QColor("#ffffff"));
+        QCOMPARE(image.pixelColor(1, y), QColor("#ffffff"));
+        QCOMPARE(image.pixelColor(2, y), QColor("#ffffff"));
+        dialog->reject();
+    }
+    void nonmodalDialogGrowsWhenDescriptionWraps() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("nonmodal"));
+        window.show();
+        auto* host = window.findChild<QWidget*>("previewLight");
+        QVERIFY(host);
+        auto* open = host->findChild<QPushButton*>("previewOpenDialog");
+        auto* dialog = host->findChild<QDialog*>("previewActualDialog");
+        QVERIFY(open && dialog);
+        open->click();
+        QTRY_VERIFY(dialog->isVisible());
+        dialog->resize(338, dialog->height());
+        QCoreApplication::processEvents();
+        choscordb::design::Text* description = nullptr;
+        for (auto* label : dialog->findChildren<choscordb::design::Text*>()) {
+            if (label->wordWrap())
+                description = label;
+        }
+        QVERIFY(description);
+        QVERIFY(description->heightForWidth(description->width()) >
+                description->sizeHint().height());
+        QVERIFY(description->height() >= description->heightForWidth(description->width()));
+        dialog->reject();
+    }
     void galleryOpenKeepsAppModalityAndNativeCorners_data() {
         QTest::addColumn<QString>("specimen");
         QTest::newRow("panel") << QString("dialogs");
@@ -666,6 +710,19 @@ class PreviewTest final : public QObject {
         auto* light = window.findChild<QWidget*>("previewLight");
         auto* table = light->findChild<QTableView*>("previewResults");
         QVERIFY(table);
+        QCOMPARE(table->verticalHeader()->defaultSectionSize(), 25);
+        window.show();
+        QApplication::processEvents();
+        const auto firstCell = table->visualRect(table->model()->index(0, 0));
+        const auto secondCell = table->visualRect(table->model()->index(0, 1));
+        const QPoint firstSample(firstCell.left() + 4, firstCell.center().y());
+        const QPoint secondSample(secondCell.left() + 4, secondCell.center().y());
+        const auto before = table->viewport()->grab().toImage();
+        QTest::mouseMove(table->viewport(), secondCell.center());
+        QApplication::processEvents();
+        const auto hovered = table->viewport()->grab().toImage();
+        QVERIFY(hovered.pixelColor(firstSample) != before.pixelColor(firstSample));
+        QVERIFY(hovered.pixelColor(secondSample) != before.pixelColor(secondSample));
         auto* model = qobject_cast<choscordb::ResultTableModel*>(table->model());
         QVERIFY(model);
         QCOMPARE(model->data(model->index(0, 1)).toString(), QString("NULL"));

@@ -14,7 +14,7 @@ DesignMetrics resolveMetrics(Density, bool reducedMotion) {
     metrics.spacingMedium = spacing(Spacing::Two);
     metrics.spacingLarge = spacing(Spacing::Four);
     metrics.controlRadius = radius(Radius::Large);
-    metrics.popoverRadius = radius(Radius::Large);
+    metrics.popoverRadius = radius(Radius::TwoExtraLarge);
     metrics.dialogRadius = radius(Radius::ExtraLarge);
     metrics.separatorWidth = focusSpec().borderWidth;
     metrics.animationDurationMs = motionSpec(Motion::Interaction, reducedMotion).durationMs;

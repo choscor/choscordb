@@ -14,10 +14,11 @@ namespace choscordb::design::detail {
 class TooltipSurface final : public QWidget {
   public:
     TooltipSurface(const QString& text, QWidget* owner)
-        : QWidget(owner->window(), Qt::ToolTip), owner_(owner) {
+        : QWidget(owner->window(), Qt::ToolTip | Qt::FramelessWindowHint), owner_(owner) {
         setObjectName("designTooltip");
         setAccessibleName(text);
         setAttribute(Qt::WA_TranslucentBackground);
+        setAttribute(Qt::WA_NoSystemBackground);
         setAttribute(Qt::WA_ShowWithoutActivating);
         setFont(resolveTypography(TypographyRole::Small));
         const auto available = owner->screen()->availableGeometry();

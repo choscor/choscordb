@@ -1,15 +1,48 @@
 #include "design_system/menu/menu.h"
 #include "design_system/theme.h"
 #include <QEvent>
-#include <QGraphicsDropShadowEffect>
-#include <QGraphicsPixmapItem>
-#include <QGraphicsScene>
+#include <QGraphicsEffect>
+#include <QImage>
 #include <QMenu>
 #include <QPainter>
 #include <QScreen>
 #include <QToolButton>
+#include <vector>
 
 namespace choscordb::design::detail {
+namespace {
+// Blur only the source alpha. Drawing a QGraphicsDropShadowEffect through a scene
+// also paints its solid source silhouette, which leaves dark corner artifacts.
+void blurAlpha(std::vector<int>& alpha, int width, int height, int radius) {
+    if (radius <= 0)
+        return;
+    std::vector<int> pass(alpha.size());
+    for (int repeat = 0; repeat < 3; ++repeat) {
+        for (int y = 0; y < height; ++y) {
+            int sum = 0;
+            for (int x = 0; x < width + radius; ++x) {
+                if (x < width)
+                    sum += alpha[y * width + x];
+                if (x >= 2 * radius + 1)
+                    sum -= alpha[y * width + x - (2 * radius + 1)];
+                if (x >= radius && x - radius < width)
+                    pass[y * width + x - radius] = sum / (2 * radius + 1);
+            }
+        }
+        for (int x = 0; x < width; ++x) {
+            int sum = 0;
+            for (int y = 0; y < height + radius; ++y) {
+                if (y < height)
+                    sum += pass[y * width + x];
+                if (y >= 2 * radius + 1)
+                    sum -= pass[(y - (2 * radius + 1)) * width + x];
+                if (y >= radius && y - radius < height)
+                    alpha[(y - radius) * width + x] = sum / (2 * radius + 1);
+            }
+        }
+    }
+}
+} // namespace
 int menuShadowMargin() {
     int margin = 0;
     for (const auto& layer : elevation(Elevation::Medium))
@@ -30,39 +63,40 @@ class MenuShadowEffect final : public QGraphicsEffect {
         }
         if (source.cacheKey() != sourceKey_) {
             sourceKey_ = source.cacheKey();
-            QPixmap silhouette(source.size());
-            silhouette.setDevicePixelRatio(source.devicePixelRatio());
-            silhouette.fill(Qt::transparent);
-            {
-                QPainter mask(&silhouette);
-                mask.drawPixmap(0, 0, source);
-                mask.setCompositionMode(QPainter::CompositionMode_SourceIn);
-                mask.fillRect(silhouette.rect(), Qt::black);
-            }
-            shadow_ = QPixmap(source.size());
-            shadow_.setDevicePixelRatio(source.devicePixelRatio());
-            shadow_.fill(Qt::transparent);
-            QPainter combined(&shadow_);
-            const auto size = source.deviceIndependentSize();
-            // MVP app-menu-popup shadow; retain its tinted shadow color.
-            // Qt's blur diameter is twice the CSS blur radius.
+            const QImage sourceImage = source.toImage();
+            const int width = sourceImage.width();
+            const int height = sourceImage.height();
+            QImage shadowImage(sourceImage.size(), QImage::Format_ARGB32_Premultiplied);
+            shadowImage.fill(Qt::transparent);
+            const qreal scale = source.devicePixelRatio();
             for (const auto& layer : elevation(Elevation::Medium)) {
-                QGraphicsScene scene;
-                auto* item = scene.addPixmap(silhouette);
-                const qreal spread = -layer.spread;
-                item->setTransform(
-                    QTransform::fromScale((size.width() - 2 * spread) / size.width(),
-                                          (size.height() - 2 * spread) / size.height()));
-                item->setPos(spread, spread);
-                auto* effect = new QGraphicsDropShadowEffect;
-                effect->setBlurRadius(layer.blur * 2);
-                effect->setOffset(layer.x, layer.y);
-                auto shade = layer.color;
-                shade.setAlphaF(layer.opacity);
-                effect->setColor(shade);
-                item->setGraphicsEffect(effect);
-                scene.render(&combined, QRectF(QPointF(), size), QRectF(QPointF(), size));
+                std::vector<int> alpha(width * height);
+                const int dx = qRound(layer.x * scale);
+                const int dy = qRound(layer.y * scale);
+                for (int y = 0; y < height; ++y)
+                    for (int x = 0; x < width; ++x) {
+                        const int sx = x - dx;
+                        const int sy = y - dy;
+                        if (sx >= 0 && sx < width && sy >= 0 && sy < height)
+                            alpha[y * width + x] = sourceImage.pixelColor(sx, sy).alpha();
+                    }
+                blurAlpha(alpha, width, height, qMax(1, qRound(layer.blur * scale / 2)));
+                QImage colored(sourceImage.size(), QImage::Format_ARGB32_Premultiplied);
+                const auto color = layer.color;
+                for (int y = 0; y < height; ++y) {
+                    auto* row = reinterpret_cast<QRgb*>(colored.scanLine(y));
+                    for (int x = 0; x < width; ++x) {
+                        const int opacity = qRound(alpha[y * width + x] * layer.opacity);
+                        row[x] = qRgba(color.red() * opacity / 255,
+                                       color.green() * opacity / 255,
+                                       color.blue() * opacity / 255, opacity);
+                    }
+                }
+                QPainter combined(&shadowImage);
+                combined.drawImage(0, 0, colored);
             }
+            shadow_ = QPixmap::fromImage(shadowImage);
+            shadow_.setDevicePixelRatio(scale);
         }
         painter->drawPixmap(offset, shadow_);
         painter->drawPixmap(offset, source);

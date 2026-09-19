@@ -3,6 +3,7 @@
 #include "design_system/theme_manager.h"
 
 #include <QAbstractItemView>
+#include <QAbstractButton>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
@@ -123,7 +124,12 @@ class ControlStyleTest final : public QObject {
         combo.showPopup();
         QCoreApplication::processEvents();
         QCOMPARE(view->window()->style()->pixelMetric(QStyle::PM_DefaultFrameWidth, nullptr,
-                                                       view->window()), 1);
+                                                       view->window()), 0);
+        const auto viewImage = view->grab().toImage();
+        QCOMPARE(viewImage.pixelColor(viewImage.width() - 1, viewImage.height() / 2),
+                 QColor("#e7ebed"));
+        QCOMPARE(viewImage.pixelColor(viewImage.width() / 2, viewImage.height() - 1),
+                 QColor("#e7ebed"));
         const auto image = view->viewport()->grab().toImage();
         const auto scale = image.devicePixelRatio();
         const auto selected =
@@ -183,6 +189,19 @@ class ControlStyleTest final : public QObject {
         menu.setActiveAction(submenu->menuAction());
         QTest::keyClick(&menu, rtl ? Qt::Key_Left : Qt::Key_Right);
         QTRY_VERIFY(submenu->isVisible());
+        const auto menuImage = menu.grab().toImage();
+        const int inset = qRound(detail::menuShadowMargin() * menuImage.devicePixelRatio());
+        const QRect panel(inset, inset, menuImage.width() - 2 * inset,
+                          menuImage.height() - 2 * inset);
+        int strongestOutsideAlpha = 0;
+        for (int y = 0; y < menuImage.height(); ++y)
+            for (int x = 0; x < menuImage.width(); ++x)
+                if (!panel.contains(x, y))
+                    strongestOutsideAlpha =
+                        qMax(strongestOutsideAlpha, menuImage.pixelColor(x, y).alpha());
+        QVERIFY2(strongestOutsideAlpha >= 10 && strongestOutsideAlpha <= 30,
+                 qPrintable(QString("Menu shadow outside panel: %1")
+                                .arg(strongestOutsideAlpha)));
         QVERIFY(menu.windowFlags().testFlag(Qt::NoDropShadowWindowHint));
         QVERIFY(submenu->windowFlags().testFlag(Qt::NoDropShadowWindowHint));
         saveNativeSurface(root,
@@ -683,10 +702,11 @@ class ControlStyleTest final : public QObject {
         QCOMPARE(table.verticalHeader()->defaultSectionSize(), 29);
     }
     void unusedHeaderGutterUsesThemeSurface_data() {
+        using namespace choscordb::design;
         QTest::addColumn<bool>("dark");
         QTest::addColumn<QColor>("expected");
-        QTest::newRow("light") << false << QColor("#f6f7f8");
-        QTest::newRow("dark") << true << QColor("#171d20");
+        QTest::newRow("light") << false << resolveColors(ResolvedAppearance::Light, {}).muted;
+        QTest::newRow("dark") << true << resolveColors(ResolvedAppearance::Dark, {}).muted;
     }
     void unusedHeaderGutterUsesThemeSurface() {
         QFETCH(bool, dark);
@@ -705,6 +725,53 @@ class ControlStyleTest final : public QObject {
         auto* header = table.verticalHeader();
         const auto image = header->grab().toImage();
         QCOMPARE(image.pixelColor(image.width() / 2, image.height() - 10), expected);
+    }
+    void tableHeaderColumnsHaveSeparators() {
+        using namespace choscordb::design;
+        const auto appearance = ResolvedAppearance::Light;
+        const ResolvedTheme theme{appearance, resolveColors(appearance, {}), false};
+        QWidget root;
+        root.setStyleSheet(controlStyleSheet(theme));
+        QTableWidget table(1, 2, &root);
+        table.setHorizontalHeaderLabels({"id · int8", "value · text"});
+        table.setColumnWidth(0, 100);
+        table.setColumnWidth(1, 100);
+        table.resize(240, 120);
+        root.resize(260, 140);
+        root.show();
+        QApplication::processEvents();
+        auto* header = table.horizontalHeader();
+        const auto image = header->grab().toImage();
+        const int boundary = header->sectionViewportPosition(0) + header->sectionSize(0) - 1;
+        QCOMPARE(image.pixelColor(boundary, header->height() / 2), theme.colors.border);
+    }
+    void rowNumberColumnHasVerticalSeparator() {
+        using namespace choscordb::design;
+        const auto appearance = ResolvedAppearance::Light;
+        const ResolvedTheme theme{appearance, resolveColors(appearance, {}), false};
+        QWidget root;
+        root.setStyleSheet(controlStyleSheet(theme));
+        QTableWidget table(2, 1, &root);
+        table.resize(240, 160);
+        root.resize(260, 180);
+        root.show();
+        QApplication::processEvents();
+        auto* header = table.verticalHeader();
+        const auto image = header->grab().toImage();
+        const int edge = image.width() - 1;
+        QCOMPARE(image.pixelColor(edge, header->sectionSize(0) / 2), theme.colors.border);
+        QCOMPARE(image.pixelColor(edge, image.height() - 10), theme.colors.border);
+        QAbstractButton* corner = nullptr;
+        for (auto* button : table.findChildren<QAbstractButton*>()) {
+            if (button->inherits("QTableCornerButton")) {
+                corner = button;
+                break;
+            }
+        }
+        QVERIFY(corner);
+        const auto cornerImage = corner->grab().toImage();
+        QCOMPARE(cornerImage.pixelColor(cornerImage.width() - 1, cornerImage.height() / 2),
+                 theme.colors.border);
     }
     void unbrokenTooltipWrapsAndOwnerDestructionDismissesIt() {
         QWidget root;

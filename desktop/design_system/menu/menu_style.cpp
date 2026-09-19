@@ -3,7 +3,7 @@
 namespace choscordb::design {
 QString menuStyleSheet() {
     return QStringLiteral(
-        R"(QMenu { min-width: 243px; margin: @shadowMargin; background: @popover; color: @popoverText; border: 1px solid @border; border-radius: @controlRadius; padding: 5px; }
+        R"(QMenu { min-width: 243px; margin: @shadowMargin; background: @popover; color: @popoverText; border: 1px solid @border; border-radius: @popoverRadius; padding: 5px; }
 QMenu::item { min-width: 209px; min-height: 17px; padding: 6px 24px 6px 10px; border-radius: 4px; font-size: 12px; }
 QMenu::item:selected { background: @primary; color: @primaryText; }
 QMenu::item:disabled { color: @disabled; }

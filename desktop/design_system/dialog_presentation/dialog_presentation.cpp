@@ -198,16 +198,16 @@ bool DialogPresentation::eventFilter(QObject* watched, QEvent* event) {
     }
     return QObject::eventFilter(watched, event);
 }
-void paintDialogSurface(QWidget& widget) {
+void paintDialogSurface(QWidget& widget, bool drawBorder) {
     QPainter painter(&widget);
     painter.setRenderHint(QPainter::Antialiasing);
     const auto theme = resolvedThemeForWidget(widget);
     const auto& colors = theme.colors;
     painter.setBrush(colors.popover);
-    const auto border = colors.border;
-    painter.setPen(QPen(border, 1));
+    painter.setPen(drawBorder ? QPen(colors.border, 1) : Qt::NoPen);
     const auto cornerRadius = resolveMetrics(Density::Compact, true).dialogRadius;
-    painter.drawRoundedRect(QRectF(widget.rect()).adjusted(.5, .5, -.5, -.5), cornerRadius,
-                            cornerRadius);
+    const auto bounds = drawBorder ? QRectF(widget.rect()).adjusted(.5, .5, -.5, -.5)
+                                   : QRectF(widget.rect());
+    painter.drawRoundedRect(bounds, cornerRadius, cornerRadius);
 }
 } // namespace choscordb::design

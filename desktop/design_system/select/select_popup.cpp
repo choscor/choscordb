@@ -15,25 +15,25 @@ void prepareComboPopup(QComboBox& combo) {
     popup->setAttribute(Qt::WA_MacShowFocusRect, false);
     popup->setPalette(applicationPalette(theme));
     // Qt deliberately excludes its private combo container from inherited QSS.
-    // Give that real popup one explicit surface; keep its native list/delegate
-    // so font pickers, keyboard selection, and custom models still work.
+    // Keep the container borderless so its frame does not double the view's
+    // visible border. Retain the native list/delegate for custom models.
     popup->setStyleSheet(
         QStringLiteral(
-            "QFrame#designComboPopup { background: %1; border: 1px solid %2; border-radius: 7px; }")
-            .arg(colors.popover.name(), colors.border.name()));
+            "QFrame#designComboPopup { background: %1; border: 0; border-radius: 7px; }")
+            .arg(colors.popover.name()));
     view->setAttribute(Qt::WA_MacShowFocusRect, false);
     view->setPalette(applicationPalette(theme));
     view->setStyleSheet(
         QStringLiteral(
-            "QAbstractItemView { border: 0; background: %1; color: %2; outline: 0; padding: 4px; "
-            "border-radius: 6px; selection-background-color: %3; selection-color: %2; }"
+            "QAbstractItemView { border: 1px solid %6; background: %1; color: %2; outline: 0; padding: 4px; "
+            "border-radius: 7px; selection-background-color: %3; selection-color: %2; }"
             "QAbstractItemView::item { min-height: 21px; padding: 4px 9px; border: 0; "
             "border-radius: 4px; }"
             "QAbstractItemView::item:selected { background: %3; color: %2; }"
             "QAbstractItemView::item:hover:!selected { background: %4; }"
             "QAbstractItemView::item:disabled { color: %5; }")
             .arg(colors.popover.name(), colors.foreground.name(), colors.accent.name(),
-                 colors.muted.name(), colors.disabled.name()));
+                 colors.muted.name(), colors.disabled.name(), colors.border.name()));
 }
 
 } // namespace choscordb::design::detail

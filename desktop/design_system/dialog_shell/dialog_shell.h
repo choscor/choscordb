@@ -3,6 +3,7 @@
 #include <QDialog>
 
 class QLabel;
+class QResizeEvent;
 class QShowEvent;
 
 namespace choscordb {
@@ -22,11 +23,13 @@ class DialogShell : public QDialog {
 
   protected:
     void showEvent(QShowEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
     void hideEvent(QHideEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
   private:
     void applyLayoutMetrics();
+    void ensureContentHeight();
     bool observingTheme_ = false;
     design::DialogPresentation* presentation_ = nullptr;
 };

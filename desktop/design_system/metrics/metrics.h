@@ -82,7 +82,7 @@ struct DesignMetrics final {
     int spacingLarge = 16;
     int controlHeight = 33;
     int dataRowHeight = 29;
-    int sqlResultRowHeight = 43;
+    int sqlResultRowHeight = 35;
     int objectDataRowHeight = 35;
     int sqlResultHeaderHeight = 43;
     int navigationRowHeight = 33;
@@ -98,7 +98,7 @@ struct DesignMetrics final {
     int iconSmall = 16;
     int iconLarge = 20;
     int controlRadius = 7;
-    int popoverRadius = 7;
+    int popoverRadius = 10;
     int dialogRadius = 8;
     int separatorWidth = 1;
     int dialogElevation = 0;

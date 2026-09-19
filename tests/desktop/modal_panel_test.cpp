@@ -301,6 +301,34 @@ class ModalPanelTest final : public QObject {
                  QColor("#f9eeee"));
         dialog.reject();
     }
+    void shortConfirmationUsesCompactLayout() {
+        QWidget parent;
+        parent.resize(960, 640);
+        parent.show();
+        choscordb::ConfirmationDialog dialog(
+            QMessageBox::Warning, "Delete synthetic record?",
+            "This preview records your choice only. No data is changed.",
+            QMessageBox::Cancel, &parent);
+        dialog.addButton("Delete", QMessageBox::DestructiveRole);
+        dialog.show();
+        QApplication::processEvents();
+        auto* heading = dialog.findChild<QLabel*>("confirmationHeading");
+        auto* body = dialog.findChild<QScrollArea*>("confirmationBodyScroll");
+        auto* footer = dialog.findChild<QDialogButtonBox*>();
+        QVERIFY(heading && body && footer);
+        auto* icon = dialog.findChild<QLabel*>("qt_msgboxex_icon_label");
+        auto* cancel = dialog.button(QMessageBox::Cancel);
+        auto* destructive = dialog.buttons().last();
+        QVERIFY(icon && cancel && destructive);
+        QVERIFY(body->x() - icon->geometry().right() <= 12);
+        QVERIFY(cancel->x() - destructive->geometry().right() <= 12);
+        QCOMPARE(dialog.width(), 440);
+        QCOMPARE(body->verticalScrollBar()->maximum(), 0);
+        QVERIFY(body->height() <= 24);
+        QVERIFY(body->y() - heading->geometry().bottom() <= 20);
+        QVERIFY(footer->y() - body->geometry().bottom() <= 20);
+        dialog.reject();
+    }
     void longDiagnosticsScrollWhileCancellationStaysVisible() {
         QWidget parent;
         parent.resize(960, 640);
@@ -351,7 +379,7 @@ class ModalPanelTest final : public QObject {
         theme.applyTo(parent);
         QApplication::processEvents();
         QVERIFY(dialog.iconPixmap().toImage() != lightIcon);
-        QCOMPARE(dialog.width(), 608);
+        QCOMPARE(dialog.width(), 440);
         parent.resize(800, 600);
         QApplication::processEvents();
         QCOMPARE(dialog.geometry().center(), parent.mapToGlobal(parent.rect().center()));

@@ -5,6 +5,7 @@
 #include "design_system/theme.h"
 
 #include <QAbstractButton>
+#include <QBoxLayout>
 #include <QDialogButtonBox>
 #include <QEvent>
 #include <QGridLayout>
@@ -144,13 +145,22 @@ void ConfirmationDialog::prepareContent() {
                 cells.append(cell);
             }
             for (const auto& cell : cells) {
-                grid->addItem(cell.item, cell.row + 1, cell.column, cell.rows, cell.columns,
+                if (cell.column == 1 && cell.item->spacerItem()) {
+                    delete cell.item;
+                    continue;
+                }
+                // The informative label is folded into bodyText_ above. Its former
+                // grid row must not leave a blank band above the buttons.
+                const int row = cell.row + 1 - (cell.row >= 2 ? 1 : 0);
+                const int rows = cell.row == 0 && cell.rows > 1 ? cell.rows - 1 : cell.rows;
+                const int column = cell.column > 1 ? cell.column - 1 : cell.column;
+                grid->addItem(cell.item, row, column, rows, cell.columns,
                               cell.item->alignment());
             }
-            grid->addWidget(heading_, 0, 0, 1, columns);
+            grid->addWidget(heading_, 0, 0, 1, qMax(1, columns - 1));
         }
         grid->setContentsMargins(padding, padding, padding, padding);
-        grid->setSpacing(padding);
+        grid->setSpacing(design::spacing(design::Spacing::Two));
         heading_->show();
     }
     for (auto* button : buttons()) {
@@ -161,7 +171,7 @@ void ConfirmationDialog::prepareContent() {
                                        : affirmative           ? "default"
                                                                : "outline");
     }
-    const int referenceWidth = design::dimension(design::Dimension::ModalWidth);
+    const int referenceWidth = 440;
     const int width = parentWidget()
                           ? qMin(referenceWidth, qMax(1, parentWidget()->window()->width() - 32))
                           : referenceWidth;
@@ -169,6 +179,17 @@ void ConfirmationDialog::prepareContent() {
     const int availableHeight =
         parentWidget() ? qMin(screenHeight, parentWidget()->window()->height() - 32) : screenHeight;
     if (auto* buttonBox = findChild<QDialogButtonBox*>()) {
+        if (auto* row = qobject_cast<QBoxLayout*>(buttonBox->layout())) {
+            row->setSpacing(design::spacing(design::Spacing::Two));
+            for (int i = 1; i + 1 < row->count(); ++i) {
+                if (row->itemAt(i - 1)->widget() && row->itemAt(i + 1)->widget()) {
+                    if (auto* spacer = row->itemAt(i)->spacerItem()) {
+                        spacer->changeSize(0, 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
+                    }
+                }
+            }
+            row->invalidate();
+        }
         if (buttonBox->sizeHint().width() > width - 2 * padding) {
             buttonBox->setOrientation(Qt::Vertical);
         }

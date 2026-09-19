@@ -8,6 +8,7 @@
 #include "design_system/modal_panel/modal_panel.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
+#include "design_system/table/table_style.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/history_model.h"
 #include "models/navigator_model.h"
@@ -749,6 +750,8 @@ void populateResults(QWidget* host, QVBoxLayout* layout, const QString& state = 
     const bool loaded = state == "loaded" && load();
     table->setModel(model);
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    configureResultTable(*table);
+    table->verticalHeader()->setDefaultSectionSize(25);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     table->setSortingEnabled(false);
     table->selectRow(3);

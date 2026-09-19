@@ -6,6 +6,7 @@
 #include <QHideEvent>
 #include <QLabel>
 #include <QLayout>
+#include <QResizeEvent>
 #include <QShowEvent>
 
 namespace choscordb {
@@ -52,15 +53,21 @@ QLabel* DialogShell::createInlineStatus(QWidget* parent) {
 
 void DialogShell::showEvent(QShowEvent* event) {
     applyLayoutMetrics();
+    ensureContentHeight();
     QDialog::showEvent(event);
     presentation_->shown();
+}
+void DialogShell::resizeEvent(QResizeEvent* event) {
+    QDialog::resizeEvent(event);
+    if (event->oldSize().width() != event->size().width())
+        ensureContentHeight();
 }
 void DialogShell::hideEvent(QHideEvent* event) {
     QDialog::hideEvent(event);
     presentation_->hidden();
 }
 void DialogShell::paintEvent(QPaintEvent*) {
-    design::paintDialogSurface(*this);
+    design::paintDialogSurface(*this, false);
 }
 
 void DialogShell::applyLayoutMetrics() {
@@ -85,6 +92,11 @@ void DialogShell::applyLayoutMetrics() {
     for (auto* childLayout : findChildren<QLayout*>()) {
         childLayout->setSpacing(metrics.spacingMedium);
     }
+}
+
+void DialogShell::ensureContentHeight() {
+    if (auto* root = layout(); root && root->hasHeightForWidth())
+        setMinimumHeight(root->totalHeightForWidth(width()));
 }
 
 } // namespace choscordb
