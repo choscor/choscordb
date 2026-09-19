@@ -1,17 +1,12 @@
 #include "design_system/label/label_style.h"
+#include "design_system/style/style_resource.h"
 
 namespace choscordb::design {
 QString labelStyleSheet() {
-    return QStringLiteral(
-        R"(QLabel[designRole="heading"] { font-size: 14px; font-weight: 600; color: @foreground; }
-QLabel[designRole="description"] { color: @mutedText; }
-)");
+    return loadStyleSheet(QStringLiteral("label/label_style_sheet.qss"));
 }
 
 QString labelApplicationStateStyleSheet() {
-    return QStringLiteral(R"(QLabel[state="completed"], QLabel[state="success"] { color: %19; }
-QLabel[state="warning"] { color: %20; }
-QLabel[state="failed"], QLabel[state="error"] { color: %21; }
-)");
+    return loadStyleSheet(QStringLiteral("label/label_application_state_style_sheet.qss"));
 }
 } // namespace choscordb::design

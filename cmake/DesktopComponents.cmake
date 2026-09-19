@@ -2,6 +2,8 @@
 # Dependencies flow from application composition down to reusable Qt controls.
 choscordb_add_library(choscordb-design-system
   desktop/resources/resources.qrc
+  desktop/resources/styles.qrc
+  desktop/design_system/style/style_resource.cpp
   desktop/design_system/badge/badge_style.cpp
   desktop/design_system/button/button.cpp
   desktop/design_system/button/button_style.cpp

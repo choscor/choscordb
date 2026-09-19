@@ -1,0 +1,8 @@
+QTableView::item:selected, QTreeView::item:selected, QListView::item:selected {
+  background: @accent;
+  color: @foreground;
+}
+
+QTableView::item:hover, QListView::item:hover {
+  background: @accent;
+}

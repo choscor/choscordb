@@ -1,15 +1,12 @@
 #include "design_system/toolbar/toolbar_style.h"
+#include "design_system/style/style_resource.h"
 
 namespace choscordb::design {
 QString toolbarStyleSheet() {
-    return QStringLiteral(R"(QToolBar { spacing: 4px; border: 0; background: @background; }
-QToolBar::separator { background: @border; width: 1px; margin: 4px; }
-)");
+    return loadStyleSheet(QStringLiteral("toolbar/toolbar_style_sheet.qss"));
 }
 
 QString toolbarApplicationStyleSheet() {
-    return QStringLiteral(
-        R"(QToolBar { min-height: %14px; spacing: %15px; border: 0; border-bottom: %2px solid %3; }
-)");
+    return loadStyleSheet(QStringLiteral("toolbar/toolbar_application_style_sheet.qss"));
 }
 } // namespace choscordb::design

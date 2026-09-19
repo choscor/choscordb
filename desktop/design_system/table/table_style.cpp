@@ -1,4 +1,5 @@
 #include "design_system/table/table_style.h"
+#include "design_system/style/style_resource.h"
 #include <QPointer>
 #include <QStyledItemDelegate>
 #include <QTableView>
@@ -9,7 +10,8 @@ class RowHoverDelegate final : public QStyledItemDelegate {
     explicit RowHoverDelegate(QTableView& table) : QStyledItemDelegate(&table), table_(&table) {
         table.setMouseTracking(true);
         QObject::connect(&table, &QTableView::entered, this, [this](const QModelIndex& index) {
-            if (hoveredRow_ == index.row()) return;
+            if (hoveredRow_ == index.row())
+                return;
             hoveredRow_ = index.row();
             table_->viewport()->update();
         });
@@ -27,26 +29,20 @@ class RowHoverDelegate final : public QStyledItemDelegate {
             rowOption.state &= ~QStyle::State_MouseOver;
         QStyledItemDelegate::paint(painter, rowOption, index);
     }
+
   private:
     QPointer<QTableView> table_;
     int hoveredRow_ = -1;
 };
-}
+} // namespace
 
 namespace choscordb::design {
 QString tableStyleSheet() {
-    return QStringLiteral(R"(QTableView { font-size: 12px; }
-QTableView QHeaderView { background: @muted; }
-QTableView QHeaderView::section:horizontal { border-right: 1px solid @border; }
-QTableView QHeaderView:vertical { border-right: 1px solid @border; }
-QTableView QHeaderView::section:vertical { border-right: 1px solid @border; }
-QTableView QTableCornerButton::section { background: @muted; border-right: 1px solid @border; }
-)");
+    return loadStyleSheet(QStringLiteral("table/table_style_sheet.qss"));
 }
 
 QString tableItemStyleSheet() {
-    return QStringLiteral(R"(QTableView::item { padding: 0 12px; }
-)");
+    return loadStyleSheet(QStringLiteral("table/table_item_style_sheet.qss"));
 }
 
 void configureResultTable(QTableView& table) {

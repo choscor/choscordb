@@ -1,25 +1,20 @@
 #include "design_system/tree/tree_style.h"
+#include "design_system/style/style_resource.h"
 
 namespace choscordb::design {
 QString treeStyleSheet() {
-    return QStringLiteral(R"(QTreeView { font-size: 12px; icon-size: 15px; qproperty-indentation: 16; }
-)");
+    return loadStyleSheet(QStringLiteral("tree/tree_style_sheet.qss"));
 }
 
 QString treeItemStyleSheet() {
-    return QStringLiteral(
-        R"(QTreeView::item { min-height: @navigationLineHeight; padding: 4px 6px; border-radius: 0; }
-)");
+    return loadStyleSheet(QStringLiteral("tree/tree_item_style_sheet.qss"));
 }
 
 QString treeStateStyleSheet() {
-    return QStringLiteral(R"(QTreeView::item:hover { background: @muted; }
-QTreeView::item:selected { background: @accent; color: @navigationText; font-weight: 600; }
-)");
+    return loadStyleSheet(QStringLiteral("tree/tree_state_style_sheet.qss"));
 }
 
 QString treeApplicationStyleSheet() {
-    return QStringLiteral(R"(QTreeView::item { min-height: %13px; }
-)");
+    return loadStyleSheet(QStringLiteral("tree/tree_application_style_sheet.qss"));
 }
 } // namespace choscordb::design

@@ -1,12 +1,8 @@
 #include "design_system/select/select_style.h"
+#include "design_system/style/style_resource.h"
 
 namespace choscordb::design {
 QString selectStyleSheet() {
-    return QStringLiteral(R"(QComboBox { min-height: @selectorHeight; padding-right: 4px; }
-QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: right; width: 24px; border: 0; }
-QComboBox::down-arrow { width: 16px; height: 16px; }
-QComboBox QAbstractItemView { background: @popover; color: @popoverText; border: 1px solid @border; padding: 4px; outline: 0; selection-background-color: @accent; selection-color: @accentText; }
-QComboBox QAbstractItemView::item { min-height: 20px; padding: 4px 6px; border-radius: 6px; }
-)");
+    return loadStyleSheet(QStringLiteral("select/select_style_sheet.qss"));
 }
 } // namespace choscordb::design

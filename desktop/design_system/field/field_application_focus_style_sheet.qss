@@ -1,0 +1,3 @@
+QPushButton:focus, QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+  border: %2px solid %7;
+}

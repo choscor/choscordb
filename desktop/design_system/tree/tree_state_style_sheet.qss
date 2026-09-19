@@ -1,0 +1,9 @@
+QTreeView::item:hover {
+  background: @muted;
+}
+
+QTreeView::item:selected {
+  background: @accent;
+  color: @navigationText;
+  font-weight: 600;
+}

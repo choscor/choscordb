@@ -1,0 +1,7 @@
+QSplitter::handle {
+  background: @border;
+}
+
+QSplitter::handle:hover, QSplitter::handle:pressed {
+  background: @focus;
+}

@@ -1,0 +1,8 @@
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QKeySequenceEdit {
+  min-height: @inputHeight;
+  padding: 0 9px;
+  border: 1px solid @input;
+  border-radius: @controlRadius;
+  color: @foreground;
+  background: @field;
+}

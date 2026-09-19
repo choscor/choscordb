@@ -1,12 +1,8 @@
 #include "design_system/badge/badge_style.h"
+#include "design_system/style/style_resource.h"
 
 namespace choscordb::design {
 QString badgeStyleSheet() {
-    return QStringLiteral(
-        R"(QLabel[designRole="badge"] { min-height: 18px; max-height: 18px; border: 1px solid transparent; border-radius: 5px; padding: 0 7px; font-size: 10px; font-weight: 400; color: @primary; background: @accent; }
-QLabel[designRole="badge"][variant="secondary"] { background: @muted; color: @foreground; }
-QLabel[designRole="badge"][variant="outline"] { background: transparent; color: @foreground; border-color: @border; }
-QLabel[designRole="badge"][variant="destructive"] { background: @destructiveTint; color: @dangerText; }
-)");
+    return loadStyleSheet(QStringLiteral("badge/badge_style_sheet.qss"));
 }
 } // namespace choscordb::design

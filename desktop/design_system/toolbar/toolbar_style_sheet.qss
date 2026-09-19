@@ -1,0 +1,11 @@
+QToolBar {
+  spacing: 4px;
+  border: 0;
+  background: @background;
+}
+
+QToolBar::separator {
+  background: @border;
+  width: 1px;
+  margin: 4px;
+}

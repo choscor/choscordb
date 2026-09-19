@@ -37,6 +37,7 @@ class QualityCommandTest(unittest.TestCase):
         self.assertEqual(
             commands[1:],
             [
+                [quality.PYTHON, "scripts/ci/qss_policy.py"],
                 ["ruff", "check", "scripts", "examples"],
                 ["ruff", "format", "--check", "scripts", "examples"],
                 [

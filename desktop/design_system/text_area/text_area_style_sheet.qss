@@ -1,0 +1,7 @@
+QPlainTextEdit, QTextEdit {
+  border: 1px solid @input;
+  border-radius: @controlRadius;
+  padding: 8px;
+  background: @field;
+  color: @foreground;
+}

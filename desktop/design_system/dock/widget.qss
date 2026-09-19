@@ -1,0 +1,7 @@
+QDockWidget, QWidget#dockTitleBar {
+  background: %1;
+  color: %2;
+}
+QLabel {
+  color: %2;
+}

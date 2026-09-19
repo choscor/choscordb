@@ -1,0 +1,5 @@
+QDockWidget::title {
+  min-height: %14px;
+  padding-left: %5px;
+  color: %17;
+}

@@ -1,5 +1,6 @@
 #include "design_system/dock/dock_style.h"
 #include "design_system/icons.h"
+#include "design_system/style/style_resource.h"
 #include "design_system/theme.h"
 
 #include <QDockWidget>
@@ -10,7 +11,7 @@
 namespace choscordb::design {
 
 QString dockApplicationStyleSheet() {
-    return QStringLiteral("QDockWidget::title { min-height: %14px; padding-left: %5px; color: %17; }\n");
+    return loadStyleSheet(QStringLiteral("dock/title.qss"));
 }
 
 void styleDockWidget(QDockWidget& dock, const ResolvedTheme& theme) {
@@ -33,17 +34,17 @@ void styleDockWidget(QDockWidget& dock, const ResolvedTheme& theme) {
         row->addWidget(button);
         return button;
     };
-    auto* floatButton = addButton(Icon::Square, QStringLiteral("dockFloatButton"),
-                                  QStringLiteral("Float dock"));
+    auto* floatButton =
+        addButton(Icon::Square, QStringLiteral("dockFloatButton"), QStringLiteral("Float dock"));
     QObject::connect(floatButton, &QToolButton::clicked, &dock,
                      [&dock] { dock.setFloating(!dock.isFloating()); });
-    auto* closeButton = addButton(Icon::Close, QStringLiteral("dockCloseButton"),
-                                  QStringLiteral("Close dock"));
+    auto* closeButton =
+        addButton(Icon::Close, QStringLiteral("dockCloseButton"), QStringLiteral("Close dock"));
     QObject::connect(closeButton, &QToolButton::clicked, &dock, &QDockWidget::close);
     titleBar->setObjectName(QStringLiteral("dockTitleBar"));
     titleBar->setFixedHeight(34);
     dock.setTitleBarWidget(titleBar);
-    dock.setStyleSheet(QStringLiteral("QDockWidget, QWidget#dockTitleBar { background: %1; color: %2; } QLabel { color: %2; }")
+    dock.setStyleSheet(loadStyleSheet(QStringLiteral("dock/widget.qss"))
                            .arg(theme.colors.surface.name(), theme.colors.text.name()));
 }
 } // namespace choscordb::design

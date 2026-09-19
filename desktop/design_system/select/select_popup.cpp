@@ -1,4 +1,5 @@
 #include "design_system/select/select_popup.h"
+#include "design_system/style/style_resource.h"
 #include "design_system/theme.h"
 #include <QAbstractItemDelegate>
 #include <QAbstractItemView>
@@ -59,12 +60,12 @@ class NormalFontPopupDelegate final : public QAbstractItemDelegate {
                               const QModelIndex& index) const override {
         activeDelegate()->updateEditorGeometry(editor, option, index);
     }
-    bool editorEvent(QEvent* event, QAbstractItemModel* model,
-                     const QStyleOptionViewItem& option, const QModelIndex& index) override {
+    bool editorEvent(QEvent* event, QAbstractItemModel* model, const QStyleOptionViewItem& option,
+                     const QModelIndex& index) override {
         return activeDelegate()->editorEvent(event, model, option, index);
     }
-    bool helpEvent(QHelpEvent* event, QAbstractItemView* view,
-                   const QStyleOptionViewItem& option, const QModelIndex& index) override {
+    bool helpEvent(QHelpEvent* event, QAbstractItemView* view, const QStyleOptionViewItem& option,
+                   const QModelIndex& index) override {
         return activeDelegate()->helpEvent(event, view, option, index);
     }
     QList<int> paintingRoles() const override { return activeDelegate()->paintingRoles(); }
@@ -94,22 +95,13 @@ void prepareComboPopup(QComboBox& combo) {
     // Keep the container borderless so its frame does not double the view's
     // visible border. Retain the native list/delegate for custom models.
     popup->setStyleSheet(
-        QStringLiteral(
-            "QFrame#designComboPopup { background: %1; border: 0; border-radius: 7px; }")
-            .arg(colors.popover.name()));
+        loadStyleSheet(QStringLiteral("select/popup.qss")).arg(colors.popover.name()));
     view->setAttribute(Qt::WA_MacShowFocusRect, false);
     view->setPalette(applicationPalette(theme));
-    view->setStyleSheet(
-        QStringLiteral(
-            "QAbstractItemView { border: 1px solid %6; background: %1; color: %2; outline: 0; padding: 4px; "
-            "border-radius: 7px; selection-background-color: %3; selection-color: %2; }"
-            "QAbstractItemView::item { min-height: 21px; padding: 4px 9px; border: 0; "
-            "border-radius: 4px; }"
-            "QAbstractItemView::item:selected { background: %3; color: %2; }"
-            "QAbstractItemView::item:hover:!selected { background: %4; }"
-            "QAbstractItemView::item:disabled { color: %5; }")
-            .arg(colors.popover.name(), colors.foreground.name(), colors.accent.name(),
-                 colors.muted.name(), colors.disabled.name(), colors.border.name()));
+    view->setStyleSheet(loadStyleSheet(QStringLiteral("select/popup_view.qss"))
+                            .arg(colors.popover.name(), colors.foreground.name(),
+                                 colors.accent.name(), colors.muted.name(), colors.disabled.name(),
+                                 colors.border.name()));
 }
 
 } // namespace choscordb::design::detail

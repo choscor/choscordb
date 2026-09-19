@@ -1,0 +1,11 @@
+QLabel[state="completed"], QLabel[state="success"] {
+  color: %19;
+}
+
+QLabel[state="warning"] {
+  color: %20;
+}
+
+QLabel[state="failed"], QLabel[state="error"] {
+  color: %21;
+}

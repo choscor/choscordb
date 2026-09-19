@@ -1,0 +1,4 @@
+QLineEdit, QPlainTextEdit, QTextEdit {
+  selection-background-color: @primary;
+  selection-color: @primaryText;
+}

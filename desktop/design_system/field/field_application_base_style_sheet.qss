@@ -1,0 +1,10 @@
+QPushButton, QToolButton, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+  min-height: %1px;
+  border: %2px solid %3;
+  border-radius: %4px;
+}
+
+QPushButton, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+  padding-left: %5px;
+  padding-right: %5px;
+}

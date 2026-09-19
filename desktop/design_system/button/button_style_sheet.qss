@@ -1,0 +1,52 @@
+QPushButton {
+  min-height: @buttonHeight;
+  padding: 0 12px;
+  border: 1px solid @border;
+  border-radius: @controlRadius;
+  background: @field;
+  color: @foreground;
+  font-weight: 400;
+}
+
+QPushButton[variant="default"] {
+  background: @primary;
+  color: @primaryText;
+  border-color: transparent;
+  font-weight: 400;
+}
+
+QPushButton[variant="outline"] {
+  background: @field;
+  color: @foreground;
+  border-color: @border;
+  font-weight: 400;
+}
+
+QPushButton[variant="outline"]:hover, QPushButton[variant="outline"]:pressed {
+  background: @muted;
+  color: @foreground;
+}
+
+QPushButton[variant="destructive"] {
+  background: @destructiveTint;
+  color: @dangerText;
+  border-color: transparent;
+  font-weight: 400;
+}
+
+QPushButton[variant="destructive"]:hover, QPushButton[variant="destructive"]:pressed {
+  background: @destructiveHover;
+  color: @dangerText;
+}
+
+QPushButton:default:focus, QPushButton:checked:focus, QPushButton[variant="default"]:focus, QPushButton[primary="true"]:focus {
+  border-color: @primaryText;
+}
+
+QPushButton[variant="outline"]:focus, QPushButton[variant="destructive"]:focus {
+  border-color: @focus;
+}
+
+QPushButton[variant="default"]:disabled, QPushButton[variant="outline"]:disabled, QPushButton[variant="destructive"]:disabled {
+  color: @disabled;
+}

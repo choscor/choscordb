@@ -1,13 +1,9 @@
 #include "design_system/dialog_shell/dialog_shell_style.h"
+#include "design_system/style/style_resource.h"
 
 namespace choscordb::design {
 
 QString dialogShellApplicationStyleSheet() {
-    return QStringLiteral(R"(QDialog[appDialog="true"] { border-radius: %22px; }
-QDialog[appDialog="true"] QLabel[dialogDescription="true"] { color: %24; }
-QDialog[appDialog="true"] QLabel[dialogStatus="true"] {
-  border: %2px solid %3; border-radius: %4px; padding: %15px;
-}
-)");
+    return loadStyleSheet(QStringLiteral("dialog_shell/dialog_shell_application_style_sheet.qss"));
 }
 } // namespace choscordb::design

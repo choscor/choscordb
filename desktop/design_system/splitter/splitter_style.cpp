@@ -1,9 +1,8 @@
 #include "design_system/splitter/splitter_style.h"
+#include "design_system/style/style_resource.h"
 
 namespace choscordb::design {
 QString splitterStyleSheet() {
-    return QStringLiteral(R"(QSplitter::handle { background: @border; }
-QSplitter::handle:hover, QSplitter::handle:pressed { background: @focus; }
-)");
+    return loadStyleSheet(QStringLiteral("splitter/splitter_style_sheet.qss"));
 }
 } // namespace choscordb::design

@@ -1,10 +1,8 @@
 #include "design_system/separator/separator_style.h"
+#include "design_system/style/style_resource.h"
 
 namespace choscordb::design {
 QString separatorStyleSheet() {
-    return QStringLiteral(
-        R"(QFrame[frameShape="4"] { max-height: 1px; border: 0; background: @border; }
-QFrame[frameShape="5"] { max-width: 1px; border: 0; background: @border; }
-)");
+    return loadStyleSheet(QStringLiteral("separator/separator_style_sheet.qss"));
 }
 } // namespace choscordb::design

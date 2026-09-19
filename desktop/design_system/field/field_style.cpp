@@ -1,57 +1,28 @@
 #include "design_system/field/field_style.h"
+#include "design_system/style/style_resource.h"
 
 namespace choscordb::design {
 QString fieldSelectionStyleSheet() {
-    return QStringLiteral(
-        R"(QLineEdit, QPlainTextEdit, QTextEdit { selection-background-color: @primary; selection-color: @primaryText; }
-)");
+    return loadStyleSheet(QStringLiteral("field/field_selection_style_sheet.qss"));
 }
 
 QString fieldCaptionStyleSheet() {
-    return QStringLiteral(R"(QLabel, QCheckBox, QRadioButton, QGroupBox { color: @foreground; }
-)");
+    return loadStyleSheet(QStringLiteral("field/field_caption_style_sheet.qss"));
 }
 
 QString fieldBaseStyleSheet() {
-    return QStringLiteral(R"(QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QKeySequenceEdit {
-  min-height: @inputHeight; padding: 0 9px; border: 1px solid @input;
-  border-radius: @controlRadius; color: @foreground; background: @field;
-}
-)");
+    return loadStyleSheet(QStringLiteral("field/field_base_style_sheet.qss"));
 }
 
 QString fieldStateStyleSheet() {
-    return QStringLiteral(R"(QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus,
-QPlainTextEdit:focus, QTextEdit:focus, QKeySequenceEdit:focus { border-color: @focus; }
-QLineEdit:read-only:focus { border-color: @input; }
-QLineEdit[invalid="true"], QComboBox[invalid="true"], QSpinBox[invalid="true"],
-QDoubleSpinBox[invalid="true"], QPlainTextEdit[invalid="true"], QTextEdit[invalid="true"],
-QKeySequenceEdit[invalid="true"] { border-color: @destructive; }
-QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled,
-QPlainTextEdit:disabled, QTextEdit:disabled { color: @disabled; }
-QLabel[designRole="fieldError"] { font-size: 11px; }
-)");
+    return loadStyleSheet(QStringLiteral("field/field_state_style_sheet.qss"));
 }
 
 QString fieldApplicationBaseStyleSheet() {
-    return QStringLiteral(R"(
-QPushButton, QToolButton, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
-  min-height: %1px;
-  border: %2px solid %3;
-  border-radius: %4px;
-}
-QPushButton, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
-  padding-left: %5px;
-  padding-right: %5px;
-}
-)");
+    return loadStyleSheet(QStringLiteral("field/field_application_base_style_sheet.qss"));
 }
 
 QString fieldApplicationFocusStyleSheet() {
-    return QStringLiteral(R"(QPushButton:focus, QLineEdit:focus, QComboBox:focus,
-QSpinBox:focus, QDoubleSpinBox:focus {
-  border: %2px solid %7;
-}
-)");
+    return loadStyleSheet(QStringLiteral("field/field_application_focus_style_sheet.qss"));
 }
 } // namespace choscordb::design

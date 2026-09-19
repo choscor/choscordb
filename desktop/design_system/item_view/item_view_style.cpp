@@ -1,5 +1,6 @@
 #include "design_system/item_view/item_view_style.h"
 #include "design_system/icons.h"
+#include "design_system/style/style_resource.h"
 #include "design_system/theme.h"
 #include <QPainter>
 
@@ -57,25 +58,14 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     painter->restore();
 }
 QString itemViewStyleSheet() {
-    return QStringLiteral(
-        R"(QWidget[designSurface="subtle"] { background: @accent; }
-QWidget[designSurface="sidebar"] { background: @sidebar; }
-QWidget[designSurface="panel"] { background: @field; }
-QWidget[designSurface="muted"] { background: @muted; }
-QTableView, QTreeView, QListView { background: @field; alternate-background-color: @muted; color: @foreground; border: 0; gridline-color: @border; selection-background-color: @accent; selection-color: @foreground; outline: 0; }
-)");
+    return loadStyleSheet(QStringLiteral("item_view/item_view_style_sheet.qss"));
 }
 
 QString itemViewStateStyleSheet() {
-    return QStringLiteral(
-        R"(QTableView::item:selected, QTreeView::item:selected, QListView::item:selected { background: @accent; color: @foreground; }
-QTableView::item:hover, QListView::item:hover { background: @accent; }
-)");
+    return loadStyleSheet(QStringLiteral("item_view/item_view_state_style_sheet.qss"));
 }
 
 QString itemViewApplicationStyleSheet() {
-    return QStringLiteral(
-        R"(QTreeView, QTableView { gridline-color: %3; selection-background-color: %12; }
-)");
+    return loadStyleSheet(QStringLiteral("item_view/item_view_application_style_sheet.qss"));
 }
 } // namespace choscordb::design

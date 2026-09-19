@@ -109,6 +109,10 @@ def cpp_format():
     run_command([clang_format_tool(), "--dry-run", "--Werror", *cpp_files()])
 
 
+def qss_lint():
+    run_command([PYTHON, "scripts/ci/qss_policy.py"])
+
+
 def python_lint():
     ruff = require_tool(
         "ruff", install=f"{PYTHON} -m pip install -r scripts/ci/requirements.txt"
@@ -279,6 +283,7 @@ def native_tests():
 
 STAGES = {
     "cpp-format": cpp_format,
+    "qss-lint": qss_lint,
     "python-lint": python_lint,
     "python-format": python_format,
     "actionlint": actionlint,
@@ -295,6 +300,7 @@ STAGES = {
 
 FAST_STAGES = (
     "cpp-format",
+    "qss-lint",
     "python-lint",
     "python-format",
     "actionlint",

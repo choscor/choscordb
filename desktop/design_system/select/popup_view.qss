@@ -1,0 +1,26 @@
+QAbstractItemView {
+  border: 1px solid %6;
+  background: %1;
+  color: %2;
+  outline: 0;
+  padding: 4px;
+  border-radius: 7px;
+  selection-background-color: %3;
+  selection-color: %2;
+}
+QAbstractItemView::item {
+  min-height: 21px;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 4px;
+}
+QAbstractItemView::item:selected {
+  background: %3;
+  color: %2;
+}
+QAbstractItemView::item:hover:!selected {
+  background: %4;
+}
+QAbstractItemView::item:disabled {
+  color: %5;
+}

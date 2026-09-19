@@ -1,15 +1,8 @@
 #include "design_system/tool_button/tool_button_style.h"
+#include "design_system/style/style_resource.h"
 
 namespace choscordb::design {
 QString toolButtonStyleSheet() {
-    return QStringLiteral(
-        R"(QToolButton { icon-size: 12px; min-height: @toolHeight; max-height: @toolHeight; border: 1px solid transparent; border-radius: @controlRadius; padding: 0 9px; font-size: 11px; background: transparent; color: @foreground; }
-QToolButton[iconOnly="true"] { min-width: 30px; max-width: 30px; padding: 0; }
-QToolButton:hover, QToolButton:checked { background: @muted; color: @foreground; }
-QToolButton:pressed { background: @muted; color: @foreground; }
-QToolButton:disabled { color: @disabled; }
-QToolButton[designRole="menuButton"] { padding-right: 21px; }
-QToolButton[designRole="menuButton"]::menu-indicator { width: 8px; height: 8px; subcontrol-origin: padding; subcontrol-position: right center; right: 9px; }
-)");
+    return loadStyleSheet(QStringLiteral("tool_button/tool_button_style_sheet.qss"));
 }
 } // namespace choscordb::design

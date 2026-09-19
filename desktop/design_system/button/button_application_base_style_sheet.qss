@@ -1,0 +1,23 @@
+QPushButton, QToolButton {
+  background-color: %6;
+}
+
+QPushButton:hover {
+  border-color: %7;
+}
+
+QPushButton:default, QPushButton:checked {
+  color: %8;
+  background-color: %9;
+  border-color: %9;
+}
+
+QPushButton:default:hover, QPushButton:checked:hover {
+  background-color: %10;
+  border-color: %10;
+}
+
+QPushButton:default:pressed, QPushButton:checked:pressed {
+  background-color: %11;
+  border-color: %11;
+}
