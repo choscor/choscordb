@@ -12,6 +12,7 @@
 #include <QImage>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QPainter>
 #include <QProgressBar>
@@ -112,6 +113,17 @@ class ControlStyleTest final : public QObject {
         combo.showPopup();
         QCoreApplication::processEvents();
         auto* view = combo.view();
+        const auto openArrow = combo.grab().toImage();
+        combo.hidePopup();
+        QCoreApplication::processEvents();
+        const auto dpr = openArrow.devicePixelRatio();
+        const auto arrowArea = QRect(qRound((combo.width() - 24) * dpr), 0,
+                                     qRound(24 * dpr), qRound(combo.height() * dpr));
+        QVERIFY(combo.grab().toImage().copy(arrowArea) != openArrow.copy(arrowArea));
+        combo.showPopup();
+        QCoreApplication::processEvents();
+        QCOMPARE(view->window()->style()->pixelMetric(QStyle::PM_DefaultFrameWidth, nullptr,
+                                                       view->window()), 1);
         const auto image = view->viewport()->grab().toImage();
         const auto scale = image.devicePixelRatio();
         const auto selected =
@@ -210,6 +222,15 @@ class ControlStyleTest final : public QObject {
         root.resize(230, 70);
         root.show();
         QCoreApplication::processEvents();
+        QStyleOptionComboBox option;
+        option.initFrom(&combo);
+        option.editable = combo.isEditable();
+        option.frame = combo.hasFrame();
+        const auto textArea = combo.style()->subControlRect(QStyle::CC_ComboBox, &option,
+                                                             QStyle::SC_ComboBoxEditField, &combo);
+        const auto buttonArea = combo.style()->subControlRect(QStyle::CC_ComboBox, &option,
+                                                               QStyle::SC_ComboBoxArrow, &combo);
+        QVERIFY(textArea.right() >= buttonArea.left() - 12);
         const auto capture = combo.grab();
         const auto image = capture.toImage();
         const auto scale = capture.devicePixelRatio();
@@ -287,10 +308,29 @@ class ControlStyleTest final : public QObject {
         tabs.style()->unpolish(&tabs);
         tabs.style()->polish(&tabs);
         tabs.setCurrentIndex(0);
-        tabs.resize(320, 39);
+        tabs.resize(320, 33);
         const auto document = tabs.grab().toImage();
         QCOMPARE(document.pixelColor(qRound(4 * scale), qRound(12 * scale)), QColor("#ffffff"));
-        QCOMPARE(tabs.height(), 39);
+        QCOMPARE(tabs.height(), 33);
+    }
+    void closableDocumentTabsUseCompactHeight() {
+        using namespace choscordb::design;
+        QWidget root;
+        ThemeManager theme;
+        theme.applyTo(root);
+        QTabBar tabs(&root);
+        tabs.setProperty("designTabVariant", "document");
+        tabs.setTabsClosable(true);
+        tabs.addTab("Query · modified");
+        root.show();
+        QCoreApplication::processEvents();
+        QCOMPARE(tabs.sizeHint().height(), 33);
+        QCOMPARE(tabs.tabRect(0).height(), 33);
+        const auto side = static_cast<QTabBar::ButtonPosition>(
+            tabs.style()->styleHint(QStyle::SH_TabBar_CloseButtonPosition));
+        auto* close = tabs.tabButton(0, side);
+        QVERIFY(close);
+        QVERIFY(tabs.tabRect(0).contains(close->geometry()));
     }
     void inputTrackingResetsBodyTrackingAndRemainsEditable() {
         using namespace choscordb::design;
@@ -401,8 +441,8 @@ class ControlStyleTest final : public QObject {
         QSpinBox spin(&root);
         spin.setRange(0, 10);
         spin.setValue(5);
-        spin.setGeometry(10, 60, 180, 32);
-        root.resize(220, 120);
+        spin.setGeometry(10, 60, 180, 64);
+        root.resize(220, 140);
         root.show();
         QApplication::processEvents();
         auto glyphPixels = [dark](const QImage& image, const QRect& rectangle) {
@@ -431,6 +471,9 @@ class ControlStyleTest final : public QObject {
                                                      QStyle::SC_SpinBoxUp, &spin);
         const auto down = spin.style()->subControlRect(QStyle::CC_SpinBox, &spinOption,
                                                        QStyle::SC_SpinBoxDown, &spin);
+        QCOMPARE(spin.font().weight(), QFont::Normal);
+        QVERIFY(down.top() > up.bottom());
+        QVERIFY(down.center().y() - up.center().y() <= 18);
         QVERIFY(glyphPixels(spin.grab().toImage(), up.adjusted(2, 2, -2, -2)) >= 5);
         QVERIFY(glyphPixels(spin.grab().toImage(), down.adjusted(2, 2, -2, -2)) >= 5);
         QTest::mouseClick(&spin, Qt::LeftButton, {}, up.center());
@@ -561,6 +604,47 @@ class ControlStyleTest final : public QObject {
         const auto secondRow = tree.visualItemRect(tree.currentItem());
         QCOMPARE(tree.viewport()->grab().toImage().pixelColor(secondRow.right() - 12,
                                                               secondRow.center().y()),
+                 QColor("#eaf4ef"));
+    }
+    void treeHoverFillsSquareRowCorners() {
+        using namespace choscordb::design;
+        QWidget root;
+        ThemeManager theme;
+        theme.setMode(ThemeMode::Light);
+        theme.applyTo(root);
+        QTreeWidget tree(&root);
+        tree.setHeaderHidden(true);
+        tree.addTopLevelItem(new QTreeWidgetItem({"Connection"}));
+        tree.resize(300, 120);
+        root.show();
+        QCoreApplication::processEvents();
+        const auto row = tree.visualItemRect(tree.topLevelItem(0));
+        QTest::mouseMove(tree.viewport(), QPoint(row.center().x(), row.bottom() + 10));
+        QTest::mouseMove(tree.viewport(), row.center());
+        QTRY_COMPARE_WITH_TIMEOUT(
+            ([&] {
+                const auto image = tree.viewport()->grab().toImage();
+                const auto scale = image.devicePixelRatio();
+                return image.pixelColor(qRound(row.right() * scale), qRound(row.top() * scale));
+            }()),
+            QColor("#f2f5f4"), 1000);
+    }
+    void listSelectionFillsSquareRowCorners() {
+        using namespace choscordb::design;
+        QWidget root;
+        ThemeManager theme;
+        theme.setMode(ThemeMode::Light);
+        theme.applyTo(root);
+        QListWidget list(&root);
+        list.addItems({"Connections", "Query history"});
+        list.setCurrentRow(1);
+        list.resize(300, 120);
+        root.show();
+        QCoreApplication::processEvents();
+        const auto row = list.visualItemRect(list.item(1));
+        const auto image = list.viewport()->grab().toImage();
+        const auto scale = image.devicePixelRatio();
+        QCOMPARE(image.pixelColor(qRound(row.right() * scale), qRound(row.top() * scale)),
                  QColor("#eaf4ef"));
     }
     void validationStateUpdatesAnAlreadyVisibleField() {
@@ -965,6 +1049,28 @@ class ControlStyleTest final : public QObject {
         QCOMPARE(unchecked.pixelColor(indicator.center()), QColor("#ffffff"));
         box.setCheckState(Qt::Checked);
         QVERIFY(box.grab().toImage() != mixed);
+    }
+    void disabledCheckedIndicatorUsesMutedGreenOutlineAndCheck() {
+        choscordb::design::ControlStyle style;
+        QCheckBox box;
+        QStyleOptionButton option;
+        option.initFrom(&box);
+        option.rect = QRect(0, 0, 16, 16);
+        option.state = QStyle::State_On;
+        option.palette.setColor(QPalette::Accent, QColor("#287f66"));
+        option.palette.setColor(QPalette::HighlightedText, Qt::white);
+        QImage image(16, 16, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::white);
+        QPainter painter(&image);
+        style.drawPrimitive(QStyle::PE_IndicatorCheckBox, &option, &painter, &box);
+        painter.end();
+        QCOMPARE(image.pixelColor(8, 3), QColor(Qt::white));
+        const auto outline = image.pixelColor(8, 0);
+        QVERIFY(outline.green() > outline.red());
+        QVERIFY(outline.green() > outline.blue());
+        const auto check = image.pixelColor(6, 10);
+        QVERIFY(check.green() > check.red());
+        QVERIFY(check.green() > check.blue());
     }
     void checkboxUsesReferenceGeometryAndKeyboardMixedState() {
         choscordb::design::ControlStyle style;

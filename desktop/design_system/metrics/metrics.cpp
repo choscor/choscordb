@@ -105,7 +105,7 @@ int dimension(Dimension value) {
     case Dimension::PaneTab:
         return 35;
     case Dimension::DocumentTab:
-        return 39;
+        return 33;
     case Dimension::Progress:
         return 5;
     case Dimension::Badge:

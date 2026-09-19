@@ -13,6 +13,29 @@
 class EditorTest : public QObject {
     Q_OBJECT
   private slots:
+    void lineNumberGutterFitsContentAndFont() {
+        choscordb::SqlEditor editor;
+        editor.setText("SELECT 1;\nSELECT 2;");
+        editor.resize(400, 160);
+        editor.show();
+        QCoreApplication::processEvents();
+        const auto digitWidth = editor.SendScintilla(
+            QsciScintilla::SCI_TEXTWIDTH, QsciScintilla::STYLE_LINENUMBER, "0");
+        QVERIFY(editor.marginWidth(0) >= digitWidth * 3);
+        QVERIFY(editor.marginWidth(0) < digitWidth * 5);
+        const auto image = editor.grab().toImage();
+        int leftmostInk = editor.marginWidth(0);
+        for (int y = 3; y < 24; ++y)
+            for (int x = 1; x < editor.marginWidth(0); ++x)
+                if (image.pixelColor(x, y).lightness() < 100)
+                    leftmostInk = qMin(leftmostInk, x);
+        QVERIFY(leftmostInk > 2);
+        const auto originalWidth = editor.marginWidth(0);
+        auto font = editor.font();
+        font.setPointSize(24);
+        editor.setEditorFont(font);
+        QVERIFY(editor.marginWidth(0) > originalWidth);
+    }
     void defaultPixelFontRendersLegiblyAndCustomPointFontPreservesEditing() {
         using namespace choscordb::design;
         choscordb::SqlEditor editor;

@@ -8,7 +8,7 @@ QString treeStyleSheet() {
 
 QString treeItemStyleSheet() {
     return QStringLiteral(
-        R"(QTreeView::item { min-height: @navigationLineHeight; padding: 9px 10px; border-radius: 6px; }
+        R"(QTreeView::item { min-height: @navigationLineHeight; padding: 9px 10px; border-radius: 0; }
 )");
 }
 

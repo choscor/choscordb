@@ -30,12 +30,15 @@ bool drawCheckboxIndicator(QStyle::PrimitiveElement element, const QStyleOption*
             markColor = colors.primaryForeground;
             border = colors.input;
         }
+        if (!enabled) {
+            markColor = fill;
+        }
         if (drawSwitchIndicator(option, painter, widget)) {
             painter->restore();
             return true;
         }
         painter->setPen(QPen(checked || mixed ? fill : border, 1));
-        painter->setBrush(checked || mixed ? QBrush(fill) : Qt::NoBrush);
+        painter->setBrush(enabled && (checked || mixed) ? QBrush(fill) : Qt::NoBrush);
         painter->drawRoundedRect(rectangle, 4, 4);
         if (checked || mixed) {
             painter->setPen(QPen(markColor, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));

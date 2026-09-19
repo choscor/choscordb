@@ -2,6 +2,7 @@
 #include "design_system/style/scoped_theme.h"
 #include "design_system/theme.h"
 #include <QAbstractSpinBox>
+#include <QAbstractItemView>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QEvent>
@@ -25,11 +26,19 @@ class ControlGlyphOverlay final : public QWidget {
             connect(spin, &QSpinBox::valueChanged, this, [this] { update(); });
         } else if (auto* spin = qobject_cast<QDoubleSpinBox*>(owner)) {
             connect(spin, &QDoubleSpinBox::valueChanged, this, [this] { update(); });
+        } else if (auto* combo = qobject_cast<QComboBox*>(owner)) {
+            combo->view()->window()->installEventFilter(this);
         }
         show();
     }
 
   protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::Show || event->type() == QEvent::Hide)
+            update();
+        return QWidget::eventFilter(watched, event);
+    }
+
     void paintEvent(QPaintEvent*) override {
         auto* owner = parentWidget();
         if (!owner) {
@@ -71,7 +80,7 @@ class ControlGlyphOverlay final : public QWidget {
             // Match the reference select's trailing glyph alignment. Qt's
             // native subcontrol retains the original, larger hit region.
             arrow.translate(combo->layoutDirection() == Qt::RightToLeft ? -2 : 2, 0);
-            drawArrow(arrow, false, combo->isEnabled(), 16);
+            drawArrow(arrow, combo->view()->isVisible(), combo->isEnabled(), 16);
         } else if (auto* spin = qobject_cast<QAbstractSpinBox*>(owner)) {
             if (spin->buttonSymbols() == QAbstractSpinBox::NoButtons) {
                 return;

@@ -661,7 +661,7 @@ class ModernUiTest final : public QObject {
         QVERIFY(toolbar->mapTo(sql, toolbar->rect().bottomLeft()).y() <=
                 grid->mapTo(sql, QPoint()).y());
         QCOMPARE(grid->mapTo(sql, QPoint()).x(), 0);
-        QCOMPARE(tabs->tabBar()->height(), 39);
+        QCOMPARE(tabs->tabBar()->height(), 33);
         QVERIFY(!tabs->tabIcon(0).isNull());
         QCOMPARE(grid->verticalHeader()->defaultSectionSize(), 43);
         QCOMPARE(grid->horizontalHeader()->height(), 43);

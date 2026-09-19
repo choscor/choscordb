@@ -105,7 +105,9 @@ void SqlEditor::setEditorFont(const QFont& requestedFont) {
     updateLineNumberMargin();
 }
 void SqlEditor::updateLineNumberMargin() {
-    const auto digits = qMax<qsizetype>(5, QString::number(lines()).size());
+    // Scintilla places line numbers against the right edge of this margin.
+    // Reserve room for its inset so a one-digit number is not clipped by the frame.
+    const auto digits = qMax<qsizetype>(3, QString::number(lines()).size());
     setMarginWidth(0, QString(digits, QChar('0')));
 }
 void SqlEditor::setProfileId(const QString& id) {

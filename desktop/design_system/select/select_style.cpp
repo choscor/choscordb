@@ -2,7 +2,7 @@
 
 namespace choscordb::design {
 QString selectStyleSheet() {
-    return QStringLiteral(R"(QComboBox { min-height: @selectorHeight; padding-right: 28px; }
+    return QStringLiteral(R"(QComboBox { min-height: @selectorHeight; padding-right: 4px; }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: right; width: 24px; border: 0; }
 QComboBox::down-arrow { width: 16px; height: 16px; }
 QComboBox QAbstractItemView { background: @popover; color: @popoverText; border: 1px solid @border; padding: 4px; outline: 0; selection-background-color: @accent; selection-color: @accentText; }
