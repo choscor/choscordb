@@ -17,6 +17,7 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/dialog_presentation/dialog_presentation.cpp
   desktop/design_system/dialog_shell/dialog_shell.cpp
   desktop/design_system/dialog_shell/dialog_shell_style.cpp
+  desktop/design_system/dialog_sections/dialog_sections.cpp
   desktop/design_system/dock/dock_style.cpp
   desktop/design_system/field/field.cpp
   desktop/design_system/field/field_style.cpp
@@ -25,6 +26,7 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/header/header_style.cpp
   desktop/design_system/icons.cpp
   desktop/design_system/item_view/item_view_style.cpp
+  desktop/design_system/navigation_profile_row/navigation_profile_row.cpp
   desktop/design_system/kbd/kbd_style.cpp
   desktop/design_system/label/label_style.cpp
   desktop/design_system/list/list_style.cpp

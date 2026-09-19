@@ -2,6 +2,7 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include <QButtonGroup>
@@ -31,11 +32,11 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     resize(design::dialogInitialSize(design::DialogSize::Profiles));
     const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* outer = new QVBoxLayout(this);
-    auto* header = new QWidget(this);
-    header->setFixedHeight(metrics.connectionHeaderHeight);
-    auto* headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(metrics.connectionContentInset, 0,
-                                     metrics.connectionContentInset, 0);
+    auto* sections = new design::DialogSections(this);
+    sections->setObjectName("profileSections");
+    outer->addWidget(sections);
+    auto* headerLayout = sections->headerLayout();
+    auto* header = sections;
     auto* heading = new design::Text(tr("New connection"), header);
     heading->setObjectName("profileHeading");
     heading->setTypographyRole(design::TypographyRole::DialogTitle);
@@ -49,10 +50,6 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     dismiss->setDesignIcon(design::Icon::Close);
     connect(dismiss, &QPushButton::clicked, this, &QDialog::close);
     headerLayout->addWidget(dismiss);
-    outer->addWidget(header);
-    auto* separator = new QFrame(this);
-    separator->setFrameShape(QFrame::HLine);
-    outer->addWidget(separator);
     // Saved profiles are managed by the sidebar. Retain the internal selection
     // model for the asynchronous profile-management service contract.
     list_ = new QListWidget(this);
@@ -71,10 +68,9 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     form_->setProperty("designSurface", "panel");
     form_->setAttribute(Qt::WA_StyledBackground);
     formScroll->setWidget(form_);
-    outer->addWidget(formScroll, 1);
+    sections->bodyLayout()->addWidget(formScroll);
     auto* formLayout = new QFormLayout(form_);
-    formLayout->setContentsMargins(metrics.connectionContentInset, metrics.spacingMedium,
-                                   metrics.connectionContentInset, metrics.spacingLarge);
+    formLayout->setContentsMargins(0, 0, 0, metrics.spacingMedium);
     formLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
     formLayout->addRow(
         createDescription(tr("Connect to a server or open a local database file."), form_));
@@ -204,16 +200,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
     status_->hide();
     formLayout->addRow(status_);
-    auto* footer = new QWidget(this);
-    auto* footerLayout = new QVBoxLayout(footer);
-    footerLayout->setContentsMargins(metrics.connectionContentInset, metrics.spacingMedium,
-                                     metrics.connectionContentInset, metrics.spacingLarge);
-    auto* footerSeparator = new QFrame(footer);
-    footerSeparator->setFrameShape(QFrame::HLine);
-    footerLayout->addWidget(footerSeparator);
-    auto* buttons = new QHBoxLayout;
-    footerLayout->addLayout(buttons);
-    outer->addWidget(footer);
+    auto* buttons = sections->footerLayout();
+    auto* footer = sections;
     auto button = [this](const QString& title, const char* object) {
         auto* result = new design::Button(title, this);
         result->setObjectName(object);
@@ -446,6 +434,7 @@ void ProfileDialog::showEvent(QShowEvent* event) {
     DialogShell::showEvent(event);
     layout()->setContentsMargins(0, 0, 0, 0);
     layout()->setSpacing(0);
+    findChild<design::DialogSections*>("profileSections")->applyCompactSpacing();
 }
 void ProfileDialog::connectDraft(bool openQuery) {
     if (busy_ || !adapter_)

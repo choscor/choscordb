@@ -1,5 +1,6 @@
 #include "editor_preferences.h"
 #include "app/appearance_controller.h"
+#include "app/main_window.h"
 #include "design_system/theme.h"
 #include "widgets/preferences_dialog/preferences_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -7,7 +8,6 @@
 #include <QFontDatabase>
 #include <QKeyEvent>
 #include <QMainWindow>
-#include <QStatusBar>
 #include <Qsci/qscicommand.h>
 #include <Qsci/qscicommandset.h>
 #include <utility>
@@ -15,7 +15,7 @@ namespace choscordb {
 namespace {
 constexpr quint64 loadToken = quint64(1) << 56;
 }
-EditorPreferencesController::EditorPreferencesController(QMainWindow* window)
+EditorPreferencesController::EditorPreferencesController(MainWindow* window)
     : QObject(window), window_(window) {
     const auto limits = EngineAdapter::editorPreferenceLimits();
     preferences_.version = limits.version;
@@ -82,7 +82,7 @@ void EditorPreferencesController::initialize(EngineAdapter* adapter) {
                 pendingSaves_.remove(token);
                 if (token == loadToken) {
                     loading_ = false;
-                    window_->statusBar()->showMessage(
+                    window_->showNotice(
                         tr("Preferences could not be loaded: %1. Open Preferences to retry.")
                             .arg(error));
                 }
@@ -92,7 +92,7 @@ void EditorPreferencesController::initialize(EngineAdapter* adapter) {
 void EditorPreferencesController::apply(const EditorPreferences& value) {
     const auto error = shortcutValidationError(value, catalog_);
     if (!error.isEmpty()) {
-        window_->statusBar()->showMessage(error);
+        window_->showNotice(error);
         return;
     }
     preferences_ = value;

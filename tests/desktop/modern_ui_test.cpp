@@ -5,6 +5,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
+#include "design_system/menu/menu.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
@@ -33,7 +34,9 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QSortFilterProxyModel>
+#include <QScrollBar>
 #include <QStackedWidget>
+#include <QStatusBar>
 #include <QStyle>
 #include <QSysInfo>
 #include <QTabBar>
@@ -44,6 +47,7 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QTreeView>
+#include <QVBoxLayout>
 #include <Qsci/qscilexersql.h>
 #include <Qsci/qsciscintilla.h>
 
@@ -82,6 +86,11 @@ class ModernUiTest final : public QObject {
         window.resize(1280, 900);
         QTRY_COMPARE(sidebar->width(), 260);
         auto* title = window.findChild<QLabel*>("navigatorTitle");
+        QVERIFY(!window.findChild<QStatusBar*>());
+        auto* navBody = title->parentWidget();
+        QVERIFY(navBody);
+        QCOMPARE(navBody->layout()->contentsMargins().top(),
+                 choscordb::design::spacing(choscordb::design::Spacing::One));
         QCOMPARE(title->text(), QString("CONNECTIONS"));
         QCOMPARE(title->font().pixelSize(), 10);
         // Qt stores font tracking in 1/64px units.
@@ -116,6 +125,17 @@ class ModernUiTest final : public QObject {
         workspace->adapter()->saveProfile(postgres, 882);
         auto* profiles = window.findChild<QListWidget*>("savedConnections");
         QTRY_COMPARE(profiles->count(), 2);
+        auto* title = window.findChild<QLabel*>("navigatorTitle");
+        const auto* navLayout = qobject_cast<QVBoxLayout*>(title->parentWidget()->layout());
+        QVERIFY(navLayout);
+        QCOMPARE(navLayout->spacing(), choscordb::design::spacing(choscordb::design::Spacing::One));
+        QCOMPARE(profiles->geometry().top() - navLayout->itemAt(0)->geometry().bottom() - 1,
+                 navLayout->spacing());
+        QTRY_VERIFY(!profiles->verticalScrollBar()->isVisible());
+        QCOMPARE(profiles->spacing(), choscordb::design::spacing(choscordb::design::Spacing::Half));
+        QCOMPARE(profiles->visualItemRect(profiles->item(1)).top() -
+                     profiles->visualItemRect(profiles->item(0)).bottom() - 1,
+                 profiles->spacing() * 2);
         auto* theme = window.findChild<choscordb::design::ThemeManager*>();
         for (const auto mode :
              {choscordb::design::ThemeMode::Light, choscordb::design::ThemeMode::Dark}) {
@@ -582,6 +602,11 @@ class ModernUiTest final : public QObject {
         QApplication::sendEvent(profiles->viewport(), &event);
         auto* menu = window.findChild<QMenu*>("savedConnectionMenu");
         QVERIFY(menu);
+        QTRY_VERIFY(menu->isVisible());
+        const QPoint panel = menu->geometry().topLeft() +
+                             QPoint(choscordb::design::detail::menuShadowMargin(),
+                                    choscordb::design::detail::menuShadowMargin());
+        QCOMPARE(panel, event.globalPos());
         auto* duplicate = menu->findChild<QAction*>("duplicateSavedConnection");
         QVERIFY(duplicate);
         duplicate->trigger();

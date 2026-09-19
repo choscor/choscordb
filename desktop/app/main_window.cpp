@@ -10,7 +10,8 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
 #include "design_system/icons.h"
-#include "design_system/item_view/item_view_style.h"
+#include "design_system/menu/menu.h"
+#include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/platform_accessibility.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
@@ -47,7 +48,6 @@
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
-#include <QStatusBar>
 #include <QStyle>
 #include <QStyleHints>
 #include <QTabBar>
@@ -168,6 +168,11 @@ class HoveredTabCloseVisibility final : public QObject {
 };
 
 } // namespace
+
+void MainWindow::showNotice(const QString& message) {
+    if (toast_)
+        toast_->showNotice(message);
+}
 
 MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindow(parent) {
     ::qInitResources_resources();
@@ -305,9 +310,9 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         button->setVariant(design::ButtonVariant::Ghost);
         button->setButtonSize(design::ButtonSize::IconSmall);
     }
-    navLayout->setContentsMargins(initialMetrics.sidebarInset, initialMetrics.sidebarTopInset,
+    navLayout->setContentsMargins(initialMetrics.sidebarInset, initialMetrics.spacingSmall,
                                   initialMetrics.sidebarInset, initialMetrics.spacingMedium);
-    navLayout->setSpacing(initialMetrics.spacingMedium);
+    navLayout->setSpacing(initialMetrics.spacingSmall);
     navHeader->setSpacing(initialMetrics.spacingSmall);
     navHeader->addWidget(navTitle);
     navHeader->addStretch();
@@ -742,17 +747,21 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     objectHint->setAlignment(Qt::AlignCenter);
     objectLayout->addWidget(objectHint);
     screens_->addWidget(object);
-    setCentralWidget(screens_);
-    auto* toast = new ToastRegion(this);
-    statusBar()->addWidget(toast, 1);
-    statusBar()->showMessage(tr("Disconnected · No background queries"));
-    statusBar()->addPermanentWidget(new QLabel(tr("UTF-8   SQL")));
+    auto* centralHost = new QWidget(this);
+    auto* centralHostLayout = new QVBoxLayout(centralHost);
+    centralHostLayout->setContentsMargins(0, 0, 0, 0);
+    centralHostLayout->setSpacing(0);
+    toast_ = new ToastRegion(centralHost);
+    auto* toast = toast_;
+    centralHostLayout->addWidget(toast_);
+    centralHostLayout->addWidget(screens_, 1);
+    setCentralWidget(centralHost);
     auto* completionNote = new QLabel(tr("Loaded objects"));
     completionNote->setObjectName("completionCatalogNote");
     completionNote->setToolTip(tr("Suggestions use loaded navigator objects. Expand nodes for more "
                                   "names; large catalogs may be limited."));
     completionNote->hide();
-    statusBar()->addPermanentWidget(completionNote);
+    centralHostLayout->insertWidget(1, completionNote);
     connect(completion_, &EditorCompletionController::partialCatalog, completionNote,
             &QWidget::setVisible);
     connect(newQuery, &QAction::triggered, this, [this] { addEditor(); });
@@ -888,7 +897,11 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 if (profile.id == selected)
                     savedConnections->setCurrentItem(item);
             }
-            savedConnections->setMaximumHeight(profiles.isEmpty() ? 0 : profiles.size() * 49 + 4);
+            const int rowHeight = savedConnections->sizeHintForRow(0);
+            savedConnections->setMaximumHeight(
+                profiles.isEmpty() ? 0
+                                   : profiles.size() * (rowHeight + 2 * savedConnections->spacing()) +
+                                         2 * savedConnections->frameWidth());
         });
     connect(workspace_->adapter(), &EngineAdapter::profileSaved, this,
             [refreshProfiles] { refreshProfiles(); });
@@ -961,7 +974,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                                 workspace_->manageSavedProfile(profile.id, operation);
                             });
                 }
-                menu->popup(savedConnections->viewport()->mapToGlobal(position));
+                menu->popup(design::detail::contextMenuPosition(
+                    savedConnections->viewport()->mapToGlobal(position)));
             });
     connect(workspace_, &QueryWorkspace::connectionReady, this, [this](quint64 id) {
         if (pendingBrowseConnection_ != id)
@@ -994,7 +1008,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 pendingBrowseConnection_.reset();
                 navigatorStatus->setText(error);
                 navigatorStatus->setToolTip(error);
-                statusBar()->showMessage(error);
+                showNotice(error);
             });
     auto* refreshSaved = viewMenu->addAction(tr("Refresh saved connections"));
     refreshSaved->setObjectName("refreshSavedConnections");
@@ -1013,27 +1027,19 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     preferences_->initialize(workspace_->adapter());
     connect(
         workspace_->adapter(), &EngineAdapter::eventReady, this,
-        [this, connections, navigatorStatus](const BridgeEvent& event) {
+        [connections, navigatorStatus](const BridgeEvent& event) {
             const auto kind =
                 QString::fromUtf8(event.kind.data(), static_cast<qsizetype>(event.kind.size()));
             if (kind == "connected") {
-                statusBar()->showMessage(tr("Connected"));
                 navigatorStatus->setText(tr("● Connected"));
                 navigatorStatus->setProperty("state", "success");
             } else if (kind == "disconnected") {
-                statusBar()->showMessage(connections->currentData().isValid() ? tr("Connected")
-                                                                              : tr("Disconnected"));
                 const bool connected = connections->currentData().isValid();
                 navigatorStatus->setText(connected ? tr("● Connected") : tr("○ Disconnected"));
                 navigatorStatus->setProperty("state", connected ? "success" : "disconnected");
             } else if (kind == "connection_failed") {
                 navigatorStatus->setText(tr("! Connection failed"));
                 navigatorStatus->setProperty("state", "error");
-            } else if (kind == "query_state") {
-                statusBar()->showMessage(
-                    tr("Query · %1")
-                        .arg(QString::fromUtf8(event.state.data(),
-                                               static_cast<qsizetype>(event.state.size()))));
             }
             navigatorStatus->setAccessibleName(
                 tr("Navigator connection status: %1").arg(navigatorStatus->text()));
@@ -1054,7 +1060,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         recoveryLayout->addWidget(recoveryMessage);
         recoveryLayout->addWidget(retry);
         recoveryLayout->addWidget(startNew);
-        statusBar()->addWidget(recoveryStatus, 1);
+        centralHostLayout->insertWidget(0, recoveryStatus);
         recoveryStatus->hide();
         connect(retry, &QPushButton::clicked, recovery_, &WorkspaceRecoveryController::retry);
         connect(startNew, &QPushButton::clicked, recovery_,
@@ -1154,7 +1160,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         if (!editor)
             return;
         if (!editor->restoreDocument(entry.sql.toUtf8(), {}, 0, 0, true)) {
-            statusBar()->showMessage(tr("History text could not be opened."));
+            showNotice(tr("History text could not be opened."));
             return;
         }
         editor->setProfileId(entry.profileId);
@@ -1276,24 +1282,24 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             &QueryWorkspace::disconnectConnection);
     connect(navigatorController, &NavigatorController::generationFailed, this,
             [toast](const QString& error) { toast->showNotice(error); });
-    const auto openGeneratedSql = [this, connections, toast](quint64 connection,
+    const auto openGeneratedSql = [this, connections](quint64 connection,
                                                              const QString& sql) {
         if (databaseClosePending_ || !editors_->isEnabled() ||
             (recovery_ && (!recovery_->isReady() || recovery_->isClosing())))
             return;
         const int target = connections->findData(QVariant::fromValue<qulonglong>(connection));
         if (target < 0) {
-            statusBar()->showMessage(tr("The selected connection is no longer available."));
+            showNotice(tr("The selected connection is no longer available."));
             return;
         }
         if (target != connections->currentIndex() && !connections->isEnabled()) {
-            statusBar()->showMessage(
+            showNotice(
                 tr("Finish the active query before switching connections to generate SQL."));
             return;
         }
         const auto bytes = sql.toUtf8();
         if (!sql.isValidUtf16() || bytes.size() > DocumentIo::MaximumBytes) {
-            statusBar()->showMessage(tr("Generated SQL exceeds editor limits."));
+            showNotice(tr("Generated SQL exceeds editor limits."));
             return;
         }
         auto* editor = addEditor();
@@ -1302,7 +1308,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         if (!editor->restoreDocument(bytes, {}, 0, 0, true)) {
             editors_->removeTab(editors_->indexOf(editor));
             editor->deleteLater();
-            statusBar()->showMessage(tr("Generated SQL could not be opened."));
+            showNotice(tr("Generated SQL could not be opened."));
             return;
         }
         connections->setCurrentIndex(target);
@@ -1313,8 +1319,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         editors_->setTabText(editors_->indexOf(editor),
                              editor->property("documentTitle").toString() + " •");
         editor->setFocus();
-        statusBar()->showMessage(tr("SQL generated. Review the draft before running."));
-        toast->showNotice(tr("SQL generated. Review the draft before running."));
+        showNotice(tr("SQL generated. Review the draft before running."));
         if (recovery_)
             recovery_->changed();
     };
@@ -1408,7 +1413,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 bool MainWindow::allowDocumentChange() {
     if (!workspace_ || workspace_->navigationAllowed())
         return true;
-    statusBar()->showMessage(tr("Finish or cancel the active database work before changing SQL "
+    showNotice(tr("Finish or cancel the active database work before changing SQL "
                                 "documents. Cancel remains in the active workspace."));
     return false;
 }

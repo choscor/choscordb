@@ -11,6 +11,7 @@ class ThemeManager;
 } // namespace design
 class SqlEditor;
 class QueryWorkspace;
+class ToastRegion;
 class WorkspaceRecoveryController;
 class HistoryDock;
 class SearchPanel;
@@ -24,6 +25,7 @@ class MainWindow final : public QMainWindow {
     bool showScreen(Screen screen);
     void openConnectionQuery(quint64 connection);
     void installObjectExplorer(QWidget* explorer);
+    void showNotice(const QString& message);
     std::optional<quint64> browsingConnection() const { return browsingConnection_; }
   signals:
     void browsingConnectionChanged(quint64 connection);
@@ -40,6 +42,7 @@ class MainWindow final : public QMainWindow {
     quint64 profileListToken_ = 0;
     std::optional<quint64> pendingBrowseConnection_, browsingConnection_;
     QStackedWidget* screens_ = nullptr;
+    ToastRegion* toast_ = nullptr;
     bool constructing_ = true;
     SqlEditor* addEditor();
     bool allowDocumentChange();

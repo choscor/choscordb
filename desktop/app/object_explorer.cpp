@@ -1,5 +1,6 @@
 #include "app/object_explorer.h"
 #include "app/object_data_workspace.h"
+#include "app/main_window.h"
 #include "bridge/engine_adapter.h"
 #include "bridge/template_service.h"
 #include "choscordb-bridge/src/lib.rs.h"
@@ -9,14 +10,12 @@
 #include <QAction>
 #include <QHeaderView>
 #include <QLabel>
-#include <QMainWindow>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QStandardItemModel>
-#include <QStatusBar>
 #include <QStyle>
 #include <QStyledItemDelegate>
 #include <QTabBar>
@@ -247,8 +246,8 @@ void ObjectExplorer::setStatus(const QString& state, const QString& text) {
     if (dataFooter_ && tabs_->currentIndex() == 4 && state == "busy") {
         // The Data footer already carries its result origin. Keep the guard's
         // explanation visible without adding a second footer or hiding Cancel.
-        if (auto* main = qobject_cast<QMainWindow*>(window()))
-            main->statusBar()->showMessage(text);
+        if (auto* main = qobject_cast<MainWindow*>(window()))
+            main->showNotice(text);
         else
             status_->show();
     }

@@ -11,6 +11,7 @@ class ModalPanel : public QDialog {
     explicit ModalPanel(QWidget* parent);
     ~ModalPanel() override;
     [[nodiscard]] QSize sizeHint() const override;
+    void setEdgeToEdgeContent(bool enabled);
 
   public slots:
     void open() override;
@@ -23,5 +24,6 @@ class ModalPanel : public QDialog {
 
   private:
     DialogPresentation presentation_;
+    bool edgeToEdgeContent_ = false;
 };
 } // namespace choscordb::design

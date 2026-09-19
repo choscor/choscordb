@@ -3,6 +3,7 @@
 #include "bridge/template_service.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/dialog_shell/dialog_shell.h"
+#include "design_system/menu/menu.h"
 #include "design_system/theme.h"
 #include "models/navigator_model.h"
 #include <QApplication>
@@ -82,7 +83,8 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
                     return;
                 QMenu menu(tree);
                 populateContextMenu(&menu, index);
-                menu.exec(tree->viewport()->mapToGlobal(point));
+                menu.exec(design::detail::contextMenuPosition(
+                    tree->viewport()->mapToGlobal(point)));
             });
 }
 void NavigatorController::refreshCurrent() {

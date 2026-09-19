@@ -4,6 +4,7 @@
 #include "bridge/result_column_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/menu/menu.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -207,7 +208,8 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                     connect(action, &QAction::triggered, this,
                             [copyScope, scope] { copyScope(scope); });
                 }
-                menu.exec(widgets_.grid->viewport()->mapToGlobal(point));
+                menu.exec(design::detail::contextMenuPosition(
+                    widgets_.grid->viewport()->mapToGlobal(point)));
             });
     updateActions();
 }

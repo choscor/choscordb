@@ -1,5 +1,7 @@
 #include "design_system/button/button.h"
 #include "design_system/control_style.h"
+#include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/text/text.h"
 #include "tools/preview/preview_window.h"
 
@@ -15,6 +17,7 @@
 #include <QCompleter>
 #include <QContextMenuEvent>
 #include <QDialog>
+#include <QHBoxLayout>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
 #include <QDir>
@@ -25,6 +28,7 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QPainter>
 #include <QProcess>
@@ -857,6 +861,59 @@ class PreviewTest final : public QObject {
         for (auto* frame : light->findChildren<QFrame*>())
             hasVerticalSeparator |= frame->frameShape() == QFrame::VLine;
         QVERIFY(hasVerticalSeparator);
+    }
+
+    void dialogSectionsPreviewUsesRealComponentInBothThemes() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("dialog-sections"));
+        window.show();
+        for (const auto* name : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(name);
+            QVERIFY(host);
+            auto* open = host->findChild<QPushButton*>("previewOpenDialogSections");
+            auto* dialog = host->findChild<QDialog*>("previewDialogSectionsModal");
+            auto* sections = host->findChild<choscordb::design::DialogSections*>(
+                "previewDialogSections");
+            QVERIFY(open && dialog && sections);
+            auto* dismiss = sections->findChild<choscordb::design::Button*>(
+                "previewDialogSectionsDismiss");
+            QVERIFY(dismiss);
+            QCOMPARE(dismiss->text(), QString());
+            QCOMPARE(dismiss->buttonSize(), choscordb::design::ButtonSize::IconSmall);
+            QVERIFY(!dismiss->icon().isNull());
+            open->click();
+            QTRY_VERIFY(dialog->isVisible());
+            QCOMPARE(sections->geometry(), dialog->rect());
+            QCOMPARE(sections->bodyLayout()->contentsMargins().left(),
+                     choscordb::design::spacing(choscordb::design::Spacing::Three));
+            QCOMPARE(sections->bodyLayout()->contentsMargins().right(),
+                     choscordb::design::spacing(choscordb::design::Spacing::Three));
+            QVERIFY(sections->headerLayout()->parentWidget()->height() < 66);
+            QVERIFY(sections->footerLayout()->parentWidget()->height() < 70);
+            QVERIFY(sections->bodyLayout()->parentWidget()->height() > 0);
+            dialog->reject();
+        }
+    }
+
+    void navigationProfileRowsShowRegularAndSelectedStates() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("navigation-profile-row"));
+        window.show();
+        QCoreApplication::processEvents();
+        for (const auto* name : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(name);
+            QVERIFY(host);
+            auto* list = host->findChild<QListWidget*>("previewNavigationProfiles");
+            QVERIFY(list);
+            QCOMPARE(list->count(), 2);
+            QCOMPARE(list->spacing(), choscordb::design::spacing(choscordb::design::Spacing::Half));
+            QCOMPARE(list->currentRow(), 1);
+            QVERIFY(list->visualItemRect(list->item(1)).bottom() < list->viewport()->height());
+            QCOMPARE(list->item(0)->text(), QString("test sqlite\nSQLite"));
+            QCOMPARE(list->item(1)->data(choscordb::design::NavigationProfileDelegate::DriverRole)
+                         .toString(), QString("sqlite"));
+            QVERIFY(dynamic_cast<choscordb::design::NavigationProfileDelegate*>(list->itemDelegate()));
+        }
     }
 
     void dockSpecimenRendersThemedTitleAndButtons() {

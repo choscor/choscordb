@@ -26,6 +26,7 @@ preserved by the component extraction.
 | Tree | `tree/`: navigation rows and branch painting |
 | List | `list/`: list item styles |
 | Item view | `item_view/`: selectors genuinely shared by table/tree/list |
+| Saved connection row | `navigation_profile_row/`: two-line database profile delegate and selection state |
 | Header | `header/`: header and table-corner styles |
 | Scrollbar | `scrollbar/`: scrollbar dimensions and states |
 | Splitter, separator | `splitter/`, `separator/`: handles and horizontal/vertical rules |
@@ -36,6 +37,7 @@ preserved by the component extraction.
 | Dialog presentation | `dialog_presentation/`: shared backdrop, focus restoration, positioning and surface painting |
 | Modal panel | `modal_panel/`: application-modal `QDialog` surface |
 | Dialog shell | `dialog_shell/`: reusable nonmodal `QDialog` shell and content/status styles |
+| Dialog sections | `dialog_sections/`: compact header, growing body, and footer layout for dialogs |
 | Confirmation dialog | `confirmation_dialog/`: reusable QMessageBox contract and presentation |
 | Toast region | `toast_region/`: transient/persistent notices and accessibility announcement |
 | Shared glyphs | `control_glyphs/`: select/spin overlays and arrow painting; Qt retains hit testing |
@@ -95,20 +97,23 @@ owning modules.
 | Selects and popup rows | Select, shared control glyphs |
 | Checks and toggles | Checkbox, switch, radio button |
 | Lists and navigation | List, tree, shared item view styles |
+| Saved connection rows | Navigation profile row |
 | Dock panel | Dock |
 | Tabs with close and overflow | Tabs |
 | Scroll areas and scrollbars | Scrollbar |
 | Separators and splitters | Separator, splitter |
 | Table headers, cells and selection | Table, header, shared item view styles |
 | Tooltips and popovers | Tooltip |
+| Dialog header, body and footer | Dialog sections |
 | Modal panel, Nonmodal content, Destructive confirmations | Modal panel, dialog shell, confirmation dialog, shared dialog presentation |
 | Menus and submenus | Menu |
 | Feedback and toast states | Badge, progress, toast region |
 
-When adding a component family or a new stock Qt control covered by an existing
-family, add a visible Light/Dark specimen in `preview_window.cpp` and extend
-`tests/desktop/preview_test.cpp` to select it and verify the real control is
-present. Update this table in the same change. Tokens, fonts, colors, metrics,
+Whenever adding or changing code in a design-system component, add or update its
+visible Light/Dark specimen in `preview_window.cpp` and the matching check in
+`tests/desktop/preview_test.cpp`. Use the real control with synthetic content.
+When introducing a component family, update the specimen table above in the
+same change. Tokens, fonts, colors, metrics,
 theme, accessibility, and stylesheet assembly are foundations used by the
 gallery; they are not separate controls.
 

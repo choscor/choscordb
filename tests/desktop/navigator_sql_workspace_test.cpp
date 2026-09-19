@@ -5,6 +5,7 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -18,7 +19,6 @@
 #include <QPushButton>
 #include <QSortFilterProxyModel>
 #include <QStackedWidget>
-#include <QStatusBar>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTableView>
@@ -150,7 +150,9 @@ class NavigatorSqlWorkspaceTest : public QObject {
         QVERIFY(explorer->findChild<QLabel*>("objectStatus")
                     ->text()
                     .contains("cancel", Qt::CaseInsensitive));
-        QVERIFY(window.statusBar()->currentMessage().contains("cancel", Qt::CaseInsensitive));
+        QVERIFY(window.findChild<choscordb::ToastRegion*>("toastRegion")
+                    ->text()
+                    .contains("cancel", Qt::CaseInsensitive));
         QVERIFY(!window.showScreen(choscordb::MainWindow::Screen::Start));
         QSignalSpy changed(explorer, &choscordb::ObjectExplorer::objectChanged);
         explorer->openObject(connection, R"(["main","another"])", "another");
@@ -263,7 +265,9 @@ class NavigatorSqlWorkspaceTest : public QObject {
         QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier,
                           tabs->tabBar()->tabRect(1).center());
         QCOMPARE(tabs->currentWidget(), first);
-        QVERIFY(window.statusBar()->currentMessage().contains("cancel", Qt::CaseInsensitive));
+        QVERIFY(window.findChild<choscordb::ToastRegion*>("toastRegion")
+                    ->text()
+                    .contains("cancel", Qt::CaseInsensitive));
         first->setFocus();
         QTest::keyClick(first, Qt::Key_Tab, Qt::ControlModifier);
         QCOMPARE(tabs->currentWidget(), first);

@@ -1,5 +1,6 @@
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_shell/dialog_shell.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/modal_panel/modal_panel.h"
 #include "design_system/theme_manager.h"
 #include <QDialogButtonBox>
@@ -21,6 +22,41 @@
 class ModalPanelTest final : public QObject {
     Q_OBJECT
   private slots:
+    void dialogSectionsKeepCompactBarsAroundGrowingBody() {
+        choscordb::design::DialogSections sections;
+        sections.headerLayout()->addWidget(new QLabel("New connection", &sections));
+        sections.bodyLayout()->addWidget(new QLineEdit(&sections));
+        sections.footerLayout()->addWidget(new QPushButton("Save", &sections));
+        sections.resize(600, 400);
+        sections.show();
+        QCoreApplication::processEvents();
+        auto* header = sections.headerLayout()->parentWidget();
+        auto* body = sections.bodyLayout()->parentWidget();
+        auto* footer = sections.footerLayout()->parentWidget();
+        QVERIFY(header->height() < 66);
+        QVERIFY(footer->height() < 70);
+        QVERIFY(body->height() > header->height());
+        QCOMPARE(header->geometry().top(), 0);
+        QCOMPARE(footer->geometry().bottom(), sections.rect().bottom());
+        QCOMPARE(sections.bodyLayout()->contentsMargins().left(),
+                 choscordb::design::spacing(choscordb::design::Spacing::Three));
+        QCOMPARE(sections.bodyLayout()->contentsMargins().right(),
+                 choscordb::design::spacing(choscordb::design::Spacing::Three));
+        QCOMPARE(sections.headerLayout()->contentsMargins().left(),
+                 choscordb::design::spacing(choscordb::design::Spacing::Three));
+        QCOMPARE(sections.footerLayout()->contentsMargins().right(),
+                 choscordb::design::spacing(choscordb::design::Spacing::Three));
+        auto* field = body->findChild<QLineEdit*>();
+        QVERIFY(field);
+        QCOMPARE(field->geometry().left(),
+                 choscordb::design::spacing(choscordb::design::Spacing::Three));
+        for (auto* frame : sections.findChildren<QFrame*>()) {
+            if (frame->frameShape() == QFrame::HLine) {
+                QCOMPARE(frame->geometry().left(), 0);
+                QCOMPARE(frame->geometry().right(), sections.rect().right());
+            }
+        }
+    }
     void framelessModalsBlockAppWindowsAndRestoreFocus_data() {
         QTest::addColumn<bool>("confirmation");
         QTest::newRow("panel") << false;

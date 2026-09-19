@@ -20,6 +20,14 @@ ModalPanel::ModalPanel(QWidget* parent) : QDialog(parent), presentation_(*this) 
     setProperty("appDialog", true);
 }
 ModalPanel::~ModalPanel() = default;
+void ModalPanel::setEdgeToEdgeContent(bool enabled) {
+    edgeToEdgeContent_ = enabled;
+    if (layout()) {
+        const int padding = enabled ? 0 : spacing(Spacing::Four);
+        layout()->setContentsMargins(padding, padding, padding, padding);
+        layout()->setSpacing(padding);
+    }
+}
 void ModalPanel::open() {
     // QDialog::open() forces window modality (a native sheet on Cocoa).
     // Retain asynchronous opening while preserving the app-owned panel mode.
@@ -41,7 +49,7 @@ QSize ModalPanel::sizeHint() const {
 }
 bool ModalPanel::event(QEvent* event) {
     if (event->type() == QEvent::Polish && layout()) {
-        const int padding = spacing(Spacing::Four);
+        const int padding = edgeToEdgeContent_ ? 0 : spacing(Spacing::Four);
         layout()->setContentsMargins(padding, padding, padding, padding);
         layout()->setSpacing(padding);
     }

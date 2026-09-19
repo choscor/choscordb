@@ -4,9 +4,12 @@
 #include "design_system/button_group/button_group.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_shell/dialog_shell.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dock/dock_style.h"
 #include "design_system/icons.h"
 #include "design_system/menu/menu.h"
+#include "design_system/metrics/metrics.h"
+#include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/modal_panel/modal_panel.h"
 #include "design_system/text/text.h"
 #include "design_system/text_area/text_area_style.h"
@@ -98,6 +101,8 @@ QList<Specimen> specimens() {
         {"Components", "shortcuts", "Shortcut entry", "desktop/design_system/field/field_style.cpp"},
         {"Components", "lists-navigation", "Lists and navigation",
          "desktop/design_system/tree/tree_style.cpp"},
+        {"Components", "navigation-profile-row", "Saved connection rows",
+         "desktop/design_system/navigation_profile_row/navigation_profile_row.cpp"},
         {"Components", "dock", "Dock panel", "desktop/design_system/dock/dock_style.cpp"},
         {"Components", "tabs", "Tabs with close and overflow",
          "desktop/design_system/tabs/tabs_style.cpp"},
@@ -109,6 +114,8 @@ QList<Specimen> specimens() {
          "desktop/design_system/table/table_style.cpp"},
         {"Components", "tooltip-popover", "Tooltips and popovers",
          "desktop/design_system/tooltip/tooltip.cpp"},
+        {"Components", "dialog-sections", "Dialog header, body and footer",
+         "desktop/design_system/dialog_sections/dialog_sections.cpp"},
         {"Components", "dialogs", "Modal panel",
          "desktop/design_system/modal_panel/modal_panel.cpp"},
         {"Components", "nonmodal", "Nonmodal content",
@@ -283,12 +290,27 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
                              menu->setAttribute(Qt::WA_DeleteOnClose);
                              QObject::connect(menu->addAction("Rename"), &QAction::triggered, tree,
                                               [tree, index] { tree->edit(index); });
-                             const int margin = detail::menuShadowMargin();
-                             menu->popup(tree->viewport()->mapToGlobal(point) -
-                                         QPoint(margin, margin));
+                             menu->popup(detail::contextMenuPosition(
+                                 tree->viewport()->mapToGlobal(point)));
                          });
         tree->expandAll();
         layout->addWidget(tree, 1);
+    } else if (id == "navigation-profile-row") {
+        auto* list = new QListWidget(host);
+        list->setObjectName("previewNavigationProfiles");
+        list->setAccessibleName("Saved database connections");
+        list->setItemDelegate(new NavigationProfileDelegate(list));
+        list->setSpacing(spacing(Spacing::Half));
+        list->setProperty("designSurface", "sidebar");
+        list->setMouseTracking(true);
+        for (const auto& name : {QStringLiteral("test sqlite"), QStringLiteral("SQLite")}) {
+            auto* item = new QListWidgetItem(name + "\nSQLite", list);
+            item->setData(NavigationProfileDelegate::DriverRole, "sqlite");
+        }
+        list->setCurrentRow(1);
+        list->setFixedHeight(98);
+        layout->addWidget(list);
+        layout->addStretch();
     } else if (id == "dock") {
         auto* dock = new QDockWidget("Dock title", host);
         dock->setWidget(new QLabel("Dock content", dock));
@@ -500,6 +522,51 @@ void populateTypography(QWidget* host, QVBoxLayout* layout) {
     auto* keyboardHint = new QLabel("Ctrl / ⌘ + Enter", host);
     keyboardHint->setProperty("designRole", "kbd");
     layout->addWidget(keyboardHint);
+    layout->addStretch();
+}
+void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
+    layout->addWidget(new QLabel("Open the real modal to inspect its compact action bars.", host));
+    auto* open = new Button("Open sectioned modal", host);
+    open->setObjectName("previewOpenDialogSections");
+    layout->addWidget(open);
+    auto* dialog = new ModalPanel(host);
+    dialog->setEdgeToEdgeContent(true);
+    dialog->setObjectName("previewDialogSectionsModal");
+    dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
+    dialog->resize(560, 360);
+    auto* root = new QVBoxLayout(dialog);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+    auto* sections = new DialogSections(dialog);
+    sections->setObjectName("previewDialogSections");
+    root->addWidget(sections);
+    auto* heading = new Text("New connection", sections);
+    heading->setTypographyRole(TypographyRole::DialogTitle);
+    sections->headerLayout()->addWidget(heading);
+    sections->headerLayout()->addStretch();
+    auto* close = new Button({}, sections);
+    close->setObjectName("previewDialogSectionsDismiss");
+    close->setAccessibleName("Close sectioned modal");
+    close->setVariant(ButtonVariant::Ghost);
+    close->setButtonSize(ButtonSize::IconSmall);
+    close->setDesignIcon(Icon::Close);
+    sections->headerLayout()->addWidget(close);
+    auto* description = new QLabel("Connect to a server or open a local database file.", sections);
+    sections->bodyLayout()->addWidget(description);
+    auto* name = new QLineEdit(sections);
+    name->setPlaceholderText("Connection name");
+    sections->bodyLayout()->addWidget(name);
+    sections->bodyLayout()->addStretch();
+    sections->footerLayout()->addStretch();
+    auto* cancel = new Button("Cancel", sections);
+    cancel->setVariant(ButtonVariant::Outline);
+    sections->footerLayout()->addWidget(cancel);
+    auto* save = new Button("Save profile", sections);
+    sections->footerLayout()->addWidget(save);
+    QObject::connect(open, &QPushButton::clicked, dialog, &QDialog::open);
+    QObject::connect(close, &QPushButton::clicked, dialog, &QDialog::reject);
+    QObject::connect(cancel, &QPushButton::clicked, dialog, &QDialog::reject);
+    QObject::connect(save, &QPushButton::clicked, dialog, &QDialog::accept);
     layout->addStretch();
 }
 void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool destructive) {
@@ -955,6 +1022,8 @@ void PreviewWindow::rebuildSpecimens() {
             table->setItem(1, 1, new QTableWidgetItem("Pending"));
             table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
             contentLayout->addWidget(table, 1);
+        } else if (id == "dialog-sections") {
+            populateDialogSections(content, contentLayout);
         } else if (id == "dialogs" || id == "nonmodal" || id == "confirmations") {
             populateDialog(content, contentLayout, id == "nonmodal", id == "confirmations");
         } else if (id == "menus") {

@@ -1,6 +1,7 @@
 #include "design_system/menu/menu.h"
 #include "design_system/theme.h"
 #include <QEvent>
+#include <QGuiApplication>
 #include <QGraphicsEffect>
 #include <QImage>
 #include <QMenu>
@@ -49,6 +50,17 @@ int menuShadowMargin() {
         margin = qMax(margin,
                       layer.blur * 2 + qMax(qAbs(layer.x), qAbs(layer.y)) + qMax(0, layer.spread));
     return margin;
+}
+QPoint contextMenuPosition(const QPoint& cursor) {
+    const int margin = menuShadowMargin();
+    QPoint position = cursor - QPoint(margin, margin);
+    // Keep the popup window on screen when its shadow would extend past an edge.
+    if (const auto* screen = QGuiApplication::screenAt(cursor)) {
+        const QRect available = screen->availableGeometry();
+        position.setX(qMax(position.x(), available.left()));
+        position.setY(qMax(position.y(), available.top()));
+    }
+    return position;
 }
 class MenuShadowEffect final : public QGraphicsEffect {
   public:

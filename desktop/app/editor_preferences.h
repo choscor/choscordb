@@ -5,15 +5,15 @@
 #include <QPointer>
 #include <QSet>
 class QAction;
-class QMainWindow;
 namespace choscordb {
+class MainWindow;
 class PreferencesDialog;
 class AppearanceController;
 class SqlEditor;
 class EditorPreferencesController final : public QObject {
     Q_OBJECT
   public:
-    explicit EditorPreferencesController(QMainWindow* window);
+    explicit EditorPreferencesController(MainWindow* window);
     void addAction(const QString& id, QAction* action, bool configurable = true);
     void addEditor(SqlEditor* editor);
     void initialize(EngineAdapter* adapter);
@@ -31,7 +31,7 @@ class EditorPreferencesController final : public QObject {
   private:
     void apply(const EditorPreferences& value);
     void applyFont(SqlEditor* editor);
-    QMainWindow* window_;
+    MainWindow* window_;
     QPointer<EngineAdapter> adapter_;
     QPointer<PreferencesDialog> dialog_;
     QPointer<AppearanceController> appearance_;
