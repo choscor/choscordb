@@ -8,6 +8,28 @@ using namespace choscordb;
 class NavigatorModelTest : public QObject {
     Q_OBJECT
   private slots:
+    void sameIndexCanAppearInTableAndSchemaGroup() {
+        NavigatorModel model;
+        QSignalSpy requested(&model, &NavigatorModel::childrenRequested);
+        QVERIFY(model.addConnection(1, "db"));
+        const auto root = model.index(0, 0);
+        model.fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(model.applyChildren(
+            1, {}, requested.last().at(2).toULongLong(),
+            {{"table", "t", "t", "table", true}, {"group", "Indexes", {}, "group", true}}));
+        auto table = model.index(0, 0, root);
+        auto group = model.index(1, 0, root);
+        model.fetchMore(table);
+        QTRY_COMPARE(requested.count(), 2);
+        QVERIFY(model.applyChildren(1, "table", requested.last().at(2).toULongLong(),
+                                    {{"index-id", "idx", "idx", "index", false}}));
+        model.fetchMore(group);
+        QTRY_COMPARE(requested.count(), 3);
+        QVERIFY(model.applyChildren(1, "group", requested.last().at(2).toULongLong(),
+                                    {{"index-id", "idx", "idx", "index", false}}));
+        QCOMPARE(model.index(0, 0, group).data().toString(), QString("idx"));
+    }
     void failedChildrenStayVisibleUntilExplicitRefresh() {
         NavigatorModel model;
         QAbstractItemModelTester tester(&model,

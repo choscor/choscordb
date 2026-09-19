@@ -2,6 +2,7 @@
 #include <QHash>
 #include <QPointer>
 #include <QStringList>
+#include <QVariant>
 #include <QWidget>
 #include <optional>
 class QAction;
@@ -20,7 +21,8 @@ class ObjectExplorer final : public QWidget {
     Q_OBJECT
   public:
     explicit ObjectExplorer(EngineAdapter* adapter, QWidget* parent = nullptr);
-    void openObject(quint64 connection, const QString& object, const QString& label);
+    void openObject(quint64 connection, const QString& object, const QString& label,
+                    const QString& kind = QString(), const QVariantList& properties = {});
     void installDataWidget(QWidget* widget);
     void setOperationBusy(bool busy);
   signals:
@@ -52,7 +54,8 @@ class ObjectExplorer final : public QWidget {
     QStringList columns_;
     bool columnsLoaded_ = false;
     std::optional<quint64> connection_;
-    QString object_, label_;
+    QString object_, label_, kind_;
+    QVariantList properties_;
     quint64 requestToken_ = 0;
     bool operationBusy_ = false;
     int activePane_ = 0;

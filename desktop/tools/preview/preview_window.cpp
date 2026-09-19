@@ -270,7 +270,9 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         auto* tree = new QTreeView(host);
         auto* model = new QStandardItemModel(tree);
         auto* parent = new QStandardItem("Navigation group");
-        parent->appendRow(new QStandardItem("Nested item"));
+        auto* child = new QStandardItem("Nested item");
+        child->setIcon(themedIcon(Icon::Table, resolvedThemeForWidget(*host).colors.mutedText, 14));
+        parent->appendRow(child);
         model->appendRow(parent);
         tree->setModel(model);
         tree->setHeaderHidden(true);

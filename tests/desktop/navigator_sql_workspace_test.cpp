@@ -11,7 +11,9 @@
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QComboBox>
+#include <QFileInfo>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
@@ -29,6 +31,84 @@
 class NavigatorSqlWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void selectedConnectionShowsOnlyItsTree() {
+        choscordb::EngineAdapter adapter;
+        QTreeView tree;
+        QLineEdit filter;
+        choscordb::NavigatorController navigator(&adapter, &tree, &filter, &tree);
+        QObject::disconnect(navigator.model(), &choscordb::NavigatorModel::childrenRequested,
+                            &adapter, &choscordb::EngineAdapter::loadMetadata);
+        navigator.addConnection(11, "First");
+        navigator.addConnection(22, "Second");
+        navigator.setSelectedConnection(11);
+        QCOMPARE(tree.model()->rowCount(), 1);
+        QCOMPARE(tree.model()->index(0, 0).data().toString(), QString("First"));
+        navigator.setSelectedConnection(22);
+        QCOMPARE(tree.model()->rowCount(), 1);
+        QCOMPARE(tree.model()->index(0, 0).data().toString(), QString("Second"));
+        navigator.clearSelectedConnection();
+        QCOMPARE(tree.model()->rowCount(), 0);
+    }
+    void searchLoadsCollapsedGroupsOnlyForSelectedConnection() {
+        choscordb::EngineAdapter adapter;
+        QTreeView tree;
+        QLineEdit filter;
+        choscordb::NavigatorController navigator(&adapter, &tree, &filter, &tree);
+        QObject::disconnect(navigator.model(), &choscordb::NavigatorModel::childrenRequested,
+                            &adapter, &choscordb::EngineAdapter::loadMetadata);
+        navigator.addConnection(11, "First");
+        navigator.addConnection(22, "Second");
+        navigator.setSelectedConnection(11);
+        connect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &tree,
+                [&](quint64 connection, const QString& parent, quint64 token) {
+                    if (connection != 11)
+                        return;
+                    std::vector<choscordb::NavigatorObject> objects;
+                    if (parent.isEmpty())
+                        objects.push_back({"schema", "public", "public", "schema", true});
+                    else if (parent == "schema")
+                        objects.push_back({"group", "Tables", "", "group", true});
+                    else if (parent == "group")
+                        objects.push_back({"table", "needle", "public.needle", "table", false});
+                    navigator.model()->applyChildren(connection, parent, token, std::move(objects));
+                });
+        filter.setText("needle");
+        QTRY_VERIFY(navigator.model()
+                        ->index(0, 0)
+                        .data(choscordb::NavigatorModel::ChildrenLoadedRole)
+                        .toBool());
+        QTRY_COMPARE(tree.model()->rowCount(), 1);
+        auto root = tree.model()->index(0, 0);
+        QTRY_COMPARE(tree.model()->rowCount(root), 1);
+        auto schema = tree.model()->index(0, 0, root);
+        QTRY_COMPARE(tree.model()->rowCount(schema), 1);
+        auto group = tree.model()->index(0, 0, schema);
+        QTRY_COMPARE(tree.model()->index(0, 0, group).data().toString(), QString("needle"));
+    }
+    void searchFailureKeepsRefineMessage() {
+        choscordb::EngineAdapter adapter;
+        QTreeView tree;
+        QLineEdit filter;
+        choscordb::NavigatorController navigator(&adapter, &tree, &filter, &tree);
+        QObject::disconnect(navigator.model(), &choscordb::NavigatorModel::childrenRequested,
+                            &adapter, &choscordb::EngineAdapter::loadMetadata);
+        navigator.addConnection(11, "First");
+        navigator.setSelectedConnection(11);
+        QSignalSpy status(&navigator, &choscordb::NavigatorController::searchStatusChanged);
+        connect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &tree,
+                [&adapter, &status](quint64 connection, const QString& parent, quint64 token) {
+                    emit adapter.metadataSubmissionFailed(connection, parent, token + 1,
+                                                          "Stale error");
+                    QCOMPARE(status.last().first().toString(), QString("Searching objects…"));
+                    emit adapter.metadataSubmissionFailed(connection, parent, token,
+                                                          "Metadata limit exceeded");
+                });
+        filter.setText("needle");
+        QTRY_VERIFY(!status.isEmpty() &&
+                    status.last().first().toString().contains("Refine the text"));
+        QCoreApplication::processEvents();
+        QVERIFY(status.last().first().toString().contains("Metadata limit exceeded"));
+    }
     void selectingObjectLoadsMetadataAndSeparateDataThenReturnsToSql() {
         choscordb::MainWindow window;
         window.show();
@@ -68,6 +148,7 @@ class NavigatorSqlWorkspaceTest : public QObject {
         auto* sql = window.findChild<QTableView*>("queryResults");
         QCOMPARE(sql->model()->index(0, 0).data().toString(), QString("99"));
         auto* navigator = window.findChild<choscordb::NavigatorController*>();
+        navigator->setSelectedConnection(connection);
         auto* model = navigator->model();
         auto root = model->index(0, 0);
         model->fetchMore(root);
@@ -75,13 +156,18 @@ class NavigatorSqlWorkspaceTest : public QObject {
         auto schema = model->index(0, 0, root);
         model->fetchMore(schema);
         QTRY_VERIFY(schema.data(choscordb::NavigatorModel::ChildrenLoadedRole).toBool());
-        auto table = model->index(0, 0, schema);
+        auto group = model->index(0, 0, schema);
+        QCOMPARE(group.data(choscordb::NavigatorModel::KindRole).toString(), QString("group"));
+        model->fetchMore(group);
+        QTRY_VERIFY(group.data(choscordb::NavigatorModel::ChildrenLoadedRole).toBool());
+        auto table = model->index(0, 0, group);
         QCOMPARE(table.data().toString(), QString("Ui table"));
         auto* tree = window.findChild<QTreeView*>();
         auto* proxy = qobject_cast<QSortFilterProxyModel*>(tree->model());
         QVERIFY(proxy);
         tree->expand(proxy->mapFromSource(root));
         tree->expand(proxy->mapFromSource(schema));
+        tree->expand(proxy->mapFromSource(group));
         QTest::mouseClick(tree->viewport(), Qt::LeftButton, Qt::NoModifier,
                           tree->visualRect(proxy->mapFromSource(table)).center());
         auto* screens = window.findChild<QStackedWidget*>("centralScreens");
@@ -196,8 +282,9 @@ class NavigatorSqlWorkspaceTest : public QObject {
         QTRY_VERIFY(run->isEnabled());
         run->trigger();
         QTRY_COMPARE(grid->model()->rowCount(), 1);
-        QCOMPARE(grid->model()->data(grid->model()->index(0, 0)).toString(),
-                 directory.filePath("first.sqlite"));
+        QCOMPARE(QFileInfo(grid->model()->data(grid->model()->index(0, 0)).toString())
+                     .canonicalFilePath(),
+                 QFileInfo(directory.filePath("first.sqlite")).canonicalFilePath());
         QTRY_VERIFY(run->isEnabled());
         QTRY_VERIFY(window.findChild<QPlainTextEdit*>("queryMessages")
                         ->toPlainText()
@@ -237,7 +324,7 @@ class NavigatorSqlWorkspaceTest : public QObject {
         run->trigger();
         QTRY_COMPARE(grid->model()->rowCount(), 1);
         QTRY_COMPARE(grid->model()->data(grid->model()->index(0, 0)).toString(),
-                     directory.filePath("second.sqlite"));
+                     QFileInfo(directory.filePath("second.sqlite")).canonicalFilePath());
         QTRY_VERIFY(run->isEnabled());
         QVERIFY(summary->text().contains("second.sqlite"));
         QVERIFY(summary->text() != origin);
@@ -406,7 +493,11 @@ class NavigatorSqlWorkspaceTest : public QObject {
         const auto schema = model->index(0, 0, root);
         model->fetchMore(schema);
         QTRY_VERIFY(schema.data(choscordb::NavigatorModel::ChildrenLoadedRole).toBool());
-        const auto table = model->index(0, 0, schema);
+        const auto group = model->index(0, 0, schema);
+        QCOMPARE(group.data(choscordb::NavigatorModel::KindRole).toString(), QString("group"));
+        model->fetchMore(group);
+        QTRY_VERIFY(group.data(choscordb::NavigatorModel::ChildrenLoadedRole).toBool());
+        const auto table = model->index(0, 0, group);
         QCOMPARE(table.data().toString(), QString("a.b"));
         model->fetchMore(table);
         QTRY_VERIFY(table.data(choscordb::NavigatorModel::ChildrenLoadedRole).toBool());

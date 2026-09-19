@@ -849,7 +849,15 @@ class PreviewTest final : public QObject {
         QVERIFY(light->findChild<QDockWidget*>());
 
         QVERIFY(window.selectSpecimen("lists-navigation"));
-        QVERIFY(light->findChild<QTreeView*>());
+        for (const auto* name : {"previewLight", "previewDark"}) {
+            auto* tree = window.findChild<QWidget*>(name)->findChild<QTreeView*>();
+            QVERIFY(tree);
+            QCOMPARE(tree->indentation(), 12);
+            QVERIFY(tree->model()->index(0, 0).data(Qt::DecorationRole).isNull());
+            QVERIFY(!tree->model()->index(0, 0, tree->model()->index(0, 0))
+                         .data(Qt::DecorationRole)
+                         .isNull());
+        }
         QVERIFY(window.selectSpecimen("numeric-fields"));
         QVERIFY(light->findChild<QDoubleSpinBox*>());
         QVERIFY(window.selectSpecimen("textareas"));

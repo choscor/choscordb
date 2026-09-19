@@ -159,6 +159,8 @@ QVariant NavigatorModel::data(const QModelIndex& index, int role) const {
         return value->object.kind;
     case ChildrenLoadedRole:
         return !value->placeholder && value->state == Node::Loaded;
+    case PropertiesRole:
+        return value->object.properties;
     case ErrorRole:
         return value->error;
     default:
@@ -243,6 +245,18 @@ bool NavigatorModel::addConnection(quint64 id, const QString& label) {
     endInsertRows();
     return true;
 }
+bool NavigatorModel::addPendingConnection(quint64 id, const QString& label) {
+    if (!addConnection(id, label))
+        return false;
+    auto* root = find(id, {});
+    root->object.name = tr("%1 — Loading…").arg(label);
+    root->object.kind = "loading";
+    root->object.hasChildren = false;
+    root->state = Node::Loaded;
+    const auto rootIndex = indexFor(root);
+    emit dataChanged(rootIndex, rootIndex, {Qt::DisplayRole, KindRole});
+    return true;
+}
 bool NavigatorModel::removeConnection(quint64 id) {
     const auto it = std::find_if(roots_.begin(), roots_.end(),
                                  [id](const auto& n) { return n->connection == id; });
@@ -266,7 +280,11 @@ bool NavigatorModel::applyChildren(quint64 connection, const QString& parentObje
     }
     QSet<QString> ids;
     for (const auto& object : children) {
-        if (object.id.isEmpty() || ids.contains(object.id) || find(connection, object.id)) {
+        const auto* existing = find(connection, object.id);
+        const bool sameIndex = existing && object.kind == "index" &&
+                               existing->object.kind == "index" && !object.hasChildren &&
+                               !existing->object.hasChildren;
+        if (object.id.isEmpty() || ids.contains(object.id) || (existing && !sameIndex)) {
             failChildren(connection, parentObjectId, token,
                          tr("Metadata object identifiers must be unique and nonempty."));
             return false;

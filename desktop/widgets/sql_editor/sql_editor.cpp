@@ -1,9 +1,12 @@
 #include "widgets/sql_editor/sql_editor.h"
 #include "bridge/engine_adapter.h"
+#include "design_system/menu/menu.h"
 #include "design_system/theme.h"
+#include <QContextMenuEvent>
 #include <QEvent>
 #include <QFontDatabase>
 #include <QFutureWatcher>
+#include <QMenu>
 #include <QTimer>
 #include <Qsci/qsciabstractapis.h>
 #include <Qsci/qscilexersql.h>
@@ -48,6 +51,18 @@ SqlEditor::SqlEditor(QWidget* parent) : QsciScintilla(parent) {
     connect(this, &QsciScintilla::textChanged, this, [this] { ++revision_; });
     connect(this, &QsciScintilla::linesChanged, this, &SqlEditor::updateLineNumberMargin);
     applyPalette();
+}
+bool SqlEditor::viewportEvent(QEvent* event) {
+    if (event->type() == QEvent::ContextMenu) {
+        auto* context = static_cast<QContextMenuEvent*>(event);
+        if (auto* menu = createStandardContextMenu()) {
+            menu->exec(design::detail::contextMenuPosition(context->globalPos()));
+            delete menu;
+        }
+        context->accept();
+        return true;
+    }
+    return QsciScintilla::viewportEvent(event);
 }
 bool SqlEditor::restoreDocument(const QByteArray& sql, const QString& path, quint64 cursor,
                                 quint64 anchor, bool modified) {

@@ -1,6 +1,6 @@
 #include "app/object_explorer.h"
-#include "app/object_data_workspace.h"
 #include "app/main_window.h"
+#include "app/object_data_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "bridge/template_service.h"
 #include "choscordb-bridge/src/lib.rs.h"
@@ -9,6 +9,8 @@
 #include "design_system/theme.h"
 #include <QAction>
 #include <QHeaderView>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QMenu>
 #include <QPlainTextEdit>
@@ -183,13 +185,15 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                 retry_->show();
             });
 }
-void ObjectExplorer::openObject(quint64 connection, const QString& object, const QString& label) {
+void ObjectExplorer::openObject(quint64 connection, const QString& object, const QString& label,
+                                const QString& kind, const QVariantList& properties) {
     if (operationBusy_) {
         setStatus("busy",
                   tr("Finish or cancel the active Data operation before changing objects."));
         return;
     }
-    if (connection_ == connection && object_ == object) {
+    if (connection_ == connection && object_ == object && kind_ == kind &&
+        properties_ == properties) {
         label_ = label;
         tabs_->setCurrentIndex(0);
         return;
@@ -197,10 +201,16 @@ void ObjectExplorer::openObject(quint64 connection, const QString& object, const
     connection_ = connection;
     columns_.clear();
     columnsLoaded_ = false;
-    updateActions();
     tabs_->setEnabled(true);
     object_ = object;
     label_ = label;
+    kind_ = kind;
+    properties_ = properties;
+    updateActions();
+    const bool basic = kind == "index" || kind == "sequence" || kind == "function";
+    tabs_->setTabText(0, basic ? tr("Details") : tr("Columns"));
+    for (int i = 1; i < 5; ++i)
+        tabs_->setTabVisible(i, !basic || i == 3);
     requestToken_ = 0;
     const QSignalBlocker blocker(tabs_);
     tabs_->setCurrentIndex(0);
@@ -222,6 +232,65 @@ void ObjectExplorer::requestPane() {
     retry_->hide();
     refresh_->setVisible(tabs_->currentIndex() != 4);
     refresh_->setEnabled(false);
+    if (tabs_->currentIndex() == 0 &&
+        (kind_ == "index" || kind_ == "sequence" || kind_ == "function")) {
+        pages_->setCurrentIndex(0);
+        auto parts = QJsonDocument::fromJson(object_.toUtf8()).array();
+        QString name = label_;
+        QString schema = tr("Unavailable: schema metadata was not provided");
+        if (parts.size() >= 2 && parts.at(0).isString()) {
+            schema = parts.at(0).toString();
+            if (parts.last().isString())
+                name = parts.last().toString();
+        } else {
+            // PostgreSQL metadata supplies a qualified display label. A quoted
+            // schema may contain dots, so find its closing quote explicitly.
+            if (label_.startsWith('"')) {
+                int end = 1;
+                while (end < label_.size()) {
+                    if (label_.at(end) == '"' && end + 1 < label_.size() &&
+                        label_.at(end + 1) == '"') {
+                        end += 2;
+                        continue;
+                    }
+                    if (label_.at(end) == '"')
+                        break;
+                    ++end;
+                }
+                if (end < label_.size() && label_.mid(end + 1, 1) == ".") {
+                    schema = label_.mid(1, end - 1).replace("\"\"", "\"");
+                    name = label_.mid(end + 2);
+                }
+            }
+        }
+        const QString title = kind_ == "index"      ? tr("Index")
+                              : kind_ == "sequence" ? tr("Sequence")
+                                                    : tr("Function");
+        model_->setHorizontalHeaderLabels({tr("Field"), tr("Value")});
+        for (const auto& pair : {qMakePair(tr("Name"), name), qMakePair(tr("Kind"), title),
+                                 qMakePair(tr("Schema"), schema)}) {
+            model_->appendRow({new QStandardItem(pair.first), new QStandardItem(pair.second)});
+        }
+        if (properties_.isEmpty())
+            model_->appendRow(
+                {new QStandardItem(tr("Metadata")),
+                 new QStandardItem(tr("Unavailable: no additional properties were provided"))});
+        for (const auto& property : properties_) {
+            const auto data = property.toMap();
+            const auto availability = data.value("availability").toString();
+            const auto value = availability == "unsupported"
+                                   ? tr("Unsupported: %1").arg(data.value("reason").toString())
+                               : availability == "unavailable"
+                                   ? tr("Unavailable: %1").arg(data.value("reason").toString())
+                                   : data.value("value").toString();
+            model_->appendRow(
+                {new QStandardItem(data.value("name").toString()), new QStandardItem(value)});
+        }
+        table_->resizeColumnsToContents();
+        refresh_->setEnabled(!operationBusy_);
+        setStatus("loaded", tr("%1 · Details loaded").arg(label_));
+        return;
+    }
     if (tabs_->currentIndex() == 4) {
         pages_->setCurrentIndex(2);
         setStatus("ready", tr("%1 · Data").arg(label_));
@@ -383,7 +452,8 @@ void ObjectExplorer::setOperationBusy(bool busy) {
         setStatus("ready", tr("%1 · %2").arg(label_, tabs_->tabText(tabs_->currentIndex())));
 }
 void ObjectExplorer::updateActions() {
-    const bool ready = connection_.has_value() && !operationBusy_;
+    const bool ready = connection_.has_value() && !operationBusy_ && kind_ != "index" &&
+                       kind_ != "sequence" && kind_ != "function";
     open_->setEnabled(ready);
     generate_->setEnabled(ready);
     for (auto it = generationActions_.begin(); it != generationActions_.end(); ++it)
@@ -392,7 +462,8 @@ void ObjectExplorer::updateActions() {
                                 (columnsLoaded_ && (it.key() == "insert" || !columns_.isEmpty()))));
 }
 void ObjectExplorer::generateSql(const QString& kind) {
-    if (!connection_ || operationBusy_)
+    if (!connection_ || operationBusy_ || kind_ == "index" || kind_ == "sequence" ||
+        kind_ == "function")
         return;
     if ((kind == "insert" || kind == "update") && !columnsLoaded_) {
         setStatus("unavailable", tr("Load the object's columns before generating this statement."));

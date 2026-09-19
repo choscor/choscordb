@@ -10,6 +10,22 @@ async fn connect() -> Box<dyn Connection> {
         .unwrap()
 }
 #[tokio::test]
+async fn invalid_sqlite_file_fails_during_connect() {
+    let path = std::env::temp_dir().join(format!("choscordb-invalid-{}.db", std::process::id()));
+    std::fs::write(&path, b"this is not a sqlite database").unwrap();
+    let result = SqliteDriver
+        .connect(ConnectionOptions::Sqlite {
+            path: path.clone(),
+            read_only: true,
+        })
+        .await;
+    std::fs::remove_file(path).unwrap();
+    assert!(
+        result.is_err(),
+        "invalid database must fail before Connected"
+    );
+}
+#[tokio::test]
 async fn real_sqlite_preserves_null_empty_and_pages() {
     let mut c = connect().await;
     let mut r = c
@@ -109,7 +125,12 @@ async fn metadata_handles_adversarial_identifiers_and_loads_lazily() {
     let roots = c.load_metadata(None).await.unwrap();
     assert_eq!(roots.len(), 1);
     assert_eq!(roots[0].kind, ObjectKind::Database);
-    let tables = c.load_metadata(Some(roots[0].id.clone())).await.unwrap();
+    let groups = c.load_metadata(Some(roots[0].id.clone())).await.unwrap();
+    assert_eq!(
+        groups.iter().map(|o| o.name.as_str()).collect::<Vec<_>>(),
+        vec!["Tables", "Views", "Indexes"]
+    );
+    let tables = c.load_metadata(Some(groups[0].id.clone())).await.unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].name, "x'; DROP TABLE users;--");
     let children = c.load_metadata(Some(tables[0].id.clone())).await.unwrap();
@@ -120,6 +141,53 @@ async fn metadata_handles_adversarial_identifiers_and_loads_lazily() {
             .await
             .unwrap()
             .contains("CREATE TABLE")
+    );
+}
+#[tokio::test]
+async fn schema_indexes_share_identity_with_table_indexes_and_expose_ddl() {
+    let mut c = connect().await;
+    run(&mut c, "CREATE TABLE thing (value TEXT)", false).await;
+    run(&mut c, "CREATE INDEX lookup ON thing(value)", false).await;
+    let database = c.load_metadata(None).await.unwrap().remove(0);
+    let groups = c.load_metadata(Some(database.id)).await.unwrap();
+    let indexes = c
+        .load_metadata(Some(
+            groups
+                .iter()
+                .find(|g| g.name == "Indexes")
+                .unwrap()
+                .id
+                .clone(),
+        ))
+        .await
+        .unwrap();
+    let index = indexes.iter().find(|i| i.name == "lookup").unwrap();
+    assert_eq!(index.kind, ObjectKind::Index);
+    assert_eq!(index.qualified_name, "\"main\".\"lookup\"");
+    let tables = c
+        .load_metadata(Some(
+            groups
+                .iter()
+                .find(|g| g.name == "Tables")
+                .unwrap()
+                .id
+                .clone(),
+        ))
+        .await
+        .unwrap();
+    let table_index = c
+        .load_metadata(Some(tables[0].id.clone()))
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|i| i.name == "lookup")
+        .unwrap();
+    assert_eq!(index.id, table_index.id);
+    assert!(
+        c.object_ddl(&index.id)
+            .await
+            .unwrap()
+            .contains("CREATE INDEX lookup")
     );
 }
 #[tokio::test]

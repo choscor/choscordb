@@ -16,6 +16,67 @@ using namespace choscordb;
 class ObjectExplorerTest final : public QObject {
     Q_OBJECT
   private slots:
+    void schemaIndexShowsDetailsAndDoesNotGenerateTableSql() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        const auto create = adapter.execute(*connection, "CREATE TABLE account(id INTEGER)");
+        QVERIFY(create);
+        adapter.fetchPage(*create);
+        QTRY_COMPARE(finished, 1);
+        const auto index =
+            adapter.execute(*connection, "CREATE INDEX account_id_idx ON account(id)");
+        QVERIFY(index);
+        adapter.fetchPage(*index);
+        QTRY_COMPARE(finished, 2);
+        ObjectExplorer explorer(&adapter);
+        explorer.show();
+        QSignalSpy generated(&explorer, &ObjectExplorer::sqlGenerated);
+        explorer.openObject(*connection, R"(["main","account","index","account_id_idx"])",
+                            "\"main\".\"account_id_idx\"", "index");
+        auto* tabs = explorer.findChild<QTabBar*>("objectTabs");
+        auto* table = explorer.findChild<QTableView*>("objectMetadata");
+        QVERIFY(tabs);
+        QTRY_COMPARE(table->model()->rowCount(), 4);
+        QCOMPARE(tabs->tabText(0), QString("Details"));
+        QCOMPARE(table->model()->index(0, 1).data().toString(), QString("account_id_idx"));
+        QCOMPARE(table->model()->index(1, 1).data().toString(), QString("Index"));
+        QCOMPARE(table->model()->index(2, 1).data().toString(), QString("main"));
+        QVERIFY(!explorer.findChild<QPushButton*>("objectOpenQuery")->isEnabled());
+        QVERIFY(!explorer.findChild<QPushButton*>("objectGenerateSql")->isEnabled());
+        QCOMPARE(generated.count(), 0);
+        tabs->setCurrentIndex(3);
+        auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
+        QTRY_VERIFY(ddl->toPlainText().contains("CREATE INDEX account_id_idx ON account(id)"));
+    }
+    void functionDetailsShowAvailableAndUnsupportedProperties() {
+        EngineAdapter adapter;
+        ObjectExplorer explorer(&adapter);
+        explorer.show();
+        explorer.openObject(
+            19, "pg:function:42", "\"public\".\"compute\"(integer)", "function",
+            {QVariantMap{{"name", "Language"}, {"value", "sql"}, {"availability", "available"}},
+             QVariantMap{{"name", "Source"},
+                         {"availability", "unsupported"},
+                         {"reason", "Definition is hidden"}}});
+        auto* table = explorer.findChild<QTableView*>("objectMetadata");
+        auto* tabs = explorer.findChild<QTabBar*>("objectTabs");
+        QCOMPARE(table->model()->rowCount(), 5);
+        QCOMPARE(table->model()->index(2, 1).data().toString(), QString("public"));
+        QCOMPARE(table->model()->index(3, 1).data().toString(), QString("sql"));
+        QCOMPARE(table->model()->index(4, 1).data().toString(),
+                 QString("Unsupported: Definition is hidden"));
+        QVERIFY(!tabs->isTabVisible(4));
+    }
     void panesLoadRealIndexesKeysDdlAndDataOnlyWhenSelected() {
         EngineAdapter adapter;
         bool connected = false;

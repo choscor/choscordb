@@ -1,11 +1,15 @@
 #include "design_system/theme.h"
 #include "design_system/theme_manager.h"
+#include "design_system/menu/menu.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include <QContextMenuEvent>
 #include <QFile>
+#include <QMenu>
 #include <QScopeGuard>
 #include <QSemaphore>
 #include <QTemporaryDir>
 #include <QThreadPool>
+#include <QTimer>
 #include <Qsci/qsciabstractapis.h>
 #include <Qsci/qscilexersql.h>
 #include <QtConcurrentRun>
@@ -13,6 +17,32 @@
 class EditorTest : public QObject {
     Q_OBJECT
   private slots:
+    void contextMenuOpensAtPointer() {
+        choscordb::SqlEditor editor;
+        editor.resize(500, 300);
+        editor.move(300, 250);
+        editor.show();
+        QCoreApplication::processEvents();
+        const QPoint local(180, 90);
+        const QPoint global = editor.mapToGlobal(local);
+        QPoint actual;
+        bool found = false;
+        QTimer::singleShot(0, &editor, [&] {
+            QMenu* menu = nullptr;
+            for (auto* widget : QApplication::topLevelWidgets())
+                if (auto* candidate = qobject_cast<QMenu*>(widget); candidate && candidate->isVisible())
+                    menu = candidate;
+            if (menu) {
+                actual = menu->pos();
+                found = menu->isVisible() && !menu->actions().isEmpty();
+                menu->close();
+            }
+        });
+        QContextMenuEvent event(QContextMenuEvent::Mouse, local, global);
+        QApplication::sendEvent(editor.viewport(), &event);
+        QVERIFY(found);
+        QCOMPARE(actual, choscordb::design::detail::contextMenuPosition(global));
+    }
     void lineNumberGutterFitsContentAndFont() {
         choscordb::SqlEditor editor;
         editor.setText("SELECT 1;\nSELECT 2;");

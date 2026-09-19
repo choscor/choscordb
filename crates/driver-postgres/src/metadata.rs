@@ -67,7 +67,7 @@ fn parse(id: &ObjectId) -> Result<(&str, u32)> {
     let kind = parts.next().ok_or_else(invalid)?;
     if !matches!(
         kind,
-        "database" | "schema" | "relation" | "constraint" | "index"
+        "database" | "schema" | "relation" | "constraint" | "index" | "sequence" | "function"
     ) {
         return Err(invalid());
     }
@@ -77,6 +77,21 @@ fn parse(id: &ObjectId) -> Result<(&str, u32)> {
         return Err(invalid());
     }
     Ok((kind, oid))
+}
+fn group(id: &ObjectId) -> Option<(u32, &str)> {
+    let mut parts = id.0.split(':');
+    if parts.next()? != "pg" || parts.next()? != "group" {
+        return None;
+    }
+    let oid = parts.next()?.parse::<u32>().ok()?;
+    let kind = parts.next()?;
+    if oid == 0
+        || parts.next().is_some()
+        || !matches!(kind, "table" | "view" | "index" | "sequence" | "function")
+    {
+        return None;
+    }
+    Some((oid, kind))
 }
 fn quote(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
@@ -132,13 +147,47 @@ pub(crate) async fn load_metadata<C: GenericClient + Sync>(
             true,
         )]);
     };
+    if let Some((schema_oid, group_kind)) = group(parent_id) {
+        return group_children(client, parent_id, schema_oid, group_kind).await;
+    }
     let (kind, oid) = parse(parent_id)?;
+    if kind == "schema" {
+        let exists = client
+            .query_opt(
+                "SELECT oid FROM pg_catalog.pg_namespace WHERE oid=$1",
+                &[&oid],
+            )
+            .await
+            .map_err(crate::normalize)?;
+        if exists.is_none() {
+            return Err(DriverError::new(
+                ErrorKind::StaleHandle,
+                "PostgreSQL schema no longer exists",
+            ));
+        }
+        return Ok([
+            ("Tables", "table"),
+            ("Views", "view"),
+            ("Indexes", "index"),
+            ("Sequences", "sequence"),
+            ("Functions", "function"),
+        ]
+        .into_iter()
+        .map(|(label, key)| {
+            object(
+                format!("pg:group:{oid}:{key}"),
+                parent.clone(),
+                label.into(),
+                String::new(),
+                ObjectKind::Group,
+                true,
+            )
+        })
+        .collect());
+    }
     let sql = match kind {
         "database" => {
             "SELECT n.oid, n.nspname::text AS name FROM pg_catalog.pg_namespace n WHERE EXISTS (SELECT 1 FROM pg_catalog.pg_database d WHERE d.oid=$1 AND d.datname=current_database()) ORDER BY n.nspname LIMIT 10001"
-        }
-        "schema" => {
-            "SELECT c.oid, c.relname::text AS name, n.nspname::text AS schema, c.relkind::text AS kind FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.oid=$1 AND c.relkind IN ('r','p','v','m','f') ORDER BY c.relname LIMIT 10001"
         }
         "relation" => return relation_children(client, parent_id, oid).await,
         _ => return Ok(Vec::new()),
@@ -176,6 +225,106 @@ pub(crate) async fn load_metadata<C: GenericClient + Sync>(
             }
         })
         .collect()
+}
+
+async fn group_children<C: GenericClient + Sync>(
+    client: &C,
+    parent: &ObjectId,
+    schema_oid: u32,
+    group_kind: &str,
+) -> Result<Vec<SchemaObject>> {
+    let sql = match group_kind {
+        "table" => {
+            "SELECT c.oid,c.relname::text AS name,n.nspname::text AS schema,c.relkind::text AS kind FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.oid=$1 AND c.relkind IN ('r','p','f') ORDER BY c.relname LIMIT 10001"
+        }
+        "view" => {
+            "SELECT c.oid,c.relname::text AS name,n.nspname::text AS schema,c.relkind::text AS kind FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.oid=$1 AND c.relkind IN ('v','m') ORDER BY c.relname LIMIT 10001"
+        }
+        "index" => {
+            "SELECT c.oid,c.relname::text AS name,n.nspname::text AS schema,c.relkind::text AS kind FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.oid=$1 AND c.relkind IN ('i','I') ORDER BY c.relname LIMIT 10001"
+        }
+        "sequence" => {
+            "SELECT c.oid,c.relname::text AS name,n.nspname::text AS schema,c.relkind::text AS kind FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.oid=$1 AND c.relkind='S' ORDER BY c.relname LIMIT 10001"
+        }
+        "function" => {
+            "SELECT p.oid,p.proname::text AS name,n.nspname::text AS schema,pg_catalog.pg_get_function_identity_arguments(p.oid) AS signature FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace WHERE n.oid=$1 AND p.prokind='f' ORDER BY p.proname,p.oid LIMIT 10001"
+        }
+        _ => return Err(invalid()),
+    };
+    let rows = bounded_query(client, sql, &[&schema_oid]).await?;
+    let mut objects = Vec::with_capacity(rows.len());
+    for row in rows {
+        let oid: u32 = row.get("oid");
+        let name = text(&row, "name")?;
+        let schema = text(&row, "schema")?;
+        let (id_kind, kind, label, qualified) = if group_kind == "function" {
+            let signature = text(&row, "signature")?;
+            (
+                "function",
+                ObjectKind::Function,
+                format!("{name}({signature})"),
+                format!("{}.{}({signature})", quote(&schema), quote(&name)),
+            )
+        } else {
+            let kind = match group_kind {
+                "table" => ObjectKind::Table,
+                "view" => ObjectKind::View,
+                "index" => ObjectKind::Index,
+                _ => ObjectKind::Sequence,
+            };
+            (
+                if group_kind == "index" {
+                    "index"
+                } else if group_kind == "sequence" {
+                    "sequence"
+                } else {
+                    "relation"
+                },
+                kind,
+                name.clone(),
+                format!("{}.{}", quote(&schema), quote(&name)),
+            )
+        };
+        let mut item = object(
+            format!("pg:{id_kind}:{oid}"),
+            Some(parent.clone()),
+            label,
+            qualified,
+            kind,
+            matches!(group_kind, "table" | "view"),
+        );
+        if group_kind == "index" {
+            let definition = client
+                .query_one(
+                    "SELECT pg_catalog.pg_get_indexdef($1::oid) AS definition",
+                    &[&oid],
+                )
+                .await
+                .map_err(crate::normalize)?;
+            item.properties.push(MetadataProperty::available(
+                "Definition",
+                text(&definition, "definition")?,
+            ));
+        } else if group_kind == "sequence" {
+            let sequence = client.query_one("SELECT s.seqstart,s.seqincrement,s.seqmin,s.seqmax,s.seqcache,s.seqcycle FROM pg_catalog.pg_sequence s WHERE s.seqrelid=$1", &[&oid]).await.map_err(crate::normalize)?;
+            for (label, value) in [
+                ("Start", sequence.get::<_, i64>("seqstart")),
+                ("Increment", sequence.get::<_, i64>("seqincrement")),
+                ("Minimum", sequence.get::<_, i64>("seqmin")),
+                ("Maximum", sequence.get::<_, i64>("seqmax")),
+                ("Cache", sequence.get::<_, i64>("seqcache")),
+            ] {
+                item.properties
+                    .push(MetadataProperty::available(label, value));
+            }
+            item.properties.push(MetadataProperty::available(
+                "Cycle",
+                sequence.get::<_, bool>("seqcycle"),
+            ));
+        }
+        objects.push(item);
+    }
+    Ok(objects)
 }
 
 async fn relation_children<C: GenericClient + Sync>(
@@ -343,6 +492,12 @@ pub(crate) async fn object_ddl<C: GenericClient + Sync>(
     let sql = match kind {
         "index" => {
             "SELECT pg_catalog.pg_get_indexdef(c.oid) AS ddl FROM pg_catalog.pg_class c WHERE c.oid=$1 AND c.relkind IN ('i','I')"
+        }
+        "sequence" => {
+            "SELECT 'CREATE SEQUENCE ' || pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(c.relname) || ' INCREMENT BY ' || s.seqincrement::text || ' MINVALUE ' || s.seqmin::text || ' MAXVALUE ' || s.seqmax::text || ' START WITH ' || s.seqstart::text || ' CACHE ' || s.seqcache::text || CASE WHEN s.seqcycle THEN ' CYCLE' ELSE ' NO CYCLE' END AS ddl FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace JOIN pg_catalog.pg_sequence s ON s.seqrelid=c.oid WHERE c.oid=$1"
+        }
+        "function" => {
+            "SELECT pg_catalog.pg_get_functiondef(p.oid) AS ddl FROM pg_catalog.pg_proc p WHERE p.oid=$1 AND p.prokind='f'"
         }
         "constraint" => {
             "SELECT 'ALTER TABLE ' || pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(t.relname) || ' ADD CONSTRAINT ' || pg_catalog.quote_ident(c.conname) || ' ' || pg_catalog.pg_get_constraintdef(c.oid) AS ddl FROM pg_catalog.pg_constraint c JOIN pg_catalog.pg_class t ON t.oid=c.conrelid JOIN pg_catalog.pg_namespace n ON n.oid=t.relnamespace WHERE c.oid=$1"
@@ -517,6 +672,7 @@ mod live_tests {
             .unwrap();
         let task = tokio::spawn(connection);
         client.batch_execute("BEGIN; CREATE SCHEMA \"metadata odd\"; CREATE TABLE \"metadata odd\".\"a\"\"b\" (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, amount numeric(12,-2), stamp timestamptz, label text DEFAULT 'x', doubled numeric GENERATED ALWAYS AS (amount * 2) STORED, UNIQUE(label)); CREATE INDEX \"index odd\" ON \"metadata odd\".\"a\"\"b\" (amount); CREATE VIEW \"metadata odd\".\"view odd\" AS SELECT amount FROM \"metadata odd\".\"a\"\"b\";").await.unwrap();
+        client.batch_execute("CREATE SEQUENCE \"metadata odd\".counter; CREATE FUNCTION \"metadata odd\".overloaded(value integer) RETURNS integer LANGUAGE sql AS 'SELECT value'; CREATE FUNCTION \"metadata odd\".overloaded(value text) RETURNS text LANGUAGE sql AS 'SELECT value';").await.unwrap();
         let database = load_metadata(&client, None).await.unwrap().remove(0);
         let schema = load_metadata(&client, Some(database.id))
             .await
@@ -524,7 +680,9 @@ mod live_tests {
             .into_iter()
             .find(|o| o.name == "metadata odd")
             .unwrap();
-        let relations = load_metadata(&client, Some(schema.id)).await.unwrap();
+        let groups = load_metadata(&client, Some(schema.id)).await.unwrap();
+        assert_eq!(groups.iter().map(|o| o.name.as_str()).collect::<Vec<_>>(), vec!["Tables", "Views", "Indexes", "Sequences", "Functions"]);
+        let relations = load_metadata(&client, Some(groups[0].id.clone())).await.unwrap();
         let table = relations.iter().find(|o| o.name == "a\"b").unwrap();
         assert_eq!(table.qualified_name, "\"metadata odd\".\"a\"\"b\"");
         let children = load_metadata(&client, Some(table.id.clone()))
@@ -543,6 +701,18 @@ mod live_tests {
         assert!(children.iter().any(|o| o.kind == ObjectKind::PrimaryKey));
         assert!(children.iter().any(|o| o.kind == ObjectKind::UniqueKey));
         let index = children.iter().find(|o| o.name == "index odd").unwrap();
+        let schema_indexes = load_metadata(&client, Some(groups[2].id.clone())).await.unwrap();
+        assert_eq!(schema_indexes.iter().find(|o| o.name == "index odd").unwrap().id, index.id);
+        let sequences = load_metadata(&client, Some(groups[3].id.clone())).await.unwrap();
+        let sequence = sequences.iter().find(|o| o.name == "counter").unwrap();
+        assert_eq!(sequence.kind, ObjectKind::Sequence);
+        assert!(object_ddl(&client, &sequence.id).await.unwrap().contains("CREATE SEQUENCE"));
+        let functions = load_metadata(&client, Some(groups[4].id.clone())).await.unwrap();
+        let overloads: Vec<_> = functions.iter().filter(|o| o.name.starts_with("overloaded(")).collect();
+        assert_eq!(overloads.len(), 2);
+        assert_ne!(overloads[0].qualified_name, overloads[1].qualified_name);
+        assert_ne!(overloads[0].id, overloads[1].id);
+        assert!(object_ddl(&client, &overloads[0].id).await.unwrap().contains("CREATE OR REPLACE FUNCTION"));
         assert!(
             object_ddl(&client, &index.id)
                 .await
@@ -553,7 +723,8 @@ mod live_tests {
         assert!(ddl.contains("GENERATED ALWAYS AS IDENTITY"));
         assert!(ddl.contains("numeric(12,-2)"));
         assert!(ddl.contains("STORED"));
-        let view = relations
+        let views = load_metadata(&client, Some(groups[1].id.clone())).await.unwrap();
+        let view = views
             .iter()
             .find(|o| o.kind == ObjectKind::View)
             .unwrap();

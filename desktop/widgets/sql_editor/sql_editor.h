@@ -34,6 +34,7 @@ class SqlEditor final : public QsciScintilla {
 
   protected:
     void changeEvent(QEvent* event) override;
+    bool viewportEvent(QEvent* event) override;
 
   private:
     void applyPalette();

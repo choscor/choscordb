@@ -123,8 +123,13 @@ class EditorCompletionTest : public QObject {
         model->fetchMore(schema);
         QTRY_COMPARE(
             model->index(0, 0, schema).data(choscordb::NavigatorModel::KindRole).toString(),
+            QString("group"));
+        auto tables = model->index(0, 0, schema);
+        model->fetchMore(tables);
+        QTRY_COMPARE(
+            model->index(0, 0, tables).data(choscordb::NavigatorModel::KindRole).toString(),
             QString("table"));
-        auto table = model->index(0, 0, schema);
+        auto table = model->index(0, 0, tables);
         model->fetchMore(table);
         QTRY_COMPARE(model->index(0, 0, table).data(choscordb::NavigatorModel::KindRole).toString(),
                      QString("column"));

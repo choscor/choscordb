@@ -30,11 +30,12 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSignalSpy>
 #include <QSortFilterProxyModel>
-#include <QScrollBar>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QStyle>
@@ -576,6 +577,107 @@ class ModernUiTest final : public QObject {
         run->trigger();
         QTRY_COMPARE(queued, 1);
     }
+    void savedProfileSelectionKeepsEditorTargetAndShowsOneTree() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+        auto* profiles = window.findChild<QListWidget*>("savedConnections");
+        auto* tree = window.findChild<QTreeView*>("databaseNavigator");
+        auto* selector = window.findChild<QComboBox*>("connectionSelector");
+        QVERIFY(workspace && profiles && tree && selector);
+        choscordb::SavedProfile profile;
+        profile.id = "browse-alpha";
+        profile.name = "Browse Alpha";
+        profile.path = ":memory:";
+        workspace->adapter()->saveProfile(profile, 8101);
+        profile.id = "browse-beta";
+        profile.name = "Browse Beta";
+        workspace->adapter()->saveProfile(profile, 8102);
+        QTRY_COMPARE(profiles->count(), 2);
+        auto click = [profiles](const QString& name) {
+            for (int row = 0; row < profiles->count(); ++row)
+                if (profiles->item(row)->text().startsWith(name)) {
+                    QTest::mouseClick(profiles->viewport(), Qt::LeftButton, Qt::NoModifier,
+                                      profiles->visualItemRect(profiles->item(row)).center());
+                    return;
+                }
+        };
+        click("Browse Alpha");
+        QTRY_VERIFY(window.browsingConnection().has_value());
+        const auto first = *window.browsingConnection();
+        QTRY_COMPARE(tree->model()->rowCount(), 1);
+        QVERIFY(tree->model()->index(0, 0).data().toString().contains("Browse Alpha"));
+        const auto editorTarget = selector->currentData();
+        click("Browse Beta");
+        QTRY_VERIFY(window.browsingConnection().has_value() &&
+                    *window.browsingConnection() != first);
+        QTRY_COMPARE(tree->model()->rowCount(), 1);
+        QVERIFY(tree->model()->index(0, 0).data().toString().contains("Browse Beta"));
+        QCOMPARE(selector->currentData(), editorTarget);
+    }
+    void failedSidebarOpenShowsReasonAndClearsBrowseSelection() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+        auto* profiles = window.findChild<QListWidget*>("savedConnections");
+        QVERIFY(workspace && profiles);
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        choscordb::SavedProfile profile;
+        profile.id = "broken-sidebar";
+        profile.name = "Broken Sidebar";
+        profile.path = directory.filePath("missing/database.sqlite");
+        workspace->adapter()->saveProfile(profile, 8103);
+        QTRY_COMPARE(profiles->count(), 1);
+        QTest::mouseClick(profiles->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          profiles->visualItemRect(profiles->item(0)).center());
+        QTRY_VERIFY(window.findChild<QMessageBox*>("sidebarConnectionFailure"));
+        auto* dialog = window.findChild<QMessageBox*>("sidebarConnectionFailure");
+        QVERIFY(dialog->text().contains("Broken Sidebar"));
+        QVERIFY(dialog->text().contains("unable to open", Qt::CaseInsensitive));
+        QVERIFY(!window.browsingConnection().has_value());
+        QVERIFY(!profiles->currentItem());
+        dialog->accept();
+    }
+    void failedSidebarOpenRestoresLastSuccessfulProfile() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+        auto* profiles = window.findChild<QListWidget*>("savedConnections");
+        auto* tree = window.findChild<QTreeView*>("databaseNavigator");
+        QVERIFY(workspace && profiles && tree);
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        choscordb::SavedProfile valid;
+        valid.id = "valid-browse";
+        valid.name = "Valid Browse";
+        valid.path = ":memory:";
+        workspace->adapter()->saveProfile(valid, 8104);
+        auto broken = valid;
+        broken.id = "invalid-browse";
+        broken.name = "Invalid Browse";
+        broken.path = directory.filePath("missing/database.sqlite");
+        workspace->adapter()->saveProfile(broken, 8105);
+        QTRY_COMPARE(profiles->count(), 2);
+        auto click = [profiles](const QString& name) {
+            for (int row = 0; row < profiles->count(); ++row)
+                if (profiles->item(row)->text().startsWith(name)) {
+                    QTest::mouseClick(profiles->viewport(), Qt::LeftButton, Qt::NoModifier,
+                                      profiles->visualItemRect(profiles->item(row)).center());
+                    return;
+                }
+        };
+        click("Valid Browse");
+        QTRY_VERIFY(window.browsingConnection().has_value());
+        const auto validId = *window.browsingConnection();
+        click("Invalid Browse");
+        QTRY_VERIFY(window.findChild<QMessageBox*>("sidebarConnectionFailure"));
+        QCOMPARE(window.browsingConnection(), std::optional<quint64>(validId));
+        QVERIFY(profiles->currentItem()->text().startsWith("Valid Browse"));
+        QTRY_COMPARE(tree->model()->rowCount(), 1);
+        QVERIFY(tree->model()->index(0, 0).data().toString().contains("Valid Browse"));
+        window.findChild<QMessageBox*>("sidebarConnectionFailure")->accept();
+    }
     void savedConnectionMenuDuplicatesTheChosenProfileWithoutConnecting() {
         choscordb::MainWindow window;
         window.show();
@@ -603,9 +705,9 @@ class ModernUiTest final : public QObject {
         auto* menu = window.findChild<QMenu*>("savedConnectionMenu");
         QVERIFY(menu);
         QTRY_VERIFY(menu->isVisible());
-        const QPoint panel = menu->geometry().topLeft() +
-                             QPoint(choscordb::design::detail::menuShadowMargin(),
-                                    choscordb::design::detail::menuShadowMargin());
+        const QPoint panel =
+            menu->geometry().topLeft() + QPoint(choscordb::design::detail::menuShadowMargin(),
+                                                choscordb::design::detail::menuShadowMargin());
         QCOMPARE(panel, event.globalPos());
         auto* duplicate = menu->findChild<QAction*>("duplicateSavedConnection");
         QVERIFY(duplicate);
@@ -703,23 +805,11 @@ class ModernUiTest final : public QObject {
         QVERIFY(window.findChild<QPlainTextEdit*>("queryMessages")->isVisible());
         QVERIFY(exportButton->isVisible());
     }
-    void connectedWorkspaceHidesOnboardingActions() {
+    void workspaceHasNoOnboardingActionStrip() {
         choscordb::MainWindow window;
         window.show();
         window.findChild<QAction*>("showSql")->trigger();
-        auto* onboarding = window.findChild<QWidget*>("emptyWorkspaceActions");
-        auto* selector = window.findChild<QComboBox*>("connectionSelector");
-        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
-        QVERIFY(onboarding && selector && workspace);
-        QVERIFY(onboarding->isVisible());
-        workspace->connectSqlite(":memory:");
-        QTRY_VERIFY(selector->currentData().isValid());
-        QTRY_VERIFY(!onboarding->isVisible());
-        const int connectedIndex = selector->currentIndex();
-        selector->setCurrentIndex(0);
-        QVERIFY(onboarding->isVisible());
-        selector->setCurrentIndex(connectedIndex);
-        QVERIFY(!onboarding->isVisible());
+        QVERIFY(!window.findChild<QWidget*>("emptyWorkspaceActions"));
     }
     void liveAppearanceReachesAlreadyOpenConnectionPanelAndMenu() {
         choscordb::MainWindow window;
@@ -731,7 +821,7 @@ class ModernUiTest final : public QObject {
         appearance->applyPreview();
         QTRY_COMPARE(saved.count(), 1);
         QVERIFY(saved.at(0).at(0).toBool());
-        window.findChild<QPushButton*>("emptyConnect")->click();
+        window.findChild<QPushButton*>("navigatorAddConnection")->click();
         auto* profile = window.findChild<choscordb::ProfileDialog*>();
         QVERIFY(profile);
         QVERIFY(profile->isVisible());
@@ -807,9 +897,8 @@ class ModernUiTest final : public QObject {
             QVERIFY(!button->icon().isNull());
             QCOMPARE(button->sizeHint(), QSize(30, 30));
         }
-        const QList<QPair<QString, int>> actions{{"emptyConnect", 33},  {"emptyOpenSql", 33},
-                                                 {"emptyNewQuery", 33}, {"previousPage", 30},
-                                                 {"nextPage", 30},      {"exportResult", 30}};
+        const QList<QPair<QString, int>> actions{
+            {"previousPage", 30}, {"nextPage", 30}, {"exportResult", 30}};
         for (const auto& [name, height] : actions) {
             auto* button = window.findChild<QPushButton*>(name);
             QVERIFY(button);

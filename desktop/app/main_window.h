@@ -11,6 +11,7 @@ class ThemeManager;
 } // namespace design
 class SqlEditor;
 class QueryWorkspace;
+class NavigatorController;
 class ToastRegion;
 class WorkspaceRecoveryController;
 class HistoryDock;
@@ -41,6 +42,9 @@ class MainWindow final : public QMainWindow {
   private:
     quint64 profileListToken_ = 0;
     std::optional<quint64> pendingBrowseConnection_, browsingConnection_;
+    QString pendingBrowseProfileId_, pendingBrowseProfileName_, lastBrowsedProfileId_;
+    bool submittingBrowseProfile_ = false;
+    NavigatorController* navigatorController_ = nullptr;
     QStackedWidget* screens_ = nullptr;
     ToastRegion* toast_ = nullptr;
     bool constructing_ = true;

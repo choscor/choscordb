@@ -901,7 +901,14 @@ async fn object_pages_preserve_sql_portal_and_uncommitted_work() {
         .into_iter()
         .find(|o| o.name == "object_read_fixture")
         .unwrap();
-    let table = c.load_metadata(Some(schema.id)).await.unwrap().remove(0);
+    let tables = c.load_metadata(Some(schema.id)).await.unwrap();
+    let table = c
+        .load_metadata(Some(
+            tables.into_iter().find(|o| o.name == "Tables").unwrap().id,
+        ))
+        .await
+        .unwrap()
+        .remove(0);
     let mut sql = c
         .execute(
             "SELECT generate_series(101,350)",
@@ -974,8 +981,11 @@ async fn cancelling_object_read_keeps_user_savepoint_transaction_and_sql_portal(
         .into_iter()
         .find(|o| o.name == "object_cancel_fixture")
         .unwrap();
+    let views = c.load_metadata(Some(schema.id)).await.unwrap();
     let view = c
-        .load_metadata(Some(schema.id))
+        .load_metadata(Some(
+            views.into_iter().find(|o| o.name == "Views").unwrap().id,
+        ))
         .await
         .unwrap()
         .into_iter()

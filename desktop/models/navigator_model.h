@@ -1,6 +1,7 @@
 #pragma once
 #include <QAbstractItemModel>
 #include <QString>
+#include <QVariantList>
 #include <memory>
 #include <vector>
 namespace choscordb {
@@ -10,6 +11,12 @@ struct NavigatorObject {
     QString qualifiedName;
     QString kind;
     bool hasChildren = false;
+    QVariantList properties;
+    NavigatorObject() = default;
+    NavigatorObject(QString id, QString name, QString qualifiedName, QString kind, bool hasChildren,
+                    QVariantList properties = {})
+        : id(std::move(id)), name(std::move(name)), qualifiedName(std::move(qualifiedName)),
+          kind(std::move(kind)), hasChildren(hasChildren), properties(std::move(properties)) {}
 };
 struct CompletionSnapshot {
     std::vector<NavigatorObject> objects;
@@ -24,7 +31,8 @@ class NavigatorModel final : public QAbstractItemModel {
         QualifiedNameRole,
         KindRole,
         ErrorRole,
-        ChildrenLoadedRole
+        ChildrenLoadedRole,
+        PropertiesRole
     };
     explicit NavigatorModel(QObject* parent = nullptr);
     ~NavigatorModel() override;
@@ -37,6 +45,7 @@ class NavigatorModel final : public QAbstractItemModel {
     bool canFetchMore(const QModelIndex& parent) const override;
     void fetchMore(const QModelIndex& parent) override;
     bool addConnection(quint64 id, const QString& label);
+    bool addPendingConnection(quint64 id, const QString& label);
     bool removeConnection(quint64 id);
     // Token must be echoed from childrenRequested, never derived on response.
     // Refresh supersedes earlier requests; late replies cannot replace new data.

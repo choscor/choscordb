@@ -21,8 +21,11 @@ pub struct ObjectId(pub String);
 pub enum ObjectKind {
     Database,
     Schema,
+    Group,
     Table,
     View,
+    Sequence,
+    Function,
     Column,
     PrimaryKey,
     ForeignKey,

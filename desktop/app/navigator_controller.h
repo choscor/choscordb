@@ -17,6 +17,10 @@ class NavigatorController final : public QObject {
                         QWidget* dialogParent);
     NavigatorModel* model() const { return model_; }
     void addConnection(quint64 connection, const QString& label);
+    void setSelectedConnection(quint64 connection);
+    void clearSelectedConnection();
+    void setPendingConnection(const QString& label);
+    quint64 selectedConnection() const;
     void populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex);
     void refreshCurrent();
     void disconnectCurrent();
@@ -24,11 +28,18 @@ class NavigatorController final : public QObject {
     void disconnectRequested(quint64 connection);
     void sqlGenerated(quint64 connection, const QString& sql);
     void generationFailed(const QString& error);
+    void searchStatusChanged(const QString& status);
 
   private:
     NavigatorModel* model_;
     QPointer<EngineAdapter> engine_;
     QTreeView* tree_;
     QSortFilterProxyModel* proxy_;
+    QLineEdit* filter_;
+    quint64 searchGeneration_ = 0;
+    int searchRequests_ = 0;
+    bool searchPending_ = false;
+    bool searchAborted_ = false;
+    void advanceSearch(quint64 generation);
 };
 } // namespace choscordb

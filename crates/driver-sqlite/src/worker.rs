@@ -19,6 +19,12 @@ pub(super) fn run(
             return;
         }
     };
+    // SQLite opens a file before reading its schema. Force that read before
+    // reporting the session as connected.
+    if let Err(error) = db.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0)) {
+        let _ = ready.send(Err(normalize(error)));
+        return;
+    }
     let requested = Arc::new(AtomicBool::new(false));
     let cancel = Arc::new(Cancellation {
         generation: std::sync::Mutex::new(CancellationState::default()),

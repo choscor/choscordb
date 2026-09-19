@@ -173,12 +173,80 @@ fn load_inner(db: &Connection, parent: Option<ObjectId>) -> Result<Vec<SchemaObj
     let names = parts(&parent)?;
     match names.as_slice() {
         [schema] => {
+            for (label, key) in [("Tables", "table"), ("Views", "view"), ("Indexes", "index")] {
+                push(
+                    &mut output,
+                    budget.object(
+                        &[schema, "group", key],
+                        Some(&parent),
+                        label,
+                        &[schema],
+                        ObjectKind::Group,
+                        true,
+                    )?,
+                );
+            }
+            Ok(output)
+        }
+        [schema, marker, requested]
+            if marker == "group" && matches!(requested.as_str(), "table" | "view" | "index") =>
+        {
+            if requested == "index" {
+                let sql = format!(
+                    "SELECT name,tbl_name,sql FROM {}.sqlite_schema WHERE type='index' ORDER BY name LIMIT 10001",
+                    quote(schema)
+                );
+                let mut q = db.prepare(&sql).map_err(normalize)?;
+                let mut rows = q.query([]).map_err(normalize)?;
+                while let Some(row) = rows.next().map_err(normalize)? {
+                    let name: String = row.get(0).map_err(normalize)?;
+                    let table: String = row.get(1).map_err(normalize)?;
+                    let definition: Option<String> = row.get(2).map_err(normalize)?;
+                    let mut index = budget.object(
+                        &[schema, &table, "index", &name],
+                        Some(&parent),
+                        &name,
+                        &[schema, &name],
+                        ObjectKind::Index,
+                        false,
+                    )?;
+                    budget.available(
+                        &mut index,
+                        "Table",
+                        format!("{}.{}", quote(schema), quote(&table)),
+                    )?;
+                    let (unique, partial): (bool, bool) = db
+                        .query_row(
+                            "SELECT \"unique\",partial FROM pragma_index_list(?1,?2) WHERE name=?3",
+                            params![table, schema, name],
+                            |r| Ok((r.get(0)?, r.get(1)?)),
+                        )
+                        .map_err(normalize)?;
+                    budget.available(&mut index, "Unique", unique)?;
+                    budget.available(&mut index, "Partial", partial)?;
+                    budget.property(
+                        &mut index,
+                        match definition {
+                            Some(ddl) => MetadataProperty::available("Definition", ddl),
+                            None => MetadataProperty {
+                                name: "Definition".into(),
+                                value: String::new(),
+                                availability: MetadataAvailability::Unavailable,
+                                reason: "SQLite creates this index implicitly for a constraint"
+                                    .into(),
+                            },
+                        },
+                    )?;
+                    push(&mut output, index);
+                }
+                return Ok(output);
+            }
             let sql = format!(
-                "SELECT name,type FROM {}.sqlite_schema WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name LIMIT 10001",
+                "SELECT name,type FROM {}.sqlite_schema WHERE type=?1 AND name NOT LIKE 'sqlite_%' ORDER BY name LIMIT 10001",
                 quote(schema)
             );
             let mut q = db.prepare(&sql).map_err(normalize)?;
-            let mut rows = q.query([]).map_err(normalize)?;
+            let mut rows = q.query([requested]).map_err(normalize)?;
             while let Some(row) = rows.next().map_err(normalize)? {
                 let name: &str = row
                     .get_ref(0)
@@ -435,11 +503,15 @@ fn load_inner(db: &Connection, parent: Option<ObjectId>) -> Result<Vec<SchemaObj
 }
 pub fn ddl(db: &Connection, object: ObjectId) -> Result<String> {
     let p = parts(&object)?;
-    let [schema, name] = p.as_slice() else {
-        return Err(DriverError::new(
-            ErrorKind::Unsupported,
-            "DDL requires a table or view",
-        ));
+    let (schema, name) = match p.as_slice() {
+        [schema, name] => (schema, name),
+        [schema, _, marker, name] if marker == "index" => (schema, name),
+        _ => {
+            return Err(DriverError::new(
+                ErrorKind::Unsupported,
+                "DDL requires a table, view, or explicit index",
+            ));
+        }
     };
     let mut statement = db
         .prepare(&format!(
@@ -471,7 +543,7 @@ pub fn load(db: &Connection, parent: Option<ObjectId>) -> Result<Vec<SchemaObjec
     if let Some(ref parent) = parent {
         let names = parts(parent)?;
         if let Some(schema) = names.first() {
-            let sql = if names.len() == 1 {
+            let sql = if names.len() == 1 || names.get(1).is_some_and(|name| name == "group") {
                 format!(
                     "SELECT COALESCE(SUM(length(CAST(name AS BLOB))),0) FROM {}.sqlite_schema",
                     quote(schema)
@@ -482,7 +554,8 @@ pub fn load(db: &Connection, parent: Option<ObjectId>) -> Result<Vec<SchemaObjec
                     quote(schema)
                 )
             };
-            let size: i64 = if names.len() == 1 {
+            let size: i64 = if names.len() == 1 || names.get(1).is_some_and(|name| name == "group")
+            {
                 db.query_row(&sql, [], |r| r.get(0))
             } else {
                 db.query_row(&sql, [&names[1]], |r| r.get(0))
