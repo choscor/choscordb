@@ -7,6 +7,7 @@
 #include <QMenu>
 #include <QPainter>
 #include <QScreen>
+#include <QToolButton>
 
 namespace choscordb::design::detail {
 int menuShadowMargin() {
@@ -80,6 +81,20 @@ void polishMenu(QWidget* widget) {
 }
 void positionSubmenu(QWidget* field, QEvent* event) {
     if (auto* menu = qobject_cast<QMenu*>(field); menu && event->type() == QEvent::Show) {
+        if (auto* button = qobject_cast<QToolButton*>(menu->parentWidget());
+            button && button->menu() == menu) {
+            const int margin = menuShadowMargin();
+            const auto available = menu->screen()->availableGeometry();
+            const int panelWidth = menu->width() - 2 * margin;
+            const int panelHeight = menu->height() - 2 * margin;
+            const QPoint anchor = button->mapToGlobal(QPoint(0, button->height() + 2));
+            const int x = qBound(available.left(), anchor.x(),
+                                 qMax(available.left(), available.right() + 1 - panelWidth));
+            const int y = qBound(available.top(), anchor.y(),
+                                 qMax(available.top(), available.bottom() + 1 - panelHeight));
+            menu->move(x - margin, y - margin);
+            return;
+        }
         auto* parentMenu = qobject_cast<QMenu*>(menu->parentWidget());
         if (parentMenu && parentMenu->isVisible() &&
             parentMenu->activeAction() == menu->menuAction()) {

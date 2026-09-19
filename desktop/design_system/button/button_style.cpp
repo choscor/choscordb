@@ -18,17 +18,17 @@ QPushButton[variant="default"]:disabled, QPushButton[variant="outline"]:disabled
 
 QString buttonApplicationBaseStyleSheet() {
     return QStringLiteral(R"(QPushButton, QToolButton { background-color: %6; }
-QPushButton:hover, QToolButton:hover { border-color: %7; }
-QPushButton:default, QPushButton:checked, QToolButton:checked {
+QPushButton:hover { border-color: %7; }
+QPushButton:default, QPushButton:checked {
   color: %8;
   background-color: %9;
   border-color: %9;
 }
-QPushButton:default:hover, QPushButton:checked:hover, QToolButton:checked:hover {
+QPushButton:default:hover, QPushButton:checked:hover {
   background-color: %10;
   border-color: %10;
 }
-QPushButton:default:pressed, QPushButton:checked:pressed, QToolButton:checked:pressed {
+QPushButton:default:pressed, QPushButton:checked:pressed {
   background-color: %11;
   border-color: %11;
 }
@@ -39,7 +39,7 @@ QString buttonApplicationStateStyleSheet() {
     return QStringLiteral(R"(QPushButton[primary="true"], QToolButton[primary="true"] {
   color: %8; background-color: %9; border-color: %9;
 }
-QPushButton:pressed, QToolButton:pressed {
+QPushButton:pressed {
   background-color: %11; border-color: %11; color: %8;
 }
 QPushButton:disabled, QToolButton:disabled { color: %23; }

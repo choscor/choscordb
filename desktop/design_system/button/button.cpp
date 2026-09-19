@@ -112,7 +112,7 @@ QSize Button::sizeHint() const {
                 (!loading_ && icon().isNull()
                      ? 0
                      : (index == 0 ? dimension(Dimension::IconSmall) : dimension(Dimension::Icon)) +
-                           spacing(Spacing::Two)),
+                           spacing(Spacing::One)),
             height};
 }
 QStyle::State Button::visualState() const {
@@ -200,13 +200,23 @@ void Button::paintEvent(QPaintEvent*) {
         path.lineTo(panel.left(), panel.top() + tl);
         path.quadTo(panel.topLeft(), QPointF(panel.left() + tl, panel.top()));
         path.closeSubpath();
-        painter.drawPath(path);
+        painter.fillPath(path, background);
+        painter.setBrush(Qt::NoBrush);
+        // The next button paints the shared edge; painting both makes a two-pixel line.
+        if (!last) {
+            painter.save();
+            painter.setClipRect(vertical ? QRect(0, 0, width(), height() - 1)
+                                         : QRect(0, 0, width() - 1, height()));
+            painter.drawPath(path);
+            painter.restore();
+        } else
+            painter.drawPath(path);
     } else
         painter.drawRoundedRect(panel, radius, radius);
     if (focus) {
         painter.setPen(
             QPen(variant_ == ButtonVariant::Default ? colors.primaryForeground : colors.focus,
-                 focusSpec().ringWidth));
+                 focusSpec().borderWidth));
         painter.setBrush(Qt::NoBrush);
         painter.drawRoundedRect(panel.adjusted(1, 1, -1, -1), radius, radius);
     }
@@ -218,7 +228,7 @@ void Button::paintEvent(QPaintEvent*) {
     const bool iconOnly = size_ >= ButtonSize::IconExtraSmall;
     const int iconPixels =
         index == 0 ? dimension(Dimension::IconSmall) : dimension(Dimension::Icon);
-    const int gap = spacing(Spacing::Two);
+    const int gap = spacing(Spacing::One);
     const bool hasLeading = loading_ || !icon().isNull();
     const auto label =
         painter.fontMetrics().elidedText(text(), Qt::ElideRight,

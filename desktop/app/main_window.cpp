@@ -422,6 +422,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     auto* rollbackAction = queryMenu->addAction(tr("Rollback"));
     rollbackAction->setEnabled(false);
     auto* queryOverflow = new QToolButton(this);
+    queryOverflow->setProperty("designRole", "menuButton");
     queryOverflow->setObjectName("queryToolbarOverflow");
     queryOverflow->setText(tr("More"));
     queryOverflow->setAccessibleName(tr("Query session and result actions"));

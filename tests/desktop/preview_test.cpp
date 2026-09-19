@@ -31,6 +31,7 @@
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QToolBar>
+#include <QToolButton>
 #include <QTreeView>
 #include <QtTest>
 #include <cstring>
@@ -713,11 +714,30 @@ class PreviewTest final : public QObject {
         auto* light = window.findChild<QWidget*>("previewLight");
         auto* editable = light->findChild<QLineEdit*>("field-editable");
         QVERIFY(editable);
+        QCOMPARE(editable->font().weight(), int(QFont::Normal));
         QTest::keyClicks(editable, "analyst");
         QCOMPARE(editable->text(), QString("analyst"));
+        QCOMPARE(editable->font().weight(), int(QFont::Medium));
         auto* password = light->findChild<QLineEdit*>("field-password");
         QVERIFY(password);
         QCOMPARE(password->echoMode(), QLineEdit::Password);
+        auto* toggle = password->findChild<QAction*>("field-password-toggle");
+        QVERIFY(toggle);
+        auto* iconButton = password->findChild<QToolButton*>();
+        QVERIFY(iconButton);
+        window.show();
+        QCoreApplication::processEvents();
+        QVERIFY(qAbs(iconButton->geometry().center().y() - password->rect().center().y()) <= 1);
+        const auto hiddenIcon = toggle->icon().pixmap(16, 16).toImage();
+        QVERIFY(!hiddenIcon.isNull());
+        toggle->trigger();
+        QCOMPARE(password->echoMode(), QLineEdit::Normal);
+        const auto shownIcon = toggle->icon().pixmap(16, 16).toImage();
+        QVERIFY(!shownIcon.isNull());
+        QVERIFY(hiddenIcon != shownIcon);
+        toggle->trigger();
+        QCOMPARE(password->echoMode(), QLineEdit::Password);
+        QCOMPARE(toggle->icon().pixmap(16, 16).toImage(), hiddenIcon);
         auto* readOnly = light->findChild<QLineEdit*>("field-readonly");
         QVERIFY(readOnly);
         QVERIFY(readOnly->isReadOnly());
@@ -727,6 +747,7 @@ class PreviewTest final : public QObject {
         auto* error = light->findChild<QLabel*>("field-error");
         QVERIFY(error);
         QVERIFY(error->text().contains("required"));
+        QCOMPARE(error->property("designRole").toString(), QString("fieldError"));
     }
 
     void buttonsUseProductionVariantsAndStates() {

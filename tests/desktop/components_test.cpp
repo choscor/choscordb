@@ -209,6 +209,12 @@ class ComponentsTest final : public QObject {
         QCoreApplication::processEvents();
         QCOMPARE(previous.parentWidget(), &group);
         QCOMPARE(next.x(), previous.x() + previous.width());
+        const auto image = group.grab().toImage();
+        const int scale = qRound(image.devicePixelRatio());
+        const int seam = next.x() * scale;
+        const int sampleY = 5 * scale;
+        QVERIFY(image.pixelColor(seam, sampleY) !=
+                image.pixelColor(seam - scale, sampleY));
         previous.setFocus(Qt::TabFocusReason);
         QTest::keyClick(&previous, Qt::Key_Tab);
         QVERIFY(next.hasFocus());

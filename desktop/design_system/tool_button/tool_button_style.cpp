@@ -3,13 +3,13 @@
 namespace choscordb::design {
 QString toolButtonStyleSheet() {
     return QStringLiteral(
-        R"(QToolButton { icon-size: 16px; min-height: @toolHeight; max-height: @toolHeight; border: 1px solid transparent; border-radius: @controlRadius; padding: 0 9px; font-size: 11px; background: transparent; color: @foreground; }
+        R"(QToolButton { icon-size: 12px; min-height: @toolHeight; max-height: @toolHeight; border: 1px solid transparent; border-radius: @controlRadius; padding: 0 9px; font-size: 11px; background: transparent; color: @foreground; }
 QToolButton[iconOnly="true"] { min-width: 30px; max-width: 30px; padding: 0; }
 QToolButton:hover, QToolButton:checked { background: @muted; color: @foreground; }
-QToolButton:pressed { background: @accent; }
-QToolButton:focus { border-color: @focus; }
+QToolButton:pressed { background: @muted; color: @foreground; }
 QToolButton:disabled { color: @disabled; }
-QToolButton::menu-indicator { width: 12px; height: 12px; subcontrol-position: right center; }
+QToolButton[designRole="menuButton"] { padding-right: 21px; }
+QToolButton[designRole="menuButton"]::menu-indicator { width: 8px; height: 8px; subcontrol-origin: padding; subcontrol-position: right center; right: 9px; }
 )");
 }
 } // namespace choscordb::design

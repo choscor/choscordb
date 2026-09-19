@@ -111,6 +111,9 @@ QList<IconDefinition> iconCatalog() {
          QStringLiteral("desktop/resources/icons/folder.svg")},
         {Icon::File, QStringLiteral("file"), QStringLiteral("desktop/resources/icons/file.svg")},
         {Icon::Key, QStringLiteral("key"), QStringLiteral("desktop/resources/icons/key.svg")},
+        {Icon::Eye, QStringLiteral("eye"), QStringLiteral("desktop/resources/icons/eye.svg")},
+        {Icon::EyeOff, QStringLiteral("eye-off"),
+         QStringLiteral("desktop/resources/icons/eye-off.svg")},
         {Icon::AppMark, QStringLiteral("app-mark"),
          QStringLiteral("desktop/resources/icons/app-mark.svg")},
         {Icon::Run, QStringLiteral("play"), QStringLiteral("desktop/resources/icons/play.svg")},
@@ -155,6 +158,10 @@ QString iconResourcePath(Icon icon) {
         return QStringLiteral(":/icons/file.svg");
     case Icon::Key:
         return QStringLiteral(":/icons/key.svg");
+    case Icon::Eye:
+        return QStringLiteral(":/icons/eye.svg");
+    case Icon::EyeOff:
+        return QStringLiteral(":/icons/eye-off.svg");
     case Icon::AppMark:
         return QStringLiteral(":/icons/app-mark.svg");
     case Icon::Run:

@@ -18,7 +18,9 @@
     "circle-alert.svg": "ce3e98b7a03b78c0071131df42466e4e1ff5187fccad30e739ec9ce951cf685a",
     "loader-circle.svg": "043021bb903919668804bdb6fee0342072e4ffea5f03fbd857774c440179ad3b",
     "copy.svg": "ea80e566c7a12628a447cb53179b19aea4f60b9143e2becd0d0f20bf260e5718",
-    "download.svg": "1b47be8ea4928e1b5620c22d24d6e03596dc07ae69af8b41d8ba6674d4bd5409"
+    "download.svg": "1b47be8ea4928e1b5620c22d24d6e03596dc07ae69af8b41d8ba6674d4bd5409",
+    "eye.svg": "5bf90197dd7629cad64a2e48d1186a71559deb6121207d10e3dc5b19ebaffdcf",
+    "eye-off.svg": "774bcd975c5de781a4ee778c76e5591bcdeb409955f7054847e7e6003da0a520"
   },
   "license": "ISC AND MIT",
   "note": "Lucide license and original source revision retained. MVP referenceOverrides replace the named paths with the local visual authority; their original hashes are preserved below. Other listed assets remain Lucide adaptations/upstream assets. app-mark.svg is original ChoscorDB identity, outside Lucide. referenceAdditions are copied from the local MVP visual authority and are not Lucide imports.",

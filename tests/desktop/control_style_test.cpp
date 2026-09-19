@@ -1,4 +1,5 @@
 #include "design_system/control_style.h"
+#include "design_system/menu/menu.h"
 #include "design_system/theme_manager.h"
 
 #include <QAbstractItemView>
@@ -841,6 +842,29 @@ class ControlStyleTest final : public QObject {
         QCOMPARE(table.horizontalHeader()->height(), 30);
         QTest::mouseClick(&tool, Qt::LeftButton);
         QVERIFY(tool.isChecked());
+    }
+    void toolButtonMenuPanelOpensBesideItsButton() {
+        using namespace choscordb::design;
+        const ResolvedTheme theme{ResolvedAppearance::Light,
+                                  resolveColors(ResolvedAppearance::Light, {}), false};
+        QWidget root;
+        root.setStyleSheet(controlStyleSheet(theme));
+        root.resize(600, 300);
+        root.move(100, 100);
+        QToolButton button(&root);
+        button.setText("More");
+        button.move(40, 40);
+        QMenu menu(&button);
+        menu.addAction("Commit");
+        button.setMenu(&menu);
+        root.show();
+        menu.popup(button.mapToGlobal(QPoint(0, button.height())));
+        QCoreApplication::processEvents();
+        const int margin = detail::menuShadowMargin();
+        QCOMPARE(menu.geometry().left() + margin, button.mapToGlobal(QPoint()).x());
+        QCOMPARE(menu.geometry().top() + margin,
+                 button.mapToGlobal(QPoint(0, button.height() + 2)).y());
+        menu.close();
     }
     void menusTabsAndScrollbarsUseSharedSurfacesAndRemainInteractive() {
         using namespace choscordb::design;

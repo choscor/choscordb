@@ -30,6 +30,19 @@ void ControlStyle::polish(QWidget* widget) {
     if (qobject_cast<QLineEdit*>(widget) || qobject_cast<QComboBox*>(widget) ||
         qobject_cast<QAbstractSpinBox*>(widget) || qobject_cast<QKeySequenceEdit*>(widget)) {
         widget->setFont(resolveTypography(TypographyRole::Field));
+        if (auto* line = qobject_cast<QLineEdit*>(widget)) {
+            const auto updateFont = [line] {
+                auto font = resolveTypography(TypographyRole::Field);
+                if (line->text().isEmpty() && !line->placeholderText().isEmpty())
+                    font.setWeight(QFont::Normal);
+                line->setFont(font);
+            };
+            if (!line->property("fieldFontConnected").toBool()) {
+                line->setProperty("fieldFontConnected", true);
+                connect(line, &QLineEdit::textChanged, line, updateFont);
+            }
+            updateFont();
+        }
     } else if (qobject_cast<QPushButton*>(widget) || qobject_cast<QToolButton*>(widget)) {
         auto font = widget->font();
         font.setLetterSpacing(QFont::AbsoluteSpacing, 0);

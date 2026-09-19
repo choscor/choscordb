@@ -23,11 +23,13 @@ QString fieldBaseStyleSheet() {
 QString fieldStateStyleSheet() {
     return QStringLiteral(R"(QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus,
 QPlainTextEdit:focus, QTextEdit:focus, QKeySequenceEdit:focus { border-color: @focus; }
+QLineEdit:read-only:focus { border-color: @input; }
 QLineEdit[invalid="true"], QComboBox[invalid="true"], QSpinBox[invalid="true"],
 QDoubleSpinBox[invalid="true"], QPlainTextEdit[invalid="true"], QTextEdit[invalid="true"],
 QKeySequenceEdit[invalid="true"] { border-color: @destructive; }
 QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled,
 QPlainTextEdit:disabled, QTextEdit:disabled { color: @disabled; }
+QLabel[designRole="fieldError"] { font-size: 11px; }
 )");
 }
 
@@ -46,7 +48,7 @@ QPushButton, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
 }
 
 QString fieldApplicationFocusStyleSheet() {
-    return QStringLiteral(R"(QPushButton:focus, QToolButton:focus, QLineEdit:focus, QComboBox:focus,
+    return QStringLiteral(R"(QPushButton:focus, QLineEdit:focus, QComboBox:focus,
 QSpinBox:focus, QDoubleSpinBox:focus {
   border: %2px solid %7;
 }

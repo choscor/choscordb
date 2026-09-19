@@ -446,10 +446,11 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
                id == "query-cancelling" || id == "tool-buttons") {
         auto* bar = new QToolBar(host);
         bar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        bar->setIconSize(QSize(12, 12));
         auto* run = bar->addAction(
-            themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.foreground, 16), "Run");
+            themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.foreground, 12), "Run");
         auto* stop = bar->addAction(
-            themedIcon(Icon::Cancel, resolvedThemeForWidget(*host).colors.foreground, 16),
+            themedIcon(Icon::Cancel, resolvedThemeForWidget(*host).colors.disabled, 12),
             "Cancel");
         stop->setEnabled(false);
         bar->addSeparator();
@@ -457,6 +458,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         toggle->setCheckable(true);
         toggle->setChecked(true);
         auto* overflow = new QToolButton(bar);
+        overflow->setProperty("designRole", "menuButton");
         overflow->setText("More");
         auto* menu = new QMenu(overflow);
         menu->addAction("Commit");
@@ -886,17 +888,45 @@ void populateMenu(QWidget* host, QVBoxLayout* layout) {
     layout->addWidget(status);
     layout->addStretch();
 }
+class PasswordLineEdit final : public QLineEdit {
+  public:
+    using QLineEdit::QLineEdit;
+
+    void centerTrailingAction() {
+        if (auto* button = findChild<QToolButton*>())
+            button->move(button->x(), (height() - button->height()) / 2);
+    }
+
+  protected:
+    void resizeEvent(QResizeEvent* event) override {
+        QLineEdit::resizeEvent(event);
+        centerTrailingAction();
+    }
+};
+
 void populateFields(QWidget* host, QVBoxLayout* layout) {
     auto* form = new QFormLayout;
     const QStringList states{"editable", "password", "selected", "disabled", "readonly", "invalid"};
     for (const auto& state : states) {
-        auto* field = new QLineEdit(host);
+        QLineEdit* field = state == "password" ? new PasswordLineEdit(host) : new QLineEdit(host);
         field->setObjectName("field-" + state);
         field->setAccessibleName(state + " input");
         field->setPlaceholderText("Enter a value…");
         if (state == "password") {
             field->setEchoMode(QLineEdit::Password);
             field->setText("synthetic-password");
+            const auto iconColor = resolvedThemeForWidget(*host).colors.foreground;
+            auto* toggle = field->addAction(themedIcon(Icon::Eye, iconColor, 16),
+                                            QLineEdit::TrailingPosition);
+            toggle->setObjectName("field-password-toggle");
+            toggle->setText("Show password");
+            static_cast<PasswordLineEdit*>(field)->centerTrailingAction();
+            QObject::connect(toggle, &QAction::triggered, field, [field, toggle, iconColor] {
+                const bool show = field->echoMode() == QLineEdit::Password;
+                field->setEchoMode(show ? QLineEdit::Normal : QLineEdit::Password);
+                toggle->setIcon(themedIcon(show ? Icon::EyeOff : Icon::Eye, iconColor, 16));
+                toggle->setText(show ? "Hide password" : "Show password");
+            });
         }
         if (state == "selected") {
             field->setText("Selected text · Việt Nam");
@@ -915,6 +945,7 @@ void populateFields(QWidget* host, QVBoxLayout* layout) {
     auto* error = new QLabel("A value is required.", host);
     error->setObjectName("field-error");
     error->setProperty("state", "error");
+    error->setProperty("designRole", "fieldError");
     form->addRow(QString{}, error);
     layout->addLayout(form);
     layout->addStretch();

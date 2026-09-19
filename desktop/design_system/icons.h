@@ -25,7 +25,9 @@ enum class Icon {
     Table,
     Folder,
     File,
-    Key
+    Key,
+    Eye,
+    EyeOff
 };
 struct IconDefinition final {
     Icon role;
