@@ -74,6 +74,7 @@ QString controlStyleSheet(const ResolvedTheme& theme) {
     sheet.replace("@input", cssColor(theme.colors.input));
     sheet.replace("@foreground", cssColor(theme.colors.foreground));
     sheet.replace("@field", cssColor(field));
+    sheet.replace("@sidebar", cssColor(theme.colors.sidebar));
     sheet.replace("@focus", cssColor(theme.colors.focus));
     sheet.replace("@dangerText", cssColor(theme.colors.danger));
     sheet.replace("@destructive", cssColor(theme.colors.destructive));

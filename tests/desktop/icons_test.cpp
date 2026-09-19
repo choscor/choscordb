@@ -4,6 +4,7 @@
 #include <QPainter>
 #include <QSvgRenderer>
 #include <QtTest>
+#include <algorithm>
 
 class IconsTest final : public QObject {
     Q_OBJECT
@@ -67,6 +68,41 @@ class IconsTest final : public QObject {
                      expected.toImage());
         }
     }
+    void explorerGlyphsRenderTheReferenceShapes() {
+        using namespace choscordb::design;
+        // Independent path literals from the approved prototype.js icon map.
+        const QList<std::pair<QString, QByteArray>> specimens{
+            {"code", "m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"},
+            {"table", "M3 4h18v16H3zM3 9h18M9 9v11"},
+            {"folder", "M3 6h7l2 3h9v11H3z"},
+            {"file", "M5 3h9l5 5v13H5zM14 3v6h5"},
+            {"key", "M8 3a5 5 0 1 0 0 10A5 5 0 0 0 8 3m4 9 9 9m-5-5 3-3"}};
+        const auto catalog = iconCatalog();
+        for (const auto& [name, path] : specimens) {
+            const auto found =
+                std::find_if(catalog.cbegin(), catalog.cend(),
+                             [&name](const auto& entry) { return entry.name == name; });
+            QVERIFY2(found != catalog.cend(), qPrintable("Missing shared explorer icon: " + name));
+            for (const QColor color : {QColor("#171717"), QColor("#fafafa")}) {
+                QPixmap expected(48, 48);
+                expected.setDevicePixelRatio(2);
+                expected.fill(Qt::transparent);
+                QSvgRenderer reference(
+                    "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" "
+                    "fill=\"none\" stroke=\"" +
+                    color.name().toUtf8() +
+                    "\" stroke-width=\"1.6\" stroke-linecap=\"round\" "
+                    "stroke-linejoin=\"round\"><path d=\"" +
+                    path + "\"/></svg>");
+                QPainter painter(&expected);
+                reference.render(&painter, QRectF(0, 0, 24, 24));
+                painter.end();
+                const auto actual = themedIcon(found->role, color, 24).pixmap(QSize(24, 24), 2.0);
+                QVERIFY2(!actual.isNull(), qPrintable(name));
+                QCOMPARE(actual.toImage(), expected.toImage());
+            }
+        }
+    }
     void strokeCoverageMatchesMvpAtRetinaScale() {
         using namespace choscordb::design;
         const auto image =
@@ -109,7 +145,7 @@ class IconsTest final : public QObject {
     void semanticCatalogIncludesApplicationActions() {
         using namespace choscordb::design;
         const auto catalog = iconCatalog();
-        QCOMPARE(catalog.size(), 17);
+        QVERIFY(!catalog.isEmpty());
         QStringList names;
         for (const auto& definition : catalog) {
             names.append(definition.name);

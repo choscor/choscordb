@@ -20,7 +20,12 @@ enum class Icon {
     Error,
     Loader,
     Copy,
-    Export
+    Export,
+    Code,
+    Table,
+    Folder,
+    File,
+    Key
 };
 struct IconDefinition final {
     Icon role;

@@ -211,12 +211,33 @@ impl Engine {
     ) -> std::result::Result<QueryId, SubmitError> {
         self.execute_with_profile(connection, sql, options, None)
     }
+    pub fn open_object_data(
+        &mut self,
+        connection: ConnectionId,
+        object: ObjectId,
+        options: QueryOptions,
+    ) -> std::result::Result<QueryId, SubmitError> {
+        if object.0.is_empty() || object.0.len() > 16384 {
+            return Err(SubmitError::InvalidInput);
+        }
+        self.execute_source(connection, String::new(), options, None, Some(object))
+    }
     pub fn execute_with_profile(
         &mut self,
         connection: ConnectionId,
         sql: String,
         options: QueryOptions,
         profile_id: Option<String>,
+    ) -> std::result::Result<QueryId, SubmitError> {
+        self.execute_source(connection, sql, options, profile_id, None)
+    }
+    fn execute_source(
+        &mut self,
+        connection: ConnectionId,
+        sql: String,
+        options: QueryOptions,
+        profile_id: Option<String>,
+        object: Option<ObjectId>,
     ) -> std::result::Result<QueryId, SubmitError> {
         self.ensure_running()?;
         if profile_id
@@ -249,7 +270,9 @@ impl Engine {
             state: QueryState::Queued,
         });
         let sql = Arc::new(sql);
-        let history = {
+        let history = if object.is_some() {
+            None
+        } else {
             let _entered = self
                 .runtime
                 .as_ref()
@@ -267,6 +290,7 @@ impl Engine {
         command_permit.send(actor::Command::Execute {
             query: id,
             sql,
+            object,
             history,
             options,
             cancellation: cancel_rx,
@@ -418,7 +442,21 @@ impl Engine {
         connection: ConnectionId,
         object: ObjectId,
     ) -> std::result::Result<(), SubmitError> {
-        self.submit(connection, actor::Command::Ddl(object))
+        self.object_ddl_request(connection, object, 0)
+    }
+    pub fn object_ddl_request(
+        &self,
+        connection: ConnectionId,
+        object: ObjectId,
+        request_token: u64,
+    ) -> std::result::Result<(), SubmitError> {
+        self.submit(
+            connection,
+            actor::Command::Ddl {
+                object,
+                request_token,
+            },
+        )
     }
     pub fn load_metadata(
         &self,

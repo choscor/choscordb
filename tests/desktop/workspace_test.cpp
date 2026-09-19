@@ -75,6 +75,144 @@ struct WorkspaceFixture {
 class WorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void newConnectionAfterSavingCreatesAnotherProfile() {
+        WorkspaceFixture f;
+        QTRY_VERIFY(f.run.isEnabled());
+        f.newConnection.trigger();
+        auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>();
+        QVERIFY(dialog);
+        auto* save = dialog->findChild<QPushButton*>("profileSave");
+        auto* name = dialog->findChild<QLineEdit*>("profileName");
+        auto* path = dialog->findChild<QLineEdit*>("profilePath");
+        auto* profiles = dialog->findChild<QListWidget*>("profileList");
+        QTRY_VERIFY(save->isEnabled());
+        name->setText("First saved connection");
+        path->setText(":memory:");
+        save->click();
+        QTRY_VERIFY(save->isEnabled());
+        QTRY_COMPARE(profiles->count(), 1);
+        dialog->reject();
+        f.newConnection.trigger();
+        QTRY_VERIFY(save->isEnabled());
+        QVERIFY2(name->text().isEmpty(), "New connection must start a new profile identity");
+        name->setText("Second saved connection");
+        path->setText(":memory:");
+        save->click();
+        QTRY_VERIFY(save->isEnabled());
+        QTRY_COMPARE(profiles->count(), 2);
+        QStringList names;
+        for (int row = 0; row < profiles->count(); ++row)
+            names << profiles->item(row)->text();
+        QVERIFY(names.contains("First saved connection"));
+        QVERIFY(names.contains("Second saved connection"));
+    }
+    void cancellationRacingSuccessfulCompletionReleasesNavigation() {
+        WorkspaceFixture f;
+        QTRY_VERIFY(f.run.isEnabled());
+        bool observed = false;
+        bool runAvailable = false;
+        bool navigationAvailable = false;
+        auto* adapter = f.workspace.adapter();
+        connect(adapter, &choscordb::EngineAdapter::eventReady, &f.parent,
+                [&](const choscordb::BridgeEvent& event) {
+                    if (event.kind != "schema" || observed)
+                        return;
+                    observed = true;
+                    // The real schema starts a page fetch. Simulate the transport
+                    // delivering its final page after Cancel, followed by successful
+                    // completion that already won the race in the engine.
+                    f.cancel.trigger();
+                    choscordb::BridgeEvent page;
+                    page.kind = "stored_page";
+                    page.id = event.id;
+                    adapter->eventReady(page);
+                    choscordb::BridgeEvent finished;
+                    finished.kind = "query_finished";
+                    finished.id = event.id;
+                    adapter->eventReady(finished);
+                    runAvailable = f.run.isEnabled();
+                    navigationAvailable = f.workspace.navigationAllowed();
+                });
+        f.execute("SELECT 42");
+        QTRY_VERIFY(observed);
+        QVERIFY2(runAvailable, "A completed query must release a cancelled outstanding page fetch");
+        QVERIFY(navigationAvailable);
+    }
+    void immediateCancellationDoesNotReenableCancelBeforeAcknowledgement() {
+        WorkspaceFixture f;
+        QTRY_VERIFY(f.run.isEnabled());
+        f.editor.setText("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE "
+                         "x<1000000000) SELECT sum(x) FROM n;");
+        f.run.trigger();
+        QVERIFY(f.cancel.isEnabled());
+        bool reenabled = false;
+        connect(&f.cancel, &QAction::changed, &f.parent, [&] {
+            if (f.cancel.isEnabled())
+                reenabled = true;
+        });
+        f.cancel.trigger();
+        QVERIFY(!f.cancel.isEnabled());
+        QTRY_VERIFY(f.run.isEnabled());
+        QVERIFY2(!reenabled, "Queued/running events must not undo a user's pending cancellation");
+        QCOMPARE(f.summary.property("state").toString(), QString("cancelled"));
+    }
+    void connectionPanelRetainsFailedSaveConnectDraftAndRetries() {
+        QTemporaryDir directory;
+        WorkspaceFixture f;
+        f.parent.resize(960, 640);
+        f.parent.show();
+        QTRY_VERIFY(f.run.isEnabled());
+        f.newConnection.trigger();
+        auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>();
+        QVERIFY(dialog);
+        QVERIFY(dialog->isModal());
+        auto* saveConnect = dialog->findChild<QPushButton*>("profileSaveConnect");
+        QTRY_VERIFY(saveConnect->isEnabled());
+        auto* name = dialog->findChild<QLineEdit*>("profileName");
+        auto* path = dialog->findChild<QLineEdit*>("profilePath");
+        name->setText("Retry SQLite");
+        const auto badPath = directory.filePath("missing/database.sqlite");
+        path->setText(badPath);
+        QSignalSpy opened(dialog, &choscordb::ProfileDialog::openQueryRequested);
+        saveConnect->click();
+        QTRY_VERIFY(saveConnect->isEnabled());
+        QVERIFY(dialog->isVisible());
+        QCOMPARE(opened.count(), 0);
+        QCOMPARE(name->text(), QString("Retry SQLite"));
+        QCOMPARE(path->text(), badPath);
+        QVERIFY(!dialog->findChild<QLabel*>("profileStatus")->text().isEmpty());
+        path->setText(directory.filePath("retry.sqlite"));
+        saveConnect->click();
+        QTRY_COMPARE(opened.count(), 1);
+        QTRY_VERIFY(!dialog->isVisible());
+    }
+    void saveAndConnectPersistsProfileBeforeOpeningSession() {
+        QTemporaryDir directory;
+        WorkspaceFixture f;
+        QTRY_VERIFY(f.run.isEnabled());
+        f.newConnection.trigger();
+        auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>();
+        QVERIFY(dialog);
+        auto* saveConnect = dialog->findChild<QPushButton*>("profileSaveConnect");
+        QVERIFY2(saveConnect, "Connection dialog must offer Save & connect");
+        QTRY_VERIFY(saveConnect->isEnabled());
+        dialog->findChild<QLineEdit*>("profileName")->setText("Saved and connected");
+        dialog->findChild<QLineEdit*>("profilePath")->setText(directory.filePath("saved.sqlite"));
+        QSignalSpy submitted(dialog, &choscordb::ProfileDialog::connectionSubmitted);
+        QSignalSpy connected(&f.workspace, &choscordb::QueryWorkspace::connectionReady);
+        saveConnect->click();
+        QTRY_COMPARE(connected.count(), 1);
+        QCOMPARE(submitted.count(), 1);
+        QVERIFY(submitted.first().at(2).toBool());
+        QSignalSpy profiles(f.workspace.adapter(), &choscordb::EngineAdapter::profilesReady);
+        f.workspace.adapter()->listProfiles(987654);
+        QTRY_COMPARE(profiles.count(), 1);
+        const auto saved = qvariant_cast<QList<choscordb::SavedProfile>>(profiles.first().at(1));
+        QCOMPARE(saved.size(), 1);
+        QCOMPARE(saved.first().name, QString("Saved and connected"));
+        QCOMPARE(saved.first().path, directory.filePath("saved.sqlite"));
+        QTRY_VERIFY(!dialog->isVisible());
+    }
     void recoveryAdapterRejectsOversizeBeforeDispatch() {
         choscordb::EngineAdapter adapter;
         QSignalSpy failures(&adapter, &choscordb::EngineAdapter::recoveryFailed);
@@ -212,6 +350,8 @@ class WorkspaceTest : public QObject {
         QCOMPARE(model->entry(0)->rowCount, quint64(2));
         table->selectRow(0);
         QVERIFY(window.grab().save("native-history.png"));
+        auto* target = window.findChild<QComboBox*>("connectionSelector");
+        const auto connection = target->currentData();
         const int queriesBeforeOpen = finished, tabsBeforeOpen = tabs->count();
         history->findChild<QPushButton*>("openHistoryQuery")->click();
         QCOMPARE(tabs->count(), tabsBeforeOpen + 1);
@@ -219,6 +359,11 @@ class WorkspaceTest : public QObject {
                  QString("SELECT 1 UNION ALL SELECT 2"));
         QTest::qWait(30);
         QCOMPARE(finished, queriesBeforeOpen);
+        QVERIFY(!target->currentData().isValid());
+        QVERIFY(target->placeholderText().contains("Disconnected"));
+        QVERIFY(!run->isEnabled());
+        target->setCurrentIndex(target->findData(connection));
+        QTRY_VERIFY(run->isEnabled());
         auto* record = history->findChild<QCheckBox*>("recordHistory");
         QTRY_VERIFY(record->isEnabled());
         record->click();
@@ -361,7 +506,7 @@ class WorkspaceTest : public QObject {
         QVERIFY(workspace);
         auto* editor = window.findChild<choscordb::SqlEditor*>();
         QVERIFY(editor);
-        auto* grid = window.findChild<QTableView*>();
+        auto* grid = window.findChild<QTableView*>("queryResults");
         QVERIFY(grid);
         auto* run = window.findChild<QAction*>("runStatement");
         QVERIFY(run);
@@ -774,6 +919,9 @@ class WorkspaceTest : public QObject {
         dialog->selectProfile(profile.id);
         dialog->findChild<QPushButton*>("profileConnect")->click();
         QTRY_COMPARE(f.connections.count(), 2);
+        // Connecting another session leaves this draft's existing target intact.
+        QCOMPARE(f.connections.currentIndex(), 0);
+        f.connections.setCurrentIndex(1);
         QCOMPARE(f.connections.currentText(), QString("Saved SQLite"));
         QVERIFY(dialog->grab().save("native-profiles.png"));
         f.execute("SELECT 7");
@@ -938,6 +1086,7 @@ class WorkspaceTest : public QObject {
         QCOMPARE(f.connections.count(), 1);
         dialog->findChild<QPushButton*>("profileConnect")->click();
         QTRY_COMPARE(f.connections.count(), 2);
+        f.connections.setCurrentIndex(1);
         f.execute("SELECT i::numeric(30,8) AS value FROM generate_series(1,1001) AS i");
         QTRY_COMPARE(f.grid.model()->rowCount(), 1000);
         QCOMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(),

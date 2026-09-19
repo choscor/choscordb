@@ -36,6 +36,15 @@ QVariant HistoryModel::data(const QModelIndex& index, int role) const {
     const auto* value = entry(index.row());
     if (!value)
         return {};
+    if (role == Qt::AccessibleTextRole && index.column() == 2) {
+        QStringList parts;
+        // Compact history hides the other visual columns; retain their real
+        // metadata in the spoken row without exposing the unbounded SQL body.
+        for (const int column : {2, 4, 0, 1, 3})
+            parts.append(data(index.siblingAtColumn(column), Qt::DisplayRole).toString().left(256));
+        parts.append(tr("%1 rows").arg(data(index.siblingAtColumn(5), Qt::DisplayRole).toString()));
+        return parts.join(QStringLiteral(". "));
+    }
     if (role == Qt::TextAlignmentRole && (index.column() == 3 || index.column() == 5))
         return int(Qt::AlignRight | Qt::AlignVCenter);
     if (role != Qt::DisplayRole)

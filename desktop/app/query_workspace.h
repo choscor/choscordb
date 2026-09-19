@@ -2,6 +2,7 @@
 #include "models/result_table_model.h"
 #include <QHash>
 #include <QObject>
+#include <QPointer>
 #include <QSet>
 #include <QString>
 #include <functional>
@@ -21,6 +22,8 @@ class ProfileDialog;
 class QuerySettingsController;
 class EngineAdapter;
 struct BridgeEvent;
+struct SavedProfile;
+struct QueryPreferences;
 class QueryWorkspace final : public QObject {
     Q_OBJECT
   public:
@@ -41,10 +44,12 @@ class QueryWorkspace final : public QObject {
         QPushButton* previousPage = nullptr;
         QPushButton* exportResult = nullptr;
         QString storagePath;
+        EngineAdapter* sharedAdapter = nullptr;
+        bool objectReadOnly = false;
     };
     explicit QueryWorkspace(Widgets widgets, QObject* parent = nullptr);
     ~QueryWorkspace() override;
-    EngineAdapter* adapter() const { return adapter_; }
+    EngineAdapter* adapter() const;
     QString profileIdForConnection(quint64 connection) const {
         return connectionProfiles_.value(connection);
     }
@@ -53,10 +58,26 @@ class QueryWorkspace final : public QObject {
     void cancelShutdown();
     void shutdown();
     void connectSqlite(const QString& path);
+    std::optional<quint64> connectSavedProfile(const SavedProfile& profile);
+    void showProfiles(const QString& profileId = {});
+    void manageSavedProfile(const QString& profileId, const QString& action);
     void disconnectConnection(quint64 connection);
     void showQuerySettings();
+    void documentChanged();
+    void trackQueryPreferencesSave(quint64 token);
+    void applyQueryPreferences(const QueryPreferences& preferences);
+    QueryPreferences queryPreferences() const;
+    void setExternalWork(bool busy);
+    void openObjectData(quint64 connection, const QString& object, const QString& label,
+                        const QueryPreferences& preferences);
+    void invalidateResult();
+    bool navigationAllowed() const { return !workInFlight() && !stopping_; }
   signals:
     void connectionReady(quint64 connection);
+    void documentTargetChanged();
+    void openQueryRequested(quint64 connection);
+    void activityChanged(bool busy);
+    void executionStateChanged(const QString& state);
 
   private:
     void execute();
@@ -70,12 +91,13 @@ class QueryWorkspace final : public QObject {
     void setExecutionState(const QString& state, const QString& detail = {});
     std::optional<quint64> selectedConnection() const;
     Widgets widgets_;
-    EngineAdapter* adapter_;
+    QPointer<EngineAdapter> adapter_;
     QuerySettingsController* querySettings_ = nullptr;
     ResultTableModel* model_;
     ValueDetailDialog* detail_ = nullptr;
     ExportDialog* export_ = nullptr;
     ProfileDialog* profiles_ = nullptr;
+    QString resultOrigin_;
     bool exporting_ = false;
     std::optional<quint64> query_;
     std::optional<quint64> queryConnection_;
@@ -94,5 +116,7 @@ class QueryWorkspace final : public QObject {
     bool fetching_ = false;
     bool hasMore_ = false;
     bool stopping_ = false;
+    bool externalWork_ = false, invalidatePending_ = false;
+    bool cancellationPending_ = false;
 };
 } // namespace choscordb

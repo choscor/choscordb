@@ -143,6 +143,10 @@ class DisconnectWorkspaceTest : public QObject {
         QCOMPARE(f.editor.text(), buffer);
         f.workspace.connectSqlite(path);
         QTRY_COMPARE(connected.count(), 2);
+        QVERIFY(!f.connections.currentData().isValid());
+        QVERIFY(!f.run.isEnabled());
+        f.connections.setCurrentIndex(f.connections.findData(connected.last().at(0)));
+        QTRY_VERIFY(f.run.isEnabled());
         f.editor.setText("SELECT count(*) FROM work");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         f.run.trigger();
@@ -286,6 +290,7 @@ class DisconnectWorkspaceTest : public QObject {
         const auto first = connected.at(0).at(0).toULongLong();
         f.workspace.connectSqlite(":memory:");
         QTRY_COMPARE(connected.count(), 2);
+        f.connections.setCurrentIndex(f.connections.findData(connected.last().at(0)));
         const auto second = connected.at(1).at(0).toULongLong();
         f.editor.setText("-- untouched draft");
         bool warning = false;

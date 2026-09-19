@@ -16,6 +16,7 @@ struct Reader {
     // cannot impersonate records, without an unbounded in-memory offset index.
     key: RandomState,
 }
+#[derive(Clone)]
 pub struct Spool {
     reader: Arc<Reader>,
 }

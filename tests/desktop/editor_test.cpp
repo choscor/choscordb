@@ -1,4 +1,5 @@
 #include "design_system/theme.h"
+#include "design_system/theme_manager.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QFile>
 #include <QScopeGuard>
@@ -66,6 +67,58 @@ class EditorTest : public QObject {
         QCOMPARE(editor.text(), QString("MMMM\nMMMM;"));
         editor.undo();
         QCOMPARE(editor.text(), QString("MMMM\nMMMM"));
+    }
+    void persistedPointFontUsesReferenceMinimumLineBox() {
+        choscordb::SqlEditor editor;
+        auto font = editor.font();
+        font.setPointSize(13);
+        editor.setEditorFont(font);
+        QCOMPARE(editor.lexer()->font(QsciLexerSQL::Default).pointSize(), 13);
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 24L);
+        font.setPointSize(32);
+        editor.setEditorFont(font);
+        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 24L);
+        QCOMPARE(editor.extraAscent(), 0);
+        QCOMPARE(editor.extraDescent(), 0);
+    }
+    void syntaxColorsFollowLiveThemeAndForcedContrast() {
+        using namespace choscordb::design;
+        choscordb::SqlEditor editor;
+        ThemeManager manager;
+        manager.setMode(ThemeMode::Light);
+        manager.applyTo(editor);
+        editor.setText("SELECT 'sample', 42; -- comment");
+        editor.recolor();
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_GETSTYLEAT, 0UL),
+                 static_cast<long>(QsciLexerSQL::Keyword));
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_GETSTYLEAT, 7UL),
+                 static_cast<long>(QsciLexerSQL::SingleQuotedString));
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_GETSTYLEAT, 17UL),
+                 static_cast<long>(QsciLexerSQL::Number));
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_GETSTYLEAT, 21UL),
+                 static_cast<long>(QsciLexerSQL::CommentLine));
+        QCOMPARE(editor.lexer()->color(QsciLexerSQL::Keyword), QColor("#885da7"));
+        QVERIFY(editor.lexer()->color(QsciLexerSQL::Keyword) !=
+                editor.palette().color(QPalette::Link));
+        for (const auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
+            manager.setMode(mode);
+            manager.applyTo(editor);
+            for (const auto style : {QsciLexerSQL::Keyword, QsciLexerSQL::SingleQuotedString,
+                                     QsciLexerSQL::Number, QsciLexerSQL::CommentLine})
+                QVERIFY(contrastRatio(editor.lexer()->color(style),
+                                      editor.palette().color(QPalette::Base)) >= 4.5);
+        }
+        QPalette forced;
+        forced.setColor(QPalette::Window, Qt::black);
+        forced.setColor(QPalette::Base, Qt::black);
+        forced.setColor(QPalette::WindowText, Qt::yellow);
+        forced.setColor(QPalette::Text, Qt::yellow);
+        manager.setSystemPalette(forced);
+        manager.setForcedContrast(true);
+        manager.applyTo(editor);
+        for (const auto style : {QsciLexerSQL::Keyword, QsciLexerSQL::SingleQuotedString,
+                                 QsciLexerSQL::Number, QsciLexerSQL::CommentLine})
+            QCOMPARE(editor.lexer()->color(style), QColor(Qt::yellow));
     }
     void darkPaletteAlsoColorsTheFoldMargin() {
         using namespace choscordb::design;

@@ -1,8 +1,49 @@
 //! Lazy, OID-addressed PostgreSQL catalog navigation.
 use choscordb_driver_api::{
-    Column, DriverError, ErrorKind, ObjectId, ObjectKind, Result, SchemaObject,
+    Column, DriverError, ErrorKind, MetadataProperty, ObjectId, ObjectKind, Result, SchemaObject,
 };
+use futures_util::TryStreamExt;
+use tokio_postgres::types::{FromSql, ToSql, Type};
 use tokio_postgres::{GenericClient, Row};
+struct RawMetadata<'a>(&'a [u8]);
+impl<'a> FromSql<'a> for RawMetadata<'a> {
+    fn from_sql(
+        _: &Type,
+        raw: &'a [u8],
+    ) -> std::result::Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        Ok(Self(raw))
+    }
+    fn accepts(_: &Type) -> bool {
+        true
+    }
+}
+async fn bounded_query<C: GenericClient + Sync>(
+    client: &C,
+    sql: &str,
+    parameters: &[&(dyn ToSql + Sync)],
+) -> Result<Vec<Row>> {
+    let stream = client
+        .query_raw(sql, parameters.iter().copied())
+        .await
+        .map_err(crate::normalize)?;
+    tokio::pin!(stream);
+    let mut rows = Vec::new();
+    let mut bytes = 0usize;
+    while let Some(row) = stream.try_next().await.map_err(crate::normalize)? {
+        for i in 0..row.len() {
+            bytes = bytes.saturating_add(
+                row.try_get::<_, Option<RawMetadata<'_>>>(i)
+                    .map_err(crate::normalize)?
+                    .map_or(0, |v| v.0.len()),
+            );
+        }
+        if rows.len() == MAX_OBJECTS || bytes > MAX_TEXT {
+            return Err(limit());
+        }
+        rows.push(row);
+    }
+    Ok(rows)
+}
 
 const MAX_OBJECTS: usize = 10_000;
 const MAX_TEXT: usize = 1024 * 1024;
@@ -70,6 +111,7 @@ fn object(
         kind,
         has_children,
         column: None,
+        properties: Vec::new(),
     }
 }
 
@@ -101,7 +143,7 @@ pub(crate) async fn load_metadata<C: GenericClient + Sync>(
         "relation" => return relation_children(client, parent_id, oid).await,
         _ => return Ok(Vec::new()),
     };
-    let rows = client.query(sql, &[&oid]).await.map_err(crate::normalize)?;
+    let rows = bounded_query(client, sql, &[&oid]).await?;
     check(&rows)?;
     rows.iter()
         .map(|row| {
@@ -141,7 +183,21 @@ async fn relation_children<C: GenericClient + Sync>(
     parent: &ObjectId,
     oid: u32,
 ) -> Result<Vec<SchemaObject>> {
-    let rows = client.query("SELECT a.attnum, a.attname::text AS name, pg_catalog.format_type(a.atttypid,a.atttypmod) AS datatype, a.atttypid, a.atttypmod, a.attnotnull, n.nspname::text AS schema, c.relname::text AS relation FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_class c ON c.oid=a.attrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE a.attrelid=$1 AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum LIMIT 10001", &[&oid]).await.map_err(crate::normalize)?;
+    if client
+        .query_opt(
+            "SELECT oid FROM pg_catalog.pg_class WHERE oid=$1 AND relkind IN ('r','p','v','m','f')",
+            &[&oid],
+        )
+        .await
+        .map_err(crate::normalize)?
+        .is_none()
+    {
+        return Err(DriverError::new(
+            ErrorKind::StaleHandle,
+            "PostgreSQL relation no longer exists",
+        ));
+    }
+    let rows = bounded_query(client, "SELECT a.attnum, a.attname::text AS name, pg_catalog.format_type(a.atttypid,a.atttypmod) AS datatype, a.atttypid, a.atttypmod, a.attnotnull, COALESCE(pg_catalog.pg_get_expr(d.adbin,d.adrelid),'No default') AS default_expression, a.attidentity::text AS identity, a.attgenerated::text AS generated, n.nspname::text AS schema, c.relname::text AS relation FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_class c ON c.oid=a.attrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=$1 AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum LIMIT 10001", &[&oid]).await?;
     check(&rows)?;
     let mut result = Vec::with_capacity(rows.len());
     for row in rows {
@@ -170,9 +226,29 @@ async fn relation_children<C: GenericClient + Sync>(
             timezone: matches!(typ, 1184 | 1266).then(|| "with time zone".into()),
             nullable: Some(!row.get::<_, bool>("attnotnull")),
         });
+        child.properties.push(MetadataProperty::available(
+            "Default",
+            text(&row, "default_expression")?,
+        ));
+        child.properties.push(MetadataProperty::available(
+            "Identity",
+            match row.get::<_, &str>("identity") {
+                "a" => "Always",
+                "d" => "By default",
+                _ => "No",
+            },
+        ));
+        child.properties.push(MetadataProperty::available(
+            "Generated",
+            match row.get::<_, &str>("generated") {
+                "s" => "Stored",
+                "v" => "Virtual",
+                _ => "No",
+            },
+        ));
         result.push(child);
     }
-    let rows=client.query("SELECT oid, conname::text AS name, contype::text AS kind FROM pg_catalog.pg_constraint WHERE conrelid=$1 AND contype IN ('p','f','u') ORDER BY conname LIMIT 10001", &[&oid]).await.map_err(crate::normalize)?;
+    let rows=bounded_query(client, "SELECT oid, conname::text AS name, contype::text AS kind, pg_catalog.pg_get_constraintdef(oid,false) AS definition FROM pg_catalog.pg_constraint WHERE conrelid=$1 AND contype IN ('p','f','u') ORDER BY conname LIMIT 10001", &[&oid]).await?;
     check(&rows)?;
     for row in rows {
         let id: u32 = row.get("oid");
@@ -182,30 +258,67 @@ async fn relation_children<C: GenericClient + Sync>(
             "f" => ObjectKind::ForeignKey,
             _ => ObjectKind::UniqueKey,
         };
-        result.push(object(
+        let mut child = object(
             format!("pg:constraint:{id}"),
             Some(parent.clone()),
             name.clone(),
             quote(&name),
             kind,
             false,
+        );
+        child.properties.push(MetadataProperty::available(
+            "Definition",
+            text(&row, "definition")?,
         ));
+        result.push(child);
     }
-    let rows=client.query("SELECT c.oid,c.relname::text AS name,n.nspname::text AS schema FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid=i.indexrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE i.indrelid=$1 ORDER BY c.relname LIMIT 10001", &[&oid]).await.map_err(crate::normalize)?;
+    let rows=bounded_query(client, "SELECT c.oid,c.relname::text AS name,n.nspname::text AS schema,i.indisunique,i.indisvalid,i.indpred IS NOT NULL AS partial,pg_catalog.pg_get_indexdef(c.oid) AS definition FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid=i.indexrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE i.indrelid=$1 ORDER BY c.relname LIMIT 10001", &[&oid]).await?;
     check(&rows)?;
     for row in rows {
         let id: u32 = row.get("oid");
         let name = text(&row, "name")?;
-        result.push(object(
+        let mut child = object(
             format!("pg:index:{id}"),
             Some(parent.clone()),
             name.clone(),
             format!("{}.{}", quote(&text(&row, "schema")?), quote(&name)),
             ObjectKind::Index,
             false,
+        );
+        child.properties.push(MetadataProperty::available(
+            "Unique",
+            row.get::<_, bool>("indisunique"),
         ));
+        child.properties.push(MetadataProperty::available(
+            "Valid",
+            row.get::<_, bool>("indisvalid"),
+        ));
+        child.properties.push(MetadataProperty::available(
+            "Partial",
+            row.get::<_, bool>("partial"),
+        ));
+        child.properties.push(MetadataProperty::available(
+            "Definition",
+            text(&row, "definition")?,
+        ));
+        result.push(child);
     }
-    if result.len() > MAX_OBJECTS {
+    if result.len() > MAX_OBJECTS
+        || result
+            .iter()
+            .map(|o| {
+                o.id.0.len()
+                    + o.name.len()
+                    + o.qualified_name.len()
+                    + o.column.as_ref().map_or(0, |c| c.database_type.len())
+                    + o.properties
+                        .iter()
+                        .map(|p| p.name.len() + p.value.len() + p.reason.len())
+                        .sum::<usize>()
+            })
+            .sum::<usize>()
+            > MAX_TEXT
+    {
         return Err(limit());
     }
     Ok(result)
@@ -296,7 +409,7 @@ async fn relation_ddl<C: GenericClient + Sync>(client: &C, oid: u32) -> Result<S
             "DDL reconstruction for partitioned, inherited, foreign, or policy/storage-customized tables is unavailable",
         ));
     }
-    let rows=client.query("SELECT a.attname::text AS name,pg_catalog.format_type(a.atttypid,a.atttypmod) AS datatype,a.attnotnull,a.attidentity::text AS identity,a.attgenerated::text AS generated,COALESCE(pg_catalog.pg_get_expr(d.adbin,d.adrelid),'') AS expression,a.attcollation<>t.typcollation AS custom_collation FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_type t ON t.oid=a.atttypid LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=$1 AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum LIMIT 10001",&[&oid]).await.map_err(crate::normalize)?;
+    let rows=bounded_query(client, "SELECT a.attname::text AS name,pg_catalog.format_type(a.atttypid,a.atttypmod) AS datatype,a.attnotnull,a.attidentity::text AS identity,a.attgenerated::text AS generated,COALESCE(pg_catalog.pg_get_expr(d.adbin,d.adrelid),'') AS expression,a.attcollation<>t.typcollation AS custom_collation FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_type t ON t.oid=a.atttypid LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=$1 AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum LIMIT 10001",&[&oid]).await?;
     check(&rows)?;
     let mut definitions = Vec::new();
     let mut total = 0usize;
@@ -338,7 +451,7 @@ async fn relation_ddl<C: GenericClient + Sync>(client: &C, oid: u32) -> Result<S
         }
         definitions.push(def);
     }
-    let rows=client.query("SELECT conname::text AS name,pg_catalog.pg_get_constraintdef(oid,false) AS ddl FROM pg_catalog.pg_constraint WHERE conrelid=$1 ORDER BY conname LIMIT 10001",&[&oid]).await.map_err(crate::normalize)?;
+    let rows=bounded_query(client, "SELECT conname::text AS name,pg_catalog.pg_get_constraintdef(oid,false) AS ddl FROM pg_catalog.pg_constraint WHERE conrelid=$1 ORDER BY conname LIMIT 10001",&[&oid]).await?;
     check(&rows)?;
     for row in rows {
         let def = format!(
@@ -425,6 +538,8 @@ mod live_tests {
             .as_ref()
             .unwrap();
         assert_eq!((amount.precision, amount.scale), (Some(12), Some(-2)));
+        assert_eq!(children.iter().find(|o|o.name=="label").unwrap().properties.iter().find(|p|p.name=="Default").map(|p|p.value.as_str()), Some("'x'::text"));
+        assert!(children.iter().find(|o|o.name=="index odd").unwrap().properties.iter().any(|p|p.name=="Definition" && p.value.contains("USING btree (amount)")));
         assert!(children.iter().any(|o| o.kind == ObjectKind::PrimaryKey));
         assert!(children.iter().any(|o| o.kind == ObjectKind::UniqueKey));
         let index = children.iter().find(|o| o.name == "index odd").unwrap();

@@ -1,8 +1,10 @@
 #pragma once
 #include "bridge/engine_adapter.h"
-#include <QDockWidget>
 #include <QPointer>
+#include <QWidget>
 class QCheckBox;
+class QLineEdit;
+class QComboBox;
 class QLabel;
 class QPlainTextEdit;
 class QTableView;
@@ -11,17 +13,19 @@ namespace design {
 class Button;
 }
 class HistoryModel;
-class HistoryDock final : public QDockWidget {
+class HistoryDock final : public QWidget {
     Q_OBJECT
   public:
     explicit HistoryDock(EngineAdapter* adapter, QWidget* parent = nullptr);
   public slots:
     void refresh();
+    void applyConfirmedPolicy(const choscordb::HistoryPolicy& policy);
   signals:
     void openRequested(const choscordb::SavedHistoryEntry& entry);
 
   private:
     void loadPage(quint32 offset);
+    void applyFilter();
     void selectEntry();
     void renderPreview();
     void updateControls();
@@ -32,6 +36,8 @@ class HistoryDock final : public QDockWidget {
     QPlainTextEdit* preview_;
     QLabel *status_, *previewNotice_, *page_;
     QCheckBox* record_;
+    QLineEdit* search_;
+    QComboBox* statusFilter_;
     design::Button *clear_, *refresh_, *previous_, *next_, *open_;
     design::Button *previewPrevious_, *previewNext_;
     HistoryPolicy policy_;

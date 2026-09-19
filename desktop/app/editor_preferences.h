@@ -20,6 +20,11 @@ class EditorPreferencesController final : public QObject {
     void setAppearanceController(AppearanceController* appearance);
     void open();
 
+  signals:
+    void queryPreferencesSaveSubmitted(quint64 token);
+    void queryPreferencesConfirmed(const choscordb::QueryPreferences& preferences);
+    void historyPolicyConfirmed(const choscordb::HistoryPolicy& policy);
+
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 

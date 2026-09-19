@@ -21,7 +21,7 @@
     "download.svg": "1b47be8ea4928e1b5620c22d24d6e03596dc07ae69af8b41d8ba6674d4bd5409"
   },
   "license": "ISC AND MIT",
-  "note": "Lucide license and original source revision retained. MVP referenceOverrides replace the named paths with the local visual authority; their original hashes are preserved below. Other listed assets remain Lucide adaptations/upstream assets. app-mark.svg is original ChoscorDB identity, outside Lucide.",
+  "note": "Lucide license and original source revision retained. MVP referenceOverrides replace the named paths with the local visual authority; their original hashes are preserved below. Other listed assets remain Lucide adaptations/upstream assets. app-mark.svg is original ChoscorDB identity, outside Lucide. referenceAdditions are copied from the local MVP visual authority and are not Lucide imports.",
   "licenseSha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
   "referenceOverrides": {
     "source": "docs/mvp-design/prototype.js",
@@ -73,6 +73,34 @@
         "referenceKey": "chevron",
         "originalLucideSha256": "2758143d7b2434e4aa7307dfd34405c87909ff4052f21b5f3f40d45224b4f19b",
         "sha256": "f1985306ef7410f06ff9a77619601fbef0ef492e63aa96e7807a40aad515fd30"
+      }
+    }
+  },
+  "referenceAdditions": {
+    "source": "docs/mvp-design/prototype.js",
+    "sha256": "26575530ec13a749d8ecd679384c5fc4580d44c5bad53f3f753ff3aa00b95d91",
+    "css": "docs/mvp-design/prototype.css",
+    "strokeWidth": 1.6,
+    "icons": {
+      "code.svg": {
+        "referenceKey": "code",
+        "sha256": "cd642229e1a52f87a9acd1cc86d5d1cc95c36971ad0587141817b317f9f64da3"
+      },
+      "table.svg": {
+        "referenceKey": "table",
+        "sha256": "70ef080503d000fb83944fe494d9c210772a1b80ccad7b71acd56c3bede00524"
+      },
+      "folder.svg": {
+        "referenceKey": "folder",
+        "sha256": "0797d6ebee7dd949abaabe95833a98dbc1ae574612bce6d006347a462de41422"
+      },
+      "file.svg": {
+        "referenceKey": "file",
+        "sha256": "6b32f57c3d79c6452438f8de0df24d5f67308a557fc7847100c35ea1cde0e4e8"
+      },
+      "key.svg": {
+        "referenceKey": "key",
+        "sha256": "0de70ce2b1f21cab9f6c1a64b66a49bb422c0f9a0c3c7725149499e947c3f885"
       }
     }
   }

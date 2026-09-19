@@ -204,6 +204,18 @@ SemanticColors resolveColors(ResolvedAppearance appearance, const Accent&) {
         .neutral = mutedText,
         .backdrop = QColor(25, 44, 54, 80),
         .switchTrack = QColor(dark ? "#465359" : "#d8dfe0"),
+        // Preserve prototype syntax hues; adjust only colors below 4.5:1 on
+        // the editor panel (light comments/numbers and dark keywords).
+        .sqlKeyword = QColor(dark ? "#a984c8" : "#885da7"),
+        .sqlString = green,
+        .sqlComment = QColor(dark ? "#9ca6a7" : "#6f7879"),
+        .sqlNumber = QColor(dark ? "#b3834f" : "#936b3f"),
+        .sqliteBadgeBackground = QColor("#f6f0e6"),
+        .sqliteBadgeForeground = QColor("#ad8a51"),
+        .sqliteBadgeBorder = QColor("#eae1d3"),
+        .postgresBadgeBackground = QColor("#edf3f9"),
+        .postgresBadgeForeground = QColor("#6288ab"),
+        .postgresBadgeBorder = QColor("#dce7ef"),
     };
 }
 
@@ -260,6 +272,16 @@ SemanticColors resolveForcedContrastColors(const QPalette& palette) {
         .neutral = text,
         .backdrop = QColor(0, 0, 0, 160),
         .switchTrack = surface,
+        .sqlKeyword = text,
+        .sqlString = text,
+        .sqlComment = text,
+        .sqlNumber = text,
+        .sqliteBadgeBackground = surface,
+        .sqliteBadgeForeground = text,
+        .sqliteBadgeBorder = text,
+        .postgresBadgeBackground = surface,
+        .postgresBadgeForeground = text,
+        .postgresBadgeBorder = text,
     };
 }
 

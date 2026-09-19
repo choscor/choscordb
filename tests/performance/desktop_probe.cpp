@@ -15,6 +15,7 @@
 #include <QJsonObject>
 #include <QKeyEvent>
 #include <QPushButton>
+#include <QScreen>
 #include <QSysInfo>
 #include <QTabWidget>
 #include <QTableView>
@@ -172,6 +173,9 @@ class Probe : public QObject {
         });
         QTimer::singleShot(0, this, [this] { checkReady(); });
         QTimer::singleShot(240000, this, [this] { finish("Measurement deadline exceeded"); });
+        // Keep the benchmark viewport reproducible despite asynchronous layout
+        // restoration and the native window manager's initial placement limits.
+        window_.setFixedSize(1280, 800);
         window_.show();
     }
     ~Probe() override { app_.afterEvent = {}; }
@@ -216,6 +220,12 @@ class Probe : public QObject {
         QTimer::singleShot(1000, this, [this] {
             if (!rss("idle_rss_bytes"))
                 return;
+            // The MVP starts on Start; measure connection/input on the same
+            // visible SQL workspace used by the original probe.
+            if (!window_.showScreen(choscordb::MainWindow::Screen::Sql)) {
+                finish("Could not open SQL workspace for measurement");
+                return;
+            }
             waitingConnection_ = true;
             app_.measurementPhase = "connecting";
             workspace_->connectSqlite(":memory:");
@@ -358,6 +368,29 @@ class Probe : public QObject {
         report_["qt_version"] = qVersion();
         report_["rendering_backend"] = QGuiApplication::platformName();
         report_["build_mode"] = "Release";
+        const auto geometry = [](const QRect& rect) {
+            return QJsonObject{{"x", rect.x()},
+                               {"y", rect.y()},
+                               {"width", rect.width()},
+                               {"height", rect.height()}};
+        };
+        QJsonObject display{{"window_geometry", geometry(window_.geometry())},
+                            {"window_device_pixel_ratio", window_.devicePixelRatioF()}};
+        if (const auto* screen = window_.screen()) {
+            display["screen_geometry"] = geometry(screen->geometry());
+            display["screen_device_pixel_ratio"] = screen->devicePixelRatio();
+            display["screen_logical_dpi"] = screen->logicalDotsPerInch();
+        }
+        if (editor_) {
+            display["editor_viewport_geometry"] = geometry(editor_->viewport()->geometry());
+            display["editor_device_pixel_ratio"] = editor_->viewport()->devicePixelRatioF();
+        }
+        if (grid_) {
+            display["grid_viewport_geometry"] = geometry(grid_->viewport()->geometry());
+            display["grid_device_pixel_ratio"] = grid_->viewport()->devicePixelRatioF();
+        }
+        report_["display"] = display;
+
         report_["outer_notify_max_ms"] = app_.maximumDispatchMs;
         report_["outer_notify_max_event_type"] = app_.maximumDispatchType;
         report_["outer_notify_max_receiver_class"] = app_.maximumDispatchClass;

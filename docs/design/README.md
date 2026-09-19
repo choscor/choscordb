@@ -6,6 +6,9 @@ with production behavior governed by the approved
 The Nova/Neutral captures and approvals below are historical; they do not approve
 the replacement components or screens.
 
+Current production-flow work and validation are recorded in
+[complete MVP flow evidence](mvp-flows-implementation-evidence.md).
+
 ## Component organization
 
 See [Qt and Telegram architecture research](qt-component-architecture.md) for the
@@ -43,10 +46,14 @@ reusable controls, use `cmake --build build/dev --target choscordb-design-system
 
 ## Delivery and evidence
 
-Implementation is at the component foundation stage. See
+The component foundation and [SQL document ownership](mvp-document-ownership-evidence.md)
+are implemented. The user then requested completion of all screens and flows;
+see the [full integration record](mvp-flows-implementation-evidence.md).
+See
 [MVP implementation evidence](mvp-implementation-evidence.md) for the baseline,
-reference manifest, coverage, verification and outstanding review checkpoints.
-Production screen migration follows the user's review of the concrete gallery.
+reference evidence record, coverage, verification and outstanding review checkpoints.
+The central-screen migration is complete; the user accepted checkpoint 2 on
+2026-09-19. See the [completion evidence](mvp-flows-implementation-evidence.md).
 
 The replacement uses green semantic colors, platform UI typography and compact
 panes, with System/Light/Dark and preserved custom SQL editor fonts. Native title
@@ -54,12 +61,11 @@ bars, OS menus and system file pickers remain native. Accessibility, visible
 keyboard focus, Unicode, reduced motion and Qt/OS scaling take precedence over
 literal matching where an actual exception is documented.
 
-Start, SQL workspace, Object explorer and History become central screens with a
+Start, SQL workspace, Object explorer and History are central screens with a
 full-height sidebar. SQL tabs retain one explicitly attributed shared SQL result;
 read-only object data owns separate bounded state. Selecting a sidebar connection
-never silently retargets an existing document. Export and Preferences become
-modal; large-value detail remains nonmodal. These are target behaviors, not claims
-that the current screen migration is complete.
+never silently retargets an existing document. Export and Preferences are
+modal; large-value detail remains nonmodal.
 
 Legacy accent/density settings remain readable without rendering effects. Saved
 profiles, credential references, SQL/recovery buffers, history, shortcuts, editor

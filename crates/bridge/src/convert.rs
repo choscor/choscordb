@@ -313,11 +313,25 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             connection,
             object,
             ddl,
+            request_token,
         } => {
             e.id = pack(connection);
             e.object = object.0;
             e.ddl = ddl;
+            e.request_token = request_token;
             "ddl"
+        }
+        Event::DdlFailed {
+            connection,
+            object,
+            request_token,
+            error: err,
+        } => {
+            e.id = pack(connection);
+            e.object = object.0;
+            e.request_token = request_token;
+            error(&mut e, err);
+            "ddl_failed"
         }
         Event::Connected {
             connection,
@@ -418,6 +432,16 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
                     has_children: o.has_children,
                     has_column: o.column.is_some(),
                     column: o.column.map(column).unwrap_or_default(),
+                    properties: o
+                        .properties
+                        .into_iter()
+                        .map(|p| ffi::MetadataPropertyDto {
+                            name: p.name,
+                            value: p.value,
+                            availability: format!("{:?}", p.availability).to_lowercase(),
+                            reason: p.reason,
+                        })
+                        .collect(),
                 })
                 .collect();
             "metadata"

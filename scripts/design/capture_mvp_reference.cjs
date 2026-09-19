@@ -9,7 +9,11 @@ const { execFileSync } = require('node:child_process');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(__dirname, '../..');
 const source = path.join(root, 'docs/mvp-design');
-const output = path.resolve(process.argv[2] || path.join(root, 'docs/design/mvp-reference'));
+const captureArgs = process.argv.slice(2);
+const clientAligned = captureArgs.includes('--client-aligned');
+const output = path.resolve(captureArgs.find(arg => !arg.startsWith('--')) || path.join(root, 'docs/design/mvp-reference'));
+const clientSizes = [{ width: 1280, height: 900 }, { width: 960, height: 640 }];
+const viewports = clientSizes.map(size => ({ ...size, height: size.height + (clientAligned ? 57 : 0) }));
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const cropSelectors = {
   'workspace-results': { 'button-default': '.editor-bottom [data-action="save-sql"]', 'button-primary': '.editor-bottom [data-action="run"]', 'document-tabs': '.work-tabs' },
@@ -36,10 +40,11 @@ const selectors = ['body', '.shell', '.sidebar', '.main', '.statusbar', '.work-t
     fixture: 'Fresh nonpersistent browser context for each theme/viewport. Only choscor-prototype theme is seeded; all data and rendered controls are the untouched prototype defaults. Query completion uses actual Run input and its simulated timer. No browser or native user profiles are read.',
     settings: { deviceScaleFactor: 1, locale: 'en-US', timezoneId: 'Asia/Ho_Chi_Minh', reducedMotion: 'reduce', osColorSchemeMatchesTheme: true, fixedDate: '2026-09-13T02:42:18.000Z (timers run normally)' },
     comparison: { cssPixelsPerQtLogicalUnit: 1, appContentOrigin: { x: 0, y: 57 }, nativeExceptions: ['Browser prototype menu row y=0..27 corresponds to the native OS menu, excluded.', 'Browser prototype titlebar y=27..57 corresponds to native titlebar, excluded.'], contentRectangle: 'x=0,y=57,width=viewport.width,height=viewport.height-57; includes app-owned statusbar. Native capture must identify the equivalent client rectangle explicitly.' },
+    clientAligned, requestedClientSizes: clientAligned ? clientSizes : null,
     captures: [], crops: [], interactions: [], errors: []
   };
   try {
-    for (const viewport of [{ width: 1280, height: 900 }, { width: 960, height: 640 }]) {
+    for (const viewport of viewports) {
       for (const theme of ['light', 'dark']) {
         const context = await browser.newContext({ viewport, deviceScaleFactor: 1, locale: 'en-US', timezoneId: 'Asia/Ho_Chi_Minh', reducedMotion: 'reduce', colorScheme: theme });
         await context.addInitScript(t => { if (!localStorage.getItem('choscor-prototype')) localStorage.setItem('choscor-prototype', JSON.stringify({ theme: t === 'dark' ? 'Dark' : 'Light' })); }, theme);

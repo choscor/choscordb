@@ -1,6 +1,11 @@
 # MVP UI implementation evidence
 
-Status: checkpoint 1 foundation implemented; user component review remains required. Production screen migration has not started.
+Status: component foundation implemented. The user subsequently requested the
+next implementation step with components already done. The first post-component
+slice is recorded in [SQL document ownership evidence](mvp-document-ownership-evidence.md).
+The checkpoint 1 record below is historical. Subsequent whole-spec work is recorded
+in [complete flow evidence](mvp-flows-implementation-evidence.md); completed-screen
+review was accepted on 2026-09-19. The checkpoint notes below remain historical.
 Contract: [2026-09-13 MVP UI flows](../specs/2026-09-13-mvp-ui-flows.md).
 
 ## Baseline and scope

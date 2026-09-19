@@ -161,6 +161,13 @@ pub enum Event {
         connection: ConnectionId,
         object: ObjectId,
         ddl: String,
+        request_token: u64,
+    },
+    DdlFailed {
+        connection: ConnectionId,
+        object: ObjectId,
+        request_token: u64,
+        error: DriverError,
     },
     Connected {
         connection: ConnectionId,

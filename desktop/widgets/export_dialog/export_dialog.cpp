@@ -7,10 +7,10 @@
 #include "design_system/theme.h"
 #include <QCloseEvent>
 #include <QComboBox>
-#include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QFrame>
 #include <QFutureWatcher>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -38,8 +38,8 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     cancel_->setVariant(design::ButtonVariant::Secondary);
     setObjectName("exportDialog");
     setWindowTitle(tr("Export results"));
-    setModal(false);
-    resize(design::dialogInitialSize(design::DialogSize::Short));
+    setAppModal();
+    resize(design::dialogInitialSize(design::DialogSize::Export));
     format_->setObjectName("exportFormat");
     destination_->setObjectName("exportDestination");
     schema_->setObjectName("exportSchema");
@@ -75,30 +75,64 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     sqlForm->addRow(tr("SQL &dialect:"), dialect_);
     sqlForm->addRow(tr("&Schema:"), schema_);
     sqlForm->addRow(tr("&Table:"), table_);
-    auto* buttons = new QDialogButtonBox(this);
-    auto* close = new design::Button(tr("Close"), this);
+    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
+    auto* layout = new QVBoxLayout(this);
+    auto* header = new QWidget(this);
+    header->setFixedHeight(metrics.modalHeaderHeight);
+    auto* headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(metrics.modalContentInset, 0, metrics.modalContentInset, 0);
+    auto* heading = new design::Text(tr("Export results"), header);
+    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    headerLayout->addWidget(heading);
+    headerLayout->addStretch();
+    auto* dismiss = new design::Button({}, header);
+    dismiss->setObjectName("exportDismiss");
+    dismiss->setAccessibleName(tr("Close export"));
+    dismiss->setVariant(design::ButtonVariant::Ghost);
+    dismiss->setButtonSize(design::ButtonSize::IconSmall);
+    dismiss->setDesignIcon(design::Icon::Close);
+    headerLayout->addWidget(dismiss);
+    connect(dismiss, &QPushButton::clicked, this, &ExportDialog::reject);
+    layout->addWidget(header);
+    auto* separator = new QFrame(this);
+    separator->setFrameShape(QFrame::HLine);
+    layout->addWidget(separator);
+    auto* body = new QWidget(this);
+    body->setProperty("designSurface", "panel");
+    body->setAttribute(Qt::WA_StyledBackground);
+    auto* bodyLayout = new QVBoxLayout(body);
+    bodyLayout->setContentsMargins(metrics.modalContentInset, metrics.modalFooterInset,
+                                   metrics.modalContentInset, metrics.modalFooterInset);
+    bodyLayout->addWidget(createDescription(
+        tr("Export the current result without loading the complete result into memory."), body));
+    bodyLayout->addLayout(form);
+    bodyLayout->addWidget(sqlFields_);
+    bodyLayout->addWidget(status_);
+    bodyLayout->addStretch();
+    layout->addWidget(body, 1);
+    auto* footer = new QWidget(this);
+    footer->setProperty("designSurface", "muted");
+    footer->setAttribute(Qt::WA_StyledBackground);
+    auto* buttons = new QHBoxLayout(footer);
+    buttons->setContentsMargins(metrics.modalFooterInset, metrics.modalFooterVerticalInset,
+                                metrics.modalFooterInset, metrics.modalFooterVerticalInset);
+    buttons->addStretch();
+    auto* close = new design::Button(tr("Close"), footer);
     close->setObjectName("exportClose");
     close->setVariant(design::ButtonVariant::Outline);
-    buttons->addButton(close, QDialogButtonBox::RejectRole);
-    buttons->addButton(start_, QDialogButtonBox::ActionRole);
-    buttons->addButton(cancel_, QDialogButtonBox::ActionRole);
-    auto* layout = new QVBoxLayout(this);
-    auto* heading = new design::Text(tr("Export results"), this);
-    heading->setTypographyRole(design::TypographyRole::Heading);
-    layout->addWidget(heading);
-    layout->addWidget(createDescription(
-        tr("Export the current result without loading the complete result into memory."), this));
-    layout->addLayout(form);
-    layout->addWidget(sqlFields_);
-    layout->addWidget(status_);
-    layout->addStretch();
-    layout->addWidget(buttons);
+    close->setButtonSize(design::ButtonSize::Small);
+    start_->setButtonSize(design::ButtonSize::Small);
+    cancel_->setButtonSize(design::ButtonSize::Small);
+    buttons->addWidget(close);
+    buttons->addWidget(cancel_);
+    buttons->addWidget(start_);
+    layout->addWidget(footer);
     connect(format_, &QComboBox::currentIndexChanged, this, &ExportDialog::updateActions);
     connect(destination_, &QLineEdit::textChanged, this, &ExportDialog::updateActions);
     connect(table_, &QLineEdit::textChanged, this, &ExportDialog::updateActions);
     connect(start_, &QPushButton::clicked, this, &ExportDialog::start);
     connect(cancel_, &QPushButton::clicked, this, &ExportDialog::cancel);
-    connect(buttons, &QDialogButtonBox::rejected, this, &ExportDialog::reject);
+    connect(close, &QPushButton::clicked, this, &ExportDialog::reject);
     connect(browse_, &QPushButton::clicked, this, [this] {
         const auto path =
             QFileDialog::getSaveFileName(this, tr("Export destination"), destination_->text(), {},
@@ -126,22 +160,23 @@ void ExportDialog::setQuery(quint64 query) {
         return;
     clearQuery();
     query_ = query;
-    status_->setText(tr("Choose a destination and export format."));
+    if (!isRunning())
+        status_->setText(tr("Choose a destination and export format."));
     updateActions();
 }
 void ExportDialog::clearQuery() {
-    const bool running = isRunning();
-    ++submissionToken_;
-    if (export_ && adapter_)
-        adapter_->cancelExport(*export_);
     query_.reset();
-    export_.reset();
-    submitting_ = cancelling_ = closeAfter_ = false;
+    if (isRunning()) {
+        // Invalidate new submissions immediately, but retain the accepted
+        // export identity until the engine acknowledges destination cleanup.
+        closeAfter_ = true;
+        cancel();
+        return;
+    }
+    ++submissionToken_;
     status_->clear();
     hide();
     updateActions();
-    if (running)
-        emit exportRunningChanged(false);
 }
 void ExportDialog::updateActions() {
     const bool sql = format_->currentData().toString() == "sql";
@@ -219,6 +254,7 @@ void ExportDialog::startExportTo(const QString& path, const QString& format,
                     return;
                 }
                 export_ = started;
+                exportQuery_ = started ? std::optional<quint64>(query) : std::nullopt;
                 submitting_ = false;
                 if (!export_) {
                     const auto message = status_->text() == tr("Starting export…")
@@ -246,7 +282,7 @@ void ExportDialog::cancel() {
     adapter_->cancelExport(*export_);
 }
 void ExportDialog::handleEvent(const BridgeEvent& value) {
-    if (!export_ || *export_ != value.id || !query_ || *query_ != value.query_id)
+    if (!export_ || *export_ != value.id || !exportQuery_ || *exportQuery_ != value.query_id)
         return;
     const auto kind = text(value.kind);
     if (kind == "export_progress") {
@@ -265,6 +301,7 @@ void ExportDialog::handleEvent(const BridgeEvent& value) {
 }
 void ExportDialog::finish(const QString& message, bool failed) {
     export_.reset();
+    exportQuery_.reset();
     submitting_ = false;
     cancelling_ = false;
     status_->setText(message);
@@ -275,6 +312,11 @@ void ExportDialog::finish(const QString& message, bool failed) {
         hide();
     }
     emit exportRunningChanged(false);
+}
+void ExportDialog::showEvent(QShowEvent* event) {
+    DialogShell::showEvent(event);
+    layout()->setContentsMargins(0, 0, 0, 0);
+    layout()->setSpacing(0);
 }
 void ExportDialog::closeEvent(QCloseEvent* event) {
     if (isRunning()) {

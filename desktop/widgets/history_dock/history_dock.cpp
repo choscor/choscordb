@@ -5,16 +5,24 @@
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "models/history_model.h"
+#include <QAction>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
+#include <QMenu>
 #include <QMessageBox>
+#include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSplitter>
+#include <QStyledItemDelegate>
 #include <QTableView>
+#include <QToolButton>
 #include <QVBoxLayout>
+#include <QWidgetAction>
 #include <atomic>
 #include <limits>
 namespace choscordb {
@@ -24,17 +32,90 @@ quint64 token() {
     return next.fetch_add(1);
 }
 constexpr quint32 pageSize = 100;
+class HistoryRowDelegate final : public QStyledItemDelegate {
+  public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+    void paint(QPainter* painter, const QStyleOptionViewItem& option,
+               const QModelIndex& index) const override {
+        if (!option.widget)
+            return;
+        const auto colors = design::resolvedThemeForWidget(*option.widget).colors;
+        const auto bounds = option.rect;
+        painter->save();
+        painter->fillRect(bounds, option.state & QStyle::State_Selected ? colors.subtleAccent
+                                                                        : colors.card);
+        painter->setPen(colors.border);
+        painter->drawLine(bounds.bottomLeft(), bounds.bottomRight());
+        auto sqlFont = design::resolveTypography(design::TypographyRole::Monospace);
+        sqlFont.setPixelSize(12);
+        painter->setFont(sqlFont);
+        painter->setPen(colors.text);
+        const int width = qMax(0, bounds.width() - 28);
+        painter->drawText(
+            bounds.adjusted(14, 8, -14, -33), Qt::AlignLeft | Qt::AlignVCenter,
+            QFontMetrics(sqlFont).elidedText(index.data().toString(), Qt::ElideRight, width));
+        auto small = design::resolveTypography(design::TypographyRole::Small);
+        small.setPixelSize(10);
+        painter->setFont(small);
+        const auto status = index.siblingAtColumn(4).data().toString();
+        const int badgeWidth = QFontMetrics(small).horizontalAdvance(status) + 14;
+        const QRect badge(bounds.left() + 14, bounds.top() + 34, badgeWidth, 20);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(colors.muted);
+        painter->drawRoundedRect(badge, 4, 4);
+        painter->setPen(status == tr("Failed") ? colors.danger : colors.action);
+        painter->drawText(badge, Qt::AlignCenter, status);
+        const auto detail = QString("%1 · %2 · %3 · %4")
+                                .arg(index.siblingAtColumn(0).data().toString(),
+                                     index.siblingAtColumn(1).data().toString(),
+                                     index.siblingAtColumn(3).data().toString(),
+                                     tr("%1 rows").arg(index.siblingAtColumn(5).data().toString()));
+        const QRect detailRect(badge.right() + 10, badge.top(),
+                               qMax(0, bounds.right() - badge.right() - 24), badge.height());
+        painter->setPen(colors.mutedText);
+        painter->drawText(
+            detailRect, Qt::AlignLeft | Qt::AlignVCenter,
+            QFontMetrics(small).elidedText(detail, Qt::ElideRight, detailRect.width()));
+        if (option.state & QStyle::State_HasFocus) {
+            painter->setPen(QPen(colors.focus, 2));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawRect(bounds.adjusted(1, 1, -1, -1));
+        }
+        painter->restore();
+    }
+};
+
 } // namespace
 HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
-    : QDockWidget(tr("Query history"), parent), adapter_(adapter) {
+    : QWidget(parent), adapter_(adapter) {
     setObjectName("historyDock");
     auto* body = new QWidget(this);
     const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* layout = new QVBoxLayout(body);
-    layout->setContentsMargins(metrics.spacingMedium, metrics.spacingMedium, metrics.spacingMedium,
-                               metrics.spacingMedium);
+    layout->setContentsMargins(0, metrics.spacingMedium, 0, 0);
     layout->setSpacing(metrics.spacingMedium);
-    auto* toolbar = new QHBoxLayout;
+    auto* filters = new QHBoxLayout;
+    filters->setContentsMargins(design::spacing(design::Spacing::Three), 0,
+                                design::spacing(design::Spacing::Three), 0);
+    search_ = new QLineEdit(body);
+    search_->setObjectName("historySearch");
+    search_->setPlaceholderText(tr("Filter this page"));
+    search_->setAccessibleName(tr("Filter this history page"));
+    search_->setToolTip(
+        tr("Search visible SQL excerpts, connection names, and statuses on this page."));
+    search_->setMaxLength(256);
+    filters->addWidget(search_, 1);
+    statusFilter_ = new QComboBox(body);
+    statusFilter_->setObjectName("historyStatusFilter");
+    statusFilter_->setAccessibleName(tr("History status filter"));
+    statusFilter_->addItem(tr("All statuses"), QString{});
+    statusFilter_->addItem(tr("Completed"), "completed");
+    statusFilter_->addItem(tr("Failed"), "failed");
+    statusFilter_->addItem(tr("Cancelled"), "cancelled");
+    statusFilter_->addItem(tr("Disconnected"), "disconnected");
+    filters->addWidget(statusFilter_);
+    layout->addLayout(filters);
+
     record_ = new QCheckBox(tr("Record history"), body);
     record_->setObjectName("recordHistory");
     clear_ = new design::Button(tr("Clear history…"), body);
@@ -46,11 +127,6 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     refresh_->setDesignIcon(design::Icon::Refresh);
     clear_->setButtonSize(design::ButtonSize::Small);
     refresh_->setButtonSize(design::ButtonSize::Small);
-    toolbar->addWidget(record_);
-    toolbar->addStretch();
-    toolbar->addWidget(clear_);
-    toolbar->addWidget(refresh_);
-    layout->addLayout(toolbar);
     status_ = new design::Text({}, body);
     status_->setObjectName("historyStatus");
     status_->setTextFormat(Qt::PlainText);
@@ -59,23 +135,20 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     model_ = new HistoryModel(this);
     table_ = new QTableView(body);
     table_->setObjectName("historyTable");
-    table_->horizontalHeader()->setMinimumSectionSize(
-        table_->fontMetrics().horizontalAdvance(tr("Status")) + metrics.spacingLarge);
     table_->setModel(model_);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    table_->setItemDelegate(new HistoryRowDelegate(table_));
+    table_->setFrameShape(QFrame::NoFrame);
+    table_->setShowGrid(false);
+    table_->setWordWrap(false);
+    table_->horizontalHeader()->hide();
+    table_->verticalHeader()->hide();
+    for (int column = 0; column < model_->columnCount(); ++column)
+        table_->setColumnHidden(column, column != 2);
     table_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    const auto columnWidth = [table = table_, metrics](const QString& sample) {
-        return table->fontMetrics().horizontalAdvance(sample) + metrics.spacingLarge;
-    };
-    table_->setColumnWidth(0, columnWidth(QStringLiteral("0000-00-00T00:00:00")));
-    table_->setColumnWidth(1, columnWidth(tr("Connection profile")));
-    table_->setColumnWidth(3, columnWidth(QStringLiteral("000000 ms")));
-    table_->setColumnWidth(4, columnWidth(tr("Disconnected")));
-    table_->setColumnWidth(5, columnWidth(QStringLiteral("000000000")));
-    table_->verticalHeader()->setDefaultSectionSize(metrics.dataRowHeight);
+    table_->verticalHeader()->setDefaultSectionSize(62);
     auto* content = new QSplitter(Qt::Vertical, body);
     content->setObjectName("historyContentSplitter");
     content->addWidget(table_);
@@ -84,6 +157,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     previewLayout->setContentsMargins(0, 0, 0, 0);
     previewLayout->setSpacing(metrics.spacingMedium);
     content->addWidget(previewBody);
+    previewBody->hide();
     layout->addWidget(content, 1);
     previewNotice_ = new design::Text({}, body);
     previewNotice_->setObjectName("historyPreviewNotice");
@@ -110,7 +184,31 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     preview_->setObjectName("historyPreview");
     preview_->setReadOnly(true);
     previewLayout->addWidget(preview_, 1);
-    auto* footer = new QHBoxLayout;
+    auto* footerBody = new QWidget(body);
+    footerBody->setObjectName("historyFooter");
+    footerBody->setProperty("designSurface", "subtle");
+    footerBody->setAttribute(Qt::WA_StyledBackground);
+    auto* footer = new QHBoxLayout(footerBody);
+    footer->setContentsMargins(
+        design::spacing(design::Spacing::Three), design::spacing(design::Spacing::OneHalf),
+        design::spacing(design::Spacing::Three), design::spacing(design::Spacing::OneHalf));
+    auto* manage = new QToolButton(footerBody);
+    manage->setObjectName("historyManage");
+    manage->setText(tr("Manage history"));
+    manage->setPopupMode(QToolButton::InstantPopup);
+    auto* manageMenu = new QMenu(manage);
+    auto* recordAction = new QWidgetAction(manageMenu);
+    recordAction->setDefaultWidget(record_);
+    manageMenu->addAction(recordAction);
+    auto* refreshAction = new QWidgetAction(manageMenu);
+    refreshAction->setDefaultWidget(refresh_);
+    manageMenu->addAction(refreshAction);
+    auto* previewAction = manageMenu->addAction(tr("View full query"));
+    previewAction->setObjectName("historyShowPreview");
+    previewAction->setCheckable(true);
+    connect(previewAction, &QAction::toggled, previewBody, &QWidget::setVisible);
+    manage->setMenu(manageMenu);
+
     previous_ = new design::Button(tr("Previous"), body);
     next_ = new design::Button(tr("Next"), body);
     next_->setObjectName("historyNext");
@@ -123,8 +221,12 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     next_->setVariant(design::ButtonVariant::Outline);
     previous_->setDesignIcon(design::Icon::ChevronLeft);
     next_->setDesignIcon(design::Icon::ChevronRight);
-    previous_->setButtonSize(design::ButtonSize::Small);
-    next_->setButtonSize(design::ButtonSize::Small);
+    previous_->setButtonSize(design::ButtonSize::IconSmall);
+    previous_->setText({});
+    previous_->setAccessibleName(tr("Previous history page"));
+    next_->setButtonSize(design::ButtonSize::IconSmall);
+    next_->setText({});
+    next_->setAccessibleName(tr("Next history page"));
     open_->setButtonSize(design::ButtonSize::Small);
     auto* paging = new design::ButtonGroup(Qt::Horizontal, body);
     paging->setObjectName("historyPaging");
@@ -133,9 +235,17 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     footer->addWidget(paging);
     footer->addWidget(page_);
     footer->addStretch();
+    footer->addWidget(manage);
+    footer->addWidget(clear_);
     footer->addWidget(open_);
-    layout->addLayout(footer);
-    setWidget(body);
+    layout->addWidget(footerBody);
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->addWidget(body);
+    connect(search_, &QLineEdit::textChanged, this, &HistoryDock::applyFilter);
+    connect(statusFilter_, &QComboBox::currentIndexChanged, this, &HistoryDock::applyFilter);
+    connect(model_, &QAbstractItemModel::modelReset, this, &HistoryDock::applyFilter);
+    connect(model_, &QAbstractItemModel::dataChanged, this, &HistoryDock::applyFilter);
     connect(table_->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             &HistoryDock::selectEntry);
     connect(model_, &QAbstractItemModel::modelReset, this, &HistoryDock::selectEntry);
@@ -258,6 +368,15 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
             });
     refresh();
 }
+void HistoryDock::applyConfirmedPolicy(const HistoryPolicy& policy) {
+    policy_ = policy;
+    havePolicy_ = true;
+    policyToken_ = 0;
+    const QSignalBlocker blocker(record_);
+    record_->setChecked(policy_.enabled);
+    updateControls();
+    refresh();
+}
 void HistoryDock::refresh() {
     if (!adapter_)
         return;
@@ -302,11 +421,32 @@ void HistoryDock::renderPreview() {
     previewNext_->setEnabled(entry && previewLength_ > 0 &&
                              previewOffset_ + previewLength_ < entry->sql.size());
 }
+void HistoryDock::applyFilter() {
+    const auto needle = search_->text().trimmed();
+    const auto status = statusFilter_->currentData().toString();
+    for (int row = 0; row < model_->rowCount(); ++row) {
+        QStringList visible;
+        for (int column = 0; column < model_->columnCount(); ++column)
+            visible.append(model_->index(row, column).data().toString());
+        const auto* entry = model_->entry(row);
+        const bool matches = visible.join(' ').contains(needle, Qt::CaseInsensitive) &&
+                             (status.isEmpty() || (entry && entry->status == status));
+        table_->setRowHidden(row, !matches);
+    }
+    if (table_->currentIndex().isValid() && table_->isRowHidden(table_->currentIndex().row())) {
+        table_->clearSelection();
+        table_->setCurrentIndex({});
+    }
+    selectEntry();
+}
 void HistoryDock::openSelection() {
+    if (table_->isRowHidden(table_->currentIndex().row()))
+        return;
     if (const auto* entry = model_->entry(table_->currentIndex().row()))
         emit openRequested(*entry);
 }
 void HistoryDock::updateControls() {
+    status_->setVisible(!status_->text().isEmpty());
     const bool idle = adapter_ && !listToken_ && !clearToken_;
     record_->setEnabled(adapter_ && havePolicy_ && !policyToken_ && !clearToken_);
     refresh_->setEnabled(idle && !policyToken_);
@@ -314,7 +454,8 @@ void HistoryDock::updateControls() {
     previous_->setEnabled(idle && !visitedOffsets_.isEmpty());
     next_->setEnabled(idle && model_->rowCount() > 0 &&
                       offset_ <= std::numeric_limits<quint32>::max() - quint32(model_->rowCount()));
-    open_->setEnabled(model_->entry(table_->currentIndex().row()) != nullptr);
+    open_->setEnabled(model_->entry(table_->currentIndex().row()) != nullptr &&
+                      !table_->isRowHidden(table_->currentIndex().row()));
     if (model_->rowCount() > 0)
         page_->setText(
             tr("Rows %1–%2").arg(quint64(offset_) + 1).arg(quint64(offset_) + model_->rowCount()));

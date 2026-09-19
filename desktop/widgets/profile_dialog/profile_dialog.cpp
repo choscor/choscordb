@@ -4,10 +4,12 @@
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
+#include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -17,51 +19,89 @@
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QTimer>
 #include <QUuid>
 #include <QVBoxLayout>
 namespace choscordb {
 ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter) {
     setObjectName("profileDialog");
-    setWindowTitle(tr("Connection profiles"));
-    setModal(false);
+    setWindowTitle(tr("New connection"));
+    setAppModal();
     resize(design::dialogInitialSize(design::DialogSize::Profiles));
     const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* outer = new QVBoxLayout(this);
-    outer->setSpacing(metrics.spacingLarge);
-    auto* heading = new design::Text(tr("Connection profiles"), this);
-    heading->setTypographyRole(design::TypographyRole::Heading);
-    outer->addWidget(heading);
-    outer->addWidget(createDescription(
-        tr("Save reusable SQLite or PostgreSQL connection details. Passwords use the operating "
-           "system credential store."),
-        this));
-    auto* columns = new QHBoxLayout;
-    outer->addLayout(columns);
-    auto* savedProfiles = new QWidget(this);
-    auto* savedLayout = new QVBoxLayout(savedProfiles);
-    savedLayout->setContentsMargins(0, 0, 0, 0);
-    savedLayout->setSpacing(metrics.spacingMedium);
-    auto* savedHeading = new design::Text(tr("Saved profiles"), savedProfiles);
-    savedHeading->setWeight(QFont::Medium);
-    savedLayout->addWidget(savedHeading);
-    list_ = new QListWidget(savedProfiles);
+    auto* header = new QWidget(this);
+    header->setFixedHeight(metrics.connectionHeaderHeight);
+    auto* headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(metrics.connectionContentInset, 0,
+                                     metrics.connectionContentInset, 0);
+    auto* heading = new design::Text(tr("New connection"), header);
+    heading->setObjectName("profileHeading");
+    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    headerLayout->addWidget(heading);
+    headerLayout->addStretch();
+    auto* dismiss = new design::Button({}, header);
+    dismiss->setObjectName("profileDismiss");
+    dismiss->setAccessibleName(tr("Close connection dialog"));
+    dismiss->setVariant(design::ButtonVariant::Ghost);
+    dismiss->setButtonSize(design::ButtonSize::IconSmall);
+    dismiss->setDesignIcon(design::Icon::Close);
+    connect(dismiss, &QPushButton::clicked, this, &QDialog::close);
+    headerLayout->addWidget(dismiss);
+    outer->addWidget(header);
+    auto* separator = new QFrame(this);
+    separator->setFrameShape(QFrame::HLine);
+    outer->addWidget(separator);
+    // Saved profiles are managed by the sidebar. Retain the internal selection
+    // model for the asynchronous profile-management service contract.
+    list_ = new QListWidget(this);
     list_->setObjectName("profileList");
-    list_->setAccessibleName(tr("Saved connection profiles"));
-    savedLayout->addWidget(list_, 1);
-    auto* savedActions = new QHBoxLayout;
-    savedLayout->addLayout(savedActions);
-    columns->addWidget(savedProfiles, 1);
+    list_->hide();
     auto* formScroll = new QScrollArea(this);
     formScroll->setObjectName("profileFormScroll");
     formScroll->setFrameShape(QFrame::NoFrame);
     formScroll->setWidgetResizable(true);
+    formScroll->viewport()->setBackgroundRole(QPalette::Base);
+    formScroll->viewport()->setProperty("designSurface", "panel");
     form_ = new QWidget(formScroll);
+    // Scroll-area content auto-fills its background. Use the themed panel
+    // rather than Window/canvas so open dialogs also follow live previews.
+    form_->setBackgroundRole(QPalette::Base);
+    form_->setProperty("designSurface", "panel");
+    form_->setAttribute(Qt::WA_StyledBackground);
     formScroll->setWidget(form_);
-    columns->addWidget(formScroll, 2);
+    outer->addWidget(formScroll, 1);
     auto* formLayout = new QFormLayout(form_);
-    formLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
-    formLayout->setSpacing(metrics.spacingMedium);
+    formLayout->setContentsMargins(metrics.connectionContentInset, metrics.spacingMedium,
+                                   metrics.connectionContentInset, metrics.spacingLarge);
+    formLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
+    formLayout->addRow(
+        createDescription(tr("Connect to a server or open a local database file."), form_));
+    driver_ = new QComboBox(form_);
+    driver_->setObjectName("profileDriver");
+    driver_->addItem(tr("SQLite"), "sqlite");
+    driver_->addItem(tr("PostgreSQL"), "postgres");
+    driver_->hide();
+    auto* drivers = new QHBoxLayout;
+    auto* driverGroup = new QButtonGroup(this);
+    const auto choice = [&](const QString& title, const char* object, int index) {
+        auto* button = new design::Button(title, form_);
+        button->setObjectName(object);
+        button->setVariant(design::ButtonVariant::Outline);
+        button->setButtonContext(design::ButtonContext::Choice);
+        button->setDesignIcon(design::Icon::Database);
+        button->setCheckable(true);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        driverGroup->addButton(button, index);
+        drivers->addWidget(button);
+        connect(button, &QPushButton::clicked, this,
+                [this, index] { driver_->setCurrentIndex(index); });
+        return button;
+    };
+    postgresChoice_ = choice(tr("PostgreSQL"), "profileDriverPostgres", 1);
+    sqliteChoice_ = choice(tr("SQLite"), "profileDriverSqlite", 0);
+    formLayout->addRow(drivers);
     auto line = [this](const char* object) {
         auto* edit = new QLineEdit(form_);
         edit->setObjectName(object);
@@ -72,15 +112,12 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         return edit;
     };
     name_ = line("profileName");
-    formLayout->addRow(tr("&Name"), name_);
-    driver_ = new QComboBox(form_);
-    driver_->setObjectName("profileDriver");
-    driver_->addItem(tr("SQLite"), "sqlite");
-    driver_->addItem(tr("PostgreSQL"), "postgres");
-    formLayout->addRow(tr("&Driver"), driver_);
+    name_->setPlaceholderText(tr("Connection name"));
+    formLayout->addRow(tr("Connection &name"), name_);
     sqliteFields_ = new QWidget(form_);
     auto* sqlite = new QFormLayout(sqliteFields_);
     sqlite->setContentsMargins(0, 0, 0, 0);
+    sqlite->setRowWrapPolicy(QFormLayout::WrapAllRows);
     path_ = line("profilePath");
     path_->setAccessibleName(tr("Database path"));
     path_->setPlaceholderText(tr("Database path or :memory:"));
@@ -89,26 +126,39 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     auto* browse = new design::Button(tr("Browse…"), form_);
     browse->setVariant(design::ButtonVariant::Outline);
     pathRow->addWidget(browse);
-    auto* pathLabel = new QLabel(tr("Database &path"), sqliteFields_);
+    auto* pathLabel = new QLabel(tr("Database &file"), sqliteFields_);
     pathLabel->setBuddy(path_);
     sqlite->addRow(pathLabel, pathRow);
-    readOnly_ = new QCheckBox(tr("Read only"), form_);
+    readOnly_ = new QCheckBox(tr("Open read-only"), form_);
+    readOnly_->setProperty("designRole", "switch");
     readOnly_->setObjectName("profileReadOnly");
     sqlite->addRow(readOnly_);
+    sqlite->addRow(createDescription(tr("Browse safely without modifying the file."), form_));
     formLayout->addRow(sqliteFields_);
     postgresFields_ = new QWidget(form_);
     auto* pg = new QFormLayout(postgresFields_);
     pg->setContentsMargins(0, 0, 0, 0);
+    pg->setRowWrapPolicy(QFormLayout::WrapAllRows);
     host_ = line("profileHost");
     database_ = line("profileDatabase");
     user_ = line("profileUser");
     port_ = new QSpinBox(form_);
     port_->setObjectName("profilePort");
     port_->setRange(1, 65535);
-    pg->addRow(tr("&Host"), host_);
-    pg->addRow(tr("P&ort"), port_);
-    pg->addRow(tr("Data&base"), database_);
-    pg->addRow(tr("&User"), user_);
+    auto* serverFields = new QGridLayout;
+    const auto serverField = [&](const QString& title, QWidget* widget, int row, int column) {
+        auto* field = new QVBoxLayout;
+        auto* label = new QLabel(title, postgresFields_);
+        label->setBuddy(widget);
+        field->addWidget(label);
+        field->addWidget(widget);
+        serverFields->addLayout(field, row, column);
+    };
+    serverField(tr("&Host"), host_, 0, 0);
+    serverField(tr("P&ort"), port_, 0, 1);
+    serverField(tr("Data&base"), database_, 1, 0);
+    serverField(tr("&Username"), user_, 1, 1);
+    pg->addRow(serverFields);
     password_ = line("profilePassword");
     password_->setEchoMode(QLineEdit::Password);
     password_->setMaxLength(16384);
@@ -126,46 +176,71 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     tls_->setObjectName("profileTls");
     tls_->addItem(tr("Verify server identity"), "verify_full");
     tls_->addItem(tr("Disable TLS"), "disable");
-    pg->addRow(tr("&TLS"), tls_);
+    auto* security = new QWidget(postgresFields_);
+    auto* securityLayout = new QFormLayout(security);
+    securityLayout->setContentsMargins(0, 0, 0, 0);
+    securityLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
+    securityLayout->addRow(tr("&TLS"), tls_);
     rootCertificate_ = line("profileRootCertificate");
-    pg->addRow(tr("Root &certificate"), rootCertificate_);
+    securityLayout->addRow(tr("Root &certificate"), rootCertificate_);
+    auto* securityToggle = new design::Button(tr("TLS && security"), postgresFields_);
+    securityToggle->setObjectName("profileSecurity");
+    securityToggle->setVariant(design::ButtonVariant::Ghost);
+    securityToggle->setCheckable(true);
+    securityToggle->setDesignIcon(design::Icon::ChevronRight);
+    connect(securityToggle, &QPushButton::toggled, security, &QWidget::setVisible);
+    connect(securityToggle, &QPushButton::toggled, this, [securityToggle](bool expanded) {
+        securityToggle->setDesignIcon(expanded ? design::Icon::ChevronDown
+                                               : design::Icon::ChevronRight);
+    });
+    pg->addRow(securityToggle);
+    pg->addRow(security);
+    security->hide();
     formLayout->addRow(postgresFields_);
     status_ = createInlineStatus(this);
     status_->setObjectName("profileStatus");
     status_->setWordWrap(true);
     status_->setTextFormat(Qt::PlainText);
     status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
-    outer->addWidget(status_);
+    status_->hide();
+    formLayout->addRow(status_);
+    auto* footer = new QWidget(this);
+    auto* footerLayout = new QVBoxLayout(footer);
+    footerLayout->setContentsMargins(metrics.connectionContentInset, metrics.spacingMedium,
+                                     metrics.connectionContentInset, metrics.spacingLarge);
+    auto* footerSeparator = new QFrame(footer);
+    footerSeparator->setFrameShape(QFrame::HLine);
+    footerLayout->addWidget(footerSeparator);
     auto* buttons = new QHBoxLayout;
-    outer->addLayout(buttons);
-    auto button = [this, buttons](const QString& title, const char* object) {
+    footerLayout->addLayout(buttons);
+    outer->addWidget(footer);
+    auto button = [this](const QString& title, const char* object) {
         auto* result = new design::Button(title, this);
         result->setObjectName(object);
         result->setVariant(design::ButtonVariant::Outline);
-        buttons->addWidget(result);
         actions_.append(result);
         return result;
     };
     auto* create = button(tr("New"), "profileNew");
-    auto* save = button(tr("Save"), "profileSave");
+    auto* save = button(tr("Save profile"), "profileSave");
     auto* duplicate = button(tr("Duplicate"), "profileDuplicate");
     auto* remove = button(tr("Delete"), "profileDelete");
-    auto* test = button(tr("Test"), "profileTest");
+    auto* test = button(tr("Test connection"), "profileTest");
     auto* open = button(tr("Connect"), "profileConnect");
-    buttons->removeWidget(create);
-    buttons->removeWidget(duplicate);
-    savedActions->addWidget(create);
-    savedActions->addWidget(duplicate);
-    create->setDesignIcon(design::Icon::Add);
-    duplicate->setDesignIcon(design::Icon::Copy);
-    save->setVariant(design::ButtonVariant::Secondary);
+    auto* saveConnect = button(tr("Save && connect"), "profileSaveConnect");
+    for (auto* action : {create, duplicate, remove, open})
+        action->hide();
+    save->setVariant(design::ButtonVariant::Outline);
     remove->setVariant(design::ButtonVariant::Destructive);
-    open->setVariant(design::ButtonVariant::Default);
-    open->setDesignIcon(design::Icon::Database);
+    saveConnect->setVariant(design::ButtonVariant::Default);
+    buttons->addWidget(test);
     buttons->addStretch();
-    auto* close = new design::Button(tr("Close"), this);
-    close->setVariant(design::ButtonVariant::Ghost);
+    auto* close = new design::Button(tr("Cancel"), footer);
+    close->setObjectName("profileCancel");
+    close->setVariant(design::ButtonVariant::Outline);
     buttons->addWidget(close);
+    buttons->addWidget(save);
+    buttons->addWidget(saveConnect);
     connect(close, &QPushButton::clicked, this, &QDialog::close);
     connect(browse, &QPushButton::clicked, this, [this] {
         const auto revision = revision_;
@@ -202,46 +277,16 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
             ++revision_;
         }
     });
-    connect(create, &QPushButton::clicked, this, [this] {
-        if (discardChanges()) {
-            list_->setCurrentRow(-1);
-            setDraft({});
-        }
-    });
+    connect(create, &QPushButton::clicked, this, &ProfileDialog::newProfile);
     connect(save, &QPushButton::clicked, this, [this] { saveDraft(draft()); });
-    connect(test, &QPushButton::clicked, this, [this] { testDraft(draft()); });
-    connect(open, &QPushButton::clicked, this, [this] {
+    connect(saveConnect, &QPushButton::clicked, this, [this] {
         if (busy_ || !adapter_)
             return;
-        auto value = draft();
-        if (value.name.trimmed().isEmpty()) {
-            setBusy(false, tr("Enter a profile name."));
-            name_->setFocus();
-            return;
-        }
-        if (value.id.isEmpty())
-            value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-        ++token_;
-        setBusy(true, tr("Connecting…"));
-        connectionSubmissionError_.clear();
-        connecting_ = true;
-        const bool hasPassword =
-            value.driver == "postgres" && (password_->isModified() || !password_->text().isEmpty());
-        const auto id = adapter_->connectProfileWithPassword(
-            value, hasPassword ? password_->text() : QString(), hasPassword);
-        connecting_ = false;
-        if (!id) {
-            setBusy(false, connectionSubmissionError_.isEmpty()
-                               ? tr("Connection could not be submitted.")
-                               : connectionSubmissionError_);
-            return;
-        }
-        pendingConnection_ = id;
-        bool savedProfile = false;
-        for (const auto& profile : profiles_)
-            savedProfile = savedProfile || profile.id == value.id;
-        emit connectionSubmitted(value, *id, savedProfile);
+        connectAfterSave_ = true;
+        saveDraft(draft());
     });
+    connect(test, &QPushButton::clicked, this, [this] { testDraft(draft()); });
+    connect(open, &QPushButton::clicked, this, [this] { connectDraft(false); });
     connect(duplicate, &QPushButton::clicked, this, [this] {
         if (busy_ || !adapter_ || current_.id.isEmpty())
             return;
@@ -294,6 +339,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                 for (const auto& profile : profiles_)
                     list_->addItem(profile.name);
                 setBusy(false, refreshNotice_);
+                if (isVisible() && focusWidget() == findChild<QPushButton*>("profileDismiss"))
+                    name_->setFocus(Qt::OtherFocusReason);
                 refreshNotice_.clear();
                 const auto sessionPassword =
                     preservePasswordOnRefresh_ ? password_->text() : QString();
@@ -308,6 +355,11 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                     password_->setModified(passwordModified);
                     preservePasswordOnRefresh_ = false;
                 }
+                if (connectAfterSave_) {
+                    connectAfterSave_ = false;
+                    connectDraft(true);
+                }
+                dispatchProfileAction();
             });
     connect(adapter, &EngineAdapter::profileSaved, this,
             [this](quint64 token, const SavedProfile& profile, const QString& warning) {
@@ -342,6 +394,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
             if (token == token_) {
                 savingDraft_ = false;
                 preservePasswordOnRefresh_ = false;
+                connectAfterSave_ = false;
                 setBusy(false, refreshNotice_.isEmpty()
                                    ? error
                                    : tr("%1 List refresh failed: %2").arg(refreshNotice_, error));
@@ -363,9 +416,15 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
             QString::fromUtf8(event.kind.data(), static_cast<qsizetype>(event.kind.size()));
         if (kind != "connected" && kind != "connection_failed" && kind != "disconnected")
             return;
+        const auto connection = *pendingConnection_;
         pendingConnection_.reset();
         if (kind == "connected") {
             setBusy(false, tr("Connected."));
+            if (openQueryAfterConnect_) {
+                openQueryAfterConnect_ = false;
+                emit openQueryRequested(connection);
+                accept();
+            }
         } else if (kind == "disconnected") {
             setBusy(false, tr("Connection closed."));
         } else {
@@ -382,6 +441,44 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     });
     setDraft({});
     refresh();
+}
+void ProfileDialog::showEvent(QShowEvent* event) {
+    DialogShell::showEvent(event);
+    layout()->setContentsMargins(0, 0, 0, 0);
+    layout()->setSpacing(0);
+}
+void ProfileDialog::connectDraft(bool openQuery) {
+    if (busy_ || !adapter_)
+        return;
+    auto value = draft();
+    if (value.name.trimmed().isEmpty()) {
+        setBusy(false, tr("Enter a profile name."));
+        name_->setFocus();
+        return;
+    }
+    if (value.id.isEmpty())
+        value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    ++token_;
+    setBusy(true, tr("Connecting…"));
+    connectionSubmissionError_.clear();
+    connecting_ = true;
+    const bool hasPassword =
+        value.driver == "postgres" && (password_->isModified() || !password_->text().isEmpty());
+    const auto id = adapter_->connectProfileWithPassword(
+        value, hasPassword ? password_->text() : QString(), hasPassword);
+    connecting_ = false;
+    if (!id) {
+        setBusy(false, connectionSubmissionError_.isEmpty()
+                           ? tr("Connection could not be submitted.")
+                           : connectionSubmissionError_);
+        return;
+    }
+    pendingConnection_ = id;
+    openQueryAfterConnect_ = openQuery;
+    bool savedProfile = false;
+    for (const auto& profile : profiles_)
+        savedProfile = savedProfile || profile.id == value.id;
+    emit connectionSubmitted(value, *id, savedProfile);
 }
 SavedProfile ProfileDialog::draft() const {
     auto value = current_;
@@ -424,6 +521,8 @@ void ProfileDialog::setDraft(const SavedProfile& value) {
 }
 void ProfileDialog::updateDriver() {
     const bool sqlite = driver_->currentData().toString() == "sqlite";
+    sqliteChoice_->setChecked(sqlite);
+    postgresChoice_->setChecked(!sqlite);
     sqliteFields_->setVisible(sqlite);
     postgresFields_->setVisible(!sqlite);
 }
@@ -434,6 +533,7 @@ void ProfileDialog::setBusy(bool busy, const QString& message) {
     for (auto* action : actions_)
         action->setEnabled(!busy && adapter_);
     status_->setText(message);
+    status_->setVisible(!message.isEmpty());
 }
 void ProfileDialog::refresh() {
     if (!adapter_)
@@ -453,6 +553,45 @@ void ProfileDialog::selectProfile(const QString& id) {
             setDraft(profiles_[row]);
             return;
         }
+    }
+}
+void ProfileDialog::manageProfile(const QString& id, const QString& action) {
+    if (action != "edit" && action != "test" && action != "duplicate" && action != "delete")
+        return;
+    managedProfile_ = id;
+    managedAction_ = action;
+    selectProfile(id);
+    dispatchProfileAction();
+}
+void ProfileDialog::dispatchProfileAction() {
+    if (busy_ || managedAction_.isEmpty())
+        return;
+    const auto action = managedAction_;
+    managedAction_.clear();
+    if (current_.id != managedProfile_) {
+        setBusy(false, tr("The saved profile is no longer available. Refresh the profile list."));
+        return;
+    }
+    if (action == "edit")
+        return;
+    const auto id = current_.id;
+    QTimer::singleShot(0, this, [this, id, action] {
+        if (busy_ || current_.id != id)
+            return;
+        const auto object = action == "test"        ? "profileTest"
+                            : action == "duplicate" ? "profileDuplicate"
+                                                    : "profileDelete";
+        if (auto* button = findChild<QPushButton*>(object))
+            button->click();
+    });
+}
+void ProfileDialog::newProfile() {
+    if (discardChanges()) {
+        pendingSelection_.clear();
+        managedProfile_.clear();
+        managedAction_.clear();
+        list_->setCurrentRow(-1);
+        setDraft({});
     }
 }
 void ProfileDialog::saveDraft(const SavedProfile& profile) {

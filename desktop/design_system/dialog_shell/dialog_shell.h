@@ -15,6 +15,8 @@ class DialogShell : public QDialog {
 
   public:
     explicit DialogShell(QWidget* parent = nullptr);
+    void setAppModal();
+    void open() override;
     [[nodiscard]] QLabel* createDescription(const QString& text, QWidget* parent);
     [[nodiscard]] QLabel* createInlineStatus(QWidget* parent);
 

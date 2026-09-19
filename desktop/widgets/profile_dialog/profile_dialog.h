@@ -14,11 +14,17 @@ class ProfileDialog final : public DialogShell {
     Q_OBJECT
   public:
     explicit ProfileDialog(EngineAdapter* adapter, QWidget* parent = nullptr);
+    void newProfile();
     void selectProfile(const QString& id);
+    void manageProfile(const QString& id, const QString& action);
     void saveDraft(const SavedProfile& profile);
     void testDraft(const SavedProfile& profile);
   signals:
     void connectionSubmitted(const choscordb::SavedProfile& profile, quint64 id, bool savedProfile);
+    void openQueryRequested(quint64 connection);
+
+  protected:
+    void showEvent(QShowEvent* event) override;
 
   private:
     SavedProfile draft() const;
@@ -27,12 +33,17 @@ class ProfileDialog final : public DialogShell {
     void setBusy(bool busy, const QString& message = {});
     void updateDriver();
     bool discardChanges();
+    void connectDraft(bool openQuery);
+    void dispatchProfileAction();
     QPointer<EngineAdapter> adapter_;
     QList<SavedProfile> profiles_;
     SavedProfile current_;
     QString pendingSelection_;
+    QString managedProfile_, managedAction_;
     QString refreshNotice_;
     bool savingDraft_ = false;
+    bool connectAfterSave_ = false;
+    bool openQueryAfterConnect_ = false;
     bool preservePasswordOnRefresh_ = false;
     quint64 token_ = 0;
     quint64 revision_ = 0;
@@ -52,5 +63,6 @@ class ProfileDialog final : public DialogShell {
     QSpinBox* port_;
     QLabel* status_;
     QList<QPushButton*> actions_;
+    QPushButton *sqliteChoice_, *postgresChoice_;
 };
 } // namespace choscordb

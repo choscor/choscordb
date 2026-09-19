@@ -1,5 +1,6 @@
 //! PostgreSQL adapter with transaction-scoped server portals and bounded pages.
 mod metadata;
+mod object_data;
 mod spool;
 mod worker;
 use async_trait::async_trait;
@@ -39,6 +40,8 @@ struct Fetched {
     summary: QuerySummary,
 }
 enum Command {
+    ObjectOpen(ObjectId, usize, Reply<object_data::Opened>),
+    ObjectRead(object_data::Read, Reply<Fetched>),
     Execute(String, QueryOptions, usize, Reply<Started>),
     Fetch(u32, PageSize, usize, Reply<Fetched>),
     Finish(u32, Reply<()>),
@@ -370,6 +373,13 @@ impl Connection for PostgresConnection {
             reader: start.reader,
             summary: start.summary,
         }))
+    }
+    async fn open_object(
+        &mut self,
+        object: &ObjectId,
+        max: usize,
+    ) -> Result<Box<dyn ResultCursor>> {
+        object_data::open(self.client.clone(), self.cancel.clone(), object, max).await
     }
     async fn load_metadata(&mut self, parent: Option<ObjectId>) -> Result<Vec<SchemaObject>> {
         self.client.request(|r| Command::Metadata(parent, r)).await

@@ -598,3 +598,157 @@ fn deferred_chunks_survive_new_sql_and_commit_and_remain_budgeted() {
         Err(SubmitError::StaleHandle)
     );
 }
+
+#[test]
+fn object_result_has_independent_pages_export_and_sql_cursor() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("object.sqlite");
+    let fixture = rusqlite::Connection::open(&path).unwrap();
+    fixture.execute_batch("CREATE TABLE data(x); INSERT INTO data WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<250) SELECT x*10 FROM n").unwrap();
+    drop(fixture);
+    let mut engine = Engine::new(EngineConfig::default(), vec![Arc::new(SqliteDriver)]).unwrap();
+    let c = engine
+        .connect(
+            "sqlite",
+            ConnectionOptions::Sqlite {
+                path,
+                read_only: false,
+            },
+        )
+        .unwrap();
+    let sql=engine.execute(c,"WITH RECURSIVE n(x) AS (VALUES(101) UNION ALL SELECT x+1 FROM n WHERE x<350) SELECT x FROM n".into(),QueryOptions::default()).unwrap();
+    let size = PageSize::new(100).unwrap();
+    engine.fetch_page_at(sql, 0, size).unwrap();
+    assert!(
+        matches!(result_event(&mut engine),Event::StoredPage{page,..} if page.rows[0][0]==Value::Integer(101))
+    );
+    let object = engine
+        .open_object_data(
+            c,
+            ObjectId(r#"["main","data"]"#.into()),
+            QueryOptions {
+                page_size: size,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    engine.fetch_page_at(object, 0, size).unwrap();
+    assert!(
+        matches!(result_event(&mut engine),Event::StoredPage{query,page,..} if query==object && page.rows.len()==100 && page.rows[0][0]==Value::Integer(10))
+    );
+    engine.fetch_page_at(sql, 1, size).unwrap();
+    assert!(
+        matches!(result_event(&mut engine),Event::StoredPage{query,page,..} if query==sql && page.rows[0][0]==Value::Integer(201))
+    );
+    let destination = dir.path().join("object.csv");
+    engine
+        .start_export(object, destination.clone(), ExportFormat::Csv)
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(event) = engine.try_event() {
+            match event {
+                Event::ExportFinished { .. } => break,
+                Event::ExportFailed { error, .. } => panic!("{error}"),
+                _ => (),
+            }
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let bytes = std::fs::read_to_string(destination).unwrap();
+    assert!(bytes.contains("2500"));
+    assert_eq!(bytes.lines().count(), 251);
+    engine.fetch_page_at(sql, 2, size).unwrap();
+    assert!(
+        matches!(result_event(&mut engine),Event::StoredPage{query,page,..} if query==sql && page.rows[0][0]==Value::Integer(301))
+    );
+}
+
+#[test]
+fn cancelling_object_read_preserves_sql_and_new_object_can_read_deferred_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("object-cancel.sqlite");
+    let fixture = rusqlite::Connection::open(&path).unwrap();
+    fixture.execute_batch("CREATE VIEW slow AS WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<1000000000) SELECT sum(x) FROM n; CREATE TABLE data(value); INSERT INTO data VALUES(printf('%070000d',7));").unwrap();
+    drop(fixture);
+    let mut engine = Engine::new(EngineConfig::default(), vec![Arc::new(SqliteDriver)]).unwrap();
+    let c = engine
+        .connect(
+            "sqlite",
+            ConnectionOptions::Sqlite {
+                path,
+                read_only: false,
+            },
+        )
+        .unwrap();
+    let sql=engine.execute(c,"WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<250) SELECT x FROM n".into(),QueryOptions::default()).unwrap();
+    let size = PageSize::new(100).unwrap();
+    engine.fetch_page_at(sql, 0, size).unwrap();
+    assert!(matches!(
+        result_event(&mut engine),
+        Event::StoredPage { .. }
+    ));
+    let slow = engine
+        .open_object_data(
+            c,
+            ObjectId(r#"["main","slow"]"#.into()),
+            QueryOptions::default(),
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(Event::Schema { query, .. }) = engine.try_event()
+            && query == slow
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    engine.fetch_page_at(slow, 0, size).unwrap();
+    std::thread::sleep(Duration::from_millis(30));
+    engine.cancel(slow).unwrap();
+    assert!(
+        matches!(result_event(&mut engine),Event::QueryFailed{query,error} if query==slow && error.kind==ErrorKind::Cancelled)
+    );
+    engine.fetch_page_at(sql, 1, size).unwrap();
+    assert!(
+        matches!(result_event(&mut engine),Event::StoredPage{query,page,..} if query==sql && page.rows[0][0]==Value::Integer(101))
+    );
+    let object = engine
+        .open_object_data(
+            c,
+            ObjectId(r#"["main","data"]"#.into()),
+            QueryOptions::default(),
+        )
+        .unwrap();
+    engine.fetch_page_at(object, 0, size).unwrap();
+    let Event::StoredPage { page, .. } = result_event(&mut engine) else {
+        panic!("missing object page")
+    };
+    let Value::Deferred {
+        handle,
+        byte_length,
+        ..
+    } = page.rows[0][0]
+    else {
+        panic!("value must be deferred")
+    };
+    assert_eq!(byte_length, 70000);
+    engine.load_value_chunk(object, handle, 69995, 5).unwrap();
+    loop {
+        if let Some(Event::ValueChunk { query, chunk, .. }) = engine.try_event() {
+            assert_eq!(query, object);
+            assert_eq!(chunk.bytes, b"00007");
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    engine.release_query(object).unwrap();
+    assert_eq!(
+        engine.load_value_chunk(object, handle, 0, 5),
+        Err(SubmitError::StaleHandle)
+    );
+}

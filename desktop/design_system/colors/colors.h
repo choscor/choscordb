@@ -76,6 +76,12 @@ struct SemanticColors final {
     QColor neutral;
     QColor backdrop;
     QColor switchTrack;
+    QColor sqlKeyword;
+    QColor sqlString;
+    QColor sqlComment;
+    QColor sqlNumber;
+    QColor sqliteBadgeBackground, sqliteBadgeForeground, sqliteBadgeBorder;
+    QColor postgresBadgeBackground, postgresBadgeForeground, postgresBadgeBorder;
 
     friend bool operator==(const SemanticColors&, const SemanticColors&) = default;
 };

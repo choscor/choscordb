@@ -1,14 +1,230 @@
+#include "choscordb-bridge/src/lib.rs.h"
 #include "models/shortcut_catalog.h"
+#include "widgets/export_dialog/export_dialog.h"
 #include "widgets/preferences_dialog/preferences_dialog.h"
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDir>
+#include <QDoubleSpinBox>
+#include <QFile>
 #include <QKeySequenceEdit>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QTabWidget>
+#include <QTemporaryDir>
+#include <QVBoxLayout>
+#include <QWindow>
 #include <QtTest>
+#include <memory>
 class PreferencesTest : public QObject {
     Q_OBJECT
   private slots:
+    void appToolsContainFocusAndRestoreInvoker_data() {
+        QTest::addColumn<bool>("exportTool");
+        QTest::newRow("preferences") << false;
+        QTest::newRow("export") << true;
+    }
+    void appToolsContainFocusAndRestoreInvoker() {
+        QFETCH(bool, exportTool);
+        choscordb::EngineAdapter adapter;
+        QWidget owner;
+        QVBoxLayout layout(&owner);
+        QLineEdit invoker;
+        QPushButton background("Background action");
+        layout.addWidget(&invoker);
+        layout.addWidget(&background);
+        owner.resize(960, 640);
+        owner.show();
+        owner.activateWindow();
+        invoker.setFocus();
+        QTRY_VERIFY(invoker.hasFocus());
+        std::unique_ptr<QDialog> dialog;
+        if (exportTool)
+            dialog = std::make_unique<choscordb::ExportDialog>(&adapter, &owner);
+        else
+            dialog = std::make_unique<choscordb::PreferencesDialog>(
+                &adapter, QList<choscordb::ShortcutDescriptor>{}, &owner);
+        QSignalSpy clicked(&background, &QPushButton::clicked);
+        dialog->show();
+        dialog->activateWindow();
+        QTRY_COMPARE(QApplication::activeModalWidget(), dialog.get());
+        QTRY_VERIFY(dialog->isActiveWindow());
+        QTRY_VERIFY(QApplication::focusWidget() &&
+                    (QApplication::focusWidget() == dialog.get() ||
+                     dialog->isAncestorOf(QApplication::focusWidget())));
+        QVERIFY(dialog->windowFlags().testFlag(Qt::FramelessWindowHint));
+        QVERIFY(owner.findChild<QWidget*>("modalBackdrop")->isVisible());
+        QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, {},
+                          background.mapTo(&owner, background.rect().center()));
+        QCOMPARE(clicked.count(), 0);
+        for (int i = 0; i < 12; ++i) {
+            QTest::keyClick(dialog.get(), Qt::Key_Tab);
+            auto* focus = QApplication::focusWidget();
+            QVERIFY(focus && (focus == dialog.get() || dialog->isAncestorOf(focus)));
+        }
+        QTest::keyClick(dialog.get(), Qt::Key_Escape);
+        QTRY_VERIFY(!dialog->isVisible());
+        QTRY_VERIFY(invoker.hasFocus());
+        QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, {},
+                          background.mapTo(&owner, background.rect().center()));
+        QCOMPARE(clicked.count(), 1);
+    }
+    void preferencesExposeFiveSectionsAndCloseOnlyAfterSave() {
+        choscordb::EngineAdapter adapter;
+        choscordb::PreferencesDialog dialog(&adapter, {});
+        dialog.show();
+        auto* sections = dialog.findChild<QTabWidget*>("preferencesSections");
+        QVERIFY(sections);
+        QCOMPARE(sections->count(), 5);
+        QCOMPARE(sections->tabText(0), QString("Appearance"));
+        QCOMPARE(sections->tabText(1), QString("SQL editor"));
+        QCOMPARE(sections->tabText(2).replace("&&", "&"), QString("Results & execution"));
+        QCOMPARE(sections->tabText(3).replace("&&", "&"), QString("History & recovery"));
+        QCOMPARE(sections->tabText(4), QString("Keyboard shortcuts"));
+        auto* save = dialog.findChild<QPushButton*>("preferencesApply");
+        QTRY_VERIFY(save->isEnabled());
+        QCOMPARE(save->text(), QString("Save preferences"));
+        QVERIFY(dialog.findChild<QPushButton*>("preferencesClose"));
+        QSignalSpy accepted(&dialog, &QDialog::accepted);
+        save->click();
+        QCOMPARE(accepted.count(), 0);
+        QTRY_COMPARE(accepted.count(), 1);
+        QVERIFY(!dialog.isVisible());
+    }
+    void supportedSettingsPersistTogetherBeforeClosingAndSurviveRestart() {
+        using namespace choscordb;
+        QTemporaryDir directory;
+        const auto path = directory.filePath("settings.sqlite");
+        {
+            EngineAdapter adapter(nullptr, path);
+            QSignalSpy editorSaved(&adapter, &EngineAdapter::editorPreferencesReady);
+            QSignalSpy querySaved(&adapter, &EngineAdapter::queryPreferencesReady);
+            QSignalSpy historySaved(&adapter, &EngineAdapter::historyPolicyReady);
+            PreferencesDialog dialog(&adapter, {});
+            dialog.show();
+            auto* save = dialog.findChild<QPushButton*>("preferencesApply");
+            QTRY_VERIFY(save->isEnabled());
+            auto* rows = dialog.findChild<QSpinBox*>("queryPageSize");
+            auto* timeout = dialog.findChild<QSpinBox*>("queryTimeoutSeconds");
+            auto* record = dialog.findChild<QCheckBox*>("preferencesRecordHistory");
+            auto* days = dialog.findChild<QDoubleSpinBox*>("preferencesHistoryDays");
+            auto* records = dialog.findChild<QDoubleSpinBox*>("preferencesHistoryRecords");
+            QVERIFY(rows && timeout && record && days && records);
+            rows->setValue(137);
+            timeout->setValue(17);
+            record->setChecked(false);
+            days->setValue(12);
+            records->setValue(345);
+            dialog.findChild<QSpinBox*>("preferencesFontSize")->setValue(21);
+            QSignalSpy accepted(&dialog, &QDialog::accepted);
+            connect(&dialog, &QDialog::accepted, &dialog, [&] {
+                QCOMPARE(editorSaved.count(), 2);
+                QCOMPARE(querySaved.count(), 2);
+                QCOMPARE(historySaved.count(), 2);
+            });
+            save->click();
+            QVERIFY(dialog.isVisible());
+            QTRY_COMPARE(accepted.count(), 1);
+        }
+        EngineAdapter restarted(nullptr, path);
+        QSignalSpy query(&restarted, &EngineAdapter::queryPreferencesReady);
+        QSignalSpy history(&restarted, &EngineAdapter::historyPolicyReady);
+        QSignalSpy editor(&restarted, &EngineAdapter::editorPreferencesReady);
+        QVERIFY(restarted.getQueryPreferences(801));
+        QVERIFY(restarted.getHistoryPolicy(802));
+        QVERIFY(restarted.getEditorPreferences(803));
+        QTRY_COMPARE(query.count(), 1);
+        QTRY_COMPARE(history.count(), 1);
+        QTRY_COMPARE(editor.count(), 1);
+        const auto result = qvariant_cast<QueryPreferences>(query.first().at(1));
+        QCOMPARE(result.pageSize, quint32(137));
+        QCOMPARE(result.timeoutSeconds, quint32(17));
+        const auto policy = qvariant_cast<HistoryPolicy>(history.first().at(1));
+        QVERIFY(!policy.enabled);
+        QCOMPARE(policy.maxAgeDays, quint32(12));
+        QCOMPARE(policy.maxRecords, quint32(345));
+        QCOMPARE(qvariant_cast<EditorPreferences>(editor.first().at(1)).fontSize, quint16(21));
+    }
+
+    void existingLargeRetentionValuesRemainUsableAndArePreserved() {
+        using namespace choscordb;
+        EngineAdapter adapter;
+        HistoryPolicy policy;
+        policy.maxAgeDays = 3000000000U;
+        policy.maxRecords = 4000000000U;
+        QSignalSpy persisted(&adapter, &EngineAdapter::historyPolicyReady);
+        QVERIFY(adapter.setHistoryPolicy(policy, 901));
+        QTRY_COMPARE(persisted.count(), 1);
+        PreferencesDialog dialog(&adapter, {});
+        dialog.show();
+        auto* save = dialog.findChild<QPushButton*>("preferencesApply");
+        QTRY_VERIFY(save->isEnabled());
+        save->click();
+        QTRY_VERIFY(!dialog.isVisible());
+        QCOMPARE(qvariant_cast<HistoryPolicy>(persisted.last().at(1)).maxAgeDays,
+                 quint32(3000000000U));
+        QCOMPARE(qvariant_cast<HistoryPolicy>(persisted.last().at(1)).maxRecords,
+                 quint32(4000000000U));
+    }
+
+    void escapeDuringAcceptedExportWaitsForCleanup_data() {
+        QTest::addColumn<bool>("invalidate");
+        QTest::newRow("Escape") << false;
+        QTest::newRow("query-invalidated") << true;
+    }
+    void escapeDuringAcceptedExportWaitsForCleanup() {
+        QFETCH(bool, invalidate);
+        using namespace choscordb;
+        EngineAdapter adapter;
+        QTemporaryDir directory;
+        bool connected = false, pageReady = false;
+        connect(&adapter, &EngineAdapter::eventReady, &adapter, [&](const BridgeEvent& event) {
+            const auto kind = QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
+            connected = connected || kind == "connected";
+            pageReady = pageReady || (kind == "page" && event.row_count > 0);
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        const auto query = adapter.execute(
+            *connection,
+            "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<1000000) "
+            "SELECT x FROM n");
+        QVERIFY(query);
+        adapter.fetchPage(*query);
+        QTRY_VERIFY_WITH_TIMEOUT(pageReady, 30000);
+        QWidget owner;
+        owner.resize(960, 640);
+        owner.show();
+        ExportDialog dialog(&adapter, &owner);
+        dialog.setQuery(*query);
+        dialog.show();
+        bool cancellationRequested = false;
+        connect(&adapter, &EngineAdapter::eventReady, &dialog, [&](const BridgeEvent& event) {
+            const auto kind = QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
+            if (kind != "export_progress" || !event.exported_rows || cancellationRequested)
+                return;
+            cancellationRequested = true;
+            if (invalidate)
+                dialog.clearQuery();
+            else
+                QTest::keyClick(&dialog, Qt::Key_Escape);
+            QVERIFY(dialog.isVisible());
+            QVERIFY(dialog.isRunning());
+            QVERIFY(dialog.findChild<QLabel*>("exportStatus")->text().contains("Cancelling"));
+        });
+        dialog.startExportTo(directory.filePath("cancelled.csv"), "csv");
+        QTRY_VERIFY(cancellationRequested);
+        QTRY_VERIFY(!dialog.isRunning());
+        QVERIFY(!dialog.isVisible());
+        QCOMPARE(QDir(directory.path())
+                     .entryList(QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot)
+                     .size(),
+                 0);
+    }
+
     void appearanceOffersOnlySystemLightAndDark() {
         choscordb::EngineAdapter adapter;
         choscordb::PreferencesDialog dialog(&adapter, {});
@@ -81,12 +297,16 @@ class PreferencesTest : public QObject {
         QCOMPARE(
             qvariant_cast<choscordb::EditorPreferences>(confirmed.last().at(1)).shortcuts.size(),
             1);
+        QTRY_VERIFY(!dialog.isVisible());
+        dialog.show();
         dialog.findChild<QPushButton*>("preferencesReset")->click();
         QCOMPARE(confirmed.count(), 2);
         apply->click();
         QTRY_COMPARE(confirmed.count(), 3);
         QVERIFY(qvariant_cast<choscordb::EditorPreferences>(confirmed.last().at(1))
                     .shortcuts.isEmpty());
+        QTRY_VERIFY(!dialog.isVisible());
+        dialog.show();
         adapter.shutdown();
         size->setValue(24);
         apply->click();
@@ -95,7 +315,11 @@ class PreferencesTest : public QObject {
         emit adapter.editorPreferencesReady(confirmed.first().at(0).toULongLong(),
                                             choscordb::EditorPreferences{});
         QCOMPARE(size->value(), 24);
-        QVERIFY(!dialog.findChild<QLabel*>("preferencesStatus")->text().isEmpty());
+        const auto error = dialog.findChild<QLabel*>("preferencesStatus")->text();
+        QVERIFY(error.contains("SQL editor / Keyboard shortcuts"));
+        QVERIFY(error.contains("Results & execution"));
+        QVERIFY(error.contains("History & recovery"));
+        QVERIFY(dialog.isVisible());
     }
 };
 QTEST_MAIN(PreferencesTest)

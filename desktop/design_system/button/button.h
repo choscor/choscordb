@@ -6,7 +6,7 @@
 #include <optional>
 
 namespace choscordb::design {
-enum class ButtonContext { Standard, EditorAction };
+enum class ButtonContext { Standard, EditorAction, Choice };
 enum class ButtonVariant { Default, Secondary, Outline, Ghost, Destructive, Link };
 enum class ButtonSize {
     ExtraSmall,

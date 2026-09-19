@@ -12,6 +12,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QComboBox>
+#include <QFileInfo>
 #include <QLabel>
 #include <QMenu>
 #include <QPlainTextEdit>
@@ -44,7 +45,9 @@ Cell cell(const CellDto& value) {
 } // namespace
 QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     : QObject(parent), widgets_(std::move(widgets)),
-      adapter_(new EngineAdapter(this, widgets_.storagePath)), model_(new ResultTableModel(this)) {
+      adapter_(widgets_.sharedAdapter ? widgets_.sharedAdapter
+                                      : new EngineAdapter(this, widgets_.storagePath)),
+      model_(new ResultTableModel(this)) {
     widgets_.grid->setModel(model_);
     querySettings_ = new QuerySettingsController(adapter_, widgets_.dialogParent, this);
     connect(querySettings_, &QuerySettingsController::readyChanged, this,
@@ -92,7 +95,11 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     connect(widgets_.run, &QAction::triggered, this, &QueryWorkspace::execute);
     connect(widgets_.cancel, &QAction::triggered, this, [this] {
         if (query_ && queryAvailable()) {
-            adapter_->cancelQuery(*query_);
+            if (!adapter_->cancelQuery(*query_))
+                return;
+            cancellationPending_ = true;
+            setExecutionState(QStringLiteral("cancelling"), tr("◷ Cancelling…"));
+            updateActions();
             widgets_.cancel->setEnabled(false);
         }
     });
@@ -104,20 +111,21 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         if (auto c = selectedConnection(); c && connectionAvailable(*c) && !workInFlight())
             adapter_->rollbackTransaction(*c);
     });
-    connect(widgets_.newConnection, &QAction::triggered, this, [this] {
-        if (!profiles_) {
-            profiles_ = new ProfileDialog(adapter_, widgets_.dialogParent);
-            connect(profiles_, &ProfileDialog::connectionSubmitted, this,
-                    [this](const SavedProfile& profile, quint64 id, bool savedProfile) {
-                        pendingConnections_.insert(id, profile.name);
-                        if (savedProfile)
-                            connectionProfiles_.insert(id, profile.id);
-                    });
-        }
-        profiles_->show();
-        profiles_->raise();
-    });
+    connect(widgets_.newConnection, &QAction::triggered, this, [this] { showProfiles(); });
     connect(widgets_.connections, &QComboBox::currentIndexChanged, this, [this] {
+        if (auto* editor = widgets_.currentEditor()) {
+            if (workInFlight()) {
+                documentChanged();
+                message(tr("Finish or cancel the active query before changing its connection."));
+                return;
+            }
+            const auto value = widgets_.connections->currentData();
+            editor->setConnectionTarget(
+                value.isValid() ? std::optional<quint64>(value.toULongLong()) : std::nullopt,
+                widgets_.connections->currentText());
+            editor->setProfileId(value.isValid() ? connectionProfiles_.value(value.toULongLong())
+                                                 : QString{});
+        }
         const QSignalBlocker blocker(widgets_.mode);
         const auto c = selectedConnection();
         widgets_.mode->setCurrentIndex(c && manualModes_.value(*c, false) ? 1 : 0);
@@ -205,9 +213,14 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
 }
 QueryWorkspace::~QueryWorkspace() {
     clearResult();
+    if (widgets_.objectReadOnly && adapter_ && query_)
+        adapter_->releaseQuery(*query_);
     delete detail_;
     delete export_;
     delete profiles_;
+}
+EngineAdapter* QueryWorkspace::adapter() const {
+    return adapter_.data();
 }
 void QueryWorkspace::clearResult() {
     if (export_)
@@ -218,13 +231,15 @@ void QueryWorkspace::clearResult() {
     if (visibleLease_) {
         const auto lease = *visibleLease_;
         visibleLease_.reset();
-        adapter_->releasePageLease(lease);
+        if (adapter_)
+            adapter_->releasePageLease(lease);
     }
     std::vector<ResultColumn>().swap(columns_);
     if (schemaLease_) {
         const auto lease = *schemaLease_;
         schemaLease_.reset();
-        adapter_->releasePageLease(lease);
+        if (adapter_)
+            adapter_->releasePageLease(lease);
     }
 }
 bool QueryWorkspace::connectionAvailable(quint64 connection) const {
@@ -235,8 +250,14 @@ bool QueryWorkspace::queryAvailable() const {
     return queryConnection_ && connectionAvailable(*queryConnection_);
 }
 bool QueryWorkspace::workInFlight() const {
-    return (busy_ || fetching_ || exporting_) &&
-           !(queryConnection_ && disconnecting_.contains(*queryConnection_));
+    return externalWork_ || ((cancellationPending_ || busy_ || fetching_ || exporting_) &&
+                             !(queryConnection_ && disconnecting_.contains(*queryConnection_)));
+}
+void QueryWorkspace::setExternalWork(bool busy) {
+    if (externalWork_ == busy)
+        return;
+    externalWork_ = busy;
+    updateActions();
 }
 void QueryWorkspace::disconnectConnection(quint64 connection) {
     if (!connectionAvailable(connection) || confirmingDisconnects_.contains(connection))
@@ -278,41 +299,176 @@ void QueryWorkspace::disconnectConnection(quint64 connection) {
     }
     updateActions();
 }
+void QueryWorkspace::showProfiles(const QString& profileId) {
+    if (stopping_ || workInFlight()) {
+        message(tr("Finish or cancel active database work before managing connections."));
+        return;
+    }
+    const bool existingDialog = profiles_ != nullptr;
+    if (!profiles_) {
+        profiles_ = new ProfileDialog(adapter_, widgets_.dialogParent);
+        connect(profiles_, &ProfileDialog::openQueryRequested, this,
+                &QueryWorkspace::openQueryRequested);
+        connect(profiles_, &ProfileDialog::connectionSubmitted, this,
+                [this](const SavedProfile& profile, quint64 id, bool savedProfile) {
+                    pendingConnections_.insert(id, profile.name);
+                    if (savedProfile)
+                        connectionProfiles_.insert(id, profile.id);
+                });
+    }
+    if (!profileId.isEmpty())
+        profiles_->manageProfile(profileId, "edit");
+    else if (existingDialog)
+        profiles_->newProfile();
+    profiles_->show();
+    profiles_->raise();
+}
+void QueryWorkspace::manageSavedProfile(const QString& profileId, const QString& action) {
+    if (stopping_ || workInFlight()) {
+        message(tr("Finish or cancel active database work before managing connections."));
+        return;
+    }
+    showProfiles(profileId);
+    if (profiles_)
+        profiles_->manageProfile(profileId, action);
+}
 void QueryWorkspace::showQuerySettings() {
     if (!stopping_)
         querySettings_->open();
+}
+void QueryWorkspace::trackQueryPreferencesSave(quint64 token) {
+    querySettings_->trackSave(token);
+}
+void QueryWorkspace::applyQueryPreferences(const QueryPreferences& preferences) {
+    querySettings_->applyConfirmed(preferences);
+}
+QueryPreferences QueryWorkspace::queryPreferences() const {
+    return querySettings_->preferences();
+}
+void QueryWorkspace::openObjectData(quint64 connection, const QString& object, const QString& label,
+                                    const QueryPreferences& preferences) {
+    if (!widgets_.objectReadOnly || !adapter_ || workInFlight() || stopping_)
+        return;
+    if (query_)
+        adapter_->releaseQuery(*query_);
+    clearResult();
+    currentPage_.reset();
+    hasMore_ = false;
+    fetching_ = false;
+    invalidatePending_ = false;
+    cancellationPending_ = false;
+    queryConnection_ = connection;
+    if (widgets_.connections->findData(QVariant::fromValue<qulonglong>(connection)) < 0) {
+        const QSignalBlocker blocker(widgets_.connections);
+        widgets_.connections->addItem(label, QVariant::fromValue<qulonglong>(connection));
+    }
+    resultOrigin_ = label;
+    widgets_.messages->clear();
+    message(tr("Object data: %1").arg(label));
+    query_ = adapter_->openObjectData(connection, object, preferences);
+    busy_ = query_.has_value();
+    executionFinished_ = !busy_;
+    setExecutionState(busy_ ? QStringLiteral("queued") : QStringLiteral("failed"),
+                      busy_ ? tr("◷ Loading object data…")
+                            : tr("! Object read could not be submitted"));
+    updateActions();
+}
+void QueryWorkspace::invalidateResult() {
+    if (workInFlight()) {
+        invalidatePending_ = true;
+        if (exporting_ && export_)
+            export_->clearQuery();
+        if (adapter_ && query_ && (busy_ || fetching_))
+            cancellationPending_ = adapter_->cancelQuery(*query_);
+        setExecutionState(QStringLiteral("cancelling"), tr("◷ Cancelling…"));
+        updateActions();
+        return;
+    }
+    invalidatePending_ = false;
+    cancellationPending_ = false;
+    clearResult();
+    if (adapter_ && query_)
+        adapter_->releaseQuery(*query_);
+    query_.reset();
+    queryConnection_.reset();
+    currentPage_.reset();
+    hasMore_ = false;
+    resultOrigin_.clear();
+    setExecutionState(QStringLiteral("disconnected"), tr("Open Data to read an object."));
+    updateActions();
 }
 void QueryWorkspace::connectSqlite(const QString& path) {
     if (auto id = adapter_->connectSqlite(path))
         pendingConnections_.insert(*id, path);
 }
+std::optional<quint64> QueryWorkspace::connectSavedProfile(const SavedProfile& profile) {
+    if (stopping_ || workInFlight()) {
+        message(tr("Finish or cancel active database work before connecting."));
+        return std::nullopt;
+    }
+    const auto id = adapter_->connectProfile(profile);
+    if (id) {
+        pendingConnections_.insert(*id, profile.name);
+        connectionProfiles_.insert(*id, profile.id);
+    }
+    return id;
+}
+void QueryWorkspace::documentChanged() {
+    auto* editor = widgets_.currentEditor();
+    const auto target = editor ? editor->connectionTarget() : std::nullopt;
+    const QSignalBlocker blocker(widgets_.connections);
+    const int index =
+        target ? widgets_.connections->findData(QVariant::fromValue<qulonglong>(*target)) : -1;
+    QString label = tr("Disconnected — choose a SQL target");
+    if (editor && !editor->targetLabel().isEmpty())
+        label = tr("Disconnected — %1").arg(editor->targetLabel());
+    else if (editor && !editor->property("profileId").toString().isEmpty())
+        label = tr("Disconnected profile — %1").arg(editor->property("profileId").toString());
+    widgets_.connections->setPlaceholderText(label);
+    widgets_.connections->setCurrentIndex(index);
+    widgets_.connections->setToolTip(
+        index >= 0 ? tr("SQL document target: %1").arg(widgets_.connections->currentText())
+                   : label);
+    const QSignalBlocker modeBlocker(widgets_.mode);
+    widgets_.mode->setCurrentIndex(target && manualModes_.value(*target, false) ? 1 : 0);
+    updateActions();
+    emit documentTargetChanged();
+}
 std::optional<quint64> QueryWorkspace::selectedConnection() const {
-    if (widgets_.connections->currentIndex() < 0)
-        return std::nullopt;
-    const auto value = widgets_.connections->currentData();
-    if (!value.isValid())
-        return std::nullopt;
-    return value.toULongLong();
+    if (widgets_.objectReadOnly)
+        return queryConnection_;
+    const auto* editor = widgets_.currentEditor();
+    return editor ? editor->connectionTarget() : std::nullopt;
 }
 void QueryWorkspace::message(const QString& value) {
     widgets_.messages->appendPlainText(value);
 }
 void QueryWorkspace::setExecutionState(const QString& state, const QString& detail) {
     widgets_.summary->setProperty("state", state);
-    const auto label = detail.isEmpty() ? state : detail;
+    const auto status = detail.isEmpty() ? state : detail;
+    const auto label =
+        resultOrigin_.isEmpty() ? status : resultOrigin_ + QStringLiteral(" · ") + status;
     widgets_.summary->setText(label);
+    widgets_.summary->setToolTip(label);
     widgets_.summary->setAccessibleName(tr("Execution status: %1").arg(label));
     widgets_.summary->style()->unpolish(widgets_.summary);
     widgets_.summary->style()->polish(widgets_.summary);
+    emit executionStateChanged(state);
 }
 void QueryWorkspace::updateActions() {
+    if (invalidatePending_ && !workInFlight()) {
+        invalidateResult();
+        return;
+    }
     const auto selected = selectedConnection();
     const bool connected = selected && connectionAvailable(*selected);
     const bool inFlight = workInFlight();
     widgets_.connections->setEnabled(widgets_.connections->count() > 0 && !inFlight && !stopping_);
     widgets_.mode->setEnabled(connected && !inFlight);
     widgets_.run->setEnabled(connected && !inFlight && querySettings_->isReady());
-    widgets_.cancel->setEnabled(query_.has_value() && busy_ && queryAvailable());
+    widgets_.cancel->setEnabled(!cancellationPending_ && query_.has_value() && busy_ &&
+                                queryAvailable() &&
+                                widgets_.summary->property("state") != "cancelling");
     widgets_.cancel->setText(widgets_.summary->property("state") == "cancelling" ? tr("Cancelling…")
                                                                                  : tr("Cancel"));
     if (widgets_.exportResult)
@@ -324,8 +480,11 @@ void QueryWorkspace::updateActions() {
     if (widgets_.previousPage)
         widgets_.previousPage->setEnabled(query_ && currentPage_ && *currentPage_ > 0 &&
                                           !inFlight && queryAvailable());
+    emit activityChanged(inFlight);
 }
 void QueryWorkspace::execute() {
+    if (widgets_.objectReadOnly)
+        return;
     auto connection = selectedConnection();
     auto* editor = widgets_.currentEditor();
     if (!connection || !editor || !connectionAvailable(*connection) || workInFlight() ||
@@ -366,12 +525,20 @@ void QueryWorkspace::execute() {
     if (query_ && widgets_.mode->currentIndex() == 1)
         pendingTransactions_.insert(*connection);
     queryConnection_ = connection;
+    auto title = editor->filePath().isEmpty() ? editor->property("documentTitle").toString()
+                                              : QFileInfo(editor->filePath()).fileName();
+    if (title.isEmpty())
+        title = tr("Untitled query");
+    resultOrigin_ = tr("%1 — %2").arg(title, editor->targetLabel());
+    widgets_.messages->clear();
+    message(tr("SQL result: %1").arg(resultOrigin_));
     clearResult();
     currentPage_.reset();
     hasMore_ = false;
     fetching_ = false;
     busy_ = query_.has_value();
     executionFinished_ = !query_.has_value();
+    cancellationPending_ = false;
     setExecutionState(busy_ ? QStringLiteral("queued") : QStringLiteral("failed"),
                       busy_ ? tr("◷ Queued") : tr("! Submission failed"));
     updateActions();
@@ -380,9 +547,16 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     const auto kind = text(e.kind);
     if (kind == "connected") {
         const auto name = pendingConnections_.take(e.id);
-        widgets_.connections->addItem(name.isEmpty() ? tr("Database session") : name,
-                                      QVariant::fromValue<qulonglong>(e.id));
-        widgets_.connections->setCurrentIndex(widgets_.connections->count() - 1);
+        {
+            const QSignalBlocker blocker(widgets_.connections);
+            const auto label = name.isEmpty() ? tr("Database session %1").arg(e.id) : name;
+            widgets_.connections->addItem(label, QVariant::fromValue<qulonglong>(e.id));
+            if (auto* editor = widgets_.currentEditor(); editor && !editor->hasAssignedTarget()) {
+                editor->setConnectionTarget(e.id, label);
+                editor->setProfileId(connectionProfiles_.value(e.id));
+            }
+        }
+        documentChanged();
         emit connectionReady(e.id);
         updateActions();
         return;
@@ -403,14 +577,18 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         manualModes_.remove(e.id);
         connectionProfiles_.remove(e.id);
         const auto index = widgets_.connections->findData(QVariant::fromValue<qulonglong>(e.id));
-        if (index >= 0)
+        if (index >= 0) {
+            const QSignalBlocker blocker(widgets_.connections);
             widgets_.connections->removeItem(index);
+        }
+        documentChanged();
         if (queryConnection_ == e.id) {
             if (detail_)
                 detail_->clearValue();
             if (export_)
                 export_->clearQuery();
             busy_ = false;
+            cancellationPending_ = false;
             fetching_ = false;
             hasMore_ = false;
             query_.reset();
@@ -439,6 +617,12 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         return;
     if (kind == "query_state") {
         const auto state = text(e.state);
+        // Terminal state notices precede their detailed outcome. Keep the
+        // pending cancellation visible until that acknowledgement arrives.
+        if (cancellationPending_ && state != "cancelling")
+            return;
+        if (state == "completed" || state == "failed" || state == "disconnected")
+            cancellationPending_ = false;
         busy_ = state == "queued" || state == "running" || state == "cancelling";
         if (state == "completed" || state == "failed" || state == "disconnected")
             executionFinished_ = true;
@@ -451,7 +635,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         if (state == "cancelling")
             widgets_.cancel->setEnabled(false);
     } else if (kind == "schema") {
-        if (!queryAvailable())
+        if (cancellationPending_ || !queryAvailable())
             return;
         clearResult();
         columns_.reserve(e.columns.size());
@@ -474,6 +658,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         adapter_->fetchPageAt(*query_, 0);
         updateActions();
     } else if (kind == "stored_page") {
+        if (cancellationPending_)
+            return;
         fetching_ = false;
         if (e.column_count != columns_.size() && e.row_count != 0) {
             message(tr("Result page has an invalid column count."));
@@ -528,7 +714,9 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         busy_ = false;
         updateActions();
     } else if (kind == "query_finished") {
+        cancellationPending_ = false;
         executionFinished_ = true;
+        fetching_ = false;
         if (e.has_transaction_state && queryConnection_) {
             if (e.transaction_active)
                 pendingTransactions_.insert(*queryConnection_);
@@ -554,19 +742,27 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         setExecutionState(QStringLiteral("completed"), summary);
         updateActions();
     } else if (kind == "query_failed") {
+        cancellationPending_ = false;
         executionFinished_ = true;
         busy_ = false;
         fetching_ = false;
         hasMore_ = false;
         message(text(e.error) +
                 (e.vendor_code.empty() ? QString{} : tr(" [Code: %1]").arg(text(e.vendor_code))));
-        setExecutionState(QStringLiteral("failed"), tr("! Failed"));
+        const auto errorKind = text(e.error_kind);
+        if (errorKind == "Cancelled")
+            setExecutionState(QStringLiteral("cancelled"), tr("○ Cancelled"));
+        else if (errorKind == "Disconnected")
+            setExecutionState(QStringLiteral("disconnected"), tr("○ Disconnected"));
+        else
+            setExecutionState(QStringLiteral("failed"), tr("! Failed"));
         updateActions();
     }
 }
 bool QueryWorkspace::confirmShutdown() {
     const bool transaction = !pendingTransactions_.isEmpty();
-    const bool active = busy_ || fetching_ || exporting_ || (query_ && !executionFinished_);
+    const bool active =
+        externalWork_ || busy_ || fetching_ || exporting_ || (query_ && !executionFinished_);
     if (!transaction && !active)
         return true;
     ConfirmationDialog box(

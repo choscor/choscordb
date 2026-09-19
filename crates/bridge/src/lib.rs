@@ -60,6 +60,13 @@ pub mod ffi {
         database_type: String,
     }
     #[derive(Default)]
+    struct MetadataPropertyDto {
+        name: String,
+        value: String,
+        availability: String,
+        reason: String,
+    }
+    #[derive(Default)]
     struct MetadataDto {
         id: String,
         parent: String,
@@ -69,6 +76,7 @@ pub mod ffi {
         has_children: bool,
         has_column: bool,
         column: ColumnDto,
+        properties: Vec<MetadataPropertyDto>,
     }
     #[derive(Default)]
     struct ProfileDto {
@@ -415,6 +423,13 @@ pub mod ffi {
             auto_commit: bool,
             profile_id: &str,
         ) -> Submit;
+        fn open_object_data(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            object: &str,
+            page_size: u32,
+            timeout_ms: u64,
+        ) -> Submit;
         fn execute(
             engine: &mut BridgeEngine,
             connection: u64,
@@ -438,6 +453,12 @@ pub mod ffi {
             max_bytes: u32,
         ) -> Submit;
         fn load_value(engine: &mut BridgeEngine, query: u64, handle: u64) -> Submit;
+        fn object_ddl_request(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            object: &str,
+            request_token: u64,
+        ) -> Submit;
         fn object_ddl(engine: &mut BridgeEngine, connection: u64, object: &str) -> Submit;
         fn fetch_page(engine: &mut BridgeEngine, query: u64, page_size: u32) -> Submit;
         fn fetch_page_at(
@@ -1123,4 +1144,40 @@ pub fn text_replace_all(
             ..Default::default()
         },
     }
+}
+
+pub fn object_ddl_request(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    object: &str,
+    request_token: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        e.object_ddl_request(unpack(connection), ObjectId(object.into()), request_token)
+            .map(|()| connection)
+            .map_err(|e| e.to_string())
+    })
+}
+
+pub fn open_object_data(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    object: &str,
+    page_size: u32,
+    timeout_ms: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        let page_size = PageSize::new(page_size).map_err(|e| e.message)?;
+        e.open_object_data(
+            unpack(connection),
+            ObjectId(object.into()),
+            QueryOptions {
+                page_size,
+                timeout: (timeout_ms != 0).then(|| Duration::from_millis(timeout_ms)),
+                auto_commit: false,
+            },
+        )
+        .map(pack)
+        .map_err(|e| e.to_string())
+    })
 }

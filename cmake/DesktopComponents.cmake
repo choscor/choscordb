@@ -112,6 +112,8 @@ choscordb_add_library(choscordb-desktop
   desktop/app/main_window.cpp
   desktop/app/workspace_recovery.cpp
   desktop/app/query_workspace.cpp
+  desktop/app/object_data_workspace.cpp
+  desktop/app/object_explorer.cpp
   desktop/app/navigator_controller.cpp
 )
 target_link_libraries(choscordb-desktop PUBLIC choscordb-widgets)

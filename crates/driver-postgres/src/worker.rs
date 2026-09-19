@@ -365,7 +365,11 @@ impl<'a> tokio_postgres::types::FromSql<'a> for Raw<'a> {
         true
     }
 }
-fn decode(row: tokio_postgres::Row, spool: &mut spool::Spool, max: usize) -> Result<Row> {
+pub(super) fn decode(
+    row: tokio_postgres::Row,
+    spool: &mut spool::Spool,
+    max: usize,
+) -> Result<Row> {
     let base = row
         .len()
         .checked_mul(std::mem::size_of::<Value>())
@@ -555,6 +559,20 @@ pub(super) async fn run(
         };
         let Command::Execute(sql, options, max, reply) = command else {
             match command {
+                Command::ObjectOpen(object, max, reply) => {
+                    let result = cancel
+                        .closing
+                        .auxiliary(&pump, object_data::prepare(&client, &object, max, false))
+                        .await;
+                    let _ = reply.send(result);
+                }
+                Command::ObjectRead(request, reply) => {
+                    let result = cancel
+                        .closing
+                        .auxiliary(&pump, object_data::read(&client, request, false))
+                        .await;
+                    let _ = reply.send(result);
+                }
                 Command::Metadata(parent, reply) => {
                     clear_notices(&notices);
                     let result = cancel
@@ -737,6 +755,23 @@ pub(super) async fn run(
                         }
                     }
                     let _ = reply.send(Ok(()));
+                }
+                Command::ObjectOpen(object, max, reply) => {
+                    let result = cancel
+                        .closing
+                        .auxiliary(
+                            &pump,
+                            object_data::prepare(&transaction, &object, max, true),
+                        )
+                        .await;
+                    let _ = reply.send(result);
+                }
+                Command::ObjectRead(request, reply) => {
+                    let result = cancel
+                        .closing
+                        .auxiliary(&pump, object_data::read(&transaction, request, true))
+                        .await;
+                    let _ = reply.send(result);
                 }
                 Command::Metadata(parent, reply) => {
                     clear_notices(&notices);

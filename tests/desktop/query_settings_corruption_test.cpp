@@ -22,7 +22,8 @@ class QuerySettingsCorruptionTest : public QObject {
             QSKIP("Run through scripts/integration/query_settings_fixture.py to seed corruption.");
 
         choscordb::MainWindow window(nullptr, path);
-        auto* controller = window.findChild<choscordb::QuerySettingsController*>();
+        auto* controller = window.findChild<choscordb::QueryWorkspace*>()
+                               ->findChild<choscordb::QuerySettingsController*>();
         auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
         QVERIFY(controller);
         QVERIFY(workspace);

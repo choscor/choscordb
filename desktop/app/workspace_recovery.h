@@ -35,6 +35,7 @@ class WorkspaceRecoveryController final : public QObject {
     void mutationEnabled(bool enabled);
     void errorOccurred(const QString& error, bool duringClose);
     void persistenceSucceeded();
+    void restoreCompleted(bool hasDocuments);
     void closeReady();
 
   private:

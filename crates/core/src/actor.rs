@@ -30,10 +30,14 @@ pub(crate) enum Command {
         query: QueryId,
         handle: Handle,
     },
-    Ddl(ObjectId),
+    Ddl {
+        object: ObjectId,
+        request_token: u64,
+    },
     Execute {
         query: QueryId,
         sql: Arc<String>,
+        object: Option<ObjectId>,
         history: Option<crate::query_history::Ticket>,
         options: QueryOptions,
         cancellation: watch::Receiver<bool>,
@@ -272,18 +276,19 @@ pub(crate) async fn run(
         },
     )
     .await;
-    let mut active: Option<Active> = None;
+    let mut sql_active: Option<Active> = None;
+    let mut object_active: Option<Active> = None;
     let mut readers = std::collections::HashMap::<QueryId, crate::deferred::Reader>::new();
     let mut stores = std::collections::HashMap::<QueryId, crate::store::Store>::new();
     loop {
         if *shutdown.borrow() {
             break;
         }
-        let mut idle_cancellation = active
+        let mut idle_cancellation = sql_active
             .as_ref()
             .filter(|a| !a.completed)
             .map(|a| a.cancellation.clone());
-        let idle_deadline = active
+        let idle_deadline = sql_active
             .as_ref()
             .filter(|a| !a.completed)
             .and_then(|a| a.deadline);
@@ -307,11 +312,33 @@ pub(crate) async fn run(
                 std::future::pending::<()>().await;
             }
         };
+        let mut object_stop = object_active
+            .as_ref()
+            .filter(|a| !a.completed)
+            .map(|a| a.cancellation.clone());
+        let object_deadline = object_active
+            .as_ref()
+            .filter(|a| !a.completed)
+            .and_then(|a| a.deadline);
+        let object_cancelled = async {
+            if let Some(receiver) = object_stop.as_mut() {
+                crate::operation::signalled(receiver).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        let object_timed_out = async {
+            if let Some(deadline) = object_deadline {
+                tokio::time::sleep_until(deadline).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
         let command = tokio::select! {
             biased;
             _ = shutdown.changed() => break,
             _ = idle_cancel => {
-                if let Some(mut old) = active.take() {
+                if let Some(mut old) = sql_active.take() {
                     let settled = tokio::time::timeout(grace, old.cancel.cancel()).await;
                     send(&events, Event::QueryState { query: old.id, state: QueryState::Cancelling }).await;
                     let _ = old.cursor.close().await;
@@ -322,7 +349,7 @@ pub(crate) async fn run(
                 continue;
             }
             _ = idle_timeout => {
-                if let Some(mut old) = active.take() {
+                if let Some(mut old) = sql_active.take() {
                     let settled = tokio::time::timeout(grace, old.cancel.cancel()).await;
                     send(&events, Event::QueryState { query: old.id, state: QueryState::Cancelling }).await;
                     let _ = old.cursor.close().await;
@@ -332,17 +359,49 @@ pub(crate) async fn run(
                 }
                 continue;
             }
+            _ = object_cancelled => {
+                if let Some(mut old)=object_active.take() {
+                    send(&events,Event::QueryState{query:old.id,state:QueryState::Cancelling}).await;
+                    let _=old.cancel.cancel().await;let _=old.cursor.close().await;
+                    failure(&events,old.id,DriverError::new(ErrorKind::Cancelled,"Object read cancelled")).await;
+                }
+                continue;
+            }
+            _ = object_timed_out => {
+                if let Some(mut old)=object_active.take() {
+                    let _=old.cancel.cancel().await;let _=old.cursor.close().await;
+                    failure(&events,old.id,DriverError::new(ErrorKind::Timeout,"Object read timed out")).await;
+                }
+                continue;
+            }
             command = commands.recv() => match command { Some(command) => command, None => break },
+        };
+        let object_command = match &command {
+            Command::Execute {
+                object: Some(_), ..
+            } => true,
+            Command::Fetch { query, .. }
+            | Command::Export { query, .. }
+            | Command::LoadValue { query, .. }
+            | Command::LoadValueChunk { query, .. }
+            | Command::Release(query) => object_active.as_ref().is_some_and(|a| a.id == *query),
+            _ => false,
+        };
+        let active = if object_command {
+            &mut object_active
+        } else {
+            &mut sql_active
         };
         match command {
             Command::Execute {
                 query,
                 sql,
+                object,
                 mut history,
                 options,
                 mut cancellation,
             } => {
-                close_active(&mut active, &events).await;
+                close_active(active, &events).await;
                 if *cancellation.borrow() {
                     if let Some(history) = &mut history {
                         history.fail(ErrorKind::Cancelled).await;
@@ -377,7 +436,7 @@ pub(crate) async fn run(
                         continue;
                     }
                 };
-                let cancel = connection.cancellation_handle();
+                let mut cancel = connection.cancellation_handle();
                 send(
                     &events,
                     Event::QueryState {
@@ -386,19 +445,36 @@ pub(crate) async fn run(
                     },
                 )
                 .await;
-                let outcome = perform(
-                    connection.execute_bounded(&sql, options, raw_limit),
-                    cancel.clone(),
-                    Control {
-                        query,
-                        cancellation: &mut cancellation,
-                        shutdown: &mut shutdown,
-                        deadline,
-                        grace,
-                        events: &events,
-                    },
-                )
-                .await;
+                let outcome = if let Some(object) = object {
+                    let result = metadata_operation(
+                        connection.open_object(&object, raw_limit),
+                        &mut shutdown,
+                    )
+                    .await;
+                    if let Ok(cursor) = &result
+                        && let Some(handle) = cursor.independent_cancellation_handle()
+                    {
+                        cancel = handle;
+                    }
+                    crate::operation::Outcome {
+                        result,
+                        poisoned: false,
+                    }
+                } else {
+                    perform(
+                        connection.execute_bounded(&sql, options, raw_limit),
+                        cancel.clone(),
+                        Control {
+                            query,
+                            cancellation: &mut cancellation,
+                            shutdown: &mut shutdown,
+                            deadline,
+                            grace,
+                            events: &events,
+                        },
+                    )
+                    .await
+                };
                 match outcome.result {
                     Ok(mut cursor) => {
                         if let Some(reader) = cursor.deferred_reader() {
@@ -473,7 +549,7 @@ pub(crate) async fn run(
                             },
                         )
                         .await;
-                        active = Some(Active {
+                        *active = Some(Active {
                             page_size,
                             history,
                             fetched_rows: 0,
@@ -695,7 +771,7 @@ pub(crate) async fn run(
                     released,
                     &mut stores,
                     &readers,
-                    &mut active,
+                    active,
                     &memory,
                     &events,
                     &shutdown,
@@ -798,31 +874,42 @@ pub(crate) async fn run(
                     .await;
                 }
             }
-            Command::Ddl(object) => {
-                match metadata_operation(connection.object_ddl(&object), &mut shutdown).await {
-                    Ok(ddl) => {
-                        send(
-                            &events,
-                            Event::Ddl {
-                                connection: id,
-                                object,
-                                ddl,
-                            },
-                        )
-                        .await
-                    }
-                    Err(error) => {
-                        send(
-                            &events,
+            Command::Ddl {
+                object,
+                request_token,
+            } => match metadata_operation(connection.object_ddl(&object), &mut shutdown).await {
+                Ok(ddl) => {
+                    send(
+                        &events,
+                        Event::Ddl {
+                            connection: id,
+                            object,
+                            request_token,
+                            ddl,
+                        },
+                    )
+                    .await
+                }
+                Err(error) => {
+                    send(
+                        &events,
+                        if request_token == 0 {
                             Event::OperationFailed {
                                 connection: id,
                                 error,
-                            },
-                        )
-                        .await
-                    }
+                            }
+                        } else {
+                            Event::DdlFailed {
+                                connection: id,
+                                object,
+                                request_token,
+                                error,
+                            }
+                        },
+                    )
+                    .await
                 }
-            }
+            },
             Command::Metadata {
                 parent,
                 request_token,
@@ -855,7 +942,7 @@ pub(crate) async fn run(
                 }
             },
             Command::Transaction(committed) => {
-                close_active(&mut active, &events).await;
+                close_active(active, &events).await;
                 let result = if committed {
                     connection.commit().await
                 } else {
@@ -889,25 +976,34 @@ pub(crate) async fn run(
                 readers.remove(&query);
                 cache.remove(query);
                 if active.as_ref().is_some_and(|a| a.id == query) {
-                    close_active(&mut active, &events).await;
+                    close_active(active, &events).await;
                 }
             }
         }
     }
     commands.close();
-    if let Some(old) = active.as_ref() {
+    if let Some(old) = sql_active.as_ref() {
         let _ = tokio::time::timeout(grace, old.cancel.cancel()).await;
     }
     // Cursor close may commit an automatic transaction (e.g. a suspended
     // PostgreSQL RETURNING portal). Disconnect must roll back the connection
     // before any cursor finalizer can run, even if native cancellation failed.
     let _ = connection.close().await;
-    if let Some(mut old) = active.take() {
+    if let Some(mut old) = sql_active.take() {
         let _ = old.cursor.close().await;
         if let Some(history) = &mut old.history {
             history.fail(ErrorKind::Disconnected).await;
         }
         old.history.take();
+        failure(
+            &events,
+            old.id,
+            DriverError::new(ErrorKind::Disconnected, "Connection closed"),
+        )
+        .await;
+    }
+    if let Some(mut old) = object_active.take() {
+        let _ = old.cursor.close().await;
         failure(
             &events,
             old.id,

@@ -1,0 +1,253 @@
+#include "app/object_explorer.h"
+#include "bridge/engine_adapter.h"
+#include "choscordb-bridge/src/lib.rs.h"
+#include <QAction>
+#include <QHeaderView>
+#include <QIcon>
+#include <QLabel>
+#include <QMenu>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QSignalSpy>
+#include <QTabBar>
+#include <QTableView>
+#include <QTest>
+using namespace choscordb;
+class ObjectExplorerTest final : public QObject {
+    Q_OBJECT
+  private slots:
+    void panesLoadRealIndexesKeysDdlAndDataOnlyWhenSelected() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        const auto create = adapter.execute(
+            *connection, "CREATE TABLE account(id INTEGER PRIMARY KEY, nickname TEXT UNIQUE)");
+        QVERIFY(create);
+        adapter.fetchPage(*create);
+        QTRY_COMPARE(finished, 1);
+        ObjectExplorer explorer(&adapter);
+        explorer.show();
+        QSignalSpy inspection(&adapter, &EngineAdapter::objectInspectionReady);
+        QSignalSpy data(&explorer, &ObjectExplorer::dataRequested);
+        explorer.openObject(*connection, R"(["main","account"])", "\"main\".\"account\"");
+        auto* table = explorer.findChild<QTableView*>("objectMetadata");
+        auto* tabs = explorer.findChild<QTabBar*>("objectTabs");
+        QTRY_COMPARE(inspection.count(), 1);
+        QCOMPARE(data.count(), 0);
+        QTest::mouseClick(tabs, Qt::LeftButton, Qt::NoModifier, tabs->tabRect(1).center());
+        QTRY_COMPARE(inspection.count(), 2);
+        QCOMPARE(table->model()->rowCount(), 1);
+        QCOMPARE(table->model()->index(0, 0).data().toString(),
+                 QString("sqlite_autoindex_account_1"));
+        QTest::mouseClick(tabs, Qt::LeftButton, Qt::NoModifier, tabs->tabRect(2).center());
+        QTRY_COMPARE(inspection.count(), 3);
+        // The fixture declares both a primary key and a UNIQUE constraint.
+        QCOMPARE(table->model()->rowCount(), 2);
+        QCOMPARE(table->model()->index(0, 0).data().toString(), QString("id"));
+        QCOMPARE(table->model()->index(0, 1).data().toString(), QString("Primary key"));
+        QCOMPARE(table->model()->index(1, 1).data().toString(), QString("Unique key"));
+        QTest::mouseClick(tabs, Qt::LeftButton, Qt::NoModifier, tabs->tabRect(3).center());
+        QTRY_COMPARE(inspection.count(), 4);
+        auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
+        QVERIFY(ddl);
+        QVERIFY(ddl->toPlainText().contains("nickname TEXT UNIQUE"));
+        QVERIFY(ddl->isReadOnly());
+        QCOMPARE(data.count(), 0);
+        QTest::mouseClick(tabs, Qt::LeftButton, Qt::NoModifier, tabs->tabRect(4).center());
+        QCOMPARE(data.count(), 1);
+        QCOMPARE(data.first().at(0).toULongLong(), *connection);
+        QCOMPARE(data.first().at(1).toString(), QString(R"(["main","account"])"));
+        QCOMPARE(inspection.count(), 4);
+    }
+    void disconnectClearsLoadedMetadataAndInvalidatesData() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        const auto create = adapter.execute(*connection, "CREATE TABLE retained(value INTEGER)");
+        QVERIFY(create);
+        adapter.fetchPage(*create);
+        QTRY_COMPARE(finished, 1);
+        ObjectExplorer explorer(&adapter);
+        explorer.show();
+        explorer.openObject(*connection, R"(["main","retained"])", "retained");
+        auto* table = explorer.findChild<QTableView*>("objectMetadata");
+        auto* status = explorer.findChild<QLabel*>("objectStatus");
+        QTRY_COMPARE(table->model()->rowCount(), 1);
+        QSignalSpy invalidated(&explorer, &ObjectExplorer::objectChanged);
+        QVERIFY(adapter.disconnectConnection(*connection));
+        QTRY_COMPARE(status->property("state").toString(), QString("disconnected"));
+        QCOMPARE(table->model()->rowCount(), 0);
+        QCOMPARE(invalidated.count(), 1);
+    }
+    void refreshEmptyUnsupportedAndRetryKeepDistinctStates() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        auto create = adapter.execute(*connection, "CREATE TABLE changing(value TEXT)");
+        QVERIFY(create);
+        adapter.fetchPage(*create);
+        QTRY_COMPARE(finished, 1);
+        ObjectExplorer explorer(&adapter);
+        explorer.resize(640, 480);
+        explorer.show();
+        explorer.openObject(*connection, R"(["main","changing"])", "changing");
+        auto* table = explorer.findChild<QTableView*>("objectMetadata");
+        auto* status = explorer.findChild<QLabel*>("objectStatus");
+        auto* tabs = explorer.findChild<QTabBar*>("objectTabs");
+        QTRY_COMPARE(table->model()->rowCount(), 1);
+        auto alter = adapter.execute(*connection, "ALTER TABLE changing ADD COLUMN extra INTEGER");
+        QVERIFY(alter);
+        adapter.fetchPage(*alter);
+        QTRY_COMPARE(finished, 2);
+        auto* refresh = explorer.findChild<QPushButton*>("objectRefresh");
+        QVERIFY(refresh);
+        QTest::mouseClick(refresh, Qt::LeftButton);
+        QTRY_COMPARE(table->model()->rowCount(), 2);
+        QCOMPARE(table->model()->index(1, 0).data().toString(), QString("extra"));
+        tabs->setCurrentIndex(1);
+        QTRY_COMPARE(status->property("state").toString(), QString("empty"));
+        QCOMPARE(table->model()->rowCount(), 0);
+        QVERIFY(status->text().contains("No indexes"));
+        explorer.openObject(*connection, R"(["main"])", "main");
+        tabs->setCurrentIndex(3);
+        QTRY_COMPARE(status->property("state").toString(), QString("unsupported"));
+        QVERIFY(status->text().size() > QString("Unsupported:").size());
+        QSignalSpy failed(&adapter, &EngineAdapter::objectInspectionFailed);
+        explorer.openObject(*connection, R"(["main","later"])", "later");
+        tabs->setCurrentIndex(3);
+        QTRY_COMPARE(status->property("state").toString(), QString("failed"));
+        QVERIFY(!failed.isEmpty());
+        const auto failedToken = failed.last().at(2).toULongLong();
+        auto later = adapter.execute(*connection, "CREATE TABLE later(value TEXT)");
+        QVERIFY(later);
+        adapter.fetchPage(*later);
+        QTRY_COMPARE(finished, 3);
+        auto* retry = explorer.findChild<QPushButton*>("objectRetry");
+        QVERIFY(retry->isVisible());
+        QTest::mouseClick(retry, Qt::LeftButton);
+        QTRY_COMPARE(status->property("state").toString(), QString("loaded"));
+        auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
+        QVERIFY(ddl->toPlainText().contains("CREATE TABLE later"));
+        adapter.objectInspectionFailed(*connection, R"(["main","later"])", failedToken,
+                                       "Late obsolete failure");
+        QCOMPARE(status->property("state").toString(), QString("loaded"));
+        QVERIFY(ddl->toPlainText().contains("CREATE TABLE later"));
+    }
+    void openAndGenerateSqlUseTheObjectAndNeverExecute() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0, queued = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+            if (event.kind == "query_state" && event.state == "queued")
+                ++queued;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        auto create =
+            adapter.execute(*connection, "CREATE TABLE \"a.b\"(\"col name\" TEXT, other INTEGER)");
+        QVERIFY(create);
+        adapter.fetchPage(*create);
+        QTRY_COMPARE(finished, 1);
+        ObjectExplorer explorer(&adapter);
+        explorer.resize(640, 480);
+        explorer.show();
+        explorer.openObject(*connection, R"(["main","a.b"])", "\"main\".\"a.b\"");
+        QTRY_COMPARE(explorer.findChild<QTableView*>("objectMetadata")->model()->rowCount(), 2);
+        QSignalSpy generated(&explorer, &ObjectExplorer::sqlGenerated);
+        auto* open = explorer.findChild<QPushButton*>("objectOpenQuery");
+        QVERIFY(open);
+        QTest::mouseClick(open, Qt::LeftButton);
+        QCOMPARE(generated.count(), 1);
+        QCOMPARE(generated.first().first().toULongLong(), *connection);
+        QCOMPARE(generated.first().at(1).toString(), QString("SELECT * FROM \"main\".\"a.b\";"));
+        auto* insert = explorer.findChild<QAction*>("objectGenerate_insert");
+        QVERIFY(insert);
+        QVERIFY(insert->isEnabled());
+        insert->trigger();
+        QCOMPARE(generated.count(), 2);
+        QVERIFY(generated.last().at(1).toString().contains(
+            "INSERT INTO \"main\".\"a.b\" (\"col name\", \"other\") VALUES ($1, $2);"));
+        auto positive = adapter.execute(*connection, "SELECT 1");
+        QVERIFY(positive);
+        adapter.fetchPage(*positive);
+        QTRY_COMPARE(finished, 2);
+        QCOMPARE(queued, 2);
+    }
+    void columnsDisplayRealPropertiesForUnicodeObject() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        const auto create = adapter.execute(
+            *connection,
+            "CREATE TABLE \"dữ liệu\"(label TEXT NOT NULL DEFAULT 'actual', amount INTEGER)");
+        QVERIFY(create);
+        adapter.fetchPage(*create);
+        QTRY_COMPARE(finished, 1);
+        ObjectExplorer explorer(&adapter);
+        explorer.show();
+        explorer.openObject(*connection, R"(["main","dữ liệu"])", "main.dữ liệu");
+        auto* table = explorer.findChild<QTableView*>("objectMetadata");
+        QVERIFY(table);
+        QTRY_COMPARE(table->model()->rowCount(), 2);
+        QCOMPARE(table->model()->index(0, 0).data().toString(), QString("label"));
+        QCOMPARE(table->model()->index(1, 0).data().toString(), QString("amount"));
+        QStringList values;
+        for (int column = 0; column < table->model()->columnCount(); ++column)
+            values.append(table->model()->index(0, column).data().toString());
+        QVERIFY(values.contains("'actual'"));
+        QVERIFY(values.contains("No"));
+        QVERIFY(values.contains("TEXT"));
+        QCOMPARE(table->editTriggers(), QAbstractItemView::NoEditTriggers);
+        QCOMPARE(table->rowHeight(0), 33);
+        QVERIFY(!table->verticalHeader()->isVisible());
+        QVERIFY(
+            !qvariant_cast<QIcon>(table->model()->index(0, 0).data(Qt::DecorationRole)).isNull());
+        QVERIFY(table->alternatingRowColors());
+        QVERIFY(!table->showGrid());
+        QVERIFY(!table->wordWrap());
+        QVERIFY(table->columnWidth(4) > 100);
+    }
+};
+QTEST_MAIN(ObjectExplorerTest)
+#include "object_explorer_test.moc"

@@ -170,6 +170,8 @@ class EditorCompletionTest : public QObject {
         QCOMPARE(metadataRequests, beforeTyping);
         workspace->connectSqlite(":memory:");
         QTRY_COMPARE(connected.count(), 2);
+        QCOMPARE(selectorForNone->currentData().toULongLong(), id);
+        selectorForNone->setCurrentIndex(selectorForNone->findData(connected.last().at(0)));
         editor->setText("us");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 2);
         window.activateWindow();

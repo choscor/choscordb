@@ -1,15 +1,102 @@
 #include "bridge/engine_adapter.h"
 #include "models/history_model.h"
 #include "widgets/history_dock/history_dock.h"
+#include <QAction>
 #include <QCheckBox>
+#include <QComboBox>
+#include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
+#include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTableView>
+#include <QToolButton>
 #include <QtTest>
 class HistoryTest : public QObject {
     Q_OBJECT
   private slots:
+    void queryRowsUseFullWidthAndFullTextPreviewIsExplicit() {
+        choscordb::EngineAdapter adapter;
+        choscordb::HistoryDock history(&adapter);
+        history.resize(700, 600);
+        history.show();
+        QTRY_VERIFY(history.findChild<QPushButton*>("refreshHistory")->isEnabled());
+        auto* table = history.findChild<QTableView*>("historyTable");
+        auto* model = qobject_cast<choscordb::HistoryModel*>(table->model());
+        choscordb::SavedHistoryEntry entry;
+        entry.id = "layout";
+        entry.sql = "SELECT customer_name FROM customers";
+        entry.status = "completed";
+        model->setEntries({entry});
+        QVERIFY(!table->horizontalHeader()->isVisible());
+        QCOMPARE(table->rowHeight(0), 62);
+        QCOMPARE(table->columnWidth(2), table->viewport()->width());
+        auto* preview = history.findChild<QPlainTextEdit*>("historyPreview");
+        QVERIFY(!preview->isVisible());
+        table->selectRow(0);
+        QVERIFY(!preview->isVisible());
+        auto* manage = history.findChild<QToolButton*>("historyManage");
+        QVERIFY(manage);
+        auto* showPreview = manage->menu()->findChild<QAction*>("historyShowPreview");
+        QVERIFY(showPreview);
+        showPreview->trigger();
+        QVERIFY(preview->isVisible());
+        QCOMPARE(preview->toPlainText(), entry.sql);
+        QSignalSpy opened(&history, &choscordb::HistoryDock::openRequested);
+        history.findChild<QPushButton*>("openHistoryQuery")->click();
+        QCOMPARE(opened.count(), 1);
+        QCOMPARE(qvariant_cast<choscordb::SavedHistoryEntry>(opened.first().first()).sql,
+                 entry.sql);
+    }
+    void pageFiltersNeverReopenAHiddenSelection() {
+        choscordb::EngineAdapter adapter;
+        choscordb::HistoryDock history(&adapter);
+        history.resize(800, 600);
+        history.show();
+        QTRY_VERIFY(history.findChild<QPushButton*>("refreshHistory")->isEnabled());
+        auto* table = history.findChild<QTableView*>("historyTable");
+        auto* model = qobject_cast<choscordb::HistoryModel*>(table->model());
+        choscordb::SavedHistoryEntry alpha, beta;
+        alpha.id = "alpha";
+        alpha.sql = "SELECT alpha_value";
+        alpha.status = "completed";
+        beta.id = "beta";
+        beta.sql = "SELECT beta_value";
+        beta.status = "failed";
+        model->setEntries({alpha, beta});
+        table->selectRow(0);
+        auto* open = history.findChild<QPushButton*>("openHistoryQuery");
+        QVERIFY(open->isEnabled());
+        auto* search = history.findChild<QLineEdit*>("historySearch");
+        QVERIFY(search);
+        QCOMPARE(search->placeholderText(), QString("Filter this page"));
+        search->setFocus();
+        QTest::keyClicks(search, "beta");
+        QVERIFY(table->isRowHidden(0));
+        QVERIFY(!table->isRowHidden(1));
+        QVERIFY(!open->isEnabled());
+        QSignalSpy opened(&history, &choscordb::HistoryDock::openRequested);
+        table->selectRow(1);
+        open->click();
+        QCOMPARE(opened.count(), 1);
+        QCOMPARE(qvariant_cast<choscordb::SavedHistoryEntry>(opened.first().first()).sql, beta.sql);
+        search->clear();
+        auto* status = history.findChild<QComboBox*>("historyStatusFilter");
+        QVERIFY(status);
+        status->setCurrentIndex(status->findData("completed"));
+        QVERIFY(!table->isRowHidden(0));
+        QVERIFY(table->isRowHidden(1));
+        QVERIFY(!open->isEnabled());
+        table->selectRow(0);
+        open->click();
+        QCOMPARE(opened.count(), 2);
+        QCOMPARE(qvariant_cast<choscordb::SavedHistoryEntry>(opened.last().first()).sql, alpha.sql);
+        search->setText("not found");
+        QVERIFY(!open->isEnabled());
+        open->click();
+        QCOMPARE(opened.count(), 2);
+    }
     void byteShortPagesAdvanceByReturnedRowsAndReturnToVisitedOffsets() {
         choscordb::EngineAdapter adapter;
         QSignalSpy listed(&adapter, &choscordb::EngineAdapter::historyListed);
@@ -52,6 +139,10 @@ class HistoryTest : public QObject {
         QCOMPARE(model.data(model.index(0, 1)).toString(), QString("Unsaved connection"));
         QCOMPARE(model.data(model.index(0, 5)).toString(), QString::fromUtf8("—"));
         QVERIFY(model.data(model.index(0, 2)).toString().size() < 300);
+        const auto accessible = model.data(model.index(0, 2), Qt::AccessibleTextRole).toString();
+        QVERIFY(accessible.contains("Completed"));
+        QVERIFY(accessible.contains("Unsaved connection"));
+        QVERIFY(accessible.size() < 500);
         QCOMPARE(model.entry(0)->sql, entry.sql);
         entry.profileId = "missing-profile";
         entry.hasRowCount = true;

@@ -76,6 +76,7 @@ pub(super) fn run(
                 );
                 db.progress_handler(0, None::<fn() -> bool>);
             }
+            Command::Object(operation) => operation(&db),
             Command::Metadata(parent, r) => {
                 let _ = r.send(metadata::load(&db, parent));
             }
@@ -283,6 +284,18 @@ fn execute(
                 });
                 let _ = r.send(page);
             }
+            Command::Object(operation) => {
+                db.progress_handler(0, None::<fn() -> bool>);
+                operation(db);
+                let stop = cancel.clone();
+                db.progress_handler(
+                    1000,
+                    Some(move || {
+                        stop.load(Ordering::Acquire)
+                            || deadline.is_some_and(|d| Instant::now() >= d)
+                    }),
+                );
+            }
             Command::Metadata(parent, reply) => {
                 // Metadata is a separate operation on the same connection. Its SQL
                 // must not inherit an exhausted result's query deadline.
@@ -351,7 +364,7 @@ fn abort_suspended_rows(db: &Db, rows: &mut rusqlite::Rows<'_>) {
     db.get_interrupt_handle().interrupt();
     let _ = rows.next();
 }
-fn next_row(
+pub(super) fn next_row(
     rows: &mut rusqlite::Rows<'_>,
     width: usize,
     spool: &mut spool::Spool,
@@ -393,7 +406,7 @@ fn memory_limit() -> DriverError {
         "Result page exceeds memory budget",
     )
 }
-fn row_bytes(row: &Row) -> usize {
+pub(super) fn row_bytes(row: &Row) -> usize {
     row.capacity() * std::mem::size_of::<Value>()
         + row
             .iter()

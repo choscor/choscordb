@@ -1,27 +1,29 @@
 #include "preferences_dialog.h"
 #include "app/appearance_controller.h"
 #include "design_system/button/button.h"
+#include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QComboBox>
-#include <QDialogButtonBox>
+#include <QDoubleSpinBox>
 #include <QFontComboBox>
 #include <QFontDatabase>
 #include <QFormLayout>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QKeySequenceEdit>
 #include <QLabel>
-#include <QListWidget>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
-#include <QStackedWidget>
 #include <QStringList>
 #include <QTabWidget>
 #include <QVBoxLayout>
 #include <atomic>
+#include <limits>
 namespace choscordb {
 namespace {
 quint64 nextToken() {
@@ -33,28 +35,53 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                                      QWidget* parent, AppearanceController* appearance)
     : DialogShell(parent), adapter_(adapter), appearance_(appearance),
       catalog_(std::move(catalog)) {
+    setAppModal();
     setWindowTitle(tr("Preferences"));
     setObjectName("preferencesDialog");
     resize(design::dialogInitialSize(design::DialogSize::Preferences));
+    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* layout = new QVBoxLayout(this);
-    layout->addWidget(createDescription(
-        tr("Tune appearance, editor behavior, and keyboard shortcuts. Appearance changes preview "
-           "immediately."),
-        this));
-    auto* pageRow = new QHBoxLayout;
-    auto* navigation = new QListWidget(this);
-    navigation->setObjectName("preferencesSections");
-    navigation->setAccessibleName(tr("Preference sections"));
-    auto* pages = new QStackedWidget(this);
+    auto* header = new QWidget(this);
+    header->setFixedHeight(metrics.modalHeaderHeight);
+    auto* headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(metrics.modalContentInset, 0, metrics.modalContentInset, 0);
+    auto* heading = new design::Text(tr("Preferences"), header);
+    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    headerLayout->addWidget(heading);
+    headerLayout->addStretch();
+    auto* dismiss = new design::Button({}, header);
+    dismiss->setObjectName("preferencesDismiss");
+    dismiss->setAccessibleName(tr("Close preferences"));
+    dismiss->setVariant(design::ButtonVariant::Ghost);
+    dismiss->setButtonSize(design::ButtonSize::IconSmall);
+    dismiss->setDesignIcon(design::Icon::Close);
+    headerLayout->addWidget(dismiss);
+    connect(dismiss, &QPushButton::clicked, this, &PreferencesDialog::reject);
+    layout->addWidget(header);
+    auto* separator = new QFrame(this);
+    separator->setFrameShape(QFrame::HLine);
+    layout->addWidget(separator);
+    auto* pages = new QTabWidget(this);
+    pages->setObjectName("preferencesSections");
+    pages->setAccessibleName(tr("Preference sections"));
+    pages->setDocumentMode(true);
+    pages->setUsesScrollButtons(true);
     pages_ = pages;
-    pageRow->addWidget(navigation);
-    pageRow->addWidget(pages, 1);
-    layout->addLayout(pageRow, 1);
-    auto addPage = [navigation, pages](QWidget* page, const QString& title) {
-        navigation->addItem(title);
-        pages->addWidget(page);
+    layout->addWidget(pages, 1);
+    auto addPage = [pages, metrics](QWidget* page, const QString& title) {
+        auto* scroll = new QScrollArea(pages);
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->viewport()->setProperty("designSurface", "panel");
+        page->setProperty("designSurface", "panel");
+        page->setAttribute(Qt::WA_StyledBackground);
+        page->setBackgroundRole(QPalette::Base);
+        if (page->layout())
+            page->layout()->setContentsMargins(metrics.modalContentInset, metrics.modalFooterInset,
+                                               metrics.modalContentInset, metrics.modalFooterInset);
+        scroll->setWidget(page);
+        pages->addTab(scroll, title);
     };
-    connect(navigation, &QListWidget::currentRowChanged, pages, &QStackedWidget::setCurrentIndex);
 
     auto* appearancePage = new QWidget(pages);
     auto* appearanceForm = new QFormLayout(appearancePage);
@@ -105,10 +132,43 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     preview_->setText("SELECT name, count(*)\nFROM sample\nWHERE active = true\nGROUP BY name;");
     preview_->setReadOnly(true);
     form->addRow(preview_);
-    addPage(editor, tr("Editor"));
-    auto* scroll = new QScrollArea(pages);
-    scroll->setWidgetResizable(true);
-    auto* keyboard = new QWidget(scroll);
+    addPage(editor, tr("SQL editor"));
+    auto* results = new QWidget(pages);
+    auto* resultForm = new QFormLayout(results);
+    const auto queryLimits = EngineAdapter::queryPreferenceLimits();
+    pageSize_ = new QSpinBox(results);
+    pageSize_->setObjectName("queryPageSize");
+    pageSize_->setRange(queryLimits.minPageSize, queryLimits.maxPageSize);
+    timeout_ = new QSpinBox(results);
+    timeout_->setObjectName("queryTimeoutSeconds");
+    timeout_->setRange(0, queryLimits.maxTimeoutSeconds);
+    timeout_->setSpecialValueText(tr("No timeout"));
+    resultForm->addRow(tr("Rows per page"), pageSize_);
+    resultForm->addRow(tr("Statement timeout (seconds)"), timeout_);
+    resultForm->addRow(createDescription(
+        tr("Applies to new queries. Existing results keep their page size and timeout."), results));
+    addPage(results, tr("Results && execution"));
+    auto* history = new QWidget(pages);
+    auto* historyForm = new QFormLayout(history);
+    recordHistory_ = new QCheckBox(tr("Record query history"), history);
+    recordHistory_->setObjectName("preferencesRecordHistory");
+    historyDays_ = new QDoubleSpinBox(history);
+    historyDays_->setDecimals(0);
+    historyDays_->setObjectName("preferencesHistoryDays");
+    historyDays_->setRange(1, std::numeric_limits<quint32>::max());
+    historyRecords_ = new QDoubleSpinBox(history);
+    historyRecords_->setDecimals(0);
+    historyRecords_->setObjectName("preferencesHistoryRecords");
+    historyRecords_->setRange(1, std::numeric_limits<quint32>::max());
+    historyForm->addRow(recordHistory_);
+    historyForm->addRow(tr("Keep history (days)"), historyDays_);
+    historyForm->addRow(tr("Maximum history entries"), historyRecords_);
+    historyForm->addRow(createDescription(
+        tr("Unsaved SQL drafts are recovered automatically. Restored drafts stay disconnected "
+           "and never execute automatically."),
+        history));
+    addPage(history, tr("History && recovery"));
+    auto* keyboard = new QWidget(pages);
     auto* keys = new QFormLayout(keyboard);
     for (const auto& descriptor : catalog_) {
         auto* key = new QKeySequenceEdit(keyboard);
@@ -117,26 +177,38 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
         sequences_.append(key);
         keys->addRow(descriptor.label, key);
     }
-    scroll->setWidget(keyboard);
-    addPage(scroll, tr("Keyboard"));
-    navigation->setCurrentRow(0);
+    addPage(keyboard, tr("Keyboard shortcuts"));
+    pages->setCurrentIndex(0);
     status_ = createInlineStatus(this);
     status_->setObjectName("preferencesStatus");
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
     layout->addWidget(status_);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Cancel |
-                                             QDialogButtonBox::RestoreDefaults,
-                                         this);
-    apply_ = buttons->button(QDialogButtonBox::Apply);
-    apply_->setObjectName("preferencesApply");
-    apply_->setProperty("variant", "default");
-    buttons->button(QDialogButtonBox::Cancel)->setProperty("variant", "outline");
-    reset_ = buttons->button(QDialogButtonBox::RestoreDefaults);
-    reset_->setObjectName("preferencesReset");
-    reset_->setProperty("variant", "outline");
-    layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    auto* footer = new QWidget(this);
+    footer->setProperty("designSurface", "muted");
+    footer->setAttribute(Qt::WA_StyledBackground);
+    auto* buttons = new QHBoxLayout(footer);
+    buttons->setContentsMargins(metrics.modalFooterInset, metrics.modalFooterVerticalInset,
+                                metrics.modalFooterInset, metrics.modalFooterVerticalInset);
+    auto* reset = new design::Button(tr("Restore defaults"), footer);
+    reset_ = reset;
+    reset->setObjectName("preferencesReset");
+    reset->setVariant(design::ButtonVariant::Outline);
+    reset->setButtonSize(design::ButtonSize::Small);
+    buttons->addWidget(reset);
+    buttons->addStretch();
+    auto* close = new design::Button(tr("Close"), footer);
+    close->setObjectName("preferencesClose");
+    close->setVariant(design::ButtonVariant::Outline);
+    close->setButtonSize(design::ButtonSize::Small);
+    buttons->addWidget(close);
+    auto* apply = new design::Button(tr("Save preferences"), footer);
+    apply_ = apply;
+    apply->setObjectName("preferencesApply");
+    apply->setButtonSize(design::ButtonSize::Small);
+    buttons->addWidget(apply);
+    layout->addWidget(footer);
+    connect(close, &QPushButton::clicked, this, &PreferencesDialog::reject);
     connect(this, &QDialog::rejected, this, [this] {
         if (appearance_)
             appearance_->cancelPreview();
@@ -144,6 +216,9 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     connect(apply_, &QPushButton::clicked, this, &PreferencesDialog::apply);
     connect(reset_, &QPushButton::clicked, this, [this] {
         fill(EditorPreferences{});
+        fillQuery(QueryPreferences{});
+        fillHistory(HistoryPolicy{});
+        errors_.clear();
         if (appearance_) {
             theme_->setCurrentIndex(theme_->findData("system"));
         }
@@ -192,9 +267,16 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                         appearanceWarning_ = message;
                         updateAppearanceStatus();
                     }
+                    if (!appearancePending_)
+                        return;
+                    appearancePending_ = false;
+                    if (!success)
+                        errors_.append(tr("Appearance: %1").arg(message));
+                    finishRequests();
                 });
         connect(retryAppearance, &QPushButton::clicked, appearance_, &AppearanceController::retry);
-        connect(resetAppearance, &QPushButton::clicked, appearance_, &AppearanceController::reset);
+        connect(resetAppearance, &QPushButton::clicked, appearance_,
+                &AppearanceController::stageReset);
     } else {
         retryAppearance->setEnabled(false);
         resetAppearance->setEnabled(false);
@@ -206,30 +288,88 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                     return;
                 token_ = 0;
                 const auto validation = shortcutValidationError(value, catalog_);
-                if (!validation.isEmpty()) {
-                    setBusy(false);
-                    status_->setText(validation);
-                    return;
+                if (!validation.isEmpty())
+                    errors_.append(tr("SQL editor / Keyboard shortcuts: %1").arg(validation));
+                else {
+                    emit preferencesConfirmed(value);
+                    if (!saving_)
+                        fill(value);
                 }
-                emit preferencesConfirmed(value);
-                fill(value);
-                ready_ = true;
-                setBusy(false);
-                status_->setText(saving_ ? tr("Preferences saved.") : tr("Preferences loaded."));
-                saving_ = false;
+                finishRequests();
+            });
+    connect(adapter, &EngineAdapter::queryPreferencesReady, this,
+            [this](quint64 token, const QueryPreferences& value) {
+                if (!queryToken_ || token != queryToken_)
+                    return;
+                queryToken_ = 0;
+                const auto limits = EngineAdapter::queryPreferenceLimits();
+                if (value.version != limits.version || value.pageSize < limits.minPageSize ||
+                    value.pageSize > limits.maxPageSize ||
+                    value.timeoutSeconds > limits.maxTimeoutSeconds)
+                    errors_.append(tr("Results & execution: stored settings are invalid. "
+                                      "Restore defaults to replace them."));
+                else {
+                    if (!saving_)
+                        fillQuery(value);
+                    emit queryPreferencesConfirmed(value);
+                }
+                finishRequests();
+            });
+    connect(adapter, &EngineAdapter::historyPolicyReady, this,
+            [this](quint64 token, const HistoryPolicy& value) {
+                if (!historyToken_ || token != historyToken_)
+                    return;
+                historyToken_ = 0;
+                if (!value.maxAgeDays || !value.maxRecords ||
+                    value.maxAgeDays > quint32(historyDays_->maximum()) ||
+                    value.maxRecords > quint32(historyRecords_->maximum()))
+                    errors_.append(tr("History & recovery: stored retention is outside the "
+                                      "supported range. Restore defaults to replace it."));
+                else {
+                    if (!saving_)
+                        fillHistory(value);
+                    emit historyPolicyConfirmed(value);
+                }
+                finishRequests();
             });
     connect(adapter, &EngineAdapter::recoveryFailed, this,
             [this](quint64 token, const QString& error) {
-                if (!token_ || token != token_)
+                if (!token)
                     return;
-                token_ = 0;
-                setBusy(false);
-                status_->setText(error);
+                QString section;
+                if (token == token_) {
+                    token_ = 0;
+                    section = tr("SQL editor / Keyboard shortcuts");
+                } else if (token == queryToken_) {
+                    queryToken_ = 0;
+                    section = tr("Results & execution");
+                } else if (token == historyToken_) {
+                    historyToken_ = 0;
+                    section = tr("History & recovery");
+                } else
+                    return;
+                errors_.append(tr("%1: %2").arg(section, error));
+                finishRequests();
             });
     fill(EditorPreferences{});
+    fillQuery(QueryPreferences{});
+    fillHistory(HistoryPolicy{});
     setBusy(true);
+    // The tabs are disabled during asynchronous loading. Give the modal an
+    // enabled initial focus target instead of leaving Cocoa's focus empty.
+    close->setFocus(Qt::OtherFocusReason);
     token_ = nextToken();
-    adapter_->getEditorPreferences(token_);
+    queryToken_ = nextToken();
+    historyToken_ = nextToken();
+    if (adapter_) {
+        adapter_->getEditorPreferences(token_);
+        adapter_->getQueryPreferences(queryToken_);
+        adapter_->getHistoryPolicy(historyToken_);
+    } else {
+        token_ = queryToken_ = historyToken_ = 0;
+        errors_.append(tr("Settings service is unavailable."));
+        finishRequests();
+    }
 }
 
 void PreferencesDialog::updateAppearanceStatus() {
@@ -300,13 +440,74 @@ void PreferencesDialog::apply() {
         status_->setText(error);
         return;
     }
+    QueryPreferences query;
+    query.pageSize = quint32(pageSize_->value());
+    query.timeoutSeconds = quint32(timeout_->value());
+    HistoryPolicy history;
+    history.enabled = recordHistory_->isChecked();
+    history.maxAgeDays = quint32(historyDays_->value());
+    history.maxRecords = quint32(historyRecords_->value());
+    errors_.clear();
     saving_ = true;
     setBusy(true);
-    token_ = nextToken();
+    // Register every participant before submitting: shutdown/queue failures may
+    // be synchronous, while success must wait for all storage acknowledgements.
+    const auto editorToken = token_ = nextToken();
+    const auto queryToken = queryToken_ = nextToken();
+    const auto historyToken = historyToken_ = nextToken();
+    appearancePending_ = !appearance_.isNull();
     status_->setText(tr("Saving preferences…"));
-    emit preferencesSaveSubmitted(token_);
-    adapter_->setEditorPreferences(value, token_);
+    emit preferencesSaveSubmitted(editorToken);
+    emit queryPreferencesSaveSubmitted(queryToken);
+    adapter_->setEditorPreferences(value, editorToken);
+    adapter_->setQueryPreferences(query, queryToken);
+    adapter_->setHistoryPolicy(history, historyToken);
     if (appearance_)
         appearance_->applyPreview();
+}
+void PreferencesDialog::fillQuery(const QueryPreferences& value) {
+    pageSize_->setValue(value.pageSize);
+    timeout_->setValue(value.timeoutSeconds);
+}
+void PreferencesDialog::fillHistory(const HistoryPolicy& value) {
+    recordHistory_->setChecked(value.enabled);
+    historyDays_->setValue(value.maxAgeDays);
+    historyRecords_->setValue(value.maxRecords);
+}
+void PreferencesDialog::finishRequests() {
+    if (token_ || queryToken_ || historyToken_ || appearancePending_)
+        return;
+    const bool saved = saving_;
+    saving_ = false;
+    if (!saved)
+        ready_ = errors_.isEmpty();
+    setBusy(false);
+    if (!errors_.isEmpty()) {
+        status_->setText(errors_.join(QLatin1Char('\n')));
+        return;
+    }
+    status_->setText(saved ? tr("Preferences saved.") : tr("Preferences loaded."));
+    if (saved)
+        accept();
+}
+void PreferencesDialog::reject() {
+    if (saving_) {
+        status_->setText(tr("Saving preferences… Please wait for storage to finish."));
+        return;
+    }
+    DialogShell::reject();
+}
+void PreferencesDialog::showEvent(QShowEvent* event) {
+    DialogShell::showEvent(event);
+    layout()->setContentsMargins(0, 0, 0, 0);
+    layout()->setSpacing(0);
+}
+void PreferencesDialog::closeEvent(QCloseEvent* event) {
+    if (saving_) {
+        status_->setText(tr("Saving preferences… Please wait for storage to finish."));
+        event->ignore();
+        return;
+    }
+    DialogShell::closeEvent(event);
 }
 } // namespace choscordb

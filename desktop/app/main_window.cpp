@@ -2,12 +2,15 @@
 #include "app/appearance_controller.h"
 #include "app/editor_preferences.h"
 #include "app/navigator_controller.h"
+#include "app/object_data_workspace.h"
+#include "app/object_explorer.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
 #include "design_system/icons.h"
+#include "design_system/item_view/item_view_style.h"
 #include "design_system/platform_accessibility.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
@@ -34,12 +37,15 @@
 #include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QStatusBar>
 #include <QStyle>
 #include <QStyleHints>
@@ -51,7 +57,9 @@
 #include <QToolButton>
 #include <QTreeView>
 #include <QVBoxLayout>
+#include <QWidgetAction>
 
+#include <atomic>
 #include <utility>
 
 int qInitResources_resources();
@@ -59,6 +67,26 @@ int qInitResources_resources();
 namespace choscordb {
 
 namespace {
+
+class NavigatorIconDelegate final : public QStyledItemDelegate {
+  public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+    void initStyleOption(QStyleOptionViewItem* option, const QModelIndex& index) const override {
+        QStyledItemDelegate::initStyleOption(option, index);
+        const auto kind = index.data(NavigatorModel::KindRole).toString();
+        const auto role = kind == "connection"                      ? design::Icon::Database
+                          : kind == "schema" || kind == "database"  ? design::Icon::Folder
+                          : kind == "table" || kind == "view"       ? design::Icon::Table
+                          : kind == "index" || kind.contains("key") ? design::Icon::Key
+                                                                    : design::Icon::File;
+        if (option->widget) {
+            const auto colors = design::resolvedThemeForWidget(*option->widget).colors;
+            option->icon = design::themedIcon(role, colors.mutedText, 16);
+            option->features |= QStyleOptionViewItem::HasDecoration;
+            option->decorationSize = QSize(16, 16);
+        }
+    }
+};
 
 class ContextualActionVisibility final : public QObject {
   public:
@@ -97,48 +125,6 @@ class ContextualActionVisibility final : public QObject {
 
     QWidget* region_;
     QList<QWidget*> actions_;
-};
-
-class ResponsiveQueryToolbar final : public QObject {
-  public:
-    ResponsiveQueryToolbar(QWidget* window, design::ThemeManager* theme,
-                           QList<QAction*> secondaryActions, QList<QToolButton*> compactActions,
-                           QAction* overflow)
-        : QObject(window), window_(window), theme_(theme), secondaryActions_(secondaryActions),
-          compactActions_(std::move(compactActions)), overflow_(overflow) {
-        window_->installEventFilter(this);
-        connect(theme_, &design::ThemeManager::metricsChanged, this, [this] { updateForWidth(); });
-        updateForWidth();
-    }
-
-  protected:
-    bool eventFilter(QObject* watched, QEvent* event) override {
-        if (watched == window_ &&
-            (event->type() == QEvent::Resize || event->type() == QEvent::Show)) {
-            updateForWidth();
-        }
-        return QObject::eventFilter(watched, event);
-    }
-
-  private:
-    void updateForWidth() {
-        const bool narrow = window_->width() <= theme_->metrics().narrowWorkspaceWidth;
-        for (auto* action : secondaryActions_) {
-            action->setVisible(!narrow);
-        }
-        for (auto* button : compactActions_) {
-            button->setToolButtonStyle(narrow ? Qt::ToolButtonIconOnly
-                                              : Qt::ToolButtonTextBesideIcon);
-            button->setProperty("iconOnly", narrow);
-        }
-        overflow_->setVisible(narrow);
-    }
-
-    QWidget* window_;
-    design::ThemeManager* theme_;
-    QList<QAction*> secondaryActions_;
-    QList<QToolButton*> compactActions_;
-    QAction* overflow_;
 };
 
 class HoveredTabCloseVisibility final : public QObject {
@@ -232,7 +218,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         connect(action, &QAction::triggered, this, [this, method] {
             if (!editors_->isEnabled())
                 return;
-            if (auto* e = qobject_cast<SqlEditor*>(editors_->currentWidget()))
+            if (auto* e = qobject_cast<SqlEditor*>(editors_->currentWidget());
+                e && showScreen(Screen::Sql))
                 (e->*method)();
         });
     };
@@ -247,6 +234,28 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     auto* newConnection = connectionMenu->addAction(tr("New SQLite session…"));
 
     auto* viewMenu = menuBar()->addMenu(tr("&View"));
+    const QList<QPair<QString, QString>> screenNames = {{"showStart", tr("Start page")},
+                                                        {"showSql", tr("SQL workspace")},
+                                                        {"showObjects", tr("Object explorer")},
+                                                        {"showHistory", tr("Query history")}};
+    QList<QAction*> screenActions;
+    for (int i = 0; i < screenNames.size(); ++i) {
+        auto* action = viewMenu->addAction(screenNames[i].second);
+        action->setObjectName(screenNames[i].first);
+        connect(action, &QAction::triggered, this,
+                [this, i] { showScreen(static_cast<Screen>(i)); });
+        screenActions.append(action);
+    }
+    auto* quickSwitch = viewMenu->addAction(tr("Quick switch…"));
+    quickSwitch->setObjectName("quickSwitch");
+    connect(quickSwitch, &QAction::triggered, this, [this, screenActions] {
+        auto* menu = new QMenu(this);
+        menu->setObjectName("quickSwitchMenu");
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        for (auto* action : screenActions)
+            menu->addAction(action);
+        menu->popup(mapToGlobal(rect().center()));
+    });
 #ifdef CHOSCORDB_DEVELOPMENT_PREVIEW
     auto* previewAction = viewMenu->addAction(tr("Design system preview…"));
     previewAction->setObjectName("openDesignSystemPreview");
@@ -263,14 +272,19 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
 #endif
     auto* navigator = new QDockWidget(tr("Connections"), this);
     navigator->setObjectName("navigator");
+    navigator->setFeatures(QDockWidget::NoDockWidgetFeatures);
+    navigator->setAllowedAreas(Qt::LeftDockWidgetArea);
     navigator->toggleViewAction()->setText(tr("Connections"));
     navigator->setTitleBarWidget(new QWidget(navigator));
     auto* navBody = new QWidget(navigator);
+    navBody->setProperty("designSurface", "sidebar");
+    navBody->setAttribute(Qt::WA_StyledBackground);
     auto* navLayout = new QVBoxLayout(navBody);
     auto* navHeader = new QHBoxLayout;
-    auto* navTitle = new design::Text(tr("Connections"), navBody);
+    auto* navTitle = new design::Text(tr("Connections").toUpper(), navBody);
     navTitle->setObjectName("navigatorTitle");
-    navTitle->setWeight(QFont::DemiBold);
+    navTitle->setTypographyRole(design::TypographyRole::SectionCaption);
+    navTitle->setForegroundRole(QPalette::PlaceholderText);
     auto* addConnection = new design::Button(tr("+"), navBody);
     addConnection->setObjectName("navigatorAddConnection");
     addConnection->setAccessibleName(tr("New connection"));
@@ -290,8 +304,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         button->setVariant(design::ButtonVariant::Ghost);
         button->setButtonSize(design::ButtonSize::IconSmall);
     }
-    navLayout->setContentsMargins(initialMetrics.spacingMedium, initialMetrics.spacingMedium,
-                                  initialMetrics.spacingMedium, initialMetrics.spacingMedium);
+    navLayout->setContentsMargins(initialMetrics.sidebarInset, initialMetrics.sidebarTopInset,
+                                  initialMetrics.sidebarInset, initialMetrics.spacingMedium);
     navLayout->setSpacing(initialMetrics.spacingMedium);
     navHeader->setSpacing(initialMetrics.spacingSmall);
     navHeader->addWidget(navTitle);
@@ -300,14 +314,29 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     navHeader->addWidget(disconnectNavigator);
     navHeader->addWidget(addConnection);
     navLayout->addLayout(navHeader);
+    auto* savedConnections = new QListWidget(navBody);
+    savedConnections->setObjectName("savedConnections");
+    savedConnections->setAccessibleName(tr("Saved database connections"));
+    savedConnections->setItemDelegate(new design::NavigationProfileDelegate(savedConnections));
+    savedConnections->setSpacing(design::spacing(design::Spacing::Half));
+    savedConnections->setProperty("designSurface", "sidebar");
+    savedConnections->setMouseTracking(true);
+    savedConnections->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+    navLayout->addWidget(savedConnections);
+    auto* objectSection = new design::Text(tr("Schema & objects").toUpper(), navBody);
+    objectSection->setTypographyRole(design::TypographyRole::SectionCaption);
+    objectSection->setForegroundRole(QPalette::PlaceholderText);
+    navLayout->addWidget(objectSection);
     auto* filter = new QLineEdit;
     filter->setPlaceholderText(tr("Filter objects…"));
     filter->setAccessibleName(tr("Filter database objects"));
     navLayout->addWidget(filter);
     auto* tree = new QTreeView;
+    tree->setProperty("designSurface", "sidebar");
+    tree->setItemDelegate(new NavigatorIconDelegate(tree));
     tree->setAccessibleName(tr("Database navigator"));
     tree->setHeaderHidden(true);
-    navLayout->addWidget(tree);
+    navLayout->addWidget(tree, 3);
     auto* navigatorStatus = new QLabel(tr("Disconnected"), navBody);
     navigatorStatus->setObjectName("navigatorStatus");
     navigatorStatus->setAccessibleName(tr("Navigator connection status: Disconnected"));
@@ -316,10 +345,12 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     navigator->setWidget(navBody);
     addDockWidget(Qt::LeftDockWidgetArea, navigator);
     resizeDocks({navigator}, {initialMetrics.initialNavigatorWidth}, Qt::Horizontal);
-    viewMenu->addAction(navigator->toggleViewAction());
+    auto* focusConnections = viewMenu->addAction(tr("Connections"));
+    connect(focusConnections, &QAction::triggered, tree, [tree] { tree->setFocus(); });
     auto* resetLayout = viewMenu->addAction(tr("Reset layout"));
     resetLayout->setObjectName("resetLayout");
     auto* central = new QWidget;
+    central->setObjectName("sqlScreen");
     auto* layout = new QVBoxLayout(central);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -328,26 +359,57 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     auto* connections = new QComboBox;
     connections->setObjectName("connectionSelector");
     connections->setMinimumContentsLength(initialMetrics.connectionLabelCharacters);
-    connections->setAccessibleName(tr("Active connection"));
+    connections->setAccessibleName(tr("SQL document connection target"));
     connections->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     connections->addItem(tr("No active connection"));
     connections->setEnabled(false);
     toolbar->addWidget(connections);
-    auto runIcon = design::themedIcon(design::Icon::Run, theme_->resolvedTheme().colors.action,
-                                      theme_->metrics().iconSmall);
-    auto* run = toolbar->addAction(runIcon, tr("Run statement"));
+    auto* toolbarSpacer = new QWidget(toolbar);
+    toolbarSpacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    toolbar->addWidget(toolbarSpacer);
+    auto* saveButton = new design::Button(tr("Save"), toolbar);
+    saveButton->setObjectName("saveSqlButton");
+    saveButton->setButtonSize(design::ButtonSize::Small);
+    saveButton->setButtonContext(design::ButtonContext::EditorAction);
+    saveButton->setVariant(design::ButtonVariant::Outline);
+    saveButton->setAccessibleName(tr("Save SQL file"));
+    toolbar->addWidget(saveButton);
+    connect(saveButton, &QPushButton::clicked, save, &QAction::trigger);
+    connect(save, &QAction::changed, saveButton,
+            [save, saveButton] { saveButton->setEnabled(save->isEnabled()); });
+    auto* run = queryMenu->addAction(tr("Run statement"));
     run->setObjectName("runStatement");
     run->setShortcut(QKeySequence("Ctrl+Return"));
     run->setEnabled(false);
-    queryMenu->addAction(run);
-    toolbar->widgetForAction(run)->setObjectName("runStatementButton");
-    toolbar->widgetForAction(run)->setProperty("primary", true);
-    auto cancelIcon = design::themedIcon(design::Icon::Cancel, theme_->resolvedTheme().colors.text,
-                                         theme_->metrics().iconSmall);
-    auto* cancel = toolbar->addAction(cancelIcon, tr("Cancel"));
+    auto* runButton = new design::Button(tr("Run"), toolbar);
+    runButton->setObjectName("runStatementButton");
+    runButton->setAccessibleName(tr("Run selection or current statement"));
+    runButton->setButtonSize(design::ButtonSize::Small);
+    runButton->setButtonContext(design::ButtonContext::EditorAction);
+    runButton->setDesignIcon(design::Icon::Run);
+    runButton->setEnabled(false);
+    toolbar->addWidget(runButton);
+    connect(runButton, &QPushButton::clicked, run, &QAction::trigger);
+    connect(run, &QAction::changed, runButton, [run, runButton] {
+        runButton->setEnabled(run->isEnabled());
+        runButton->setToolTip(run->text() + " · " +
+                              run->shortcut().toString(QKeySequence::NativeText));
+    });
+    auto* cancel = queryMenu->addAction(tr("Cancel"));
     cancel->setEnabled(false);
-    queryMenu->addAction(cancel);
-    toolbar->addSeparator();
+    auto* cancelButton = new design::Button(tr("Cancel"), toolbar);
+    cancelButton->setObjectName("cancelQueryButton");
+    cancelButton->setButtonSize(design::ButtonSize::Small);
+    cancelButton->setButtonContext(design::ButtonContext::EditorAction);
+    cancelButton->setVariant(design::ButtonVariant::Outline);
+    cancelButton->setEnabled(false);
+    auto* cancelWidgetAction = toolbar->addWidget(cancelButton);
+    cancelWidgetAction->setVisible(false);
+    connect(cancelButton, &QPushButton::clicked, cancel, &QAction::trigger);
+    connect(cancel, &QAction::changed, cancelButton, [cancel, cancelButton] {
+        cancelButton->setEnabled(cancel->isEnabled());
+        cancelButton->setText(cancel->text());
+    });
     auto* mode = new QComboBox;
     mode->setObjectName("transactionMode");
     mode->setMinimumContentsLength(initialMetrics.transactionLabelCharacters);
@@ -355,36 +417,24 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     mode->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     mode->addItems({tr("Auto-commit"), tr("Manual transaction")});
     mode->setEnabled(false);
-    toolbar->addWidget(mode);
     auto* commitAction = queryMenu->addAction(tr("Commit"));
     commitAction->setEnabled(false);
-    auto* commitButton = new QToolButton(toolbar);
-    commitButton->setObjectName("commitTransactionButton");
-    commitButton->setDefaultAction(commitAction);
-    commitButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    auto* commitPresentation = toolbar->addWidget(commitButton);
     auto* rollbackAction = queryMenu->addAction(tr("Rollback"));
     rollbackAction->setEnabled(false);
-    auto* rollbackButton = new QToolButton(toolbar);
-    rollbackButton->setObjectName("rollbackTransactionButton");
-    rollbackButton->setDefaultAction(rollbackAction);
-    rollbackButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    auto* rollbackPresentation = toolbar->addWidget(rollbackButton);
-    auto* queryOverflow = new QToolButton(toolbar);
+    auto* queryOverflow = new QToolButton(this);
     queryOverflow->setObjectName("queryToolbarOverflow");
     queryOverflow->setText(tr("More"));
-    queryOverflow->setAccessibleName(tr("More query actions"));
-    queryOverflow->setToolTip(tr("More query actions"));
+    queryOverflow->setAccessibleName(tr("Query session and result actions"));
+    queryOverflow->setToolTip(tr("Query session and result actions"));
     queryOverflow->setPopupMode(QToolButton::InstantPopup);
     auto* queryOverflowMenu = new QMenu(queryOverflow);
+    auto* modeAction = new QWidgetAction(queryOverflowMenu);
+    modeAction->setDefaultWidget(mode);
+    queryOverflowMenu->addAction(modeAction);
+    queryOverflowMenu->addSeparator();
     queryOverflowMenu->addAction(commitAction);
     queryOverflowMenu->addAction(rollbackAction);
     queryOverflow->setMenu(queryOverflowMenu);
-    auto* overflowPresentation = toolbar->addWidget(queryOverflow);
-    new ResponsiveQueryToolbar(this, theme_, {commitPresentation, rollbackPresentation},
-                               {qobject_cast<QToolButton*>(toolbar->widgetForAction(run)),
-                                qobject_cast<QToolButton*>(toolbar->widgetForAction(cancel))},
-                               overflowPresentation);
     preferences_->addAction("run_statement", run);
     preferences_->addAction("cancel_query", cancel);
     preferences_->addAction("commit", commitAction);
@@ -397,7 +447,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         setWindowIcon(
             design::themedIcon(design::Icon::AppMark, resolved.colors.action, metrics.iconLarge));
         run->setIcon(
-            design::themedIcon(design::Icon::Run, resolved.colors.actionText, metrics.iconSmall));
+            design::themedIcon(design::Icon::Run, resolved.colors.text, metrics.iconSmall));
         cancel->setIcon(
             design::themedIcon(design::Icon::Cancel, resolved.colors.text, metrics.iconSmall));
         refreshNavigator->setDesignIcon(design::Icon::Refresh);
@@ -407,12 +457,27 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     connect(theme_, &design::ThemeManager::themeChanged, this, refreshIcons);
     connect(theme_, &design::ThemeManager::metricsChanged, this, refreshIcons);
     refreshIcons();
-    layout->addWidget(toolbar);
     auto* splitter = new QSplitter(Qt::Vertical);
     editors_ = new QTabWidget;
     editors_->setObjectName("editorTabs");
+    connect(theme_, &design::ThemeManager::themeChanged, editors_, [this] {
+        const auto icon =
+            design::themedIcon(design::Icon::Code, theme_->resolvedTheme().colors.mutedText, 16);
+        for (int index = 0; index < editors_->count(); ++index)
+            editors_->setTabIcon(index, icon);
+    });
     connect(editors_, &QTabWidget::currentChanged, this, [this] {
+        if (activeDocument_ && editors_->currentWidget() != activeDocument_ &&
+            !allowDocumentChange()) {
+            const QSignalBlocker blocker(editors_);
+            editors_->setCurrentWidget(activeDocument_);
+            activeDocument_->setFocus();
+            return;
+        }
+        activeDocument_ = editors_->currentWidget();
         completion_->setEditor(qobject_cast<SqlEditor*>(editors_->currentWidget()));
+        if (workspace_)
+            workspace_->documentChanged();
     });
     for (auto* action : editingActions)
         editors_->addAction(action);
@@ -421,6 +486,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     editors_->setDocumentMode(true);
     editors_->tabBar()->setUsesScrollButtons(true);
     editors_->tabBar()->setElideMode(Qt::ElideRight);
+    editors_->tabBar()->setProperty("designTabVariant", "document");
     new HoveredTabCloseVisibility(editors_->tabBar());
     auto* listTabs = viewMenu->addAction(tr("Editor tabs…"));
     listTabs->setObjectName("listEditorTabs");
@@ -442,19 +508,33 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         }
         menu->popup(editors_->tabBar()->mapToGlobal(editors_->tabBar()->rect().bottomLeft()));
     });
-    splitter->addWidget(editors_);
-    auto* results = new QTabWidget;
+    auto* editorPane = new QWidget;
+    auto* editorPaneLayout = new QVBoxLayout(editorPane);
+    editorPaneLayout->setContentsMargins(0, 0, 0, 0);
+    editorPaneLayout->setSpacing(0);
+    editorPaneLayout->addWidget(editors_, 1);
+    editorPaneLayout->addWidget(toolbar);
+    splitter->addWidget(editorPane);
+    auto* resultArea = new QWidget;
+    auto* resultAreaLayout = new QVBoxLayout(resultArea);
+    resultAreaLayout->setContentsMargins(0, 0, 0, 0);
+    resultAreaLayout->setSpacing(0);
+    auto* results = new QStackedWidget;
+    results->setObjectName("sqlResultViews");
     auto* resultBody = new QWidget;
     auto* resultLayout = new QVBoxLayout(resultBody);
-    resultLayout->setContentsMargins(initialMetrics.spacingLarge, initialMetrics.spacingLarge,
-                                     initialMetrics.spacingLarge, initialMetrics.spacingLarge);
-    resultLayout->setSpacing(initialMetrics.spacingMedium);
+    resultLayout->setContentsMargins(0, 0, 0, 0);
+    resultLayout->setSpacing(0);
     auto* empty =
         new design::Text(tr("○ Disconnected · Connect and run a statement to view results."));
     empty->setObjectName("executionSummary");
+    empty->setTextFormat(Qt::PlainText);
+    empty->setWordWrap(false);
+    empty->setTypographyRole(design::TypographyRole::Small);
+    empty->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    empty->setMinimumWidth(0);
     empty->setProperty("state", "disconnected");
     empty->setAccessibleName(tr("Execution status: disconnected"));
-    resultLayout->addWidget(empty);
     auto* emptyActions = new QWidget(resultBody);
     emptyActions->setObjectName("emptyWorkspaceActions");
     auto* emptyActionsLayout = new QHBoxLayout(emptyActions);
@@ -483,40 +563,78 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     grid->setObjectName("queryResults");
     grid->setAccessibleName(tr("Query results"));
     grid->setAlternatingRowColors(true);
-    resultLayout->addWidget(grid);
-    auto* pager = new QHBoxLayout;
-    auto* previousPage = new design::Button(tr("Previous page"));
+    grid->setFrameShape(QFrame::NoFrame);
+    grid->setShowGrid(false);
+    grid->setWordWrap(false);
+    grid->horizontalHeader()->setStretchLastSection(true);
+    grid->horizontalHeader()->setResizeContentsPrecision(50);
+    grid->verticalHeader()->setDefaultSectionSize(initialMetrics.sqlResultRowHeight);
+    grid->horizontalHeader()->setFixedHeight(initialMetrics.sqlResultHeaderHeight);
+    resultLayout->addWidget(grid, 1);
+    auto* resultFooter = new QWidget;
+    resultFooter->setObjectName("sqlResultFooter");
+    auto* pager = new QHBoxLayout(resultFooter);
+    pager->setContentsMargins(initialMetrics.spacingMedium, initialMetrics.spacingSmall,
+                              initialMetrics.spacingMedium, initialMetrics.spacingSmall);
+    auto* resultView = new QComboBox(resultFooter);
+    resultView->setObjectName("resultViewSelector");
+    resultView->setAccessibleName(tr("SQL result view"));
+    resultView->addItems({tr("Results"), tr("Messages")});
+    connect(resultView, &QComboBox::currentIndexChanged, results, &QStackedWidget::setCurrentIndex);
+    pager->addWidget(resultView);
+    pager->addWidget(empty, 1);
+    auto* compactState = new design::Text(tr("Disconnected"), resultFooter);
+    compactState->setObjectName("executionStateCompact");
+    compactState->setTypographyRole(design::TypographyRole::Small);
+    pager->addWidget(compactState);
+    auto* previousPage = new design::Button({});
+    previousPage->setAccessibleName(tr("Previous page"));
+    previousPage->setToolTip(tr("Previous page"));
+    previousPage->setButtonSize(design::ButtonSize::IconSmall);
     previousPage->setObjectName("previousPage");
     previousPage->setEnabled(false);
-    pager->addWidget(previousPage);
-    auto* nextPage = new design::Button(tr("Next page"));
+    auto* nextPage = new design::Button({});
+    nextPage->setAccessibleName(tr("Next page"));
+    nextPage->setToolTip(tr("Next page"));
+    nextPage->setButtonSize(design::ButtonSize::IconSmall);
     nextPage->setObjectName("nextPage");
     nextPage->setEnabled(false);
-    auto* exportResult = new design::Button(tr("Export…"));
+    auto* exportResult = new design::Button(tr("Export"));
+    exportResult->setButtonSize(design::ButtonSize::Small);
     exportResult->setObjectName("exportResult");
     exportResult->setEnabled(false);
-    for (auto* button : {previousPage, nextPage, exportResult})
-        button->setVariant(design::ButtonVariant::Outline);
+    for (auto* button : {previousPage, nextPage})
+        button->setVariant(design::ButtonVariant::Ghost);
     pager->setSpacing(initialMetrics.spacingMedium);
     previousPage->setDesignIcon(design::Icon::ChevronLeft);
     nextPage->setDesignIcon(design::Icon::ChevronRight);
     exportResult->setDesignIcon(design::Icon::Export);
-    pager->addWidget(exportResult);
-    pager->addStretch();
+    pager->addWidget(previousPage);
     pager->addWidget(nextPage);
-    resultLayout->addLayout(pager);
+    pager->addWidget(queryOverflow);
+    pager->addWidget(exportResult);
+    const auto colorResultFooter = [this, resultFooter] {
+        auto palette = resultFooter->palette();
+        palette.setColor(QPalette::Window, theme_->resolvedTheme().colors.subtleAccent);
+        resultFooter->setAutoFillBackground(true);
+        resultFooter->setPalette(palette);
+    };
+    connect(theme_, &design::ThemeManager::themeChanged, this, colorResultFooter);
+    colorResultFooter();
     auto* messages = new QPlainTextEdit;
     messages->setObjectName("queryMessages");
     messages->setReadOnly(true);
     messages->setAccessibleName(tr("Query messages"));
-    results->addTab(resultBody, tr("Results"));
-    results->addTab(messages, tr("Messages"));
-    splitter->addWidget(results);
+    results->addWidget(resultBody);
+    results->addWidget(messages);
+    resultAreaLayout->addWidget(results, 1);
+    resultAreaLayout->addWidget(resultFooter);
+    splitter->addWidget(resultArea);
     splitter->setSizes({initialMetrics.initialEditorHeight, initialMetrics.initialResultsHeight});
     layout->addWidget(splitter);
     search_ = new SearchPanel(
         [this] { return qobject_cast<SqlEditor*>(editors_->currentWidget()); }, this);
-    layout->insertWidget(1, search_);
+    editorPaneLayout->insertWidget(0, search_);
     editMenu->addSeparator();
     QList<QAction*> searchActions;
     auto searchAction = [this, editMenu, &searchActions](const QString& id, const QString& text,
@@ -526,7 +644,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         searchActions.append(action);
         preferences_->addAction(id, action);
         connect(action, &QAction::triggered, this, [this, method] {
-            if (editors_->isEnabled())
+            if (editors_->isEnabled() && editors_->currentWidget() && showScreen(Screen::Sql))
                 (search_->*method)();
         });
     };
@@ -546,7 +664,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     preferences_->addAction("complete", completeAction, false);
     searchActions.append(completeAction);
     connect(completeAction, &QAction::triggered, this, [this] {
-        if (editors_->isEnabled())
+        if (editors_->isEnabled() && editors_->currentWidget() && showScreen(Screen::Sql))
             completion_->requestCompletion();
     });
     editMenu->addSeparator();
@@ -554,10 +672,75 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     preferencesAction->setObjectName("preferences");
     preferencesAction->setShortcut(QKeySequence::Preferences);
     preferences_->addAction("preferences", preferencesAction, false);
-    connect(preferencesAction, &QAction::triggered, preferences_,
-            &EditorPreferencesController::open);
+    connect(preferencesAction, &QAction::triggered, this, [this] {
+        if (allowDocumentChange())
+            preferences_->open();
+    });
     connect(editors_, &QTabWidget::currentChanged, search_, &SearchPanel::editorChanged);
-    setCentralWidget(central);
+    screens_ = new QStackedWidget(this);
+    screens_->setObjectName("centralScreens");
+    auto* start = new QWidget;
+    start->setObjectName("startScreen");
+    start->setProperty("designSurface", "panel");
+    start->setAttribute(Qt::WA_StyledBackground);
+    auto* startLayout = new QVBoxLayout(start);
+    startLayout->setContentsMargins(0, 0, 0, 0);
+    startLayout->addStretch();
+    auto* startIcon = new QLabel(start);
+    startIcon->setObjectName("startDatabaseIcon");
+    startIcon->setAlignment(Qt::AlignCenter);
+    const auto colorStartIcon = [this, startIcon] {
+        startIcon->setPixmap(
+            design::themedIcon(design::Icon::Database, theme_->resolvedTheme().colors.mutedText, 30)
+                .pixmap(30, 30));
+    };
+    colorStartIcon();
+    connect(theme_, &design::ThemeManager::themeChanged, startIcon, colorStartIcon);
+    startLayout->addWidget(startIcon);
+    auto* welcome = new design::Text(tr("No database open"), start);
+    welcome->setAlignment(Qt::AlignCenter);
+    welcome->setWeight(QFont::Medium);
+    startLayout->addWidget(welcome);
+    auto* startHint =
+        new design::Text(tr("Select a connection in the sidebar or create a new one."), start);
+    startHint->setObjectName("startHint");
+    startHint->setForegroundRole(QPalette::PlaceholderText);
+    startHint->setWordWrap(true);
+    startHint->setAlignment(Qt::AlignCenter);
+    startLayout->addWidget(startHint);
+    startLayout->addStretch();
+    auto* startFooter = new QWidget(start);
+    startFooter->setObjectName("startFooter");
+    startFooter->setProperty("designSurface", "subtle");
+    startFooter->setAttribute(Qt::WA_StyledBackground);
+    auto* startActions = new QHBoxLayout(startFooter);
+    startActions->setContentsMargins(
+        design::spacing(design::Spacing::TwoHalf), initialMetrics.spacingSmall,
+        design::spacing(design::Spacing::TwoHalf), initialMetrics.spacingSmall);
+    auto* startStatus = new design::Text(tr("PostgreSQL · SQLite"), startFooter);
+    startStatus->setTypographyRole(design::TypographyRole::Small);
+    startStatus->setForegroundRole(QPalette::PlaceholderText);
+    startActions->addWidget(startStatus);
+    startActions->addStretch();
+    auto* startConnect = new design::Button(tr("New connection"), start);
+    startConnect->setObjectName("startNewConnection");
+    startConnect->setButtonSize(design::ButtonSize::Small);
+    startConnect->setDesignIcon(design::Icon::Add);
+    connect(startConnect, &QPushButton::clicked, newConnection, &QAction::trigger);
+    startActions->addWidget(startConnect);
+    startLayout->addWidget(startFooter);
+    screens_->addWidget(start);
+    screens_->addWidget(central);
+    auto* object = new QWidget;
+    object->setObjectName("objectScreen");
+    auto* objectLayout = new QVBoxLayout(object);
+    auto* objectHint =
+        new design::Text(tr("Select a table or view in the sidebar to inspect it."), object);
+    objectHint->setWordWrap(true);
+    objectHint->setAlignment(Qt::AlignCenter);
+    objectLayout->addWidget(objectHint);
+    screens_->addWidget(object);
+    setCentralWidget(screens_);
     auto* toast = new ToastRegion(this);
     statusBar()->addWidget(toast, 1);
     statusBar()->showMessage(tr("Disconnected · No background queries"));
@@ -576,26 +759,32 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     connect(emptyConnect, &QPushButton::clicked, newConnection, &QAction::trigger);
     connect(addConnection, &QPushButton::clicked, newConnection, &QAction::trigger);
     connect(editors_, &QTabWidget::tabCloseRequested, this, [this](int index) {
+        if (!allowDocumentChange())
+            return;
         auto* editor = qobject_cast<SqlEditor*>(editors_->widget(index));
         if (editor->isModified() &&
             ConfirmationDialog::question(this, tr("Close query"), tr("Discard unsaved changes?"),
                                          QMessageBox::Discard | QMessageBox::Cancel,
                                          QMessageBox::Cancel) != QMessageBox::Discard)
             return;
+        if (!allowDocumentChange())
+            return;
         editors_->removeTab(index);
         editor->deleteLater();
         if (!editors_->count())
-            addEditor();
+            showScreen(Screen::Start);
         if (recovery_)
             recovery_->changed();
     });
     connect(open, &QAction::triggered, this, [this] {
+        if (!allowDocumentChange())
+            return;
         const auto path = QFileDialog::getOpenFileName(this, tr("Open SQL file"), {},
                                                        tr("SQL files (*.sql);;All files (*)"));
         if (path.isEmpty())
             return;
-        auto* editor = addEditor();
-        editor->openFile(path);
+        if (auto* editor = addEditor())
+            editor->openFile(path);
     });
     connect(save, &QAction::triggered, this, [this] {
         auto* editor = qobject_cast<SqlEditor*>(editors_->currentWidget());
@@ -610,14 +799,214 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         editor->saveFile(path);
     });
     addEditor();
+    connect(run, &QAction::triggered, this, [this] { showScreen(Screen::Sql); });
     workspace_ =
         new QueryWorkspace({connections, mode, run, cancel, commitAction, rollbackAction,
                             newConnection, nextPage, empty, messages, grid,
                             [this] { return qobject_cast<SqlEditor*>(editors_->currentWidget()); },
                             this, previousPage, exportResult, storagePath},
                            this);
+    connect(grid->model(), &QAbstractItemModel::modelReset, grid, [grid, fitted = false]() mutable {
+        if (!grid->model()->columnCount()) {
+            fitted = false;
+            return;
+        }
+        if (fitted)
+            return;
+        // Sample only the first bounded page once. Subsequent paging
+        // retains column widths the user adjusted for this result.
+        grid->resizeColumnsToContents();
+        for (int column = 0; column < grid->model()->columnCount(); ++column)
+            grid->setColumnWidth(column, qBound(80, grid->columnWidth(column), 400));
+        // A model reset can retain the previous last section's stretch size.
+        // Recompute it after fitting the new bounded page.
+        grid->horizontalHeader()->setStretchLastSection(false);
+        grid->horizontalHeader()->setStretchLastSection(true);
+        fitted = true;
+    });
+    connect(workspace_, &QueryWorkspace::executionStateChanged, this,
+            [this, empty, compactState, cancelButton, cancelWidgetAction](const QString& state) {
+                const bool active =
+                    state == "queued" || state == "running" || state == "cancelling";
+                const bool restoreFocus = !active && cancelButton->hasFocus();
+                cancelWidgetAction->setVisible(active);
+                cancelButton->setVisible(active);
+                if (restoreFocus && editors_->currentWidget())
+                    editors_->currentWidget()->setFocus();
+                empty->setToolTip(empty->text());
+                compactState->setText(state);
+                compactState->setAccessibleName(tr("Execution status: %1").arg(state));
+            });
+    auto* objectExplorer = new ObjectExplorer(workspace_->adapter(), screens_);
+    installObjectExplorer(objectExplorer);
+    auto* objectData = new ObjectDataWorkspace(workspace_, objectExplorer);
+    objectExplorer->installDataWidget(objectData);
+    connect(objectExplorer, &ObjectExplorer::dataRequested, objectData,
+            &ObjectDataWorkspace::openObject);
+    connect(objectExplorer, &ObjectExplorer::objectChanged, objectData,
+            &ObjectDataWorkspace::invalidate);
+    connect(objectData, &ObjectDataWorkspace::busyChanged, objectExplorer,
+            &ObjectExplorer::setOperationBusy);
+    connect(this, &MainWindow::objectContextSelected, objectExplorer,
+            [objectExplorer](quint64 connection, const QString& object, const QString& label,
+                             const QString&) {
+                objectExplorer->openObject(connection, object, label);
+            });
+    connect(workspace_, &QueryWorkspace::openQueryRequested, this,
+            &MainWindow::openConnectionQuery);
+    connect(preferences_, &EditorPreferencesController::queryPreferencesSaveSubmitted, workspace_,
+            &QueryWorkspace::trackQueryPreferencesSave);
+    connect(preferences_, &EditorPreferencesController::queryPreferencesConfirmed, workspace_,
+            &QueryWorkspace::applyQueryPreferences);
+    const auto refreshProfiles = [this] {
+        static std::atomic<quint64> next{quint64(1) << 54};
+        profileListToken_ = next.fetch_add(1);
+        workspace_->adapter()->listProfiles(profileListToken_);
+    };
+    connect(
+        workspace_->adapter(), &EngineAdapter::profilesReady, this,
+        [this, savedConnections](quint64 token, const QList<SavedProfile>& profiles) {
+            if (token != profileListToken_)
+                return;
+            const auto selected =
+                savedConnections->currentItem()
+                    ? savedConnections->currentItem()->data(Qt::UserRole).value<SavedProfile>().id
+                    : QString{};
+            savedConnections->clear();
+            for (const auto& profile : profiles) {
+                auto* item = new QListWidgetItem(
+                    profile.name + "\n" +
+                        (profile.driver == "sqlite" ? tr("SQLite") : tr("PostgreSQL")),
+                    savedConnections);
+                item->setData(Qt::UserRole, QVariant::fromValue(profile));
+                item->setData(design::NavigationProfileDelegate::DriverRole, profile.driver);
+                item->setIcon(design::themedIcon(design::Icon::Database,
+                                                 theme_->resolvedTheme().colors.mutedText, 16));
+                item->setToolTip(profile.name);
+                if (profile.id == selected)
+                    savedConnections->setCurrentItem(item);
+            }
+            savedConnections->setMaximumHeight(profiles.isEmpty() ? 0 : profiles.size() * 49 + 4);
+        });
+    connect(workspace_->adapter(), &EngineAdapter::profileSaved, this,
+            [refreshProfiles] { refreshProfiles(); });
+    connect(workspace_->adapter(), &EngineAdapter::profileDeleted, this,
+            [refreshProfiles] { refreshProfiles(); });
+    const auto selectProfile = [this, connections](QListWidgetItem* item) {
+        if (!item || !allowDocumentChange())
+            return;
+        const auto profile = item->data(Qt::UserRole).value<SavedProfile>();
+        for (int i = 0; i < connections->count(); ++i) {
+            if (!connections->itemData(i).isValid())
+                continue;
+            const auto id = connections->itemData(i).toULongLong();
+            if (workspace_->profileIdForConnection(id) == profile.id) {
+                if (showScreen(Screen::Object)) {
+                    browsingConnection_ = id;
+                    emit browsingConnectionChanged(id);
+                }
+                return;
+            }
+        }
+        if (!pendingBrowseConnection_)
+            pendingBrowseConnection_ = workspace_->connectSavedProfile(profile);
+    };
+    connect(savedConnections, &QListWidget::itemClicked, this, selectProfile);
+    connect(savedConnections, &QListWidget::itemActivated, this, selectProfile);
+    savedConnections->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(savedConnections, &QWidget::customContextMenuRequested, this,
+            [this, savedConnections, connections](const QPoint& position) {
+                auto* item = savedConnections->itemAt(position);
+                if (!item || !allowDocumentChange())
+                    return;
+                savedConnections->setCurrentItem(item);
+                const auto profile = item->data(Qt::UserRole).value<SavedProfile>();
+                std::optional<quint64> session;
+                for (int i = 0; i < connections->count(); ++i) {
+                    if (connections->itemData(i).isValid()) {
+                        const auto id = connections->itemData(i).toULongLong();
+                        if (workspace_->profileIdForConnection(id) == profile.id)
+                            session = id;
+                    }
+                }
+                auto* menu = new QMenu(savedConnections);
+                menu->setObjectName("savedConnectionMenu");
+                menu->setAttribute(Qt::WA_DeleteOnClose);
+                auto* connectAction = menu->addAction(tr("Connect"));
+                connectAction->setObjectName("connectSavedConnection");
+                connectAction->setEnabled(!session && !pendingBrowseConnection_);
+                connect(connectAction, &QAction::triggered, this, [this, profile] {
+                    if (allowDocumentChange())
+                        pendingBrowseConnection_ = workspace_->connectSavedProfile(profile);
+                });
+                auto* disconnectAction = menu->addAction(tr("Disconnect"));
+                disconnectAction->setObjectName("disconnectSavedConnection");
+                disconnectAction->setEnabled(session.has_value());
+                connect(disconnectAction, &QAction::triggered, this, [this, session] {
+                    if (session)
+                        workspace_->disconnectConnection(*session);
+                });
+                menu->addSeparator();
+                const QList<QPair<QString, QString>> management = {{"edit", tr("Edit…")},
+                                                                   {"test", tr("Test connection")},
+                                                                   {"duplicate", tr("Duplicate")},
+                                                                   {"delete", tr("Delete…")}};
+                for (const auto& entry : management) {
+                    auto* action = menu->addAction(entry.second);
+                    action->setObjectName(entry.first + "SavedConnection");
+                    connect(action, &QAction::triggered, this,
+                            [this, profile, operation = entry.first] {
+                                workspace_->manageSavedProfile(profile.id, operation);
+                            });
+                }
+                menu->popup(savedConnections->viewport()->mapToGlobal(position));
+            });
+    connect(workspace_, &QueryWorkspace::connectionReady, this, [this](quint64 id) {
+        if (pendingBrowseConnection_ != id)
+            return;
+        pendingBrowseConnection_.reset();
+        if (showScreen(Screen::Object)) {
+            browsingConnection_ = id;
+            emit browsingConnectionChanged(id);
+        }
+    });
+    connect(
+        workspace_->adapter(), &EngineAdapter::eventReady, this,
+        [this](const BridgeEvent& event) {
+            const auto kind = QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
+            if (kind == "connection_failed" && pendingBrowseConnection_ == event.id)
+                pendingBrowseConnection_.reset();
+            if (kind == "disconnected" && browsingConnection_ == event.id)
+                browsingConnection_.reset();
+        },
+        Qt::DirectConnection);
+    connect(workspace_->adapter(), &EngineAdapter::profileFailed, this,
+            [this, navigatorStatus](quint64 token, const QString& error) {
+                if (token == profileListToken_) {
+                    navigatorStatus->setText(tr("Saved connections: %1").arg(error));
+                    navigatorStatus->setToolTip(error);
+                }
+            });
+    connect(workspace_->adapter(), &EngineAdapter::profileConnectFailed, this,
+            [this, navigatorStatus](const QString& error) {
+                pendingBrowseConnection_.reset();
+                navigatorStatus->setText(error);
+                navigatorStatus->setToolTip(error);
+                statusBar()->showMessage(error);
+            });
+    auto* refreshSaved = viewMenu->addAction(tr("Refresh saved connections"));
+    refreshSaved->setObjectName("refreshSavedConnections");
+    connect(refreshSaved, &QAction::triggered, this, refreshProfiles);
+    refreshProfiles();
+    connect(workspace_, &QueryWorkspace::documentTargetChanged, emptyActions,
+            [connections, emptyActions] {
+                emptyActions->setVisible(!connections->currentData().isValid());
+            });
     auto* querySettings = queryMenu->addAction(tr("Query settings…"));
     querySettings->setObjectName("querySettings");
+    queryOverflowMenu->addSeparator();
+    queryOverflowMenu->addAction(querySettings);
+    queryOverflowMenu->addAction(open);
     connect(querySettings, &QAction::triggered, workspace_, &QueryWorkspace::showQuerySettings);
     preferences_->initialize(workspace_->adapter());
     connect(
@@ -726,19 +1115,15 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         });
         connect(recovery_, &WorkspaceRecoveryController::mutationEnabled, search_,
                 &QWidget::setEnabled);
+        connect(
+            recovery_, &WorkspaceRecoveryController::restoreCompleted, this,
+            [this](bool hasDocuments) { showScreen(hasDocuments ? Screen::Sql : Screen::Start); });
         recovery_->start();
     }
     history_ = new HistoryDock(workspace_->adapter(), this);
-    addDockWidget(Qt::BottomDockWidgetArea, history_);
-    history_->hide();
-    connect(history_, &QDockWidget::visibilityChanged, this,
-            [this, sized = false](bool visible) mutable {
-                if (visible && !sized) {
-                    resizeDocks({history_}, {theme_->metrics().initialHistoryHeight}, Qt::Vertical);
-                    sized = true;
-                }
-            });
-    viewMenu->addAction(history_->toggleViewAction());
+    connect(preferences_, &EditorPreferencesController::historyPolicyConfirmed, history_,
+            &HistoryDock::applyConfirmedPolicy);
+    screens_->addWidget(history_);
     appearance_ = new AppearanceController(theme_, workspace_->adapter(), this, navigator, splitter,
                                            history_);
     preferences_->setAppearanceController(appearance_);
@@ -764,12 +1149,17 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             (recovery_ && (!recovery_->isReady() || recovery_->isClosing())))
             return;
         auto* editor = addEditor();
+        if (!editor)
+            return;
         if (!editor->restoreDocument(entry.sql.toUtf8(), {}, 0, 0, true)) {
             statusBar()->showMessage(tr("History text could not be opened."));
             return;
         }
         editor->setProfileId(entry.profileId);
-        editors_->setTabText(editors_->indexOf(editor), tr("History query •"));
+        workspace_->documentChanged();
+        editor->setProperty("documentTitle", tr("History query %1").arg(nextDocumentNumber_));
+        editors_->setTabText(editors_->indexOf(editor),
+                             editor->property("documentTitle").toString() + " •");
         if (recovery_)
             recovery_->changed();
     });
@@ -836,8 +1226,38 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     connect(disconnectNavigator, &QPushButton::clicked, disconnectNavigatorAction,
             &QAction::trigger);
     connect(tree->selectionModel(), &QItemSelectionModel::currentChanged, this,
+            [this, tree](const QModelIndex& current, const QModelIndex& previous) {
+                if (!current.isValid())
+                    return;
+                if (!allowDocumentChange()) {
+                    const QSignalBlocker blocker(tree->selectionModel());
+                    tree->selectionModel()->setCurrentIndex(
+                        previous, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+                    return;
+                }
+                auto object = current;
+                auto kind = object.data(NavigatorModel::KindRole).toString();
+                while (object.isValid() && kind != "table" && kind != "view" && kind != "schema" &&
+                       kind != "connection") {
+                    object = object.parent();
+                    kind = object.data(NavigatorModel::KindRole).toString();
+                }
+                if (!object.isValid())
+                    return;
+                const auto connection = object.data(NavigatorModel::ConnectionRole);
+                if (!connection.isValid())
+                    return;
+                browsingConnection_ = connection.toULongLong();
+                emit browsingConnectionChanged(*browsingConnection_);
+                if ((kind == "table" || kind == "view") && showScreen(Screen::Object))
+                    emit objectContextSelected(
+                        *browsingConnection_, object.data(NavigatorModel::ObjectIdRole).toString(),
+                        object.data(NavigatorModel::QualifiedNameRole).toString(), kind);
+            });
+    connect(tree->selectionModel(), &QItemSelectionModel::currentChanged, this,
             [tree, refreshNavigator, disconnectNavigator, refreshNavigatorAction,
-             disconnectNavigatorAction](const QModelIndex& current) {
+             disconnectNavigatorAction](const QModelIndex&) {
+                const auto current = tree->currentIndex();
                 const bool canRefresh = current.isValid();
                 const bool canDisconnect =
                     current.data(NavigatorModel::KindRole).toString() == "connection";
@@ -854,43 +1274,51 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             &QueryWorkspace::disconnectConnection);
     connect(navigatorController, &NavigatorController::generationFailed, this,
             [toast](const QString& error) { toast->showNotice(error); });
-    connect(navigatorController, &NavigatorController::sqlGenerated, this,
-            [this, connections, toast](quint64 connection, const QString& sql) {
-                if (databaseClosePending_ || !editors_->isEnabled() ||
-                    (recovery_ && (!recovery_->isReady() || recovery_->isClosing())))
-                    return;
-                const int target =
-                    connections->findData(QVariant::fromValue<qulonglong>(connection));
-                if (target < 0) {
-                    statusBar()->showMessage(tr("The selected connection is no longer available."));
-                    return;
-                }
-                if (target != connections->currentIndex() && !connections->isEnabled()) {
-                    statusBar()->showMessage(tr(
-                        "Finish the active query before switching connections to generate SQL."));
-                    return;
-                }
-                const auto bytes = sql.toUtf8();
-                if (!sql.isValidUtf16() || bytes.size() > DocumentIo::MaximumBytes) {
-                    statusBar()->showMessage(tr("Generated SQL exceeds editor limits."));
-                    return;
-                }
-                auto* editor = addEditor();
-                if (!editor->restoreDocument(bytes, {}, 0, 0, true)) {
-                    editors_->removeTab(editors_->indexOf(editor));
-                    editor->deleteLater();
-                    statusBar()->showMessage(tr("Generated SQL could not be opened."));
-                    return;
-                }
-                connections->setCurrentIndex(target);
-                editor->setProfileId(workspace_->profileIdForConnection(connection));
-                editors_->setTabText(editors_->indexOf(editor), tr("Generated SQL •"));
-                editor->setFocus();
-                statusBar()->showMessage(tr("SQL generated. Review the draft before running."));
-                toast->showNotice(tr("SQL generated. Review the draft before running."));
-                if (recovery_)
-                    recovery_->changed();
-            });
+    const auto openGeneratedSql = [this, connections, toast](quint64 connection,
+                                                             const QString& sql) {
+        if (databaseClosePending_ || !editors_->isEnabled() ||
+            (recovery_ && (!recovery_->isReady() || recovery_->isClosing())))
+            return;
+        const int target = connections->findData(QVariant::fromValue<qulonglong>(connection));
+        if (target < 0) {
+            statusBar()->showMessage(tr("The selected connection is no longer available."));
+            return;
+        }
+        if (target != connections->currentIndex() && !connections->isEnabled()) {
+            statusBar()->showMessage(
+                tr("Finish the active query before switching connections to generate SQL."));
+            return;
+        }
+        const auto bytes = sql.toUtf8();
+        if (!sql.isValidUtf16() || bytes.size() > DocumentIo::MaximumBytes) {
+            statusBar()->showMessage(tr("Generated SQL exceeds editor limits."));
+            return;
+        }
+        auto* editor = addEditor();
+        if (!editor)
+            return;
+        if (!editor->restoreDocument(bytes, {}, 0, 0, true)) {
+            editors_->removeTab(editors_->indexOf(editor));
+            editor->deleteLater();
+            statusBar()->showMessage(tr("Generated SQL could not be opened."));
+            return;
+        }
+        connections->setCurrentIndex(target);
+        editor->setConnectionTarget(connection, connections->itemText(target));
+        workspace_->documentChanged();
+        editor->setProfileId(workspace_->profileIdForConnection(connection));
+        editor->setProperty("documentTitle", tr("Generated SQL %1").arg(nextDocumentNumber_));
+        editors_->setTabText(editors_->indexOf(editor),
+                             editor->property("documentTitle").toString() + " •");
+        editor->setFocus();
+        statusBar()->showMessage(tr("SQL generated. Review the draft before running."));
+        toast->showNotice(tr("SQL generated. Review the draft before running."));
+        if (recovery_)
+            recovery_->changed();
+    };
+    connect(navigatorController, &NavigatorController::sqlGenerated, this, openGeneratedSql);
+    connect(objectExplorer, &ObjectExplorer::sqlGenerated, this, openGeneratedSql);
+
     auto rebuildCompletion = [this, connections, model = navigatorController->model()] {
         if (!connections->currentData().isValid()) {
             completion_->setCatalog(CompletionService{});
@@ -908,6 +1336,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         completion_->setCatalog(CompletionService(std::move(items), snapshot.partial));
     };
     connect(connections, &QComboBox::currentIndexChanged, this, rebuildCompletion);
+    connect(workspace_, &QueryWorkspace::documentTargetChanged, this, rebuildCompletion);
     connect(navigatorController->model(), &NavigatorModel::completionChanged, this,
             [connections, rebuildCompletion](quint64 id) {
                 if (id == connections->currentData().toULongLong())
@@ -919,6 +1348,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 navigatorController->addConnection(id, connections->itemText(connections->findData(
                                                            QVariant::fromValue<qulonglong>(id))));
             });
+    constructing_ = false;
+    showScreen(Screen::Start);
 }
 void MainWindow::closeEvent(QCloseEvent* event) {
     if (appearance_ && !appearanceCloseApproved_ && !appearance_->flush()) {
@@ -972,11 +1403,75 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     }
     event->accept();
 }
+bool MainWindow::allowDocumentChange() {
+    if (!workspace_ || workspace_->navigationAllowed())
+        return true;
+    statusBar()->showMessage(tr("Finish or cancel the active database work before changing SQL "
+                                "documents. Cancel remains in the active workspace."));
+    return false;
+}
+bool MainWindow::showScreen(Screen screen) {
+    if (!screens_)
+        return false;
+    if (screens_->currentIndex() != static_cast<int>(screen) && !allowDocumentChange())
+        return false;
+    if (screen == Screen::Sql && !editors_->count()) {
+        addEditor();
+        return true;
+    }
+    screens_->setCurrentIndex(static_cast<int>(screen));
+    if (screen == Screen::History && history_)
+        history_->refresh();
+    if (screen == Screen::Sql && editors_->currentWidget())
+        editors_->currentWidget()->setFocus();
+    return true;
+}
+void MainWindow::installObjectExplorer(QWidget* explorer) {
+    const auto index = static_cast<int>(Screen::Object);
+    const bool visible = screens_->currentIndex() == index;
+    auto* previous = screens_->widget(index);
+    screens_->removeWidget(previous);
+    screens_->insertWidget(index, explorer);
+    previous->deleteLater();
+    if (visible)
+        screens_->setCurrentIndex(index);
+}
+void MainWindow::openConnectionQuery(quint64 connection) {
+    auto* selector = findChild<QComboBox*>("connectionSelector");
+    const auto index = selector->findData(QVariant::fromValue<qulonglong>(connection));
+    if (index < 0 || !allowDocumentChange())
+        return;
+    auto* editor = addEditor();
+    if (!editor)
+        return;
+    editor->setConnectionTarget(connection, selector->itemText(index));
+    editor->setProfileId(workspace_->profileIdForConnection(connection));
+    workspace_->documentChanged();
+}
 SqlEditor* MainWindow::addEditor() {
+    if (!allowDocumentChange())
+        return nullptr;
     auto* editor = new SqlEditor;
     preferences_->addEditor(editor);
-    const int index = editors_->addTab(editor, tr("Untitled query"));
+    connect(editor, &SqlEditor::connectionTargetChanged, this, [this, editor] {
+        if (workspace_ && editors_->currentWidget() == editor)
+            workspace_->documentChanged();
+    });
+    const auto title = tr("Untitled query %1").arg(++nextDocumentNumber_);
+    editor->setProperty("documentTitle", title);
+    if (workspace_) {
+        if (const auto* previous = qobject_cast<SqlEditor*>(editors_->currentWidget())) {
+            editor->setConnectionTarget(previous->connectionTarget(), previous->targetLabel());
+            editor->setProfileId(previous->property("profileId").toString());
+        }
+    }
+    const int index = editors_->addTab(
+        editor,
+        design::themedIcon(design::Icon::Code, theme_->resolvedTheme().colors.mutedText, 16),
+        title);
     editors_->setCurrentIndex(index);
+    if (!constructing_)
+        showScreen(Screen::Sql);
     connect(editor, &SqlEditor::modificationChanged, this, [this, editor](bool modified) {
         auto title = editor->filePath().isEmpty() ? editor->property("documentTitle").toString()
                                                   : QFileInfo(editor->filePath()).fileName();

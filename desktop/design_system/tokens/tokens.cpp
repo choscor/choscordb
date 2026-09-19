@@ -47,6 +47,12 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     color(QStringLiteral("backdrop"), colors.backdrop);
     add(QStringLiteral("backdrop.blur"), QString::number(backdropBlurRadius()) + "px");
     color(QStringLiteral("switch-track"), colors.switchTrack);
+    color(QStringLiteral("sqlite-badge-background"), colors.sqliteBadgeBackground);
+    color(QStringLiteral("sqlite-badge-foreground"), colors.sqliteBadgeForeground);
+    color(QStringLiteral("sqlite-badge-border"), colors.sqliteBadgeBorder);
+    color(QStringLiteral("postgres-badge-background"), colors.postgresBadgeBackground);
+    color(QStringLiteral("postgres-badge-foreground"), colors.postgresBadgeForeground);
+    color(QStringLiteral("postgres-badge-border"), colors.postgresBadgeBorder);
 
     const auto pixels = [&add](const QString& name, int value) {
         add(name, QString::number(value) + QStringLiteral("px"));
@@ -94,7 +100,9 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
           std::pair{"heading", TypographyRole::Heading}, std::pair{"base", TypographyRole::Base},
           std::pair{"dialogTitle", TypographyRole::DialogTitle},
           std::pair{"monospace", TypographyRole::Monospace},
-          std::pair{"field", TypographyRole::Field}}) {
+          std::pair{"field", TypographyRole::Field},
+          std::pair{"sectionCaption", TypographyRole::SectionCaption},
+          std::pair{"metadata", TypographyRole::Metadata}}) {
         const auto spec = typographySpec(role);
         const auto prefix = QStringLiteral("typography.%1.").arg(QLatin1String(name));
         add(prefix + QStringLiteral("family"), spec.family);

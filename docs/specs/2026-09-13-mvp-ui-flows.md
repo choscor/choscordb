@@ -1,9 +1,24 @@
 # ChoscorDB: MVP design fidelity and complete desktop flows
 
-- Status: Approved for implementation; component and final visual reviews remain required.
+- Status: Implemented; checkpoint 2 visual review accepted on 2026-09-19.
 - Date: 2026-09-13 (Asia/Ho_Chi_Minh).
 - Source: User-requested whole-app UI/UX upgrade following `docs/mvp-design`, developed using `$brainstorm`.
 - Approval: The user accepted recommendations 1–4 (scope, fidelity, missing-state treatment, review checkpoints), then approved all five visual scenes covering recommendations 5–9 (result ownership, object data, navigation, dialogs, migration).
+
+## Completion record
+
+The user identified the components as already done before requesting screen/flow
+implementation, then accepted the completed comparison/evidence package with
+“ok good, continue” after the checkpoint 2 review request on 2026-09-19.
+Implementation and the required visual review are complete. The presented
+form-layout variations remain documented in the
+[completion evidence](../design/mvp-flows-implementation-evidence.md).
+
+Validation passed: 36 native suites, 268 Rust tests, explicit PostgreSQL integration,
+and 100 Cocoa screen/dialog captures. The existing 16ms GUI-dispatch target still
+fails in both baseline and current measurements; broader release-performance
+qualification remains unverified. Visual acceptance does not waive those limits.
+No commit or publication is implied by this completion record.
 
 ## Outcome and authority
 

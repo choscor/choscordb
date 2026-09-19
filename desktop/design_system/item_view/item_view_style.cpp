@@ -1,9 +1,68 @@
 #include "design_system/item_view/item_view_style.h"
+#include "design_system/icons.h"
+#include "design_system/theme.h"
+#include <QPainter>
 
 namespace choscordb::design {
+QSize NavigationProfileDelegate::sizeHint(const QStyleOptionViewItem&, const QModelIndex&) const {
+    return {180, 45};
+}
+void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
+                                      const QModelIndex& index) const {
+    if (!option.widget)
+        return;
+    const auto colors = resolvedThemeForWidget(*option.widget).colors;
+    const bool selected = option.state & QStyle::State_Selected;
+    const bool hovered = option.state & QStyle::State_MouseOver;
+    const auto bounds = option.rect.adjusted(1, 1, -1, -1);
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing);
+    painter->setPen(selected ? colors.sidebarBorder : Qt::transparent);
+    painter->setBrush(selected ? colors.subtleAccent : hovered ? colors.muted : colors.sidebar);
+    painter->drawRoundedRect(bounds, 6, 6);
+    const QRect badge(bounds.left() + 8, bounds.center().y() - 14, 27, 29);
+    const bool sqlite = index.data(DriverRole).toString() == "sqlite";
+    painter->setPen(sqlite ? colors.sqliteBadgeBorder : colors.postgresBadgeBorder);
+    painter->setBrush(sqlite ? colors.sqliteBadgeBackground : colors.postgresBadgeBackground);
+    painter->drawRoundedRect(badge, 6, 6);
+    const auto ink = selected ? colors.action : colors.mutedText;
+    themedIcon(Icon::Database,
+               sqlite ? colors.sqliteBadgeForeground : colors.postgresBadgeForeground, 16)
+        .paint(painter, badge.adjusted(5, 6, -6, -7));
+    const auto lines = index.data(Qt::DisplayRole).toString().split('\n');
+    const int textLeft = badge.right() + 10;
+    const int textWidth = qMax(0, bounds.right() - textLeft - 25);
+    auto titleFont = resolveTypography(TypographyRole::Field);
+    painter->setFont(titleFont);
+    painter->setPen(selected ? colors.action : colors.text);
+    painter->drawText(
+        QRect(textLeft, bounds.top() + 6, textWidth, 17), Qt::AlignLeft | Qt::AlignVCenter,
+        QFontMetrics(titleFont).elidedText(lines.value(0), Qt::ElideRight, textWidth));
+    auto detailFont = resolveTypography(TypographyRole::Small);
+    detailFont.setPixelSize(10);
+    painter->setFont(detailFont);
+    painter->setPen(ink);
+    const auto detail = lines.value(1) + (selected ? tr(" · Selected") : QString{});
+    painter->drawText(QRect(textLeft, bounds.top() + 24, textWidth, 13),
+                      Qt::AlignLeft | Qt::AlignVCenter,
+                      QFontMetrics(detailFont).elidedText(detail, Qt::ElideRight, textWidth));
+    if (selected)
+        themedIcon(Icon::Check, colors.action, 14)
+            .paint(painter, QRect(bounds.right() - 21, bounds.center().y() - 7, 14, 14));
+    if (option.state & QStyle::State_HasFocus) {
+        painter->setPen(QPen(colors.focus, 2));
+        painter->setBrush(Qt::NoBrush);
+        painter->drawRoundedRect(bounds.adjusted(1, 1, -1, -1), 6, 6);
+    }
+    painter->restore();
+}
 QString itemViewStyleSheet() {
     return QStringLiteral(
-        R"(QTableView, QTreeView, QListView { background: @field; alternate-background-color: @muted; color: @foreground; border: 0; gridline-color: @border; selection-background-color: @accent; selection-color: @foreground; outline: 0; }
+        R"(QWidget[designSurface="subtle"] { background: @accent; }
+QWidget[designSurface="sidebar"] { background: @sidebar; }
+QWidget[designSurface="panel"] { background: @field; }
+QWidget[designSurface="muted"] { background: @muted; }
+QTableView, QTreeView, QListView { background: @field; alternate-background-color: @muted; color: @foreground; border: 0; gridline-color: @border; selection-background-color: @accent; selection-color: @foreground; outline: 0; }
 )");
 }
 

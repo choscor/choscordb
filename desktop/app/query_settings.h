@@ -14,6 +14,8 @@ class QuerySettingsController final : public QObject {
     const QueryPreferences& preferences() const { return preferences_; }
     bool isReady() const { return ready_; }
     void open();
+    void trackSave(quint64 token) { saves_.insert(token); }
+    void applyConfirmed(const QueryPreferences& preferences) { apply(preferences); }
   signals:
     void preferencesChanged(const choscordb::QueryPreferences& preferences);
     void readyChanged(bool ready);

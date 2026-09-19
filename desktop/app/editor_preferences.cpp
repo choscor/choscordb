@@ -118,6 +118,12 @@ void EditorPreferencesController::open() {
                 [this](quint64 token) { pendingSaves_.insert(token); });
         connect(dialog_, &PreferencesDialog::preferencesConfirmed, this,
                 &EditorPreferencesController::apply);
+        connect(dialog_, &PreferencesDialog::queryPreferencesSaveSubmitted, this,
+                &EditorPreferencesController::queryPreferencesSaveSubmitted);
+        connect(dialog_, &PreferencesDialog::queryPreferencesConfirmed, this,
+                &EditorPreferencesController::queryPreferencesConfirmed);
+        connect(dialog_, &PreferencesDialog::historyPolicyConfirmed, this,
+                &EditorPreferencesController::historyPolicyConfirmed);
     }
     dialog_->show();
     dialog_->raise();

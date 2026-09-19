@@ -875,3 +875,157 @@ async fn disabled_tls_ignores_obsolete_root_certificate_path() {
     );
     connection.close().await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires disposable live PostgreSQL fixture"]
+async fn object_pages_preserve_sql_portal_and_uncommitted_work() {
+    let mut c = PostgresDriver.connect(settings()).await.unwrap();
+    run(&mut *c, "CREATE SCHEMA object_read_fixture", false).await;
+    run(
+        &mut *c,
+        "CREATE TABLE object_read_fixture.\"dữ\"\" liệu\"(x integer)",
+        false,
+    )
+    .await;
+    run(
+        &mut *c,
+        "INSERT INTO object_read_fixture.\"dữ\"\" liệu\" SELECT n*10 FROM generate_series(1,250) n",
+        false,
+    )
+    .await;
+    let database = c.load_metadata(None).await.unwrap().remove(0);
+    let schema = c
+        .load_metadata(Some(database.id))
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|o| o.name == "object_read_fixture")
+        .unwrap();
+    let table = c.load_metadata(Some(schema.id)).await.unwrap().remove(0);
+    let mut sql = c
+        .execute(
+            "SELECT generate_series(101,350)",
+            QueryOptions {
+                auto_commit: false,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        sql.fetch_page(PageSize::new(100).unwrap())
+            .await
+            .unwrap()
+            .rows[0],
+        vec![Value::Integer(101)]
+    );
+    let mut object = c.open_object(&table.id, 4096).await.unwrap();
+    let page = object
+        .fetch_page_bounded(PageSize::new(100).unwrap(), 65536)
+        .await
+        .unwrap();
+    assert_eq!(page.rows[0], vec![Value::Integer(10)]);
+    assert_eq!(page.rows[99], vec![Value::Integer(1000)]);
+    assert!(page.has_more);
+    assert_eq!(object.summary().transaction_active, Some(true));
+    assert_eq!(
+        sql.fetch_page(PageSize::new(100).unwrap())
+            .await
+            .unwrap()
+            .rows[0],
+        vec![Value::Integer(201)]
+    );
+    object.close().await.unwrap();
+    sql.close().await.unwrap();
+    c.rollback().await.unwrap();
+    let rows = run(
+        &mut *c,
+        "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='object_read_fixture')",
+        true,
+    )
+    .await;
+    assert_eq!(rows, vec![vec![Value::Bool(false)]]);
+}
+
+#[tokio::test]
+#[ignore = "requires disposable live PostgreSQL fixture"]
+async fn cancelling_object_read_keeps_user_savepoint_transaction_and_sql_portal() {
+    let mut c = PostgresDriver.connect(settings()).await.unwrap();
+    run(&mut *c, "CREATE SCHEMA object_cancel_fixture", false).await;
+    run(
+        &mut *c,
+        "CREATE TABLE object_cancel_fixture.edits(x integer)",
+        false,
+    )
+    .await;
+    run(
+        &mut *c,
+        "INSERT INTO object_cancel_fixture.edits VALUES(71)",
+        false,
+    )
+    .await;
+    run(&mut *c, "SAVEPOINT user_work", false).await;
+    run(&mut *c,"CREATE VIEW object_cancel_fixture.slow AS SELECT n FROM generate_series(1,250) n CROSS JOIN LATERAL pg_sleep(n*0+0.1)",false).await;
+    let database = c.load_metadata(None).await.unwrap().remove(0);
+    let schema = c
+        .load_metadata(Some(database.id))
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|o| o.name == "object_cancel_fixture")
+        .unwrap();
+    let view = c
+        .load_metadata(Some(schema.id))
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|o| o.name == "slow")
+        .unwrap();
+    let mut sql = c
+        .execute(
+            "SELECT generate_series(101,350)",
+            QueryOptions {
+                auto_commit: false,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        sql.fetch_page(PageSize::new(100).unwrap())
+            .await
+            .unwrap()
+            .rows[0],
+        vec![Value::Integer(101)]
+    );
+    let mut object = c.open_object(&view.id, 4096).await.unwrap();
+    let cancel = object.independent_cancellation_handle().unwrap();
+    let read = tokio::spawn(async move {
+        let result = object
+            .fetch_page_bounded(PageSize::new(100).unwrap(), 65536)
+            .await;
+        object.close().await.unwrap();
+        result
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    cancel.cancel().await.unwrap();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(3), read)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(result,Err(error) if error.kind==ErrorKind::Cancelled));
+    assert_eq!(
+        sql.fetch_page(PageSize::new(100).unwrap())
+            .await
+            .unwrap()
+            .rows[0],
+        vec![Value::Integer(201)]
+    );
+    sql.close().await.unwrap();
+    run(&mut *c, "ROLLBACK TO SAVEPOINT user_work", false).await;
+    assert_eq!(
+        run(&mut *c, "SELECT x FROM object_cancel_fixture.edits", false).await,
+        vec![vec![Value::Integer(71)]]
+    );
+    c.rollback().await.unwrap();
+}

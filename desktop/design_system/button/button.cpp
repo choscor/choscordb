@@ -98,7 +98,12 @@ QSize Button::sizeHint() const {
                            dimension(Dimension::ButtonSmall), dimension(Dimension::Button),
                            dimension(Dimension::ButtonLarge)};
     const bool hasLeading = loading_ || !icon().isNull() || size_ >= ButtonSize::IconExtraSmall;
-    const int height = heights[index] + (hasLeading ? (index == 0 ? 0 : index == 1 ? 1 : 3) : 0);
+    const int height = context_ == ButtonContext::Choice
+                           ? DesignMetrics{}.connectionDriverHeight
+                           : heights[index] + (hasLeading ? (index == 0   ? 0
+                                                             : index == 1 ? 1
+                                                                          : 3)
+                                                          : 0);
     if (size_ >= ButtonSize::IconExtraSmall)
         return {height, height};
     const int padding = buttonPadding(size_, context_);
@@ -161,6 +166,11 @@ void Button::paintEvent(QPaintEvent*) {
     case ButtonVariant::Link:
         foreground = colors.primary;
         break;
+    }
+    if (context_ == ButtonContext::Choice && isChecked()) {
+        background = colors.subtleAccent;
+        foreground = colors.sidebarAccentForeground;
+        border = colors.primary;
     }
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);

@@ -542,3 +542,185 @@ async fn execution_summary_reports_native_transaction_state() {
         cursor.close().await.unwrap();
     }
 }
+
+#[tokio::test]
+async fn object_inspection_reports_real_defaults_indexes_and_foreign_key_targets() {
+    let mut c = connect().await;
+    run(&mut c, "CREATE TABLE parent(id INTEGER PRIMARY KEY)", false).await;
+    run(&mut c, "CREATE TABLE \"dữ\"\" liệu\" (id INTEGER PRIMARY KEY, label TEXT NOT NULL DEFAULT '', parent_id INTEGER REFERENCES parent(id) ON DELETE CASCADE)", false).await;
+    run(
+        &mut c,
+        "CREATE UNIQUE INDEX \"label odd\" ON \"dữ\"\" liệu\"(label) WHERE label <> ''",
+        false,
+    )
+    .await;
+    let objects = c
+        .load_metadata(Some(ObjectId(r#"["main","dữ\" liệu"]"#.into())))
+        .await
+        .unwrap();
+    let property = |kind, name: &str, key: &str| {
+        objects
+            .iter()
+            .find(|o| o.kind == kind && o.name == name)
+            .unwrap()
+            .properties
+            .iter()
+            .find(|p| p.name == key)
+            .map(|p| p.value.clone())
+    };
+    assert_eq!(
+        property(ObjectKind::Column, "label", "Default"),
+        Some("''".into())
+    );
+    assert_eq!(
+        property(ObjectKind::Index, "label odd", "Unique"),
+        Some("true".into())
+    );
+    assert_eq!(
+        property(ObjectKind::Index, "label odd", "Partial"),
+        Some("true".into())
+    );
+    assert_eq!(
+        property(ObjectKind::Index, "label odd", "Columns"),
+        Some("\"label\"".into())
+    );
+    assert_eq!(
+        property(ObjectKind::ForeignKey, "parent_id", "References"),
+        Some("\"main\".\"parent\" (\"id\")".into())
+    );
+    assert_eq!(
+        property(ObjectKind::ForeignKey, "parent_id", "On delete"),
+        Some("CASCADE".into())
+    );
+}
+
+#[tokio::test]
+async fn object_ddl_rejects_oversized_display_without_returning_a_partial_definition() {
+    let mut c = connect().await;
+    run(
+        &mut c,
+        &format!(
+            "CREATE TABLE large_definition(x TEXT DEFAULT '{}')",
+            "x".repeat(1024 * 1024)
+        ),
+        false,
+    )
+    .await;
+    let result = c
+        .object_ddl(&ObjectId(r#"["main","large_definition"]"#.into()))
+        .await;
+    assert!(matches!(result, Err(ref error) if error.kind == ErrorKind::ResourceLimit));
+}
+
+#[tokio::test]
+async fn bounded_object_pages_preserve_sql_cursor_and_manual_transaction() {
+    let mut c = connect().await;
+    run(&mut c, "CREATE TABLE \"dữ\"\" liệu\"(x)", false).await;
+    run(&mut c, "INSERT INTO \"dữ\"\" liệu\" WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<250) SELECT x*10 FROM n", true).await;
+    let mut sql = c.execute("WITH RECURSIVE n(x) AS (VALUES(101) UNION ALL SELECT x+1 FROM n WHERE x<350) SELECT x FROM n", QueryOptions {auto_commit:false,..Default::default()}).await.unwrap();
+    let first = sql.fetch_page(PageSize::new(100).unwrap()).await.unwrap();
+    assert_eq!(first.rows[0], vec![Value::Integer(101)]);
+    assert_eq!(first.rows[99], vec![Value::Integer(200)]);
+    let mut object = c
+        .open_object(&ObjectId(r#"["main","dữ\" liệu"]"#.into()), 4096)
+        .await
+        .unwrap();
+    let page = object
+        .fetch_page_bounded(PageSize::new(100).unwrap(), 65536)
+        .await
+        .unwrap();
+    assert_eq!(page.rows[0], vec![Value::Integer(10)]);
+    assert_eq!(page.rows[99], vec![Value::Integer(1000)]);
+    assert!(page.has_more);
+    assert_eq!(object.summary().transaction_active, Some(true));
+    assert_eq!(
+        sql.fetch_page(PageSize::new(100).unwrap())
+            .await
+            .unwrap()
+            .rows[0],
+        vec![Value::Integer(201)]
+    );
+    let page = object
+        .fetch_page_bounded(PageSize::new(100).unwrap(), 65536)
+        .await
+        .unwrap();
+    assert_eq!(page.rows[0], vec![Value::Integer(1010)]);
+    assert!(page.has_more);
+    let page = object
+        .fetch_page_bounded(PageSize::new(100).unwrap(), 65536)
+        .await
+        .unwrap();
+    assert_eq!(page.rows.last().unwrap(), &vec![Value::Integer(2500)]);
+    assert!(!page.has_more);
+    object.close().await.unwrap();
+    sql.close().await.unwrap();
+    c.rollback().await.unwrap();
+    let mut check = c
+        .execute("SELECT x FROM \"dữ\"\" liệu\"", Default::default())
+        .await
+        .unwrap();
+    assert!(
+        check
+            .fetch_page(PageSize::default())
+            .await
+            .unwrap()
+            .rows
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn metadata_bounds_repeated_long_parent_names_and_retains_small_unicode_objects() {
+    let mut c = connect().await;
+    for width in [45, 2000] {
+        let table = format!("{}{width}", "表".repeat(2730));
+        let columns = (0..width)
+            .map(|i| format!("c{i} TEXT"))
+            .collect::<Vec<_>>()
+            .join(",");
+        run(
+            &mut c,
+            &format!("CREATE TABLE \"{table}\"({columns})"),
+            false,
+        )
+        .await;
+        let result = c
+            .load_metadata(Some(ObjectId(
+                serde_json::to_string(&["main", &table]).unwrap(),
+            )))
+            .await;
+        assert!(
+            matches!(result,Err(error) if error.kind==ErrorKind::ResourceLimit),
+            "complete repeated identity storage must fit the metadata budget"
+        );
+    }
+    run(
+        &mut c,
+        "CREATE TABLE \"小表\"(first TEXT DEFAULT 'actual', second INTEGER)",
+        false,
+    )
+    .await;
+    let objects = c
+        .load_metadata(Some(ObjectId(r#"["main","小表"]"#.into())))
+        .await
+        .unwrap();
+    assert_eq!(
+        objects
+            .iter()
+            .filter(|o| o.kind == ObjectKind::Column)
+            .count(),
+        2
+    );
+    let first = objects.iter().find(|o| o.name == "first").unwrap();
+    assert_eq!(first.parent.as_ref().unwrap().0, r#"["main","小表"]"#);
+    assert_eq!(first.qualified_name, "\"main\".\"小表\".\"first\"");
+    assert_eq!(
+        first
+            .properties
+            .iter()
+            .find(|p| p.name == "Default")
+            .unwrap()
+            .value,
+        "'actual'"
+    );
+}

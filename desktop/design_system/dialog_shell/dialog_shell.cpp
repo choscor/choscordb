@@ -18,6 +18,21 @@ DialogShell::DialogShell(QWidget* parent) : QDialog(parent) {
     presentation_ = new design::DialogPresentation(*this);
 }
 
+void DialogShell::setAppModal() {
+    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
+    setAttribute(Qt::WA_TranslucentBackground);
+    setWindowModality(Qt::ApplicationModal);
+}
+
+void DialogShell::open() {
+    if (windowModality() == Qt::ApplicationModal) {
+        setResult(0);
+        show();
+    } else {
+        QDialog::open();
+    }
+}
+
 QLabel* DialogShell::createDescription(const QString& text, QWidget* parent) {
     auto* description = new QLabel(text, parent);
     description->setProperty("dialogDescription", true);

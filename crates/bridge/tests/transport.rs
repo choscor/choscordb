@@ -475,3 +475,26 @@ fn search_transport_preserves_byte_ranges_literal_replacement_and_errors() {
     assert_eq!(replaced.count, 2);
     assert_eq!(replaced.text, "é $1 $1");
 }
+
+#[test]
+fn ddl_requests_correlate_success_and_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("inspect.sqlite");
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute_batch("CREATE TABLE t(x TEXT DEFAULT 'one')")
+        .unwrap();
+    drop(db);
+    let mut engine = new_engine();
+    let connection = connect_sqlite(&mut engine, path.to_str().unwrap(), false);
+    await_event(&mut engine, "connected");
+    assert!(object_ddl_request(&mut engine, connection.id, r#"["main","t"]"#, 81).accepted);
+    let ddl = await_event(&mut engine, "ddl");
+    assert_eq!(ddl.request_token, 81);
+    assert_eq!(ddl.object, r#"["main","t"]"#);
+    assert!(ddl.ddl.contains("DEFAULT 'one'"));
+    assert!(object_ddl_request(&mut engine, connection.id, r#"["main","missing"]"#, 82).accepted);
+    let failure = await_event(&mut engine, "ddl_failed");
+    assert_eq!(failure.request_token, 82);
+    assert_eq!(failure.object, r#"["main","missing"]"#);
+    assert!(!failure.error.is_empty());
+}

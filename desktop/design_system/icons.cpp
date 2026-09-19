@@ -105,6 +105,12 @@ bool validSvgDocument(const QByteArray& svg) {
 QList<IconDefinition> iconCatalog() {
     ::qInitResources_resources();
     return {
+        {Icon::Code, QStringLiteral("code"), QStringLiteral("desktop/resources/icons/code.svg")},
+        {Icon::Table, QStringLiteral("table"), QStringLiteral("desktop/resources/icons/table.svg")},
+        {Icon::Folder, QStringLiteral("folder"),
+         QStringLiteral("desktop/resources/icons/folder.svg")},
+        {Icon::File, QStringLiteral("file"), QStringLiteral("desktop/resources/icons/file.svg")},
+        {Icon::Key, QStringLiteral("key"), QStringLiteral("desktop/resources/icons/key.svg")},
         {Icon::AppMark, QStringLiteral("app-mark"),
          QStringLiteral("desktop/resources/icons/app-mark.svg")},
         {Icon::Run, QStringLiteral("play"), QStringLiteral("desktop/resources/icons/play.svg")},
@@ -139,6 +145,16 @@ QList<IconDefinition> iconCatalog() {
 
 QString iconResourcePath(Icon icon) {
     switch (icon) {
+    case Icon::Code:
+        return QStringLiteral(":/icons/code.svg");
+    case Icon::Table:
+        return QStringLiteral(":/icons/table.svg");
+    case Icon::Folder:
+        return QStringLiteral(":/icons/folder.svg");
+    case Icon::File:
+        return QStringLiteral(":/icons/file.svg");
+    case Icon::Key:
+        return QStringLiteral(":/icons/key.svg");
     case Icon::AppMark:
         return QStringLiteral(":/icons/app-mark.svg");
     case Icon::Run:

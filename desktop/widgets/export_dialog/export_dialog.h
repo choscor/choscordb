@@ -28,6 +28,7 @@ class ExportDialog final : public DialogShell {
 
   protected:
     void closeEvent(QCloseEvent* event) override;
+    void showEvent(QShowEvent* event) override;
     void reject() override;
 
   private:
@@ -39,6 +40,7 @@ class ExportDialog final : public DialogShell {
     QPointer<EngineAdapter> adapter_;
     std::optional<quint64> query_;
     std::optional<quint64> export_;
+    std::optional<quint64> exportQuery_;
     quint64 submissionToken_ = 0;
     bool submitting_ = false;
     bool cancelling_ = false;

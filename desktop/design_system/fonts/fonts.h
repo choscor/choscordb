@@ -5,7 +5,17 @@
 
 namespace choscordb::design {
 
-enum class TypographyRole { Ui, Monospace, Small, Heading, Base, DialogTitle, Field };
+enum class TypographyRole {
+    Ui,
+    Monospace,
+    Small,
+    Heading,
+    Base,
+    DialogTitle,
+    Field,
+    SectionCaption,
+    Metadata
+};
 
 struct TypographySpec final {
     QString family;

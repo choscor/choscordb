@@ -153,6 +153,7 @@ void WorkspaceRecoveryController::restored(quint64 token,
     ready_ = true;
     dirty_ = false;
     setEnabled(!closing_);
+    emit restoreCompleted(!documents.isEmpty());
     emit persistenceSucceeded();
     if (closing_)
         flush();

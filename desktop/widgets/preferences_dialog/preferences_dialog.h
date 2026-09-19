@@ -8,6 +8,7 @@ class QKeySequenceEdit;
 class QLabel;
 class QPushButton;
 class QSpinBox;
+class QDoubleSpinBox;
 class QComboBox;
 namespace choscordb {
 class SqlEditor;
@@ -22,6 +23,14 @@ class PreferencesDialog final : public DialogShell {
   signals:
     void preferencesSaveSubmitted(quint64 token);
     void preferencesConfirmed(const choscordb::EditorPreferences& preferences);
+    void queryPreferencesSaveSubmitted(quint64 token);
+    void queryPreferencesConfirmed(const choscordb::QueryPreferences& preferences);
+    void historyPolicyConfirmed(const choscordb::HistoryPolicy& policy);
+
+  protected:
+    void reject() override;
+    void closeEvent(QCloseEvent* event) override;
+    void showEvent(QShowEvent* event) override;
 
   private:
     EditorPreferences draft() const;
@@ -30,6 +39,9 @@ class PreferencesDialog final : public DialogShell {
     void updateAppearanceStatus();
     void apply();
     void setBusy(bool busy);
+    void finishRequests();
+    void fillQuery(const QueryPreferences& value);
+    void fillHistory(const HistoryPolicy& value);
     QPointer<EngineAdapter> adapter_;
     QPointer<AppearanceController> appearance_;
     QList<ShortcutDescriptor> catalog_;
@@ -37,6 +49,9 @@ class PreferencesDialog final : public DialogShell {
     QFontComboBox* font_;
     QCheckBox* system_;
     QSpinBox* size_;
+    QSpinBox *pageSize_, *timeout_;
+    QDoubleSpinBox *historyDays_, *historyRecords_;
+    QCheckBox* recordHistory_;
     SqlEditor* preview_;
     QWidget* pages_;
     QLabel* status_;
@@ -45,7 +60,9 @@ class PreferencesDialog final : public DialogShell {
     bool forcedContrast_ = false;
     QComboBox* theme_ = nullptr;
     QPushButton *apply_, *reset_;
-    quint64 token_ = 0;
+    quint64 token_ = 0, queryToken_ = 0, historyToken_ = 0;
+    bool appearancePending_ = false;
+    QStringList errors_;
     bool busy_ = false, ready_ = false, saving_ = false, appearanceValid_ = true;
 };
 } // namespace choscordb

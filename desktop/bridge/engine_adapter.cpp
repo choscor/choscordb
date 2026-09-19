@@ -122,6 +122,13 @@ struct EngineAdapter::Private {
         quint32 pageSize;
     };
     QHash<quint64, QueryPaging> queryPaging;
+    struct InspectionRequest {
+        quint64 connection, token;
+        QString object;
+        ObjectInspectionPane pane;
+    };
+    QHash<quint64, InspectionRequest> inspections;
+    quint64 nextInspectionToken = quint64(1) << 63;
     bool closing = false, stopping = false;
     std::optional<quint64> shutdownToken;
     QString shutdownHistoryError;
@@ -136,8 +143,87 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
     : QObject(parent), d_(std::make_unique<Private>(storagePath)) {
     connect(this, &EngineAdapter::eventReady, this, [this](const BridgeEvent& event) {
         const auto kind = string(event.kind);
+        if (kind == "metadata" || kind == "metadata_failed" || kind == "ddl" ||
+            kind == "ddl_failed") {
+            const auto it = d_->inspections.find(event.request_token);
+            if (it != d_->inspections.end() && it->connection == event.id &&
+                it->object ==
+                    (kind.startsWith("ddl") ? string(event.object) : string(event.parent))) {
+                const auto request = it.value();
+                d_->inspections.erase(it);
+                ObjectInspection result;
+                result.pane = request.pane;
+                if (kind.endsWith("_failed")) {
+                    if (string(event.error_kind) == "Unsupported") {
+                        result.availability = MetadataAvailability::Unsupported;
+                        result.reason = string(event.error);
+                        emit objectInspectionReady(request.connection, request.object,
+                                                   request.token, result);
+                    } else {
+                        emit objectInspectionFailed(request.connection, request.object,
+                                                    request.token, string(event.error));
+                    }
+                } else {
+                    result.ddl = string(event.ddl);
+                    for (const auto& object : event.objects) {
+                        const auto objectKind = string(object.kind);
+                        const bool include =
+                            (request.pane == ObjectInspectionPane::Columns &&
+                             objectKind == "column") ||
+                            (request.pane == ObjectInspectionPane::Indexes &&
+                             objectKind == "index") ||
+                            (request.pane == ObjectInspectionPane::Keys &&
+                             (objectKind == "primarykey" || objectKind == "foreignkey" ||
+                              objectKind == "uniquekey"));
+                        if (!include)
+                            continue;
+                        ObjectInspectionRow row;
+                        row.id = string(object.id);
+                        row.name = string(object.name);
+                        row.kind = objectKind;
+                        if (object.has_column) {
+                            row.properties.append({tr("Type"),
+                                                   string(object.column.database_type),
+                                                   MetadataAvailability::Available,
+                                                   {}});
+                            row.properties.append(
+                                {tr("Nullable"),
+                                 object.column.nullability < 0
+                                     ? QString()
+                                     : (object.column.nullability == 1 ? tr("Yes") : tr("No")),
+                                 object.column.nullability < 0 ? MetadataAvailability::Unavailable
+                                                               : MetadataAvailability::Available,
+                                 object.column.nullability < 0
+                                     ? tr("The driver cannot determine nullability")
+                                     : QString()});
+                        }
+                        for (const auto& property : object.properties) {
+                            const auto availability = string(property.availability);
+                            row.properties.append(
+                                {string(property.name), string(property.value),
+                                 availability == "unsupported"   ? MetadataAvailability::Unsupported
+                                 : availability == "unavailable" ? MetadataAvailability::Unavailable
+                                                                 : MetadataAvailability::Available,
+                                 string(property.reason)});
+                        }
+                        result.rows.append(row);
+                    }
+                    emit objectInspectionReady(request.connection, request.object, request.token,
+                                               result);
+                }
+            }
+        }
         if (kind == "disconnected" || kind == "connection_failed") {
             d_->connections.remove(event.id);
+            for (auto it = d_->inspections.begin(); it != d_->inspections.end();) {
+                if (it->connection == event.id) {
+                    const auto request = it.value();
+                    it = d_->inspections.erase(it);
+                    emit objectInspectionFailed(request.connection, request.object, request.token,
+                                                tr("Connection disconnected"));
+                } else
+                    ++it;
+            }
             for (auto it = d_->queryPaging.begin(); it != d_->queryPaging.end();) {
                 if (it->connection == event.id)
                     it = d_->queryPaging.erase(it);
@@ -692,10 +778,11 @@ void EngineAdapter::fetchPageAt(quint64 query, quint64 index) {
     if (!reply.accepted)
         emit commandFailed(string(reply.error));
 }
-void EngineAdapter::cancelQuery(quint64 query) {
+bool EngineAdapter::cancelQuery(quint64 query) {
     auto reply = cancel(*d_->engine, query);
     if (!reply.accepted)
         emit commandFailed(string(reply.error));
+    return reply.accepted;
 }
 std::optional<quint64> EngineAdapter::startExport(quint64 query, const QString& path,
                                                   const QString& format, const QStringList& table,
@@ -731,6 +818,55 @@ void EngineAdapter::loadMetadata(quint64 connection, const QString& parent, quin
     auto reply = metadata_request(*d_->engine, connection, utf8View(bytes), requestToken);
     if (!reply.accepted)
         emit metadataSubmissionFailed(connection, parent, requestToken, string(reply.error));
+}
+std::optional<quint64> EngineAdapter::openObjectData(quint64 connection, const QString& object,
+                                                     const QueryPreferences& preferences) {
+    if (d_->closing || d_->stopping) {
+        emit commandFailed(tr("Workspace is closing."));
+        return std::nullopt;
+    }
+    const auto limits = queryPreferenceLimits();
+    if (preferences.version != limits.version || preferences.pageSize < limits.minPageSize ||
+        preferences.pageSize > limits.maxPageSize ||
+        preferences.timeoutSeconds > limits.maxTimeoutSeconds) {
+        emit commandFailed(tr("Invalid query settings."));
+        return std::nullopt;
+    }
+    const auto bytes = object.toUtf8();
+    auto reply = open_object_data(*d_->engine, connection, utf8View(bytes), preferences.pageSize,
+                                  quint64(preferences.timeoutSeconds) * 1000);
+    if (!reply.accepted) {
+        emit commandFailed(string(reply.error));
+        return std::nullopt;
+    }
+    d_->queryPaging.insert(reply.id, {connection, preferences.pageSize});
+    return reply.id;
+}
+void EngineAdapter::loadObjectInspection(quint64 connection, const QString& object,
+                                         ObjectInspectionPane pane, quint64 requestToken) {
+    // Each pane retains only its newest request; late responses cannot populate a new context.
+    for (auto it = d_->inspections.begin(); it != d_->inspections.end();) {
+        if (it->connection == connection && it->pane == pane)
+            it = d_->inspections.erase(it);
+        else
+            ++it;
+    }
+    if (d_->inspections.size() >= 64) {
+        emit objectInspectionFailed(
+            connection, object, requestToken,
+            tr("Too many pending metadata requests; retry after loading completes"));
+        return;
+    }
+    const auto token = d_->nextInspectionToken++;
+    const auto bytes = object.toUtf8();
+    d_->inspections.insert(token, {connection, requestToken, object, pane});
+    auto reply = pane == ObjectInspectionPane::Ddl
+                     ? object_ddl_request(*d_->engine, connection, utf8View(bytes), token)
+                     : metadata_request(*d_->engine, connection, utf8View(bytes), token);
+    if (!reply.accepted) {
+        d_->inspections.remove(token);
+        emit objectInspectionFailed(connection, object, requestToken, string(reply.error));
+    }
 }
 void EngineAdapter::objectDdl(quint64 connection, const QString& object) {
     const auto bytes = object.toUtf8();

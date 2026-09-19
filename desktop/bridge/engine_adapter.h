@@ -91,6 +91,23 @@ struct SqlSelection {
     quint64 end;
     bool confirmation;
 };
+enum class ObjectInspectionPane { Columns, Indexes, Keys, Ddl };
+enum class MetadataAvailability { Available, Unsupported, Unavailable };
+struct ObjectProperty {
+    QString name, value;
+    MetadataAvailability availability = MetadataAvailability::Available;
+    QString reason;
+};
+struct ObjectInspectionRow {
+    QString id, name, kind;
+    QList<ObjectProperty> properties;
+};
+struct ObjectInspection {
+    ObjectInspectionPane pane = ObjectInspectionPane::Columns;
+    MetadataAvailability availability = MetadataAvailability::Available;
+    QString reason, ddl;
+    QList<ObjectInspectionRow> rows;
+};
 class EngineAdapter final : public QObject {
     Q_OBJECT
   public:
@@ -137,12 +154,16 @@ class EngineAdapter final : public QObject {
     std::optional<quint64> connectProfile(const SavedProfile& profile);
     void fetchPage(quint64 query);
     void fetchPageAt(quint64 query, quint64 index);
-    void cancelQuery(quint64 query);
+    bool cancelQuery(quint64 query);
     std::optional<quint64> startExport(quint64 query, const QString& path, const QString& format,
                                        const QStringList& table = {}, bool postgres = false);
     void cancelExport(quint64 id);
     void loadValueChunk(quint64 query, quint64 handle, quint64 offset, quint32 maxBytes = 65536);
     void loadMetadata(quint64 connection, const QString& parent = {}, quint64 requestToken = 0);
+    std::optional<quint64> openObjectData(quint64 connection, const QString& object,
+                                          const QueryPreferences& preferences = {});
+    void loadObjectInspection(quint64 connection, const QString& object, ObjectInspectionPane pane,
+                              quint64 requestToken);
     void objectDdl(quint64 connection, const QString& object);
     void commitTransaction(quint64 connection);
     void rollbackTransaction(quint64 connection);
@@ -184,6 +205,10 @@ class EngineAdapter final : public QObject {
     void exportSubmissionFailed(quint64 query, const QString& error);
     void valueChunkSubmissionFailed(quint64 query, quint64 handle, quint64 offset,
                                     const QString& error);
+    void objectInspectionReady(quint64 connection, const QString& object, quint64 token,
+                               const choscordb::ObjectInspection& inspection);
+    void objectInspectionFailed(quint64 connection, const QString& object, quint64 token,
+                                const QString& error);
     void metadataSubmissionFailed(quint64 connection, const QString& parent, quint64 token,
                                   const QString& error);
 
@@ -209,3 +234,5 @@ Q_DECLARE_METATYPE(choscordb::EditorPreferences)
 
 Q_DECLARE_METATYPE(choscordb::QueryPreferences)
 Q_DECLARE_METATYPE(choscordb::AppearanceLayout)
+
+Q_DECLARE_METATYPE(choscordb::ObjectInspection)

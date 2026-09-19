@@ -1,5 +1,6 @@
 //! SQLite adapter. All SQLite and spool I/O runs on a dedicated bounded worker.
 mod metadata;
+mod object_data;
 mod spool;
 mod worker;
 use async_trait::async_trait;
@@ -18,6 +19,7 @@ struct Started {
     summary: QuerySummary,
 }
 enum Command {
+    Object(Box<dyn FnOnce(&rusqlite::Connection) + Send>),
     Execute(String, QueryOptions, usize, Reply<Started>),
     Fetch(u32, PageSize, usize, Reply<ResultPage>),
     Load(u32, Handle, Reply<Value>),
@@ -174,6 +176,13 @@ impl Connection for SqliteConnection {
             columns: start.columns,
             summary: start.summary,
         }))
+    }
+    async fn open_object(
+        &mut self,
+        object: &ObjectId,
+        max: usize,
+    ) -> Result<Box<dyn ResultCursor>> {
+        object_data::open(self.client.clone(), object, max).await
     }
     async fn load_metadata(&mut self, parent: Option<ObjectId>) -> Result<Vec<SchemaObject>> {
         self.client.request(|r| Command::Metadata(parent, r)).await

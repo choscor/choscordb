@@ -7,7 +7,11 @@
 namespace choscordb::design {
 
 ThemeManager::ThemeManager(QObject* parent)
-    : QObject(parent), resolvedTheme_(resolveTheme()), metrics_(resolveMetrics(density_, false)) {}
+    : QObject(parent), metrics_(resolveMetrics(density_, false)) {
+    // resolveTheme reads accessibility policy members declared after the theme.
+    // Resolve only after all member initializers have established that policy.
+    resolvedTheme_ = resolveTheme();
+}
 
 ThemeMode ThemeManager::mode() const {
     return mode_;

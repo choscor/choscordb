@@ -30,6 +30,29 @@ pub enum ObjectKind {
     Index,
     Other,
 }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MetadataAvailability {
+    Available,
+    Unsupported,
+    Unavailable,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MetadataProperty {
+    pub name: String,
+    pub value: String,
+    pub availability: MetadataAvailability,
+    pub reason: String,
+}
+impl MetadataProperty {
+    pub fn available(name: &str, value: impl ToString) -> Self {
+        Self {
+            name: name.into(),
+            value: value.to_string(),
+            availability: MetadataAvailability::Available,
+            reason: String::new(),
+        }
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SchemaObject {
     pub id: ObjectId,
@@ -39,6 +62,8 @@ pub struct SchemaObject {
     pub kind: ObjectKind,
     pub has_children: bool,
     pub column: Option<Column>,
+    #[serde(default)]
+    pub properties: Vec<MetadataProperty>,
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct QuerySummary {
@@ -98,6 +123,18 @@ pub trait Connection: Send {
         }
         Ok(cursor)
     }
+    /// Opens a bounded read-only object source alongside the existing SQL cursor.
+    /// Must neither release that cursor nor begin, commit, or roll back a transaction.
+    async fn open_object(
+        &mut self,
+        _object: &ObjectId,
+        _max_schema_bytes: usize,
+    ) -> Result<Box<dyn ResultCursor>> {
+        Err(DriverError::new(
+            ErrorKind::Unsupported,
+            "Separate object browsing is unavailable for this driver",
+        ))
+    }
     async fn load_metadata(&mut self, parent: Option<ObjectId>) -> Result<Vec<SchemaObject>>;
     async fn object_ddl(&mut self, _object: &ObjectId) -> Result<String> {
         Err(DriverError::new(
@@ -126,6 +163,11 @@ pub trait DeferredReader: Send + Sync {
 }
 #[async_trait]
 pub trait ResultCursor: Send {
+    /// Independent object sources own a cancellation handle that cannot cancel SQL.
+    fn independent_cancellation_handle(&self) -> Option<Arc<dyn CancelHandle>> {
+        None
+    }
+
     fn deferred_reader(&self) -> Option<Arc<dyn DeferredReader>> {
         None
     }

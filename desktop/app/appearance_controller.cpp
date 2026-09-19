@@ -4,6 +4,7 @@
 #include <QEvent>
 #include <QGuiApplication>
 #include <QMainWindow>
+#include <QMouseEvent>
 #include <QScreen>
 #include <QSplitter>
 #include <QTimer>
@@ -12,6 +13,13 @@
 
 namespace choscordb {
 namespace {
+AppearanceLayout defaultLayout() {
+    AppearanceLayout value;
+    const design::DesignMetrics metrics;
+    value.navigatorWidth = metrics.initialNavigatorWidth;
+    value.editorResultsSplit = metrics.initialEditorResultsSplit;
+    return value;
+}
 design::ThemeMode themeMode(const QString& value) {
     if (value == "dark")
         return design::ThemeMode::Dark;
@@ -27,9 +35,10 @@ quint64 AppearanceController::nextToken() {
 }
 AppearanceController::AppearanceController(design::ThemeManager* theme, EngineAdapter* adapter,
                                            QMainWindow* window, QDockWidget* navigator,
-                                           QSplitter* workspace, QDockWidget* history)
+                                           QSplitter* workspace, QWidget* history)
     : QObject(window), theme_(theme), adapter_(adapter), window_(window), navigator_(navigator),
-      history_(history), workspace_(workspace), saveTimer_(new QTimer(this)) {
+      workspace_(workspace), saveTimer_(new QTimer(this)) {
+    Q_UNUSED(history);
     connect(theme_, &design::ThemeManager::accessibilityPolicyChanged, this,
             &AppearanceController::accessibilityPolicyChanged);
     saveTimer_->setSingleShot(true);
@@ -37,7 +46,7 @@ AppearanceController::AppearanceController(design::ThemeManager* theme, EngineAd
     connect(saveTimer_, &QTimer::timeout, this, [this] { submitSave(Request::AutomaticSave); });
     connect(workspace_, &QSplitter::splitterMoved, this, [this] { scheduleSave(); });
     connect(navigator_, &QDockWidget::visibilityChanged, this, [this] { scheduleSave(); });
-    connect(history_, &QDockWidget::visibilityChanged, this, [this] { scheduleSave(); });
+    navigator_->installEventFilter(this);
     connect(theme_, &design::ThemeManager::themeChanged, this, [this] { scheduleSave(); });
     connect(theme_, &design::ThemeManager::metricsChanged, this, [this] { scheduleSave(); });
     window_->installEventFilter(this);
@@ -49,7 +58,8 @@ AppearanceController::AppearanceController(design::ThemeManager* theme, EngineAd
                 token_ = 0;
                 request_ = Request::None;
                 if (request == Request::Load || request == Request::Reset) {
-                    persisted_ = hasSaved ? value : AppearanceLayout{};
+                    defaultSidebar_ = !hasSaved;
+                    persisted_ = hasSaved ? value : defaultLayout();
                     apply(persisted_, true);
                     loaded_ = true;
                     automaticAllowed_ = true;
@@ -64,8 +74,14 @@ AppearanceController::AppearanceController(design::ThemeManager* theme, EngineAd
                         persistentWarning_.clear();
                         emit warningChanged({});
                     }
-                    if (request == Request::Save)
-                        apply(persisted_, false);
+                    if (request == Request::Save) {
+                        const bool resetLayout = resetPreview_;
+                        if (resetLayout)
+                            defaultSidebar_ = true;
+                        resetPreview_ = false;
+                        previewing_ = false;
+                        apply(persisted_, resetLayout);
+                    }
                     if (request == Request::Save)
                         emit saveFinished(true, tr("Appearance saved."));
                     if (flushRequested_) {
@@ -137,11 +153,10 @@ AppearanceLayout AppearanceController::current() const {
     const int total = sizes.size() >= 2 ? sizes[0] + sizes[1] : 0;
     if (total > 0)
         result.editorResultsSplit =
-            static_cast<quint16>(std::clamp((sizes[0] * 1000) / total, 100, 900));
-    result.historyHeight =
-        static_cast<quint32>(std::max(history_->height(), theme_->metrics().minimumHistoryHeight));
-    result.navigatorVisible = navigator_->isVisible();
-    result.historyVisible = history_->isVisible();
+            static_cast<quint16>(std::clamp((sizes[0] * 1000 + total / 2) / total, 100, 900));
+    // Dock placement is obsolete; retain compatible stored geometry and split.
+    result.navigatorVisible = true;
+    result.historyVisible = false;
     const auto geometry = window_->normalGeometry();
     result.x = geometry.x();
     result.y = geometry.y();
@@ -175,11 +190,14 @@ bool AppearanceController::preview(const QString& mode) {
     }
     previewing_ = true;
     theme_->setMode(themeMode(mode));
-    emit warningChanged(persistentWarning_);
+    emit warningChanged(resetPreview_ ? QString{} : persistentWarning_);
     return true;
 }
 void AppearanceController::cancelPreview() {
+    resetPreview_ = false;
     apply(persisted_, false);
+    emit warningChanged(persistentWarning_);
+    emit readyChanged(loaded_);
     previewing_ = false;
     if (dirty_)
         scheduleSave();
@@ -191,10 +209,29 @@ void AppearanceController::applyPreview() {
                                      : persistentWarning_);
         return;
     }
-    previewing_ = false;
+    if (token_) {
+        emit saveFinished(false, tr("Layout settings are still being saved. Please retry."));
+        return;
+    }
+    // Keep the preview isolated from automatic layout writes until acknowledged.
     dirty_ = false;
     saveTimer_->stop();
     submitSave(Request::Save);
+}
+void AppearanceController::stageReset() {
+    if (!loaded_ || token_) {
+        emit warningChanged(tr("Appearance settings are still loading or saving. Please retry."));
+        return;
+    }
+    saveTimer_->stop();
+    resetPreview_ = true;
+    previewing_ = true;
+    theme_->setMode(design::ThemeMode::System);
+    // Keep geometry unchanged until Save is acknowledged so Close can discard
+    // the entire reset without overwriting compatible persisted placement.
+    emit resolvedChoicesChanged(current());
+    emit warningChanged({});
+    emit readyChanged(true);
 }
 void AppearanceController::reset() {
     if (token_)
@@ -212,7 +249,8 @@ void AppearanceController::resetLayout() {
         return;
     }
     auto value = current();
-    const AppearanceLayout defaults;
+    defaultSidebar_ = true;
+    const auto defaults = defaultLayout();
     value.navigatorWidth = defaults.navigatorWidth;
     value.editorResultsSplit = defaults.editorResultsSplit;
     value.historyHeight = defaults.historyHeight;
@@ -227,7 +265,7 @@ void AppearanceController::resetLayout() {
     value.screenName.clear();
     apply(value, true);
     dirty_ = false;
-    submitSave(Request::AutomaticSave);
+    submitSave(Request::AutomaticSave, value);
 }
 void AppearanceController::retry() {
     if (token_)
@@ -252,11 +290,10 @@ void AppearanceController::apply(const AppearanceLayout& value, bool includeLayo
             }
         if (onScreen)
             window_->setGeometry(requested);
-        navigator_->setVisible(value.navigatorVisible);
-        history_->setVisible(value.historyVisible);
+        navigator_->show();
         window_->resizeDocks({navigator_}, {static_cast<int>(value.navigatorWidth)},
                              Qt::Horizontal);
-        window_->resizeDocks({history_}, {static_cast<int>(value.historyHeight)}, Qt::Vertical);
+
         workspace_->setSizes({static_cast<int>(value.editorResultsSplit),
                               1000 - static_cast<int>(value.editorResultsSplit)});
         if (value.maximized)
@@ -271,14 +308,20 @@ void AppearanceController::scheduleSave() {
     if (request_ == Request::None)
         saveTimer_->start();
 }
-void AppearanceController::submitSave(Request request) {
+void AppearanceController::submitSave(Request request, std::optional<AppearanceLayout> layout) {
     if (!loaded_ || token_)
         return;
     token_ = nextToken();
     request_ = request;
     if (request == Request::AutomaticSave)
         dirty_ = false;
-    if (!adapter_->setAppearanceLayout(current(), token_)) {
+    auto value = layout.value_or(current());
+    if (request == Request::Save && resetPreview_) {
+        const auto selectedTheme = value.theme;
+        value = defaultLayout();
+        value.theme = selectedTheme;
+    }
+    if (!adapter_->setAppearanceLayout(value, token_)) {
         token_ = 0;
         request_ = Request::None;
     }
@@ -296,8 +339,37 @@ bool AppearanceController::flush() {
     return false;
 }
 bool AppearanceController::eventFilter(QObject* watched, QEvent* event) {
-    if (watched == window_ && (event->type() == QEvent::Move || event->type() == QEvent::Resize ||
-                               event->type() == QEvent::WindowStateChange))
+    // A stored width is an explicit compatible layout choice. Only fresh/reset
+    // defaults respond to the reference breakpoint; dragging the native divider
+    // turns that default into the user's own width.
+    if (defaultSidebar_ && watched == window_ && event->type() == QEvent::MouseButtonPress) {
+        const auto* mouse = static_cast<QMouseEvent*>(event);
+        const auto dock = navigator_->geometry();
+        if (mouse->button() == Qt::LeftButton && mouse->position().y() >= dock.top() &&
+            mouse->position().y() <= dock.bottom() && mouse->position().x() >= dock.right() &&
+            mouse->position().x() <= dock.right() + theme_->metrics().spacingLarge)
+            defaultSidebar_ = false;
+    }
+    if (defaultSidebar_ && loaded_ && !applying_ && !sidebarResizePending_ && watched == window_ &&
+        event->type() == QEvent::Resize) {
+        sidebarResizePending_ = true;
+        QTimer::singleShot(0, this, [this] {
+            sidebarResizePending_ = false;
+            if (!defaultSidebar_)
+                return;
+            const auto metrics = theme_->metrics();
+            const int width = window_->width() <= metrics.narrowWorkspaceWidth
+                                  ? metrics.narrowNavigatorWidth
+                                  : metrics.initialNavigatorWidth;
+            const bool wasApplying = applying_;
+            applying_ = true;
+            window_->resizeDocks({navigator_}, {width}, Qt::Horizontal);
+            applying_ = wasApplying;
+        });
+    }
+    if ((watched == navigator_ && event->type() == QEvent::Resize) ||
+        (watched == window_ && (event->type() == QEvent::Move || event->type() == QEvent::Resize ||
+                                event->type() == QEvent::WindowStateChange)))
         scheduleSave();
     return QObject::eventFilter(watched, event);
 }

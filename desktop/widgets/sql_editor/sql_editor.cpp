@@ -61,6 +61,7 @@ bool SqlEditor::restoreDocument(const QByteArray& sql, const QString& path, quin
     };
     if (!sql.isValidUtf8() || !boundary(cursor) || !boundary(anchor))
         return false;
+    setConnectionTarget(std::nullopt);
     SendScintilla(SCI_CLEARALL);
     SendScintilla(SCI_ADDTEXT, static_cast<uintptr_t>(sql.size()), sql.constData());
     SendScintilla(SCI_EMPTYUNDOBUFFER);
@@ -92,18 +93,15 @@ void SqlEditor::setEditorFont(const QFont& requestedFont) {
         }
         lexer()->setDefaultFont(font);
     }
-    // Reset any previous default padding before measuring a custom font.
-    // User point-size preferences retain their natural, unclipped line box.
+    // Persisted point fonts and pixel defaults share the reference minimum.
+    // Larger custom fonts retain their natural, unclipped line box.
     setExtraAscent(0);
     setExtraDescent(0);
-    if (requestedFont == design::resolveTypography(design::TypographyRole::Monospace)) {
-        const auto naturalHeight = SendScintilla(SCI_TEXTHEIGHT, 0UL);
-        const auto lineHeight =
-            design::typographySpec(design::TypographyRole::Monospace).lineHeight;
-        const auto padding = qMax(0, lineHeight - static_cast<int>(naturalHeight));
-        setExtraAscent(padding / 2);
-        setExtraDescent(padding - padding / 2);
-    }
+    const auto naturalHeight = SendScintilla(SCI_TEXTHEIGHT, 0UL);
+    const auto lineHeight = design::typographySpec(design::TypographyRole::Monospace).lineHeight;
+    const auto padding = qMax(0, lineHeight - static_cast<int>(naturalHeight));
+    setExtraAscent(padding / 2);
+    setExtraDescent(padding - padding / 2);
     updateLineNumberMargin();
 }
 void SqlEditor::updateLineNumberMargin() {
@@ -183,19 +181,16 @@ void SqlEditor::applyPalette() {
     lexer()->setDefaultColor(foreground);
     lexer()->setPaper(base, -1);
     lexer()->setColor(foreground, -1);
-    auto keyword = palette().color(QPalette::Link);
-    auto string = palette().color(QPalette::LinkVisited);
-    if (base.lightness() < 128) {
-        if (keyword.lightness() <= 128)
-            keyword = foreground;
-        if (string.lightness() <= 128)
-            string = foreground;
-    }
-    lexer()->setColor(keyword, QsciLexerSQL::Keyword);
-    lexer()->setColor(string, QsciLexerSQL::SingleQuotedString);
+    const auto colors = design::resolvedThemeForWidget(*this).colors;
+    const auto readable = [&](const QColor& color) {
+        return design::contrastRatio(color, base) >= 4.5 ? color : foreground;
+    };
+    lexer()->setColor(readable(colors.sqlKeyword), QsciLexerSQL::Keyword);
+    lexer()->setColor(readable(colors.sqlString), QsciLexerSQL::SingleQuotedString);
+    lexer()->setColor(readable(colors.sqlNumber), QsciLexerSQL::Number);
     for (const auto style :
          {QsciLexerSQL::Comment, QsciLexerSQL::CommentLine, QsciLexerSQL::CommentDoc})
-        lexer()->setColor(palette().color(QPalette::PlaceholderText), style);
+        lexer()->setColor(readable(colors.sqlComment), style);
     setMarginsBackgroundColor(palette().color(QPalette::AlternateBase));
     setMarginsForegroundColor(foreground);
     setFoldMarginColors(base, base);

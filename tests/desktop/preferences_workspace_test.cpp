@@ -18,6 +18,82 @@
 class PreferencesWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void appearanceResetRequiresSaveAndSurvivesRestart_data() {
+        QTest::addColumn<bool>("corrupt");
+        QTest::addColumn<bool>("save");
+        QTest::newRow("valid-close") << false << false;
+        QTest::newRow("valid-save") << false << true;
+        QTest::newRow("corrupt-close") << true << false;
+        QTest::newRow("corrupt-save") << true << true;
+    }
+    void appearanceResetRequiresSaveAndSurvivesRestart() {
+        using namespace choscordb;
+        QFETCH(bool, corrupt);
+        QFETCH(bool, save);
+        QTemporaryDir directory;
+        const auto path = directory.filePath("reset.sqlite");
+        {
+            EngineAdapter writer(nullptr, path);
+            if (corrupt) {
+                bool connected = false, completed = false;
+                connect(&writer, &EngineAdapter::eventReady, &writer,
+                        [&](const BridgeEvent& event) {
+                            connected = connected || event.kind == "connected";
+                            completed = completed || event.kind == "query_finished";
+                        });
+                const auto connection = writer.connectSqlite(path);
+                QVERIFY(connection);
+                QTRY_VERIFY(connected);
+                const auto query = writer.execute(
+                    *connection,
+                    "INSERT INTO appearance_layout(singleton,value) VALUES(1,'{bad json')");
+                QVERIFY(query);
+                writer.fetchPage(*query);
+                QTRY_VERIFY(completed);
+            } else {
+                AppearanceLayout initial;
+                initial.theme = "dark";
+                initial.width = 1100;
+                initial.height = 760;
+                QSignalSpy saved(&writer, &EngineAdapter::appearanceLayoutReady);
+                QVERIFY(writer.setAppearanceLayout(initial, 902));
+                QTRY_COMPARE(saved.count(), 1);
+            }
+        }
+        {
+            MainWindow window(nullptr, path);
+            window.show();
+            auto* appearance = window.findChild<AppearanceController*>();
+            QTRY_VERIFY(appearance->isReady());
+            window.findChild<QAction*>("preferences")->trigger();
+            auto* dialog = window.findChild<QDialog*>("preferencesDialog");
+            auto* apply = dialog->findChild<QPushButton*>("preferencesApply");
+            auto* reset = dialog->findChild<QPushButton*>("appearanceReset");
+            QTRY_VERIFY(reset->isEnabled());
+            reset->click();
+            QTRY_VERIFY(apply->isEnabled());
+            if (save) {
+                apply->click();
+                QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
+            } else {
+                dialog->findChild<QPushButton*>("preferencesClose")->click();
+            }
+            window.close();
+            QTRY_VERIFY(!window.isVisible());
+        }
+        MainWindow restarted(nullptr, path);
+        auto* appearance = restarted.findChild<AppearanceController*>();
+        QTRY_VERIFY(appearance->isReady());
+        if (corrupt && !save) {
+            QVERIFY(!appearance->currentWarning().isEmpty());
+            QVERIFY(!appearance->canSave());
+        } else {
+            QVERIFY(appearance->currentWarning().isEmpty());
+            QCOMPARE(appearance->persisted().theme, save ? QString("system") : QString("dark"));
+            QCOMPARE(appearance->persisted().width, save ? quint32(1280) : quint32(1100));
+        }
+    }
+
     void brokenAppearanceRequiresExplicitRepair_data() {
         QTest::addColumn<QString>("payload");
         QTest::newRow("corrupt") << QString("{bad json");
@@ -138,6 +214,11 @@ class PreferencesWorkspaceTest : public QObject {
             QCOMPARE(appearance->persisted().accent, QString("#FFFFFF"));
             QCOMPARE(appearance->persisted().accentKind, QString("custom"));
             QCOMPARE(appearance->persisted().density, QString("comfortable"));
+            QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
+            window.findChild<QAction*>("preferences")->trigger();
+            dialog = window.findChild<QDialog*>("preferencesDialog");
+            mode = dialog->findChild<QComboBox*>("appearanceTheme");
+            QTRY_VERIFY(dialog->findChild<QPushButton*>("preferencesApply")->isEnabled());
             mode->setCurrentIndex(mode->findData("dark"));
             dialog->reject();
             QCOMPARE(theme->mode(), design::ThemeMode::Light);
@@ -237,6 +318,7 @@ class PreferencesWorkspaceTest : public QObject {
         QFETCH(QString, binding);
         choscordb::MainWindow window;
         window.show();
+        window.findChild<QAction*>("newQuery")->trigger();
         auto* tabs = window.findChild<QTabWidget*>("editorTabs");
         auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
         window.findChild<QAction*>("preferences")->trigger();
@@ -246,8 +328,7 @@ class PreferencesWorkspaceTest : public QObject {
         dialog->findChild<QKeySequenceEdit*>("shortcut_undo")
             ->setKeySequence(QKeySequence(binding));
         apply->click();
-        QTRY_VERIFY(apply->isEnabled());
-        dialog->hide();
+        QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
         window.activateWindow();
         editor->setFocus();
         QTRY_VERIFY(editor->hasFocus());
@@ -259,11 +340,13 @@ class PreferencesWorkspaceTest : public QObject {
         QCOMPARE(editor->text(), QString("SELECT 1;"));
         QTest::keySequence(editor, QKeySequence(binding));
         QCOMPARE(editor->text(), QString("SELECT 1"));
-        dialog->show();
+        window.findChild<QAction*>("preferences")->trigger();
+        dialog = window.findChild<QDialog*>("preferencesDialog");
+        apply = dialog->findChild<QPushButton*>("preferencesApply");
+        QTRY_VERIFY(apply->isEnabled());
         dialog->findChild<QKeySequenceEdit*>("shortcut_undo")->setKeySequence({});
         apply->click();
-        QTRY_VERIFY(apply->isEnabled());
-        dialog->hide();
+        QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
         window.activateWindow();
         editor->setFocus();
         QTRY_VERIFY(editor->hasFocus());

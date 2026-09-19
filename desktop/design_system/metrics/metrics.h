@@ -9,7 +9,7 @@
 namespace choscordb::design {
 
 enum class Density { Compact, Comfortable };
-enum class DialogSize { Short, Preferences, Profiles, Detail, Ddl };
+enum class DialogSize { Short, Export, Preferences, Profiles, Detail, Ddl };
 enum class Spacing { Half, One, OneHalf, Two, TwoHalf, Three, Four, Six, Eight };
 enum class Dimension {
     ButtonExtraSmall,
@@ -82,9 +82,19 @@ struct DesignMetrics final {
     int spacingLarge = 16;
     int controlHeight = 33;
     int dataRowHeight = 29;
+    int sqlResultRowHeight = 43;
+    int objectDataRowHeight = 35;
+    int sqlResultHeaderHeight = 43;
     int navigationRowHeight = 33;
     int workspaceChromeHeight = 35;
     int dialogContentSpacing = 16;
+    int modalHeaderHeight = 58;
+    int modalContentInset = 16;
+    int modalFooterInset = 14;
+    int modalFooterVerticalInset = 9;
+    int connectionContentInset = 21;
+    int connectionHeaderHeight = 66;
+    int connectionDriverHeight = 44;
     int iconSmall = 16;
     int iconLarge = 20;
     int controlRadius = 7;
@@ -99,7 +109,12 @@ struct DesignMetrics final {
     int defaultWorkspaceHeight = 900;
     int minimumWorkspaceWidth = 960;
     int minimumWorkspaceHeight = 640;
-    int initialNavigatorWidth = 245;
+    int initialNavigatorWidth = 260;
+    int narrowNavigatorWidth = 235;
+    int objectColumnRowHeight = 33;
+    int sidebarInset = 11;
+    int sidebarTopInset = 9;
+    int initialEditorResultsSplit = 430;
     int initialEditorHeight = 420;
     int initialResultsHeight = 340;
     int initialHistoryHeight = 360;
