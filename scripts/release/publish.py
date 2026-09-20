@@ -265,7 +265,16 @@ class GitHubStore:
                 str(notes),
             ]
         )
-        return self.api("releases/tags/" + tag)
+        # The by-tag endpoint excludes drafts. Resolve the newly created draft
+        # through the authenticated, paginated release list instead.
+        matching = [
+            release for release in self.releases() if release["tag_name"] == tag
+        ]
+        if len(matching) != 1 or not matching[0]["draft"]:
+            raise ValueError(
+                "created draft could not be confirmed; inspect remote release before retrying"
+            )
+        return matching[0]
 
     def assets(self, release):
         result = {}

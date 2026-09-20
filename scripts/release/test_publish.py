@@ -327,6 +327,8 @@ args=sys.argv[1:]
 with open(os.environ['COMMAND_LOG'],'a') as log: log.write(json.dumps(args)+'\n')
 if os.environ.get('DENIED'):
     print('private-token-details',file=sys.stderr);sys.exit(1)
+state=pathlib.Path(os.environ['COMMAND_LOG']+'.draft')
+if args[:2]==['release','create']: state.write_text('created')
 if args[0]=='api':
     endpoint=args[1]
     if 'git/ref/tags/' in endpoint: print(json.dumps({'object':{'type':'tag','sha':'b'*40}}))
@@ -335,8 +337,10 @@ if args[0]=='api':
         assert args[-2:]==['-H','Accept: application/octet-stream']
         sys.stdout.buffer.write(b'dmg')
     elif '/assets?' in endpoint: print(json.dumps([{'name':'ChoscorDB-1.0.0.dmg','id':7}]))
-    elif 'releases?' in endpoint: print('[]')
-    elif '/releases/tags/' in endpoint: print(json.dumps({'id':1,'draft':True,'prerelease':False,'tag_name':'v1.0.0'}))
+    elif 'releases?' in endpoint:
+        print(json.dumps([{'id':392485694,'draft':True,'prerelease':False,'tag_name':'v1.0.0'}] if state.exists() else []))
+    elif '/releases/tags/' in endpoint:
+        print('HTTP 404: Not Found',file=sys.stderr);sys.exit(1)
     else: sys.exit(99)
 """
         )
@@ -353,6 +357,8 @@ if args[0]=='api':
             self.assertEqual(store.tag_commit("v1.0.0"), "a" * 40)
             self.assertEqual(store.releases(), [])
             release = store.create("v1.0.0", self.root / "notes.md")
+            self.assertEqual(release["id"], 392485694)
+            self.assertTrue(release["draft"])
             asset = store.assets(release)["ChoscorDB-1.0.0.dmg"]
             self.assertEqual(store.digest(asset), hashlib.sha256(b"dmg").hexdigest())
             store.upload("v1.0.0", self.root / "ChoscorDB-1.0.0.dmg")
