@@ -598,6 +598,7 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
             database,
             user,
             tls,
+            ssh,
         } => {
             dto.driver = "postgres".into();
             dto.host = host;
@@ -610,6 +611,13 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
             }
             .into();
             dto.root_certificate = tls.root_certificate_path.unwrap_or_default();
+            if let Some(ssh) = ssh {
+                dto.ssh_enabled = true;
+                dto.ssh_host = ssh.host;
+                dto.ssh_port = ssh.port;
+                dto.ssh_user = ssh.user;
+                dto.ssh_identity_file = ssh.identity_file.unwrap_or_default();
+            }
         }
     }
     dto

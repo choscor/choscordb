@@ -115,6 +115,11 @@ pub mod ffi {
         tls: String,
         root_certificate: String,
         credential_ref: String,
+        ssh_enabled: bool,
+        ssh_host: String,
+        ssh_port: u16,
+        ssh_user: String,
+        ssh_identity_file: String,
     }
     #[derive(Default)]
     struct SqlTemplateResultDto {
@@ -669,6 +674,7 @@ pub fn connect_postgres(
                 database: database.into(),
                 user: user.into(),
                 password: Some(Secret::new(password)),
+                ssh: None,
                 tls: if verify_tls {
                     TlsMode::VerifyFull
                 } else {
@@ -1012,6 +1018,12 @@ fn profile(dto: ffi::ProfileDto) -> std::result::Result<choscordb_core::Connecti
             port: dto.port,
             database: dto.database,
             user: dto.user,
+            ssh: dto.ssh_enabled.then_some(choscordb_driver_api::SshTunnel {
+                host: dto.ssh_host,
+                port: dto.ssh_port,
+                user: dto.ssh_user,
+                identity_file: (!dto.ssh_identity_file.is_empty()).then_some(dto.ssh_identity_file),
+            }),
             tls: PostgresTls {
                 mode: match dto.tls.as_str() {
                     "disable" => TlsMode::Disable,

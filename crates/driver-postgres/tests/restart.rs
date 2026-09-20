@@ -17,6 +17,7 @@ fn settings() -> ConnectionOptions {
         user: value("CHOSCORDB_TEST_POSTGRES_USER"),
         password: Some(Secret::new(value("CHOSCORDB_TEST_POSTGRES_PASSWORD"))),
         tls: TlsMode::VerifyFull,
+        ssh: None,
         root_certificate: Some(value("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE").into()),
     }
 }

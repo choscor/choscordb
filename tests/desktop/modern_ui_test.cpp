@@ -107,7 +107,11 @@ class ModernUiTest final : public QObject {
              {"runStatementButton", "cancelQueryButton", "queryResultAddRow",
               "queryResultDeleteRows", "queryResultApplyEdits", "exportResult"}) {
             auto* button = window.findChild<QPushButton*>(name);
-            QVERIFY(button->isVisible());
+            if (button->objectName() == "queryResultAddRow" ||
+                button->objectName() == "queryResultDeleteRows")
+                QVERIFY(button->isHidden());
+            else
+                QVERIFY(button->isVisible());
             QVERIFY2(!button->isEnabled(), name);
         }
     }

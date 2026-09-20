@@ -9,6 +9,7 @@
 #include "design_system/menu/menu.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
+#include "models/result_table_model.h"
 #include "widgets/history_dock/history_dock.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -43,6 +44,58 @@
 class NavigatorSqlWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void sqlRowActionsLiveInResultContextMenu() {
+        QTemporaryDir storage;
+        choscordb::MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+        window.show();
+        QTRY_VERIFY(window.findChild<choscordb::WorkspaceRecoveryController*>()->isReady());
+        QTRY_VERIFY(window.findChild<choscordb::AppearanceController*>()->isReady());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* grid = window.findChild<QTableView*>("queryResults");
+        QVERIFY(grid);
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+        QVERIFY(model);
+        const QStringList names = {"queryResultAddRow", "queryResultDeleteRows",
+                                   "queryResultRestoreRows"};
+        const auto invoke = [&](const QString& name, bool enabled) {
+            QTimer::singleShot(0, grid, [&] {
+                auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+                QVERIFY(menu);
+                menu->close();
+                for (const auto& actionName : names) {
+                    auto* action = menu->findChild<QAction*>(actionName);
+                    QVERIFY2(action, qPrintable(actionName));
+                }
+                auto* action = menu->findChild<QAction*>(name);
+                QCOMPARE(action->isEnabled(), enabled);
+                if (enabled)
+                    action->trigger();
+            });
+            grid->customContextMenuRequested(QPoint(10, 10));
+        };
+        invoke(names[0], false);
+        for (const auto& name : names) {
+            auto* button = window.findChild<QPushButton*>(name);
+            QVERIFY(button);
+            QVERIFY(button->isHidden());
+            for (auto* toolbar : window.findChildren<QToolBar*>())
+                for (auto* action : toolbar->actions())
+                    QVERIFY(toolbar->widgetForAction(action) != button);
+        }
+        choscordb::ResultColumn column{};
+        column.name = "value";
+        QVERIFY(model->setPage({column}, {{QString("first")}, {QString("second")}}, 0));
+        model->setEditableColumns({true}, true, true);
+        QVERIFY(model->setData(model->index(0, 0), QString("edited")));
+        invoke(names[0], true);
+        QCOMPARE(model->rowCount(), 3);
+        grid->selectionModel()->select(model->index(1, 0), QItemSelectionModel::Select);
+        invoke(names[1], true);
+        QVERIFY(!model->deleted()[0]);
+        QVERIFY(model->deleted()[1]);
+        invoke(names[2], true);
+        QVERIFY(!model->deleted()[1]);
+    }
     void sqlOpensWithEqualEditorAndResults() {
         QTemporaryDir storage;
         choscordb::MainWindow window(nullptr, storage.filePath("settings.sqlite"));

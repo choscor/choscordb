@@ -196,6 +196,45 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     pg->addRow(securityToggle);
     pg->addRow(security);
     security->hide();
+    sshEnabled_ = new QCheckBox(tr("Connect through SSH tunnel"), postgresFields_);
+    sshEnabled_->setObjectName("profileSshEnabled");
+    sshEnabled_->setProperty("designRole", "switch");
+    pg->addRow(sshEnabled_);
+    auto* sshFields = new QWidget(postgresFields_);
+    auto* sshLayout = new QFormLayout(sshFields);
+    sshLayout->setContentsMargins(0, 0, 0, 0);
+    sshLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
+    sshHost_ = line("profileSshHost");
+    sshUser_ = line("profileSshUser");
+    sshIdentityFile_ = line("profileSshIdentityFile");
+    sshIdentityFile_->setPlaceholderText(tr("Optional — use SSH agent or default keys"));
+    sshPort_ = new QSpinBox(sshFields);
+    sshPort_->setObjectName("profileSshPort");
+    sshPort_->setRange(1, 65535);
+    sshLayout->addRow(tr("SSH host"), sshHost_);
+    sshLayout->addRow(tr("SSH port"), sshPort_);
+    sshLayout->addRow(tr("SSH username"), sshUser_);
+    sshLayout->addRow(tr("SSH private key file"), sshIdentityFile_);
+    sshLayout->addRow(createDescription(
+        tr("Uses system OpenSSH with your SSH agent or key file. The server must already be "
+           "trusted in SSH known hosts. Unlock encrypted keys in your agent first. "
+           "The database host and port are reached from the SSH server."),
+        sshFields));
+    pg->addRow(sshFields);
+    connect(sshEnabled_, &QCheckBox::toggled, sshFields, &QWidget::setVisible);
+    connect(sshEnabled_, &QCheckBox::toggled, this, [this] {
+        if (!filling_) {
+            dirty_ = true;
+            ++revision_;
+        }
+    });
+    connect(sshPort_, &QSpinBox::valueChanged, this, [this] {
+        if (!filling_) {
+            dirty_ = true;
+            ++revision_;
+        }
+    });
+    sshFields->hide();
     formLayout->addRow(postgresFields_);
     status_ = createInlineStatus(this);
     status_->setObjectName("profileStatus");
@@ -485,6 +524,11 @@ SavedProfile ProfileDialog::draft() const {
     value.user = user_->text();
     value.tls = tls_->currentData().toString();
     value.rootCertificate = rootCertificate_->text();
+    value.sshEnabled = value.driver == "postgres" && sshEnabled_->isChecked();
+    value.sshHost = sshHost_->text();
+    value.sshPort = static_cast<quint16>(sshPort_->value());
+    value.sshUser = sshUser_->text();
+    value.sshIdentityFile = sshIdentityFile_->text();
     return value;
 }
 void ProfileDialog::setDraft(const SavedProfile& value) {
@@ -502,6 +546,11 @@ void ProfileDialog::setDraft(const SavedProfile& value) {
     const auto tlsIndex = tls_->findData(value.tls);
     tls_->setCurrentIndex(tlsIndex < 0 ? 0 : tlsIndex);
     rootCertificate_->setText(value.rootCertificate);
+    sshEnabled_->setChecked(value.sshEnabled);
+    sshHost_->setText(value.sshHost);
+    sshPort_->setValue(value.sshPort ? value.sshPort : 22);
+    sshUser_->setText(value.sshUser);
+    sshIdentityFile_->setText(value.sshIdentityFile);
     password_->clear();
     password_->setModified(false);
     password_->setPlaceholderText(value.credentialRef.isEmpty()

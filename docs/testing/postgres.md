@@ -37,3 +37,26 @@ python3 scripts/integration/postgres_fixture.py stop
 ```
 
 Its marked directory remains available for a subsequent start. Fixture certificates and passwords are solely for local tests.
+
+## SSH tunnel coverage
+
+The live driver suite can also run through an SSH server with TCP forwarding
+allowed. The database host and port are resolved from that server. Configure
+key/agent authentication and verify the SSH host key in your OpenSSH known-hosts
+file before running; tests never accept an unknown key automatically.
+
+Add these variables to the existing PostgreSQL fixture environment:
+
+```sh
+export CHOSCORDB_TEST_POSTGRES_SSH_HOST=bastion.example
+export CHOSCORDB_TEST_POSTGRES_SSH_PORT=22
+export CHOSCORDB_TEST_POSTGRES_SSH_USER=operator
+export CHOSCORDB_TEST_POSTGRES_SSH_IDENTITY=/absolute/path/to/private-key
+cargo test -p choscordb-driver-postgres --test live --locked -- --ignored --test-threads=1
+```
+
+The identity variable is optional when using an SSH agent or default OpenSSH
+identities. The existing live cases exercise queries, transactions, cancellation,
+disconnect, and PostgreSQL certificate/hostname verification over the tunnel.
+The deterministic `ssh` test separately verifies that an unavailable SSH server
+never falls back to a direct database connection.

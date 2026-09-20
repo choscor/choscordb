@@ -18,6 +18,7 @@
 #include <memory>
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QImage>
 #include <QKeySequenceEdit>
@@ -26,6 +27,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalSpy>
+#include <QSpinBox>
 #include <QtTest>
 
 class SecondaryDesignTest final : public QObject {
@@ -238,6 +240,48 @@ class SecondaryDesignTest final : public QObject {
         QVERIFY(save->isVisible());
         QVERIFY(dialog.rect().contains(QRect(save->mapTo(&dialog, QPoint()), save->size())));
         QVERIFY(dialog.findChild<QLineEdit*>("profilePassword")->isVisible());
+    }
+
+    void postgresSshFormSavesAndRestoresTunnelSettings() {
+        using namespace choscordb;
+        EngineAdapter adapter;
+        ProfileDialog dialog(&adapter);
+        dialog.show();
+        auto* save = dialog.findChild<QPushButton*>("profileSave");
+        QTRY_VERIFY(save->isEnabled());
+        dialog.findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
+        dialog.findChild<QLineEdit*>("profileName")->setText("Tunnel UI");
+        dialog.findChild<QLineEdit*>("profileDatabase")->setText("app");
+        dialog.findChild<QLineEdit*>("profileUser")->setText("dbuser");
+        auto* enabled = dialog.findChild<QCheckBox*>("profileSshEnabled");
+        QVERIFY(enabled);
+        QVERIFY(!enabled->isChecked());
+        auto* host = dialog.findChild<QLineEdit*>("profileSshHost");
+        QVERIFY(!host->isVisible());
+        enabled->setChecked(true);
+        QVERIFY(host->isVisible());
+        host->setText("bastion.example");
+        auto* port = dialog.findChild<QSpinBox*>("profileSshPort");
+        QCOMPARE(port->value(), 22);
+        port->setValue(2222);
+        dialog.findChild<QLineEdit*>("profileSshUser")->setText("operator");
+        dialog.findChild<QLineEdit*>("profileSshIdentityFile")->setText("/keys/test");
+        QSignalSpy saved(&adapter, &EngineAdapter::profileSaved);
+        save->click();
+        QTRY_COMPARE(saved.count(), 1);
+        const auto profile = qvariant_cast<SavedProfile>(saved.first().at(1));
+        QVERIFY(profile.sshEnabled);
+        QCOMPARE(profile.sshHost, QString("bastion.example"));
+        QCOMPARE(profile.sshPort, quint16(2222));
+        QCOMPARE(profile.sshUser, QString("operator"));
+        QCOMPARE(profile.sshIdentityFile, QString("/keys/test"));
+        QTRY_VERIFY(save->isEnabled());
+        QCOMPARE(host->text(), QString("bastion.example"));
+        QCOMPARE(port->value(), 2222);
+        enabled->setChecked(false);
+        save->click();
+        QTRY_COMPARE(saved.count(), 2);
+        QVERIFY(!qvariant_cast<SavedProfile>(saved.at(1).at(1)).sshEnabled);
     }
 
     void closingDuringInitialProfileLoadKeepsTheServiceUsable() {

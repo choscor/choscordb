@@ -2,12 +2,15 @@
 mod metadata;
 mod object_data;
 mod spool;
+mod ssh;
 mod worker;
 use async_trait::async_trait;
 use choscordb_driver_api::*;
+use futures_util::StreamExt;
 use postgres_native_tls::MakeTlsConnector;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
+use tokio_postgres::tls::MakeTlsConnect;
 fn display_notice(code: &str, message: &str) -> String {
     const MAX_BYTES: usize = 512;
     let mut output = String::with_capacity(MAX_BYTES);
@@ -139,17 +142,44 @@ struct Cancellation {
     next: std::sync::atomic::AtomicU64,
     token: tokio_postgres::CancelToken,
     tls: MakeTlsConnector,
+    ssh: Option<SshTunnel>,
+    host: String,
+    port: u16,
 }
 impl Cancellation {
+    async fn send_cancel(&self) -> Result<()> {
+        if let Some(settings) = &self.ssh {
+            let mut stream = ssh::Stream::open(settings, &self.host, self.port)?;
+            let tls = <MakeTlsConnector as MakeTlsConnect<ssh::Stream>>::make_tls_connect(
+                &mut self.tls.clone(),
+                &self.host,
+            )
+            .map_err(|_| DriverError::new(ErrorKind::Tls, "Cannot initialize TLS"))?;
+            // TLS shutdown can finish after writing only to the local pipe.
+            // Keep the process alive while it drains those bytes to PostgreSQL.
+            let mut process = stream.take_process();
+            tokio::time::timeout(ssh::TIMEOUT, async {
+                self.token
+                    .cancel_query_raw(stream, tls)
+                    .await
+                    .map_err(normalize)?;
+                process.finish().await
+            })
+            .await
+            .map_err(|_| ssh::timeout_error())?
+        } else {
+            self.token
+                .cancel_query(self.tls.clone())
+                .await
+                .map_err(normalize)
+        }
+    }
     async fn interrupt_current(&self) -> Result<()> {
         self.closing.request();
         let mut state = self.state.lock().await;
         state.cancelled = Some(state.current);
         if state.running {
-            self.token
-                .cancel_query(self.tls.clone())
-                .await
-                .map_err(normalize)?;
+            self.send_cancel().await?;
         }
         Ok(())
     }
@@ -165,11 +195,7 @@ impl CancelHandle for QueryCancellation {
         if state.current == self.generation {
             state.cancelled = Some(self.generation);
             if state.running {
-                self.shared
-                    .token
-                    .cancel_query(self.shared.tls.clone())
-                    .await
-                    .map_err(normalize)?;
+                self.shared.send_cancel().await?;
             }
         } else if state.current.checked_add(1) == Some(self.generation) {
             state.cancelled = Some(self.generation);
@@ -213,6 +239,7 @@ impl DatabaseDriver for PostgresDriver {
             password,
             tls,
             root_certificate,
+            ssh,
         } = options
         else {
             return Err(DriverError::new(
@@ -231,6 +258,9 @@ impl DatabaseDriver for PostgresDriver {
                 ErrorKind::InvalidInput,
                 "Invalid PostgreSQL connection settings",
             ));
+        }
+        if let Some(settings) = &ssh {
+            settings.validate()?;
         }
         let root_certificate = if tls == TlsMode::Disable {
             None
@@ -296,30 +326,57 @@ impl DatabaseDriver for PostgresDriver {
         if let Some(password) = password {
             config.password(password.expose());
         }
-        let (client, mut connection) =
-            config.connect(connector.clone()).await.map_err(|error| {
-                if error.as_db_error().is_some() {
-                    normalize(error)
-                } else {
-                    DriverError::new(
-                        if tls == TlsMode::VerifyFull
-                            && !std::error::Error::source(&error)
-                                .is_some_and(|source| source.is::<std::io::Error>())
-                        {
-                            ErrorKind::Tls
-                        } else {
-                            ErrorKind::Connection
-                        },
-                        "PostgreSQL connection failed; check server, network, and TLS settings",
-                    )
-                }
-            })?;
+        let connection_error = |error: tokio_postgres::Error| {
+            if error.as_db_error().is_some() {
+                normalize(error)
+            } else {
+                DriverError::new(
+                    if tls == TlsMode::VerifyFull
+                        && !std::error::Error::source(&error)
+                            .is_some_and(|source| source.is::<std::io::Error>())
+                    {
+                        ErrorKind::Tls
+                    } else {
+                        ErrorKind::Connection
+                    },
+                    if ssh.is_some() {
+                        "PostgreSQL connection through SSH failed; check SSH host trust, key or agent authentication, forwarding, and database TLS settings"
+                    } else {
+                        "PostgreSQL connection failed; check server, network, and TLS settings"
+                    },
+                )
+            }
+        };
+        let (client, mut messages) = if let Some(settings) = &ssh {
+            let stream = ssh::Stream::open(settings, &host, port)?;
+            let tls = <MakeTlsConnector as MakeTlsConnect<ssh::Stream>>::make_tls_connect(
+                &mut connector.clone(),
+                &host,
+            )
+            .map_err(|_| DriverError::new(ErrorKind::Tls, "Cannot initialize TLS"))?;
+            let (client, mut connection) =
+                tokio::time::timeout(ssh::TIMEOUT, config.connect_raw(stream, tls))
+                    .await
+                    .map_err(|_| ssh::timeout_error())?
+                    .map_err(connection_error)?;
+            (
+                client,
+                futures_util::stream::poll_fn(move |cx| connection.poll_message(cx)).boxed(),
+            )
+        } else {
+            let (client, mut connection) = config
+                .connect(connector.clone())
+                .await
+                .map_err(connection_error)?;
+            (
+                client,
+                futures_util::stream::poll_fn(move |cx| connection.poll_message(cx)).boxed(),
+            )
+        };
         let notices = Arc::new(Mutex::new(Vec::new()));
         let incoming = notices.clone();
         let pump = tokio::spawn(async move {
-            while let Some(message) =
-                futures_util::future::poll_fn(|cx| connection.poll_message(cx)).await
-            {
+            while let Some(message) = messages.next().await {
                 match message {
                     Ok(tokio_postgres::AsyncMessage::Notice(notice)) => {
                         if let Ok(mut list) = incoming.lock()
@@ -339,6 +396,9 @@ impl DatabaseDriver for PostgresDriver {
             next: std::sync::atomic::AtomicU64::new(1),
             token: client.cancel_token(),
             tls: connector,
+            ssh,
+            host,
+            port,
         });
         let (tx, rx) = mpsc::channel(32);
         tokio::spawn(worker::run(client, rx, cancel.clone(), notices, pump));

@@ -32,6 +32,11 @@ ProfileDto profileDto(const SavedProfile& value) {
     dto.tls = rustString(value.tls);
     dto.root_certificate = rustString(value.rootCertificate);
     dto.credential_ref = rustString(value.credentialRef);
+    dto.ssh_enabled = value.sshEnabled;
+    dto.ssh_host = rustString(value.sshHost);
+    dto.ssh_port = value.sshPort;
+    dto.ssh_user = rustString(value.sshUser);
+    dto.ssh_identity_file = rustString(value.sshIdentityFile);
     return dto;
 }
 SavedProfile savedProfile(const ProfileDto& dto) {
@@ -49,6 +54,11 @@ SavedProfile savedProfile(const ProfileDto& dto) {
     value.tls = dto.tls.empty() ? QStringLiteral("verify_full") : string(dto.tls);
     value.rootCertificate = string(dto.root_certificate);
     value.credentialRef = string(dto.credential_ref);
+    value.sshEnabled = dto.ssh_enabled;
+    value.sshHost = string(dto.ssh_host);
+    value.sshPort = dto.ssh_port ? dto.ssh_port : 22;
+    value.sshUser = string(dto.ssh_user);
+    value.sshIdentityFile = string(dto.ssh_identity_file);
     return value;
 }
 AppearanceLayout appearanceLayout(const AppearanceLayoutDto& dto) {

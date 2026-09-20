@@ -826,8 +826,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     exportResult->setDesignIcon(design::Icon::Export);
     pager->addWidget(previousPage);
     pager->addWidget(nextPage);
-    const auto addGridAction = [toolbar](const QString& label, const char* name,
-                                         design::Icon icon) {
+    const auto addGridAction = [toolbar](const QString& label, const char* name, design::Icon icon,
+                                         bool inToolbar = true) {
         auto* button = new design::Button({}, toolbar);
         button->setAccessibleName(label);
         button->setToolTip(label);
@@ -836,14 +836,19 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         button->setButtonSize(design::ButtonSize::IconSmall);
         button->setVariant(design::ButtonVariant::Outline);
         button->setEnabled(false);
-        toolbar->addWidget(button);
+        if (inToolbar)
+            toolbar->addWidget(button);
+        else
+            button->hide();
         return button;
     };
-    auto* addResultRow = addGridAction(tr("Add row"), "queryResultAddRow", design::Icon::Add);
+    // Keep the shared edit controls as command/state bindings for the table menu.
+    auto* addResultRow =
+        addGridAction(tr("Add row"), "queryResultAddRow", design::Icon::Add, false);
     auto* deleteResultRows =
-        addGridAction(tr("Delete rows"), "queryResultDeleteRows", design::Icon::Close);
+        addGridAction(tr("Delete rows"), "queryResultDeleteRows", design::Icon::Close, false);
     auto* restoreResultRows =
-        addGridAction(tr("Restore rows"), "queryResultRestoreRows", design::Icon::Refresh);
+        addGridAction(tr("Restore rows"), "queryResultRestoreRows", design::Icon::Refresh, false);
     auto* nullResultCell =
         addGridAction(tr("Set NULL"), "queryResultSetNull", design::Icon::Square);
     auto* discardResultEdits =

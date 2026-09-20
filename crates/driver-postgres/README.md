@@ -65,3 +65,25 @@ Run with the same fixture environment as above:
 ```sh
 CARGO_INCREMENTAL=0 cargo test -p choscordb-driver-postgres --test auxiliary_close -- --ignored
 ```
+
+## SSH connections
+
+In a PostgreSQL connection profile, enable **Connect through SSH tunnel** and enter the SSH
+host, port, and username. Optionally enter a private-key file path. Keep the
+PostgreSQL host and port set to the database address reachable from the SSH
+server (for example, `localhost:5432` for a database on that server).
+
+The application runs the system `ssh` executable using key or agent
+authentication. An encrypted key must already be unlocked in the agent; SSH
+password and interactive passphrase prompts are not supported. Verify and trust
+the server key with OpenSSH before connecting. Unknown or changed host keys fail
+closed. OpenSSH configuration can supply identities and proxy settings.
+
+Each database connection owns its SSH process and forwards over standard input
+and output without opening a local listening port. Connection failures never
+fall back to a direct connection. Query cancellation opens a separate SSH
+forward to the same database; closing or dropping a connection terminates its
+tunnel. SSH connection and cancellation handshakes have a 15-second deadline.
+TLS settings remain independent of SSH: verification uses the configured
+PostgreSQL hostname and optional root certificate. Saved profiles contain only
+SSH settings and the key path, never key contents or SSH credentials.

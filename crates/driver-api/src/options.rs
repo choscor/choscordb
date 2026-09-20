@@ -74,6 +74,36 @@ impl std::fmt::Debug for Secret {
         f.write_str("[REDACTED]")
     }
 }
+/// SSH authentication uses OpenSSH's agent or an optional private-key file.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SshTunnel {
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub identity_file: Option<String>,
+}
+impl SshTunnel {
+    pub fn validate(&self) -> Result<()> {
+        if self.port == 0
+            || [&self.host, &self.user].iter().any(|value| {
+                value.is_empty()
+                    || value.len() > 16 * 1024
+                    || value.starts_with('-')
+                    || value.chars().any(|c| c.is_whitespace() || c.is_control())
+            })
+            || self.identity_file.as_ref().is_some_and(|path| {
+                path.trim().is_empty() || path.len() > 16 * 1024 || path.contains('\0')
+            })
+        {
+            return Err(DriverError::new(
+                ErrorKind::InvalidInput,
+                "Invalid SSH tunnel settings",
+            ));
+        }
+        Ok(())
+    }
+}
 #[derive(Debug)]
 pub enum ConnectionOptions {
     Sqlite {
@@ -88,5 +118,6 @@ pub enum ConnectionOptions {
         password: Option<Secret>,
         tls: TlsMode,
         root_certificate: Option<std::path::PathBuf>,
+        ssh: Option<SshTunnel>,
     },
 }

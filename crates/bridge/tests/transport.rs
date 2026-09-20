@@ -536,3 +536,43 @@ fn ddl_requests_correlate_success_and_failure() {
     assert_eq!(failure.object, r#"["main","missing"]"#);
     assert!(!failure.error.is_empty());
 }
+
+#[test]
+fn postgres_ssh_profile_survives_save_reload_and_duplicate() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("ssh.sqlite");
+    let path = path.to_str().unwrap();
+    {
+        let mut engine = new_engine_with_storage(path);
+        let profile = ffi::ProfileDto {
+            id: "ssh".into(),
+            name: "SSH database".into(),
+            driver: "postgres".into(),
+            host: "db.internal".into(),
+            port: 5433,
+            database: "app".into(),
+            user: "dbuser".into(),
+            tls: "verify_full".into(),
+            ssh_enabled: true,
+            ssh_host: "bastion.example".into(),
+            ssh_port: 2222,
+            ssh_user: "operator".into(),
+            ssh_identity_file: "/keys/database".into(),
+            ..Default::default()
+        };
+        assert!(profile_save(&mut engine, profile, 80).accepted);
+        let saved = await_event(&mut engine, "profile_saved");
+        assert!(saved.profiles[0].ssh_enabled);
+    }
+    let mut engine = new_engine_with_storage(path);
+    assert!(profile_duplicate(&mut engine, "ssh", "copy", "Copy", 81).accepted);
+    let saved = await_event(&mut engine, "profile_saved");
+    let profile = &saved.profiles[0];
+    assert!(profile.ssh_enabled);
+    assert_eq!(profile.ssh_host, "bastion.example");
+    assert_eq!(profile.ssh_port, 2222);
+    assert_eq!(profile.ssh_user, "operator");
+    assert_eq!(profile.ssh_identity_file, "/keys/database");
+    assert_eq!(profile.host, "db.internal");
+    assert_eq!(profile.port, 5433);
+}

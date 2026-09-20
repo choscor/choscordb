@@ -15,11 +15,7 @@ impl CancelHandle for Stop {
         self.cancelled.store(true, Ordering::Release);
         let running = self.running.lock().await;
         if *running {
-            self.shared
-                .token
-                .cancel_query(self.shared.tls.clone())
-                .await
-                .map_err(normalize)?;
+            self.shared.send_cancel().await?;
         }
         Ok(())
     }

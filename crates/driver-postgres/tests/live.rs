@@ -29,6 +29,17 @@ fn settings() -> ConnectionOptions {
         } else {
             TlsMode::Disable
         },
+        ssh: std::env::var("CHOSCORDB_TEST_POSTGRES_SSH_HOST")
+            .ok()
+            .map(|host| SshTunnel {
+                host,
+                port: std::env::var("CHOSCORDB_TEST_POSTGRES_SSH_PORT")
+                    .expect("SSH fixture port")
+                    .parse()
+                    .unwrap(),
+                user: std::env::var("CHOSCORDB_TEST_POSTGRES_SSH_USER").expect("SSH fixture user"),
+                identity_file: std::env::var("CHOSCORDB_TEST_POSTGRES_SSH_IDENTITY").ok(),
+            }),
         root_certificate: std::env::var_os("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE")
             .map(Into::into),
     }
@@ -639,6 +650,7 @@ async fn oversized_tls_root_is_rejected_before_connection() {
         user: "fixture".into(),
         password: None,
         tls: TlsMode::VerifyFull,
+        ssh: None,
         root_certificate: Some(file.path().into()),
     };
     let result = PostgresDriver.connect(options).await;

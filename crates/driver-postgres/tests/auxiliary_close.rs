@@ -29,6 +29,7 @@ fn settings() -> ConnectionOptions {
         } else {
             TlsMode::Disable
         },
+        ssh: None,
         root_certificate: std::env::var_os("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE")
             .map(Into::into),
     }

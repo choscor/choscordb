@@ -9,8 +9,8 @@ pub use appearance::{
     MAX_APPEARANCE_LAYOUT_BYTES, MAX_SCREEN_NAME_BYTES, MAX_WINDOW_DIMENSION, MIN_WINDOW_HEIGHT,
     MIN_WINDOW_WIDTH, ThemeMode, WindowGeometry, WorkspaceLayout,
 };
-pub use choscordb_driver_api::TlsMode;
 use choscordb_driver_api::{ConnectionOptions, Secret};
+pub use choscordb_driver_api::{SshTunnel, TlsMode};
 pub use preferences::{
     DEFAULT_EDITOR_FONT_SIZE, EDITOR_PREFERENCES_VERSION, EditorPreferences, MAX_EDITOR_FONT_SIZE,
     MAX_FONT_FAMILY_BYTES, MAX_SHORTCUT_SEQUENCE_BYTES, MIN_EDITOR_FONT_SIZE, ShortcutCommand,
@@ -80,6 +80,8 @@ pub enum ProfileConfiguration {
         database: String,
         user: String,
         tls: PostgresTls,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ssh: Option<SshTunnel>,
     },
 }
 
@@ -592,6 +594,7 @@ impl ProfileConfiguration {
                 database,
                 user,
                 tls,
+                ssh,
             } => ConnectionOptions::Postgres {
                 host: host.clone(),
                 port: *port,
@@ -600,6 +603,7 @@ impl ProfileConfiguration {
                 password,
                 tls: tls.mode.clone(),
                 root_certificate: tls.root_certificate_path.as_ref().map(Into::into),
+                ssh: ssh.clone(),
             },
         }
     }
@@ -633,7 +637,11 @@ impl ConnectionProfile {
                 database,
                 user,
                 tls,
+                ssh,
             } => {
+                if let Some(ssh) = ssh {
+                    ssh.validate().map_err(|_| StorageError::InvalidProfile)?;
+                }
                 if *port == 0 {
                     return Err(StorageError::InvalidProfile);
                 }

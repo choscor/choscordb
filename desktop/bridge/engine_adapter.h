@@ -22,6 +22,9 @@ struct SavedProfile {
     QString tls = "verify_full", rootCertificate, credentialRef;
     bool readOnly = false;
     quint16 port = 5432;
+    bool sshEnabled = false;
+    QString sshHost, sshUser, sshIdentityFile;
+    quint16 sshPort = 22;
 };
 struct SavedHistoryEntry {
     QString id, profileId, sql;

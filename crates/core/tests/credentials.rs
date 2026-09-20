@@ -52,6 +52,7 @@ fn profile() -> ConnectionProfile {
         name: "Remote".into(),
         group_id: None,
         configuration: ProfileConfiguration::Postgres {
+            ssh: None,
             host: "localhost".into(),
             port: 5432,
             database: "db".into(),

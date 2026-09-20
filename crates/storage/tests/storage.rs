@@ -180,6 +180,7 @@ fn postgres_profile_persists_only_credential_references() {
         name: "Postgres".into(),
         group_id: None,
         configuration: ProfileConfiguration::Postgres {
+            ssh: None,
             host: "localhost".into(),
             port: 5432,
             database: "app".into(),
@@ -298,6 +299,7 @@ fn every_supported_profile_option_reaches_driver_unchanged() {
     use choscordb_driver_api::{ConnectionOptions, Secret};
     for mode in [TlsMode::VerifyFull, TlsMode::Disable] {
         let config = ProfileConfiguration::Postgres {
+            ssh: None,
             host: "db.example".into(),
             port: 6543,
             database: "app data".into(),
@@ -311,6 +313,7 @@ fn every_supported_profile_option_reaches_driver_unchanged() {
         let restored: ProfileConfiguration = serde_json::from_str(&encoded).unwrap();
         match restored.connection_options(Some(Secret::new("private-password"))) {
             ConnectionOptions::Postgres {
+                ssh: None,
                 host,
                 port,
                 database,
@@ -445,6 +448,7 @@ fn postgres_required_fields_and_certificate_path_are_validated() {
     ] {
         let mut p = profile();
         p.configuration = ProfileConfiguration::Postgres {
+            ssh: None,
             host: host.into(),
             port,
             database: database.into(),

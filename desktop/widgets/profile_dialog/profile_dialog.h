@@ -64,6 +64,9 @@ class ProfileDialog final : public DialogShell {
     QComboBox *driver_, *tls_;
     QCheckBox *readOnly_, *rememberPassword_;
     QSpinBox* port_;
+    QCheckBox* sshEnabled_;
+    QLineEdit *sshHost_, *sshUser_, *sshIdentityFile_;
+    QSpinBox* sshPort_;
     QLabel* status_;
     design::FieldValidation* nameValidation_;
     QList<QPushButton*> actions_;

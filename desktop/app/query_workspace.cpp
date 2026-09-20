@@ -252,10 +252,11 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 connect(action, &QAction::triggered, this,
                         [copyScope, scope] { copyScope(scope); });
             }
-            if (widgets_.objectReadOnly) {
+            if (widgets_.addRow || widgets_.deleteRows || widgets_.restoreRows ||
+                (widgets_.objectReadOnly && widgets_.setNull)) {
                 menu.addSeparator();
                 for (auto* button : {widgets_.addRow, widgets_.deleteRows, widgets_.restoreRows,
-                                     widgets_.setNull}) {
+                                     widgets_.objectReadOnly ? widgets_.setNull : nullptr}) {
                     if (!button)
                         continue;
                     auto* action = menu.addAction(button->accessibleName());

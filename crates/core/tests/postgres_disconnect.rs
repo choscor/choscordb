@@ -14,6 +14,7 @@ fn options() -> ConnectionOptions {
     let get =
         |name| std::env::var(name).expect("repository PostgreSQL fixture environment required");
     ConnectionOptions::Postgres {
+        ssh: None,
         host: get("CHOSCORDB_TEST_POSTGRES_HOST"),
         port: get("CHOSCORDB_TEST_POSTGRES_PORT").parse().unwrap(),
         database: get("CHOSCORDB_TEST_POSTGRES_DATABASE"),
