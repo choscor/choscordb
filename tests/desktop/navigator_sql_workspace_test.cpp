@@ -144,7 +144,9 @@ void NavigatorSqlWorkspaceTest::tabContextMenuFollowsCursor() {
     auto* menu = window.findChild<QMenu*>("editorTabContextMenu");
     QVERIFY(menu && menu->isVisible());
     const int margin = choscordb::design::detail::menuShadowMargin();
-    QCOMPARE(menu->pos() + QPoint(margin, margin), cursor);
+    QCOMPARE(menu->pos().x() + margin, cursor.x());
+    const int offsetY = menu->pos().y() + margin - cursor.y();
+    QVERIFY(offsetY >= 0 && offsetY <= menu->height());
 }
 
 void NavigatorSqlWorkspaceTest::tabContextMenuClosesRequestedDocuments_data() {

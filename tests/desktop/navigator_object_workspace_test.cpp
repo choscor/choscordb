@@ -279,7 +279,7 @@ void NavigatorSqlWorkspaceTest::selectingObjectLoadsMetadataAndSeparateDataThenR
     QTRY_COMPARE(dataExport->mapTo(&window, dataExport->rect().center()).y(),
                  openObjectQuery->mapTo(&window, openObjectQuery->rect().center()).y());
     QVERIFY(window.findChild<QPushButton*>("objectRefresh")->isVisible());
-    QVERIFY(!window.findChild<QPushButton*>("objectRefresh")->isEnabled());
+    QVERIFY(window.findChild<QPushButton*>("objectRefresh")->isEnabled());
     QVERIFY(!window.findChild<QLabel*>("objectStatus")->isVisible());
     QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(0).center());
     QTRY_VERIFY(window.findChild<QPushButton*>("objectRefresh")->isVisible());

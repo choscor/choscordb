@@ -543,14 +543,12 @@ void ObjectExplorer::updateFooter() {
     if (dataFooter_)
         dataFooter_->setVisible(data);
     status_->setVisible(!data);
-    refresh_->setEnabled(tabs_->currentIndex() != 4 && !operationBusy_ && connection_.has_value() &&
-                         !requestToken_);
+    refresh_->setEnabled(!operationBusy_ && connection_.has_value() && !requestToken_);
 }
 void ObjectExplorer::setOperationBusy(bool busy) {
     operationBusy_ = busy;
     updateActions();
-    refresh_->setEnabled(tabs_->currentIndex() != 4 && !busy && connection_.has_value() &&
-                         !requestToken_);
+    refresh_->setEnabled(!busy && connection_.has_value() && !requestToken_);
     if (busy)
         activePane_ = tabs_->currentIndex();
     else if (status_->property("state") == "busy")

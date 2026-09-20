@@ -22,7 +22,9 @@ pub(super) fn run(
     // SQLite opens a file before reading its schema. Force that read before
     // reporting the session as connected.
     if let Err(error) = db.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0)) {
-        let _ = ready.send(Err(normalize(error)));
+        let error = normalize(error);
+        drop(db);
+        let _ = ready.send(Err(error));
         return;
     }
     let requested = Arc::new(AtomicBool::new(false));
