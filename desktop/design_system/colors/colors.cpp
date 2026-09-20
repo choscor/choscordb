@@ -75,7 +75,7 @@ QColor paletteColor(const QPalette& palette, QPalette::ColorRole role, const QCo
 } // namespace
 
 Accent Accent::presetColor(AccentPreset value) {
-    return {.kind = AccentKind::Preset, .preset = value};
+    return {.kind = AccentKind::Preset, .preset = value, .customColor = {}};
 }
 
 Accent Accent::custom(QColor value) {
