@@ -3,8 +3,10 @@
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_sections/dialog_sections.h"
+#include "design_system/field/field.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
+#include "design_system/toast_region/toast_region.h"
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
@@ -109,7 +111,9 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     };
     name_ = line("profileName");
     name_->setPlaceholderText(tr("Connection name"));
-    formLayout->addRow(tr("Connection &name"), name_);
+    nameValidation_ = new design::FieldValidation(name_, form_);
+    formLayout->addRow(tr("Connection &name"), nameValidation_);
+    connect(name_, &QLineEdit::textChanged, this, [this] { nameValidation_->setError({}); });
     sqliteFields_ = new QWidget(form_);
     auto* sqlite = new QFormLayout(sqliteFields_);
     sqlite->setContentsMargins(0, 0, 0, 0);
@@ -441,7 +445,7 @@ void ProfileDialog::connectDraft(bool openQuery) {
         return;
     auto value = draft();
     if (value.name.trimmed().isEmpty()) {
-        setBusy(false, tr("Enter a profile name."));
+        nameValidation_->setError(tr("Enter a profile name."));
         name_->setFocus();
         return;
     }
@@ -516,13 +520,17 @@ void ProfileDialog::updateDriver() {
     postgresFields_->setVisible(!sqlite);
 }
 void ProfileDialog::setBusy(bool busy, const QString& message) {
+    if (busy)
+        progressToast(this)->showProgress(tr("Profiles"), message);
+    else
+        clearProgressToast(this);
     busy_ = busy;
     list_->setEnabled(!busy);
     form_->setEnabled(!busy);
     for (auto* action : actions_)
         action->setEnabled(!busy && adapter_);
-    status_->setText(message);
-    status_->setVisible(!message.isEmpty());
+    status_->setText(busy ? QString() : message);
+    status_->setVisible(!busy && !message.isEmpty());
 }
 void ProfileDialog::refresh() {
     if (!adapter_)
@@ -587,6 +595,11 @@ void ProfileDialog::saveDraft(const SavedProfile& profile) {
     if (busy_ || !adapter_)
         return;
     auto value = profile;
+    if (value.name.trimmed().isEmpty()) {
+        nameValidation_->setError(tr("Enter a profile name."));
+        name_->setFocus();
+        return;
+    }
     if (value.id.isEmpty())
         value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     const auto password = password_->text();
@@ -612,7 +625,7 @@ void ProfileDialog::testDraft(const SavedProfile& profile) {
         return;
     auto value = profile;
     if (value.name.trimmed().isEmpty()) {
-        setBusy(false, tr("Enter a profile name."));
+        nameValidation_->setError(tr("Enter a profile name."));
         name_->setFocus();
         return;
     }

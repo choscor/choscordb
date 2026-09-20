@@ -78,6 +78,44 @@ pub struct QuerySummary {
     pub affected_rows: Option<u64>,
     pub warnings: Vec<String>,
 }
+/// A statement and its values as shown in the edit review. Values are always bound.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EditStatement {
+    pub sql: String,
+    pub params: Vec<Value>,
+    /// Updates and deletes must affect exactly one original row.
+    pub expected_rows: Option<u64>,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct EditBatch {
+    pub statements: Vec<EditStatement>,
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditBatchSummary {
+    pub affected_rows: Vec<u64>,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct EditTarget {
+    pub qualified_name: String,
+    pub parameter_style: String,
+    pub columns: Vec<EditColumn>,
+    pub key_columns: Vec<String>,
+    pub reason: String,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct EditQueryTarget {
+    pub target: EditTarget,
+    pub source_columns: Vec<String>,
+    pub reason: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EditColumn {
+    pub name: String,
+    pub database_type: String,
+    pub nullable: bool,
+    pub generated: bool,
+    pub key: bool,
+}
 #[async_trait]
 pub trait DatabaseDriver: Send + Sync {
     fn id(&self) -> &'static str;
@@ -95,6 +133,29 @@ pub trait CancelHandle: Send + Sync {
 #[async_trait]
 pub trait Connection: Send {
     fn cancellation_handle(&self) -> Arc<dyn CancelHandle>;
+    async fn inspect_edit_target(&mut self, _object: &ObjectId) -> Result<EditTarget> {
+        Err(DriverError::new(
+            ErrorKind::Unsupported,
+            "Editable table metadata is unavailable",
+        ))
+    }
+    async fn inspect_edit_query(
+        &mut self,
+        _sql: &str,
+        _result_columns: Vec<String>,
+    ) -> Result<EditQueryTarget> {
+        Err(DriverError::new(
+            ErrorKind::Unsupported,
+            "Editable query results are unavailable",
+        ))
+    }
+    /// Execute the reviewed statements in one owned transaction.
+    async fn apply_edit_batch(&mut self, _batch: EditBatch) -> Result<EditBatchSummary> {
+        Err(DriverError::new(
+            ErrorKind::Unsupported,
+            "Editable results are unavailable",
+        ))
+    }
     async fn execute(&mut self, sql: &str, options: QueryOptions) -> Result<Box<dyn ResultCursor>>;
     /// Limit owned result schema storage. Adapters MUST override this to check
     /// borrowed metadata before allocating or executing writes; this compatibility

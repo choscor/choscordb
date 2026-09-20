@@ -1,8 +1,10 @@
 #include "preferences_dialog.h"
 #include "app/appearance_controller.h"
 #include "design_system/button/button.h"
+#include "design_system/field/field.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
+#include "design_system/toast_region/toast_region.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -125,8 +127,14 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     const auto limits = EngineAdapter::editorPreferenceLimits();
     size_->setRange(limits.minFontSize, limits.maxFontSize);
     form->addRow(system_);
-    form->addRow(tr("Font family"), font_);
-    form->addRow(tr("Font size"), size_);
+    fontValidation_ = new design::FieldValidation(font_, editor);
+    sizeValidation_ = new design::FieldValidation(size_, editor);
+    form->addRow(tr("Font family"), fontValidation_);
+    form->addRow(tr("Font size"), sizeValidation_);
+    connect(font_, &QFontComboBox::currentFontChanged, fontValidation_,
+            [this] { fontValidation_->setError({}); });
+    connect(size_, &QSpinBox::valueChanged, sizeValidation_,
+            [this] { sizeValidation_->setError({}); });
     preview_ = new SqlEditor(editor);
     preview_->setObjectName("preferencesPreview");
     preview_->setText("SELECT name, count(*)\nFROM sample\nWHERE active = true\nGROUP BY name;");
@@ -175,7 +183,11 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
         key->setObjectName("shortcut_" + descriptor.id);
         key->setEnabled(descriptor.configurable);
         sequences_.append(key);
-        keys->addRow(descriptor.label, key);
+        auto* validation = new design::FieldValidation(key, keyboard);
+        sequenceValidations_.append(validation);
+        keys->addRow(descriptor.label, validation);
+        connect(key, &QKeySequenceEdit::keySequenceChanged, validation,
+                [validation] { validation->setError({}); });
     }
     addPage(keyboard, tr("Keyboard shortcuts"));
     pages->setCurrentIndex(0);
@@ -426,10 +438,44 @@ void PreferencesDialog::updatePreview() {
     preview_->setEditorFont(selected);
 }
 void PreferencesDialog::setBusy(bool busy) {
+    if (busy)
+        progressToast(this)->showProgress(tr("Preferences"), tr("Saving or loading preferences…"));
+    else
+        clearProgressToast(this);
+    if (busy)
+        status_->clear();
     busy_ = busy;
     pages_->setEnabled(!busy);
     reset_->setEnabled(!busy);
     apply_->setEnabled(!busy && ready_ && appearanceValid_);
+}
+bool PreferencesDialog::placeValidationError(const QString& message) {
+    fontValidation_->setError({});
+    sizeValidation_->setError({});
+    for (auto* validation : sequenceValidations_)
+        validation->setError({});
+    auto* tabs = static_cast<QTabWidget*>(pages_);
+    if (message.startsWith(tr("Font size"))) {
+        tabs->setCurrentIndex(1);
+        sizeValidation_->setError(message);
+        size_->setFocus();
+        return true;
+    }
+    if (message.startsWith(tr("Font family"))) {
+        tabs->setCurrentIndex(1);
+        fontValidation_->setError(message);
+        font_->setFocus();
+        return true;
+    }
+    for (qsizetype index = 0; index < catalog_.size(); ++index) {
+        if (message.contains(catalog_[index].label)) {
+            tabs->setCurrentIndex(4);
+            sequenceValidations_[index]->setError(message);
+            sequences_[index]->setFocus();
+            return true;
+        }
+    }
+    return false;
 }
 void PreferencesDialog::apply() {
     if (busy_ || !ready_ || !appearanceValid_ || !adapter_)
@@ -437,7 +483,8 @@ void PreferencesDialog::apply() {
     const auto value = draft();
     const auto error = shortcutValidationError(value, catalog_);
     if (!error.isEmpty()) {
-        status_->setText(error);
+        if (!placeValidationError(error))
+            status_->setText(error);
         return;
     }
     QueryPreferences query;
@@ -456,7 +503,7 @@ void PreferencesDialog::apply() {
     const auto queryToken = queryToken_ = nextToken();
     const auto historyToken = historyToken_ = nextToken();
     appearancePending_ = !appearance_.isNull();
-    status_->setText(tr("Saving preferences…"));
+    progressToast(this)->showProgress(tr("Preferences"), tr("Saving preferences…"));
     emit preferencesSaveSubmitted(editorToken);
     emit queryPreferencesSaveSubmitted(queryToken);
     adapter_->setEditorPreferences(value, editorToken);
@@ -492,7 +539,8 @@ void PreferencesDialog::finishRequests() {
 }
 void PreferencesDialog::reject() {
     if (saving_) {
-        status_->setText(tr("Saving preferences… Please wait for storage to finish."));
+        progressToast(this)->showProgress(
+            tr("Preferences"), tr("Saving preferences… Please wait for storage to finish."));
         return;
     }
     DialogShell::reject();
@@ -504,7 +552,8 @@ void PreferencesDialog::showEvent(QShowEvent* event) {
 }
 void PreferencesDialog::closeEvent(QCloseEvent* event) {
     if (saving_) {
-        status_->setText(tr("Saving preferences… Please wait for storage to finish."));
+        progressToast(this)->showProgress(
+            tr("Preferences"), tr("Saving preferences… Please wait for storage to finish."));
         event->ignore();
         return;
     }

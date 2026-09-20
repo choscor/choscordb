@@ -929,6 +929,76 @@ std::optional<quint64> EngineAdapter::openObjectData(quint64 connection, const Q
     d_->queryPaging.insert(reply.id, {connection, preferences.pageSize});
     return reply.id;
 }
+bool EngineAdapter::inspectEditTarget(quint64 connection, const QString& object, quint64 token) {
+    const auto bytes = object.toUtf8();
+    auto reply = edit_target_request(*d_->engine, connection, utf8View(bytes), token);
+    if (!reply.accepted)
+        emit commandFailed(string(reply.error));
+    return reply.accepted;
+}
+bool EngineAdapter::inspectQueryEdit(quint64 connection, const QString& sql,
+                                     const QStringList& resultColumns, quint64 token) {
+    const auto bytes = sql.toUtf8();
+    rust::Vec<rust::String> names;
+    for (const auto& name : resultColumns)
+        names.push_back(rustString(name));
+    auto reply =
+        edit_query_request(*d_->engine, connection, utf8View(bytes), std::move(names), token);
+    if (!reply.accepted)
+        emit commandFailed(string(reply.error));
+    return reply.accepted;
+}
+bool EngineAdapter::applyEditBatch(quint64 connection,
+                                   const std::vector<ReviewedEditStatement>& statements,
+                                   quint64 token) {
+    rust::Vec<EditStatementDto> batch;
+    for (const auto& statement : statements) {
+        EditStatementDto dto;
+        dto.sql = rustString(statement.sql);
+        dto.has_expected_rows = statement.expectedRows.has_value();
+        dto.expected_rows = statement.expectedRows.value_or(0);
+        for (size_t i = 0; i < statement.params.size(); ++i) {
+            const auto& value = statement.params[i];
+            const auto type =
+                i < statement.paramTypes.size() ? statement.paramTypes[i].toLower() : QString{};
+            CellDto cell;
+            if (std::holds_alternative<std::monostate>(value))
+                cell.kind = "null";
+            else if (const auto* v = std::get_if<bool>(&value)) {
+                cell.kind = "boolean";
+                cell.boolean = *v;
+            } else if (const auto* v = std::get_if<qint64>(&value)) {
+                cell.kind = "integer";
+                cell.integer = *v;
+            } else if (const auto* v = std::get_if<double>(&value)) {
+                cell.kind = "real";
+                cell.real = *v;
+            } else if (const auto* v = std::get_if<QString>(&value)) {
+                cell.kind = type.startsWith("numeric") || type.startsWith("decimal") ? "decimal"
+                            : type == "date"                                         ? "date"
+                            : type == "time" || type.startsWith("time ")             ? "time"
+                            : type.startsWith("timestamp")                           ? "timestamp"
+                            : type == "uuid"                                         ? "uuid"
+                            : type == "json" || type == "jsonb"                      ? "json"
+                                                                                     : "text";
+                cell.text = rustString(*v);
+            } else if (const auto* v = std::get_if<QByteArray>(&value)) {
+                cell.kind = "binary";
+                for (char byte : *v)
+                    cell.bytes.push_back(static_cast<uint8_t>(byte));
+            } else {
+                emit commandFailed(tr("Deferred values cannot be bound to grid edits."));
+                return false;
+            }
+            dto.params.push_back(std::move(cell));
+        }
+        batch.push_back(std::move(dto));
+    }
+    auto reply = apply_edit_batch(*d_->engine, connection, std::move(batch), token);
+    if (!reply.accepted)
+        emit commandFailed(string(reply.error));
+    return reply.accepted;
+}
 void EngineAdapter::loadObjectInspection(quint64 connection, const QString& object,
                                          ObjectInspectionPane pane, quint64 requestToken) {
     // Each pane retains only its newest request; late responses cannot populate a new context.

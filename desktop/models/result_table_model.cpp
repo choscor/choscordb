@@ -1,5 +1,7 @@
 #include "models/result_table_model.h"
 #include <QArrayData>
+#include <QBrush>
+#include <QColor>
 #include <QFont>
 #include <algorithm>
 #include <limits>
@@ -25,6 +27,17 @@ QVariant ResultTableModel::data(const QModelIndex& index, int role) const {
         index.row() >= rowCount() || index.column() >= columnCount())
         return {};
     const auto& cell = rows_[index.row()][index.column()];
+    if (role == Qt::BackgroundRole && deleted_[index.row()])
+        return QBrush(QColor(255, 215, 215));
+    if (role == Qt::BackgroundRole && inserted_[index.row()])
+        return QBrush(QColor(220, 245, 220));
+    if (role == Qt::BackgroundRole && touched_[index.row()][index.column()])
+        return QBrush(QColor(255, 245, 195));
+    if (role == Qt::ToolTipRole && deleted_[index.row()])
+        return tr("Pending deletion");
+    if (role == Qt::ToolTipRole && inserted_[index.row()])
+        return touched_[index.row()][index.column()] ? tr("Pending insert value")
+                                                     : tr("Omitted; database default applies");
     if (role == Qt::FontRole && std::holds_alternative<std::monostate>(cell)) {
         QFont font;
         font.setItalic(true);
@@ -34,9 +47,12 @@ QVariant ResultTableModel::data(const QModelIndex& index, int role) const {
         (std::holds_alternative<qint64>(cell) || std::holds_alternative<double>(cell)))
         return int(Qt::AlignRight | Qt::AlignVCenter);
     if (role == Qt::UserRole)
-        return std::holds_alternative<std::monostate>(cell);
+        return touched_[index.row()][index.column()] &&
+               std::holds_alternative<std::monostate>(cell);
     if (role != Qt::DisplayRole && role != Qt::EditRole)
         return {};
+    if (inserted_[index.row()] && !touched_[index.row()][index.column()])
+        return QString{};
     return std::visit(
         [](const auto& value) -> QVariant {
             using T = std::decay_t<decltype(value)>;
@@ -155,16 +171,161 @@ bool ResultTableModel::setPage(std::vector<ResultColumn> columns, std::vector<Ro
                 return false;
         }
     }
+    // The immutable originals and staging flags are owned beside the visible page.
+    // Qt strings and byte arrays remain shared, but the cell vectors are copied.
+    if (!count.add(rows.size(), sizeof(Row)) ||
+        !count.add(rows.size(), sizeof(std::vector<bool>) + sizeof(std::vector<std::size_t>)) ||
+        !count.add(rows.size() * 2 + columns.size() * 2) ||
+        !count.add(rows.size(), (columns.size() + 7) / 8) ||
+        !count.add(rows.size(), columns.size() * sizeof(std::size_t)))
+        return false;
+    for (const auto& row : rows)
+        if (!count.add(row.size(), sizeof(Cell)))
+            return false;
     beginResetModel();
     // Destroy the previous page before adopting the validated transfer.
     std::vector<ResultColumn>().swap(columns_);
     std::vector<Row>().swap(rows_);
     columns_ = std::move(columns);
     rows_ = std::move(rows);
+    originalRows_ = rows_;
+    touched_.assign(rows_.size(), std::vector<bool>(columns_.size(), false));
+    editBytes_.assign(rows_.size(), std::vector<std::size_t>(columns_.size(), 0));
+    inserted_.assign(rows_.size(), false);
+    deleted_.assign(rows_.size(), false);
+    editable_.assign(columns_.size(), false);
+    insertEditable_.assign(columns_.size(), false);
+    canInsert_ = canDelete_ = false;
     firstRow_ = firstRow;
     residentBytes_ = count.bytes;
+    stagedBytes_ = 0;
     endResetModel();
+    emit pendingEditsChanged(false);
     return true;
+}
+void ResultTableModel::setEditableColumns(std::vector<bool> editable, bool canInsert,
+                                          bool canDelete, std::vector<bool> insertEditable) {
+    if (editable.size() != columns_.size())
+        return;
+    editable_ = std::move(editable);
+    insertEditable_ = insertEditable.size() == columns_.size()
+                          ? std::move(insertEditable)
+                          : std::vector<bool>(columns_.size(), canInsert);
+    canInsert_ = canInsert;
+    canDelete_ = canDelete;
+    if (!rows_.empty() && !columns_.empty())
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1));
+}
+Qt::ItemFlags ResultTableModel::flags(const QModelIndex& index) const {
+    auto result = QAbstractTableModel::flags(index);
+    if (index.isValid() && index.row() < rowCount() && index.column() < columnCount() &&
+        !deleted_[index.row()] &&
+        (inserted_[index.row()] ? insertEditable_[index.column()] : editable_[index.column()]) &&
+        !std::holds_alternative<QByteArray>(rows_[index.row()][index.column()]) &&
+        !std::holds_alternative<DeferredValue>(rows_[index.row()][index.column()]))
+        result |= Qt::ItemIsEditable;
+    return result;
+}
+bool ResultTableModel::setData(const QModelIndex& index, const QVariant& value, int role) {
+    if (role != Qt::EditRole || !(flags(index) & Qt::ItemIsEditable))
+        return false;
+    const QString text = value.toString();
+    const auto bytes = std::size_t(text.size()) * sizeof(QChar) + sizeof(Cell) + QtHeaderBytes;
+    const auto oldBytes = editBytes_[index.row()][index.column()];
+    if (bytes > byteBudget_ - residentBytes_ - (stagedBytes_ - oldBytes))
+        return false;
+    const auto type = columns_[index.column()].databaseType.toLower();
+    Cell converted = text;
+    if (type == "integer" || type == "int" || type == "bigint" || type == "smallint" ||
+        type == "int2" || type == "int4" || type == "int8") {
+        bool valid = false;
+        const auto integer = text.toLongLong(&valid);
+        if (!valid)
+            return false;
+        converted = static_cast<qint64>(integer);
+    } else if (type == "boolean" || type == "bool") {
+        if (text.compare("true", Qt::CaseInsensitive) == 0 || text == "1")
+            converted = true;
+        else if (text.compare("false", Qt::CaseInsensitive) == 0 || text == "0")
+            converted = false;
+        else
+            return false;
+    } else if (type == "real" || type == "double precision" || type == "float4" ||
+               type == "float8") {
+        bool valid = false;
+        const auto number = text.toDouble(&valid);
+        if (!valid)
+            return false;
+        converted = number;
+    }
+    rows_[index.row()][index.column()] = std::move(converted);
+    touched_[index.row()][index.column()] = true;
+    stagedBytes_ = stagedBytes_ - oldBytes + bytes;
+    editBytes_[index.row()][index.column()] = bytes;
+    emit dataChanged(index, index);
+    emit pendingEditsChanged(hasPendingEdits());
+    return true;
+}
+bool ResultTableModel::setNull(const QModelIndex& index) {
+    if (!(flags(index) & Qt::ItemIsEditable))
+        return false;
+    stagedBytes_ -= editBytes_[index.row()][index.column()];
+    editBytes_[index.row()][index.column()] = 0;
+    rows_[index.row()][index.column()] = std::monostate{};
+    touched_[index.row()][index.column()] = true;
+    emit dataChanged(index, index);
+    emit pendingEditsChanged(hasPendingEdits());
+    return true;
+}
+bool ResultTableModel::addRow() {
+    const auto bytes = columns_.size() * (sizeof(Cell) + sizeof(std::size_t)) + sizeof(Row) +
+                       sizeof(std::vector<bool>) + sizeof(std::vector<std::size_t>) +
+                       (columns_.size() + 7) / 8 + 2;
+    if (!canInsert_ || rows_.size() >= 10000 || bytes > byteBudget_ - residentBytes_ - stagedBytes_)
+        return false;
+    beginInsertRows({}, rowCount(), rowCount());
+    rows_.emplace_back(columns_.size());
+    touched_.emplace_back(columns_.size(), false);
+    editBytes_.emplace_back(columns_.size(), 0);
+    inserted_.push_back(true);
+    deleted_.push_back(false);
+    stagedBytes_ += bytes;
+    endInsertRows();
+    emit pendingEditsChanged(true);
+    return true;
+}
+void ResultTableModel::markDeleted(const QModelIndexList& selection, bool deleted) {
+    if (!canDelete_)
+        return;
+    for (const auto& i : selection) {
+        if (!i.isValid() || i.model() != this || i.row() >= rowCount())
+            continue;
+        deleted_[i.row()] = deleted;
+        if (columnCount())
+            emit dataChanged(index(i.row(), 0), index(i.row(), columnCount() - 1));
+    }
+    emit pendingEditsChanged(hasPendingEdits());
+}
+void ResultTableModel::discardEdits() {
+    beginResetModel();
+    rows_ = originalRows_;
+    touched_.assign(rows_.size(), std::vector<bool>(columns_.size(), false));
+    editBytes_.assign(rows_.size(), std::vector<std::size_t>(columns_.size(), 0));
+    inserted_.assign(rows_.size(), false);
+    deleted_.assign(rows_.size(), false);
+    stagedBytes_ = 0;
+    endResetModel();
+    emit pendingEditsChanged(false);
+}
+bool ResultTableModel::hasPendingEdits() const {
+    for (size_t r = 0; r < rows_.size(); ++r) {
+        if (inserted_[r] || deleted_[r])
+            return true;
+        for (size_t c = 0; c < columns_.size(); ++c)
+            if (touched_[r][c])
+                return true;
+    }
+    return false;
 }
 QString ResultTableModel::copyRows(QModelIndexList selection, QString* error) const {
     return copyScope(std::move(selection), 1, error);

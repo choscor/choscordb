@@ -1,3 +1,4 @@
+#include "design_system/field/field.h"
 #include "widgets/search_panel/search_panel.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QCheckBox>
@@ -12,6 +13,20 @@
 class SearchTest : public QObject {
     Q_OBJECT
   private slots:
+    void replaceAllShowsEmptySearchErrorBelowFindField() {
+        QWidget parent;
+        choscordb::SqlEditor editor(&parent);
+        choscordb::SearchPanel panel([&] { return &editor; }, &parent);
+        parent.show();
+        panel.showReplace();
+        editor.setText("cat");
+        panel.findChild<QPushButton*>("searchReplaceAll")->click();
+        auto* needle = panel.findChild<QLineEdit*>("searchNeedle");
+        auto* validation =
+            dynamic_cast<choscordb::design::FieldValidation*>(needle->parentWidget());
+        QVERIFY(validation);
+        QVERIFY(validation->error().contains("text to find"));
+    }
     void replaceOneRejectsMalformedUnicode() {
         QWidget parent;
         choscordb::SqlEditor editor(&parent);
@@ -25,7 +40,11 @@ class SearchTest : public QObject {
         panel.findChild<QLineEdit*>("searchReplacement")->setText(QString(QChar(0xd800)));
         panel.findChild<QPushButton*>("searchReplace")->click();
         QCOMPARE(editor.text(), QString("cat"));
-        QVERIFY(panel.findChild<QLabel*>("searchStatus")->text().contains("Unicode"));
+        auto* replacement = panel.findChild<QLineEdit*>("searchReplacement");
+        auto* validation =
+            dynamic_cast<choscordb::design::FieldValidation*>(replacement->parentWidget());
+        QVERIFY(validation);
+        QVERIFY(validation->error().contains("Unicode"));
     }
     void pendingSearchRejectsTabRoundTripDestructionOptionsAndHide_data() {
         QTest::addColumn<int>("change");

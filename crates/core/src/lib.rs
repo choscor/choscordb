@@ -459,6 +459,70 @@ impl Engine {
             },
         )
     }
+    pub fn apply_edit_batch(
+        &self,
+        connection: ConnectionId,
+        batch: EditBatch,
+        request_token: u64,
+    ) -> std::result::Result<(), SubmitError> {
+        if batch.statements.is_empty()
+            || batch.statements.len() > 1000
+            || batch
+                .statements
+                .iter()
+                .any(|s| s.sql.len() > MAX_SQL_BYTES || s.params.len() > 256)
+        {
+            return Err(SubmitError::InvalidInput);
+        }
+        self.submit(
+            connection,
+            actor::Command::Edit {
+                batch,
+                request_token,
+            },
+        )
+    }
+    pub fn edit_target_request(
+        &self,
+        connection: ConnectionId,
+        object: ObjectId,
+        request_token: u64,
+    ) -> std::result::Result<(), SubmitError> {
+        if object.0.is_empty() || object.0.len() > 16384 {
+            return Err(SubmitError::InvalidInput);
+        }
+        self.submit(
+            connection,
+            actor::Command::EditTarget {
+                object,
+                request_token,
+            },
+        )
+    }
+    pub fn edit_query_request(
+        &self,
+        connection: ConnectionId,
+        sql: String,
+        result_columns: Vec<String>,
+        request_token: u64,
+    ) -> std::result::Result<(), SubmitError> {
+        if sql.is_empty()
+            || sql.len() > MAX_SQL_BYTES
+            || result_columns.is_empty()
+            || result_columns.len() > 1000
+            || result_columns.iter().any(|name| name.len() > 1024)
+        {
+            return Err(SubmitError::InvalidInput);
+        }
+        self.submit(
+            connection,
+            actor::Command::EditQuery {
+                sql,
+                result_columns,
+                request_token,
+            },
+        )
+    }
     pub fn load_metadata(
         &self,
         connection: ConnectionId,

@@ -4,6 +4,7 @@
 #include "design_system/button/button.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/value_preview_model.h"
 #include <QCloseEvent>
 #include <QDialogButtonBox>
@@ -154,7 +155,8 @@ void ValueDetailDialog::request(quint64 offset, quint32 maxBytes) {
     dropChunk();
     offset_ = offset;
     loading_ = true;
-    status_->setText(tr("Loading bytes at offset %1…").arg(offset));
+    status_->clear();
+    progressToast(this)->showProgress(tr("Value"), tr("Loading bytes at offset %1…").arg(offset));
     updateActions();
     if (adapter_)
         adapter_->loadValueChunk(*query_, handle_, offset, maxBytes);
@@ -163,6 +165,7 @@ void ValueDetailDialog::request(quint64 offset, quint32 maxBytes) {
 }
 void ValueDetailDialog::fail(const QString& error) {
     loading_ = false;
+    clearProgressToast(this);
     alignmentTarget_.reset();
     status_->setText(tr("Unable to load value: %1").arg(error.left(1024)));
     updateActions();
@@ -223,6 +226,7 @@ void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
     lease_ = event.lease_id;
     hasChunk_ = true;
     loading_ = false;
+    clearProgressToast(this);
     total_ = event.total_bytes;
     nextOffset_ = model_->nextOffset();
     if (!event.chunk_bytes.empty())

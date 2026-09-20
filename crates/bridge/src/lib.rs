@@ -59,6 +59,28 @@ pub mod ffi {
         byte_length: u64,
         database_type: String,
     }
+    struct EditStatementDto {
+        sql: String,
+        params: Vec<CellDto>,
+        has_expected_rows: bool,
+        expected_rows: u64,
+    }
+    #[derive(Default)]
+    struct EditColumnDto {
+        name: String,
+        database_type: String,
+        nullable: bool,
+        generated: bool,
+        key: bool,
+    }
+    #[derive(Default)]
+    struct EditTargetDto {
+        qualified_name: String,
+        parameter_style: String,
+        columns: Vec<EditColumnDto>,
+        key_columns: Vec<String>,
+        reason: String,
+    }
     #[derive(Default)]
     struct MetadataPropertyDto {
         name: String,
@@ -287,6 +309,9 @@ pub mod ffi {
         parent: String,
         objects: Vec<MetadataDto>,
         committed: bool,
+        edit_affected_rows: Vec<u64>,
+        edit_target: EditTargetDto,
+        edit_source_columns: Vec<String>,
         capabilities: u64,
     }
     #[derive(Default)]
@@ -448,6 +473,25 @@ pub mod ffi {
             object: &str,
             page_size: u32,
             timeout_ms: u64,
+        ) -> Submit;
+        fn apply_edit_batch(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            statements: Vec<EditStatementDto>,
+            request_token: u64,
+        ) -> Submit;
+        fn edit_target_request(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            object: &str,
+            request_token: u64,
+        ) -> Submit;
+        fn edit_query_request(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            sql: &str,
+            result_columns: Vec<String>,
+            request_token: u64,
         ) -> Submit;
         fn execute(
             engine: &mut BridgeEngine,
@@ -1198,5 +1242,78 @@ pub fn open_object_data(
         )
         .map(pack)
         .map_err(|e| e.to_string())
+    })
+}
+pub fn apply_edit_batch(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    statements: Vec<ffi::EditStatementDto>,
+    request_token: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        let statements = statements
+            .into_iter()
+            .map(|statement| {
+                let params = statement
+                    .params
+                    .into_iter()
+                    .map(|cell| match cell.kind.as_str() {
+                        "null" => Ok(Value::Null),
+                        "boolean" => Ok(Value::Bool(cell.boolean)),
+                        "integer" => Ok(Value::Integer(cell.integer)),
+                        "real" => Ok(Value::Real(cell.real)),
+                        "decimal" => Ok(Value::Decimal(cell.text)),
+                        "text" => Ok(Value::Text(cell.text)),
+                        "date" => Ok(Value::Date(cell.text)),
+                        "time" => Ok(Value::Time(cell.text)),
+                        "timestamp" => Ok(Value::Timestamp(cell.text)),
+                        "uuid" => Ok(Value::Uuid(cell.text)),
+                        "json" => Ok(Value::Json(cell.text)),
+                        "binary" => Ok(Value::Binary(cell.bytes)),
+                        _ => Err("Invalid edit value".to_string()),
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                Ok(EditStatement {
+                    sql: statement.sql,
+                    params,
+                    expected_rows: statement
+                        .has_expected_rows
+                        .then_some(statement.expected_rows),
+                })
+            })
+            .collect::<std::result::Result<Vec<_>, String>>()?;
+        e.apply_edit_batch(unpack(connection), EditBatch { statements }, request_token)
+            .map(|()| connection)
+            .map_err(|error| error.to_string())
+    })
+}
+pub fn edit_target_request(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    object: &str,
+    request_token: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        e.edit_target_request(unpack(connection), ObjectId(object.into()), request_token)
+            .map(|()| connection)
+            .map_err(|error| error.to_string())
+    })
+}
+pub fn edit_query_request(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    sql: &str,
+    result_columns: Vec<String>,
+    request_token: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        e.edit_query_request(
+            unpack(connection),
+            sql.into(),
+            result_columns,
+            request_token,
+        )
+        .map(|()| connection)
+        .map_err(|error| error.to_string())
     })
 }

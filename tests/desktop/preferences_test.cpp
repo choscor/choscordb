@@ -1,4 +1,6 @@
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/field/field.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/shortcut_catalog.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/preferences_dialog/preferences_dialog.h"
@@ -213,7 +215,9 @@ class PreferencesTest : public QObject {
                 QTest::keyClick(&dialog, Qt::Key_Escape);
             QVERIFY(dialog.isVisible());
             QVERIFY(dialog.isRunning());
-            QVERIFY(dialog.findChild<QLabel*>("exportStatus")->text().contains("Cancelling"));
+            auto* progress = dialog.findChild<choscordb::ToastRegion*>("progressToast");
+            QVERIFY(progress);
+            QVERIFY(progress->text().contains("Cancelling"));
         });
         dialog.startExportTo(directory.filePath("cancelled.csv"), "csv");
         QTRY_VERIFY(cancellationRequested);
@@ -250,6 +254,23 @@ class PreferencesTest : public QObject {
         QVERIFY(!dialog.findChild<QLabel*>("preferencesStatus")->text().isEmpty());
         reset->click();
         QVERIFY(apply->isEnabled());
+    }
+    void shortcutConflictAppearsBelowTheShortcutField() {
+        choscordb::EngineAdapter adapter;
+        choscordb::PreferencesDialog dialog(
+            &adapter, {{"find", "Find", "Ctrl+F"}, {"copy", "Copy", "Ctrl+C"}});
+        dialog.show();
+        auto* apply = dialog.findChild<QPushButton*>("preferencesApply");
+        QTRY_VERIFY(apply->isEnabled());
+        auto* find = dialog.findChild<QKeySequenceEdit*>("shortcut_find");
+        find->setKeySequence(QKeySequence("Ctrl+C", QKeySequence::PortableText));
+        apply->click();
+        auto* validation = dynamic_cast<choscordb::design::FieldValidation*>(find->parentWidget());
+        QVERIFY(validation);
+        QVERIFY(validation->error().contains("conflict"));
+        QVERIFY(find->property("invalid").toBool());
+        find->setKeySequence(QKeySequence("Ctrl+J", QKeySequence::PortableText));
+        QCOMPARE(validation->error(), QString());
     }
     void conflictsIncludeDefaultsReservedCommandsAndPrefixes() {
         QList<choscordb::ShortcutDescriptor> catalog = {{"find", "Find", "Ctrl+F"},

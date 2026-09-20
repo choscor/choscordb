@@ -4,6 +4,7 @@
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/history_model.h"
 #include <QAction>
 #include <QCheckBox>
@@ -159,12 +160,8 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     content->addWidget(previewBody);
     previewBody->hide();
     layout->addWidget(content, 1);
-    previewNotice_ = new design::Text({}, body);
-    previewNotice_->setObjectName("historyPreviewNotice");
-    previewNotice_->setTextFormat(Qt::PlainText);
-    previewNotice_->setWordWrap(true);
     auto* previewToolbar = new QHBoxLayout;
-    previewToolbar->addWidget(previewNotice_, 1);
+    previewToolbar->addStretch();
     previewPrevious_ = new design::Button(tr("Earlier text"), body);
     previewPrevious_->setObjectName("historyPreviewPrevious");
     previewNext_ = new design::Button(tr("Later text"), body);
@@ -286,7 +283,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
         }
         failed_ = false;
         policyToken_ = token();
-        status_->setText(tr("Saving history preference…"));
+        status_->clear();
         updateControls();
         adapter_->setHistoryPolicy(proposed, policyToken_);
     });
@@ -298,7 +295,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
             return;
         failed_ = false;
         clearToken_ = token();
-        status_->setText(tr("Clearing history…"));
+        status_->clear();
         updateControls();
         adapter_->clearHistory(clearToken_);
     });
@@ -395,7 +392,7 @@ void HistoryDock::loadPage(quint32 offset) {
     listToken_ = token();
     pendingOffset_ = offset;
     if (!failed_)
-        status_->setText(tr("Loading history…"));
+        status_->clear();
     updateControls();
     adapter_->listHistory(pageSize, offset, listToken_);
 }
@@ -413,10 +410,10 @@ void HistoryDock::renderPreview() {
     previewLength_ = text.size();
     preview_->setPlainText(text);
     const bool partial = entry && entry->sql.size() > 65536;
-    previewNotice_->setText(
-        partial ? tr("Preview truncated to part %1. Use Earlier text / Later text to read all SQL.")
-                      .arg(previewOffsets_.size() + 1)
-                : QString{});
+    if (partial)
+        emit noticeRequested(
+            tr("Preview truncated to part %1. Use Earlier text / Later text to read all SQL.")
+                .arg(previewOffsets_.size() + 1));
     previewPrevious_->setEnabled(!previewOffsets_.isEmpty());
     previewNext_->setEnabled(entry && previewLength_ > 0 &&
                              previewOffset_ + previewLength_ < entry->sql.size());
@@ -446,6 +443,15 @@ void HistoryDock::openSelection() {
         emit openRequested(*entry);
 }
 void HistoryDock::updateControls() {
+    if (clearToken_)
+        progressToast(this)->showProgress(tr("History"), tr("Clearing history…"));
+    else if (policyToken_)
+        progressToast(this)->showProgress(tr("History"),
+                                          tr("Saving or loading history preference…"));
+    else if (listToken_)
+        progressToast(this)->showProgress(tr("History"), tr("Loading history…"));
+    else
+        clearProgressToast(this);
     status_->setVisible(!status_->text().isEmpty());
     const bool idle = adapter_ && !listToken_ && !clearToken_;
     record_->setEnabled(adapter_ && havePolicy_ && !policyToken_ && !clearToken_);

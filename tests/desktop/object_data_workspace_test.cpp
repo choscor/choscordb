@@ -9,6 +9,8 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFile>
 #include <QHeaderView>
 #include <QLabel>
@@ -24,6 +26,267 @@
 class ObjectDataWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void binaryOriginalAllowsInsertButPreventsUnsafeRowChanges() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        auto* run = window.findChild<QAction*>("runStatement");
+        auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText(
+            "CREATE TABLE binary_rows(id INTEGER PRIMARY KEY, name TEXT, payload BLOB);");
+        run->trigger();
+        QTRY_VERIFY(messages->toPlainText().contains("Completed"));
+        QTRY_VERIFY(run->isEnabled());
+        messages->clear();
+        editor->setText("INSERT INTO binary_rows VALUES(1, 'before', x'00ff');");
+        run->trigger();
+        QTRY_VERIFY(messages->toPlainText().contains("Completed"));
+        const auto connection =
+            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.show();
+        data.openObject(connection, R"(["main","binary_rows"])", "binary_rows");
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        QTRY_COMPARE(grid->model()->rowCount(), 1);
+        auto* add = data.findChild<QPushButton*>("objectDataAddRow");
+        auto* remove = data.findChild<QPushButton*>("objectDataDeleteRows");
+        QTRY_VERIFY(add->isEnabled());
+        QVERIFY(!remove->isEnabled());
+        QVERIFY(remove->toolTip().contains("Binary"));
+        QVERIFY(!(grid->model()->flags(grid->model()->index(0, 1)) & Qt::ItemIsEditable));
+    }
+    void omittedInsertUsesDefaultAndSetNullStaysDistinct() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        auto* run = window.findChild<QAction*>("runStatement");
+        auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText(
+            "CREATE TABLE default_rows(id INTEGER PRIMARY KEY, name TEXT DEFAULT 'db-default');");
+        run->trigger();
+        QTRY_VERIFY(messages->toPlainText().contains("Completed"));
+        const auto connection =
+            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.show();
+        data.openObject(connection, R"(["main","default_rows"])", "default_rows");
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        auto* add = data.findChild<QPushButton*>("objectDataAddRow");
+        QTRY_VERIFY(add->isEnabled());
+        add->click();
+        QVERIFY(grid->model()->setData(grid->model()->index(0, 0), QString("3")));
+        QCOMPARE(grid->model()->index(0, 1).data().toString(), QString());
+        add->click();
+        QVERIFY(grid->model()->setData(grid->model()->index(1, 0), QString("4")));
+        grid->setCurrentIndex(grid->model()->index(1, 1));
+        auto* setNull = data.findChild<QPushButton*>("objectDataSetNull");
+        QTRY_VERIFY(setNull->isEnabled());
+        setNull->click();
+        QVERIFY(grid->model()->index(1, 1).data(Qt::UserRole).toBool());
+        QTimer::singleShot(0, &data, [] {
+            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            const auto review = dialog->findChild<QPlainTextEdit*>("gridEditReview")->toPlainText();
+            QVERIFY(review.contains("DEFAULT") == false);
+            QVERIFY(review.contains("NULL"));
+            dialog->accept();
+        });
+        data.findChild<QPushButton*>("objectDataApply")->click();
+        editor->setText("SELECT id, name FROM default_rows ORDER BY id;");
+        editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+        QTRY_VERIFY(run->isEnabled());
+        run->trigger();
+        auto* results = window.findChild<QTableView*>("queryResults");
+        QTRY_COMPARE(results->model()->rowCount(), 2);
+        QCOMPARE(results->model()->index(0, 1).data().toString(), QString("db-default"));
+        QCOMPARE(results->model()->index(1, 1).data(Qt::DisplayRole).toString(), QString("NULL"));
+    }
+    void manualTransactionDisablesGridApply() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        auto* run = window.findChild<QAction*>("runStatement");
+        auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("CREATE TABLE tx_rows(id INTEGER PRIMARY KEY, name TEXT);");
+        run->trigger();
+        QTRY_VERIFY(messages->toPlainText().contains("Completed"));
+        const auto connection =
+            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.show();
+        data.openObject(connection, R"(["main","tx_rows"])", "tx_rows");
+        auto* add = data.findChild<QPushButton*>("objectDataAddRow");
+        QTRY_VERIFY(add->isEnabled());
+        add->click();
+        auto* apply = data.findChild<QPushButton*>("objectDataApply");
+        QTRY_VERIFY(apply->isEnabled());
+        window.findChild<QComboBox*>("transactionMode")->setCurrentIndex(1);
+        editor->setText("SELECT 1;");
+        editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+        QTRY_VERIFY(run->isEnabled());
+        run->trigger();
+        QTRY_VERIFY(!apply->isEnabled());
+        QVERIFY(apply->toolTip().contains("Commit or roll back"));
+    }
+    void sqlResultUsesVerifiedSourceColumns() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        auto* run = window.findChild<QAction*>("runStatement");
+        auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
+        auto* grid = window.findChild<QTableView*>("queryResults");
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("CREATE TABLE source_rows (id INTEGER PRIMARY KEY, name TEXT);");
+        run->trigger();
+        QTRY_VERIFY(messages->toPlainText().contains("Completed"));
+        QTRY_VERIFY(run->isEnabled());
+        messages->clear();
+        editor->setText("INSERT INTO source_rows VALUES (1, 'before');");
+        run->trigger();
+        QTRY_VERIFY(messages->toPlainText().contains("Completed"));
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("SELECT id, name AS shown, upper(name) AS computed FROM source_rows;");
+        editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+        run->trigger();
+        QTRY_COMPARE(grid->model()->rowCount(), 1);
+        QTRY_VERIFY(grid->model()->flags(grid->model()->index(0, 1)) & Qt::ItemIsEditable);
+        QVERIFY(!(grid->model()->flags(grid->model()->index(0, 0)) & Qt::ItemIsEditable));
+        QVERIFY(!(grid->model()->flags(grid->model()->index(0, 2)) & Qt::ItemIsEditable));
+        QVERIFY(grid->model()->setData(grid->model()->index(0, 1), QString("after")));
+        auto* apply = window.findChild<QPushButton*>("queryResultApplyEdits");
+        QTRY_VERIFY(apply->isEnabled());
+        QTimer::singleShot(0, &window, [] {
+            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            QVERIFY(dialog->findChild<QPlainTextEdit*>("gridEditReview")
+                        ->toPlainText()
+                        .contains("shown") == false);
+            dialog->accept();
+        });
+        apply->click();
+        QTRY_VERIFY(!apply->isEnabled());
+        QTRY_COMPARE(grid->model()->index(0, 1).data().toString(), QString("after"));
+        editor->setText("SELECT name FROM source_rows;");
+        editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+        QTRY_VERIFY(run->isEnabled());
+        run->trigger();
+        QTRY_COMPARE(grid->model()->rowCount(), 1);
+        QTRY_VERIFY(!(grid->model()->flags(grid->model()->index(0, 0)) & Qt::ItemIsEditable));
+        QTRY_VERIFY(!grid->toolTip().isEmpty());
+    }
+    void keyedTableEditsStageAndApplyWithReview() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        auto* run = window.findChild<QAction*>("runStatement");
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("CREATE TABLE editable_rows (id INTEGER PRIMARY KEY, name TEXT);");
+        run->trigger();
+        QTRY_VERIFY(window.findChild<QPlainTextEdit*>("queryMessages")
+                        ->toPlainText()
+                        .contains("Completed"));
+        QTRY_VERIFY(run->isEnabled());
+        window.findChild<QPlainTextEdit*>("queryMessages")->clear();
+        editor->setText("INSERT INTO editable_rows VALUES (1, 'before'), (2, 'second');");
+        run->trigger();
+        QTRY_VERIFY(window.findChild<QPlainTextEdit*>("queryMessages")
+                        ->toPlainText()
+                        .contains("Completed"));
+        QTRY_VERIFY(run->isEnabled());
+        const auto connection =
+            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.show();
+        data.openObject(connection, R"(["main","editable_rows"])", "editable_rows");
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        QTRY_COMPARE(grid->model()->rowCount(), 2);
+        QTRY_VERIFY(grid->model()->flags(grid->model()->index(0, 1)) & Qt::ItemIsEditable);
+        QVERIFY(!(grid->model()->flags(grid->model()->index(0, 0)) & Qt::ItemIsEditable));
+        grid->setSelectionMode(QAbstractItemView::MultiSelection);
+        grid->selectRow(0);
+        grid->selectRow(1);
+        data.findChild<QPushButton*>("objectDataDeleteRows")->click();
+        QVERIFY(grid->model()->index(0, 0).data(Qt::ToolTipRole).toString().contains("deletion"));
+        QVERIFY(grid->model()->index(1, 0).data(Qt::ToolTipRole).toString().contains("deletion"));
+        data.findChild<QPushButton*>("objectDataRestoreRows")->click();
+        QVERIFY(!grid->model()->index(0, 0).data(Qt::ToolTipRole).toString().contains("deletion"));
+        QVERIFY(!grid->model()->index(1, 0).data(Qt::ToolTipRole).toString().contains("deletion"));
+        QVERIFY(grid->model()->setData(grid->model()->index(0, 1), QString("after")));
+        QVERIFY(data.findChild<QPushButton*>("objectDataApply")->isEnabled());
+        QTimer::singleShot(0, &data, [] {
+            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            QVERIFY(dialog->findChild<QPlainTextEdit*>("gridEditReview")
+                        ->toPlainText()
+                        .contains("UPDATE"));
+            dialog->reject();
+        });
+        data.findChild<QPushButton*>("objectDataApply")->click();
+        QCOMPARE(grid->model()->index(0, 1).data().toString(), QString("after"));
+        QTimer::singleShot(0, &data, [] {
+            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            dialog->button(QMessageBox::Cancel)->click();
+        });
+        QVERIFY(!data.resolvePendingEdits());
+        QTimer::singleShot(0, &data, [] {
+            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            dialog->accept();
+        });
+        data.findChild<QPushButton*>("objectDataApply")->click();
+        QTRY_VERIFY(!data.findChild<QPushButton*>("objectDataApply")->isEnabled());
+        editor->setText("SELECT name FROM editable_rows WHERE id = 1;");
+        editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+        QTRY_VERIFY(run->isEnabled());
+        run->trigger();
+        auto* sqlGrid = window.findChild<QTableView*>("queryResults");
+        QTRY_COMPARE(sqlGrid->model()->rowCount(), 1);
+        QTRY_COMPARE(sqlGrid->model()->index(0, 0).data().toString(), QString("after"));
+        QTRY_VERIFY(grid->model()->rowCount() == 2);
+        QVERIFY(grid->model()->setData(grid->model()->index(0, 1), QString("discard-me")));
+        QTimer::singleShot(0, &data, [] {
+            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            for (auto* button : dialog->buttons())
+                if (button->text() == "Discard") {
+                    button->click();
+                    return;
+                }
+            QFAIL("Discard button missing");
+        });
+        data.findChild<QPushButton*>("objectDataRefresh")->click();
+        QTRY_COMPARE(grid->model()->rowCount(), 2);
+        QCOMPARE(grid->model()->index(0, 1).data().toString(), QString("after"));
+    }
     void shutdownConfirmsActiveObjectWorkWithoutDiscardingIt() {
         choscordb::MainWindow window;
         window.show();
@@ -165,7 +428,8 @@ class ObjectDataWorkspaceTest : public QObject {
                         "x<1001) SELECT x+10000 FROM n;");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         run->trigger();
-        QTRY_COMPARE(sqlTable->model()->rowCount(), 1000);
+        QTRY_VERIFY2(sqlTable->model()->rowCount() == 1000,
+                     qPrintable(window.findChild<QPlainTextEdit*>("queryMessages")->toPlainText()));
         QCOMPARE(sqlTable->model()->index(0, 0).data().toString(), QString("10001"));
         QTRY_VERIFY(run->isEnabled());
         const auto draft = editor->text();
@@ -191,7 +455,8 @@ class ObjectDataWorkspaceTest : public QObject {
         auto* sqlNext = window.findChild<QPushButton*>("nextPage");
         QTRY_VERIFY(sqlNext->isEnabled());
         sqlNext->click();
-        QTRY_COMPARE(sqlTable->model()->rowCount(), 1);
+        QTRY_VERIFY2(sqlTable->model()->rowCount() == 1,
+                     qPrintable(window.findChild<QPlainTextEdit*>("queryMessages")->toPlainText()));
         QCOMPARE(sqlTable->model()->index(0, 0).data().toString(), QString("11001"));
         data.invalidate();
         QCOMPARE(objectTable->model()->rowCount(), 0);

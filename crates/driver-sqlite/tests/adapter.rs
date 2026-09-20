@@ -10,6 +10,247 @@ async fn connect() -> Box<dyn Connection> {
         .unwrap()
 }
 #[tokio::test]
+async fn reviewed_batch_binds_values_and_rolls_back_on_conflict() {
+    let mut c = connect().await;
+    run(
+        &mut c,
+        "CREATE TABLE items(id INTEGER PRIMARY KEY, name TEXT)",
+        false,
+    )
+    .await;
+    run(&mut c, "INSERT INTO items VALUES(1, 'old')", false).await;
+    let insert = EditStatement {
+        sql: "INSERT INTO items(name) VALUES(?)".into(),
+        params: vec![Value::Text("a'b".into())],
+        expected_rows: None,
+    };
+    let stale = EditStatement {
+        sql: "UPDATE items SET name=? WHERE id=? AND name=?".into(),
+        params: vec![
+            Value::Text("new".into()),
+            Value::Integer(1),
+            Value::Text("stale".into()),
+        ],
+        expected_rows: Some(1),
+    };
+    assert!(
+        c.apply_edit_batch(EditBatch {
+            statements: vec![insert.clone(), stale]
+        })
+        .await
+        .is_err()
+    );
+    let mut result = c
+        .execute("SELECT count(*) FROM items", QueryOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        result.fetch_page(PageSize::default()).await.unwrap().rows[0][0],
+        Value::Integer(1)
+    );
+    result.close().await.unwrap();
+    assert_eq!(
+        c.apply_edit_batch(EditBatch {
+            statements: vec![insert]
+        })
+        .await
+        .unwrap()
+        .affected_rows,
+        vec![1]
+    );
+    let mut result = c
+        .execute("SELECT name FROM items WHERE id=2", QueryOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        result.fetch_page(PageSize::default()).await.unwrap().rows[0][0],
+        Value::Text("a'b".into())
+    );
+}
+#[tokio::test]
+async fn edit_target_uses_catalog_key_and_quotes_table_name() {
+    let mut c = connect().await;
+    run(
+        &mut c,
+        "CREATE TABLE \"order\"(id INTEGER PRIMARY KEY, name TEXT)",
+        false,
+    )
+    .await;
+    let target = c
+        .inspect_edit_target(&ObjectId("[\"main\",\"order\"]".into()))
+        .await
+        .unwrap();
+    assert_eq!(target.qualified_name, "\"main\".\"order\"");
+    assert_eq!(target.key_columns, vec!["id"]);
+    assert!(
+        target
+            .columns
+            .iter()
+            .find(|column| column.name == "id")
+            .unwrap()
+            .key
+    );
+    run(&mut c, "CREATE TABLE keyless(name TEXT)", false).await;
+    let target = c
+        .inspect_edit_target(&ObjectId("[\"main\",\"keyless\"]".into()))
+        .await
+        .unwrap();
+    assert!(target.key_columns.is_empty());
+    assert!(target.reason.contains("inserts only"));
+    run(
+        &mut c,
+        "CREATE TABLE unique_key(code TEXT NOT NULL UNIQUE, value TEXT)",
+        false,
+    )
+    .await;
+    let target = c
+        .inspect_edit_target(&ObjectId("[\"main\",\"unique_key\"]".into()))
+        .await
+        .unwrap();
+    assert_eq!(target.key_columns, vec!["code"]);
+    run(
+        &mut c,
+        "CREATE TABLE nullable_pk(code TEXT PRIMARY KEY, value TEXT)",
+        false,
+    )
+    .await;
+    let target = c
+        .inspect_edit_target(&ObjectId("[\"main\",\"nullable_pk\"]".into()))
+        .await
+        .unwrap();
+    assert!(target.key_columns.is_empty());
+}
+#[tokio::test]
+async fn editable_query_requires_direct_unique_key_mapping() {
+    let mut c = connect().await;
+    run(
+        &mut c,
+        "CREATE TABLE people(id INTEGER PRIMARY KEY, name TEXT)",
+        false,
+    )
+    .await;
+    let eligible = c
+        .inspect_edit_query(
+            "SELECT id AS person_id, upper(name) AS label, name FROM people WHERE id=1",
+            vec!["person_id".into(), "label".into(), "name".into()],
+        )
+        .await
+        .unwrap();
+    assert!(eligible.reason.is_empty(), "{}", eligible.reason);
+    assert_eq!(eligible.source_columns, vec!["id", "", "name"]);
+    assert_eq!(eligible.target.key_columns, vec!["id"]);
+    let implicit_alias = c
+        .inspect_edit_query(
+            "SELECT id person_id, name FROM people",
+            vec!["person_id".into(), "name".into()],
+        )
+        .await
+        .unwrap();
+    assert!(
+        implicit_alias.reason.is_empty(),
+        "{}",
+        implicit_alias.reason
+    );
+    assert_eq!(implicit_alias.source_columns, vec!["id", "name"]);
+    let missing = c
+        .inspect_edit_query("SELECT name FROM people", vec!["name".into()])
+        .await
+        .unwrap();
+    assert!(!missing.reason.is_empty());
+    let joined = c
+        .inspect_edit_query(
+            "SELECT people.id FROM people JOIN other ON true",
+            vec!["id".into()],
+        )
+        .await
+        .unwrap();
+    assert!(!joined.reason.is_empty());
+}
+#[tokio::test]
+async fn query_eligibility_inspection_preserves_active_paging_cursor() {
+    let mut c = connect().await;
+    run(
+        &mut c,
+        "CREATE TABLE people(id INTEGER PRIMARY KEY, name TEXT)",
+        false,
+    )
+    .await;
+    run(&mut c, "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<250) INSERT INTO people SELECT x,printf('person-%d',x) FROM n", false).await;
+    let mut result = c
+        .execute(
+            "SELECT id,name FROM people ORDER BY id",
+            QueryOptions::default(),
+        )
+        .await
+        .unwrap();
+    let first = result
+        .fetch_page(PageSize::new(100).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(first.rows[0][0], Value::Integer(1));
+    assert!(first.has_more);
+    let query = c
+        .inspect_edit_query(
+            "SELECT id,name FROM people ORDER BY id",
+            vec!["id".into(), "name".into()],
+        )
+        .await
+        .unwrap();
+    assert!(query.reason.is_empty());
+    let second = result
+        .fetch_page(PageSize::new(100).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(second.rows[0][0], Value::Integer(101));
+    assert!(second.has_more);
+}
+#[tokio::test]
+async fn reviewed_batch_refuses_manual_transaction_and_rolls_back_constraint_failure() {
+    let mut c = connect().await;
+    run(
+        &mut c,
+        "CREATE TABLE t(id INTEGER PRIMARY KEY, value TEXT UNIQUE)",
+        false,
+    )
+    .await;
+    run(&mut c, "BEGIN", false).await;
+    let insert = EditStatement {
+        sql: "INSERT INTO t(id,value) VALUES(?,?)".into(),
+        params: vec![Value::Integer(1), Value::Text("one".into())],
+        expected_rows: None,
+    };
+    assert_eq!(
+        c.apply_edit_batch(EditBatch {
+            statements: vec![insert.clone()]
+        })
+        .await
+        .unwrap_err()
+        .kind,
+        ErrorKind::InvalidInput
+    );
+    c.rollback().await.unwrap();
+    let duplicate = EditStatement {
+        sql: "INSERT INTO t(id,value) VALUES(?,?)".into(),
+        params: vec![Value::Integer(2), Value::Text("one".into())],
+        expected_rows: None,
+    };
+    assert!(
+        c.apply_edit_batch(EditBatch {
+            statements: vec![insert, duplicate]
+        })
+        .await
+        .is_err()
+    );
+    let mut result = c
+        .execute("SELECT count(*) FROM t", QueryOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        result.fetch_page(PageSize::default()).await.unwrap().rows[0][0],
+        Value::Integer(0)
+    );
+}
+#[tokio::test]
 async fn invalid_sqlite_file_fails_during_connect() {
     let path = std::env::temp_dir().join(format!("choscordb-invalid-{}.db", std::process::id()));
     std::fs::write(&path, b"this is not a sqlite database").unwrap();

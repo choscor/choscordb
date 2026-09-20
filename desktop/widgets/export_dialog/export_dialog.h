@@ -10,7 +10,8 @@ class QLineEdit;
 namespace choscordb {
 namespace design {
 class Button;
-}
+class FieldValidation;
+} // namespace design
 class EngineAdapter;
 struct BridgeEvent;
 class ExportDialog final : public DialogShell {
@@ -55,5 +56,6 @@ class ExportDialog final : public DialogShell {
     design::Button* start_;
     design::Button* cancel_;
     QLabel* status_;
+    design::FieldValidation *formatValidation_, *destinationValidation_, *tableValidation_;
 };
 } // namespace choscordb

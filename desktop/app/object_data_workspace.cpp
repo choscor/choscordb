@@ -28,8 +28,8 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     summary->setMinimumWidth(0);
     auto* table = new QTableView(this);
     table->setObjectName("objectDataResults");
-    table->setAccessibleName(tr("Read-only object data"));
-    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setAccessibleName(tr("Object data"));
+    table->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
     table->setAlternatingRowColors(true);
     table->setShowGrid(false);
     table->setWordWrap(false);
@@ -74,6 +74,12 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     next->setDesignIcon(design::Icon::ChevronRight);
     next->setButtonSize(design::ButtonSize::IconSmall);
     auto* exportButton = makeButton(tr("Export…"), "objectDataExport");
+    auto* addRow = makeButton(tr("Add row"), "objectDataAddRow");
+    auto* deleteRows = makeButton(tr("Delete selected"), "objectDataDeleteRows");
+    auto* restoreRows = makeButton(tr("Restore selected"), "objectDataRestoreRows");
+    auto* setNull = makeButton(tr("Set NULL"), "objectDataSetNull");
+    auto* applyEdits = makeButton(tr("Apply…"), "objectDataApply");
+    auto* discardEdits = makeButton(tr("Discard"), "objectDataDiscard");
     auto* refresh = makeButton({}, "objectDataRefresh");
     refresh_ = refresh;
     refresh->setAccessibleName(tr("Refresh object data"));
@@ -93,25 +99,33 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     auto* commit = new QAction(this);
     auto* rollback = new QAction(this);
     auto* newConnection = new QAction(this);
-    result_ = new QueryWorkspace({connections,
-                                  mode,
-                                  run,
-                                  cancel,
-                                  commit,
-                                  rollback,
-                                  newConnection,
-                                  next,
-                                  summary,
-                                  messages,
-                                  table,
-                                  [] { return nullptr; },
-                                  this,
-                                  previous,
-                                  exportButton,
-                                  {},
-                                  sql_->adapter(),
-                                  true},
-                                 this);
+    result_ = new QueryWorkspace(
+        {connections,
+         mode,
+         run,
+         cancel,
+         commit,
+         rollback,
+         newConnection,
+         next,
+         summary,
+         messages,
+         table,
+         [] { return nullptr; },
+         this,
+         previous,
+         exportButton,
+         {},
+         sql_->adapter(),
+         true,
+         addRow,
+         deleteRows,
+         setNull,
+         applyEdits,
+         discardEdits,
+         [this](quint64 connection) { return sql_ && sql_->activeManualTransaction(connection); },
+         restoreRows},
+        this);
     connect(cancel, &QAction::changed, cancelButton, [cancel, cancelButton] {
         cancelButton->setEnabled(cancel->isEnabled());
         cancelButton->setText(cancel->text());
@@ -120,7 +134,7 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     cancelButton->hide();
     connect(cancelButton, &QPushButton::clicked, cancel, &QAction::trigger);
     connect(refresh_, &QPushButton::clicked, this,
-            [this] { openObject(connection_, object_, label_); });
+            [this] { openObject(connection_, object_, label_, kind_); });
     refresh_->setEnabled(false);
     connect(result_, &QueryWorkspace::executionStateChanged, messages,
             [messages](const QString& state) { messages->setVisible(state == "failed"); });
@@ -134,20 +148,29 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     });
     connect(sql_, &QueryWorkspace::activityChanged, this,
             [this](bool busy) { refresh_->setEnabled(!busy && !object_.isEmpty()); });
+    connect(sql_, &QueryWorkspace::transactionStateChanged, this,
+            [this](quint64, bool) { result_->refreshEditActions(); });
 }
 void ObjectDataWorkspace::openObject(quint64 connection, const QString& object,
-                                     const QString& label) {
+                                     const QString& label, const QString& kind) {
     if (!sql_ || !sql_->navigationAllowed() || !result_->navigationAllowed() || object.isEmpty())
         return;
     connection_ = connection;
     object_ = object;
     label_ = label;
-    result_->openObjectData(connection, object, label, sql_->queryPreferences());
+    kind_ = kind;
+    result_->openObjectData(connection, object, label, sql_->queryPreferences(), kind);
 }
 void ObjectDataWorkspace::invalidate() {
+    if (!resolvePendingEdits())
+        return;
     object_.clear();
     label_.clear();
+    kind_.clear();
     refresh_->setEnabled(false);
     result_->invalidateResult();
+}
+bool ObjectDataWorkspace::resolvePendingEdits() {
+    return !result_ || result_->resolvePendingEdits();
 }
 } // namespace choscordb

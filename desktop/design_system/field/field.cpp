@@ -6,10 +6,49 @@
 #include <QFocusEvent>
 #include <QFocusFrame>
 #include <QKeySequenceEdit>
+#include <QLabel>
 #include <QLineEdit>
 #include <QPainter>
 #include <QPlainTextEdit>
+#include <QStyle>
 #include <QTextEdit>
+#include <QVBoxLayout>
+
+namespace choscordb::design {
+FieldValidation::FieldValidation(QWidget* control, QWidget* parent)
+    : QWidget(parent), control_(control), errorLabel_(new QLabel(this)) {
+    Q_ASSERT(control_);
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(4);
+    control_->setParent(this);
+    setFocusProxy(control_);
+    setProperty("originalAccessibleDescription", control_->accessibleDescription());
+    layout->addWidget(control_);
+    errorLabel_->setProperty("state", "error");
+    errorLabel_->setProperty("designRole", "fieldError");
+    errorLabel_->setWordWrap(true);
+    errorLabel_->hide();
+    layout->addWidget(errorLabel_);
+}
+
+QString FieldValidation::error() const {
+    return errorLabel_->text();
+}
+
+void FieldValidation::setError(const QString& message) {
+    errorLabel_->setText(message);
+    errorLabel_->setVisible(!message.isEmpty());
+    control_->setProperty("invalid", !message.isEmpty());
+    const auto original = property("originalAccessibleDescription").toString();
+    control_->setAccessibleDescription(message.isEmpty()    ? original
+                                       : original.isEmpty() ? message
+                                                            : original + ". " + message);
+    control_->style()->unpolish(control_);
+    control_->style()->polish(control_);
+    control_->update();
+}
+} // namespace choscordb::design
 
 namespace choscordb::design::detail {
 class FieldFocusFrame final : public QFocusFrame {

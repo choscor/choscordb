@@ -7,6 +7,7 @@
 #include "design_system/button/button.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
+#include "design_system/toast_region/toast_region.h"
 #include <QAction>
 #include <QHeaderView>
 #include <QJsonArray>
@@ -364,7 +365,7 @@ void ObjectExplorer::requestPane() {
     if (tabs_->currentIndex() == 4) {
         pages_->setCurrentIndex(2);
         setStatus("ready", tr("%1 · Data").arg(label_));
-        emit dataRequested(*connection_, object_, label_);
+        emit dataRequested(*connection_, object_, label_, kind_);
         return;
     }
     pages_->setCurrentIndex(tabs_->currentIndex() == 3 ? 1 : 0);
@@ -377,8 +378,12 @@ void ObjectExplorer::requestPane() {
                                    requestToken_);
 }
 void ObjectExplorer::setStatus(const QString& state, const QString& text) {
+    if (state == "loading")
+        progressToast(this)->showProgress(tr("Loading object"), text);
+    else
+        clearProgressToast(this);
     status_->setProperty("state", state);
-    status_->setText(text);
+    status_->setText(state == "loading" ? QString{} : text);
     status_->setAccessibleName(tr("Object status: %1").arg(text));
     status_->style()->unpolish(status_);
     status_->style()->polish(status_);

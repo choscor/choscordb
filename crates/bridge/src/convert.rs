@@ -75,6 +75,25 @@ fn cell(value: Value) -> ffi::CellDto {
     .into();
     c
 }
+fn edit_target(target: EditTarget) -> ffi::EditTargetDto {
+    ffi::EditTargetDto {
+        qualified_name: target.qualified_name,
+        parameter_style: target.parameter_style,
+        columns: target
+            .columns
+            .into_iter()
+            .map(|column| ffi::EditColumnDto {
+                name: column.name,
+                database_type: column.database_type,
+                nullable: column.nullable,
+                generated: column.generated,
+                key: column.key,
+            })
+            .collect(),
+        key_columns: target.key_columns,
+        reason: target.reason,
+    }
+}
 fn error(e: &mut ffi::BridgeEvent, error: DriverError) {
     e.error = error.message;
     e.vendor_code = error.vendor_code.unwrap_or_default();
@@ -101,6 +120,68 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
     let mut transfer = None;
     let mut e = ffi::BridgeEvent::default();
     e.kind = match event {
+        Event::EditQuery {
+            connection,
+            request_token,
+            query,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            e.edit_target = edit_target(query.target);
+            e.edit_source_columns = query.source_columns;
+            e.edit_target.reason = query.reason;
+            "edit_query"
+        }
+        Event::EditQueryFailed {
+            connection,
+            request_token,
+            error: err,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            error(&mut e, err);
+            "edit_query_failed"
+        }
+        Event::EditTarget {
+            connection,
+            request_token,
+            target,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            e.edit_target = edit_target(target);
+            "edit_target"
+        }
+        Event::EditTargetFailed {
+            connection,
+            request_token,
+            error: err,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            error(&mut e, err);
+            "edit_target_failed"
+        }
+        Event::EditApplied {
+            connection,
+            request_token,
+            summary,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            e.edit_affected_rows = summary.affected_rows;
+            "edit_applied"
+        }
+        Event::EditFailed {
+            connection,
+            request_token,
+            error: err,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            error(&mut e, err);
+            "edit_failed"
+        }
         Event::AppearanceLayout {
             request_token,
             appearance,

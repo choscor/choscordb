@@ -1,6 +1,8 @@
 #include "query_settings_dialog.h"
 #include "design_system/button/button.h"
+#include "design_system/field/field.h"
 #include "design_system/text/text.h"
+#include "design_system/toast_region/toast_region.h"
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QLabel>
@@ -35,8 +37,13 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     timeout_->setObjectName("queryTimeoutSeconds");
     timeout_->setRange(0, limits.maxTimeoutSeconds);
     timeout_->setSpecialValueText(tr("No timeout"));
-    form->addRow(tr("Rows per page"), pageSize_);
-    form->addRow(tr("Statement timeout (seconds)"), timeout_);
+    pageSizeValidation_ = new design::FieldValidation(pageSize_, this);
+    timeoutValidation_ = new design::FieldValidation(timeout_, this);
+    form->addRow(tr("Rows per page"), pageSizeValidation_);
+    form->addRow(tr("Statement timeout (seconds)"), timeoutValidation_);
+    connect(pageSize_, &QSpinBox::valueChanged, this,
+            [this] { pageSizeValidation_->setError({}); });
+    connect(timeout_, &QSpinBox::valueChanged, this, [this] { timeoutValidation_->setError({}); });
     auto* explanation = createDescription(
         tr("Applies to new queries. Existing results keep their page size and timeout."), this);
     layout->addWidget(explanation);
@@ -69,33 +76,44 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
         status_->clear();
         updateControls();
     });
-    connect(
-        adapter, &EngineAdapter::queryPreferencesReady, this,
-        [this](quint64 token, const QueryPreferences& value) {
-            if (!token_ || token != token_)
-                return;
-            token_ = 0;
-            const auto limits = EngineAdapter::queryPreferenceLimits();
-            if (value.version != limits.version || value.pageSize < limits.minPageSize ||
-                value.pageSize > limits.maxPageSize ||
-                value.timeoutSeconds > limits.maxTimeoutSeconds) {
-                status_->setText(
-                    tr("Stored query settings are invalid. Reset to defaults to replace them."));
+    connect(adapter, &EngineAdapter::queryPreferencesReady, this,
+            [this](quint64 token, const QueryPreferences& value) {
+                if (!token_ || token != token_)
+                    return;
+                token_ = 0;
+                clearProgressToast(this);
+                const auto limits = EngineAdapter::queryPreferenceLimits();
+                if (value.version != limits.version || value.pageSize < limits.minPageSize ||
+                    value.pageSize > limits.maxPageSize ||
+                    value.timeoutSeconds > limits.maxTimeoutSeconds) {
+                    pageSizeValidation_->setError(
+                        value.pageSize < limits.minPageSize || value.pageSize > limits.maxPageSize
+                            ? tr("Stored page size is outside the supported range.")
+                            : QString{});
+                    timeoutValidation_->setError(
+                        value.timeoutSeconds > limits.maxTimeoutSeconds
+                            ? tr("Stored timeout is outside the supported range.")
+                            : QString{});
+                    if (value.version != limits.version)
+                        status_->setText(
+                            tr("Stored settings version is unsupported. Restore defaults."));
+                    updateControls();
+                    return;
+                }
+                fill(value);
+                ready_ = true;
+                status_->setText(saving_ ? tr("Query settings saved.")
+                                         : tr("Query settings loaded."));
+                saving_ = false;
                 updateControls();
-                return;
-            }
-            fill(value);
-            ready_ = true;
-            status_->setText(saving_ ? tr("Query settings saved.") : tr("Query settings loaded."));
-            saving_ = false;
-            updateControls();
-            emit queryPreferencesConfirmed(value);
-        });
+                emit queryPreferencesConfirmed(value);
+            });
     connect(adapter, &EngineAdapter::recoveryFailed, this,
             [this](quint64 token, const QString& error) {
                 if (!token_ || token != token_)
                     return;
                 token_ = 0;
+                clearProgressToast(this);
                 saving_ = false;
                 status_->setText(error);
                 updateControls();
@@ -103,9 +121,10 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     fill(QueryPreferences{});
     token_ = nextToken();
     updateControls();
-    if (adapter_)
+    if (adapter_) {
+        progressToast(this)->showProgress(tr("Query settings"), tr("Loading query settings…"));
         adapter_->getQueryPreferences(token_);
-    else {
+    } else {
         token_ = 0;
         status_->setText(tr("Settings service is unavailable."));
         updateControls();
@@ -130,13 +149,20 @@ void QuerySettingsDialog::apply() {
     const auto limits = EngineAdapter::queryPreferenceLimits();
     if (value.version != limits.version || value.pageSize < limits.minPageSize ||
         value.pageSize > limits.maxPageSize || value.timeoutSeconds > limits.maxTimeoutSeconds) {
-        status_->setText(tr("Query settings are outside the supported range."));
+        pageSizeValidation_->setError(value.pageSize < limits.minPageSize ||
+                                              value.pageSize > limits.maxPageSize
+                                          ? tr("Page size is outside the supported range.")
+                                          : QString{});
+        timeoutValidation_->setError(value.timeoutSeconds > limits.maxTimeoutSeconds
+                                         ? tr("Timeout is outside the supported range.")
+                                         : QString{});
         return;
     }
     saving_ = true;
     const auto token = nextToken();
     token_ = token;
-    status_->setText(tr("Saving query settings…"));
+    status_->clear();
+    progressToast(this)->showProgress(tr("Query settings"), tr("Saving query settings…"));
     updateControls();
     // The owner registers this token before even a synchronous submission failure.
     // Retain only locals afterward: a signal handler may close/delete this dialog.

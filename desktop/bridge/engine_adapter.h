@@ -1,4 +1,5 @@
 #pragma once
+#include "models/result_table_model.h"
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -6,8 +7,15 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <vector>
 namespace choscordb {
 struct BridgeEvent;
+struct ReviewedEditStatement {
+    QString sql;
+    std::vector<Cell> params;
+    std::vector<QString> paramTypes;
+    std::optional<quint64> expectedRows;
+};
 struct Submit;
 struct SavedProfile {
     QString id, name, groupId, driver = "sqlite", path, host, database, user;
@@ -171,6 +179,11 @@ class EngineAdapter final : public QObject {
     void loadMetadata(quint64 connection, const QString& parent = {}, quint64 requestToken = 0);
     std::optional<quint64> openObjectData(quint64 connection, const QString& object,
                                           const QueryPreferences& preferences = {});
+    bool inspectEditTarget(quint64 connection, const QString& object, quint64 token);
+    bool inspectQueryEdit(quint64 connection, const QString& sql, const QStringList& resultColumns,
+                          quint64 token);
+    bool applyEditBatch(quint64 connection, const std::vector<ReviewedEditStatement>& statements,
+                        quint64 token);
     void loadObjectInspection(quint64 connection, const QString& object, ObjectInspectionPane pane,
                               quint64 requestToken);
     void objectDdl(quint64 connection, const QString& object);

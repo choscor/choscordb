@@ -539,6 +539,65 @@ fn dispose(active: Option<Active>) {
     }
 }
 // The transaction borrows Client only inside this loop; no self-referential state.
+#[derive(Debug)]
+struct EditParam(Value);
+impl tokio_postgres::types::ToSql for EditParam {
+    fn to_sql(
+        &self,
+        _: &tokio_postgres::types::Type,
+        out: &mut tokio_postgres::types::private::BytesMut,
+    ) -> std::result::Result<tokio_postgres::types::IsNull, Box<dyn std::error::Error + Sync + Send>>
+    {
+        use tokio_postgres::types::IsNull;
+        let value = match &self.0 {
+            Value::Null => return Ok(IsNull::Yes),
+            Value::Bool(v) => v.to_string(),
+            Value::Integer(v) => v.to_string(),
+            Value::Real(v) => v.to_string(),
+            Value::Decimal(v)
+            | Value::Text(v)
+            | Value::Date(v)
+            | Value::Time(v)
+            | Value::Timestamp(v)
+            | Value::Uuid(v)
+            | Value::Json(v) => v.clone(),
+            Value::Binary(_) | Value::Deferred { .. } => {
+                return Err("Binary and deferred values are not editable".into());
+            }
+        };
+        out.extend_from_slice(value.as_bytes());
+        Ok(IsNull::No)
+    }
+    fn accepts(_: &tokio_postgres::types::Type) -> bool {
+        true
+    }
+    fn encode_format(&self, _: &tokio_postgres::types::Type) -> tokio_postgres::types::Format {
+        tokio_postgres::types::Format::Text
+    }
+    tokio_postgres::types::to_sql_checked!();
+}
+async fn apply_edit_batch(
+    client: &mut tokio_postgres::Client,
+    batch: EditBatch,
+) -> Result<EditBatchSummary> {
+    let tx = client.transaction().await.map_err(normalize)?;
+    let mut affected_rows = Vec::with_capacity(batch.statements.len());
+    for edit in batch.statements {
+        let params: Vec<EditParam> = edit.params.into_iter().map(EditParam).collect();
+        let bound: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
+            params.iter().map(|p| p as _).collect();
+        let count = tx.execute(&edit.sql, &bound).await.map_err(normalize)?;
+        if edit.expected_rows.is_some_and(|expected| expected != count) {
+            return Err(DriverError::new(
+                ErrorKind::Query,
+                "Edit conflict: the original row has changed",
+            ));
+        }
+        affected_rows.push(count);
+    }
+    tx.commit().await.map_err(normalize)?;
+    Ok(EditBatchSummary { affected_rows })
+}
 pub(super) async fn run(
     mut client: tokio_postgres::Client,
     mut rx: mpsc::Receiver<Command>,
@@ -589,6 +648,27 @@ pub(super) async fn run(
                         .auxiliary(&pump, metadata::object_ddl(&client, &object))
                         .await;
                     clear_notices(&notices);
+                    let _ = reply.send(result);
+                }
+                Command::Edit(batch, reply) => {
+                    let result = cancel
+                        .closing
+                        .auxiliary(&pump, apply_edit_batch(&mut client, batch))
+                        .await;
+                    let _ = reply.send(result);
+                }
+                Command::EditTarget(object, reply) => {
+                    let result = cancel
+                        .closing
+                        .auxiliary(&pump, metadata::edit_target(&client, &object))
+                        .await;
+                    let _ = reply.send(result);
+                }
+                Command::EditQuery(sql, columns, reply) => {
+                    let result = cancel
+                        .closing
+                        .auxiliary(&pump, metadata::edit_query(&client, &sql, columns))
+                        .await;
                     let _ = reply.send(result);
                 }
                 Command::Transaction(_, reply) | Command::Finish(_, reply) => {
@@ -789,6 +869,26 @@ pub(super) async fn run(
                         .auxiliary(&pump, metadata::object_ddl(&transaction, &object))
                         .await;
                     clear_notices(&notices);
+                    let _ = reply.send(result);
+                }
+                Command::Edit(_, reply) => {
+                    let _ = reply.send(Err(DriverError::new(
+                        ErrorKind::InvalidInput,
+                        "Commit or roll back the active transaction before applying edits",
+                    )));
+                }
+                Command::EditTarget(object, reply) => {
+                    let result = cancel
+                        .closing
+                        .auxiliary(&pump, metadata::edit_target(&transaction, &object))
+                        .await;
+                    let _ = reply.send(result);
+                }
+                Command::EditQuery(sql, columns, reply) => {
+                    let result = cancel
+                        .closing
+                        .auxiliary(&pump, metadata::edit_query(&transaction, &sql, columns))
+                        .await;
                     let _ = reply.send(result);
                 }
                 Command::Transaction(commit, reply) => {

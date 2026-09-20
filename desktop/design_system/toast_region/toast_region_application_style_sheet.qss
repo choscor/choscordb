@@ -21,3 +21,8 @@ QLabel#toastRegion[variant="danger"] {
   background-color: @dangerSurface;
   border-left: 4px solid %21;
 }
+
+QLabel#toastRegion[variant="progress"] {
+  background-color: @warningSurface;
+  border-left: 4px solid %20;
+}

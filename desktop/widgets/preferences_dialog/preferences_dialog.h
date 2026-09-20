@@ -11,6 +11,9 @@ class QSpinBox;
 class QDoubleSpinBox;
 class QComboBox;
 namespace choscordb {
+namespace design {
+class FieldValidation;
+}
 class SqlEditor;
 class AppearanceController;
 class PreferencesDialog final : public DialogShell {
@@ -42,10 +45,13 @@ class PreferencesDialog final : public DialogShell {
     void finishRequests();
     void fillQuery(const QueryPreferences& value);
     void fillHistory(const HistoryPolicy& value);
+    bool placeValidationError(const QString& message);
     QPointer<EngineAdapter> adapter_;
     QPointer<AppearanceController> appearance_;
     QList<ShortcutDescriptor> catalog_;
     QList<QKeySequenceEdit*> sequences_;
+    QList<design::FieldValidation*> sequenceValidations_;
+    design::FieldValidation *fontValidation_, *sizeValidation_;
     QFontComboBox* font_;
     QCheckBox* system_;
     QSpinBox* size_;

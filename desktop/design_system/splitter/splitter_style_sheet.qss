@@ -5,3 +5,13 @@ QSplitter::handle {
 QSplitter::handle:hover, QSplitter::handle:pressed {
   background: @focus;
 }
+
+QMainWindow::separator {
+  background: @border;
+  width: 5px;
+  height: 5px;
+}
+
+QMainWindow::separator:hover, QMainWindow::separator:pressed {
+  background: @focus;
+}

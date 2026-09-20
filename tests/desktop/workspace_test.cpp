@@ -3,6 +3,7 @@
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/field/field.h"
 #include "models/history_model.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/history_dock/history_dock.h"
@@ -75,6 +76,32 @@ struct WorkspaceFixture {
 class WorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void formErrorsAppearBelowTheRelevantFields() {
+        choscordb::EngineAdapter adapter;
+        choscordb::ProfileDialog profile(&adapter);
+        profile.show();
+        QTRY_VERIFY(profile.findChild<QPushButton*>("profileTest")->isEnabled());
+        choscordb::SavedProfile blank;
+        profile.testDraft(blank);
+        auto* name = profile.findChild<QLineEdit*>("profileName");
+        auto* nameValidation =
+            dynamic_cast<choscordb::design::FieldValidation*>(name->parentWidget());
+        QVERIFY(nameValidation);
+        QVERIFY(nameValidation->error().contains("profile name"));
+        name->setText("Valid name");
+        QCOMPARE(nameValidation->error(), QString());
+
+        choscordb::ExportDialog exportDialog(&adapter);
+        exportDialog.setQuery(1);
+        exportDialog.startExportTo({}, "csv");
+        auto* destination = exportDialog.findChild<QLineEdit*>("exportDestination");
+        auto* destinationValidation =
+            dynamic_cast<choscordb::design::FieldValidation*>(destination->parentWidget());
+        QVERIFY(destinationValidation);
+        QVERIFY(destinationValidation->error().contains("destination"));
+        destination->setText("/tmp/example.csv");
+        QCOMPARE(destinationValidation->error(), QString());
+    }
     void newConnectionAfterSavingCreatesAnotherProfile() {
         WorkspaceFixture f;
         QTRY_VERIFY(f.run.isEnabled());

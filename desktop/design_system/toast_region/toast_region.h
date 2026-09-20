@@ -2,6 +2,7 @@
 #include <QLabel>
 #include <QPointer>
 class QTimer;
+class QProgressBar;
 class QGraphicsOpacityEffect;
 class QPropertyAnimation;
 namespace choscordb {
@@ -15,6 +16,8 @@ class ToastRegion final : public QLabel {
     // A nonpositive duration keeps the toast visible until clearNotice().
     void showToast(const QString& title, const QString& body, ToastVariant variant,
                    int durationMs = 5000);
+    // Keep a progress notice visible until a terminal toast or clearNotice().
+    void showProgress(const QString& title, const QString& detail = {});
     void clearNotice();
 
   protected:
@@ -25,8 +28,12 @@ class ToastRegion final : public QLabel {
     void placeOverlay();
     QPointer<QWidget> overlayHost_;
     QTimer* timer_;
+    QProgressBar* progress_;
     QGraphicsOpacityEffect* opacity_;
     QPropertyAnimation* fade_;
     bool dismissing_ = false;
 };
+// Feature widgets use one progress overlay per host and dismiss it when work ends.
+ToastRegion* progressToast(QWidget* host);
+void clearProgressToast(QWidget* host);
 } // namespace choscordb

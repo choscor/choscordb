@@ -8,7 +8,8 @@ class QLineEdit;
 namespace choscordb {
 namespace design {
 class Button;
-}
+class FieldValidation;
+} // namespace design
 class SqlEditor;
 class SearchPanel final : public QWidget {
     Q_OBJECT
@@ -32,6 +33,7 @@ class SearchPanel final : public QWidget {
     void setPending(bool pending);
     std::function<SqlEditor*()> currentEditor_;
     QLineEdit *needle_, *replacement_;
+    design::FieldValidation *needleValidation_, *replacementValidation_;
     QCheckBox *case_, *word_;
     QWidget* replacementRow_;
     QLabel* status_;

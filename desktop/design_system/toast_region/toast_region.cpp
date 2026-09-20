@@ -2,6 +2,7 @@
 #include <QAccessible>
 #include <QEvent>
 #include <QGraphicsOpacityEffect>
+#include <QProgressBar>
 #include <QPropertyAnimation>
 #include <QStyle>
 #include <QTimer>
@@ -20,10 +21,16 @@ ToastRegion::ToastRegion(QWidget* parent)
     connect(fade_, &QPropertyAnimation::finished, this, [this] {
         if (dismissing_) {
             clear();
+            progress_->hide();
             hide();
             dismissing_ = false;
         }
     });
+    progress_ = new QProgressBar(this);
+    progress_->setObjectName("toastProgress");
+    progress_->setRange(0, 0);
+    progress_->setTextVisible(false);
+    progress_->hide();
     hide();
 }
 void ToastRegion::attachTo(QWidget* host) {
@@ -49,25 +56,55 @@ void ToastRegion::placeOverlay() {
         return;
     const int width = qMin(320, qMax(1, overlayHost_->width() - 32));
     setFixedWidth(width);
+    setMinimumHeight(0);
+    setMaximumHeight(QWIDGETSIZE_MAX);
     adjustSize();
+    if (!progress_->isHidden()) {
+        setFixedHeight(qMax(sizeHint().height() + 28, 72));
+        progress_->setGeometry(12, height() - 20, this->width() - 24, 8);
+    }
     move(qMax(0, overlayHost_->width() - this->width() - 16),
-         qMax(0, overlayHost_->height() - this->height() - 16));
+         objectName() == QLatin1String("progressToast")
+             ? 16
+             : qMax(0, overlayHost_->height() - this->height() - 16));
     raise();
 }
 void ToastRegion::showToast(const QString& title, const QString& body, ToastVariant variant,
                             int durationMs) {
-    const char* name = variant == ToastVariant::Success ? "success"
+    progress_->hide();
+    const char* name = variant == ToastVariant::Success   ? "success"
                        : variant == ToastVariant::Warning ? "warning"
-                                                           : "danger";
+                                                          : "danger";
     setProperty("variant", name);
     style()->unpolish(this);
     style()->polish(this);
     setTextFormat(Qt::RichText);
-    display(QStringLiteral("<b>%1</b><br/>%2")
-                .arg(title.toHtmlEscaped(), body.toHtmlEscaped()));
+    display(QStringLiteral("<b>%1</b><br/>%2").arg(title.toHtmlEscaped(), body.toHtmlEscaped()));
     setAccessibleDescription(title + QStringLiteral(". ") + body);
     if (durationMs > 0)
         timer_->start(durationMs);
+}
+void ToastRegion::showProgress(const QString& title, const QString& detail) {
+    const bool updating = isVisible() && !dismissing_ && !progress_->isHidden() &&
+                          property("variant").toString() == QLatin1String("progress");
+    setProperty("variant", "progress");
+    style()->unpolish(this);
+    style()->polish(this);
+    progress_->show();
+    setTextFormat(Qt::RichText);
+    const auto content =
+        QStringLiteral("<b>%1</b>%2")
+            .arg(title.toHtmlEscaped(),
+                 detail.isEmpty() ? QString()
+                                  : QStringLiteral("<br/>%1").arg(detail.toHtmlEscaped()));
+    if (updating) {
+        setText(content);
+        placeOverlay();
+    } else {
+        display(content);
+    }
+    setAccessibleDescription(title +
+                             (detail.isEmpty() ? QString() : QStringLiteral(". ") + detail));
 }
 void ToastRegion::display(const QString& text) {
     timer_->stop();
@@ -90,6 +127,7 @@ void ToastRegion::clearNotice() {
     timer_->stop();
     fade_->stop();
     if (isHidden()) {
+        progress_->hide();
         clear();
         dismissing_ = false;
         return;
@@ -98,5 +136,24 @@ void ToastRegion::clearNotice() {
     fade_->setStartValue(opacity_->opacity());
     fade_->setEndValue(0.0);
     fade_->start();
+}
+ToastRegion* progressToast(QWidget* host) {
+    if (!host)
+        return nullptr;
+    auto* toast =
+        host->findChild<ToastRegion*>(QStringLiteral("progressToast"), Qt::FindDirectChildrenOnly);
+    if (!toast) {
+        toast = new ToastRegion(host);
+        toast->setObjectName("progressToast");
+        toast->attachTo(host);
+    }
+    return toast;
+}
+void clearProgressToast(QWidget* host) {
+    if (host) {
+        if (auto* toast = host->findChild<ToastRegion*>(QStringLiteral("progressToast"),
+                                                        Qt::FindDirectChildrenOnly))
+            toast->clearNotice();
+    }
 }
 } // namespace choscordb

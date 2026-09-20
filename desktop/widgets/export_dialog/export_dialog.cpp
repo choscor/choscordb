@@ -3,8 +3,10 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/field/field.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
+#include "design_system/toast_region/toast_region.h"
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QFileDialog>
@@ -61,12 +63,14 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     status_->setWordWrap(true);
     status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
     auto* destinationRow = new QHBoxLayout;
-    destinationRow->addWidget(destination_);
-    destinationRow->addWidget(browse_);
+    destinationValidation_ = new design::FieldValidation(destination_, this);
+    destinationRow->addWidget(destinationValidation_, 1);
+    destinationRow->addWidget(browse_, 0, Qt::AlignTop);
     auto* form = new QFormLayout;
     form->setRowWrapPolicy(QFormLayout::WrapLongRows);
     form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    form->addRow(tr("&Format:"), format_);
+    formatValidation_ = new design::FieldValidation(format_, this);
+    form->addRow(tr("&Format:"), formatValidation_);
     auto* destinationLabel = new QLabel(tr("&Destination:"), this);
     destinationLabel->setBuddy(destination_);
     form->addRow(destinationLabel, destinationRow);
@@ -74,7 +78,8 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     sqlForm->setContentsMargins(0, 0, 0, 0);
     sqlForm->addRow(tr("SQL &dialect:"), dialect_);
     sqlForm->addRow(tr("&Schema:"), schema_);
-    sqlForm->addRow(tr("&Table:"), table_);
+    tableValidation_ = new design::FieldValidation(table_, this);
+    sqlForm->addRow(tr("&Table:"), tableValidation_);
     const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* layout = new QVBoxLayout(this);
     auto* header = new QWidget(this);
@@ -128,8 +133,13 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     buttons->addWidget(start_);
     layout->addWidget(footer);
     connect(format_, &QComboBox::currentIndexChanged, this, &ExportDialog::updateActions);
+    connect(format_, &QComboBox::currentIndexChanged, this,
+            [this] { formatValidation_->setError({}); });
     connect(destination_, &QLineEdit::textChanged, this, &ExportDialog::updateActions);
+    connect(destination_, &QLineEdit::textChanged, this,
+            [this] { destinationValidation_->setError({}); });
     connect(table_, &QLineEdit::textChanged, this, &ExportDialog::updateActions);
+    connect(table_, &QLineEdit::textChanged, this, [this] { tableValidation_->setError({}); });
     connect(start_, &QPushButton::clicked, this, &ExportDialog::start);
     connect(cancel_, &QPushButton::clicked, this, &ExportDialog::cancel);
     connect(close, &QPushButton::clicked, this, &ExportDialog::reject);
@@ -205,8 +215,13 @@ void ExportDialog::startExportTo(const QString& path, const QString& format,
         return;
     if (path.isEmpty() || format_->findData(format) < 0 ||
         (format == "sql" && (table.isEmpty() || table.size() > 2 || table.last().isEmpty()))) {
-        status_->setText(
-            tr("Choose a destination, a supported format, and a table for SQL export."));
+        destinationValidation_->setError(path.isEmpty() ? tr("Choose a destination.") : QString{});
+        formatValidation_->setError(format_->findData(format) < 0 ? tr("Choose a supported format.")
+                                                                  : QString{});
+        tableValidation_->setError(
+            format == "sql" && (table.isEmpty() || table.size() > 2 || table.last().isEmpty())
+                ? tr("Enter a table for SQL export.")
+                : QString{});
         return;
     }
     const auto query = *query_;
@@ -217,7 +232,8 @@ void ExportDialog::startExportTo(const QString& path, const QString& format,
     table_->setText(table.isEmpty() ? QString{} : table.last());
     dialect_->setCurrentIndex(postgres ? 1 : 0);
     submitting_ = true;
-    status_->setText(tr("Checking destination…"));
+    status_->clear();
+    progressToast(this)->showProgress(tr("Export"), tr("Checking destination…"));
     start_->setText(tr("&Export"));
     updateActions();
     emit exportRunningChanged(true);
@@ -247,6 +263,7 @@ void ExportDialog::startExportTo(const QString& path, const QString& format,
                     }
                 }
                 status_->setText(tr("Starting export…"));
+                progressToast(this)->showProgress(tr("Export"), tr("Starting export…"));
                 const auto started = adapter_->startExport(query, path, format, table, postgres);
                 if (query_ != query || submissionToken_ != token || !submitting_) {
                     if (started && adapter_)
@@ -277,7 +294,8 @@ void ExportDialog::cancel() {
     if (!export_ || cancelling_ || !adapter_)
         return;
     cancelling_ = true;
-    status_->setText(tr("Cancelling…"));
+    status_->clear();
+    progressToast(this)->showProgress(tr("Export"), tr("Cancelling…"));
     updateActions();
     adapter_->cancelExport(*export_);
 }
@@ -287,9 +305,9 @@ void ExportDialog::handleEvent(const BridgeEvent& value) {
     const auto kind = text(value.kind);
     if (kind == "export_progress") {
         if (!cancelling_)
-            status_->setText(tr("Exporting: %1 rows · %2 bytes")
-                                 .arg(value.exported_rows)
-                                 .arg(value.exported_bytes));
+            progressToast(this)->showProgress(tr("Export"), tr("Exporting: %1 rows · %2 bytes")
+                                                                .arg(value.exported_rows)
+                                                                .arg(value.exported_bytes));
     } else if (kind == "export_finished") {
         finish(tr("Export complete: %1 rows · %2 bytes")
                    .arg(value.exported_rows)
@@ -304,6 +322,7 @@ void ExportDialog::finish(const QString& message, bool failed) {
     exportQuery_.reset();
     submitting_ = false;
     cancelling_ = false;
+    clearProgressToast(this);
     status_->setText(message);
     start_->setText(failed ? tr("&Retry") : tr("&Export"));
     updateActions();

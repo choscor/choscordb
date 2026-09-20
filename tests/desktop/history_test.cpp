@@ -157,6 +157,7 @@ class HistoryTest : public QObject {
         QSignalSpy policies(&adapter, &choscordb::EngineAdapter::historyPolicyReady);
         QSignalSpy listed(&adapter, &choscordb::EngineAdapter::historyListed);
         choscordb::HistoryDock dock(&adapter);
+        QSignalSpy notices(&dock, &choscordb::HistoryDock::noticeRequested);
         dock.show();
         QTRY_VERIFY(!policies.isEmpty());
         QTRY_COMPARE(listed.count(), 1);
@@ -173,7 +174,8 @@ class HistoryTest : public QObject {
         table->selectRow(0);
         auto* preview = dock.findChild<QPlainTextEdit*>("historyPreview");
         QVERIFY(preview->toPlainText().size() <= 65536);
-        QVERIFY(dock.findChild<QLabel*>("historyPreviewNotice")->text().contains("truncated"));
+        QVERIFY(!notices.isEmpty());
+        QVERIFY(notices.last().at(0).toString().contains("truncated"));
         QSignalSpy opened(&dock, &choscordb::HistoryDock::openRequested);
         dock.findChild<QPushButton*>("openHistoryQuery")->click();
         QCOMPARE(opened.count(), 1);

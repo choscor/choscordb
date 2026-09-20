@@ -8,6 +8,199 @@ fn parts(id: &ObjectId) -> Result<Vec<String>> {
     serde_json::from_str(&id.0)
         .map_err(|_| DriverError::new(ErrorKind::InvalidInput, "Invalid SQLite object identifier"))
 }
+pub(crate) fn edit_target(db: &Connection, id: &ObjectId) -> Result<EditTarget> {
+    let p = parts(id)?;
+    let [schema, table] = p.as_slice() else {
+        return Err(DriverError::new(
+            ErrorKind::InvalidInput,
+            "A table identifier is required",
+        ));
+    };
+    let kind: String = db
+        .query_row(
+            &format!(
+                "SELECT type FROM {}.sqlite_schema WHERE name=?1",
+                quote(schema)
+            ),
+            [table],
+            |r| r.get(0),
+        )
+        .map_err(normalize)?;
+    let mut target = EditTarget {
+        qualified_name: format!("{}.{}", quote(schema), quote(table)),
+        parameter_style: "?".into(),
+        ..Default::default()
+    };
+    if kind != "table" {
+        target.reason = "Only base tables can be edited".into();
+        return Ok(target);
+    }
+    let (without_rowid, strict): (bool, bool) = db
+        .query_row(
+            "SELECT wr,strict FROM pragma_table_list WHERE schema=?1 AND name=?2",
+            params![schema, table],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(normalize)?;
+    let has_primary_index: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_index_list(?1,?2) WHERE origin='pk')",
+            params![table, schema],
+            |r| r.get(0),
+        )
+        .map_err(normalize)?;
+    let mut keys = Vec::<(i64, String)>::new();
+    let mut statement = db
+        .prepare(
+            "SELECT name,type,\"notnull\",pk,hidden FROM pragma_table_xinfo(?1,?2) ORDER BY cid",
+        )
+        .map_err(normalize)?;
+    let rows = statement
+        .query_map(params![table, schema], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, i64>(4)?,
+            ))
+        })
+        .map_err(normalize)?;
+    for row in rows {
+        let (name, database_type, notnull, pk, hidden) = row.map_err(normalize)?;
+        if hidden == 1 {
+            continue;
+        }
+        let rowid_alias =
+            pk > 0 && database_type.eq_ignore_ascii_case("INTEGER") && !has_primary_index;
+        let nullable = notnull == 0 && !(pk > 0 && (without_rowid || strict || rowid_alias));
+        if pk > 0 {
+            keys.push((pk, name.clone()));
+        }
+        target.columns.push(EditColumn {
+            name,
+            database_type,
+            nullable,
+            generated: hidden != 0,
+            key: false,
+        });
+    }
+    keys.sort_by_key(|(position, _)| *position);
+    target.key_columns = keys.into_iter().map(|(_, name)| name).collect();
+    if target.key_columns.iter().any(|name| {
+        target
+            .columns
+            .iter()
+            .any(|column| column.name == *name && column.nullable)
+    }) {
+        target.key_columns.clear();
+    }
+    if target.key_columns.is_empty() {
+        let mut indexes = db.prepare("SELECT name FROM pragma_index_list(?1,?2) WHERE \"unique\"=1 AND partial=0 ORDER BY seq").map_err(normalize)?;
+        let names = indexes
+            .query_map(params![table, schema], |r| r.get::<_, String>(0))
+            .map_err(normalize)?;
+        for name in names {
+            let name = name.map_err(normalize)?;
+            let mut columns = Vec::new();
+            let mut valid = true;
+            let mut info = db
+                .prepare("SELECT name FROM pragma_index_xinfo(?1,?2) WHERE key=1 ORDER BY seqno")
+                .map_err(normalize)?;
+            let rows = info
+                .query_map(params![name, schema], |r| r.get::<_, Option<String>>(0))
+                .map_err(normalize)?;
+            for row in rows {
+                let Some(column) = row.map_err(normalize)? else {
+                    valid = false;
+                    break;
+                };
+                if !target
+                    .columns
+                    .iter()
+                    .any(|c| c.name == column && !c.nullable && !c.generated)
+                {
+                    valid = false;
+                    break;
+                }
+                columns.push(column);
+            }
+            if valid && !columns.is_empty() {
+                target.key_columns = columns;
+                break;
+            }
+        }
+    }
+    for column in &mut target.columns {
+        column.key = target.key_columns.contains(&column.name);
+    }
+    if target.key_columns.is_empty() {
+        target.reason = "No stable primary or nonnullable unique key; inserts only".into();
+    }
+    Ok(target)
+}
+pub(crate) fn edit_query(
+    db: &Connection,
+    sql: &str,
+    result_columns: Vec<String>,
+) -> Result<EditQueryTarget> {
+    let mut output = EditQueryTarget {
+        reason: "Query shape cannot be proven editable".into(),
+        ..Default::default()
+    };
+    let Some(shape) = simple_select(sql, &result_columns) else {
+        return Ok(output);
+    };
+    if shape.schema.is_none() {
+        let shadowed: bool = db
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM temp.sqlite_schema WHERE name=?1)",
+                [&shape.table],
+                |r| r.get(0),
+            )
+            .map_err(normalize)?;
+        if shadowed {
+            return Ok(output);
+        }
+    }
+    let schema = shape.schema.unwrap_or_else(|| "main".into());
+    let id = ObjectId(
+        serde_json::to_string(&[&schema, &shape.table])
+            .map_err(|_| DriverError::new(ErrorKind::Internal, "Cannot identify table"))?,
+    );
+    let target = match edit_target(db, &id) {
+        Ok(target) => target,
+        Err(_) => return Ok(output),
+    };
+    if target.columns.is_empty() {
+        return Ok(output);
+    }
+    let sources = shape.source_columns;
+    if sources.len() != result_columns.len()
+        || sources.iter().any(|source| {
+            !source.is_empty() && !target.columns.iter().any(|column| column.name == *source)
+        })
+    {
+        return Ok(output);
+    }
+    if sources
+        .iter()
+        .filter(|source| !source.is_empty())
+        .any(|source| sources.iter().filter(|other| *other == source).count() > 1)
+    {
+        output.reason = "Duplicate source columns are ambiguous".into();
+        return Ok(output);
+    }
+    if target.key_columns.is_empty() || target.key_columns.iter().any(|key| !sources.contains(key))
+    {
+        output.reason = "All stable key columns must be present".into();
+        return Ok(output);
+    }
+    output.target = target;
+    output.source_columns = sources;
+    output.reason.clear();
+    Ok(output)
+}
 const MAX_METADATA_BYTES: usize = 1024 * 1024;
 fn limit() -> DriverError {
     DriverError::new(

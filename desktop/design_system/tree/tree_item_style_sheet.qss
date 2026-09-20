@@ -1,5 +1,5 @@
 QTreeView::item {
   min-height: @navigationLineHeight;
-  padding: 4px 6px;
+  padding: 3px 3px;
   border-radius: 0;
 }

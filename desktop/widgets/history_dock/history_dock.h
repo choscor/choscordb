@@ -22,6 +22,7 @@ class HistoryDock final : public QWidget {
     void applyConfirmedPolicy(const choscordb::HistoryPolicy& policy);
   signals:
     void openRequested(const choscordb::SavedHistoryEntry& entry);
+    void noticeRequested(const QString& message);
 
   private:
     void loadPage(quint32 offset);
@@ -34,7 +35,7 @@ class HistoryDock final : public QWidget {
     HistoryModel* model_;
     QTableView* table_;
     QPlainTextEdit* preview_;
-    QLabel *status_, *previewNotice_, *page_;
+    QLabel *status_, *page_;
     QCheckBox* record_;
     QLineEdit* search_;
     QComboBox* statusFilter_;

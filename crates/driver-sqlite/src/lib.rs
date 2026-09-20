@@ -26,6 +26,9 @@ enum Command {
     Finish(u32, Reply<()>),
     Metadata(Option<ObjectId>, Reply<Vec<SchemaObject>>),
     Ddl(ObjectId, Reply<String>),
+    Edit(EditBatch, Reply<EditBatchSummary>),
+    EditTarget(ObjectId, Reply<EditTarget>),
+    EditQuery(String, Vec<String>, Reply<EditQueryTarget>),
     Transaction(bool, Reply<()>),
     Close(Reply<()>),
 }
@@ -144,6 +147,23 @@ impl DatabaseDriver for SqliteDriver {
 }
 #[async_trait]
 impl Connection for SqliteConnection {
+    async fn inspect_edit_query(
+        &mut self,
+        sql: &str,
+        result_columns: Vec<String>,
+    ) -> Result<EditQueryTarget> {
+        self.client
+            .request(|r| Command::EditQuery(sql.into(), result_columns, r))
+            .await
+    }
+    async fn inspect_edit_target(&mut self, object: &ObjectId) -> Result<EditTarget> {
+        self.client
+            .request(|r| Command::EditTarget(object.clone(), r))
+            .await
+    }
+    async fn apply_edit_batch(&mut self, batch: EditBatch) -> Result<EditBatchSummary> {
+        self.client.request(|r| Command::Edit(batch, r)).await
+    }
     fn cancellation_handle(&self) -> Arc<dyn CancelHandle> {
         Arc::new(QueryCancellation {
             shared: self.cancel.clone(),

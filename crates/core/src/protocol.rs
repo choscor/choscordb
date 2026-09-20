@@ -57,6 +57,36 @@ pub type ExportId = Handle;
 pub use choscordb_export::{ExportFormat, SqlDialect};
 
 pub enum Event {
+    EditQuery {
+        connection: ConnectionId,
+        request_token: u64,
+        query: EditQueryTarget,
+    },
+    EditQueryFailed {
+        connection: ConnectionId,
+        request_token: u64,
+        error: DriverError,
+    },
+    EditTarget {
+        connection: ConnectionId,
+        request_token: u64,
+        target: EditTarget,
+    },
+    EditTargetFailed {
+        connection: ConnectionId,
+        request_token: u64,
+        error: DriverError,
+    },
+    EditApplied {
+        connection: ConnectionId,
+        request_token: u64,
+        summary: EditBatchSummary,
+    },
+    EditFailed {
+        connection: ConnectionId,
+        request_token: u64,
+        error: DriverError,
+    },
     AppearanceLayout {
         request_token: u64,
         appearance: Option<crate::AppearanceLayout>,

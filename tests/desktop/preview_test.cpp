@@ -1,7 +1,8 @@
 #include "design_system/button/button.h"
 #include "design_system/control_style.h"
-#include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/dialog_sections/dialog_sections.h"
+#include "design_system/field/field.h"
+#include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/text/text.h"
 #include "tools/preview/preview_window.h"
 
@@ -17,11 +18,12 @@
 #include <QCompleter>
 #include <QContextMenuEvent>
 #include <QDialog>
-#include <QHBoxLayout>
+#include <QDir>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
-#include <QDir>
 #include <QFile>
+#include <QGraphicsOpacityEffect>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QImage>
 #include <QJsonDocument>
@@ -32,21 +34,22 @@
 #include <QMenu>
 #include <QPainter>
 #include <QProcess>
+#include <QProgressBar>
 #include <QPushButton>
-#include <QGraphicsOpacityEffect>
-#include <QSpinBox>
 #include <QRadioButton>
 #include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSpinBox>
 #include <QSvgRenderer>
 #include <QTableView>
 #include <QTableWidget>
 #include <QTemporaryDir>
+#include <QTextBlock>
+#include <QTextEdit>
+#include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
-#include <QTextEdit>
-#include <QTextBlock>
 #include <QTreeView>
 #include <QtTest>
 #include <cstring>
@@ -179,6 +182,30 @@ class PreviewTest final : public QObject {
             QCOMPARE(toast->parentWidget(), scroll->viewport());
             QCOMPARE(toast->geometry().right(), scroll->viewport()->width() - 17);
             QCOMPARE(toast->geometry().bottom(), scroll->viewport()->height() - 17);
+        }
+    }
+    void progressToastHasPersistentIndicatorInBothThemes() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("feedback"));
+        window.show();
+        for (const auto* name : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(name);
+            auto* start = host->findChild<QPushButton*>("previewToast_progress");
+            auto* finish = host->findChild<QPushButton*>("previewToast_progressDone");
+            QVERIFY(start && finish);
+            start->click();
+            auto* progress = host->findChild<choscordb::ToastRegion*>("progressToast");
+            QVERIFY(progress);
+            QVERIFY(progress->isVisible());
+            QVERIFY(progress->findChild<QProgressBar*>()->isVisible());
+            QVERIFY(!progress->findChild<QTimer*>()->isActive());
+            QVERIFY(progress->isVisible());
+            progress->clearNotice();
+            progress->showProgress("Exporting", "Another batch…");
+            QTest::qWait(250);
+            QVERIFY(progress->isVisible());
+            finish->click();
+            QTRY_VERIFY(progress->isHidden());
         }
     }
     void toastCanAttachAcrossWidgetTrees() {
@@ -343,13 +370,6 @@ class PreviewTest final : public QObject {
             QCOMPARE(snapshot.pixelColor(snapshot.width() / 2, snapshot.height() - 20), expected);
         }
     }
-
-
-
-
-
-
-
 
     void narrowGalleryKeepsNavigationAndActionsReachable() {
         choscordb::design::PreviewWindow window;
@@ -564,8 +584,6 @@ class PreviewTest final : public QObject {
         QVERIFY(darkColor.lightness() > 128);
     }
 
-
-
     void exportsRenderActualModalAndMenuSurfaces() {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
@@ -600,8 +618,6 @@ class PreviewTest final : public QObject {
             QJsonDocument::fromJson(tooltipMetadata.readAll()).object().value("surface").toString(),
             QString("tooltip"));
     }
-
-
 
     void standaloneExportsWithoutAProfile() {
         QTemporaryDir directory;
@@ -679,12 +695,6 @@ class PreviewTest final : public QObject {
             QCOMPARE(icon->accessibleName(), QString("database · %1 pixels").arg(size));
         }
     }
-
-
-
-
-
-
 
     void examplesOpenActualDismissibleSurfaces() {
         choscordb::design::PreviewWindow window;
@@ -792,6 +802,33 @@ class PreviewTest final : public QObject {
         QCOMPARE(window.visibleSections(), QStringList({"Components"}));
     }
 
+    void fieldValidationIsBelowInputAndSelectInBothThemes() {
+        choscordb::design::PreviewWindow window;
+        for (const auto& specimen : {"fields", "selects"}) {
+            QVERIFY(window.selectSpecimen(specimen));
+            for (const auto& theme : {"previewLight", "previewDark"}) {
+                auto* host = window.findChild<QWidget*>(theme);
+                QVERIFY(host);
+                auto* validated =
+                    dynamic_cast<choscordb::design::FieldValidation*>(host->findChild<QWidget*>(
+                        specimen == QStringLiteral("fields") ? "field-validation"
+                                                             : "select-validation"));
+                QVERIFY(validated);
+                QVERIFY(validated->control());
+                QVERIFY(validated->control()->property("invalid").toBool());
+                auto* message = validated->findChild<QLabel*>();
+                QVERIFY(message);
+                QVERIFY(!message->isHidden());
+                validated->resize(300, validated->sizeHint().height());
+                validated->layout()->activate();
+                QVERIFY(message->geometry().top() >= validated->control()->geometry().bottom());
+                validated->setError({});
+                QVERIFY(!validated->control()->property("invalid").toBool());
+                QVERIFY(message->isHidden());
+            }
+        }
+    }
+
     void tokensExposeCopyableValuesAndSources() {
         choscordb::design::PreviewWindow window;
         auto* light = window.findChild<QWidget*>("previewLight");
@@ -886,9 +923,10 @@ class PreviewTest final : public QObject {
         for (const auto* name : {"previewLight", "previewDark"}) {
             auto* tree = window.findChild<QWidget*>(name)->findChild<QTreeView*>();
             QVERIFY(tree);
-            QCOMPARE(tree->indentation(), 12);
+            QCOMPARE(tree->indentation(), 9);
             QVERIFY(tree->model()->index(0, 0).data(Qt::DecorationRole).isNull());
-            QVERIFY(!tree->model()->index(0, 0, tree->model()->index(0, 0))
+            QVERIFY(!tree->model()
+                         ->index(0, 0, tree->model()->index(0, 0))
                          .data(Qt::DecorationRole)
                          .isNull());
         }
@@ -899,6 +937,10 @@ class PreviewTest final : public QObject {
         QVERIFY(window.selectSpecimen("checks-toggles"));
         QVERIFY(light->findChild<QRadioButton*>());
         QVERIFY(window.selectSpecimen("separators-splitters"));
+        for (const auto* name : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(name);
+            QVERIFY(host->findChild<QDockWidget*>("previewResizableSidebar"));
+        }
         bool hasVerticalSeparator = false;
         for (auto* frame : light->findChildren<QFrame*>())
             hasVerticalSeparator |= frame->frameShape() == QFrame::VLine;
@@ -914,11 +956,11 @@ class PreviewTest final : public QObject {
             QVERIFY(host);
             auto* open = host->findChild<QPushButton*>("previewOpenDialogSections");
             auto* dialog = host->findChild<QDialog*>("previewDialogSectionsModal");
-            auto* sections = host->findChild<choscordb::design::DialogSections*>(
-                "previewDialogSections");
+            auto* sections =
+                host->findChild<choscordb::design::DialogSections*>("previewDialogSections");
             QVERIFY(open && dialog && sections);
-            auto* dismiss = sections->findChild<choscordb::design::Button*>(
-                "previewDialogSectionsDismiss");
+            auto* dismiss =
+                sections->findChild<choscordb::design::Button*>("previewDialogSectionsDismiss");
             QVERIFY(dismiss);
             QCOMPARE(dismiss->text(), QString());
             QCOMPARE(dismiss->buttonSize(), choscordb::design::ButtonSize::IconSmall);
@@ -952,9 +994,14 @@ class PreviewTest final : public QObject {
             QCOMPARE(list->currentRow(), 1);
             QVERIFY(list->visualItemRect(list->item(1)).bottom() < list->viewport()->height());
             QCOMPARE(list->item(0)->text(), QString("test sqlite\nSQLite"));
-            QCOMPARE(list->item(1)->data(choscordb::design::NavigationProfileDelegate::DriverRole)
-                         .toString(), QString("sqlite"));
-            QVERIFY(dynamic_cast<choscordb::design::NavigationProfileDelegate*>(list->itemDelegate()));
+            QCOMPARE(list->item(1)
+                         ->data(choscordb::design::NavigationProfileDelegate::DriverRole)
+                         .toString(),
+                     QString("sqlite"));
+            QVERIFY(
+                dynamic_cast<choscordb::design::NavigationProfileDelegate*>(list->itemDelegate()));
+            const auto height = list->visualItemRect(list->item(0)).height();
+            QVERIFY(height >= 40 && height <= 44);
         }
     }
 
@@ -971,8 +1018,7 @@ class PreviewTest final : public QObject {
             QVERIFY(title);
             const auto theme = choscordb::design::resolvedThemeForWidget(*host);
             const auto image = dock->grab().toImage();
-            QCOMPARE(image.pixelColor(image.width() / 2, image.height() / 2),
-                     theme.colors.surface);
+            QCOMPARE(image.pixelColor(image.width() / 2, image.height() / 2), theme.colors.surface);
             for (const auto* buttonName : {"dockFloatButton", "dockCloseButton"}) {
                 auto* button = dock->findChild<QToolButton*>(buttonName);
                 QVERIFY(button);
@@ -997,6 +1043,15 @@ class PreviewTest final : public QObject {
         QVERIFY(tree);
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
+        for (const auto* theme : {"previewLight", "previewDark"}) {
+            auto* specimen = window.findChild<QWidget*>(theme)->findChild<QTreeView*>();
+            QVERIFY(specimen);
+            const auto root = specimen->model()->index(0, 0);
+            const auto child = specimen->model()->index(0, 0, root);
+            QVERIFY(specimen->visualRect(root).height() >= 28);
+            QVERIFY(specimen->visualRect(root).height() <= 32);
+            QVERIFY(specimen->visualRect(child).left() - specimen->visualRect(root).left() <= 20);
+        }
         const auto group = tree->model()->index(0, 0);
         const auto nested = tree->model()->index(0, 0, group);
         QVERIFY(tree->visualRect(group).height() <= 32);
@@ -1018,8 +1073,8 @@ class PreviewTest final : public QObject {
         auto* rename = menu->actions().isEmpty() ? nullptr : menu->actions().first();
         QVERIFY(rename);
         QCOMPARE(rename->text(), QStringLiteral("Rename"));
-        const QPoint visibleMenu = menu->geometry().topLeft() +
-                                   menu->actionGeometry(rename).topLeft();
+        const QPoint visibleMenu =
+            menu->geometry().topLeft() + menu->actionGeometry(rename).topLeft();
         QVERIFY(qAbs(visibleMenu.y() - contextEvent.globalY()) <= 10);
         rename->trigger();
         QTRY_VERIFY(tree->findChild<QLineEdit*>());

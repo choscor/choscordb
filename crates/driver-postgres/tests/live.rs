@@ -61,6 +61,126 @@ async fn run(connection: &mut dyn Connection, sql: &str, auto: bool) -> Vec<Row>
 }
 #[tokio::test]
 #[ignore = "requires disposable live PostgreSQL fixture"]
+async fn reviewed_batch_is_atomic_and_binds_values() {
+    let mut c = PostgresDriver.connect(settings()).await.unwrap();
+    run(&mut *c, "DROP TABLE IF EXISTS choscordb_edit_batch", true).await;
+    run(
+        &mut *c,
+        "CREATE TABLE choscordb_edit_batch(id integer PRIMARY KEY, name text)",
+        true,
+    )
+    .await;
+    let oid = run(
+        &mut *c,
+        "SELECT 'choscordb_edit_batch'::regclass::oid::bigint",
+        true,
+    )
+    .await;
+    let Value::Integer(oid) = oid[0][0] else {
+        panic!("expected relation oid")
+    };
+    let target = c
+        .inspect_edit_target(&ObjectId(format!("pg:relation:{oid}")))
+        .await
+        .unwrap();
+    assert!(target.qualified_name.ends_with(".\"choscordb_edit_batch\""));
+    assert_eq!(target.key_columns, vec!["id"]);
+    let query = c
+        .inspect_edit_query(
+            "SELECT id AS key, upper(name) AS label, name FROM choscordb_edit_batch WHERE id=1",
+            vec!["key".into(), "label".into(), "name".into()],
+        )
+        .await
+        .unwrap();
+    assert!(query.reason.is_empty(), "{}", query.reason);
+    assert_eq!(query.source_columns, vec!["id", "", "name"]);
+    let joined = c
+        .inspect_edit_query(
+            "SELECT a.id FROM choscordb_edit_batch a JOIN choscordb_edit_batch b ON b.id=a.id",
+            vec!["id".into()],
+        )
+        .await
+        .unwrap();
+    assert!(!joined.reason.is_empty());
+    let insert = EditStatement {
+        sql: "INSERT INTO choscordb_edit_batch(id,name) VALUES($1,$2)".into(),
+        params: vec![Value::Integer(1), Value::Text("a'b".into())],
+        expected_rows: None,
+    };
+    let stale = EditStatement {
+        sql: "DELETE FROM choscordb_edit_batch WHERE id=$1 AND name=$2".into(),
+        params: vec![Value::Integer(1), Value::Text("old".into())],
+        expected_rows: Some(1),
+    };
+    assert!(
+        c.apply_edit_batch(EditBatch {
+            statements: vec![insert.clone(), stale]
+        })
+        .await
+        .is_err()
+    );
+    assert!(
+        run(&mut *c, "SELECT id FROM choscordb_edit_batch", true)
+            .await
+            .is_empty()
+    );
+    assert_eq!(
+        c.apply_edit_batch(EditBatch {
+            statements: vec![insert]
+        })
+        .await
+        .unwrap()
+        .affected_rows,
+        vec![1]
+    );
+    assert_eq!(
+        run(
+            &mut *c,
+            "SELECT name FROM choscordb_edit_batch WHERE id=1",
+            true
+        )
+        .await,
+        vec![vec![Value::Text("a'b".into())]]
+    );
+    run(&mut *c, "DROP TABLE choscordb_edit_batch", true).await;
+}
+#[tokio::test]
+#[ignore = "requires disposable live PostgreSQL fixture"]
+async fn query_inspection_preserves_active_paging_cursor() {
+    let mut c = PostgresDriver.connect(settings()).await.unwrap();
+    run(&mut *c, "DROP TABLE IF EXISTS choscordb_edit_paging", true).await;
+    run(
+        &mut *c,
+        "CREATE TABLE choscordb_edit_paging(id integer PRIMARY KEY)",
+        true,
+    )
+    .await;
+    run(
+        &mut *c,
+        "INSERT INTO choscordb_edit_paging SELECT generate_series(1,250)",
+        true,
+    )
+    .await;
+    let sql = "SELECT id FROM choscordb_edit_paging ORDER BY id";
+    let mut cursor = c.execute(sql, QueryOptions::default()).await.unwrap();
+    let first = cursor
+        .fetch_page(PageSize::new(100).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(first.rows[0][0], Value::Integer(1));
+    assert!(first.has_more);
+    let target = c.inspect_edit_query(sql, vec!["id".into()]).await.unwrap();
+    assert!(target.reason.is_empty(), "{}", target.reason);
+    let second = cursor
+        .fetch_page(PageSize::new(100).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(second.rows[0][0], Value::Integer(101));
+    cursor.close().await.unwrap();
+    run(&mut *c, "DROP TABLE choscordb_edit_paging", true).await;
+}
+#[tokio::test]
+#[ignore = "requires disposable live PostgreSQL fixture"]
 async fn auto_commit_runs_commands_forbidden_in_transaction_blocks() {
     let mut connection = PostgresDriver.connect(settings()).await.unwrap();
 

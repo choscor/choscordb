@@ -89,6 +89,15 @@ pub(super) fn run(
             Command::Ddl(id, r) => {
                 let _ = r.send(metadata::ddl(&db, id));
             }
+            Command::Edit(batch, r) => {
+                let _ = r.send(apply_edit_batch(&db, batch));
+            }
+            Command::EditTarget(object, r) => {
+                let _ = r.send(metadata::edit_target(&db, &object));
+            }
+            Command::EditQuery(sql, columns, r) => {
+                let _ = r.send(metadata::edit_query(&db, &sql, columns));
+            }
             Command::Transaction(commit, r) => {
                 let result = if db.is_autocommit() {
                     Ok(())
@@ -113,6 +122,65 @@ pub(super) fn run(
             }
         }
     }
+}
+fn apply_edit_batch(db: &Db, batch: EditBatch) -> Result<EditBatchSummary> {
+    use rusqlite::types::Value as SqlValue;
+    if !db.is_autocommit() {
+        return Err(DriverError::new(
+            ErrorKind::InvalidInput,
+            "Commit or roll back the active transaction before applying edits",
+        ));
+    }
+    let mut affected_rows = Vec::with_capacity(batch.statements.len());
+    db.execute_batch("BEGIN IMMEDIATE").map_err(normalize)?;
+    let outcome: Result<()> = (|| {
+        for edit in batch.statements {
+            let values: Result<Vec<SqlValue>> = edit
+                .params
+                .into_iter()
+                .map(|v| {
+                    Ok(match v {
+                        Value::Null => SqlValue::Null,
+                        Value::Bool(v) => SqlValue::Integer(v as i64),
+                        Value::Integer(v) => SqlValue::Integer(v),
+                        Value::Real(v) => SqlValue::Real(v),
+                        Value::Binary(v) => SqlValue::Blob(v),
+                        Value::Decimal(v)
+                        | Value::Text(v)
+                        | Value::Date(v)
+                        | Value::Time(v)
+                        | Value::Timestamp(v)
+                        | Value::Uuid(v)
+                        | Value::Json(v) => SqlValue::Text(v),
+                        Value::Deferred { .. } => {
+                            return Err(DriverError::new(
+                                ErrorKind::InvalidInput,
+                                "Deferred values cannot be edited",
+                            ));
+                        }
+                    })
+                })
+                .collect();
+            let values = values?;
+            let count = db
+                .execute(&edit.sql, rusqlite::params_from_iter(values))
+                .map_err(normalize)? as u64;
+            if edit.expected_rows.is_some_and(|expected| expected != count) {
+                return Err(DriverError::new(
+                    ErrorKind::Query,
+                    "Edit conflict: the original row has changed",
+                ));
+            }
+            affected_rows.push(count);
+        }
+        Ok(())
+    })();
+    if let Err(error) = outcome {
+        let _ = db.execute_batch("ROLLBACK");
+        return Err(error);
+    }
+    db.execute_batch("COMMIT").map_err(normalize)?;
+    Ok(EditBatchSummary { affected_rows })
 }
 fn stale() -> DriverError {
     DriverError::new(ErrorKind::StaleHandle, "Cursor is no longer active")
@@ -319,6 +387,30 @@ fn execute(
             Command::Ddl(object, reply) => {
                 db.progress_handler(0, None::<fn() -> bool>);
                 let _ = reply.send(metadata::ddl(db, object));
+                let stop = cancel.clone();
+                db.progress_handler(
+                    1000,
+                    Some(move || {
+                        stop.load(Ordering::Acquire)
+                            || deadline.is_some_and(|d| Instant::now() >= d)
+                    }),
+                );
+            }
+            Command::EditTarget(object, reply) => {
+                db.progress_handler(0, None::<fn() -> bool>);
+                let _ = reply.send(metadata::edit_target(db, &object));
+                let stop = cancel.clone();
+                db.progress_handler(
+                    1000,
+                    Some(move || {
+                        stop.load(Ordering::Acquire)
+                            || deadline.is_some_and(|d| Instant::now() >= d)
+                    }),
+                );
+            }
+            Command::EditQuery(sql, columns, reply) => {
+                db.progress_handler(0, None::<fn() -> bool>);
+                let _ = reply.send(metadata::edit_query(db, &sql, columns));
                 let stop = cancel.clone();
                 db.progress_handler(
                     1000,

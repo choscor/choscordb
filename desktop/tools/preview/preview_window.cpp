@@ -3,18 +3,19 @@
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
-#include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/dialog_sections/dialog_sections.h"
+#include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/dock/dock_style.h"
+#include "design_system/field/field.h"
 #include "design_system/icons.h"
 #include "design_system/menu/menu.h"
 #include "design_system/metrics/metrics.h"
-#include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/modal_panel/modal_panel.h"
+#include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/table/table_style.h"
 #include "design_system/text/text.h"
 #include "design_system/text_area/text_area_style.h"
 #include "design_system/theme_manager.h"
-#include "design_system/table/table_style.h"
 #include "design_system/toast_region/toast_region.h"
 
 #include <QApplication>
@@ -24,6 +25,7 @@
 #include <QFrame>
 #include <QHelpEvent>
 #include <QKeySequenceEdit>
+#include <QMainWindow>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QRadioButton>
@@ -33,10 +35,10 @@
 #include <QStandardItemModel>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QTextEdit>
 #include <QToolBar>
 #include <QToolButton>
 #include <QToolTip>
-#include <QTextEdit>
 
 #include <QClipboard>
 #include <QComboBox>
@@ -98,7 +100,8 @@ QList<Specimen> specimens() {
          "desktop/design_system/select/select_popup.cpp"},
         {"Components", "checks-toggles", "Checks and toggles",
          "desktop/design_system/checkbox/checkbox_indicator.cpp"},
-        {"Components", "shortcuts", "Shortcut entry", "desktop/design_system/field/field_style.cpp"},
+        {"Components", "shortcuts", "Shortcut entry",
+         "desktop/design_system/field/field_style.cpp"},
         {"Components", "lists-navigation", "Lists and navigation",
          "desktop/design_system/tree/tree_style.cpp"},
         {"Components", "navigation-profile-row", "Saved connection rows",
@@ -123,8 +126,7 @@ QList<Specimen> specimens() {
         {"Components", "confirmations", "Destructive confirmations",
          "desktop/design_system/confirmation_dialog/confirmation_dialog.cpp"},
         {"Components", "menus", "Menus and submenus", "desktop/design_system/menu/menu.cpp"},
-        {"Components", "feedback", "Toast",
-         "desktop/design_system/toast_region/toast_region.cpp"},
+        {"Components", "feedback", "Toast", "desktop/design_system/toast_region/toast_region.cpp"},
     };
 }
 // Forced visual options live only in the developer host. Button's production
@@ -166,7 +168,8 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         layout->addLayout(form);
     } else if (id == "selects") {
         auto* select = new QComboBox(host);
-        select->addItems({"First option", "Second option", "Long Unicode value · Việt Nam · 日本語"});
+        select->addItems(
+            {"First option", "Second option", "Long Unicode value · Việt Nam · 日本語"});
         select->setAccessibleName("Synthetic selection");
         layout->addWidget(select);
         auto* status = new QLabel(
@@ -179,6 +182,13 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         disabled->addItem("Disabled select");
         disabled->setEnabled(false);
         layout->addWidget(disabled);
+        auto* invalid = new QComboBox(host);
+        invalid->setObjectName("select-invalid");
+        invalid->addItems({"Choose an option", "Available option"});
+        auto* validated = new FieldValidation(invalid, host);
+        validated->setObjectName("select-validation");
+        validated->setError("Select an option.");
+        layout->addWidget(validated);
     } else if (id == "checks-toggles") {
         for (auto state : {Qt::Unchecked, Qt::PartiallyChecked, Qt::Checked}) {
             auto* check = new QCheckBox(state == Qt::Unchecked ? "Unchecked"
@@ -257,18 +267,17 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
                 tree->setExpanded(index, !tree->isExpanded(index));
         });
         tree->setContextMenuPolicy(Qt::CustomContextMenu);
-        QObject::connect(tree, &QTreeView::customContextMenuRequested, tree,
-                         [tree](const QPoint& point) {
-                             const QModelIndex index = tree->indexAt(point);
-                             if (!index.isValid())
-                                 return;
-                             auto* menu = new QMenu(tree);
-                             menu->setAttribute(Qt::WA_DeleteOnClose);
-                             QObject::connect(menu->addAction("Rename"), &QAction::triggered, tree,
-                                              [tree, index] { tree->edit(index); });
-                             menu->popup(detail::contextMenuPosition(
-                                 tree->viewport()->mapToGlobal(point)));
-                         });
+        QObject::connect(
+            tree, &QTreeView::customContextMenuRequested, tree, [tree](const QPoint& point) {
+                const QModelIndex index = tree->indexAt(point);
+                if (!index.isValid())
+                    return;
+                auto* menu = new QMenu(tree);
+                menu->setAttribute(Qt::WA_DeleteOnClose);
+                QObject::connect(menu->addAction("Rename"), &QAction::triggered, tree,
+                                 [tree, index] { tree->edit(index); });
+                menu->popup(detail::contextMenuPosition(tree->viewport()->mapToGlobal(point)));
+            });
         tree->expandAll();
         layout->addWidget(tree, 1);
     } else if (id == "navigation-profile-row") {
@@ -284,7 +293,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
             item->setData(NavigationProfileDelegate::DriverRole, "sqlite");
         }
         list->setCurrentRow(1);
-        list->setFixedHeight(98);
+        list->setFixedHeight(92);
         layout->addWidget(list);
         layout->addStretch();
     } else if (id == "dock") {
@@ -299,7 +308,8 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         tabs->setMovable(true);
         for (int i = 0; i < 8; ++i) {
             tabs->addTab(new QLabel("Sample document content", tabs),
-                         i == 0 ? "Document · modified" : QString("Long document %1 · 日本語").arg(i));
+                         i == 0 ? "Document · modified"
+                                : QString("Long document %1 · 日本語").arg(i));
         }
         QObject::connect(tabs, &QTabWidget::tabCloseRequested, tabs, [tabs](int index) {
             auto* page = tabs->widget(index);
@@ -325,6 +335,14 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         scroll->setWidgetResizable(true);
         layout->addWidget(scroll, 1);
     } else if (id == "separators-splitters") {
+        auto* dockHost = new QMainWindow(host);
+        dockHost->setObjectName("previewDockResizeHost");
+        auto* dock = new QDockWidget("Connections", dockHost);
+        dock->setObjectName("previewResizableSidebar");
+        dock->setWidget(new QLabel("Navigator objects", dock));
+        dockHost->addDockWidget(Qt::LeftDockWidgetArea, dock);
+        dockHost->setCentralWidget(new QLabel("Drag the sidebar boundary", dockHost));
+        layout->addWidget(dockHost, 1);
         auto* splitter = new QSplitter(host);
         splitter->addWidget(new QLabel("Navigator side", splitter));
         splitter->addWidget(new QPlainTextEdit("Drag the shared splitter handle.", splitter));
@@ -388,13 +406,23 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         for (const auto& example : examples) {
             auto* button = new Button(QString("Show %1 toast").arg(example.name), host);
             button->setObjectName(QString("previewToast_%1").arg(example.name));
-            QObject::connect(button, &QPushButton::clicked, toast,
-                             [toast, duration, example] {
-                                 toast->showToast(example.title, example.body, example.variant,
-                                                  duration->value() * 1000);
-                             });
+            QObject::connect(button, &QPushButton::clicked, toast, [toast, duration, example] {
+                toast->showToast(example.title, example.body, example.variant,
+                                 duration->value() * 1000);
+            });
             actions->addWidget(button);
         }
+        auto* progress = new Button("Show progress", host);
+        progress->setObjectName("previewToast_progress");
+        QObject::connect(progress, &QPushButton::clicked, viewport, [viewport] {
+            progressToast(viewport)->showProgress("Exporting", "Writing rows…");
+        });
+        actions->addWidget(progress);
+        auto* finish = new Button("Complete progress", host);
+        finish->setObjectName("previewToast_progressDone");
+        QObject::connect(finish, &QPushButton::clicked, viewport,
+                         [viewport] { clearProgressToast(viewport); });
+        actions->addWidget(finish);
         actions->addStretch();
         layout->addLayout(actions);
     } else if (id == "tooltip-popover") {
@@ -580,8 +608,7 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
     dialog->setObjectName("previewActualDialog");
     dialog->setWindowTitle("Synthetic component preview");
     auto* content = new QVBoxLayout(dialog);
-    auto* heading =
-        new Text(destructive ? "Delete synthetic record?" : "Panel details", dialog);
+    auto* heading = new Text(destructive ? "Delete synthetic record?" : "Panel details", dialog);
     heading->setTypographyRole(TypographyRole::DialogTitle);
     content->addWidget(heading);
     auto* description =
@@ -670,8 +697,8 @@ void populateFields(QWidget* host, QVBoxLayout* layout) {
             field->setEchoMode(QLineEdit::Password);
             field->setText("synthetic-password");
             const auto iconColor = resolvedThemeForWidget(*host).colors.foreground;
-            auto* toggle = field->addAction(themedIcon(Icon::Eye, iconColor, 16),
-                                            QLineEdit::TrailingPosition);
+            auto* toggle =
+                field->addAction(themedIcon(Icon::Eye, iconColor, 16), QLineEdit::TrailingPosition);
             toggle->setObjectName("field-password-toggle");
             toggle->setText("Show password");
             static_cast<PasswordLineEdit*>(field)->centerTrailingAction();
@@ -692,15 +719,15 @@ void populateFields(QWidget* host, QVBoxLayout* layout) {
             field->setText("Read-only value");
             field->setReadOnly(true);
         }
-        if (state == "invalid")
-            field->setProperty("invalid", true);
-        form->addRow(state, field);
+        if (state == "invalid") {
+            auto* validated = new FieldValidation(field, host);
+            validated->setObjectName("field-validation");
+            validated->setError("A value is required.");
+            form->addRow(state, validated);
+        } else {
+            form->addRow(state, field);
+        }
     }
-    auto* error = new QLabel("A value is required.", host);
-    error->setObjectName("field-error");
-    error->setProperty("state", "error");
-    error->setProperty("designRole", "fieldError");
-    form->addRow(QString{}, error);
     layout->addLayout(form);
     layout->addStretch();
 }
@@ -832,8 +859,7 @@ PreviewWindow::PreviewWindow(QWidget* parent) : QMainWindow(parent) {
     layout->addWidget(search_);
     navigation_ = new QListWidget(body);
     navigation_->setObjectName("previewNavigation");
-    navigation_->addItems(
-        {"Tokens", "Typography", "Icons", "Components"});
+    navigation_->addItems({"Tokens", "Typography", "Icons", "Components"});
     navigation_->setMaximumHeight(170);
     layout->addWidget(navigation_);
     specimen_ = new QComboBox(body);

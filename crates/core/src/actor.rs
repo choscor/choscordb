@@ -11,6 +11,19 @@ use tokio::{
 };
 
 pub(crate) enum Command {
+    Edit {
+        batch: EditBatch,
+        request_token: u64,
+    },
+    EditTarget {
+        object: ObjectId,
+        request_token: u64,
+    },
+    EditQuery {
+        sql: String,
+        result_columns: Vec<String>,
+        request_token: u64,
+    },
     Export {
         export: crate::ExportId,
         query: QueryId,
@@ -393,6 +406,101 @@ pub(crate) async fn run(
             &mut sql_active
         };
         match command {
+            Command::EditQuery {
+                sql,
+                result_columns,
+                request_token,
+            } => {
+                match metadata_operation(
+                    connection.inspect_edit_query(&sql, result_columns),
+                    &mut shutdown,
+                )
+                .await
+                {
+                    Ok(query) => {
+                        send(
+                            &events,
+                            Event::EditQuery {
+                                connection: id,
+                                request_token,
+                                query,
+                            },
+                        )
+                        .await
+                    }
+                    Err(error) => {
+                        send(
+                            &events,
+                            Event::EditQueryFailed {
+                                connection: id,
+                                request_token,
+                                error,
+                            },
+                        )
+                        .await
+                    }
+                }
+            }
+            Command::EditTarget {
+                object,
+                request_token,
+            } => {
+                match metadata_operation(connection.inspect_edit_target(&object), &mut shutdown)
+                    .await
+                {
+                    Ok(target) => {
+                        send(
+                            &events,
+                            Event::EditTarget {
+                                connection: id,
+                                request_token,
+                                target,
+                            },
+                        )
+                        .await
+                    }
+                    Err(error) => {
+                        send(
+                            &events,
+                            Event::EditTargetFailed {
+                                connection: id,
+                                request_token,
+                                error,
+                            },
+                        )
+                        .await
+                    }
+                }
+            }
+            Command::Edit {
+                batch,
+                request_token,
+            } => {
+                match metadata_operation(connection.apply_edit_batch(batch), &mut shutdown).await {
+                    Ok(summary) => {
+                        send(
+                            &events,
+                            Event::EditApplied {
+                                connection: id,
+                                request_token,
+                                summary,
+                            },
+                        )
+                        .await
+                    }
+                    Err(error) => {
+                        send(
+                            &events,
+                            Event::EditFailed {
+                                connection: id,
+                                request_token,
+                                error,
+                            },
+                        )
+                        .await
+                    }
+                }
+            }
             Command::Execute {
                 query,
                 sql,

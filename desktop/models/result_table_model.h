@@ -33,7 +33,7 @@ class ResultTableModel final : public QAbstractTableModel {
     std::size_t residentBytes() const { return residentBytes_; }
     std::size_t byteBudget() const { return byteBudget_; }
     bool setByteBudget(std::size_t bytes) {
-        if (bytes < residentBytes_)
+        if (bytes < residentBytes_ + stagedBytes_)
             return false;
         byteBudget_ = bytes;
         return true;
@@ -45,18 +45,44 @@ class ResultTableModel final : public QAbstractTableModel {
     QVariant headerData(int section, Qt::Orientation orientation,
                         int role = Qt::DisplayRole) const override;
     bool setPage(std::vector<ResultColumn> columns, std::vector<Row> rows, quint64 firstRow);
+    void setEditableColumns(std::vector<bool> editable, bool canInsert, bool canDelete,
+                            std::vector<bool> insertEditable = {});
+    Qt::ItemFlags flags(const QModelIndex& index) const override;
+    bool setData(const QModelIndex& index, const QVariant& value, int role = Qt::EditRole) override;
+    bool setNull(const QModelIndex& index);
+    bool addRow();
+    void markDeleted(const QModelIndexList& selection, bool deleted);
+    void discardEdits();
+    bool hasPendingEdits() const;
+    bool canInsert() const { return canInsert_; }
+    bool canDelete() const { return canDelete_; }
+    const std::vector<Row>& originalRows() const { return originalRows_; }
+    const std::vector<Row>& rows() const { return rows_; }
+    const std::vector<std::vector<bool>>& touched() const { return touched_; }
+    const std::vector<bool>& inserted() const { return inserted_; }
+    const std::vector<bool>& deleted() const { return deleted_; }
     // Copies a rectangle covering the selection, leaving unselected cells blank.
     // Deferred values must be loaded before copying; failures return empty text.
     QString copyCells(QModelIndexList selection, QString* error = nullptr) const;
     QString copyRows(QModelIndexList selection, QString* error = nullptr) const;
     QString copyPage(QString* error = nullptr) const;
 
+  signals:
+    void pendingEditsChanged(bool pending);
+
   private:
     QString copyScope(QModelIndexList selection, int scope, QString* error) const;
     std::vector<ResultColumn> columns_;
     std::vector<Row> rows_;
+    std::vector<Row> originalRows_;
+    std::vector<std::vector<bool>> touched_;
+    std::vector<std::vector<std::size_t>> editBytes_;
+    std::vector<bool> inserted_, deleted_, editable_;
+    std::vector<bool> insertEditable_;
+    bool canInsert_ = false, canDelete_ = false;
     quint64 firstRow_ = 0;
     std::size_t byteBudget_;
     std::size_t residentBytes_ = 0;
+    std::size_t stagedBytes_ = 0;
 };
 } // namespace choscordb

@@ -8,8 +8,10 @@ class ObjectDataWorkspace final : public QWidget {
     Q_OBJECT
   public:
     explicit ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* parent = nullptr);
-    void openObject(quint64 connection, const QString& object, const QString& label);
+    void openObject(quint64 connection, const QString& object, const QString& label,
+                    const QString& kind = QStringLiteral("table"));
     void invalidate();
+    bool resolvePendingEdits();
     QWidget* footerWidget() const { return footer_; }
   signals:
     void busyChanged(bool busy);
@@ -20,6 +22,6 @@ class ObjectDataWorkspace final : public QWidget {
     QPushButton* refresh_ = nullptr;
     QWidget* footer_ = nullptr;
     quint64 connection_ = 0;
-    QString object_, label_;
+    QString object_, label_, kind_;
 };
 } // namespace choscordb

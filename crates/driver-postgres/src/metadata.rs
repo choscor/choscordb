@@ -1,6 +1,7 @@
 //! Lazy, OID-addressed PostgreSQL catalog navigation.
 use choscordb_driver_api::{
-    Column, DriverError, ErrorKind, MetadataProperty, ObjectId, ObjectKind, Result, SchemaObject,
+    Column, DriverError, EditColumn, EditQueryTarget, EditTarget, ErrorKind, MetadataProperty,
+    ObjectId, ObjectKind, Result, SchemaObject, simple_select,
 };
 use futures_util::TryStreamExt;
 use tokio_postgres::types::{FromSql, ToSql, Type};
@@ -95,6 +96,121 @@ fn group(id: &ObjectId) -> Option<(u32, &str)> {
 }
 fn quote(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
+}
+pub(crate) async fn edit_target<C: GenericClient + Sync>(
+    client: &C,
+    object: &ObjectId,
+) -> Result<EditTarget> {
+    let (kind, oid) = parse(object)?;
+    if kind != "relation" {
+        return Err(invalid());
+    }
+    let relation = client.query_one("SELECT n.nspname::text, c.relname::text, c.relkind::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE c.oid=$1", &[&oid]).await.map_err(crate::normalize)?;
+    let schema: String = relation.get(0);
+    let table: String = relation.get(1);
+    let relation_kind: String = relation.get(2);
+    let mut target = EditTarget {
+        qualified_name: format!("{}.{}", quote(&schema), quote(&table)),
+        parameter_style: "$".into(),
+        ..Default::default()
+    };
+    if !matches!(relation_kind.as_str(), "r" | "p") {
+        target.reason = "Only base tables can be edited".into();
+        return Ok(target);
+    }
+    let rows = bounded_query(client, "SELECT attname::text, pg_catalog.format_type(atttypid,atttypmod), attnotnull, attgenerated::text FROM pg_catalog.pg_attribute WHERE attrelid=$1 AND attnum>0 AND NOT attisdropped ORDER BY attnum LIMIT 10001", &[&oid]).await?;
+    check(&rows)?;
+    for row in rows {
+        target.columns.push(EditColumn {
+            name: row.get(0),
+            database_type: row.get(1),
+            nullable: !row.get::<_, bool>(2),
+            generated: row.get::<_, &str>(3) != "",
+            key: false,
+        });
+    }
+    let indexes = bounded_query(client, "SELECT i.indexrelid, i.indisprimary FROM pg_catalog.pg_index i WHERE i.indrelid=$1 AND i.indisunique AND i.indisvalid AND i.indisready AND i.indpred IS NULL AND i.indexprs IS NULL ORDER BY i.indisprimary DESC, i.indexrelid LIMIT 10001", &[&oid]).await?;
+    check(&indexes)?;
+    for index in indexes {
+        let index_oid: u32 = index.get(0);
+        let primary: bool = index.get(1);
+        let rows = bounded_query(client, "SELECT a.attname::text, a.attnotnull FROM pg_catalog.pg_index i JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum,ordinality) ON k.ordinality<=i.indnkeyatts JOIN pg_catalog.pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum WHERE i.indexrelid=$1 ORDER BY k.ordinality", &[&index_oid]).await?;
+        let mut columns = Vec::new();
+        let mut valid = true;
+        for row in rows {
+            let name: String = row.get(0);
+            if !primary && !row.get::<_, bool>(1) {
+                valid = false;
+                break;
+            }
+            columns.push(name);
+        }
+        if valid && !columns.is_empty() {
+            target.key_columns = columns;
+            break;
+        }
+    }
+    for column in &mut target.columns {
+        column.key = target.key_columns.contains(&column.name);
+    }
+    if target.key_columns.is_empty() {
+        target.reason = "No stable primary or nonnullable unique key; inserts only".into();
+    }
+    Ok(target)
+}
+pub(crate) async fn edit_query<C: GenericClient + Sync>(
+    client: &C,
+    sql: &str,
+    result_columns: Vec<String>,
+) -> Result<EditQueryTarget> {
+    let mut output = EditQueryTarget {
+        reason: "Query shape cannot be proven editable".into(),
+        ..Default::default()
+    };
+    let Some(shape) = simple_select(sql, &result_columns) else {
+        return Ok(output);
+    };
+    let relation_name = match &shape.schema {
+        Some(schema) => format!("{}.{}", quote(schema), quote(&shape.table)),
+        None => quote(&shape.table),
+    };
+    let oid: Option<u32> = client
+        .query_one("SELECT pg_catalog.to_regclass($1)::oid", &[&relation_name])
+        .await
+        .map_err(crate::normalize)?
+        .get(0);
+    let Some(oid) = oid else {
+        return Ok(output);
+    };
+    let target = edit_target(client, &ObjectId(format!("pg:relation:{oid}"))).await?;
+    if target.columns.is_empty() {
+        return Ok(output);
+    }
+    let sources = shape.source_columns;
+    if sources.len() != result_columns.len()
+        || sources.iter().any(|source| {
+            !source.is_empty() && !target.columns.iter().any(|column| column.name == *source)
+        })
+    {
+        return Ok(output);
+    }
+    if sources
+        .iter()
+        .filter(|source| !source.is_empty())
+        .any(|source| sources.iter().filter(|other| *other == source).count() > 1)
+    {
+        output.reason = "Duplicate source columns are ambiguous".into();
+        return Ok(output);
+    }
+    if target.key_columns.is_empty() || target.key_columns.iter().any(|key| !sources.contains(key))
+    {
+        output.reason = "All stable key columns must be present".into();
+        return Ok(output);
+    }
+    output.target = target;
+    output.source_columns = sources;
+    output.reason.clear();
+    Ok(output)
 }
 fn text(row: &Row, field: &str) -> Result<String> {
     let value: &str = row.try_get(field).map_err(crate::normalize)?;

@@ -46,6 +46,13 @@ class QueryWorkspace final : public QObject {
         QString storagePath;
         EngineAdapter* sharedAdapter = nullptr;
         bool objectReadOnly = false;
+        QPushButton* addRow = nullptr;
+        QPushButton* deleteRows = nullptr;
+        QPushButton* setNull = nullptr;
+        QPushButton* applyEdits = nullptr;
+        QPushButton* discardEdits = nullptr;
+        std::function<bool(quint64)> transactionActive = {};
+        QPushButton* restoreRows = nullptr;
     };
     explicit QueryWorkspace(Widgets widgets, QObject* parent = nullptr);
     ~QueryWorkspace() override;
@@ -69,8 +76,15 @@ class QueryWorkspace final : public QObject {
     QueryPreferences queryPreferences() const;
     void setExternalWork(bool busy);
     void openObjectData(quint64 connection, const QString& object, const QString& label,
-                        const QueryPreferences& preferences);
+                        const QueryPreferences& preferences,
+                        const QString& kind = QStringLiteral("table"));
     void invalidateResult();
+    bool hasPendingEdits() const { return model_->hasPendingEdits(); }
+    bool activeManualTransaction(quint64 connection) const {
+        return pendingTransactions_.contains(connection);
+    }
+    void refreshEditActions() { updateActions(); }
+    bool resolvePendingEdits();
     bool navigationAllowed() const { return !workInFlight() && !stopping_; }
   signals:
     void connectionReady(quint64 connection);
@@ -78,9 +92,12 @@ class QueryWorkspace final : public QObject {
     void openQueryRequested(quint64 connection);
     void activityChanged(bool busy);
     void executionStateChanged(const QString& state);
+    void transactionStateChanged(quint64 connection, bool active);
 
   private:
     void execute();
+    bool applyStagedEdits();
+    void configureEditability();
     void clearResult();
     void handleEvent(const BridgeEvent& event);
     void updateActions();
@@ -98,6 +115,13 @@ class QueryWorkspace final : public QObject {
     ExportDialog* export_ = nullptr;
     ProfileDialog* profiles_ = nullptr;
     QString resultOrigin_;
+    QString objectKind_, objectId_;
+    QString executedSql_, editParameterStyle_;
+    QString editQualifiedName_, editReason_;
+    std::vector<QString> editColumnNames_;
+    std::vector<bool> editKey_, editGenerated_;
+    quint64 editTargetToken_ = 0, editApplyToken_ = 0;
+    bool editApplying_ = false, editApplied_ = false;
     bool exporting_ = false;
     std::optional<quint64> query_;
     std::optional<quint64> queryConnection_;

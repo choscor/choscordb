@@ -24,6 +24,41 @@ choscordb::ResultColumn column(const QString& name) {
 class ResultCopyWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void stagedCellsAndRowsAreReversible() {
+        choscordb::ResultTableModel model;
+        QVERIFY(model.setPage({column("id"), column("name")},
+                              {{qint64(1), QString("first")}, {qint64(2), QString("second")}}, 0));
+        model.setEditableColumns({false, true}, true, true);
+        QVERIFY(!(model.flags(model.index(0, 0)) & Qt::ItemIsEditable));
+        QVERIFY(model.flags(model.index(0, 1)) & Qt::ItemIsEditable);
+        QVERIFY(model.setData(model.index(0, 1), QString("changed")));
+        QCOMPARE(model.index(0, 1).data().toString(), QString("changed"));
+        QVERIFY(model.setNull(model.index(1, 1)));
+        QCOMPARE(model.index(1, 1).data(Qt::UserRole).toBool(), true);
+        QVERIFY(model.addRow());
+        QCOMPARE(model.rowCount(), 3);
+        QCOMPARE(model.index(2, 1).data(Qt::DisplayRole).toString(), QString(""));
+        model.markDeleted({model.index(0, 0), model.index(1, 1)}, true);
+        QVERIFY(model.hasPendingEdits());
+        QVERIFY(model.deleted()[0] && model.deleted()[1]);
+        model.markDeleted({model.index(0, 0), model.index(1, 0)}, false);
+        QVERIFY(!model.deleted()[0] && !model.deleted()[1]);
+        model.discardEdits();
+        QCOMPARE(model.rowCount(), 2);
+        QCOMPARE(model.index(0, 1).data().toString(), QString("first"));
+        QVERIFY(!model.hasPendingEdits());
+    }
+    void repeatedEditReusesStagingBudget() {
+        choscordb::ResultTableModel model;
+        QVERIFY(model.setPage({column("value")}, {{QString("original")}}, 0));
+        model.setEditableColumns({true}, false, false);
+        QVERIFY(model.setByteBudget(model.residentBytes() + 200));
+        const auto cell = model.index(0, 0);
+        QVERIFY(model.setData(cell, QString(30, 'a')));
+        QVERIFY(model.setData(cell, QString(30, 'b')));
+        QCOMPARE(cell.data().toString(), QString(30, 'b'));
+        QVERIFY(!model.setByteBudget(model.residentBytes()));
+    }
     void rowAndPageScopesPreserveValuesAndBounds() {
         choscordb::ResultTableModel model;
         QVERIFY(model.setPage({column("a"), column("b")},

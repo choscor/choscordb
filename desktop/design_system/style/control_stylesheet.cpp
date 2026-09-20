@@ -62,7 +62,7 @@ QString controlStyleSheet(const ResolvedTheme& theme) {
     pixels("@paneTabHeight", dimension(Dimension::PaneTab) - 3);
     pixels("@documentTabHeight", dimension(Dimension::DocumentTab) - 2);
     pixels("@tableHeaderHeight", dimension(Dimension::TableHeader) - 1);
-    pixels("@navigationLineHeight", dimension(Dimension::NavigationRow) - 18);
+    pixels("@navigationLineHeight", dimension(Dimension::NavigationRow) - 11);
     pixels("@progressHeight", dimension(Dimension::Progress));
     sheet.replace("@shadowMargin", QString::number(shadowMargin) + "px");
     sheet.replace("@destructiveTint", cssColor(destructiveTint));

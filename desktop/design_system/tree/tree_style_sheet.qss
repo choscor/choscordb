@@ -1,5 +1,5 @@
 QTreeView {
   font-size: 12px;
   icon-size: 14px;
-  qproperty-indentation: 12;
+  qproperty-indentation: 9;
 }

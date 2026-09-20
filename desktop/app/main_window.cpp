@@ -30,8 +30,12 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QDateTime>
+#include <QDir>
+#include <QDirIterator>
 #include <QDockWidget>
 #include <QEvent>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -49,6 +53,7 @@
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QStandardPaths>
 #include <QStyle>
 #include <QStyleHints>
 #include <QTabBar>
@@ -62,6 +67,7 @@
 #include <QWidgetAction>
 
 #include <atomic>
+#include <memory>
 #include <utility>
 
 int qInitResources_resources();
@@ -233,9 +239,9 @@ class WorkspaceTabs final : public QTabWidget {
 
 void MainWindow::showToast(const QString& message, ToastVariant variant) {
     if (toast_) {
-        const auto title = variant == ToastVariant::Success ? tr("Success")
+        const auto title = variant == ToastVariant::Success   ? tr("Success")
                            : variant == ToastVariant::Warning ? tr("Warning")
-                                                               : tr("Error");
+                                                              : tr("Error");
         toast_->showToast(title, message, variant);
     }
 }
@@ -270,6 +276,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     auto* open = fileMenu->addAction(tr("Open SQL file…"));
     open->setShortcut(QKeySequence::Open);
     auto* save = fileMenu->addAction(tr("Save SQL file…"));
+    auto* saveAs = fileMenu->addAction(tr("Save SQL file as…"));
+    saveAs->setObjectName("saveSqlAs");
     save->setShortcut(QKeySequence::Save);
     auto* closeTab = fileMenu->addAction(tr("Close tab"));
     closeTab->setObjectName("closeWorkspaceTab");
@@ -386,13 +394,47 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     navLayout->setContentsMargins(initialMetrics.sidebarInset, initialMetrics.spacingSmall,
                                   initialMetrics.sidebarInset, initialMetrics.spacingMedium);
     navLayout->setSpacing(initialMetrics.spacingSmall);
+    auto* sidebarTabs = new QHBoxLayout;
+    auto* sidebarPanels = new QStackedWidget(navBody);
+    sidebarPanels->setObjectName("sidebarPanels");
+    for (const auto& tab : {QPair{QStringLiteral("sidebarConnections"), tr("Connections")},
+                            QPair{QStringLiteral("sidebarSaved"), tr("Saved SQL files")},
+                            QPair{QStringLiteral("sidebarHistory"), tr("Recent history")}}) {
+        auto* button = new design::Button({}, navBody);
+        button->setObjectName(tab.first);
+        button->setAccessibleName(tab.second);
+        button->setToolTip(tab.second);
+        button->setCheckable(true);
+        button->setVariant(design::ButtonVariant::Ghost);
+        button->setButtonSize(design::ButtonSize::IconSmall);
+        button->setDesignIcon(tab.first == "sidebarConnections" ? design::Icon::Database
+                              : tab.first == "sidebarSaved"     ? design::Icon::File
+                                                                : design::Icon::Code);
+        const int index = sidebarTabs->count();
+        connect(button, &QPushButton::clicked, sidebarPanels, [sidebarPanels, navBody, index] {
+            sidebarPanels->setCurrentIndex(index);
+            for (auto* other : navBody->findChildren<QPushButton*>()) {
+                if (other->objectName().startsWith("sidebar"))
+                    other->setChecked(
+                        other->objectName() ==
+                        QStringList{"sidebarConnections", "sidebarSaved", "sidebarHistory"}.at(
+                            index));
+            }
+        });
+        sidebarTabs->addWidget(button);
+    }
+    navLayout->addLayout(sidebarTabs);
+    auto* connectionsPanel = new QWidget(sidebarPanels);
+    auto* connectionsLayout = new QVBoxLayout(connectionsPanel);
+    connectionsLayout->setContentsMargins(0, 0, 0, 0);
+    connectionsLayout->setSpacing(initialMetrics.spacingSmall);
     navHeader->setSpacing(initialMetrics.spacingSmall);
     navHeader->addWidget(navTitle);
     navHeader->addStretch();
     navHeader->addWidget(refreshNavigator);
     navHeader->addWidget(disconnectNavigator);
     navHeader->addWidget(addConnection);
-    navLayout->addLayout(navHeader);
+    connectionsLayout->addLayout(navHeader);
     auto* savedConnections = new QListWidget(navBody);
     savedConnections->setObjectName("savedConnections");
     savedConnections->setAccessibleName(tr("Saved database connections"));
@@ -401,26 +443,60 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     savedConnections->setProperty("designSurface", "sidebar");
     savedConnections->setMouseTracking(true);
     savedConnections->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
-    navLayout->addWidget(savedConnections);
+    connectionsLayout->addWidget(savedConnections);
     auto* objectSection = new design::Text(tr("Schema & objects").toUpper(), navBody);
     objectSection->setTypographyRole(design::TypographyRole::SectionCaption);
     objectSection->setForegroundRole(QPalette::PlaceholderText);
-    navLayout->addWidget(objectSection);
+    connectionsLayout->addWidget(objectSection);
     auto* filter = new QLineEdit;
     filter->setPlaceholderText(tr("Filter objects…"));
     filter->setAccessibleName(tr("Filter database objects"));
-    navLayout->addWidget(filter);
+    connectionsLayout->addWidget(filter);
     auto* tree = new QTreeView;
     tree->setObjectName("databaseNavigator");
     tree->setProperty("designSurface", "sidebar");
     tree->setItemDelegate(new NavigatorIconDelegate(tree));
     tree->setAccessibleName(tr("Database navigator"));
     tree->setHeaderHidden(true);
-    navLayout->addWidget(tree, 3);
+    connectionsLayout->addWidget(tree, 3);
     auto* navigatorStatus = new QLabel(tr("Disconnected"), navBody);
     navigatorStatus->setObjectName("navigatorStatus");
     navigatorStatus->setAccessibleName(tr("Navigator connection status: Disconnected"));
-    navLayout->addWidget(navigatorStatus);
+    connectionsLayout->addWidget(navigatorStatus);
+    sidebarPanels->addWidget(connectionsPanel);
+    auto* savedPanel = new QWidget(sidebarPanels);
+    auto* savedLayout = new QVBoxLayout(savedPanel);
+    savedLayout->setContentsMargins(0, 0, 0, 0);
+    auto* savedTitle = new design::Text(tr("SAVED SQL"), savedPanel);
+    savedLayout->addWidget(savedTitle);
+    auto* savedStatus = new QLabel(savedPanel);
+    savedStatus->setObjectName("sidebarSavedStatus");
+    savedStatus->setWordWrap(true);
+    savedLayout->addWidget(savedStatus);
+    auto* savedFiles = new QListWidget(savedPanel);
+    savedFiles->setObjectName("sidebarSavedFiles");
+    savedFiles->setAccessibleName(tr("Saved SQL files"));
+    savedLayout->addWidget(savedFiles, 1);
+    sidebarPanels->addWidget(savedPanel);
+    auto* historyPanel = new QWidget(sidebarPanels);
+    auto* historyLayout = new QVBoxLayout(historyPanel);
+    historyLayout->setContentsMargins(0, 0, 0, 0);
+    auto* historyTitle = new design::Text(tr("RECENT HISTORY"), historyPanel);
+    historyLayout->addWidget(historyTitle);
+    auto* historyStatus = new QLabel(historyPanel);
+    historyStatus->setObjectName("sidebarHistoryStatus");
+    historyStatus->setWordWrap(true);
+    historyLayout->addWidget(historyStatus);
+    auto* historyItems = new QListWidget(historyPanel);
+    historyItems->setObjectName("sidebarHistoryItems");
+    historyItems->setAccessibleName(tr("Recent query history"));
+    historyLayout->addWidget(historyItems, 1);
+    auto* allHistory = new design::Button(tr("View full history"), historyPanel);
+    allHistory->setObjectName("sidebarFullHistory");
+    historyLayout->addWidget(allHistory);
+    sidebarPanels->addWidget(historyPanel);
+    navLayout->addWidget(sidebarPanels, 1);
+    navBody->findChild<QPushButton*>("sidebarConnections")->setChecked(true);
     new ContextualActionVisibility(navBody, {refreshNavigator, disconnectNavigator});
     navigator->setWidget(navBody);
     addDockWidget(Qt::LeftDockWidgetArea, navigator);
@@ -435,6 +511,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     auto* toolbar = new QToolBar(tr("Query controls"));
+    toolbar->setObjectName("queryToolbar");
     toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     auto* connections = new QComboBox;
     connections->setObjectName("connectionSelector");
@@ -567,7 +644,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         const bool sql = qobject_cast<SqlEditor*>(editors_->currentWidget()) != nullptr;
         if (sql)
             lastSqlDocument_ = qobject_cast<SqlEditor*>(editors_->currentWidget());
-        workspaceTabs->workspaceBar()->setHeaderVisible(sql);
+        workspaceTabs->workspaceBar()->setHeaderVisible(
+            sql || workspaceTabs->workspaceBar()->property("recoveryActive").toBool());
         if (sqlResultArea_)
             sqlResultArea_->setVisible(sql);
         if (search_ && !sql)
@@ -582,6 +660,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     editors_->setMovable(true);
     editors_->setDocumentMode(true);
     editors_->tabBar()->setUsesScrollButtons(true);
+    editors_->tabBar()->setExpanding(false);
     editors_->tabBar()->setElideMode(Qt::ElideRight);
     editors_->tabBar()->setProperty("designTabVariant", "document");
     new HoveredTabCloseVisibility(editors_->tabBar());
@@ -639,7 +718,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     grid->setFrameShape(QFrame::NoFrame);
     design::configureResultTable(*grid);
     grid->setWordWrap(false);
-    grid->horizontalHeader()->setStretchLastSection(true);
+    grid->horizontalHeader()->setStretchLastSection(false);
     grid->horizontalHeader()->setResizeContentsPrecision(50);
     grid->verticalHeader()->setDefaultSectionSize(initialMetrics.sqlResultRowHeight);
     grid->horizontalHeader()->setFixedHeight(initialMetrics.sqlResultHeaderHeight);
@@ -649,12 +728,6 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     auto* pager = new QHBoxLayout(resultFooter);
     pager->setContentsMargins(initialMetrics.spacingMedium, initialMetrics.spacingSmall,
                               initialMetrics.spacingMedium, initialMetrics.spacingSmall);
-    auto* resultView = new QComboBox(resultFooter);
-    resultView->setObjectName("resultViewSelector");
-    resultView->setAccessibleName(tr("SQL result view"));
-    resultView->addItems({tr("Results"), tr("Messages")});
-    connect(resultView, &QComboBox::currentIndexChanged, results, &QStackedWidget::setCurrentIndex);
-    pager->addWidget(resultView);
     pager->addWidget(empty, 1);
     auto* compactState = new design::Text(tr("Disconnected"), resultFooter);
     compactState->setObjectName("executionStateCompact");
@@ -684,6 +757,21 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     exportResult->setDesignIcon(design::Icon::Export);
     pager->addWidget(previousPage);
     pager->addWidget(nextPage);
+    const auto addGridAction = [pager, resultFooter](const QString& label, const char* name) {
+        auto* button = new design::Button(label, resultFooter);
+        button->setObjectName(name);
+        button->setButtonSize(design::ButtonSize::Small);
+        button->setVariant(design::ButtonVariant::Outline);
+        button->setEnabled(false);
+        pager->addWidget(button);
+        return button;
+    };
+    auto* addResultRow = addGridAction(tr("Add row"), "queryResultAddRow");
+    auto* deleteResultRows = addGridAction(tr("Delete rows"), "queryResultDeleteRows");
+    auto* restoreResultRows = addGridAction(tr("Restore rows"), "queryResultRestoreRows");
+    auto* nullResultCell = addGridAction(tr("Set NULL"), "queryResultSetNull");
+    auto* discardResultEdits = addGridAction(tr("Discard"), "queryResultDiscardEdits");
+    auto* applyResultEdits = addGridAction(tr("Apply"), "queryResultApplyEdits");
     toolbar->addWidget(queryOverflow);
     pager->addWidget(exportResult);
     const auto colorResultFooter = [this, resultFooter] {
@@ -823,20 +911,25 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     centralHostLayout->addWidget(screens_, 1);
     setCentralWidget(centralHost);
     toast_->attachTo(centralHost);
-    auto* completionNote = new QLabel(tr("Loaded objects"));
-    completionNote->setObjectName("completionCatalogNote");
-    completionNote->setToolTip(tr("Suggestions use loaded navigator objects. Expand nodes for more "
-                                  "names; large catalogs may be limited."));
-    completionNote->hide();
-    centralHostLayout->insertWidget(0, completionNote);
-    connect(completion_, &EditorCompletionController::partialCatalog, completionNote,
-            &QWidget::setVisible);
+    connect(completion_, &EditorCompletionController::partialCatalog, this,
+            [this, partialShown = false](bool partial) mutable {
+                if (partial && !partialShown)
+                    showToast(tr("Suggestions use loaded navigator objects. Expand nodes for more "
+                                 "names; large catalogs may be limited."),
+                              ToastVariant::Warning);
+                partialShown = partial;
+            });
     connect(newQuery, &QAction::triggered, this, [this] { addEditor(); });
     connect(addConnection, &QPushButton::clicked, newConnection, &QAction::trigger);
     connect(editors_, &QTabWidget::tabCloseRequested, this, [this](int index) {
         if (!allowDocumentChange())
             return;
         auto* closing = editors_->widget(index);
+        if (auto* object = qobject_cast<ObjectExplorer*>(closing)) {
+            if (auto* data = object->findChild<ObjectDataWorkspace*>();
+                data && !data->resolvePendingEdits())
+                return;
+        }
         auto* editor = qobject_cast<SqlEditor*>(closing);
         if (editor && editor->isModified() &&
             ConfirmationDialog::question(this, tr("Close query"), tr("Discard unsaved changes?"),
@@ -862,24 +955,146 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         if (auto* editor = addEditor())
             editor->openFile(path);
     });
+    const auto savedDirectory =
+        QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
+            .filePath("sql");
+    auto refreshSavedFiles = [savedFiles, savedStatus, savedDirectory] {
+        savedFiles->clear();
+        const QDir directory(savedDirectory);
+        if (!directory.exists()) {
+            savedStatus->setText(QObject::tr("No saved SQL files yet."));
+            return;
+        }
+        if (!directory.isReadable()) {
+            savedStatus->setText(
+                QObject::tr("Saved SQL directory cannot be read: %1").arg(savedDirectory));
+            return;
+        }
+        QDirIterator files(savedDirectory, {"*.sql"}, QDir::Files | QDir::NoSymLinks);
+        constexpr int limit = 1000;
+        while (files.hasNext() && savedFiles->count() < limit) {
+            const auto path = files.next();
+            auto* item = new QListWidgetItem(QFileInfo(path).fileName(), savedFiles);
+            item->setData(Qt::UserRole, path);
+        }
+        savedStatus->setText(files.hasNext() ? QObject::tr("Showing the first %1 files.").arg(limit)
+                             : savedFiles->count() ? QString{}
+                                                   : QObject::tr("No saved SQL files yet."));
+    };
+    refreshSavedFiles_ = refreshSavedFiles;
+    connect(sidebarPanels, &QStackedWidget::currentChanged, this, [refreshSavedFiles](int index) {
+        if (index == 1)
+            refreshSavedFiles();
+    });
+    auto openSavedItem = [this](QListWidgetItem* item) {
+        if (!allowDocumentChange() || databaseClosePending_ ||
+            (recovery_ && (!recovery_->isReady() || recovery_->isClosing()))) {
+            showToast(tr("Saved file cannot be opened while the workspace is busy."),
+                      ToastVariant::Warning);
+            return;
+        }
+        const auto path = item->data(Qt::UserRole).toString();
+        const auto identity = [](const QString& value) {
+            const QFileInfo info(value);
+            const auto canonical = info.canonicalFilePath();
+            return canonical.isEmpty() ? info.absoluteFilePath() : canonical;
+        };
+        for (int i = 0; i < editors_->count(); ++i) {
+            auto* existing = qobject_cast<SqlEditor*>(editors_->widget(i));
+            if (existing && !existing->filePath().isEmpty() &&
+                identity(existing->filePath()) == identity(path)) {
+                editors_->setCurrentIndex(i);
+                showScreen(Screen::Sql);
+                return;
+            }
+        }
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) {
+            showToast(
+                tr("Could not open %1: %2").arg(QFileInfo(path).fileName(), file.errorString()),
+                ToastVariant::Danger);
+            return;
+        }
+        file.close();
+        if (auto* editor = addEditor()) {
+            connect(editor, &SqlEditor::fileOpened, this,
+                    [this, editor](const QString&, const QString& error) {
+                        if (error.isEmpty() || editors_->indexOf(editor) < 0)
+                            return;
+                        editors_->removeTab(editors_->indexOf(editor));
+                        editor->deleteLater();
+                        if (!editors_->count())
+                            showScreen(Screen::Start);
+                    });
+            editor->openFile(path);
+        }
+    };
+    connect(savedFiles, &QListWidget::itemClicked, this, openSavedItem);
+    connect(savedFiles, &QListWidget::itemActivated, this, openSavedItem);
     connect(save, &QAction::triggered, this, [this] {
         auto* editor = qobject_cast<SqlEditor*>(editors_->currentWidget());
         if (!editor)
             return;
         auto path = editor->filePath();
-        if (path.isEmpty())
-            path = QFileDialog::getSaveFileName(this, tr("Save SQL file"), {},
+        if (path.isEmpty()) {
+            const auto directory =
+                QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
+                    .filePath("sql");
+            if (!QDir().mkpath(directory)) {
+                showToast(tr("Could not create saved SQL directory: %1").arg(directory),
+                          ToastVariant::Danger);
+                return;
+            }
+            path = QFileDialog::getSaveFileName(this, tr("Save SQL file"), directory + "/",
                                                 tr("SQL files (*.sql)"));
+        }
         if (path.isEmpty())
             return;
         editor->saveFile(path);
     });
+    connect(saveAs, &QAction::triggered, this, [this, savedDirectory] {
+        auto* editor = qobject_cast<SqlEditor*>(editors_->currentWidget());
+        if (!editor)
+            return;
+        const auto suggested =
+            editor->filePath().isEmpty() ? savedDirectory + "/" : editor->filePath();
+        if (editor->filePath().isEmpty() && !QDir().mkpath(savedDirectory)) {
+            showToast(tr("Could not create saved SQL directory: %1").arg(savedDirectory),
+                      ToastVariant::Danger);
+            return;
+        }
+        const auto path = QFileDialog::getSaveFileName(this, tr("Save SQL file as"), suggested,
+                                                       tr("SQL files (*.sql)"));
+        if (!path.isEmpty())
+            editor->saveFile(path);
+    });
     connect(run, &QAction::triggered, this, [this] { showScreen(Screen::Sql); });
     workspace_ =
-        new QueryWorkspace({connections, mode, run, cancel, commitAction, rollbackAction,
-                            newConnection, nextPage, empty, messages, grid,
+        new QueryWorkspace({connections,
+                            mode,
+                            run,
+                            cancel,
+                            commitAction,
+                            rollbackAction,
+                            newConnection,
+                            nextPage,
+                            empty,
+                            messages,
+                            grid,
                             [this] { return qobject_cast<SqlEditor*>(editors_->currentWidget()); },
-                            this, previousPage, exportResult, storagePath},
+                            this,
+                            previousPage,
+                            exportResult,
+                            storagePath,
+                            nullptr,
+                            false,
+                            addResultRow,
+                            deleteResultRows,
+                            nullResultCell,
+                            applyResultEdits,
+                            discardResultEdits,
+                            {},
+                            restoreResultRows},
                            this);
     connect(grid->model(), &QAbstractItemModel::modelReset, grid, [grid, fitted = false]() mutable {
         if (!grid->model()->columnCount()) {
@@ -893,11 +1108,26 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         grid->resizeColumnsToContents();
         for (int column = 0; column < grid->model()->columnCount(); ++column)
             grid->setColumnWidth(column, qBound(80, grid->columnWidth(column), 400));
-        // A model reset can retain the previous last section's stretch size.
-        // Recompute it after fitting the new bounded page.
-        grid->horizontalHeader()->setStretchLastSection(false);
-        grid->horizontalHeader()->setStretchLastSection(true);
         fitted = true;
+    });
+    connect(workspace_, &QueryWorkspace::executionStateChanged, results,
+            [results](const QString& state) {
+                if (state == "failed")
+                    results->setCurrentIndex(1);
+                else if (state == "completed" || state == "queued" || state == "running")
+                    results->setCurrentIndex(0);
+            });
+    connect(workspace_, &QueryWorkspace::executionStateChanged, this, [this](const QString& state) {
+        if (!centralWidget())
+            return;
+        if (state == "queued" || state == "running" || state == "cancelling") {
+            const auto detail = state == "queued"       ? tr("Waiting to run…")
+                                : state == "cancelling" ? tr("Cancelling query…")
+                                                        : tr("Running query…");
+            progressToast(centralWidget())->showProgress(tr("Query in progress"), detail);
+        } else {
+            clearProgressToast(centralWidget());
+        }
     });
     connect(workspace_, &QueryWorkspace::executionStateChanged, this,
             [this, empty, compactState, cancelButton, cancelWidgetAction](const QString& state) {
@@ -918,7 +1148,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             [this, tree](quint64 connection, const QString& object, const QString& label,
                          const QString& kind) {
                 openObjectTab(connection, object, label, kind,
-                              tree->currentIndex().data(NavigatorModel::PropertiesRole).toList());
+                              tree->currentIndex().data(NavigatorModel::PropertiesRole).toList(),
+                              kind == QStringLiteral("table") ? 4 : -1);
             });
     connect(workspace_, &QueryWorkspace::openQueryRequested, this,
             &MainWindow::openConnectionQuery);
@@ -1176,16 +1407,18 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         },
         Qt::DirectConnection);
     connect(workspace_->adapter(), &EngineAdapter::profileFailed, this,
-            [this, navigatorStatus](quint64 token, const QString& error) {
-                if (token == profileListToken_) {
-                    navigatorStatus->setText(tr("Saved connections: %1").arg(error));
-                    navigatorStatus->setToolTip(error);
-                }
+            [this](quint64 token, const QString& error) {
+                if (token == profileListToken_)
+                    showToast(tr("Saved connections: %1").arg(error), ToastVariant::Danger);
             });
     connect(workspace_->adapter(), &EngineAdapter::profileConnectFailed, this,
             [this, navigatorStatus, savedConnections, connections](const QString& error) {
-                navigatorStatus->setText(error);
-                navigatorStatus->setToolTip(error);
+                navigatorStatus->setText(tr("! Connection failed"));
+                navigatorStatus->setProperty("state", "error");
+                navigatorStatus->setAccessibleName(
+                    tr("Navigator connection status: %1").arg(navigatorStatus->text()));
+                navigatorStatus->style()->unpolish(navigatorStatus);
+                navigatorStatus->style()->polish(navigatorStatus);
                 if (!submittingBrowseProfile_ || pendingBrowseProfileId_.isEmpty()) {
                     showToast(error, ToastVariant::Danger);
                     return;
@@ -1269,22 +1502,71 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             explorer->selectPane(static_cast<int>(tab.pane));
             return explorer;
         });
-        auto* recoveryStatus = new QWidget;
+        auto* recoveryStatus = new QWidget(toolbar);
+        recoveryStatus->setObjectName("workspaceRecoveryActions");
         auto* recoveryLayout = new QHBoxLayout(recoveryStatus);
         recoveryLayout->setContentsMargins(0, 0, 0, 0);
         auto* recoveryMessage = new QLabel;
         recoveryMessage->setTextFormat(Qt::PlainText);
-        auto* retry = new design::Button(tr("Retry recovery"));
-        auto* startNew = new design::Button(tr("Start new workspace"));
+        recoveryMessage->setFixedWidth(180);
+        auto* retry = new design::Button(tr("Retry"));
+        retry->setObjectName("retryWorkspaceRecovery");
+        retry->setAccessibleName(tr("Retry workspace recovery"));
+        auto* startNew = new design::Button(tr("Start new"));
+        startNew->setObjectName("startNewWorkspace");
+        startNew->setAccessibleName(tr("Start new workspace"));
         startNew->setVariant(design::ButtonVariant::Destructive);
+        auto* discardClose = new design::Button(tr("Close anyway"));
+        discardClose->setObjectName("closeWithoutRecovery");
+        discardClose->setAccessibleName(tr("Close without recovery"));
+        discardClose->setVariant(design::ButtonVariant::Destructive);
+        auto* cancelClose = new design::Button(tr("Keep open"));
+        cancelClose->setObjectName("cancelRecoveryClose");
+        cancelClose->setAccessibleName(tr("Keep workspace open"));
         recoveryLayout->addWidget(recoveryMessage);
         recoveryLayout->addWidget(retry);
         recoveryLayout->addWidget(startNew);
-        centralHostLayout->insertWidget(0, recoveryStatus);
+        recoveryLayout->addWidget(discardClose);
+        recoveryLayout->addWidget(cancelClose);
+        auto* recoveryAction =
+            toolbar->insertWidget(toolbar->actions().constFirst(), recoveryStatus);
+        recoveryAction->setVisible(false);
         recoveryStatus->hide();
+        auto normalActions = std::make_shared<QList<QPair<QAction*, bool>>>();
+        const auto showRecovery = [toolbar, recoveryAction, recoveryStatus, normalActions] {
+            if (normalActions->isEmpty()) {
+                for (auto* action : toolbar->actions()) {
+                    if (action != recoveryAction) {
+                        normalActions->append({action, action->isVisible()});
+                        action->setVisible(false);
+                    }
+                }
+            }
+            recoveryAction->setVisible(true);
+            recoveryStatus->show();
+        };
+        const auto hideRecovery = [recoveryAction, recoveryStatus, normalActions] {
+            recoveryAction->setVisible(false);
+            recoveryStatus->hide();
+            for (const auto& entry : *normalActions)
+                entry.first->setVisible(entry.second);
+            normalActions->clear();
+        };
         connect(retry, &QPushButton::clicked, recovery_, &WorkspaceRecoveryController::retry);
         connect(startNew, &QPushButton::clicked, recovery_,
                 &WorkspaceRecoveryController::startEmpty);
+        connect(discardClose, &QPushButton::clicked, recovery_,
+                &WorkspaceRecoveryController::closeWithoutRecovery);
+        connect(cancelClose, &QPushButton::clicked, this, [this, hideRecovery, workspaceTabs] {
+            appearanceCloseApproved_ = false;
+            recovery_->cancelClose();
+            workspaceTabs->workspaceBar()->setProperty("recoveryActive", false);
+            workspaceTabs->workspaceBar()->setHeaderVisible(
+                qobject_cast<SqlEditor*>(editors_->currentWidget()) != nullptr);
+            if (!editors_->count())
+                screens_->setCurrentIndex(static_cast<int>(Screen::Start));
+            hideRecovery();
+        });
         connect(recovery_, &WorkspaceRecoveryController::mutationEnabled, this,
                 [newQuery, open, save, editMenu, searchActions](bool enabled) {
                     editMenu->setEnabled(enabled);
@@ -1304,39 +1586,28 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 &WorkspaceRecoveryController::saved);
         connect(workspace_->adapter(), &EngineAdapter::recoveryFailed, recovery_,
                 &WorkspaceRecoveryController::failed);
-        connect(recovery_, &WorkspaceRecoveryController::persistenceSucceeded, recoveryStatus,
-                &QWidget::hide);
-        connect(
-            recovery_, &WorkspaceRecoveryController::errorOccurred, this,
-            [this, recoveryStatus, recoveryMessage, startNew](const QString& error, bool closing) {
-                recoveryMessage->setText(error);
-                startNew->setVisible(!recovery_->isReady());
-                recoveryStatus->show();
-                if (!closing)
-                    return;
-                // Queue the modal choice after synchronous transport rejection has unwound.
-                QTimer::singleShot(0, this, [this, error] {
-                    if (!recovery_->isClosing())
-                        return;
-                    ConfirmationDialog box(QMessageBox::Warning, tr("Workspace recovery failed"),
-                                           error, QMessageBox::NoButton, this);
-                    box.setTextFormat(Qt::PlainText);
-                    auto* retryButton = box.addButton(tr("Retry"), QMessageBox::AcceptRole);
-                    auto* discardButton =
-                        box.addButton(tr("Close without recovery"), QMessageBox::DestructiveRole);
-                    auto* cancelButton = box.addButton(QMessageBox::Cancel);
-                    box.setDefaultButton(cancelButton);
-                    box.exec();
-                    if (box.clickedButton() == retryButton)
-                        recovery_->retry();
-                    else if (box.clickedButton() == discardButton)
-                        recovery_->closeWithoutRecovery();
-                    else {
-                        appearanceCloseApproved_ = false;
-                        recovery_->cancelClose();
-                    }
+        connect(recovery_, &WorkspaceRecoveryController::persistenceSucceeded, this,
+                [this, hideRecovery, workspaceTabs] {
+                    workspaceTabs->workspaceBar()->setProperty("recoveryActive", false);
+                    workspaceTabs->workspaceBar()->setHeaderVisible(
+                        qobject_cast<SqlEditor*>(editors_->currentWidget()) != nullptr);
+                    hideRecovery();
                 });
-            });
+        connect(recovery_, &WorkspaceRecoveryController::errorOccurred, this,
+                [this, showRecovery, recoveryMessage, startNew, discardClose, cancelClose,
+                 workspaceTabs](const QString& error, bool closing) {
+                    recoveryMessage->setText(recoveryMessage->fontMetrics().elidedText(
+                        error, Qt::ElideRight, recoveryMessage->width()));
+                    recoveryMessage->setToolTip(error);
+                    recoveryMessage->setAccessibleName(error);
+                    startNew->setVisible(!closing && !recovery_->isReady());
+                    discardClose->setVisible(closing);
+                    cancelClose->setVisible(closing);
+                    showRecovery();
+                    workspaceTabs->workspaceBar()->setProperty("recoveryActive", true);
+                    screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
+                    workspaceTabs->workspaceBar()->setHeaderVisible(true);
+                });
         connect(recovery_, &WorkspaceRecoveryController::closeReady, this, [this] {
             recoveryCloseApproved_ = true;
             QTimer::singleShot(0, this, [this] { close(); });
@@ -1352,6 +1623,66 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         recovery_->start();
     }
     history_ = new HistoryDock(workspace_->adapter(), this);
+    auto refreshRecentHistory = [this, historyStatus, historyItems] {
+        if (!workspace_)
+            return;
+        historyItems->clear();
+        historyStatus->setText(tr("Loading recent history…"));
+        static std::atomic<quint64> nextToken{quint64(1) << 62};
+        sidebarHistoryToken_ = ++nextToken;
+        if (!workspace_->adapter()->listHistory(50, 0, sidebarHistoryToken_))
+            historyStatus->setText(tr("Could not request recent history."));
+    };
+    connect(sidebarPanels, &QStackedWidget::currentChanged, this,
+            [refreshRecentHistory](int index) {
+                if (index == 2)
+                    refreshRecentHistory();
+            });
+    connect(workspace_->adapter(), &EngineAdapter::historyListed, this,
+            [this, historyItems, historyStatus,
+             savedConnections](quint64 token, const QList<SavedHistoryEntry>& entries) {
+                if (token != sidebarHistoryToken_ || !token)
+                    return;
+                historyItems->clear();
+                for (const auto& entry : entries) {
+                    const auto preview = entry.sql.left(100).simplified();
+                    const auto when = QDateTime::fromSecsSinceEpoch(entry.timestamp)
+                                          .toLocalTime()
+                                          .toString(Qt::ISODate);
+                    QString profileName =
+                        entry.profileId.isEmpty() ? tr("Unsaved connection") : entry.profileId;
+                    for (int i = 0; i < savedConnections->count(); ++i) {
+                        const auto profile =
+                            savedConnections->item(i)->data(Qt::UserRole).value<SavedProfile>();
+                        if (profile.id == entry.profileId) {
+                            profileName = profile.name;
+                            break;
+                        }
+                    }
+                    auto* item =
+                        new QListWidgetItem(QStringLiteral("%1\n%2 · %3 · %4")
+                                                .arg(preview, profileName, when, entry.status),
+                                            historyItems);
+                    item->setData(Qt::UserRole, QVariant::fromValue(entry));
+                }
+                historyStatus->setText(entries.isEmpty() ? tr("No query history yet.") : QString{});
+            });
+    connect(workspace_->adapter(), &EngineAdapter::recoveryFailed, this,
+            [this, historyStatus](quint64 token, const QString& error) {
+                if (token == sidebarHistoryToken_)
+                    historyStatus->setText(tr("Recent history could not be loaded: %1").arg(error));
+            });
+    auto openHistoryItem = [this](QListWidgetItem* item) {
+        const auto entry = item->data(Qt::UserRole).value<SavedHistoryEntry>();
+        sidebarHistoryOpen_ = true;
+        emit history_->openRequested(entry);
+        sidebarHistoryOpen_ = false;
+    };
+    connect(historyItems, &QListWidget::itemClicked, this, openHistoryItem);
+    connect(historyItems, &QListWidget::itemActivated, this, openHistoryItem);
+    connect(allHistory, &QPushButton::clicked, this, [this] { showScreen(Screen::History); });
+    connect(history_, &HistoryDock::noticeRequested, this,
+            [this](const QString& message) { showToast(message, ToastVariant::Warning); });
     connect(preferences_, &EditorPreferencesController::historyPolicyConfirmed, history_,
             &HistoryDock::applyConfirmedPolicy);
     screens_->addWidget(history_);
@@ -1377,16 +1708,52 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     }
     connect(history_, &HistoryDock::openRequested, this, [this](const SavedHistoryEntry& entry) {
         if (databaseClosePending_ ||
-            (recovery_ && (!recovery_->isReady() || recovery_->isClosing())))
+            (recovery_ && (!recovery_->isReady() || recovery_->isClosing()))) {
+            showToast(tr("History cannot be opened while the workspace is unavailable."),
+                      ToastVariant::Warning);
             return;
+        }
+        for (int i = 0; sidebarHistoryOpen_ && i < editors_->count(); ++i) {
+            auto* existing = qobject_cast<SqlEditor*>(editors_->widget(i));
+            if (existing && !entry.id.isEmpty() &&
+                existing->property("historyRecordId").toString() == entry.id) {
+                if (!allowDocumentChange())
+                    return;
+                editors_->setCurrentIndex(i);
+                showScreen(Screen::Sql);
+                return;
+            }
+        }
         auto* editor = addEditor();
         if (!editor)
             return;
         if (!editor->restoreDocument(entry.sql.toUtf8(), {}, 0, 0, true)) {
             showToast(tr("History text could not be opened."), ToastVariant::Danger);
+            editors_->removeTab(editors_->indexOf(editor));
+            editor->deleteLater();
+            if (!editors_->count())
+                showScreen(Screen::Start);
             return;
         }
         editor->setProfileId(entry.profileId);
+        std::optional<quint64> historyConnection;
+        QString historyLabel =
+            entry.profileId.isEmpty() ? tr("Unavailable connection") : entry.profileId;
+        if (auto* selector = findChild<QComboBox*>("connectionSelector")) {
+            for (int i = 0; i < selector->count(); ++i) {
+                if (!selector->itemData(i).isValid())
+                    continue;
+                const auto connection = selector->itemData(i).toULongLong();
+                if (workspace_->profileIdForConnection(connection) == entry.profileId &&
+                    !entry.profileId.isEmpty()) {
+                    historyConnection = connection;
+                    historyLabel = selector->itemText(i);
+                    break;
+                }
+            }
+        }
+        editor->setConnectionTarget(historyConnection, historyLabel);
+        editor->setProperty("historyRecordId", entry.id);
         workspace_->documentChanged();
         editor->setProperty("documentTitle", tr("History query %1").arg(nextDocumentNumber_));
         editors_->setTabText(editors_->indexOf(editor),
@@ -1395,11 +1762,19 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             recovery_->changed();
     });
     connect(workspace_->adapter(), &EngineAdapter::eventReady, this,
-            [this](const BridgeEvent& event) {
+            [this, sidebarPanels, refreshRecentHistory](const BridgeEvent& event) {
                 const auto kind =
                     QString::fromUtf8(event.kind.data(), static_cast<qsizetype>(event.kind.size()));
                 if (history_->isVisible() && (kind == "query_finished" || kind == "query_failed"))
                     history_->refresh();
+                if (sidebarPanels->currentIndex() == 2 &&
+                    (kind == "query_finished" || kind == "query_failed"))
+                    refreshRecentHistory();
+            });
+    connect(workspace_->adapter(), &EngineAdapter::historyCleared, this,
+            [sidebarPanels, refreshRecentHistory](quint64) {
+                if (sidebarPanels->currentIndex() == 2)
+                    refreshRecentHistory();
             });
     connect(workspace_->adapter(), &EngineAdapter::shutdownReady, this, [this] {
         databaseClosePending_ = false;
@@ -1502,6 +1877,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                                       : selectedKind.contains("key") ? 2
                                       : selectedKind == "ddl"        ? 3
                                       : selectedKind == "data"       ? 4
+                                      : selectedKind == "table"      ? 4
                                                                      : -1;
                     openObjectTab(*browsingConnection_,
                                   object.data(NavigatorModel::ObjectIdRole).toString(),
@@ -1628,6 +2004,15 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     showScreen(Screen::Start);
 }
 void MainWindow::closeEvent(QCloseEvent* event) {
+    for (int i = 0; i < editors_->count(); ++i) {
+        if (auto* object = qobject_cast<ObjectExplorer*>(editors_->widget(i))) {
+            if (auto* data = object->findChild<ObjectDataWorkspace*>();
+                data && !data->resolvePendingEdits()) {
+                event->ignore();
+                return;
+            }
+        }
+    }
     if (appearance_ && !appearanceCloseApproved_ && !appearance_->flush()) {
         event->ignore();
         return;
@@ -1763,6 +2148,13 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
             recovery_->changed();
     });
     connect(data, &ObjectDataWorkspace::busyChanged, explorer, &ObjectExplorer::setOperationBusy);
+    connect(data, &ObjectDataWorkspace::busyChanged, data, [data](bool busy) {
+        if (busy)
+            progressToast(data)->showProgress(QObject::tr("Object data"),
+                                              QObject::tr("Working with object data…"));
+        else
+            clearProgressToast(data);
+    });
     connect(explorer, &ObjectExplorer::sqlGenerated, this,
             [this](quint64 connection, const QString& sql) {
                 if (openGeneratedSql_)
@@ -1876,13 +2268,13 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
     explorer->setProperty("objectType", kind);
     explorer->setProperty("objectLabel", label);
     explorer->openObject(connection, objectId, label, kind, properties);
-    if (pane >= 0)
-        explorer->selectPane(pane);
     const auto icon =
         design::themedIcon(design::Icon::Table, theme_->resolvedTheme().colors.mutedText, 16);
     const int index = editors_->addTab(explorer, icon, label);
     editors_->setCurrentIndex(index);
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
+    if (pane >= 0)
+        explorer->selectPane(pane);
     if (recovery_)
         recovery_->changed();
 }
@@ -1978,10 +2370,13 @@ SqlEditor* MainWindow::addEditor() {
                                            QMessageBox::Ok, this);
                     box.setTextFormat(Qt::PlainText);
                     box.exec();
-                } else
+                } else {
                     editors_->setTabText(editors_->indexOf(editor),
                                          QFileInfo(path).fileName() +
                                              (editor->isModified() ? " •" : ""));
+                    if (refreshSavedFiles_)
+                        refreshSavedFiles_();
+                }
             });
     if (recovery_) {
         recovery_->watchEditor(editor);

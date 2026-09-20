@@ -64,6 +64,9 @@ class MainWindow final : public QMainWindow {
     bool appearanceCloseApproved_ = false;
     bool databaseClosePending_ = false, databaseCloseApproved_ = false;
     HistoryDock* history_ = nullptr;
+    quint64 sidebarHistoryToken_ = 0;
+    bool sidebarHistoryOpen_ = false;
+    std::function<void()> refreshSavedFiles_;
     EditorPreferencesController* preferences_ = nullptr;
     AppearanceController* appearance_ = nullptr;
     EditorCompletionController* completion_ = nullptr;

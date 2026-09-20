@@ -2,8 +2,10 @@
 #include "bridge/engine_adapter.h"
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
+#include "design_system/field/field.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
+#include "design_system/toast_region/toast_region.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QCheckBox>
 #include <QFutureWatcher>
@@ -55,7 +57,8 @@ SearchPanel::SearchPanel(std::function<SqlEditor*()> currentEditor, QWidget* par
     close->setVariant(design::ButtonVariant::Ghost);
     close->setButtonSize(design::ButtonSize::Small);
     close->setDesignIcon(design::Icon::Close);
-    first->addWidget(needle_, 1);
+    needleValidation_ = new design::FieldValidation(needle_, this);
+    first->addWidget(needleValidation_, 1);
     first->addWidget(navigation);
     first->addWidget(close);
     layout->addLayout(first);
@@ -81,7 +84,8 @@ SearchPanel::SearchPanel(std::function<SqlEditor*()> currentEditor, QWidget* par
     replace->setVariant(design::ButtonVariant::Outline);
     replace->setButtonSize(design::ButtonSize::Small);
     replaceAll_->setButtonSize(design::ButtonSize::Small);
-    second->addWidget(replacement_, 1);
+    replacementValidation_ = new design::FieldValidation(replacement_, this);
+    second->addWidget(replacementValidation_, 1);
     second->addWidget(replace);
     second->addWidget(replaceAll_);
     layout->addWidget(replacementRow_);
@@ -103,8 +107,14 @@ SearchPanel::SearchPanel(std::function<SqlEditor*()> currentEditor, QWidget* par
     auto* escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
     escape->setContext(Qt::WidgetWithChildrenShortcut);
     connect(escape, &QShortcut::activated, close, &QPushButton::click);
-    connect(needle_, &QLineEdit::textChanged, this, [this] { invalidate(); });
-    connect(replacement_, &QLineEdit::textChanged, this, [this] { ++generation_; });
+    connect(needle_, &QLineEdit::textChanged, this, [this] {
+        needleValidation_->setError({});
+        invalidate();
+    });
+    connect(replacement_, &QLineEdit::textChanged, this, [this] {
+        replacementValidation_->setError({});
+        ++generation_;
+    });
     connect(case_, &QCheckBox::toggled, this, [this] { invalidate(); });
     connect(word_, &QCheckBox::toggled, this, [this] { invalidate(); });
     hide();
@@ -149,6 +159,12 @@ SqlEditor* SearchPanel::editable(bool mutation) const {
                : nullptr;
 }
 void SearchPanel::setPending(bool pending) {
+    if (pending)
+        progressToast(this)->showProgress(tr("Search"), tr("Working…"));
+    else
+        clearProgressToast(this);
+    if (pending)
+        status_->clear();
     pending_ = pending;
     for (auto* button : findChildren<QPushButton*>())
         if (button->objectName() != "searchClose")
@@ -183,7 +199,6 @@ void SearchPanel::find(bool backwards) {
     const bool caseSensitive = case_->isChecked(), wholeWord = word_->isChecked();
     hasMatch_ = false;
     setPending(true);
-    status_->setText(tr("Searching…"));
     auto* watcher = new QFutureWatcher<TextMatch>(this);
     connect(watcher, &QFutureWatcher<TextMatch>::finished, this,
             [this, watcher, target, revision, request, cursor, anchor] {
@@ -198,7 +213,7 @@ void SearchPanel::find(bool backwards) {
                     return;
                 }
                 if (!result.valid) {
-                    status_->setText(result.error);
+                    needleValidation_->setError(result.error);
                     return;
                 }
                 if (!result.found) {
@@ -237,16 +252,16 @@ void SearchPanel::replaceOne() {
     }
     const auto length = editor->SendScintilla(QsciScintilla::SCI_GETLENGTH);
     if (length > 16 * 1024 * 1024 || replacement_->text().size() > 16 * 1024 * 1024) {
-        status_->setText(tr("Replacement output exceeds 16 MiB."));
+        replacementValidation_->setError(tr("Replacement output exceeds 16 MiB."));
         return;
     }
     if (!replacement_->text().isValidUtf16()) {
-        status_->setText(tr("Replacement input is not valid Unicode."));
+        replacementValidation_->setError(tr("Replacement input is not valid Unicode."));
         return;
     }
     const auto bytes = replacement_->text().toUtf8();
     if (quint64(length) - (matchEnd_ - matchStart_) + quint64(bytes.size()) > 16 * 1024 * 1024) {
-        status_->setText(tr("Replacement output exceeds 16 MiB."));
+        replacementValidation_->setError(tr("Replacement output exceeds 16 MiB."));
         return;
     }
     const auto start = matchStart_;
@@ -278,10 +293,18 @@ void SearchPanel::replaceAll() {
     QPointer<SqlEditor> target(editor);
     const auto source = editor->text(), needle = needle_->text(),
                replacement = replacement_->text();
+    if (needle.isEmpty() || !needle.isValidUtf16()) {
+        needleValidation_->setError(needle.isEmpty() ? tr("Enter text to find.")
+                                                     : tr("Search text is not valid Unicode."));
+        return;
+    }
+    if (!replacement.isValidUtf16()) {
+        replacementValidation_->setError(tr("Replacement input is not valid Unicode."));
+        return;
+    }
     const bool caseSensitive = case_->isChecked(), wholeWord = word_->isChecked();
     hasMatch_ = false;
     setPending(true);
-    status_->setText(tr("Replacing…"));
     auto* watcher = new QFutureWatcher<TextReplacement>(this);
     connect(
         watcher, &QFutureWatcher<TextReplacement>::finished, this,
@@ -301,7 +324,7 @@ void SearchPanel::replaceAll() {
             if (result.count != 0) {
                 const auto bytes = result.text.toUtf8();
                 if (bytes.size() > 16 * 1024 * 1024) {
-                    status_->setText(tr("Replacement output exceeds 16 MiB."));
+                    replacementValidation_->setError(tr("Replacement output exceeds 16 MiB."));
                     return;
                 }
                 target->SendScintilla(QsciScintilla::SCI_BEGINUNDOACTION);

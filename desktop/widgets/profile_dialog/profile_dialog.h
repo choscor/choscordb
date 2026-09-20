@@ -10,6 +10,9 @@ class QPushButton;
 class QCheckBox;
 class QSpinBox;
 namespace choscordb {
+namespace design {
+class FieldValidation;
+}
 class ProfileDialog final : public DialogShell {
     Q_OBJECT
   public:
@@ -62,6 +65,7 @@ class ProfileDialog final : public DialogShell {
     QCheckBox *readOnly_, *rememberPassword_;
     QSpinBox* port_;
     QLabel* status_;
+    design::FieldValidation* nameValidation_;
     QList<QPushButton*> actions_;
     QPushButton *sqliteChoice_, *postgresChoice_;
 };
