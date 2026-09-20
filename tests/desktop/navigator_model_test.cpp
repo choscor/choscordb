@@ -8,6 +8,121 @@ using namespace choscordb;
 class NavigatorModelTest : public QObject {
     Q_OBJECT
   private slots:
+    void metadataPagesAppendOnlyAfterExplicitContinuation() {
+        NavigatorModel model;
+        QAbstractItemModelTester tester(&model,
+                                        QAbstractItemModelTester::FailureReportingMode::QtTest);
+        tester.setUseFetchMore(false);
+        QSignalSpy first(&model, &NavigatorModel::childrenRequested);
+        QSignalSpy next(&model, &NavigatorModel::childrenPageRequested);
+        QVERIFY(model.addConnection(1, "MySQL"));
+        const auto root = model.index(0, 0);
+        model.fetchMore(root);
+        QTRY_COMPARE(first.count(), 1);
+        QVERIFY(model.applyChildrenPage(1, {}, first.last().at(2).toULongLong(),
+                                        {{"a", "Alpha", "db.Alpha", "table", false}}, 0, true, 1));
+        QCOMPARE(model.rowCount(root), 2);
+        const QPersistentModelIndex alpha(model.index(0, 0, root));
+        QCOMPARE(model.index(1, 0, root).data(NavigatorModel::KindRole).toString(),
+                 QString("load_more"));
+        QVERIFY(!model.canFetchMore(root));
+        QVERIFY(!root.data(NavigatorModel::ChildrenLoadedRole).toBool());
+        QVERIFY(model.completionSnapshot(1, 100, 4096).partial);
+        model.requestNextPage(model.index(1, 0, root));
+        QTRY_COMPARE(next.count(), 1);
+        QCOMPARE(next.last().at(3).toULongLong(), quint64(1));
+        QCOMPARE(next.last().at(4).toUInt(), quint32(1000));
+        QVERIFY(alpha.isValid());
+        QVERIFY(model.applyChildrenPage(1, {}, next.last().at(2).toULongLong(),
+                                        {{"b", "Beta", "db.Beta", "table", false}}, 1, false, 2));
+        QVERIFY(alpha.isValid());
+        QCOMPARE(alpha.data().toString(), QString("Alpha"));
+        QCOMPARE(model.rowCount(root), 2);
+        QCOMPARE(model.index(1, 0, root).data().toString(), QString("Beta"));
+        QVERIFY(root.data(NavigatorModel::ChildrenLoadedRole).toBool());
+        QVERIFY(!model.completionSnapshot(1, 100, 4096).partial);
+        model.requestNextPage(root);
+        QCOMPARE(next.count(), 1);
+    }
+
+    void repeatedIndexInLaterPageFailsWithoutDiscardingLoadedRows() {
+        NavigatorModel model;
+        QSignalSpy first(&model, &NavigatorModel::childrenRequested);
+        QSignalSpy next(&model, &NavigatorModel::childrenPageRequested);
+        QVERIFY(model.addConnection(1, "MySQL"));
+        const auto root = model.index(0, 0);
+        model.fetchMore(root);
+        QTRY_COMPARE(first.count(), 1);
+        QVERIFY(model.applyChildrenPage(1, {}, first.last().at(2).toULongLong(),
+                                        {{"idx", "Index", "db.Index", "index", false}}, 0, true,
+                                        1));
+        const QPersistentModelIndex firstIndex(model.index(0, 0, root));
+        model.requestNextPage(root);
+        QTRY_COMPARE(next.count(), 1);
+        QVERIFY(!model.applyChildrenPage(1, {}, next.last().at(2).toULongLong(),
+                                         {{"idx", "Index", "db.Index", "index", false}}, 1, false,
+                                         2));
+        QVERIFY(firstIndex.isValid());
+        QCOMPARE(firstIndex.data().toString(), QString("Index"));
+        QCOMPARE(model.index(1, 0, root).data(NavigatorModel::KindRole).toString(),
+                 QString("error"));
+    }
+
+    void refreshRejectsInFlightContinuationAndRestartsAtFirstPage() {
+        NavigatorModel model;
+        QSignalSpy first(&model, &NavigatorModel::childrenRequested);
+        QSignalSpy next(&model, &NavigatorModel::childrenPageRequested);
+        QVERIFY(model.addConnection(1, "MySQL"));
+        const auto root = model.index(0, 0);
+        model.fetchMore(root);
+        QTRY_COMPARE(first.count(), 1);
+        QVERIFY(model.applyChildrenPage(1, {}, first.last().at(2).toULongLong(),
+                                        {{"a", "Alpha", "db.Alpha", "table", false}}, 0, true, 1));
+        model.requestNextPage(root);
+        QTRY_COMPARE(next.count(), 1);
+        const auto oldToken = next.last().at(2).toULongLong();
+        model.refresh(root);
+        QTRY_COMPARE(first.count(), 2);
+        QVERIFY(!model.applyChildrenPage(1, {}, oldToken,
+                                         {{"b", "Beta", "db.Beta", "table", false}}, 1, false, 2));
+        QVERIFY(model.applyChildrenPage(1, {}, first.last().at(2).toULongLong(),
+                                        {{"c", "Current", "db.Current", "table", false}}, 0, false,
+                                        1));
+        QCOMPARE(model.rowCount(root), 1);
+        QCOMPARE(model.index(0, 0, root).data().toString(), QString("Current"));
+    }
+
+    void moreThanTenThousandObjectsRemainBrowsableInBoundedPages() {
+        NavigatorModel model;
+        QSignalSpy first(&model, &NavigatorModel::childrenRequested);
+        QSignalSpy next(&model, &NavigatorModel::childrenPageRequested);
+        QVERIFY(model.addConnection(1, "MySQL"));
+        const auto root = model.index(0, 0);
+        model.fetchMore(root);
+        QTRY_COMPARE(first.count(), 1);
+        quint64 token = first.last().at(2).toULongLong();
+        for (quint64 offset = 0; offset < 10001; offset += 1000) {
+            std::vector<NavigatorObject> page;
+            const quint64 end = qMin(offset + 1000, quint64(10001));
+            for (quint64 i = offset; i < end; ++i) {
+                const auto name = QString("table_%1").arg(i);
+                page.push_back({name, name, "db." + name, "table", false});
+            }
+            QVERIFY(
+                model.applyChildrenPage(1, {}, token, std::move(page), offset, end < 10001, end));
+            if (end < 10001) {
+                QVERIFY(!model.canFetchMore(root));
+                model.requestNextPage(root);
+                QTRY_COMPARE(next.count(), int(offset / 1000 + 1));
+                QCOMPARE(next.last().at(3).toULongLong(), end);
+                token = next.last().at(2).toULongLong();
+            }
+        }
+        QCOMPARE(model.rowCount(root), 10001);
+        QCOMPARE(model.index(10000, 0, root).data().toString(), QString("table_10000"));
+        QVERIFY(root.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    }
+
     void sameIndexCanAppearInTableAndSchemaGroup() {
         NavigatorModel model;
         QSignalSpy requested(&model, &NavigatorModel::childrenRequested);

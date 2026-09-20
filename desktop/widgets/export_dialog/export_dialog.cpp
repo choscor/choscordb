@@ -54,8 +54,9 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     format_->addItem(tr("JSON"), "json");
     format_->addItem(tr("JSON Lines"), "jsonl");
     format_->addItem(tr("SQL INSERT"), "sql");
-    dialect_->addItem(tr("SQLite"), false);
-    dialect_->addItem(tr("PostgreSQL"), true);
+    dialect_->addItem(tr("SQLite"), "sqlite");
+    dialect_->addItem(tr("PostgreSQL"), "postgres");
+    dialect_->addItem(tr("MySQL"), "mysql");
     schema_->setPlaceholderText(tr("Optional"));
     table_->setToolTip(tr("One literal identifier; dots are not separators."));
     schema_->setToolTip(table_->toolTip());
@@ -206,11 +207,16 @@ void ExportDialog::start() {
         table.append(schema_->text());
     if (!table_->text().isEmpty())
         table.append(table_->text());
-    startExportTo(destination_->text(), format_->currentData().toString(), table,
-                  dialect_->currentData().toBool());
+    startExportToDialect(destination_->text(), format_->currentData().toString(), table,
+                         dialect_->currentData().toString());
 }
 void ExportDialog::startExportTo(const QString& path, const QString& format,
                                  const QStringList& table, bool postgres) {
+    startExportToDialect(path, format, table,
+                         postgres ? QStringLiteral("postgres") : QStringLiteral("sqlite"));
+}
+void ExportDialog::startExportToDialect(const QString& path, const QString& format,
+                                        const QStringList& table, const QString& dialect) {
     if (!adapter_ || !query_ || isRunning())
         return;
     if (path.isEmpty() || format_->findData(format) < 0 ||
@@ -230,7 +236,7 @@ void ExportDialog::startExportTo(const QString& path, const QString& format,
     format_->setCurrentIndex(format_->findData(format));
     schema_->setText(table.size() == 2 ? table.first() : QString{});
     table_->setText(table.isEmpty() ? QString{} : table.last());
-    dialect_->setCurrentIndex(postgres ? 1 : 0);
+    dialect_->setCurrentIndex(dialect_->findData(dialect));
     submitting_ = true;
     status_->clear();
     progressToast(this)->showProgress(tr("Export"), tr("Checking destination…"));
@@ -241,7 +247,7 @@ void ExportDialog::startExportTo(const QString& path, const QString& format,
         return;
     auto* watcher = new QFutureWatcher<bool>(this);
     connect(watcher, &QFutureWatcher<bool>::finished, this,
-            [this, watcher, query, token, path, format, table, postgres] {
+            [this, watcher, query, token, path, format, table, dialect] {
                 const bool exists = watcher->result();
                 watcher->deleteLater();
                 if (!adapter_ || query_ != query || submissionToken_ != token || !submitting_)
@@ -264,7 +270,8 @@ void ExportDialog::startExportTo(const QString& path, const QString& format,
                 }
                 status_->setText(tr("Starting export…"));
                 progressToast(this)->showProgress(tr("Export"), tr("Starting export…"));
-                const auto started = adapter_->startExport(query, path, format, table, postgres);
+                const auto started =
+                    adapter_->startExportDialect(query, path, format, table, dialect);
                 if (query_ != query || submissionToken_ != token || !submitting_) {
                     if (started && adapter_)
                         adapter_->cancelExport(*started);

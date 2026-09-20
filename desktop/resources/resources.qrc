@@ -13,6 +13,9 @@
     <file alias="chevron-right.svg">icons/chevron-right.svg</file>
     <file alias="chevron-left.svg">icons/chevron-left.svg</file>
     <file alias="search.svg">icons/search.svg</file>
+    <file alias="postgresql.svg">icons/postgresql.svg</file>
+    <file alias="mysql.png">icons/mysql.png</file>
+    <file alias="sqlite.svg">icons/sqlite.svg</file>
     <file alias="database.svg">icons/database.svg</file>
     <file alias="check.svg">icons/check.svg</file>
     <file alias="triangle-alert.svg">icons/triangle-alert.svg</file>

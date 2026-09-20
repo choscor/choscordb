@@ -57,6 +57,11 @@ pub type ExportId = Handle;
 pub use choscordb_export::{ExportFormat, SqlDialect};
 
 pub enum Event {
+    SessionSqlMode {
+        connection: ConnectionId,
+        mode: String,
+        request_token: u64,
+    },
     EditQuery {
         connection: ConnectionId,
         request_token: u64,
@@ -248,6 +253,8 @@ pub enum Event {
         parent: Option<ObjectId>,
         request_token: u64,
         objects: Vec<SchemaObject>,
+        offset: u64,
+        next_offset: Option<u64>,
     },
     MetadataFailed {
         connection: ConnectionId,

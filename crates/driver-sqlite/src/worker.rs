@@ -271,6 +271,8 @@ fn execute(
             transaction_active: Some(!db.is_autocommit()),
             affected_rows: affected,
             warnings: vec![],
+            has_more_results: false,
+            sql_mode: None,
         },
     }));
     let mut rows = match statement.query([]) {

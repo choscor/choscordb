@@ -90,10 +90,6 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
         button->hide();
     }
     auto* applyEdits = makeButton(toolbar, tr("Apply…"), "objectDataApply", design::Icon::Check);
-    auto* discardEdits =
-        makeButton(toolbar, tr("Discard"), "objectDataDiscard", design::Icon::Cancel);
-    refresh_ =
-        makeButton(toolbar, tr("Refresh object data"), "objectDataRefresh", design::Icon::Refresh);
     auto* cancelButton =
         makeButton(toolbar, tr("Cancel"), "objectDataCancel", design::Icon::Cancel);
     toolbar->addStretch(1);
@@ -132,7 +128,7 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
          deleteRows,
          setNull,
          applyEdits,
-         discardEdits,
+         nullptr,
          [this](quint64 connection) { return sql_ && sql_->activeManualTransaction(connection); },
          restoreRows},
         this);
@@ -143,20 +139,14 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     });
     cancelButton->setEnabled(cancel->isEnabled());
     connect(cancelButton, &QPushButton::clicked, cancel, &QAction::trigger);
-    connect(refresh_, &QPushButton::clicked, this,
-            [this] { openObject(connection_, object_, label_, kind_); });
-    refresh_->setEnabled(false);
     connect(result_, &QueryWorkspace::executionStateChanged, messages,
             [messages](const QString& state) { messages->setVisible(state == "failed"); });
     connect(result_, &QueryWorkspace::activityChanged, this, [this, cancelButton](bool busy) {
         if (sql_)
             sql_->setExternalWork(busy);
-        refresh_->setEnabled(!busy && !object_.isEmpty());
         cancelButton->setProperty("busy", busy);
         emit busyChanged(busy);
     });
-    connect(sql_, &QueryWorkspace::activityChanged, this,
-            [this](bool busy) { refresh_->setEnabled(!busy && !object_.isEmpty()); });
     connect(sql_, &QueryWorkspace::transactionStateChanged, this,
             [this](quint64, bool) { result_->refreshEditActions(); });
 }
@@ -164,19 +154,11 @@ void ObjectDataWorkspace::openObject(quint64 connection, const QString& object,
                                      const QString& label, const QString& kind) {
     if (!sql_ || !sql_->navigationAllowed() || !result_->navigationAllowed() || object.isEmpty())
         return;
-    connection_ = connection;
-    object_ = object;
-    label_ = label;
-    kind_ = kind;
     result_->openObjectData(connection, object, label, sql_->queryPreferences(), kind);
 }
 void ObjectDataWorkspace::invalidate() {
     if (!resolvePendingEdits())
         return;
-    object_.clear();
-    label_.clear();
-    kind_.clear();
-    refresh_->setEnabled(false);
     result_->invalidateResult();
 }
 bool ObjectDataWorkspace::resolvePendingEdits() {

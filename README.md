@@ -1,6 +1,6 @@
 # ChoscorDB
 
-A native, cross-platform SQL client built with Qt 6 Widgets and a Qt-independent Rust engine. PostgreSQL and SQLite are the MVP drivers. Licensed under GPL-3.0-or-later.
+A native, cross-platform SQL client built with Qt 6 Widgets and a Qt-independent Rust engine. PostgreSQL, SQLite, and MySQL are supported drivers. See [MySQL support and testing](docs/testing/mysql.md) for its current capabilities. Licensed under GPL-3.0-or-later.
 
 Implementation is in progress. See [the PRD](docs/prd-mvp.md), [UI reference](docs/design/README.md), and [verification status](docs/architecture/implementation-status.md). The visual reference is a design artifact, not a working desktop application.
 

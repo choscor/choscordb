@@ -1,0 +1,23 @@
+{
+  "description": "Database identity logos, downloaded 2026-09-20. Bundled for offline engine identification; original brand colors retained.",
+  "icons": {
+    "postgresql.svg": {
+      "sha256": "51f93e19516081fc7d6fe6ab9bbab07abe5f7819e28016eefacea6dea691bc54",
+      "url": "https://wiki.postgresql.org/images/a/a4/PostgreSQL_logo.3colors.svg",
+      "adaptation": "Unmodified upstream logo. See https://wiki.postgresql.org/wiki/Logo and https://www.postgresql.org/about/policies/trademarks/.",
+      "upstreamSha256": "51f93e19516081fc7d6fe6ab9bbab07abe5f7819e28016eefacea6dea691bc54"
+    },
+    "sqlite.svg": {
+      "sha256": "9cb48dce1011084d22a06f82826e930c5ac3568f2bd6d0a2ba7f71c4e2f89daa",
+      "url": "https://sqlite.org/src/raw/art/sqlite370.svg?ci=tip",
+      "adaptation": "Extracted database/feather symbol (path21, g37, path55), removed white background and wordmark, cropped square viewBox; original paths and colors unchanged. Upstream artwork: https://sqlite.org/src/dir?ci=tip&name=art.",
+      "upstreamSha256": "462c4ce8229b585dd6880cd308b121d9de63eb619db05e469598594e80d7b151"
+    },
+    "mysql.png": {
+      "sha256": "2d59bc428916752528280eac03330d712164163e2f3c476409f5c25d8a7c2778",
+      "url": "https://www.mysql.com/common/logos/logo-mysql-170x115.png",
+      "adaptation": "Unmodified official MySQL logo, downloaded 2026-09-21; original colors and proportions retained. MySQL is a trademark of Oracle and/or its affiliates. Logo usage policy: https://www.mysql.com/about/legal/logos.html. This provenance record does not grant trademark or logo-use permission.",
+      "upstreamSha256": "2d59bc428916752528280eac03330d712164163e2f3c476409f5c25d8a7c2778"
+    }
+  }
+}

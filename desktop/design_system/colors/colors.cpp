@@ -146,10 +146,10 @@ SemanticColors resolveColors(ResolvedAppearance appearance, const Accent&) {
     const QColor canvas(dark ? "#171d20" : "#f6f7f8");
     const QColor panel(dark ? "#20272b" : "#ffffff");
     const QColor text(dark ? "#e0e8e8" : "#222b32");
-    const QColor soft(dark ? "#2b3437" : "#f2f5f4");
+    const QColor soft(dark ? "#303030" : "#f2f2f2");
     const QColor green(dark ? "#65b493" : "#287f66");
     const QColor greenText(dark ? "#12231b" : "#ffffff");
-    const QColor greenBackground(dark ? "#283e34" : "#eaf4ef");
+    const QColor greenBackground(dark ? "#254b38" : "#ccebdc");
     const QColor line(dark ? "#343e43" : "#e7ebed");
     const QColor sidebar(dark ? "#1c2428" : "#fafbfb");
     // Accessibility extensions: the reference's light muted/red text does not

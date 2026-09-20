@@ -32,14 +32,17 @@ fn validate_name(name: &str) -> Result<(), NameError> {
     Ok(())
 }
 fn quote(output: &mut dyn Write, name: &str) -> fmt::Result {
-    output.write_char('"')?;
-    for part in name.split_inclusive('"') {
+    quote_with(output, name, '"')
+}
+fn quote_with(output: &mut dyn Write, name: &str, delimiter: char) -> fmt::Result {
+    output.write_char(delimiter)?;
+    for part in name.split_inclusive(delimiter) {
         output.write_str(part)?;
-        if part.ends_with('"') {
-            output.write_char('"')?;
+        if part.ends_with(delimiter) {
+            output.write_char(delimiter)?;
         }
     }
-    output.write_char('"')
+    output.write_char(delimiter)
 }
 // Count exact output first. No quoted-name vectors or growing format buffers.
 fn bounded(render: impl Fn(&mut dyn Write) -> fmt::Result) -> Result<String, NameError> {
@@ -102,7 +105,7 @@ pub fn template(
     let name = qualified_name(object)?;
     template_from_qualified(kind, &name, columns)
 }
-/// Accepts only complete double-quoted identifier components separated by dots.
+/// Accepts complete double-quoted or MySQL backtick-quoted components separated by dots.
 /// Dots within components, escaped quotes and Unicode remain unchanged.
 pub fn template_from_qualified(
     kind: TemplateKind,
@@ -113,6 +116,8 @@ pub fn template_from_qualified(
         return Err(NameError::ResourceLimit);
     }
     validate_qualified(name)?;
+    let mysql = name.starts_with('`');
+    let delimiter = if mysql { '`' } else { '"' };
     let mut input = name.len();
     for column in columns {
         input = input.saturating_add(column.len());
@@ -130,22 +135,30 @@ pub fn template_from_qualified(
             if columns.is_empty() {
                 out.write_char('*')?;
             } else {
-                column_list(out, columns)?;
+                column_list(out, columns, delimiter)?;
             }
             write!(out, " FROM {name};")
         }
         TemplateKind::Insert if columns.is_empty() => {
-            write!(out, "INSERT INTO {name} DEFAULT VALUES;")
+            if mysql {
+                write!(out, "INSERT INTO {name} () VALUES ();")
+            } else {
+                write!(out, "INSERT INTO {name} DEFAULT VALUES;")
+            }
         }
         TemplateKind::Insert => {
             write!(out, "INSERT INTO {name} (")?;
-            column_list(out, columns)?;
+            column_list(out, columns, delimiter)?;
             out.write_str(") VALUES (")?;
             for index in 0..columns.len() {
                 if index > 0 {
                     out.write_str(", ")?;
                 }
-                write!(out, "${}", index + 1)?;
+                if mysql {
+                    out.write_char('?')?;
+                } else {
+                    write!(out, "${}", index + 1)?;
+                }
             }
             out.write_str(");")
         }
@@ -155,20 +168,24 @@ pub fn template_from_qualified(
                 if index > 0 {
                     out.write_str(", ")?;
                 }
-                quote(out, column)?;
-                write!(out, " = ${}", index + 1)?;
+                quote_with(out, column, delimiter)?;
+                if mysql {
+                    out.write_str(" = ?")?;
+                } else {
+                    write!(out, " = ${}", index + 1)?;
+                }
             }
             out.write_str(" WHERE /* predicate */;")
         }
         TemplateKind::Delete => write!(out, "DELETE FROM {name} WHERE /* predicate */;"),
     })
 }
-fn column_list(out: &mut dyn Write, columns: &[&str]) -> fmt::Result {
+fn column_list(out: &mut dyn Write, columns: &[&str], delimiter: char) -> fmt::Result {
     for (index, column) in columns.iter().enumerate() {
         if index > 0 {
             out.write_str(", ")?;
         }
-        quote(out, column)?;
+        quote_with(out, column, delimiter)?;
     }
     Ok(())
 }
@@ -180,17 +197,21 @@ fn validate_qualified(name: &str) -> Result<(), NameError> {
         return Err(NameError::Nul);
     }
     let bytes = name.as_bytes();
+    let delimiter = bytes[0];
+    if !matches!(delimiter, b'"' | b'`') {
+        return Err(NameError::InvalidQualified);
+    }
     let mut index = 0;
     loop {
-        if bytes.get(index) != Some(&b'"') {
+        if bytes.get(index) != Some(&delimiter) {
             return Err(NameError::InvalidQualified);
         }
         index += 1;
         let start = index;
         let mut closed = false;
         while index < bytes.len() {
-            if bytes[index] == b'"' {
-                if bytes.get(index + 1) == Some(&b'"') {
+            if bytes[index] == delimiter {
+                if bytes.get(index + 1) == Some(&delimiter) {
                     index += 2;
                     continue;
                 }
@@ -218,6 +239,29 @@ fn validate_qualified(name: &str) -> Result<(), NameError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mysql_templates_preserve_backticks_and_use_mysql_parameters() {
+        assert_eq!(
+            template_from_qualified(TemplateKind::Insert, "`shop`.`odd``table`", &["id", "a`b"])
+                .unwrap(),
+            "INSERT INTO `shop`.`odd``table` (`id`, `a``b`) VALUES (?, ?);"
+        );
+        assert_eq!(
+            template_from_qualified(TemplateKind::Select, "`shop`.`items`", &["title"]).unwrap(),
+            "SELECT `title` FROM `shop`.`items`;"
+        );
+        assert_eq!(
+            template_from_qualified(TemplateKind::Update, "`items`", &["title"]).unwrap(),
+            "UPDATE `items` SET `title` = ? WHERE /* predicate */;"
+        );
+        assert_eq!(
+            template_from_qualified(TemplateKind::Insert, "`items`", &[]).unwrap(),
+            "INSERT INTO `items` () VALUES ();"
+        );
+        for invalid in ["`items`; DROP TABLE x", "`items`.", "`a`.\"b\"", "``"] {
+            assert!(template_from_qualified(TemplateKind::Select, invalid, &[]).is_err());
+        }
+    }
     #[test]
     fn strict_driver_qualified_names_preserve_components() {
         let name = "\"odd.schema\".\"a\"\"表\"";

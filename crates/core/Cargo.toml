@@ -21,6 +21,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"
 thiserror = "2"
 
 [dev-dependencies]
+choscordb-driver-mysql = { path = "../driver-mysql" }
 choscordb-driver-postgres = { path = "../driver-postgres" }
 choscordb-driver-sqlite = { path = "../driver-sqlite" }
 rusqlite = { version = "0.40", features = ["bundled"] }

@@ -1,5 +1,6 @@
 #include "design_system/icons.h"
 
+#include <QCryptographicHash>
 #include <QFile>
 #include <QPainter>
 #include <QSvgRenderer>
@@ -118,8 +119,9 @@ class IconsTest final : public QObject {
         using namespace choscordb::design;
         for (const auto& definition : iconCatalog()) {
             const auto role = definition.role;
-            if (role == Icon::AppMark) {
-                continue; // The app identity keeps its own colors, checked below.
+            if (role == Icon::AppMark || role == Icon::PostgreSQL || role == Icon::SQLite ||
+                role == Icon::MySQL) {
+                continue; // Brand identities keep their own colors, checked below.
             }
             for (const auto& color : {QColor("#171717"), QColor("#fafafa")}) {
                 const auto icon = themedIcon(role, color, 20);
@@ -145,7 +147,49 @@ class IconsTest final : public QObject {
         }
     }
 
-    void appIdentityKeepsWhiteGlyphAndGreenBackgroundAcrossThemes() {
+    void databaseLogosKeepDistinctBrandColorsAcrossThemes() {
+        using namespace choscordb::design;
+        QList<QImage> images;
+        for (const auto role : {Icon::PostgreSQL, Icon::SQLite}) {
+            QVERIFY(iconResourceDecodes(role));
+            const auto light = themedIcon(role, Qt::black, 32).pixmap(QSize(32, 32), 2.0);
+            const auto dark = themedIcon(role, Qt::white, 32).pixmap(QSize(32, 32), 2.0);
+            QCOMPARE(light.devicePixelRatio(), 2.0);
+            QCOMPARE(light.size(), QSize(64, 64));
+            QCOMPARE(light.toImage(), dark.toImage());
+            const auto image = light.toImage();
+            bool hasBlue = false;
+            for (int y = 0; y < image.height(); ++y)
+                for (int x = 0; x < image.width(); ++x) {
+                    const auto pixel = image.pixelColor(x, y);
+                    hasBlue |= pixel.alpha() > 128 && pixel.blue() > pixel.red() + 30;
+                }
+            QVERIFY(hasBlue);
+            images.append(image);
+        }
+        QVERIFY(images.at(0) != images.at(1));
+    }
+
+    void mysqlUsesOfficialOfflineArtworkAcrossThemes() {
+        using namespace choscordb::design;
+        const auto catalog = iconCatalog();
+        const auto found = std::find_if(catalog.cbegin(), catalog.cend(),
+                                        [](const auto& entry) { return entry.name == "mysql"; });
+        QVERIFY(found != catalog.cend());
+        QVERIFY(iconResourceDecodes(found->role));
+        QCOMPARE(iconResourcePath(found->role), QString(":/icons/mysql.png"));
+        const auto light = themedIcon(found->role, Qt::black, 32).pixmap(QSize(32, 32), 2.0);
+        const auto dark = themedIcon(found->role, Qt::white, 32).pixmap(QSize(32, 32), 2.0);
+        QVERIFY(!light.isNull());
+        QCOMPARE(light.toImage(), dark.toImage());
+        QFile artwork(iconResourcePath(found->role));
+        QVERIFY(artwork.open(QIODevice::ReadOnly));
+        // Pin the unmodified artwork downloaded from mysql.com's logo download page.
+        QCOMPARE(QCryptographicHash::hash(artwork.readAll(), QCryptographicHash::Sha256).toHex(),
+                 QByteArray("2d59bc428916752528280eac03330d712164163e2f3c476409f5c25d8a7c2778"));
+    }
+
+    void appIdentityKeepsDogAndOrangeGradientAcrossThemes() {
         using namespace choscordb::design;
         QVERIFY(iconResourceDecodes(Icon::AppMark));
         const auto dark = themedIcon(Icon::AppMark, QColor("#171717"), 128)
@@ -157,8 +201,16 @@ class IconsTest final : public QObject {
         QCOMPARE(dark, light);
         QCOMPARE(dark.size(), QSize(256, 256));
         QCOMPARE(dark.pixelColor(0, 0).alpha(), 0);
-        QCOMPARE(dark.pixelColor(128, 32), QColor("#16A34A"));
-        QCOMPARE(dark.pixelColor(128, 52), QColor(Qt::white));
+        const auto top = dark.pixelColor(128, 24);
+        const auto bottom = dark.pixelColor(128, 232);
+        QVERIFY(top.red() > 230 && top.green() > 60 && top.green() < 180);
+        QVERIFY(bottom.red() > 230 && bottom.green() > 140 && bottom.green() < 230);
+        QVERIFY(bottom.green() > top.green() + 30);
+        // The original dog's dark nose and cream muzzle remain visible.
+        const auto nose = dark.pixelColor(128, 140);
+        QVERIFY(nose.red() < 120 && nose.green() < 80 && nose.blue() < 40);
+        const auto muzzle = dark.pixelColor(128, 177);
+        QVERIFY(muzzle.red() > 230 && muzzle.green() > 170 && muzzle.blue() > 80);
     }
 
     void semanticCatalogIncludesApplicationActions() {
@@ -173,6 +225,7 @@ class IconsTest final : public QObject {
         }
         QVERIFY(names.contains("search"));
         QVERIFY(names.contains("database"));
+        QVERIFY(names.contains("mysql"));
         QVERIFY(names.contains("copy"));
         QVERIFY(names.contains("cancel"));
         QVERIFY(names.contains("square"));

@@ -79,6 +79,7 @@ choscordb_add_library(choscordb-desktop-services
   desktop/bridge/completion_service.cpp
   desktop/bridge/result_column_adapter.cpp
   desktop/bridge/engine_adapter.cpp
+  desktop/bridge/engine_adapter_storage.cpp
   desktop/models/shortcut_catalog.cpp
   desktop/models/history_model.cpp
   desktop/models/result_table_model.cpp
@@ -114,16 +115,30 @@ choscordb_add_library(choscordb-desktop
   desktop/app/query_settings.cpp
   desktop/app/editor_preferences.cpp
   desktop/app/main_window.cpp
+  desktop/app/main_window_ui.cpp
+  desktop/app/main_window_workspace.cpp
+  desktop/app/main_window_lifecycle.cpp
+  desktop/app/main_window_navigator.cpp
   desktop/app/workspace_recovery.cpp
   desktop/app/query_workspace.cpp
+  desktop/app/query_workspace_events.cpp
   desktop/app/object_data_workspace.cpp
   desktop/app/object_explorer.cpp
   desktop/app/navigator_controller.cpp
 )
 target_link_libraries(choscordb-desktop PUBLIC choscordb-widgets)
+if(APPLE)
+  enable_language(OBJCXX)
+  target_sources(choscordb-desktop PRIVATE desktop/app/macos_title_bar.mm)
+  _choscordb_register_first_party_target(choscordb-desktop desktop/app/macos_title_bar.mm)
+  target_link_libraries(choscordb-desktop PRIVATE "-framework AppKit")
+endif()
 
 if(BUILD_TESTING)
-  choscordb_add_library(choscordb-preview desktop/tools/preview/preview_window.cpp)
+  choscordb_add_library(choscordb-preview
+    desktop/tools/preview/preview_window.cpp
+    desktop/tools/preview/preview_standard.cpp
+  )
   target_link_libraries(choscordb-preview PUBLIC choscordb-design-system)
   target_link_libraries(choscordb-desktop PUBLIC choscordb-preview)
   target_compile_definitions(choscordb-desktop PRIVATE CHOSCORDB_DEVELOPMENT_PREVIEW)

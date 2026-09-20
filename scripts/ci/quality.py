@@ -109,6 +109,10 @@ def cpp_format():
     run_command([clang_format_tool(), "--dry-run", "--Werror", *cpp_files()])
 
 
+def cpp_size():
+    run_command([PYTHON, "scripts/ci/cpp_size.py"])
+
+
 def qss_lint():
     run_command([PYTHON, "scripts/ci/qss_policy.py"])
 
@@ -283,6 +287,7 @@ def native_tests():
 
 STAGES = {
     "cpp-format": cpp_format,
+    "cpp-size": cpp_size,
     "qss-lint": qss_lint,
     "python-lint": python_lint,
     "python-format": python_format,
@@ -300,6 +305,7 @@ STAGES = {
 
 FAST_STAGES = (
     "cpp-format",
+    "cpp-size",
     "qss-lint",
     "python-lint",
     "python-format",

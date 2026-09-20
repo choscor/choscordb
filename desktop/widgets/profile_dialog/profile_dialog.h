@@ -60,6 +60,7 @@ class ProfileDialog final : public DialogShell {
     QWidget* form_;
     QWidget* sqliteFields_;
     QWidget* postgresFields_;
+    QWidget* sshFields_;
     QLineEdit *name_, *path_, *host_, *database_, *user_, *rootCertificate_, *password_;
     QComboBox *driver_, *tls_;
     QCheckBox *readOnly_, *rememberPassword_;
@@ -70,6 +71,6 @@ class ProfileDialog final : public DialogShell {
     QLabel* status_;
     design::FieldValidation* nameValidation_;
     QList<QPushButton*> actions_;
-    QPushButton *sqliteChoice_, *postgresChoice_;
+    QPushButton *sqliteChoice_, *postgresChoice_, *mysqlChoice_;
 };
 } // namespace choscordb

@@ -5,6 +5,7 @@
 #include <QFont>
 #include <algorithm>
 #include <limits>
+#include <numeric>
 namespace choscordb {
 std::optional<DeferredValue> ResultTableModel::deferredValue(const QModelIndex& index) const {
     if (!index.isValid() || index.model() != this || index.row() < 0 || index.column() < 0 ||
@@ -230,6 +231,8 @@ bool ResultTableModel::setData(const QModelIndex& index, const QVariant& value, 
     if (role != Qt::EditRole || !(flags(index) & Qt::ItemIsEditable))
         return false;
     const QString text = value.toString();
+    if (text == data(index, Qt::EditRole).toString())
+        return true;
     const auto bytes = std::size_t(text.size()) * sizeof(QChar) + sizeof(Cell) + QtHeaderBytes;
     const auto oldBytes = editBytes_[index.row()][index.column()];
     if (bytes > byteBudget_ - residentBytes_ - (stagedBytes_ - oldBytes))
@@ -295,14 +298,34 @@ bool ResultTableModel::addRow() {
     return true;
 }
 void ResultTableModel::markDeleted(const QModelIndexList& selection, bool deleted) {
-    if (!canDelete_)
-        return;
+    std::vector<int> selectedRows;
     for (const auto& i : selection) {
-        if (!i.isValid() || i.model() != this || i.row() >= rowCount())
-            continue;
-        deleted_[i.row()] = deleted;
-        if (columnCount())
-            emit dataChanged(index(i.row(), 0), index(i.row(), columnCount() - 1));
+        if (i.isValid() && i.model() == this && i.row() < rowCount())
+            selectedRows.push_back(i.row());
+    }
+    std::sort(selectedRows.begin(), selectedRows.end(), std::greater<int>());
+    selectedRows.erase(std::unique(selectedRows.begin(), selectedRows.end()), selectedRows.end());
+    for (const int row : selectedRows) {
+        if (inserted_[row]) {
+            if (!deleted)
+                continue;
+            const auto bytes = columns_.size() * (sizeof(Cell) + sizeof(std::size_t)) +
+                               sizeof(Row) + sizeof(std::vector<bool>) +
+                               sizeof(std::vector<std::size_t>) + (columns_.size() + 7) / 8 + 2;
+            beginRemoveRows({}, row, row);
+            stagedBytes_ -= bytes + std::accumulate(editBytes_[row].begin(), editBytes_[row].end(),
+                                                    std::size_t{0});
+            rows_.erase(rows_.begin() + row);
+            touched_.erase(touched_.begin() + row);
+            editBytes_.erase(editBytes_.begin() + row);
+            inserted_.erase(inserted_.begin() + row);
+            deleted_.erase(deleted_.begin() + row);
+            endRemoveRows();
+        } else if (canDelete_) {
+            deleted_[row] = deleted;
+            if (columnCount())
+                emit dataChanged(index(row, 0), index(row, columnCount() - 1));
+        }
     }
     emit pendingEditsChanged(hasPendingEdits());
 }

@@ -341,7 +341,7 @@ class ComponentsTest final : public QObject {
         QCoreApplication::processEvents();
         QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#287f66"));
         button.setVariant(ButtonVariant::Secondary);
-        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#f2f5f4"));
+        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#f2f2f2"));
         button.setVariant(ButtonVariant::Outline);
         QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#ffffff"));
         theme.setMode(ThemeMode::Dark);

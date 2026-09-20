@@ -70,6 +70,10 @@ pub struct SchemaObject {
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct QuerySummary {
+    #[serde(default)]
+    pub has_more_results: bool,
+    #[serde(default)]
+    pub sql_mode: Option<String>,
     /// Authoritative connection transaction state when this execution summary was
     /// captured. None means the adapter cannot report it; do not infer SQL keywords.
     /// This is a snapshot, not a live connection state after subsequent operations.
@@ -78,6 +82,12 @@ pub struct QuerySummary {
     pub affected_rows: Option<u64>,
     pub warnings: Vec<String>,
 }
+#[derive(Clone, Debug, Default)]
+pub struct MetadataPage {
+    pub objects: Vec<SchemaObject>,
+    pub next_offset: Option<u64>,
+}
+
 /// A statement and its values as shown in the edit review. Values are always bound.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EditStatement {
@@ -200,6 +210,36 @@ pub trait Connection: Send {
         ))
     }
     async fn load_metadata(&mut self, parent: Option<ObjectId>) -> Result<Vec<SchemaObject>>;
+    async fn sql_mode(&mut self) -> Result<Option<String>> {
+        Ok(None)
+    }
+    async fn load_metadata_page(
+        &mut self,
+        parent: Option<ObjectId>,
+        offset: u64,
+        limit: u32,
+    ) -> Result<MetadataPage> {
+        if limit == 0 || limit > 10_000 {
+            return Err(DriverError::new(
+                ErrorKind::InvalidInput,
+                "Invalid metadata page size",
+            ));
+        }
+        let objects = self.load_metadata(parent).await?;
+        let start = usize::try_from(offset)
+            .map_err(|_| DriverError::new(ErrorKind::InvalidInput, "Invalid metadata offset"))?;
+        let end = start.saturating_add(limit as usize).min(objects.len());
+        let next_offset = (end < objects.len()).then_some(end as u64);
+        Ok(MetadataPage {
+            objects: objects
+                .into_iter()
+                .skip(start)
+                .take(limit as usize)
+                .collect(),
+            next_offset,
+        })
+    }
+
     async fn object_ddl(&mut self, _object: &ObjectId) -> Result<String> {
         Err(DriverError::new(
             ErrorKind::Unsupported,
@@ -227,6 +267,9 @@ pub trait DeferredReader: Send + Sync {
 }
 #[async_trait]
 pub trait ResultCursor: Send {
+    async fn next_result_set(&mut self) -> Result<bool> {
+        Ok(false)
+    }
     /// Independent object sources own a cancellation handle that cannot cancel SQL.
     fn independent_cancellation_handle(&self) -> Option<Arc<dyn CancelHandle>> {
         None

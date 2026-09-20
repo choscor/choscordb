@@ -14,13 +14,17 @@ from prepare_qt_notices import SHA256 as QTBASE_SHA256, SVG_SHA256 as QTSVG_SHA2
 
 QT_SOURCE_HASHES = {"qtbase": QTBASE_SHA256, "qtsvg": QTSVG_SHA256}
 LUCIDE_SOURCE_SHA256 = (
-    "102cdaf604413ecfda82cf14afd53cdfb0c1598197477e3cb5d5c8b861e21e4a"
+    "465a369ffe77706233b0195796ec77ea5d5d050ddd8af16a17b59f2b11a2381d"
 )
 
 GEIST_SOURCE_SHA256 = "1190ba834ead1873d41bbe2210659a927e1eef2ae252ed8d995fe05e17e476a6"
 
 SHADCN_SOURCE_SHA256 = (
     "8e2b3b92fdc4aa4a8b9b81b372ced0cd2a785e25365d157ef450b0773d44f81f"
+)
+
+DATABASE_LOGOS_SOURCE_SHA256 = (
+    "cbc41e1971859e0ef6549c900a5c97a90deea690fcbad7e649a08947da955f90"
 )
 
 QT_PLUGINS = {
@@ -289,13 +293,29 @@ def generate(
             raise ValueError(
                 "Lucide icon source snapshot does not match reviewed provenance"
             )
-    icon_hashes = {**lucide_icons, **local_icons}
+    database_sources = [
+        name
+        for name in payload
+        if name.endswith("/Resources/licenses/SOURCE-DATABASE-LOGOS.json")
+    ]
+    if (
+        len(database_sources) != 1
+        or digest(payload[database_sources[0]]) != DATABASE_LOGOS_SOURCE_SHA256
+        or source_hashes.get("desktop/resources/icons/SOURCE-DATABASE-LOGOS.json")
+        != DATABASE_LOGOS_SOURCE_SHA256
+    ):
+        raise ValueError("Database logo provenance differs from reviewed source")
+    database_record = json.loads(payload[database_sources[0]])
+    database_icons = {
+        name: record["sha256"] for name, record in database_record["icons"].items()
+    }
+    icon_hashes = {**lucide_icons, **local_icons, **database_icons}
     icon_prefix = app_licenses[0].removesuffix("licenses/LICENSE") + "icons/"
     staged_icons = {icon: icon_prefix + icon for icon in icon_hashes}
     actual_icon_paths = {
         name
         for name in payload
-        if "/Resources/icons/" in name and name.endswith(".svg")
+        if "/Resources/icons/" in name and name.endswith((".svg", ".png"))
     }
     if actual_icon_paths != set(staged_icons.values()):
         raise ValueError("Staged icon inventory differs from reviewed assets")
@@ -754,6 +774,14 @@ def generate(
             "Source: " + row["downloadLocation"],
             "",
             row["comment"],
+            "",
+        ]
+    notices += ["## Database identity artwork", ""]
+    for filename, record in sorted(database_record["icons"].items()):
+        notices += [
+            filename + ": " + record["adaptation"],
+            "",
+            "Source: " + record["url"],
             "",
         ]
     artifacts = {

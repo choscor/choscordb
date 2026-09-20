@@ -266,6 +266,12 @@ pub mod ffi {
     }
     #[derive(Default)]
     struct BridgeEvent {
+        sql_mode: String,
+        has_sql_mode: bool,
+        has_more_results: bool,
+        has_more_metadata: bool,
+        metadata_offset: u64,
+        next_metadata_offset: u64,
         has_lease: bool,
         lease_id: u64,
         reserved_bytes: u64,
@@ -512,6 +518,20 @@ pub mod ffi {
             parent: &str,
             request_token: u64,
         ) -> Submit;
+        fn refresh_sql_mode(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            request_token: u64,
+        ) -> Submit;
+        fn next_result_set(engine: &mut BridgeEngine, query: u64) -> Submit;
+        fn metadata_page_request(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            parent: &str,
+            request_token: u64,
+            offset: u64,
+            limit: u32,
+        ) -> Submit;
         fn metadata(engine: &mut BridgeEngine, connection: u64, parent: &str) -> Submit;
         fn load_value_chunk(
             engine: &mut BridgeEngine,
@@ -543,6 +563,14 @@ pub mod ffi {
             table: Vec<String>,
             postgres: bool,
         ) -> Submit;
+        fn start_export_dialect(
+            engine: &mut BridgeEngine,
+            query: u64,
+            destination: &str,
+            format: &str,
+            table: Vec<String>,
+            dialect: &str,
+        ) -> Submit;
         fn cancel_export(engine: &mut BridgeEngine, job: u64) -> Submit;
         fn cancel(engine: &mut BridgeEngine, query: u64) -> Submit;
         fn commit(engine: &mut BridgeEngine, connection: u64) -> Submit;
@@ -556,6 +584,19 @@ pub mod ffi {
         fn memory_usage(engine: &BridgeEngine) -> MemoryUsageDto;
         fn cache_usage(engine: &BridgeEngine) -> CacheUsageDto;
         fn sql_execution_range(
+            sql: &str,
+            cursor: u64,
+            selection_start: u64,
+            selection_end: u64,
+        ) -> SqlRange;
+        fn sql_execution_range_mysql_mode(
+            sql: &str,
+            cursor: u64,
+            selection_start: u64,
+            selection_end: u64,
+            mode: &str,
+        ) -> SqlRange;
+        fn sql_execution_range_mysql(
             sql: &str,
             cursor: u64,
             selection_start: u64,
@@ -599,6 +640,7 @@ fn make_engine(config: EngineConfig) -> Box<BridgeEngine> {
             vec![
                 Arc::new(choscordb_driver_sqlite::SqliteDriver),
                 Arc::new(choscordb_driver_postgres::PostgresDriver),
+                Arc::new(choscordb_driver_mysql::MysqlDriver::new()),
             ],
             credentials,
         )
@@ -844,6 +886,57 @@ pub fn sql_execution_range(
     })
     .unwrap_or_default()
 }
+pub fn sql_execution_range_mysql(
+    sql: &str,
+    cursor: u64,
+    selection_start: u64,
+    selection_end: u64,
+) -> ffi::SqlRange {
+    sql_execution_range_mysql_mode(sql, cursor, selection_start, selection_end, "")
+}
+
+pub fn sql_execution_range_mysql_mode(
+    sql: &str,
+    cursor: u64,
+    selection_start: u64,
+    selection_end: u64,
+    mode: &str,
+) -> ffi::SqlRange {
+    catch_unwind(|| {
+        let Ok(cursor) = usize::try_from(cursor) else {
+            return ffi::SqlRange::default();
+        };
+        let selection = if selection_start == selection_end {
+            None
+        } else {
+            let (Ok(start), Ok(end)) = (
+                usize::try_from(selection_start),
+                usize::try_from(selection_end),
+            ) else {
+                return ffi::SqlRange::default();
+            };
+            Some(start..end)
+        };
+        let Some(range) = choscordb_sql_language::execution_range_mysql_with_mode(
+            sql,
+            cursor,
+            selection,
+            choscordb_sql_language::MysqlSqlMode::from_sql_mode(mode),
+        ) else {
+            return ffi::SqlRange::default();
+        };
+        ffi::SqlRange {
+            valid: true,
+            start: range.start as u64,
+            end: range.end as u64,
+            confirmation_required: choscordb_sql_language::classify_mysql_with_mode(
+                &sql[range.clone()],
+                choscordb_sql_language::MysqlSqlMode::from_sql_mode(mode),
+            ) == choscordb_sql_language::Safety::ConfirmationRequired,
+        }
+    })
+    .unwrap_or_default()
+}
 
 pub fn load_value(engine: &mut BridgeEngine, query: u64, handle: u64) -> ffi::Submit {
     submit(engine, |e| {
@@ -978,19 +1071,36 @@ pub fn start_export(
     table: Vec<String>,
     postgres: bool,
 ) -> ffi::Submit {
+    start_export_dialect(
+        engine,
+        query,
+        destination,
+        format,
+        table,
+        if postgres { "postgres" } else { "sqlite" },
+    )
+}
+
+pub fn start_export_dialect(
+    engine: &mut BridgeEngine,
+    query: u64,
+    destination: &str,
+    format: &str,
+    table: Vec<String>,
+    dialect: &str,
+) -> ffi::Submit {
     submit(engine, |e| {
+        let dialect = match dialect {
+            "sqlite" => choscordb_core::SqlDialect::Sqlite,
+            "postgres" => choscordb_core::SqlDialect::Postgres,
+            "mysql" => choscordb_core::SqlDialect::Mysql,
+            _ => return Err("Unknown SQL dialect".into()),
+        };
         let format = match format {
             "csv" => choscordb_core::ExportFormat::Csv,
             "json" => choscordb_core::ExportFormat::Json,
             "jsonl" => choscordb_core::ExportFormat::JsonLines,
-            "sql" => choscordb_core::ExportFormat::SqlInsert {
-                table,
-                dialect: if postgres {
-                    choscordb_core::SqlDialect::Postgres
-                } else {
-                    choscordb_core::SqlDialect::Sqlite
-                },
-            },
+            "sql" => choscordb_core::ExportFormat::SqlInsert { table, dialect },
             _ => return Err("Unknown export format".into()),
         };
         e.start_export(unpack(query), destination.into(), format)
@@ -1012,6 +1122,27 @@ fn profile(dto: ffi::ProfileDto) -> std::result::Result<choscordb_core::Connecti
         "sqlite" => ProfileConfiguration::Sqlite {
             path: dto.path,
             read_only: dto.read_only,
+        },
+        "mysql" => ProfileConfiguration::Mysql {
+            ssh: dto.ssh_enabled.then_some(choscordb_driver_api::SshTunnel {
+                host: dto.ssh_host,
+                port: dto.ssh_port,
+                user: dto.ssh_user,
+                identity_file: (!dto.ssh_identity_file.is_empty()).then_some(dto.ssh_identity_file),
+            }),
+            host: dto.host,
+            port: dto.port,
+            database: dto.database,
+            user: dto.user,
+            tls: PostgresTls {
+                mode: match dto.tls.as_str() {
+                    "disable" => TlsMode::Disable,
+                    "verify_full" => TlsMode::VerifyFull,
+                    _ => return Err("Invalid TLS mode".into()),
+                },
+                root_certificate_path: (!dto.root_certificate.is_empty())
+                    .then_some(dto.root_certificate),
+            },
         },
         "postgres" => ProfileConfiguration::Postgres {
             host: dto.host,
@@ -1327,5 +1458,45 @@ pub fn edit_query_request(
         )
         .map(|()| connection)
         .map_err(|error| error.to_string())
+    })
+}
+
+pub fn next_result_set(engine: &mut BridgeEngine, query: u64) -> ffi::Submit {
+    submit(engine, |e| {
+        e.next_result_set(unpack(query))
+            .map(|_| query)
+            .map_err(|e| e.to_string())
+    })
+}
+pub fn metadata_page_request(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    parent: &str,
+    request_token: u64,
+    offset: u64,
+    limit: u32,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        e.load_metadata_page(
+            unpack(connection),
+            (!parent.is_empty()).then(|| ObjectId(parent.into())),
+            request_token,
+            offset,
+            limit,
+        )
+        .map(|_| connection)
+        .map_err(|e| e.to_string())
+    })
+}
+
+pub fn refresh_sql_mode(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    request_token: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        e.refresh_sql_mode(unpack(connection), request_token)
+            .map(|_| connection)
+            .map_err(|e| e.to_string())
     })
 }

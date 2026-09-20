@@ -123,7 +123,12 @@ QStyle::State Button::visualState() const {
     return option.state;
 }
 void Button::focusInEvent(QFocusEvent* event) {
-    keyboardFocus_ = event->reason() != Qt::MouseFocusReason;
+    // Window activation and popup dismissal restore focus without changing its origin.
+    if (event->reason() == Qt::MouseFocusReason)
+        keyboardFocus_ = false;
+    else if (event->reason() == Qt::TabFocusReason || event->reason() == Qt::BacktabFocusReason ||
+             event->reason() == Qt::ShortcutFocusReason)
+        keyboardFocus_ = true;
     QPushButton::focusInEvent(event);
     update();
 }

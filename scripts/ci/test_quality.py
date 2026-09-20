@@ -38,6 +38,7 @@ class QualityCommandTest(unittest.TestCase):
         self.assertEqual(
             commands[1:],
             [
+                [quality.PYTHON, "scripts/ci/cpp_size.py"],
                 [quality.PYTHON, "scripts/ci/qss_policy.py"],
                 ["ruff", "check", "scripts", "examples"],
                 ["ruff", "format", "--check", "scripts", "examples"],
@@ -112,6 +113,7 @@ class QualityCommandTest(unittest.TestCase):
             "python-lint": 1,
             "python-format": 1,
             "cpp-format": 1,
+            "cpp-size": 1,
             "actionlint": 1,
             "cargo-deny": 1,
             "native-dependencies": 1,

@@ -3,6 +3,7 @@ use choscordb_driver_api::*;
 pub enum SqlDialect {
     Sqlite,
     Postgres,
+    Mysql,
 }
 #[derive(Clone, Debug)]
 pub enum ExportFormat {
@@ -105,11 +106,19 @@ pub(crate) fn json(value: &Value) -> Result<String> {
         _ => quoted(&plain(value)?),
     })
 }
-pub(crate) fn identifier(value: &str) -> Result<String> {
+pub(crate) fn identifier(value: &str, dialect: SqlDialect) -> Result<String> {
     if value.is_empty() || value.contains('\0') {
         return Err(invalid("Invalid SQL identifier"));
     }
-    Ok(format!("\"{}\"", value.replace('"', "\"\"")))
+    let quote = if matches!(dialect, SqlDialect::Mysql) {
+        '`'
+    } else {
+        '"'
+    };
+    Ok(format!(
+        "{quote}{}{quote}",
+        value.replace(quote, &format!("{quote}{quote}"))
+    ))
 }
 pub(crate) fn sql(value: &Value, dialect: SqlDialect) -> Result<String> {
     Ok(match value {
@@ -125,17 +134,25 @@ pub(crate) fn sql(value: &Value, dialect: SqlDialect) -> Result<String> {
         Value::Decimal(v) if valid_decimal(v) => v.clone(),
         Value::Decimal(_) => return Err(invalid("Invalid exact decimal representation")),
         Value::Binary(v) => match dialect {
-            SqlDialect::Sqlite => format!("X'{}'", hex(v)),
+            SqlDialect::Sqlite | SqlDialect::Mysql => format!("X'{}'", hex(v)),
             SqlDialect::Postgres => format!("decode('{}', 'hex')", hex(v)),
         },
         Value::Deferred { .. } => return Err(invalid("Deferred value was not resolved")),
         _ => {
             let value = plain(value)?;
+            if matches!(dialect, SqlDialect::Mysql) {
+                return Ok(format!(
+                    "CONVERT(X'{}' USING utf8mb4)",
+                    hex(value.as_bytes())
+                ));
+            }
             if value.contains('\0') {
                 return Err(invalid("SQL text literal contains NUL"));
             }
             match dialect {
-                SqlDialect::Sqlite => format!("'{}'", value.replace('\'', "''")),
+                SqlDialect::Sqlite | SqlDialect::Mysql => {
+                    format!("'{}'", value.replace('\'', "''"))
+                }
                 SqlDialect::Postgres => {
                     format!("E'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
                 }
@@ -161,15 +178,15 @@ pub(crate) fn header(format: &ExportFormat, columns: &[Column]) -> Result<String
             "{{\"columns\":{}}}\n",
             serde_json::to_string(columns).map_err(|_| invalid("Invalid columns"))?
         )),
-        ExportFormat::SqlInsert { table, .. } => {
+        ExportFormat::SqlInsert { table, dialect } => {
             if table.is_empty() {
                 return Err(invalid("SQL export requires a table name"));
             }
             for part in table {
-                identifier(part)?;
+                identifier(part, *dialect)?;
             }
             for column in columns {
-                identifier(&column.name)?;
+                identifier(&column.name, *dialect)?;
             }
             Ok(String::new())
         }
@@ -207,12 +224,12 @@ pub fn encode_row(
             "INSERT INTO {} ({}) VALUES ({});\n",
             table
                 .iter()
-                .map(|s| identifier(s))
+                .map(|s| identifier(s, *dialect))
                 .collect::<Result<Vec<_>>>()?
                 .join("."),
             columns
                 .iter()
-                .map(|c| identifier(&c.name))
+                .map(|c| identifier(&c.name, *dialect))
                 .collect::<Result<Vec<_>>>()?
                 .join(", "),
             row.iter()

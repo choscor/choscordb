@@ -74,6 +74,15 @@ pub enum ProfileConfiguration {
         path: String,
         read_only: bool,
     },
+    Mysql {
+        host: String,
+        port: u16,
+        database: String,
+        user: String,
+        tls: PostgresTls,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ssh: Option<SshTunnel>,
+    },
     Postgres {
         host: String,
         port: u16,
@@ -588,6 +597,23 @@ impl ProfileConfiguration {
                 path: path.into(),
                 read_only: *read_only,
             },
+            Self::Mysql {
+                host,
+                port,
+                database,
+                user,
+                tls,
+                ssh,
+            } => ConnectionOptions::Mysql {
+                host: host.clone(),
+                port: *port,
+                database: database.clone(),
+                user: user.clone(),
+                password,
+                ssh: ssh.clone(),
+                tls: tls.mode.clone(),
+                root_certificate: tls.root_certificate_path.as_ref().map(Into::into),
+            },
             Self::Postgres {
                 host,
                 port,
@@ -631,6 +657,27 @@ impl ConnectionProfile {
         }
         match &self.configuration {
             ProfileConfiguration::Sqlite { path, .. } => validate_field(path, 16 * 1024)?,
+            ProfileConfiguration::Mysql {
+                host,
+                port,
+                database,
+                user,
+                tls,
+                ssh,
+            } => {
+                if let Some(ssh) = ssh {
+                    ssh.validate().map_err(|_| StorageError::InvalidProfile)?;
+                }
+                if *port == 0 {
+                    return Err(StorageError::InvalidProfile);
+                }
+                for field in [host, database, user] {
+                    validate_field(field, 16 * 1024)?;
+                }
+                if let Some(path) = &tls.root_certificate_path {
+                    validate_field(path, 16 * 1024)?;
+                }
+            }
             ProfileConfiguration::Postgres {
                 host,
                 port,

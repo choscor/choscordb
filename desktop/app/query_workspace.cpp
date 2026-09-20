@@ -1,5 +1,6 @@
 #include "app/query_workspace.h"
 #include "app/query_settings.h"
+#include "app/query_workspace_p.h"
 #include "bridge/engine_adapter.h"
 #include "bridge/result_column_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
@@ -17,6 +18,7 @@
 #include <QDialogButtonBox>
 #include <QEventLoop>
 #include <QFileInfo>
+#include <QHeaderView>
 #include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
@@ -28,40 +30,19 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <algorithm>
-#include <atomic>
 namespace choscordb {
-namespace {
-quint64 nextEditRequestToken() {
-    static std::atomic<quint64> token{1};
-    return token.fetch_add(1, std::memory_order_relaxed);
-}
-QString text(const rust::String& value) {
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
-}
-Cell cell(const CellDto& value) {
-    const auto kind = text(value.kind);
-    if (kind == "null")
-        return std::monostate{};
-    if (kind == "boolean")
-        return value.boolean;
-    if (kind == "integer")
-        return static_cast<qint64>(value.integer);
-    if (kind == "real")
-        return value.real;
-    if (kind == "binary")
-        return QByteArray(reinterpret_cast<const char*>(value.bytes.data()),
-                          static_cast<qsizetype>(value.bytes.size()));
-    if (kind == "deferred")
-        return DeferredValue{value.handle, value.byte_length, text(value.database_type)};
-    return text(value.text);
-}
-} // namespace
+using query_workspace_detail::nextEditRequestToken;
+using query_workspace_detail::text;
 QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     : QObject(parent), widgets_(std::move(widgets)),
       adapter_(widgets_.sharedAdapter ? widgets_.sharedAdapter
                                       : new EngineAdapter(this, widgets_.storagePath)),
       model_(new ResultTableModel(this)) {
     widgets_.grid->setModel(model_);
+    widgets_.grid->horizontalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
+    widgets_.grid->verticalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
+    connect(widgets_.grid->selectionModel(), &QItemSelectionModel::selectionChanged, this,
+            [this] { updateActions(); });
     connect(widgets_.grid->selectionModel(), &QItemSelectionModel::currentChanged, this,
             [this](const QModelIndex&, const QModelIndex&) { updateActions(); });
     if (!widgets_.objectReadOnly)
@@ -116,8 +97,11 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 model_->markDeleted(widgets_.grid->selectionModel()->selectedIndexes(), false);
         });
     if (widgets_.setNull)
-        connect(widgets_.setNull, &QPushButton::clicked, this,
-                [this] { model_->setNull(widgets_.grid->currentIndex()); });
+        connect(widgets_.setNull, &QPushButton::clicked, this, [this] {
+            const auto selection = widgets_.grid->selectionModel()->selectedIndexes();
+            for (const auto& index : selection)
+                model_->setNull(index);
+        });
     if (widgets_.discardEdits)
         connect(widgets_.discardEdits, &QPushButton::clicked, model_,
                 &ResultTableModel::discardEdits);
@@ -189,13 +173,21 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         updateActions();
     });
     connect(widgets_.nextPage, &QPushButton::clicked, this, [this] {
-        if (query_ && hasMore_ && !fetching_ && queryAvailable() && !exporting_) {
+        if (query_ && (hasMore_ || hasMoreResults_) && !fetching_ && queryAvailable() &&
+            !exporting_) {
             if (!resolvePendingEdits())
                 return;
             fetching_ = true;
             busy_ = true;
             updateActions();
-            adapter_->fetchPageAt(*query_, currentPage_.value_or(0) + 1);
+            if (hasMore_) {
+                adapter_->fetchPageAt(*query_, currentPage_.value_or(0) + 1);
+            } else {
+                hasMoreResults_ = false;
+                currentPage_.reset();
+                executionFinished_ = false;
+                adapter_->nextResultSet(*query_);
+            }
         }
     });
     if (widgets_.previousPage)
@@ -253,10 +245,10 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                         [copyScope, scope] { copyScope(scope); });
             }
             if (widgets_.addRow || widgets_.deleteRows || widgets_.restoreRows ||
-                (widgets_.objectReadOnly && widgets_.setNull)) {
+                widgets_.setNull) {
                 menu.addSeparator();
                 for (auto* button : {widgets_.addRow, widgets_.deleteRows, widgets_.restoreRows,
-                                     widgets_.objectReadOnly ? widgets_.setNull : nullptr}) {
+                                     widgets_.setNull}) {
                     if (!button)
                         continue;
                     auto* action = menu.addAction(button->accessibleName());
@@ -386,7 +378,12 @@ bool QueryWorkspace::applyStagedEdits() {
         message(tr("Commit or roll back the manual transaction before applying grid changes."));
         return false;
     }
-    const auto quoted = [](QString name) {
+    const bool mysql = driverForConnection(*queryConnection_) == QStringLiteral("mysql");
+    const auto quoted = [mysql](QString name) {
+        if (mysql) {
+            name.replace('`', QStringLiteral("``"));
+            return QStringLiteral("`") + name + QStringLiteral("`");
+        }
         name.replace('"', QStringLiteral("\"\""));
         return QStringLiteral("\"") + name + QStringLiteral("\"");
     };
@@ -418,11 +415,12 @@ bool QueryWorkspace::applyStagedEdits() {
                     names << quoted(editColumnNames_[c]);
                     values << bind(rows[r][c], c);
                 }
-            statement.sql =
-                names.isEmpty()
-                    ? QStringLiteral("INSERT INTO %1 DEFAULT VALUES").arg(editQualifiedName_)
-                    : QStringLiteral("INSERT INTO %1 (%2) VALUES (%3)")
-                          .arg(editQualifiedName_, names.join(", "), values.join(", "));
+            statement.sql = names.isEmpty()
+                                ? (mysql ? QStringLiteral("INSERT INTO %1 () VALUES ()")
+                                         : QStringLiteral("INSERT INTO %1 DEFAULT VALUES"))
+                                      .arg(editQualifiedName_)
+                                : QStringLiteral("INSERT INTO %1 (%2) VALUES (%3)")
+                                      .arg(editQualifiedName_, names.join(", "), values.join(", "));
         } else {
             QStringList assignments, predicates;
             if (!deleted[r])
@@ -441,6 +439,7 @@ bool QueryWorkspace::applyStagedEdits() {
                 }
                 predicates << quoted(editColumnNames_[c]) +
                                   (postgres ? QStringLiteral(" IS NOT DISTINCT FROM ")
+                                   : mysql  ? QStringLiteral(" <=> ")
                                             : QStringLiteral(" IS ")) +
                                   bind(originals[r][c], c);
             }
@@ -533,8 +532,9 @@ bool QueryWorkspace::queryAvailable() const {
     return queryConnection_ && connectionAvailable(*queryConnection_);
 }
 bool QueryWorkspace::workInFlight() const {
-    return externalWork_ || ((cancellationPending_ || busy_ || fetching_ || exporting_) &&
-                             !(queryConnection_ && disconnecting_.contains(*queryConnection_)));
+    return externalWork_ || executionModeToken_ != 0 ||
+           ((cancellationPending_ || busy_ || fetching_ || exporting_) &&
+            !(queryConnection_ && disconnecting_.contains(*queryConnection_)));
 }
 void QueryWorkspace::setExternalWork(bool busy) {
     if (externalWork_ == busy)
@@ -595,6 +595,7 @@ void QueryWorkspace::showProfiles(const QString& profileId) {
         connect(profiles_, &ProfileDialog::connectionSubmitted, this,
                 [this](const SavedProfile& profile, quint64 id, bool savedProfile) {
                     pendingConnections_.insert(id, profile.name);
+                    connectionDrivers_.insert(id, profile.driver);
                     if (savedProfile)
                         connectionProfiles_.insert(id, profile.id);
                 });
@@ -639,6 +640,7 @@ void QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
     clearResult();
     currentPage_.reset();
     hasMore_ = false;
+    hasMoreResults_ = false;
     fetching_ = false;
     invalidatePending_ = false;
     cancellationPending_ = false;
@@ -692,13 +694,16 @@ void QueryWorkspace::invalidateResult() {
     queryConnection_.reset();
     currentPage_.reset();
     hasMore_ = false;
+    hasMoreResults_ = false;
     resultOrigin_.clear();
     setExecutionState(QStringLiteral("disconnected"), tr("Open Data to read an object."));
     updateActions();
 }
 void QueryWorkspace::connectSqlite(const QString& path) {
-    if (auto id = adapter_->connectSqlite(path))
+    if (auto id = adapter_->connectSqlite(path)) {
         pendingConnections_.insert(*id, path);
+        connectionDrivers_.insert(*id, QStringLiteral("sqlite"));
+    }
 }
 std::optional<quint64> QueryWorkspace::connectSavedProfile(const SavedProfile& profile) {
     if (stopping_ || workInFlight()) {
@@ -709,6 +714,7 @@ std::optional<quint64> QueryWorkspace::connectSavedProfile(const SavedProfile& p
     if (id) {
         pendingConnections_.insert(*id, profile.name);
         connectionProfiles_.insert(*id, profile.id);
+        connectionDrivers_.insert(*id, profile.driver);
     }
     return id;
 }
@@ -765,8 +771,8 @@ void QueryWorkspace::updateActions() {
     widgets_.connections->setEnabled(widgets_.connections->count() > 0 && !inFlight && !stopping_);
     widgets_.mode->setEnabled(connected && !inFlight);
     widgets_.run->setEnabled(connected && !inFlight && querySettings_->isReady());
-    widgets_.cancel->setEnabled(!cancellationPending_ && query_.has_value() && busy_ &&
-                                queryAvailable() &&
+    widgets_.cancel->setEnabled(!cancellationPending_ && query_.has_value() &&
+                                (busy_ || executionModeToken_ != 0) && queryAvailable() &&
                                 widgets_.summary->property("state") != "cancelling");
     widgets_.cancel->setText(widgets_.summary->property("state") == "cancelling" ? tr("Cancelling…")
                                                                                  : tr("Cancel"));
@@ -775,7 +781,11 @@ void QueryWorkspace::updateActions() {
     const bool manual = widgets_.mode->currentIndex() == 1;
     widgets_.commit->setEnabled(connected && manual && !inFlight);
     widgets_.rollback->setEnabled(connected && manual && !inFlight);
-    widgets_.nextPage->setEnabled(query_.has_value() && hasMore_ && !inFlight && queryAvailable());
+    widgets_.nextPage->setEnabled(query_.has_value() && (hasMore_ || hasMoreResults_) &&
+                                  !inFlight && queryAvailable());
+    widgets_.nextPage->setToolTip(!hasMore_ && hasMoreResults_ ? tr("Next result")
+                                                               : tr("Next page"));
+    widgets_.nextPage->setAccessibleName(widgets_.nextPage->toolTip());
     if (widgets_.previousPage)
         widgets_.previousPage->setEnabled(query_ && currentPage_ && *currentPage_ > 0 &&
                                           !inFlight && queryAvailable());
@@ -786,18 +796,26 @@ void QueryWorkspace::updateActions() {
             model_->canInsert()
                 ? widgets_.addRow->accessibleName()
                 : (editReason_.isEmpty() ? tr("This result is read only.") : editReason_));
+    const bool canRemoveRows =
+        model_->canDelete() || std::any_of(model_->inserted().begin(), model_->inserted().end(),
+                                           [](bool inserted) { return inserted; });
     if (widgets_.deleteRows)
-        widgets_.deleteRows->setEnabled(model_->canDelete() && model_->rowCount() && !inFlight);
+        widgets_.deleteRows->setEnabled(canRemoveRows && model_->rowCount() && !inFlight);
     if (widgets_.deleteRows)
-        widgets_.deleteRows->setToolTip(model_->canDelete() || editReason_.isEmpty()
+        widgets_.deleteRows->setToolTip(canRemoveRows || editReason_.isEmpty()
                                             ? widgets_.deleteRows->accessibleName()
                                             : editReason_);
     if (widgets_.restoreRows)
-        widgets_.restoreRows->setEnabled(model_->canDelete() && model_->hasPendingEdits() &&
-                                         !inFlight);
-    if (widgets_.setNull)
+        widgets_.restoreRows->setEnabled(
+            !inFlight && std::any_of(model_->deleted().begin(), model_->deleted().end(),
+                                     [](bool deleted) { return deleted; }));
+    if (widgets_.setNull) {
+        const auto selection = widgets_.grid->selectionModel()->selectedIndexes();
         widgets_.setNull->setEnabled(
-            !inFlight && (model_->flags(widgets_.grid->currentIndex()) & Qt::ItemIsEditable));
+            !inFlight && std::any_of(selection.begin(), selection.end(), [this](const auto& index) {
+                return model_->flags(index) & Qt::ItemIsEditable;
+            }));
+    }
     if (widgets_.applyEdits)
         widgets_.applyEdits->setEnabled(
             model_->hasPendingEdits() && !inFlight &&
@@ -825,11 +843,32 @@ void QueryWorkspace::execute() {
         return;
     if (!resolvePendingEdits())
         return;
+    if (driverForConnection(*connection) == "mysql" && !executionModeReady_) {
+        if (executionModeToken_ != 0)
+            return;
+        executionModeToken_ = nextEditRequestToken();
+        executionModeEditor_ = editor;
+        executionModeSql_ = editor->text();
+        executionModeCursor_ =
+            static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS));
+        executionModeStart_ =
+            static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONSTART));
+        executionModeEnd_ =
+            static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONEND));
+        executionModeConnection_ = connection;
+        if (!adapter_->refreshSqlMode(*connection, executionModeToken_)) {
+            executionModeToken_ = 0;
+            executionModeConnection_.reset();
+        }
+        updateActions();
+        return;
+    }
     const auto sql = editor->text();
     const auto range = EngineAdapter::executionRange(
         sql, static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS)),
         static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONSTART)),
-        static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONEND)));
+        static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONEND)),
+        driverForConnection(*connection), connectionSqlModes_.value(*connection));
     if (!range.valid) {
         message(tr("No executable statement at the cursor."));
         return;
@@ -871,6 +910,7 @@ void QueryWorkspace::execute() {
     clearResult();
     currentPage_.reset();
     hasMore_ = false;
+    hasMoreResults_ = false;
     fetching_ = false;
     busy_ = query_.has_value();
     executionFinished_ = !query_.has_value();
@@ -878,307 +918,6 @@ void QueryWorkspace::execute() {
     setExecutionState(busy_ ? QStringLiteral("queued") : QStringLiteral("failed"),
                       busy_ ? tr("◷ Queued") : tr("! Submission failed"));
     updateActions();
-}
-void QueryWorkspace::handleEvent(const BridgeEvent& e) {
-    const auto kind = text(e.kind);
-    if ((kind == "edit_target" || kind == "edit_target_failed" || kind == "edit_query" ||
-         kind == "edit_query_failed") &&
-        e.request_token == editTargetToken_ && queryConnection_ == e.id) {
-        editColumnNames_.clear();
-        editKey_.clear();
-        editGenerated_.clear();
-        editQualifiedName_.clear();
-        if (kind.endsWith("_failed"))
-            editReason_ = text(e.error);
-        else {
-            editQualifiedName_ = text(e.edit_target.qualified_name);
-            editReason_ = text(e.edit_target.reason);
-            editParameterStyle_ = text(e.edit_target.parameter_style);
-            if (kind == "edit_query") {
-                for (const auto& source : e.edit_source_columns) {
-                    const auto name = text(source);
-                    editColumnNames_.push_back(name);
-                    bool key = false, generated = true;
-                    for (const auto& column : e.edit_target.columns)
-                        if (name == text(column.name)) {
-                            key = column.key;
-                            generated = column.generated;
-                            break;
-                        }
-                    editKey_.push_back(key);
-                    editGenerated_.push_back(generated);
-                }
-            } else {
-                for (const auto& column : e.edit_target.columns) {
-                    editColumnNames_.push_back(text(column.name));
-                    editKey_.push_back(column.key);
-                    editGenerated_.push_back(column.generated);
-                }
-            }
-        }
-        if (kind.startsWith("edit_query"))
-            widgets_.grid->setToolTip(editReason_);
-        configureEditability();
-        updateActions();
-        return;
-    }
-    if ((kind == "edit_applied" || kind == "edit_failed") && e.request_token == editApplyToken_ &&
-        queryConnection_ == e.id) {
-        editApplying_ = false;
-        editApplied_ = kind == "edit_applied";
-        if (editApplied_) {
-            model_->discardEdits();
-            quint64 total = 0;
-            for (auto count : e.edit_affected_rows)
-                total += count;
-            message(tr("Applied %1 grid changes (%2 rows affected).")
-                        .arg(e.edit_affected_rows.size())
-                        .arg(total));
-            if (widgets_.objectReadOnly && queryConnection_)
-                openObjectData(*queryConnection_, objectId_, resultOrigin_,
-                               querySettings_->preferences(), objectKind_);
-            else if (queryConnection_ && !executedSql_.isEmpty()) {
-                if (query_)
-                    adapter_->releaseQuery(*query_);
-                clearResult();
-                currentPage_.reset();
-                query_ = adapter_->execute(*queryConnection_, executedSql_, true,
-                                           connectionProfiles_.value(*queryConnection_),
-                                           querySettings_->preferences());
-                busy_ = query_.has_value();
-                executionFinished_ = !busy_;
-            }
-        } else
-            message(tr("Grid changes were not applied: %1").arg(text(e.error)));
-        updateActions();
-        return;
-    }
-    if (kind == "connected") {
-        const auto name = pendingConnections_.take(e.id);
-        {
-            const QSignalBlocker blocker(widgets_.connections);
-            const auto label = name.isEmpty() ? tr("Database session %1").arg(e.id) : name;
-            widgets_.connections->addItem(label, QVariant::fromValue<qulonglong>(e.id));
-            if (auto* editor = widgets_.currentEditor(); editor && !editor->hasAssignedTarget()) {
-                editor->setConnectionTarget(e.id, label);
-                editor->setProfileId(connectionProfiles_.value(e.id));
-            }
-        }
-        documentChanged();
-        emit connectionReady(e.id);
-        updateActions();
-        return;
-    }
-    if (kind == "connection_failed" || kind == "operation_failed" || kind == "bridge_failed") {
-        pendingConnections_.remove(e.id);
-        if (kind == "connection_failed") {
-            connectionProfiles_.remove(e.id);
-            disconnecting_.remove(e.id);
-        }
-        message(text(e.error) +
-                (e.vendor_code.empty() ? QString{} : tr(" [Code: %1]").arg(text(e.vendor_code))));
-        return;
-    }
-    if (kind == "disconnected") {
-        disconnecting_.remove(e.id);
-        pendingTransactions_.remove(e.id);
-        manualModes_.remove(e.id);
-        connectionProfiles_.remove(e.id);
-        const auto index = widgets_.connections->findData(QVariant::fromValue<qulonglong>(e.id));
-        if (index >= 0) {
-            const QSignalBlocker blocker(widgets_.connections);
-            widgets_.connections->removeItem(index);
-        }
-        documentChanged();
-        if (queryConnection_ == e.id) {
-            if (detail_)
-                detail_->clearValue();
-            if (export_)
-                export_->clearQuery();
-            busy_ = false;
-            cancellationPending_ = false;
-            fetching_ = false;
-            hasMore_ = false;
-            query_.reset();
-            queryConnection_.reset();
-            currentPage_.reset();
-            setExecutionState(QStringLiteral("disconnected"), tr("○ Disconnected"));
-        }
-        updateActions();
-        return;
-    }
-    if (kind == "transaction_finished") {
-        pendingTransactions_.remove(e.id);
-        emit transactionStateChanged(e.id, false);
-        message(e.committed ? tr("Transaction committed.") : tr("Transaction rolled back."));
-        if (queryConnection_ == e.id) {
-            hasMore_ = false;
-            busy_ = false;
-            if (query_ && currentPage_ && queryAvailable()) {
-                fetching_ = true;
-                adapter_->fetchPageAt(*query_, *currentPage_);
-            }
-            updateActions();
-        }
-        return;
-    }
-    if (!query_ || e.id != *query_)
-        return;
-    if (kind == "query_state") {
-        const auto state = text(e.state);
-        // Terminal state notices precede their detailed outcome. Keep the
-        // pending cancellation visible until that acknowledgement arrives.
-        if (cancellationPending_ && state != "cancelling")
-            return;
-        if (state == "completed" || state == "failed" || state == "disconnected")
-            cancellationPending_ = false;
-        busy_ = state == "queued" || state == "running" || state == "cancelling";
-        if (state == "completed" || state == "failed" || state == "disconnected")
-            executionFinished_ = true;
-        const QString icon = state == "completed"      ? QStringLiteral("✓ ")
-                             : state == "failed"       ? QStringLiteral("! ")
-                             : state == "disconnected" ? QStringLiteral("○ ")
-                                                       : QStringLiteral("◷ ");
-        setExecutionState(state, icon + state);
-        updateActions();
-        if (state == "cancelling")
-            widgets_.cancel->setEnabled(false);
-    } else if (kind == "schema") {
-        if (cancellationPending_ || !queryAvailable())
-            return;
-        clearResult();
-        columns_.reserve(e.columns.size());
-        for (const auto& c : e.columns)
-            columns_.push_back(resultColumn(c));
-        if (!widgets_.objectReadOnly && queryConnection_ && !executedSql_.isEmpty()) {
-            editTargetToken_ = nextEditRequestToken();
-            editQualifiedName_.clear();
-            editReason_ = tr("Checking query edit eligibility…");
-            widgets_.grid->setToolTip(editReason_);
-            QStringList names;
-            for (const auto& column : columns_)
-                names << column.name;
-            adapter_->inspectQueryEdit(*queryConnection_, executedSql_, names, editTargetToken_);
-        }
-        quint64 bytes = columns_.capacity() * sizeof(ResultColumn);
-        for (const auto& column : columns_)
-            bytes += 96 + sizeof(QChar) * (column.name.capacity() + column.databaseType.capacity() +
-                                           column.timezone.capacity());
-        if (!e.has_lease || !adapter_->retainTransfer(e.lease_id, bytes)) {
-            clearResult();
-            busy_ = false;
-            fetching_ = false;
-            message(tr("Result schema exceeds its transfer reservation."));
-            updateActions();
-            return;
-        }
-        schemaLease_ = e.lease_id;
-        fetching_ = true;
-        adapter_->fetchPageAt(*query_, 0);
-        updateActions();
-    } else if (kind == "stored_page") {
-        if (cancellationPending_)
-            return;
-        fetching_ = false;
-        if (e.column_count != columns_.size() && e.row_count != 0) {
-            message(tr("Result page has an invalid column count."));
-            hasMore_ = false;
-            updateActions();
-            return;
-        }
-        if (static_cast<quint64>(e.row_count) * e.column_count != e.cells.size()) {
-            message(tr("Result page has an invalid cell count."));
-            hasMore_ = false;
-            updateActions();
-            return;
-        }
-        std::vector<ResultTableModel::Row> rows;
-        rows.reserve(e.row_count);
-        size_t i = 0;
-        for (quint32 r = 0; r < e.row_count; ++r) {
-            ResultTableModel::Row row;
-            row.reserve(e.column_count);
-            for (quint32 c = 0; c < e.column_count; ++c)
-                row.push_back(cell(e.cells[i++]));
-            rows.push_back(std::move(row));
-        }
-        if (!model_->setPage(columns_, std::move(rows), e.first_row)) {
-            message(tr("Result page exceeds the grid memory budget."));
-            hasMore_ = false;
-        } else {
-            configureEditability();
-            // setPage destroyed the old Qt buffers before we release their reservation.
-            if (visibleLease_) {
-                const auto lease = *visibleLease_;
-                visibleLease_.reset();
-                adapter_->releasePageLease(lease);
-            }
-            if (!e.has_lease || !adapter_->retainTransfer(e.lease_id, model_->residentBytes())) {
-                model_->setPage({}, {}, 0);
-                currentPage_.reset();
-                hasMore_ = false;
-                busy_ = false;
-                message(tr("Result page exceeds its transfer reservation."));
-                updateActions();
-                return;
-            }
-            visibleLease_ = e.lease_id;
-            currentPage_ = e.page_index;
-            hasMore_ = e.has_more;
-            setExecutionState(QStringLiteral("completed"),
-                              tr("✓ Completed · Page %1 · %2 rows · %3 KiB visible")
-                                  .arg(e.page_index + 1)
-                                  .arg(e.row_count)
-                                  .arg(model_->residentBytes() / 1024));
-        }
-        busy_ = false;
-        updateActions();
-    } else if (kind == "query_finished") {
-        cancellationPending_ = false;
-        executionFinished_ = true;
-        fetching_ = false;
-        if (e.has_transaction_state && queryConnection_) {
-            if (e.transaction_active)
-                pendingTransactions_.insert(*queryConnection_);
-            else
-                pendingTransactions_.remove(*queryConnection_);
-            emit transactionStateChanged(*queryConnection_, e.transaction_active);
-        }
-        busy_ = false;
-        for (const auto& warning : e.warnings)
-            message(text(warning));
-        message(e.has_affected_rows ? tr("Completed in %1 ms; %2 rows affected.")
-                                          .arg(e.duration_ms)
-                                          .arg(e.affected_rows)
-                                    : tr("Completed in %1 ms.").arg(e.duration_ms));
-        QString summary = e.has_affected_rows ? tr("✓ Completed · %1 ms · %2 rows affected")
-                                                    .arg(e.duration_ms)
-                                                    .arg(e.affected_rows)
-                                              : tr("✓ Completed · %1 ms").arg(e.duration_ms);
-        if (currentPage_)
-            summary += tr(" · Page %1 · %2 rows · %3 KiB visible")
-                           .arg(*currentPage_ + 1)
-                           .arg(model_->rowCount())
-                           .arg(model_->residentBytes() / 1024);
-        setExecutionState(QStringLiteral("completed"), summary);
-        updateActions();
-    } else if (kind == "query_failed") {
-        cancellationPending_ = false;
-        executionFinished_ = true;
-        busy_ = false;
-        fetching_ = false;
-        hasMore_ = false;
-        message(text(e.error) +
-                (e.vendor_code.empty() ? QString{} : tr(" [Code: %1]").arg(text(e.vendor_code))));
-        const auto errorKind = text(e.error_kind);
-        if (errorKind == "Cancelled")
-            setExecutionState(QStringLiteral("cancelled"), tr("○ Cancelled"));
-        else if (errorKind == "Disconnected")
-            setExecutionState(QStringLiteral("disconnected"), tr("○ Disconnected"));
-        else
-            setExecutionState(QStringLiteral("failed"), tr("! Failed"));
-        updateActions();
-    }
 }
 bool QueryWorkspace::confirmShutdown() {
     const bool transaction = !pendingTransactions_.isEmpty();

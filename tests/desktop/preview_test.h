@@ -1,0 +1,52 @@
+#pragma once
+
+#include <QObject>
+
+class PreviewTest final : public QObject {
+    Q_OBJECT
+
+  private slots:
+    void editorResultsSplitUsesEqualPanesInBothThemes();
+    void documentTabSpecimenShowsFixedWidthTabsInBothThemes();
+    void richTextParagraphsHaveCompactSpacing();
+    void showToastOpensTransientToastAtViewportCorner();
+    void toastPortalIsPresentInBothThemes();
+    void progressToastHasPersistentIndicatorInBothThemes();
+    void toastCanAttachAcrossWidgetTrees();
+    void toastVariantsShowTitleBodyAndUseConfiguredTimeout();
+    void nonmodalDialogSurfaceHasNoOutline();
+    void nonmodalDialogGrowsWhenDescriptionWraps();
+    void galleryOpenKeepsAppModalityAndNativeCorners_data();
+    void galleryOpenKeepsAppModalityAndNativeCorners();
+    void moreButtonUsesThemeSurface();
+    void scrollSpecimensKeepTheirIndependentThemePaper();
+    void narrowGalleryKeepsNavigationAndActionsReachable();
+    void standaloneCapturesRequestedThemeAndViewport_data();
+    void standaloneCapturesRequestedThemeAndViewport();
+    void confirmationSpecimenUsesProductionCancellationBoundary();
+    void initTestCase();
+    void exportedPopupContainsItsVisibleContent_data();
+    void exportedPopupContainsItsVisibleContent();
+    void tooltipUsesTheProductionSurfaceInBothThemes();
+    void exportsRenderActualModalAndMenuSurfaces();
+    void standaloneExportsWithoutAProfile();
+    void displayedIconsRasterizeAtTargetScale_data();
+    void displayedIconsRasterizeAtTargetScale();
+    void iconsShowNamedProductionAssetsAtSupportedSizes();
+    void examplesOpenActualDismissibleSurfaces();
+    void fieldSpecimenRetainsEditingAndValidationStates();
+    void sidebarTabSpecimenUsesProductionContextInBothThemes();
+    void sidebarTabFocusRingSurvivesOnlyKeyboardActivation();
+    void buttonsUseProductionVariantsAndStates();
+    void individualSpecimensAreSelectableAndSearchable();
+    void fieldValidationIsBelowInputAndSelectInBothThemes();
+    void tokensExposeCopyableValuesAndSources();
+    void exportsAreDeterministicAndFailuresVisible();
+    void comparisonThemesAreIndependent();
+    void navigationIsSearchable();
+    void componentFamiliesAreRendered();
+    void dialogSectionsPreviewUsesRealComponentInBothThemes();
+    void navigationProfileRowsShowRegularAndSelectedStates();
+    void dockSpecimenRendersThemedTitleAndButtons();
+    void navigationTreeTogglesAndRenamesFromMenu();
+};

@@ -15,6 +15,63 @@ ResultColumn column(const QString& name, const QString& databaseType) {
 class ResultModelTest : public QObject {
     Q_OBJECT
   private slots:
+    void unchangedEditorValuesDoNotStageEdits() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("text", "text"), column("number", "bigint"),
+                               column("flag", "boolean"), column("null", "text")},
+                              {{QString("hello"), qint64(42), true, std::monostate{}}}, 0));
+        model.setEditableColumns({true, true, true, true}, true, true);
+        for (int c = 0; c < model.columnCount(); ++c)
+            QVERIFY(model.setData(model.index(0, c), model.data(model.index(0, c), Qt::EditRole)));
+        QVERIFY(!model.hasPendingEdits());
+        QVERIFY(std::holds_alternative<std::monostate>(model.rows()[0][3]));
+        QVERIFY(model.setData(model.index(0, 0), "changed"));
+        QVERIFY(model.hasPendingEdits());
+        QVERIFY(model.setData(model.index(0, 0), "changed"));
+        QVERIFY(model.touched()[0][0]);
+        QVERIFY(model.addRow());
+        QVERIFY(model.setData(model.index(1, 0), ""));
+        QVERIFY(!model.touched()[1][0]);
+        QVERIFY(model.setNull(model.index(1, 0)));
+        QVERIFY(model.touched()[1][0]);
+    }
+    void deletingInsertedRowsRemovesThemAndRestoresBudget() {
+        ResultTableModel model;
+        QAbstractItemModelTester tester(&model,
+                                        QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QVERIFY(model.setPage({column("a", "text"), column("b", "text")},
+                              {{QString("original"), QString("kept")}}, 0));
+        model.setEditableColumns({true, true}, true, true);
+        for (int row = 1; row <= 3; ++row) {
+            QVERIFY(model.addRow());
+            QVERIFY(model.setData(model.index(row, 0), QString::number(row)));
+        }
+        QSignalSpy removed(&model, &QAbstractItemModel::rowsRemoved);
+        model.markDeleted(
+            {model.index(1, 0), model.index(3, 0), model.index(1, 1), model.index(0, 0)}, true);
+        QCOMPARE(model.rowCount(), 2);
+        QCOMPARE(removed.count(), 2);
+        QCOMPARE(model.index(1, 0).data().toString(), QString("2"));
+        QVERIFY(model.deleted()[0]);
+        QVERIFY(!model.deleted()[1]);
+        model.markDeleted({model.index(0, 0), model.index(1, 0)}, false);
+        QCOMPARE(model.rowCount(), 2);
+        QVERIFY(!model.deleted()[0]);
+        model.markDeleted({model.index(1, 0)}, true);
+        QCOMPARE(model.rowCount(), 1);
+        QVERIFY(!model.hasPendingEdits());
+        QVERIFY(model.setByteBudget(model.residentBytes()));
+    }
+    void insertedRowsCanBeRemovedWithoutDatabaseDeletePermission() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("value", "text")}, {{QString("original")}}, 0));
+        model.setEditableColumns({false}, true, false);
+        QVERIFY(model.addRow());
+        model.markDeleted({model.index(0, 0), model.index(1, 0)}, true);
+        QCOMPARE(model.rowCount(), 1);
+        QVERIFY(!model.deleted()[0]);
+        QVERIFY(!model.hasPendingEdits());
+    }
     void nullAndEmptyAreDistinct() {
         ResultTableModel model;
         QAbstractItemModelTester tester(&model,

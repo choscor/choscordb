@@ -10,6 +10,37 @@
 class NavigatorSqlTest : public QObject {
     Q_OBJECT
   private slots:
+    void metadataContinuationMenuRequestsTheNextBoundedPage() {
+        choscordb::EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        choscordb::NavigatorController controller(&engine, &tree, &filter, &tree);
+        auto* model = controller.model();
+        QObject::disconnect(model, &choscordb::NavigatorModel::childrenRequested, &engine,
+                            &choscordb::EngineAdapter::loadMetadata);
+        QObject::disconnect(model, &choscordb::NavigatorModel::childrenPageRequested, &engine,
+                            &choscordb::EngineAdapter::loadMetadataPage);
+        QSignalSpy first(model, &choscordb::NavigatorModel::childrenRequested);
+        QSignalSpy next(model, &choscordb::NavigatorModel::childrenPageRequested);
+        controller.addConnection(9, "MySQL");
+        const auto root = model->index(0, 0);
+        model->fetchMore(root);
+        QTRY_COMPARE(first.count(), 1);
+        QVERIFY(model->applyChildrenPage(9, {}, first.last().at(2).toULongLong(),
+                                         {{"a", "Alpha", "db.Alpha", "table", false}}, 0, true, 1));
+        QMenu menu;
+        controller.populateContextMenu(&menu, model->index(1, 0, root));
+        auto* more = menu.findChild<QAction*>("loadMoreMetadata");
+        QVERIFY(more);
+        QCOMPARE(menu.actions().size(), 1);
+        more->trigger();
+        QTRY_COMPARE(next.count(), 1);
+        QCOMPARE(next.last().at(0).toULongLong(), quint64(9));
+        QCOMPARE(next.last().at(3).toULongLong(), quint64(1));
+        QCOMPARE(next.last().at(4).toUInt(), quint32(1000));
+        QCOMPARE(model->index(0, 0, root).data().toString(), QString("Alpha"));
+    }
+
     void disconnectTargetsTheNodeAndRejectsAStaleMenu() {
         choscordb::EngineAdapter engine;
         QTreeView tree;

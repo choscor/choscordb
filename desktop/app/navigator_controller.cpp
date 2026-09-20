@@ -90,6 +90,13 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
         }
     });
     connect(model_, &NavigatorModel::childrenRequested, engine, &EngineAdapter::loadMetadata);
+    connect(model_, &NavigatorModel::childrenPageRequested, engine,
+            &EngineAdapter::loadMetadataPage);
+    connect(tree, &QTreeView::activated, this, [this](const QModelIndex& index) {
+        const auto source = proxy_->mapToSource(index);
+        if (source.data(NavigatorModel::KindRole).toString() == "load_more")
+            model_->requestNextPage(source);
+    });
     connect(engine, &EngineAdapter::metadataSubmissionFailed, this,
             [this](quint64 connection, const QString& parent, quint64 token, const QString& error) {
                 const bool accepted = model_->failChildren(connection, parent, token, error);
@@ -122,8 +129,9 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
                                        text(object.qualified_name), text(object.kind),
                                        object.has_children, std::move(properties)});
                 }
-                const bool accepted = model_->applyChildren(e.id, text(e.parent), e.request_token,
-                                                            std::move(objects));
+                const bool accepted = model_->applyChildrenPage(
+                    e.id, text(e.parent), e.request_token, std::move(objects), e.metadata_offset,
+                    e.has_more_metadata, e.next_metadata_offset);
                 if (accepted && e.id == selectedConnection() && searchPending_) {
                     searchPending_ = false;
                     const auto generation = searchGeneration_;
@@ -170,6 +178,17 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
     if (!menu || !sourceIndex.isValid() || sourceIndex.model() != model_)
         return;
     const QPersistentModelIndex index(sourceIndex);
+    if (index.data(NavigatorModel::KindRole).toString() == "load_more" ||
+        index.data(NavigatorModel::HasMoreRole).toBool()) {
+        auto* more = menu->addAction(tr("Load more objects"));
+        more->setObjectName("loadMoreMetadata");
+        connect(more, &QAction::triggered, this, [this, index] {
+            if (index.isValid())
+                model_->requestNextPage(index);
+        });
+        if (index.data(NavigatorModel::KindRole).toString() == "load_more")
+            return;
+    }
     if (index.data(NavigatorModel::KindRole).toString() == "connection") {
         auto* disconnect = menu->addAction(tr("Disconnect"));
         disconnect->setObjectName("disconnectSession");
@@ -345,14 +364,17 @@ void NavigatorController::advanceSearch(quint64 generation) {
             matches.push_back(current);
         if (kind != "connection" && kind != "database" && kind != "schema" && kind != "group")
             continue;
-        if (model_->canFetchMore(current)) {
+        if (model_->canFetchMore(current) || current.data(NavigatorModel::HasMoreRole).toBool()) {
             if (searchRequests_ >= 256) {
                 emit searchStatusChanged(tr("Search limit reached. Refine the text."));
                 return;
             }
             ++searchRequests_;
             searchPending_ = true;
-            model_->fetchMore(current);
+            if (current.data(NavigatorModel::HasMoreRole).toBool())
+                model_->requestNextPage(current);
+            else
+                model_->fetchMore(current);
             return;
         }
         for (int row = model_->rowCount(current) - 1; row >= 0; --row)

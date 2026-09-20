@@ -36,7 +36,7 @@ QTabBar::tab:last, QTabBar::tab:only-one {
 QTabBar::tab:selected {
   background: @field;
   color: @foreground;
-  border-bottom-color: @primary;
+  border-bottom-color: @mutedText;
 }
 
 QTabBar[designTabVariant="document"]::tab {
@@ -52,7 +52,7 @@ QTabBar[designTabVariant="document"]::tab {
 }
 
 QTabBar[designTabVariant="document"]::tab:selected {
-  border-top-color: @primary;
+  border-top-color: @mutedText;
 }
 
 QTabBar::tab:hover {

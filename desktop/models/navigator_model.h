@@ -32,7 +32,8 @@ class NavigatorModel final : public QAbstractItemModel {
         KindRole,
         ErrorRole,
         ChildrenLoadedRole,
-        PropertiesRole
+        PropertiesRole,
+        HasMoreRole
     };
     explicit NavigatorModel(QObject* parent = nullptr);
     ~NavigatorModel() override;
@@ -51,6 +52,10 @@ class NavigatorModel final : public QAbstractItemModel {
     // Refresh supersedes earlier requests; late replies cannot replace new data.
     bool applyChildren(quint64 connection, const QString& parentObjectId, quint64 token,
                        std::vector<NavigatorObject> children);
+    bool applyChildrenPage(quint64 connection, const QString& parentObjectId, quint64 token,
+                           std::vector<NavigatorObject> children, quint64 offset, bool hasMore,
+                           quint64 nextOffset);
+    void requestNextPage(const QModelIndex& index);
     bool failChildren(quint64 connection, const QString& parentObjectId, quint64 token,
                       const QString& error);
     void refresh(const QModelIndex& index);
@@ -63,6 +68,9 @@ class NavigatorModel final : public QAbstractItemModel {
     // Dispatched on the next event-loop turn so fetchMore callers cannot be
     // reentered by a synchronous metadata provider.
     void childrenRequested(quint64 connection, const QString& parentObjectId, quint64 requestToken);
+
+    void childrenPageRequested(quint64 connection, const QString& parentObjectId,
+                               quint64 requestToken, quint64 offset, quint32 limit);
 
   private:
     struct Node;

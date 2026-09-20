@@ -80,6 +80,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     driver_->setObjectName("profileDriver");
     driver_->addItem(tr("SQLite"), "sqlite");
     driver_->addItem(tr("PostgreSQL"), "postgres");
+    driver_->addItem(tr("MySQL"), "mysql");
     driver_->hide();
     auto* drivers = new QHBoxLayout;
     auto* driverGroup = new QButtonGroup(this);
@@ -88,7 +89,9 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         button->setObjectName(object);
         button->setVariant(design::ButtonVariant::Outline);
         button->setButtonContext(design::ButtonContext::Choice);
-        button->setDesignIcon(design::Icon::Database);
+        button->setDesignIcon(index == 0   ? design::Icon::SQLite
+                              : index == 1 ? design::Icon::PostgreSQL
+                                           : design::Icon::MySQL);
         button->setCheckable(true);
         button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         driverGroup->addButton(button, index);
@@ -98,6 +101,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         return button;
     };
     postgresChoice_ = choice(tr("PostgreSQL"), "profileDriverPostgres", 1);
+    mysqlChoice_ = choice(tr("MySQL"), "profileDriverMysql", 2);
     sqliteChoice_ = choice(tr("SQLite"), "profileDriverSqlite", 0);
     formLayout->addRow(drivers);
     auto line = [this](const char* object) {
@@ -201,6 +205,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     sshEnabled_->setProperty("designRole", "switch");
     pg->addRow(sshEnabled_);
     auto* sshFields = new QWidget(postgresFields_);
+    sshFields_ = sshFields;
     auto* sshLayout = new QFormLayout(sshFields);
     sshLayout->setContentsMargins(0, 0, 0, 0);
     sshLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
@@ -284,6 +289,9 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         }
     });
     connect(driver_, &QComboBox::currentIndexChanged, this, [this] {
+        if (!filling_ && driver_->currentData() != "sqlite" &&
+            (port_->value() == 5432 || port_->value() == 3306))
+            port_->setValue(driver_->currentData() == "mysql" ? 3306 : 5432);
         updateDriver();
         if (!filling_) {
             dirty_ = true;
@@ -494,8 +502,8 @@ void ProfileDialog::connectDraft(bool openQuery) {
     setBusy(true, tr("Connecting…"));
     connectionSubmissionError_.clear();
     connecting_ = true;
-    const bool hasPassword =
-        value.driver == "postgres" && (password_->isModified() || !password_->text().isEmpty());
+    const bool hasPassword = (value.driver == "postgres" || value.driver == "mysql") &&
+                             (password_->isModified() || !password_->text().isEmpty());
     const auto id = adapter_->connectProfileWithPassword(
         value, hasPassword ? password_->text() : QString(), hasPassword);
     connecting_ = false;
@@ -524,7 +532,8 @@ SavedProfile ProfileDialog::draft() const {
     value.user = user_->text();
     value.tls = tls_->currentData().toString();
     value.rootCertificate = rootCertificate_->text();
-    value.sshEnabled = value.driver == "postgres" && sshEnabled_->isChecked();
+    value.sshEnabled =
+        (value.driver == "postgres" || value.driver == "mysql") && sshEnabled_->isChecked();
     value.sshHost = sshHost_->text();
     value.sshPort = static_cast<quint16>(sshPort_->value());
     value.sshUser = sshUser_->text();
@@ -536,11 +545,11 @@ void ProfileDialog::setDraft(const SavedProfile& value) {
     ++revision_;
     current_ = value;
     name_->setText(value.name);
-    driver_->setCurrentIndex(value.driver == "postgres" ? 1 : 0);
+    driver_->setCurrentIndex(driver_->findData(value.driver));
     path_->setText(value.path);
     readOnly_->setChecked(value.readOnly);
     host_->setText(value.host.isEmpty() ? "localhost" : value.host);
-    port_->setValue(value.port ? value.port : 5432);
+    port_->setValue(value.port ? value.port : value.driver == "mysql" ? 3306 : 5432);
     database_->setText(value.database);
     user_->setText(value.user);
     const auto tlsIndex = tls_->findData(value.tls);
@@ -564,7 +573,12 @@ void ProfileDialog::setDraft(const SavedProfile& value) {
 void ProfileDialog::updateDriver() {
     const bool sqlite = driver_->currentData().toString() == "sqlite";
     sqliteChoice_->setChecked(sqlite);
-    postgresChoice_->setChecked(!sqlite);
+    const bool mysql = driver_->currentData().toString() == "mysql";
+    postgresChoice_->setChecked(!sqlite && !mysql);
+    mysqlChoice_->setChecked(mysql);
+    sshEnabled_->setVisible(!sqlite);
+    sshFields_->setVisible(!sqlite && sshEnabled_->isChecked());
+
     sqliteFields_->setVisible(sqlite);
     postgresFields_->setVisible(!sqlite);
 }
@@ -661,7 +675,7 @@ void ProfileDialog::saveDraft(const SavedProfile& profile) {
     dirty_ = true;
     ++revision_;
     QString action = "clear";
-    if (value.driver == "postgres" && remember)
+    if ((value.driver == "postgres" || value.driver == "mysql") && remember)
         action =
             modified || !password.isEmpty() || value.credentialRef.isEmpty() ? "replace" : "keep";
     savingDraft_ = true;
@@ -681,8 +695,8 @@ void ProfileDialog::testDraft(const SavedProfile& profile) {
     if (value.id.isEmpty())
         value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     setBusy(true, tr("Testing connection…"));
-    const bool hasPassword =
-        value.driver == "postgres" && (password_->isModified() || !password_->text().isEmpty());
+    const bool hasPassword = (value.driver == "postgres" || value.driver == "mysql") &&
+                             (password_->isModified() || !password_->text().isEmpty());
     adapter_->testProfileWithPassword(value, hasPassword ? password_->text() : QString(),
                                       hasPassword, ++token_);
 }

@@ -353,6 +353,21 @@ impl Engine {
         slot.cancellation.send_replace(true);
         Ok(())
     }
+    pub fn refresh_sql_mode(
+        &self,
+        connection: ConnectionId,
+        request_token: u64,
+    ) -> std::result::Result<(), SubmitError> {
+        self.submit(connection, actor::Command::SqlMode { request_token })
+    }
+    pub fn next_result_set(&self, query: QueryId) -> std::result::Result<(), SubmitError> {
+        let owner = self
+            .queries
+            .get(query)
+            .ok_or(SubmitError::StaleHandle)?
+            .connection;
+        self.submit(owner, actor::Command::NextResult { query })
+    }
     pub fn fetch_page(
         &self,
         query: QueryId,
@@ -537,11 +552,26 @@ impl Engine {
         parent: Option<ObjectId>,
         request_token: u64,
     ) -> std::result::Result<(), SubmitError> {
+        self.load_metadata_page(connection, parent, request_token, 0, 10_000)
+    }
+    pub fn load_metadata_page(
+        &self,
+        connection: ConnectionId,
+        parent: Option<ObjectId>,
+        request_token: u64,
+        offset: u64,
+        limit: u32,
+    ) -> std::result::Result<(), SubmitError> {
+        if limit == 0 || limit > 10_000 {
+            return Err(SubmitError::InvalidInput);
+        }
         self.submit(
             connection,
             actor::Command::Metadata {
                 parent,
                 request_token,
+                offset,
+                limit,
             },
         )
     }

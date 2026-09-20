@@ -427,6 +427,17 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             error(&mut e, err);
             "ddl_failed"
         }
+        Event::SessionSqlMode {
+            connection,
+            mode,
+            request_token,
+        } => {
+            e.request_token = request_token;
+            e.id = pack(connection);
+            e.sql_mode = mode;
+            e.has_sql_mode = true;
+            "session_sql_mode"
+        }
         Event::Connected {
             connection,
             capabilities: c,
@@ -498,6 +509,9 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             e.transaction_active = summary.transaction_active.unwrap_or_default();
             e.has_affected_rows = summary.affected_rows.is_some();
             e.affected_rows = summary.affected_rows.unwrap_or_default();
+            e.has_more_results = summary.has_more_results;
+            e.has_sql_mode = summary.sql_mode.is_some();
+            e.sql_mode = summary.sql_mode.unwrap_or_default();
             e.warnings = summary.warnings;
             "query_finished"
         }
@@ -511,7 +525,12 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             connection,
             parent,
             objects,
+            offset,
+            next_offset,
         } => {
+            e.metadata_offset = offset;
+            e.has_more_metadata = next_offset.is_some();
+            e.next_metadata_offset = next_offset.unwrap_or_default();
             e.id = pack(connection);
             e.request_token = request_token;
             e.parent = parent.map(|p| p.0).unwrap_or_default();
@@ -591,6 +610,33 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
             dto.driver = "sqlite".into();
             dto.path = path;
             dto.read_only = read_only;
+        }
+        choscordb_core::ProfileConfiguration::Mysql {
+            host,
+            port,
+            database,
+            user,
+            tls,
+            ssh,
+        } => {
+            dto.driver = "mysql".into();
+            dto.host = host;
+            dto.port = port;
+            dto.database = database;
+            dto.user = user;
+            dto.tls = match tls.mode {
+                TlsMode::Disable => "disable",
+                TlsMode::VerifyFull => "verify_full",
+            }
+            .into();
+            dto.root_certificate = tls.root_certificate_path.unwrap_or_default();
+            if let Some(ssh) = ssh {
+                dto.ssh_enabled = true;
+                dto.ssh_host = ssh.host;
+                dto.ssh_port = ssh.port;
+                dto.ssh_user = ssh.user;
+                dto.ssh_identity_file = ssh.identity_file.unwrap_or_default();
+            }
         }
         choscordb_core::ProfileConfiguration::Postgres {
             host,

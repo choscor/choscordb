@@ -159,12 +159,12 @@ class DesignSystemTest final : public QObject {
         const auto dark = resolveColors(ResolvedAppearance::Dark, {});
         QCOMPARE(light.background, QColor("#f6f7f8"));
         QCOMPARE(light.primary, QColor("#287f66"));
-        QCOMPARE(light.secondary, QColor("#f2f5f4"));
+        QCOMPARE(light.secondary, QColor("#f2f2f2"));
         QCOMPARE(light.ring, QColor("#287f66"));
         QCOMPARE(light.destructive, QColor("#c45d58"));
         QCOMPARE(dark.background, QColor("#171d20"));
         QCOMPARE(dark.card, QColor("#20272b"));
-        QCOMPARE(dark.muted, QColor("#2b3437"));
+        QCOMPARE(dark.muted, QColor("#303030"));
         QCOMPARE(dark.destructive, QColor("#c45d58"));
         QCOMPARE(dark.border, QColor("#343e43"));
         QCOMPARE(dark.input, QColor("#343e43"));

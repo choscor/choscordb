@@ -424,3 +424,64 @@ fn another_engine_cannot_cleanup_an_inflight_publication() {
         "protected"
     );
 }
+
+struct MysqlPasswordDriver(Arc<Mutex<Vec<String>>>);
+#[async_trait::async_trait]
+impl DatabaseDriver for MysqlPasswordDriver {
+    fn id(&self) -> &'static str {
+        "mysql"
+    }
+    fn capabilities(&self) -> DriverCapabilities {
+        DriverCapabilities::default()
+    }
+    async fn connect(
+        &self,
+        options: ConnectionOptions,
+    ) -> choscordb_driver_api::Result<Box<dyn Connection>> {
+        let ConnectionOptions::Mysql { password, .. } = options else {
+            panic!("wrong options")
+        };
+        self.0
+            .lock()
+            .unwrap()
+            .push(password.map(|p| p.expose().to_owned()).unwrap_or_default());
+        choscordb_driver_sqlite::SqliteDriver
+            .connect(ConnectionOptions::Sqlite {
+                path: ":memory:".into(),
+                read_only: false,
+            })
+            .await
+    }
+}
+#[test]
+fn mysql_profiles_resolve_saved_credentials_and_allow_transient_override() {
+    let received = Arc::new(Mutex::new(vec![]));
+    let mut engine = Engine::new_with_credentials(
+        EngineConfig::default(),
+        vec![Arc::new(MysqlPasswordDriver(received.clone()))],
+        Arc::new(Vault::default()),
+    )
+    .unwrap();
+    let mut p = profile();
+    p.configuration = ProfileConfiguration::Mysql {
+        ssh: None,
+        host: "db.example".into(),
+        port: 3306,
+        database: "inventory".into(),
+        user: "reader".into(),
+        tls: PostgresTls::default(),
+    };
+    let p = save(&mut engine, p, "saved-mysql");
+    engine.test_profile(p.clone(), None, 2).unwrap();
+    assert!(matches!(event(&mut engine), Event::ProfileTested { .. }));
+    engine.connect_profile(p.clone(), None).unwrap();
+    assert!(matches!(event(&mut engine), Event::Connected { .. }));
+    engine
+        .connect_profile(p, Some(Secret::new("once-mysql")))
+        .unwrap();
+    assert!(matches!(event(&mut engine), Event::Connected { .. }));
+    assert_eq!(
+        *received.lock().unwrap(),
+        vec!["saved-mysql", "saved-mysql", "once-mysql"]
+    );
+}

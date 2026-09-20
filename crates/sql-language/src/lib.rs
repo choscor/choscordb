@@ -109,3 +109,85 @@ mod editor_tests {
         assert!(quote_identifier("a\0b").is_err());
     }
 }
+
+// Dialect-specific entry points retain the existing editor behavior by default.
+pub fn statement_ranges_mysql(sql: &str) -> Vec<std::ops::Range<usize>> {
+    scanner::statement_ranges_dialect(sql, true)
+}
+pub fn execution_range_mysql(
+    sql: &str,
+    cursor: usize,
+    selection: Option<std::ops::Range<usize>>,
+) -> Option<std::ops::Range<usize>> {
+    editor::execution_range_dialect(sql, cursor, selection, true)
+}
+pub fn classify_mysql(sql: &str) -> Safety {
+    safety::classify_dialect(sql, true)
+}
+
+#[cfg(test)]
+mod mysql_tests {
+    use super::*;
+    #[test]
+    fn mysql_executable_comments_require_confirmation() {
+        assert_eq!(
+            classify_mysql("/*!50000 DROP TABLE users */"),
+            Safety::ConfirmationRequired
+        );
+        assert_eq!(
+            classify_mysql("SELECT 1 /*!50000 INTO OUTFILE '/tmp/data' */"),
+            Safety::ConfirmationRequired
+        );
+        assert_eq!(classify_mysql("SELECT 1 /* harmless */"), Safety::Ordinary);
+    }
+    #[test]
+    fn mysql_statement_selection_understands_escaped_quotes_and_hash_comments() {
+        let sql = "SELECT 'a\\';b'; # ignored ;\nSELECT 2;";
+        let ranges = statement_ranges_mysql(sql);
+        assert_eq!(ranges.len(), 2);
+        assert_eq!(&sql[ranges[0].clone()], "SELECT 'a\\';b';");
+        assert_eq!(
+            &sql[execution_range_mysql(sql, 12, None).unwrap()],
+            "SELECT 'a\\';b';"
+        );
+        assert_eq!(statement_ranges_mysql("SELECT 1--2; SELECT 3;").len(), 2);
+        assert_eq!(statement_ranges_mysql("SELECT '$tag$'; SELECT 2;").len(), 2);
+    }
+}
+
+/// Session modes that affect MySQL lexical boundaries.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MysqlSqlMode {
+    pub no_backslash_escapes: bool,
+    pub ansi_quotes: bool,
+}
+impl MysqlSqlMode {
+    pub fn from_sql_mode(value: &str) -> Self {
+        let modes: Vec<_> = value.split(',').map(str::trim).collect();
+        Self {
+            no_backslash_escapes: modes
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case("NO_BACKSLASH_ESCAPES")),
+            ansi_quotes: modes
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case("ANSI_QUOTES") || m.eq_ignore_ascii_case("ANSI")),
+        }
+    }
+}
+pub fn statement_ranges_mysql_with_mode(
+    sql: &str,
+    mode: MysqlSqlMode,
+) -> Vec<std::ops::Range<usize>> {
+    scanner::statement_ranges_with_mode(sql, Some(mode))
+}
+pub fn execution_range_mysql_with_mode(
+    sql: &str,
+    cursor: usize,
+    selection: Option<std::ops::Range<usize>>,
+    mode: MysqlSqlMode,
+) -> Option<std::ops::Range<usize>> {
+    editor::execution_range_with_mode(sql, cursor, selection, Some(mode))
+}
+pub fn classify_mysql_with_mode(sql: &str, mode: MysqlSqlMode) -> Safety {
+    safety::classify_with_mode(sql, Some(mode))
+}

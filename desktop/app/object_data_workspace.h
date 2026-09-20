@@ -1,7 +1,6 @@
 #pragma once
 #include <QPointer>
 #include <QWidget>
-class QPushButton;
 namespace choscordb {
 class QueryWorkspace;
 class ObjectDataWorkspace final : public QWidget {
@@ -20,10 +19,7 @@ class ObjectDataWorkspace final : public QWidget {
   private:
     QPointer<QueryWorkspace> sql_;
     QueryWorkspace* result_ = nullptr;
-    QPushButton* refresh_ = nullptr;
     QWidget* footer_ = nullptr;
     QWidget* toolbar_ = nullptr;
-    quint64 connection_ = 0;
-    QString object_, label_, kind_;
 };
 } // namespace choscordb

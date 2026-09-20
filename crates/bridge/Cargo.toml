@@ -12,6 +12,7 @@ choscordb-credentials = { path = "../credentials" }
 choscordb-core = { path = "../core" }
 choscordb-driver-api = { path = "../driver-api" }
 choscordb-driver-sqlite = { path = "../driver-sqlite" }
+choscordb-driver-mysql = { path = "../driver-mysql" }
 choscordb-driver-postgres = { path = "../driver-postgres" }
 choscordb-sql-language = { path = "../sql-language" }
 cxx = "1"

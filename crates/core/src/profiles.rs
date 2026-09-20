@@ -343,6 +343,7 @@ impl Engine {
         let driver_id = match profile.configuration {
             ProfileConfiguration::Sqlite { .. } => "sqlite",
             ProfileConfiguration::Postgres { .. } => "postgres",
+            ProfileConfiguration::Mysql { .. } => "mysql",
         };
         let driver = self
             .drivers
@@ -440,7 +441,9 @@ impl DatabaseDriver for ProfileDriver {
         &self,
         mut options: ConnectionOptions,
     ) -> choscordb_driver_api::Result<Box<dyn Connection>> {
-        if let ConnectionOptions::Postgres { password, .. } = &mut options {
+        if let ConnectionOptions::Postgres { password, .. }
+        | ConnectionOptions::Mysql { password, .. } = &mut options
+        {
             *password = resolve(&self.commands, self.reference.clone(), password.take()).await?;
         }
         self.inner.connect(options).await
@@ -460,6 +463,7 @@ impl Engine {
         let id = match profile.configuration {
             ProfileConfiguration::Sqlite { .. } => "sqlite",
             ProfileConfiguration::Postgres { .. } => "postgres",
+            ProfileConfiguration::Mysql { .. } => "mysql",
         };
         let inner = self
             .drivers

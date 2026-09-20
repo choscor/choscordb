@@ -60,6 +60,9 @@ class QueryWorkspace final : public QObject {
     QString profileIdForConnection(quint64 connection) const {
         return connectionProfiles_.value(connection);
     }
+    QString driverForConnection(quint64 connection) const {
+        return connectionDrivers_.value(connection);
+    }
     bool confirmShutdown();
     void beginShutdown();
     void cancelShutdown();
@@ -96,6 +99,12 @@ class QueryWorkspace final : public QObject {
 
   private:
     void execute();
+    quint64 executionModeToken_ = 0;
+    bool executionModeReady_ = false;
+    QPointer<SqlEditor> executionModeEditor_;
+    QString executionModeSql_;
+    quint64 executionModeCursor_ = 0, executionModeStart_ = 0, executionModeEnd_ = 0;
+    std::optional<quint64> executionModeConnection_;
     bool applyStagedEdits();
     void configureEditability();
     void clearResult();
@@ -127,6 +136,8 @@ class QueryWorkspace final : public QObject {
     std::optional<quint64> queryConnection_;
     QHash<quint64, QString> pendingConnections_;
     QHash<quint64, QString> connectionProfiles_;
+    QHash<quint64, QString> connectionDrivers_;
+    QHash<quint64, QString> connectionSqlModes_;
     QHash<quint64, bool> manualModes_;
     QSet<quint64> pendingTransactions_;
     QSet<quint64> confirmingDisconnects_;
@@ -139,6 +150,7 @@ class QueryWorkspace final : public QObject {
     bool busy_ = false;
     bool fetching_ = false;
     bool hasMore_ = false;
+    bool hasMoreResults_ = false;
     bool stopping_ = false;
     bool externalWork_ = false, invalidatePending_ = false;
     bool cancellationPending_ = false;

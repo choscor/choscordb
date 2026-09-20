@@ -112,7 +112,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     reconnect_->setEnabled(false);
     addAction(reconnect_);
     connect(reconnect_, &QAction::triggered, this, &ObjectExplorer::reconnectRequested);
-    auto* refresh = new design::Button(tr("Refresh"), headerBody);
+    auto* refresh = new design::Button(tr("Refresh object"), headerBody);
     refresh->setVariant(design::ButtonVariant::Outline);
     refresh->setButtonSize(design::ButtonSize::Small);
     refresh->setDesignIcon(design::Icon::Refresh);
@@ -376,6 +376,7 @@ void ObjectExplorer::requestPane() {
         pages_->setCurrentIndex(2);
         setStatus("ready", tr("%1 · Data").arg(label_));
         emit dataRequested(*connection_, object_, label_, kind_);
+        updateFooter();
         return;
     }
     pages_->setCurrentIndex(tabs_->currentIndex() == 3 ? 1 : 0);
@@ -542,13 +543,12 @@ void ObjectExplorer::updateFooter() {
     if (dataFooter_)
         dataFooter_->setVisible(data);
     status_->setVisible(!data);
-    refresh_->setEnabled(!data && !operationBusy_ && connection_.has_value() && !requestToken_);
+    refresh_->setEnabled(!operationBusy_ && connection_.has_value() && !requestToken_);
 }
 void ObjectExplorer::setOperationBusy(bool busy) {
     operationBusy_ = busy;
     updateActions();
-    refresh_->setEnabled(!busy && tabs_->currentIndex() != 4 && connection_.has_value() &&
-                         !requestToken_);
+    refresh_->setEnabled(!busy && connection_.has_value() && !requestToken_);
     if (busy)
         activePane_ = tabs_->currentIndex();
     else if (status_->property("state") == "busy")

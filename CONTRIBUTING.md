@@ -28,6 +28,25 @@ Focused commands and platform-specific prerequisites are documented in
 `docs/CI.md`. Pre-commit hooks are optional; the checked-in commands and CI are
 canonical.
 
+## C++ file size
+
+Keep handwritten sources and headers under `desktop/` and `tests/` at or below
+1,000 physical lines, including comments and blank lines. The `cpp-size` stage
+runs in both `fast` and `full`, and CTest exposes it as `cpp-source-size` when
+Python is available. Run it directly with:
+
+```sh
+python scripts/ci/quality.py cpp-size
+```
+
+Split by responsibility before reaching the limit. Keep related operations
+together, keep private implementation details out of public headers, and register
+new translation units in CMake. Prefer smaller functions with one logical task;
+moving a large function to another file alone does not simplify it. Do not meet
+the limit by compressing formatting, removing useful comments, or including
+implementation `.cpp` files. See [the C++ size audit](docs/cpp-file-size.md) for
+the initial splits and tool choices.
+
 ## Exceptions and suppressions
 
 Fix first-party warnings and analyzer findings when practical. A suppression

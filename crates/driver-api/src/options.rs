@@ -110,6 +110,16 @@ pub enum ConnectionOptions {
         path: std::path::PathBuf,
         read_only: bool,
     },
+    Mysql {
+        host: String,
+        port: u16,
+        database: String,
+        user: String,
+        password: Option<Secret>,
+        tls: TlsMode,
+        root_certificate: Option<std::path::PathBuf>,
+        ssh: Option<SshTunnel>,
+    },
     Postgres {
         host: String,
         port: u16,

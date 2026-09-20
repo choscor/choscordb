@@ -172,14 +172,21 @@ class EngineAdapter final : public QObject {
     void deleteProfile(const QString& id, quint64 token);
     void testProfile(const SavedProfile& profile, quint64 token);
     std::optional<quint64> connectProfile(const SavedProfile& profile);
+    bool refreshSqlMode(quint64 connection, quint64 requestToken);
+    void nextResultSet(quint64 query);
     void fetchPage(quint64 query);
     void fetchPageAt(quint64 query, quint64 index);
     bool cancelQuery(quint64 query);
     std::optional<quint64> startExport(quint64 query, const QString& path, const QString& format,
                                        const QStringList& table = {}, bool postgres = false);
+    std::optional<quint64> startExportDialect(quint64 query, const QString& path,
+                                              const QString& format, const QStringList& table,
+                                              const QString& dialect);
     void cancelExport(quint64 id);
     void loadValueChunk(quint64 query, quint64 handle, quint64 offset, quint32 maxBytes = 65536);
     void loadMetadata(quint64 connection, const QString& parent = {}, quint64 requestToken = 0);
+    void loadMetadataPage(quint64 connection, const QString& parent, quint64 requestToken,
+                          quint64 offset, quint32 limit = 1000);
     std::optional<quint64> openObjectData(quint64 connection, const QString& object,
                                           const QueryPreferences& preferences = {});
     bool inspectEditTarget(quint64 connection, const QString& object, quint64 token);
@@ -202,7 +209,8 @@ class EngineAdapter final : public QObject {
     PageMemoryUsage memoryUsage() const;
     PageCacheUsage cacheUsage() const;
     static SqlSelection executionRange(const QString& sql, quint64 cursor, quint64 start,
-                                       quint64 end);
+                                       quint64 end, const QString& driver = {},
+                                       const QString& sqlMode = {});
   signals:
     void queryPreferencesReady(quint64 token, const choscordb::QueryPreferences& preferences);
     void shutdownReady();

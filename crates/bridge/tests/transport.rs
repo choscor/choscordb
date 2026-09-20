@@ -576,3 +576,142 @@ fn postgres_ssh_profile_survives_save_reload_and_duplicate() {
     assert_eq!(profile.host, "db.internal");
     assert_eq!(profile.port, 5433);
 }
+
+#[test]
+fn mysql_profile_roundtrips_and_dispatches_to_registered_driver() {
+    let mut engine = new_engine();
+    let dto = ffi::ProfileDto {
+        id: "mysql".into(),
+        name: "Inventory".into(),
+        driver: "mysql".into(),
+        host: "127.0.0.1".into(),
+        port: 1,
+        database: "inventory".into(),
+        user: "reader".into(),
+        tls: "verify_full".into(),
+        root_certificate: "/ca.pem".into(),
+        ..Default::default()
+    };
+    let saved = profile_save(&mut engine, dto, 901);
+    assert!(saved.accepted, "{}", saved.error);
+    let event = await_event(&mut engine, "profile_saved");
+    let dto = event.profiles.into_iter().next().unwrap();
+    assert_eq!(
+        (
+            &*dto.driver,
+            &*dto.database,
+            &*dto.user,
+            &*dto.tls,
+            &*dto.root_certificate
+        ),
+        ("mysql", "inventory", "reader", "verify_full", "/ca.pem")
+    );
+    assert_eq!(dto.port, 1);
+    let tested = profile_test(&mut engine, dto, 902);
+    assert!(tested.accepted, "{}", tested.error);
+    assert_eq!(
+        await_event(&mut engine, "profile_failed").request_token,
+        902
+    );
+}
+
+#[test]
+fn mysql_bridge_rejects_invalid_ssh_and_invalid_tls() {
+    for (tls, ssh_enabled) in [("prefer", false), ("verify_full", true)] {
+        let mut engine = new_engine();
+        let result = profile_save(
+            &mut engine,
+            ffi::ProfileDto {
+                id: "mysql".into(),
+                name: "MySQL".into(),
+                driver: "mysql".into(),
+                host: "db.example".into(),
+                port: 3306,
+                database: "app".into(),
+                user: "reader".into(),
+                tls: tls.into(),
+                ssh_enabled,
+                ..Default::default()
+            },
+            1,
+        );
+        assert!(!result.accepted);
+    }
+}
+
+#[test]
+fn mysql_sql_ranges_keep_escaped_quote_and_hash_comment_in_statement() {
+    let sql = "SELECT 'it\\'s; intact'; # comment;\nDELETE FROM items";
+    let selected = sql_execution_range_mysql(sql, 0, 0, 0);
+    assert!(selected.valid);
+    assert_eq!(
+        &sql[selected.start as usize..selected.end as usize],
+        "SELECT 'it\\'s; intact';"
+    );
+    // The shared grammar conservatively confirms dialect-specific escaped strings.
+    assert!(selected.confirmation_required);
+    assert!(!sql_execution_range_mysql("SELECT 1", 0, 0, 0).confirmation_required);
+    let selected = sql_execution_range_mysql(sql, sql.len() as u64, 0, 0);
+    assert!(selected.valid);
+    assert!(selected.confirmation_required);
+}
+
+#[test]
+fn export_dialect_rejects_unknown_names() {
+    let mut engine = new_engine();
+    let result = start_export_dialect(
+        &mut engine,
+        0,
+        "/unused",
+        "sql",
+        vec!["items".into()],
+        "unknown",
+    );
+    assert!(!result.accepted);
+    assert_eq!(result.error, "Unknown SQL dialect");
+}
+
+#[test]
+fn mysql_sql_mode_crosses_editor_bridge() {
+    let sql = "SELECT 'a\\'; SELECT 2;";
+    let default = sql_execution_range_mysql(sql, 16, 0, 0);
+    let mode = sql_execution_range_mysql_mode(sql, 16, 0, 0, "NO_BACKSLASH_ESCAPES");
+    assert!(mode.valid);
+    assert_eq!(&sql[mode.start as usize..mode.end as usize], "SELECT 2;");
+    assert!(!default.valid || default.start != mode.start || default.end != mode.end);
+}
+
+#[test]
+fn mysql_bridge_preserves_ssh_profile() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut engine =
+        new_engine_with_storage(directory.path().join("mysql-ssh.db").to_str().unwrap());
+    assert!(
+        profile_save(
+            &mut engine,
+            ffi::ProfileDto {
+                id: "mysql-ssh".into(),
+                name: "MySQL over SSH".into(),
+                driver: "mysql".into(),
+                host: "database.internal".into(),
+                port: 3306,
+                database: "inventory".into(),
+                user: "reader".into(),
+                tls: "verify_full".into(),
+                ssh_enabled: true,
+                ssh_host: "bastion.example".into(),
+                ssh_port: 2222,
+                ssh_user: "tunnel".into(),
+                ssh_identity_file: "/keys/mysql".into(),
+                ..Default::default()
+            },
+            701
+        )
+        .accepted
+    );
+    let saved = await_event(&mut engine, "profile_saved");
+    assert!(saved.profiles[0].ssh_enabled);
+    assert_eq!(saved.profiles[0].ssh_host, "bastion.example");
+    assert_eq!(saved.profiles[0].host, "database.internal");
+    assert_eq!(saved.profiles[0].tls, "verify_full");
+}

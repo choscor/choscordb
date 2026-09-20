@@ -22,6 +22,10 @@ QByteArray themedSvg(Icon icon, const QColor& color) {
         return {};
     }
     auto svg = source.readAll();
+    // Database logos retain their upstream brand colors in both themes.
+    if (icon == Icon::PostgreSQL || icon == Icon::SQLite) {
+        return svg;
+    }
     const auto replacement = color.name(QColor::HexRgb).toUtf8();
     svg.replace("currentColor", replacement);
     svg.replace("stroke-width=\"2\"",
@@ -84,9 +88,7 @@ bool validSvgDocument(const QByteArray& svg) {
             continue;
         }
         if (!root) {
-            root =
-                reader.name() == QLatin1String("svg") &&
-                reader.attributes().value(QLatin1String("viewBox")) == QLatin1String("0 0 24 24");
+            root = reader.name() == QLatin1String("svg") && !QSvgRenderer(svg).viewBoxF().isEmpty();
         } else if (reader.name() == QLatin1String("path") ||
                    reader.name() == QLatin1String("polygon") ||
                    reader.name() == QLatin1String("rect") ||
@@ -133,6 +135,11 @@ QList<IconDefinition> iconCatalog() {
          QStringLiteral("desktop/resources/icons/chevron-left.svg")},
         {Icon::Search, QStringLiteral("search"),
          QStringLiteral("desktop/resources/icons/search.svg")},
+        {Icon::PostgreSQL, QStringLiteral("postgresql"),
+         QStringLiteral("desktop/resources/icons/postgresql.svg")},
+        {Icon::MySQL, QStringLiteral("mysql"), QStringLiteral("desktop/resources/icons/mysql.png")},
+        {Icon::SQLite, QStringLiteral("sqlite"),
+         QStringLiteral("desktop/resources/icons/sqlite.svg")},
         {Icon::Database, QStringLiteral("database"),
          QStringLiteral("desktop/resources/icons/database.svg")},
         {Icon::Check, QStringLiteral("check"), QStringLiteral("desktop/resources/icons/check.svg")},
@@ -186,6 +193,12 @@ QString iconResourcePath(Icon icon) {
         return QStringLiteral(":/icons/chevron-left.svg");
     case Icon::Search:
         return QStringLiteral(":/icons/search.svg");
+    case Icon::PostgreSQL:
+        return QStringLiteral(":/icons/postgresql.svg");
+    case Icon::MySQL:
+        return QStringLiteral(":/icons/mysql.png");
+    case Icon::SQLite:
+        return QStringLiteral(":/icons/sqlite.svg");
     case Icon::Database:
         return QStringLiteral(":/icons/database.svg");
     case Icon::Check:
@@ -206,11 +219,15 @@ QString iconResourcePath(Icon icon) {
 
 bool iconResourceDecodes(Icon icon) {
     ::qInitResources_resources();
+    if (icon == Icon::MySQL)
+        return !QPixmap(iconResourcePath(icon)).isNull();
     return validSvgDocument(themedSvg(icon, QColor(Qt::black)));
 }
 
 QIcon themedIcon(Icon icon, const QColor& color, int size) {
     ::qInitResources_resources();
+    if (icon == Icon::MySQL)
+        return QIcon(iconResourcePath(icon));
     auto svg = themedSvg(icon, color);
     if (!renderSvg(svg, QSize(size, size), 1.0).isNull()) {
         return QIcon(new SvgIconEngine(std::move(svg)));

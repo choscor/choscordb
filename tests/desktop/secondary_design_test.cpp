@@ -35,6 +35,24 @@ class SecondaryDesignTest final : public QObject {
   private slots:
     void initTestCase() { QApplication::setStyle(new choscordb::design::ControlStyle); }
 
+    void mysqlExecutionRangeKeepsEscapedSemicolonInsideStatement() {
+        const QString sql = QStringLiteral("SELECT 'a\\';b'; SELECT 2;");
+        const auto range = choscordb::EngineAdapter::executionRange(sql, 12, 0, 0, "mysql");
+        QVERIFY(range.valid);
+        QCOMPARE(sql.mid(range.start, range.end - range.start), QString("SELECT 'a\\';b';"));
+        const auto destructive =
+            choscordb::EngineAdapter::executionRange("# note\nDELETE FROM t", 9, 0, 0, "mysql");
+        QVERIFY(destructive.confirmation);
+    }
+
+    void exportDialogOffersMysqlDialect() {
+        choscordb::EngineAdapter adapter;
+        choscordb::ExportDialog dialog(&adapter);
+        auto* dialect = dialog.findChild<QComboBox*>("exportDialect");
+        QVERIFY(dialect);
+        QVERIFY(dialect->findData("mysql") >= 0);
+    }
+
     void secondaryDialogsUseSharedActionsAndKeepRejectionSafe_data() {
         QTest::addColumn<QString>("surface");
         QTest::addColumn<QString>("closeName");
@@ -109,7 +127,7 @@ class SecondaryDesignTest final : public QObject {
         QCOMPARE(footerCapture.toImage().pixelColor(
                      QPoint(preferences.width() / 2, preferences.height() - 5) *
                      footerCapture.devicePixelRatio()),
-                 QColor("#f2f5f4"));
+                 QColor("#f2f2f2"));
         QCOMPARE(preferences.height(), 412);
         auto* tabs = preferences.findChild<QTabWidget*>("preferencesSections");
         QCOMPARE(tabs->mapTo(&preferences, QPoint{}).x(), 0);
@@ -230,6 +248,20 @@ class SecondaryDesignTest final : public QObject {
         theme.setMode(choscordb::design::ThemeMode::Light);
         theme.applyTo(dialog);
         dialog.show();
+        for (const auto& choice :
+             {std::pair{"profileDriverPostgres", choscordb::design::Icon::PostgreSQL},
+              std::pair{"profileDriverSqlite", choscordb::design::Icon::SQLite}}) {
+            auto* button = dialog.findChild<QPushButton*>(choice.first);
+            QVERIFY(button);
+            const auto image = button->icon().pixmap(24, 24).toImage();
+            QCOMPARE(image, choscordb::design::themedIcon(choice.second, Qt::black, 24)
+                                .pixmap(24, 24)
+                                .toImage());
+            QVERIFY(image !=
+                    choscordb::design::themedIcon(choscordb::design::Icon::Database, Qt::black, 24)
+                        .pixmap(24, 24)
+                        .toImage());
+        }
         auto* driver = dialog.findChild<QComboBox*>("profileDriver");
         QTRY_VERIFY(driver->isEnabled());
         driver->setCurrentIndex(driver->findData("postgres"));
@@ -240,6 +272,39 @@ class SecondaryDesignTest final : public QObject {
         QVERIFY(save->isVisible());
         QVERIFY(dialog.rect().contains(QRect(save->mapTo(&dialog, QPoint()), save->size())));
         QVERIFY(dialog.findChild<QLineEdit*>("profilePassword")->isVisible());
+    }
+
+    void mysqlProfileChoiceUsesServerFieldsAndDefaultPortWithSsh() {
+        using namespace choscordb;
+        EngineAdapter adapter;
+        ProfileDialog dialog(&adapter);
+        dialog.show();
+        auto* driver = dialog.findChild<QComboBox*>("profileDriver");
+        QTRY_VERIFY(driver->isEnabled());
+        auto* mysql = dialog.findChild<QPushButton*>("profileDriverMysql");
+        QVERIFY(mysql);
+        mysql->click();
+        QCOMPARE(driver->currentData().toString(), QString("mysql"));
+        QVERIFY(mysql->isChecked());
+        QVERIFY(dialog.findChild<QLineEdit*>("profileHost")->isVisible());
+        QVERIFY(dialog.findChild<QLineEdit*>("profilePassword")->isVisible());
+        QVERIFY(!dialog.findChild<QLineEdit*>("profilePath")->isVisible());
+        auto* port = dialog.findChild<QSpinBox*>("profilePort");
+        QCOMPARE(port->value(), 3306);
+        QVERIFY(dialog.findChild<QCheckBox*>("profileSshEnabled")->isVisible());
+        dialog.findChild<QPushButton*>("profileDriverPostgres")->click();
+        QCOMPARE(port->value(), 5432);
+        auto* ssh = dialog.findChild<QCheckBox*>("profileSshEnabled");
+        ssh->setChecked(true);
+        mysql->click();
+        auto* mysqlSsh = dialog.findChild<QCheckBox*>("profileSshEnabled");
+        QVERIFY(mysqlSsh->isVisible());
+        mysqlSsh->setChecked(true);
+        QVERIFY(dialog.findChild<QLineEdit*>("profileSshHost")->isVisible());
+        port->setValue(3307);
+        dialog.findChild<QPushButton*>("profileDriverSqlite")->click();
+        mysql->click();
+        QCOMPARE(port->value(), 3307);
     }
 
     void postgresSshFormSavesAndRestoresTunnelSettings() {
@@ -350,7 +415,7 @@ class SecondaryDesignTest final : public QObject {
         const auto selectedImage = sqlite->grab().toImage();
         QCOMPARE(selectedImage.pixelColor(selectedImage.width() / 2,
                                           qRound(6 * sqlite->devicePixelRatioF())),
-                 QColor("#eaf4ef"));
+                 QColor("#ccebdc"));
         auto* path = dialog.findChild<QLineEdit*>("profilePath");
         auto* host = dialog.findChild<QLineEdit*>("profileHost");
         path->setText("/tmp/分析.db");

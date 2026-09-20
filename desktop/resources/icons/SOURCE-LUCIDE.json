@@ -20,11 +20,10 @@
     "copy.svg": "ea80e566c7a12628a447cb53179b19aea4f60b9143e2becd0d0f20bf260e5718",
     "download.svg": "1b47be8ea4928e1b5620c22d24d6e03596dc07ae69af8b41d8ba6674d4bd5409",
     "eye.svg": "5bf90197dd7629cad64a2e48d1186a71559deb6121207d10e3dc5b19ebaffdcf",
-    "eye-off.svg": "774bcd975c5de781a4ee778c76e5591bcdeb409955f7054847e7e6003da0a520",
-    "app-mark.svg": "23f93c19eb3c8d3419a3e8c01f1f69dcf74bbfb8066cfabe9b3e7312ba3bfb65"
+    "eye-off.svg": "774bcd975c5de781a4ee778c76e5591bcdeb409955f7054847e7e6003da0a520"
   },
   "license": "ISC AND MIT",
-  "note": "Lucide license and original source revision retained. MVP referenceOverrides replace the named paths with the local visual authority; their original hashes are preserved below. Other listed assets remain Lucide adaptations/upstream assets. app-mark.svg adapts Lucide database-zap with white strokes on a green rounded background; its geometry comes from the pinned source revision. referenceAdditions are copied from the local MVP visual authority and are not Lucide imports.",
+  "note": "Lucide license and original source revision retained. MVP referenceOverrides replace the named paths with the local visual authority; their original hashes are preserved below. Other listed assets remain Lucide adaptations/upstream assets. referenceAdditions are copied from the local MVP visual authority and are not Lucide imports. app-mark.svg is Choscor brand artwork, not a Lucide icon; its source is recorded with the local additions.",
   "licenseSha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
   "referenceOverrides": {
     "source": "docs/mvp-design/prototype.js",
@@ -104,15 +103,13 @@
       "key.svg": {
         "referenceKey": "key",
         "sha256": "0de70ce2b1f21cab9f6c1a64b66a49bb422c0f9a0c3c7725149499e947c3f885"
+      },
+      "app-mark.svg": {
+        "source": "https://choscor.com/assets/logo.png",
+        "sourceSha256": "f40e48624a0dcab97df736d0d722d1ff3aebfd9b9468d6df61253b525b91076d",
+        "sha256": "fdb81cc21f86597bb56cf631d376eb576fb93ffdce3d827047c2ea2a3ac150d7",
+        "changes": "Original transparent 1024px dog artwork embedded unchanged over a rounded orange-to-gold gradient."
       }
-    }
-  },
-  "adaptations": {
-    "app-mark.svg": {
-      "upstreamIcon": "database-zap",
-      "upstreamPath": "icons/database-zap.svg",
-      "upstreamSha256": "4ea707d1bd7d339dc4e228a28ef93f9358ff9deeed54f211dbbeffb07ebc4948",
-      "changes": "White strokes, green rounded background, scaled and positioned on the shared 24-square canvas."
     }
   }
 }

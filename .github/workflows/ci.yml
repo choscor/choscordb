@@ -165,3 +165,32 @@ jobs:
       - name: Stop owned PostgreSQL fixture
         if: always()
         run: python scripts/integration/postgres_fixture.py stop
+  mysql-integration:
+    name: MySQL 8.4 integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: choscordb-test-password
+          MYSQL_DATABASE: choscordb_test
+        ports:
+          - 33306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install TLS build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes pkg-config libssl-dev libdbus-1-dev
+      - name: Run MySQL driver integration tests
+        run: cargo test -p choscordb-driver-mysql --lib --test live --test editing --locked -- --include-ignored --test-threads=1
+      - name: Run MySQL core integration tests
+        run: cargo test -p choscordb-core --test mysql --locked -- --include-ignored --test-threads=1

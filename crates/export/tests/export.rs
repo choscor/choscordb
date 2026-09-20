@@ -426,3 +426,34 @@ async fn wide_inline_row_streams_cells_within_the_encoding_allowance() {
         )
     );
 }
+
+#[test]
+fn mysql_export_quotes_identifiers_and_preserves_text_in_any_sql_mode() {
+    let format = ExportFormat::SqlInsert {
+        table: vec!["shop".into(), "a`b".into()],
+        dialect: SqlDialect::Mysql,
+    };
+    let mut cols = columns();
+    cols[0].name = "odd`name".into();
+    cols[1].name = "payload".into();
+    assert_eq!(
+        encode_row(
+            &format,
+            &cols,
+            &vec![Value::Text("a\\'".into()), Value::Binary(vec![0, 255])],
+            true
+        )
+        .unwrap(),
+        "INSERT INTO `shop`.`a``b` (`odd``name`, `payload`) VALUES (CONVERT(X'615c27' USING utf8mb4), X'00ff');\n"
+    );
+    assert_eq!(
+        encode_row(
+            &format,
+            &cols,
+            &vec![Value::Text(String::new()), Value::Null],
+            true
+        )
+        .unwrap(),
+        "INSERT INTO `shop`.`a``b` (`odd``name`, `payload`) VALUES (CONVERT(X'' USING utf8mb4), NULL);\n"
+    );
+}

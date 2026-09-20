@@ -8,22 +8,39 @@ pub(crate) struct Token {
 
 // A lexical pass complements the grammar for incomplete editor buffers and
 // PostgreSQL dollar strings, including nested block comments.
-pub(crate) fn scan(sql: &str) -> (Vec<Token>, Vec<usize>, bool) {
+pub(crate) fn scan_with_mode(
+    sql: &str,
+    mode: Option<crate::MysqlSqlMode>,
+) -> (Vec<Token>, Vec<usize>, bool) {
+    let mysql = mode.is_some();
     let b = sql.as_bytes();
     let (mut i, mut depth) = (0, 0usize);
     let (mut tokens, mut ends) = (Vec::new(), Vec::new());
     let mut valid = true;
     while i < b.len() {
         let start = i;
-        if b[i..].starts_with(b"--") {
+        if (b[i..].starts_with(b"--")
+            && (!mysql || b.get(i + 2).is_some_and(|c| c.is_ascii_whitespace())))
+            || (mysql && b[i] == b'#')
+        {
             while i < b.len() && b[i] != b'\n' {
                 i += 1;
             }
         } else if b[i..].starts_with(b"/*") {
+            // MySQL executes version comments as SQL. Preserve a selectable
+            // statement and require confirmation rather than treating it as inert.
+            if mysql && b[i..].starts_with(b"/*!") {
+                valid = false;
+                tokens.push(Token {
+                    word: String::new(),
+                    start,
+                    depth,
+                });
+            }
             i += 2;
             let mut nesting = 1;
             while i < b.len() && nesting > 0 {
-                if b[i..].starts_with(b"/*") {
+                if !mysql && b[i..].starts_with(b"/*") {
                     nesting += 1;
                     i += 2;
                 } else if b[i..].starts_with(b"*/") {
@@ -34,12 +51,15 @@ pub(crate) fn scan(sql: &str) -> (Vec<Token>, Vec<usize>, bool) {
                 }
             }
             valid &= nesting == 0;
-        } else if matches!(b[i], b'\'' | b'"' | b'`' | b'[') {
+        } else if matches!(b[i], b'\'' | b'"' | b'`') || (!mysql && b[i] == b'[') {
             let close = if b[i] == b'[' { b']' } else { b[i] };
-            let escape = b[i] == b'\''
+            let escape = mode.is_some_and(|mode| {
+                !mode.no_backslash_escapes && (b[i] == b'\'' || (b[i] == b'"' && !mode.ansi_quotes))
+            }) || (!mysql
+                && b[i] == b'\''
                 && start > 0
                 && matches!(b[start - 1], b'e' | b'E')
-                && (start < 2 || !b[start - 2].is_ascii_alphanumeric());
+                && (start < 2 || !b[start - 2].is_ascii_alphanumeric()));
             i += 1;
             let mut closed = false;
             while i < b.len() {
@@ -58,7 +78,7 @@ pub(crate) fn scan(sql: &str) -> (Vec<Token>, Vec<usize>, bool) {
                 }
             }
             valid &= closed;
-        } else if b[i] == b'$' && {
+        } else if !mysql && b[i] == b'$' && {
             let mut j = i + 1;
             if j < b.len() && (b[j].is_ascii_alphabetic() || b[j] == b'_') {
                 while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_') {
@@ -112,7 +132,16 @@ pub(crate) fn scan(sql: &str) -> (Vec<Token>, Vec<usize>, bool) {
 }
 
 pub fn statement_ranges(sql: &str) -> Vec<Range<usize>> {
-    let (tokens, mut ends, _) = scan(sql);
+    statement_ranges_dialect(sql, false)
+}
+pub(crate) fn statement_ranges_dialect(sql: &str, mysql: bool) -> Vec<Range<usize>> {
+    statement_ranges_with_mode(sql, mysql.then_some(crate::MysqlSqlMode::default()))
+}
+pub(crate) fn statement_ranges_with_mode(
+    sql: &str,
+    mode: Option<crate::MysqlSqlMode>,
+) -> Vec<Range<usize>> {
+    let (tokens, mut ends, _) = scan_with_mode(sql, mode);
     if ends.last().copied() != Some(sql.len()) {
         ends.push(sql.len());
     }

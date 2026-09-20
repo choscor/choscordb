@@ -32,6 +32,11 @@ QToolButton:disabled {
 
 QToolButton[designRole="menuButton"] {
   padding-right: 21px;
+  background: @field;
+}
+
+QToolButton[designRole="menuButton"]:hover, QToolButton[designRole="menuButton"]:pressed, QToolButton[designRole="menuButton"]:checked {
+  background: @muted;
 }
 
 QToolButton[designRole="menuButton"]::menu-indicator {

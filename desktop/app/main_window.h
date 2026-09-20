@@ -41,8 +41,19 @@ class MainWindow final : public QMainWindow {
 
   protected:
     void closeEvent(QCloseEvent* event) override;
+#ifdef Q_OS_MACOS
+    void showEvent(QShowEvent* event) override;
+#endif
 
   private:
+    struct Ui;
+    Ui buildUi();
+    void connectWorkspace(const Ui& ui, const QString& storagePath);
+    void connectLifecycle(const Ui& ui, const QString& storagePath);
+    void connectNavigator(const Ui& ui);
+#ifdef Q_OS_MACOS
+    void updateNativeTitleBar();
+#endif
     quint64 profileListToken_ = 0;
     std::optional<quint64> pendingBrowseConnection_, browsingConnection_;
     QString pendingBrowseProfileId_, pendingBrowseProfileName_, lastBrowsedProfileId_;

@@ -11,6 +11,9 @@ use tokio::{
 };
 
 pub(crate) enum Command {
+    SqlMode {
+        request_token: u64,
+    },
     Edit {
         batch: EditBatch,
         request_token: u64,
@@ -55,6 +58,9 @@ pub(crate) enum Command {
         options: QueryOptions,
         cancellation: watch::Receiver<bool>,
     },
+    NextResult {
+        query: QueryId,
+    },
     Fetch {
         query: QueryId,
         size: PageSize,
@@ -64,6 +70,8 @@ pub(crate) enum Command {
     Metadata {
         parent: Option<ObjectId>,
         request_token: u64,
+        offset: u64,
+        limit: u32,
     },
     Transaction(bool),
     Release(QueryId),
@@ -289,6 +297,17 @@ pub(crate) async fn run(
         },
     )
     .await;
+    if let Ok(Some(mode)) = connection.sql_mode().await {
+        send(
+            &events,
+            Event::SessionSqlMode {
+                connection: id,
+                mode,
+                request_token: 0,
+            },
+        )
+        .await;
+    }
     let mut sql_active: Option<Active> = None;
     let mut object_active: Option<Active> = None;
     let mut readers = std::collections::HashMap::<QueryId, crate::deferred::Reader>::new();
@@ -406,6 +425,63 @@ pub(crate) async fn run(
             &mut sql_active
         };
         match command {
+            Command::SqlMode { request_token } => {
+                // Inspect the session without retiring its current results. A
+                // user may still reject the subsequent execution confirmation.
+                let outcome = if let Some(current) = active.as_mut() {
+                    perform(
+                        connection.sql_mode(),
+                        current.cancel.clone(),
+                        Control {
+                            query: current.id,
+                            cancellation: &mut current.cancellation,
+                            shutdown: &mut shutdown,
+                            deadline: None,
+                            grace,
+                            events: &events,
+                        },
+                    )
+                    .await
+                } else {
+                    crate::operation::Outcome {
+                        result: metadata_operation(connection.sql_mode(), &mut shutdown).await,
+                        poisoned: false,
+                    }
+                };
+                match outcome.result {
+                    Ok(mode) => {
+                        send(
+                            &events,
+                            Event::SessionSqlMode {
+                                connection: id,
+                                mode: mode.unwrap_or_default(),
+                                request_token,
+                            },
+                        )
+                        .await
+                    }
+                    Err(error) => {
+                        if let Some(mut old) = active.take() {
+                            if let Some(history) = &mut old.history {
+                                history.fail(error.kind).await;
+                            }
+                            let _ = old.cursor.close().await;
+                            failure(&events, old.id, error.clone()).await;
+                        }
+                        send(
+                            &events,
+                            Event::OperationFailed {
+                                connection: id,
+                                error,
+                            },
+                        )
+                        .await
+                    }
+                }
+                if outcome.poisoned {
+                    break;
+                }
+            }
             Command::EditQuery {
                 sql,
                 result_columns,
@@ -677,6 +753,106 @@ pub(crate) async fn run(
                         }
                         failure(&events, query, error).await;
                     }
+                }
+                if outcome.poisoned {
+                    break;
+                }
+            }
+            Command::NextResult { query } => {
+                let Some(current) = active.as_mut().filter(|a| a.id == query) else {
+                    failure(
+                        &events,
+                        query,
+                        DriverError::new(ErrorKind::StaleHandle, "Result cursor is unavailable"),
+                    )
+                    .await;
+                    continue;
+                };
+                // Navigation of completed result sets is not SQL execution. The
+                // MySQL producer enforces its own execution deadline while active.
+                if current.completed {
+                    current.deadline = None;
+                }
+                let outcome = perform(
+                    current.cursor.next_result_set(),
+                    current.cancel.clone(),
+                    Control {
+                        query,
+                        cancellation: &mut current.cancellation,
+                        shutdown: &mut shutdown,
+                        deadline: current.deadline,
+                        grace,
+                        events: &events,
+                    },
+                )
+                .await;
+                match outcome.result {
+                    Ok(true) => {
+                        let columns = current.cursor.columns().to_vec();
+                        let result = async {
+                            if column_bytes(&columns) > raw_limit {
+                                return Err(DriverError::new(
+                                    ErrorKind::ResourceLimit,
+                                    "Result schema exceeds memory budget",
+                                ));
+                            }
+                            let lease = wait_capacity(
+                                memory.acquire(query, false),
+                                Some(&mut current.cancellation),
+                                &mut shutdown,
+                                current.deadline,
+                            )
+                            .await?;
+                            let (store, mut lease) = crate::store::Store::create_reserved(
+                                columns.clone(),
+                                store_config.clone(),
+                                store_directory.clone(),
+                                lease,
+                            )
+                            .await?;
+                            stores.insert(query, store);
+                            cache.remove(query);
+                            current.completed = false;
+                            current.fetched_rows = 0;
+                            lease
+                                .shrink_to(raw_limit * 4)
+                                .expect("schema fits transfer reservation");
+                            send(
+                                &events,
+                                Event::QueryState {
+                                    query,
+                                    state: QueryState::Running,
+                                },
+                            )
+                            .await;
+                            send(
+                                &events,
+                                Event::Schema {
+                                    query,
+                                    columns,
+                                    lease,
+                                },
+                            )
+                            .await;
+                            Ok(())
+                        }
+                        .await;
+                        if let Err(error) = result {
+                            failure(&events, query, error).await;
+                        }
+                    }
+                    Ok(false) => {
+                        send(
+                            &events,
+                            Event::QueryFinished {
+                                query,
+                                duration: current.started.elapsed(),
+                                summary: current.cursor.summary(),
+                            },
+                        )
+                        .await
+                    }
+                    Err(error) => failure(&events, query, error).await,
                 }
                 if outcome.poisoned {
                     break;
@@ -1021,8 +1197,13 @@ pub(crate) async fn run(
             Command::Metadata {
                 parent,
                 request_token,
-            } => match metadata_operation(connection.load_metadata(parent.clone()), &mut shutdown)
-                .await
+                offset,
+                limit,
+            } => match metadata_operation(
+                connection.load_metadata_page(parent.clone(), offset, limit),
+                &mut shutdown,
+            )
+            .await
             {
                 Ok(objects) => {
                     send(
@@ -1031,7 +1212,9 @@ pub(crate) async fn run(
                             connection: id,
                             parent,
                             request_token,
-                            objects,
+                            objects: objects.objects,
+                            offset,
+                            next_offset: objects.next_offset,
                         },
                     )
                     .await

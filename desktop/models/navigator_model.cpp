@@ -8,6 +8,8 @@ struct NavigatorModel::Node {
     enum State { Unloaded, Loading, Loaded, Failed } state = Unloaded;
     quint64 connection = 0;
     quint64 token = 0;
+    quint64 offset = 0;
+    bool hasMore = false;
     NavigatorObject object;
     QString error;
     Node* parent = nullptr;
@@ -65,7 +67,7 @@ CompletionSnapshot NavigatorModel::completionSnapshot(quint64 connection, quint6
     auto visit = [&](const Node* value) {
         if (value->placeholder)
             return true;
-        if (value->object.hasChildren && value->state != Node::Loaded)
+        if (value->object.hasChildren && (value->state != Node::Loaded || value->hasMore))
             snapshot.partial = true;
         const auto& object = value->object;
         if (object.kind != "database" && object.kind != "schema" && object.kind != "table" &&
@@ -158,7 +160,9 @@ QVariant NavigatorModel::data(const QModelIndex& index, int role) const {
     case KindRole:
         return value->object.kind;
     case ChildrenLoadedRole:
-        return !value->placeholder && value->state == Node::Loaded;
+        return !value->placeholder && value->state == Node::Loaded && !value->hasMore;
+    case HasMoreRole:
+        return !value->placeholder && value->hasMore && value->state == Node::Loaded;
     case PropertiesRole:
         return value->object.properties;
     case ErrorRole:
@@ -192,7 +196,12 @@ void NavigatorModel::fetchMore(const QModelIndex& parent) {
     if (!canFetchMore(parent))
         return;
     auto* value = node(parent);
-    clearChildren(value);
+    if (!value->children.empty() && value->children.back()->placeholder) {
+        const auto last = static_cast<int>(value->children.size()) - 1;
+        beginRemoveRows(parent, last, last);
+        value->children.pop_back();
+        endRemoveRows();
+    }
     value->state = Node::Loading;
     value->token = ++nextToken_;
     value->error.clear();
@@ -202,7 +211,8 @@ void NavigatorModel::fetchMore(const QModelIndex& parent) {
     loading->placeholder = true;
     loading->state = Node::Loaded;
     loading->object = {QString(), tr("Loading…"), QString(), QString("loading"), false};
-    beginInsertRows(parent, 0, 0);
+    const auto loadingRow = static_cast<int>(value->children.size());
+    beginInsertRows(parent, loadingRow, loadingRow);
     value->children.push_back(std::move(loading));
     endInsertRows();
     emit dataChanged(parent, parent, {ErrorRole, ChildrenLoadedRole});
@@ -213,8 +223,12 @@ void NavigatorModel::fetchMore(const QModelIndex& parent) {
     // request boundary so even an immediate reply cannot mutate rows reentrantly.
     QTimer::singleShot(0, this, [this, connection, objectId, token] {
         const auto* current = find(connection, objectId);
-        if (current && current->state == Node::Loading && current->token == token)
-            emit childrenRequested(connection, objectId, token);
+        if (current && current->state == Node::Loading && current->token == token) {
+            if (current->offset == 0)
+                emit childrenRequested(connection, objectId, token);
+            else
+                emit childrenPageRequested(connection, objectId, token, current->offset, 1000);
+        }
     });
 }
 NavigatorModel::Node* NavigatorModel::find(quint64 connection, const QString& id) const {
@@ -271,17 +285,29 @@ bool NavigatorModel::removeConnection(quint64 id) {
 }
 bool NavigatorModel::applyChildren(quint64 connection, const QString& parentObjectId, quint64 token,
                                    std::vector<NavigatorObject> children) {
+    return applyChildrenPage(connection, parentObjectId, token, std::move(children), 0, false, 0);
+}
+bool NavigatorModel::applyChildrenPage(quint64 connection, const QString& parentObjectId,
+                                       quint64 token, std::vector<NavigatorObject> children,
+                                       quint64 offset, bool hasMore, quint64 nextOffset) {
     auto* value = find(connection, parentObjectId);
-    if (!value || value->state != Node::Loading || value->token != token)
+    if (!value || value->state != Node::Loading || value->token != token || value->offset != offset)
         return false;
-    if (children.size() > std::numeric_limits<int>::max()) {
+    if (hasMore && (nextOffset <= offset || children.empty())) {
+        failChildren(connection, parentObjectId, token, tr("Invalid metadata continuation."));
+        return false;
+    }
+    if (children.size() >= std::numeric_limits<int>::max() - value->children.size()) {
         failChildren(connection, parentObjectId, token, tr("Too many metadata objects."));
         return false;
     }
     QSet<QString> ids;
+    for (const auto& child : value->children)
+        if (!child->placeholder)
+            ids.insert(child->object.id);
     for (const auto& object : children) {
         const auto* existing = find(connection, object.id);
-        const bool sameIndex = existing && object.kind == "index" &&
+        const bool sameIndex = existing && existing->parent != value && object.kind == "index" &&
                                existing->object.kind == "index" && !object.hasChildren &&
                                !existing->object.hasChildren;
         if (object.id.isEmpty() || ids.contains(object.id) || (existing && !sameIndex)) {
@@ -300,18 +326,44 @@ bool NavigatorModel::applyChildren(quint64 connection, const QString& parentObje
         child->object = std::move(object);
         prepared.push_back(std::move(child));
     }
-    clearChildren(value);
-    value->state = Node::Loaded;
-    value->error.clear();
     const auto parentIndex = indexFor(value);
+    const auto loadingRow = static_cast<int>(value->children.size()) - 1;
+    beginRemoveRows(parentIndex, loadingRow, loadingRow);
+    value->children.pop_back();
+    endRemoveRows();
+    value->state = Node::Loaded;
+    value->hasMore = hasMore;
+    value->offset = nextOffset;
+    value->error.clear();
+    if (hasMore) {
+        auto continuation = std::make_unique<Node>();
+        continuation->connection = connection;
+        continuation->parent = value;
+        continuation->placeholder = true;
+        continuation->state = Node::Loaded;
+        continuation->object = {QString(), tr("Load more…"), QString(), QString("load_more"),
+                                false};
+        prepared.push_back(std::move(continuation));
+    }
     if (!prepared.empty()) {
-        beginInsertRows(parentIndex, 0, static_cast<int>(prepared.size()) - 1);
-        value->children = std::move(prepared);
+        const auto first = static_cast<int>(value->children.size());
+        beginInsertRows(parentIndex, first, first + static_cast<int>(prepared.size()) - 1);
+        for (auto& child : prepared)
+            value->children.push_back(std::move(child));
         endInsertRows();
     }
-    emit dataChanged(parentIndex, parentIndex, {ErrorRole, ChildrenLoadedRole});
+    emit dataChanged(parentIndex, parentIndex, {ErrorRole, ChildrenLoadedRole, HasMoreRole});
     emit completionChanged(connection);
     return true;
+}
+void NavigatorModel::requestNextPage(const QModelIndex& index) {
+    auto* value = node(index);
+    if (value && value->placeholder)
+        value = value->parent;
+    if (!value || !value->hasMore || value->state != Node::Loaded)
+        return;
+    value->state = Node::Unloaded;
+    fetchMore(indexFor(value));
 }
 bool NavigatorModel::failChildren(quint64 connection, const QString& parentObjectId, quint64 token,
                                   const QString& error) {
@@ -320,7 +372,7 @@ bool NavigatorModel::failChildren(quint64 connection, const QString& parentObjec
         return false;
     value->state = Node::Failed;
     value->error = error.isEmpty() ? tr("Metadata loading failed.") : error;
-    auto& placeholder = value->children.front();
+    auto& placeholder = value->children.back();
     placeholder->error = value->error;
     placeholder->object.name = tr("Failed: %1 — refresh to retry").arg(value->error);
     placeholder->object.kind = "error";
@@ -340,6 +392,8 @@ void NavigatorModel::refresh(const QModelIndex& index) {
         return;
     clearChildren(value);
     value->state = Node::Unloaded;
+    value->offset = 0;
+    value->hasMore = false;
     value->error.clear();
     emit completionChanged(value->connection);
     fetchMore(indexFor(value));

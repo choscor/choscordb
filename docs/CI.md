@@ -81,7 +81,7 @@ cargo install cargo-deny --version 0.20.2 --locked
 cargo deny --locked check
 ```
 
-The focused deterministic stages are `cpp-format`, `python-lint`,
+The focused deterministic stages are `cpp-format`, `cpp-size`, `python-lint`,
 `python-format`, `actionlint`, `python-tests`, `rust-format`, `rust-check`,
 `rust-clippy`, `rust-tests`, and `cargo-deny`. Native stages are
 `native-dependencies`, `native-build`, and `native-tests`. Every command prints
@@ -122,6 +122,12 @@ Strict native compilation uses `/W4 /WX` on MSVC and `-Wall -Wextra -Wpedantic
 -Werror` on GCC/Clang. The blocking clang-tidy profile is limited to analyzer,
 bugprone, performance, portability, and reviewed modernize/core-guideline
 checks; naming/readability policy is not imported wholesale.
+
+The dependency-free `cpp-size` gate enforces a 1,000-physical-line maximum for
+the same handwritten source/header scope, including tests and Objective-C++.
+It counts blank lines and comments, reports every oversized file, and requires
+no compiler database. CTest also runs it as `cpp-source-size` when Python is
+available. See [C++ file size](cpp-file-size.md) for rationale and analyzer options.
 
 ## PostgreSQL integration
 

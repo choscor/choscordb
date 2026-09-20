@@ -64,16 +64,16 @@ pub(crate) async fn row(
         ExportFormat::Csv => String::new(),
         ExportFormat::Json => if first { "[" } else { ",[" }.into(),
         ExportFormat::JsonLines => "{\"row\":[".into(),
-        ExportFormat::SqlInsert { table, .. } => format!(
+        ExportFormat::SqlInsert { table, dialect } => format!(
             "INSERT INTO {} ({}) VALUES (",
             table
                 .iter()
-                .map(|v| identifier(v))
+                .map(|v| identifier(v, *dialect))
                 .collect::<Result<Vec<_>>>()?
                 .join("."),
             columns
                 .iter()
-                .map(|v| identifier(&v.name))
+                .map(|v| identifier(&v.name, *dialect))
                 .collect::<Result<Vec<_>>>()?
                 .join(", ")
         ),
@@ -188,7 +188,7 @@ async fn deferred(
                 }
                 (
                     ExportFormat::SqlInsert {
-                        dialect: SqlDialect::Sqlite,
+                        dialect: SqlDialect::Sqlite | SqlDialect::Mysql,
                         ..
                     },
                     DeferredKind::Binary,
@@ -214,6 +214,13 @@ async fn deferred(
                     },
                     DeferredKind::Text,
                 ) => "E'",
+                (
+                    ExportFormat::SqlInsert {
+                        dialect: SqlDialect::Mysql,
+                        ..
+                    },
+                    DeferredKind::Text,
+                ) => "CONVERT(X'",
             };
             write(sink, prefix, count).await?;
         }
@@ -240,11 +247,12 @@ async fn deferred(
                     s[1..s.len() - 1].to_owned()
                 }
                 ExportFormat::SqlInsert { dialect, .. } => {
-                    if valid.contains('\0') {
+                    if valid.contains('\0') && !matches!(dialect, SqlDialect::Mysql) {
                         return Err(invalid());
                     }
                     match dialect {
                         SqlDialect::Sqlite => valid.replace('\'', "''"),
+                        SqlDialect::Mysql => hex(valid.as_bytes()),
                         SqlDialect::Postgres => valid.replace('\\', "\\\\").replace('\'', "''"),
                     }
                 }
@@ -266,6 +274,13 @@ async fn deferred(
             },
             DeferredKind::Binary,
         ) => "', 'hex')",
+        (
+            ExportFormat::SqlInsert {
+                dialect: SqlDialect::Mysql,
+                ..
+            },
+            DeferredKind::Text,
+        ) => "' USING utf8mb4)",
         (ExportFormat::SqlInsert { .. }, _) => "'",
     };
     write(sink, suffix, count).await

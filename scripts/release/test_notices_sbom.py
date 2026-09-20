@@ -65,11 +65,15 @@ class NoticesTest(unittest.TestCase):
         }
         repository = Path(__file__).resolve().parents[2]
         icons = repository / "desktop/resources/icons"
-        for name in ["LICENSE-LUCIDE", "SOURCE-LUCIDE.json"]:
+        for name in [
+            "LICENSE-LUCIDE",
+            "SOURCE-LUCIDE.json",
+            "SOURCE-DATABASE-LOGOS.json",
+        ]:
             payload["choscordb.app/Contents/Resources/licenses/" + name] = (
                 icons / name
             ).read_bytes()
-        for icon in icons.glob("*.svg"):
+        for icon in [*icons.glob("*.svg"), *icons.glob("*.png")]:
             payload["choscordb.app/Contents/Resources/icons/" + icon.name] = (
                 icon.read_bytes()
             )
@@ -269,6 +273,10 @@ class NoticesTest(unittest.TestCase):
     def test_reviewed_icon_and_font_notices_reject_changed_payload_bytes(self):
         for relative, diagnostic in [
             ("icons/eye-off.svg", "Icon"),
+            ("icons/postgresql.svg", "Icon"),
+            ("icons/sqlite.svg", "Icon"),
+            ("icons/mysql.png", "Icon"),
+            ("licenses/SOURCE-DATABASE-LOGOS.json", "Database logo"),
             ("licenses/SOURCE-LUCIDE.json", "Lucide"),
             ("licenses/LICENSE-LUCIDE", "Lucide"),
             ("licenses/SOURCE-GEIST.json", "Geist"),
@@ -284,6 +292,25 @@ class NoticesTest(unittest.TestCase):
                     self.generate()
                 path.write_bytes(original)
                 self.refresh_manifest()
+
+    def test_database_logo_source_snapshot_must_match_reviewed_assets(self):
+        original = self.source.read_bytes()
+        for name in [
+            "SOURCE-DATABASE-LOGOS.json",
+            "postgresql.svg",
+            "sqlite.svg",
+            "mysql.png",
+        ]:
+            with self.subTest(name=name):
+                source = json.loads(original)
+                for entry in source["files"]:
+                    if entry["path"] == "desktop/resources/icons/" + name:
+                        entry["sha256"] = "0" * 64
+                self.source.write_text(json.dumps(source))
+                self.refresh_manifest()
+                with self.assertRaisesRegex(ValueError, "Database logo|Icon"):
+                    self.generate()
+        self.source.write_bytes(original)
 
     def test_nested_duplicate_icon_cannot_hide_from_inventory(self):
         icons = self.stage / "choscordb.app/Contents/Resources/icons"
@@ -312,6 +339,11 @@ class NoticesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Qt framework versions"):
             self.generate("unknown-qt-patch")
 
+    def test_mysql_logo_notice_preserves_upstream_policy(self):
+        notices = (self.generate() / "THIRD_PARTY_NOTICES.md").read_text()
+        self.assertIn("MySQL is a trademark of Oracle", notices)
+        self.assertIn("https://www.mysql.com/about/legal/logos.html", notices)
+
     def test_current_icon_inventory_uses_reviewed_assets(self):
         document = json.loads((self.generate() / "sbom.spdx.json").read_text())
         packages = {p["SPDXID"]: p["name"] for p in document["packages"]}
@@ -324,11 +356,14 @@ class NoticesTest(unittest.TestCase):
             if r["relationshipType"] == "CONTAINS"
             and "/icons/" in files[r["relatedSpdxElement"]]
         }
-        self.assertEqual(len(icons), 24)
+        self.assertEqual(len(icons), 27)
         self.assertEqual(icons["refresh-cw.svg"], "Lucide Icons")
         self.assertEqual(icons["eye-off.svg"], "Lucide Icons")
         self.assertEqual(icons["code.svg"], "ChoscorDB")
-        self.assertEqual(icons["app-mark.svg"], "Lucide Icons")
+        self.assertEqual(icons["app-mark.svg"], "ChoscorDB")
+        self.assertEqual(icons["postgresql.svg"], "ChoscorDB")
+        self.assertEqual(icons["sqlite.svg"], "ChoscorDB")
+        self.assertEqual(icons["mysql.png"], "ChoscorDB")
         unknown = self.stage / "choscordb.app/Contents/Resources/icons/mystery.svg"
         unknown.write_bytes(b"unreviewed")
         self.refresh_manifest()

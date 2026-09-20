@@ -268,3 +268,61 @@ async fn progress_advances_before_a_large_deferred_row_finishes() {
         "must publish bytes while the row is still incomplete"
     );
 }
+
+#[tokio::test]
+async fn mysql_deferred_text_exports_independent_of_chunk_boundaries() {
+    for (bytes, literal) in [
+        ("é\\'".as_bytes(), "c3a95c27"),
+        (b"".as_slice(), ""),
+        (b"a\0b".as_slice(), "610062"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mysql.sql");
+        let mut src = source(bytes, DeferredKind::Text);
+        let mut sink = FileSink::create(path.clone()).await.unwrap();
+        export(
+            &mut src,
+            &mut sink,
+            ExportFormat::SqlInsert {
+                table: vec!["t".into()],
+                dialect: SqlDialect::Mysql,
+            },
+            Cancellation::default(),
+            limits(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(path).unwrap(),
+            format!("INSERT INTO `t` (`v`) VALUES (CONVERT(X'{literal}' USING utf8mb4));\n")
+        );
+    }
+}
+
+#[tokio::test]
+async fn mysql_export_rejects_invalid_utf8_without_replacing_destination() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mysql.sql");
+    std::fs::write(&path, "original").unwrap();
+    let mut src = source(&[0xc3, 0x20], DeferredKind::Text);
+    let mut sink = FileSink::create(path.clone()).await.unwrap();
+    assert_eq!(
+        export(
+            &mut src,
+            &mut sink,
+            ExportFormat::SqlInsert {
+                table: vec!["t".into()],
+                dialect: SqlDialect::Mysql
+            },
+            Cancellation::default(),
+            limits(),
+            None
+        )
+        .await
+        .unwrap_err()
+        .kind,
+        ErrorKind::InvalidInput
+    );
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "original");
+}
