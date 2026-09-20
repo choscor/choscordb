@@ -17,6 +17,7 @@
 #include <QVBoxLayout>
 #include <QtConcurrent/QtConcurrentRun>
 #include <algorithm>
+#include <cstdint>
 namespace choscordb {
 SearchPanel::SearchPanel(std::function<SqlEditor*()> currentEditor, QWidget* parent)
     : QWidget(parent), currentEditor_(std::move(currentEditor)) {
@@ -270,7 +271,7 @@ void SearchPanel::replaceOne() {
                           static_cast<unsigned long>(matchStart_));
     editor->SendScintilla(QsciScintilla::SCI_SETTARGETEND, static_cast<unsigned long>(matchEnd_));
     editor->SendScintilla(QsciScintilla::SCI_REPLACETARGET,
-                          static_cast<unsigned long>(bytes.size()), bytes.constData());
+                          static_cast<std::uintptr_t>(bytes.size()), bytes.constData());
     editor->SendScintilla(QsciScintilla::SCI_ENDUNDOACTION);
     editor->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(start),
                           static_cast<long>(start + bytes.size()));
@@ -333,7 +334,7 @@ void SearchPanel::replaceAll() {
                                       static_cast<unsigned long>(
                                           target->SendScintilla(QsciScintilla::SCI_GETLENGTH)));
                 target->SendScintilla(QsciScintilla::SCI_REPLACETARGET,
-                                      static_cast<unsigned long>(bytes.size()), bytes.constData());
+                                      static_cast<std::uintptr_t>(bytes.size()), bytes.constData());
                 target->SendScintilla(QsciScintilla::SCI_ENDUNDOACTION);
             }
             invalidate();

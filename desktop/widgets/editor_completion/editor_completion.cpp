@@ -10,6 +10,7 @@
 #include <QStandardItemModel>
 #include <QTimer>
 #include <QtConcurrent>
+#include <cstdint>
 namespace choscordb {
 EditorCompletionController::EditorCompletionController(QObject* parent)
     : QObject(parent), completer_(new QCompleter(this)), model_(new QStandardItemModel(this)),
@@ -202,8 +203,8 @@ void EditorCompletionController::accept(const QModelIndex& index) {
     editor_->beginUndoAction();
     editor_->SendScintilla(QsciScintilla::SCI_SETTARGETSTART, long(shownStart_));
     editor_->SendScintilla(QsciScintilla::SCI_SETTARGETEND, long(shownEnd_));
-    editor_->SendScintilla(QsciScintilla::SCI_REPLACETARGET, insertion.size(),
-                           insertion.constData());
+    editor_->SendScintilla(QsciScintilla::SCI_REPLACETARGET,
+                           static_cast<std::uintptr_t>(insertion.size()), insertion.constData());
     editor_->SendScintilla(QsciScintilla::SCI_GOTOPOS, long(shownStart_ + insertion.size()));
     editor_->endUndoAction();
     inserting_ = false;

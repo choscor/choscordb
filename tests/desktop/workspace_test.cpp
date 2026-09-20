@@ -430,27 +430,44 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
     f.execute("SELECT 1");
     QTRY_VERIFY(f.run.isEnabled());
     bool cancelled = false;
-    QTimer::singleShot(0, &f.parent, [&] {
-        auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
-        QVERIFY(box);
-        cancelled = true;
-        box->button(QMessageBox::Cancel)->click();
+    QTimer cancelTimer;
+    cancelTimer.setInterval(10);
+    connect(&cancelTimer, &QTimer::timeout, &f.parent, [&] {
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            auto* box = qobject_cast<QMessageBox*>(widget);
+            if (!box || !box->isVisible())
+                continue;
+            if (auto* button = box->button(QMessageBox::Cancel)) {
+                cancelled = true;
+                cancelTimer.stop();
+                button->click();
+                return;
+            }
+        }
     });
+    cancelTimer.start();
     QVERIFY(!f.workspace.confirmShutdown());
     QVERIFY(cancelled);
     QVERIFY(f.run.isEnabled());
     bool approved = false;
-    QTimer::singleShot(0, &f.parent, [&] {
-        auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
-        QVERIFY(box);
-        for (auto* button : box->buttons())
-            if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
-                approved = true;
-                button->click();
-                return;
+    QTimer approveTimer;
+    approveTimer.setInterval(10);
+    connect(&approveTimer, &QTimer::timeout, &f.parent, [&] {
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            auto* box = qobject_cast<QMessageBox*>(widget);
+            if (!box || !box->isVisible())
+                continue;
+            for (auto* button : box->buttons()) {
+                if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+                    approved = true;
+                    approveTimer.stop();
+                    button->click();
+                    return;
+                }
             }
-        QFAIL("missing close action");
+        }
     });
+    approveTimer.start();
     QVERIFY(f.workspace.confirmShutdown());
     QVERIFY(approved);
     f.rollback.trigger();
