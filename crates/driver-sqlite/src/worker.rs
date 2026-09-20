@@ -62,7 +62,7 @@ pub(super) fn run(
                 }
                 let deadline = options.timeout.and_then(|t| Instant::now().checked_add(t));
                 let stop = requested.clone();
-                db.progress_handler(
+                let _ = db.progress_handler(
                     1000,
                     Some(move || {
                         stop.load(Ordering::Acquire)
@@ -80,7 +80,7 @@ pub(super) fn run(
                     deadline,
                     max_schema_bytes,
                 );
-                db.progress_handler(0, None::<fn() -> bool>);
+                let _ = db.progress_handler(0, None::<fn() -> bool>);
             }
             Command::Object(operation) => operation(&db),
             Command::Metadata(parent, r) => {
@@ -361,10 +361,10 @@ fn execute(
                 let _ = r.send(page);
             }
             Command::Object(operation) => {
-                db.progress_handler(0, None::<fn() -> bool>);
+                let _ = db.progress_handler(0, None::<fn() -> bool>);
                 operation(db);
                 let stop = cancel.clone();
-                db.progress_handler(
+                let _ = db.progress_handler(
                     1000,
                     Some(move || {
                         stop.load(Ordering::Acquire)
@@ -375,10 +375,10 @@ fn execute(
             Command::Metadata(parent, reply) => {
                 // Metadata is a separate operation on the same connection. Its SQL
                 // must not inherit an exhausted result's query deadline.
-                db.progress_handler(0, None::<fn() -> bool>);
+                let _ = db.progress_handler(0, None::<fn() -> bool>);
                 let _ = reply.send(metadata::load(db, parent));
                 let stop = cancel.clone();
-                db.progress_handler(
+                let _ = db.progress_handler(
                     1000,
                     Some(move || {
                         stop.load(Ordering::Acquire)
@@ -387,10 +387,10 @@ fn execute(
                 );
             }
             Command::Ddl(object, reply) => {
-                db.progress_handler(0, None::<fn() -> bool>);
+                let _ = db.progress_handler(0, None::<fn() -> bool>);
                 let _ = reply.send(metadata::ddl(db, object));
                 let stop = cancel.clone();
-                db.progress_handler(
+                let _ = db.progress_handler(
                     1000,
                     Some(move || {
                         stop.load(Ordering::Acquire)
@@ -399,10 +399,10 @@ fn execute(
                 );
             }
             Command::EditTarget(object, reply) => {
-                db.progress_handler(0, None::<fn() -> bool>);
+                let _ = db.progress_handler(0, None::<fn() -> bool>);
                 let _ = reply.send(metadata::edit_target(db, &object));
                 let stop = cancel.clone();
-                db.progress_handler(
+                let _ = db.progress_handler(
                     1000,
                     Some(move || {
                         stop.load(Ordering::Acquire)
@@ -411,10 +411,10 @@ fn execute(
                 );
             }
             Command::EditQuery(sql, columns, reply) => {
-                db.progress_handler(0, None::<fn() -> bool>);
+                let _ = db.progress_handler(0, None::<fn() -> bool>);
                 let _ = reply.send(metadata::edit_query(db, &sql, columns));
                 let stop = cancel.clone();
-                db.progress_handler(
+                let _ = db.progress_handler(
                     1000,
                     Some(move || {
                         stop.load(Ordering::Acquire)
@@ -460,7 +460,7 @@ fn abort_suspended_rows(db: &Db, rows: &mut rusqlite::Rows<'_>) {
     // Finalizing a suspended automatic RETURNING statement commits its write.
     // Resume the interrupted existing VM so SQLite rolls back before finalization.
     // Callers exclude unstarted/exhausted results and already-executed DDL.
-    db.progress_handler(1, Some(|| true));
+    let _ = db.progress_handler(1, Some(|| true));
     db.get_interrupt_handle().interrupt();
     let _ = rows.next();
 }

@@ -324,7 +324,7 @@ dependencies = [
 
 [[package]]
 name = "choscordb-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "choscordb-credentials",
@@ -346,7 +346,7 @@ dependencies = [
 
 [[package]]
 name = "choscordb-credentials"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "choscordb-driver-api",
  "keyring",
@@ -365,7 +365,7 @@ dependencies = [
 
 [[package]]
 name = "choscordb-driver-mysql"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "choscordb-driver-api",
@@ -378,7 +378,7 @@ dependencies = [
 
 [[package]]
 name = "choscordb-driver-postgres"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "choscordb-driver-api",
@@ -418,14 +418,14 @@ dependencies = [
 
 [[package]]
 name = "choscordb-postgres-values"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "choscordb-driver-api",
 ]
 
 [[package]]
 name = "choscordb-result-cache"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "choscordb-driver-api",
  "proptest",
@@ -433,7 +433,7 @@ dependencies = [
 
 [[package]]
 name = "choscordb-result-store"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "choscordb-driver-api",
  "crc32fast",
@@ -443,7 +443,7 @@ dependencies = [
 
 [[package]]
 name = "choscordb-sql-language"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "regex",
  "tree-sitter",

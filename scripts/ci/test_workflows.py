@@ -247,7 +247,7 @@ class WorkflowPolicyTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate_ci(commented_gate)
         unpinned = self.files["security.yml"].replace(
-            "actions/dependency-review-action@56339e523c0409420f6c2c9a2f4292bbb3c07dd3",
+            "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294",
             "actions/dependency-review-action@v4",
         )
         with self.assertRaises(AssertionError):

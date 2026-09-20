@@ -152,9 +152,10 @@ impl ResultCursor for ObjectCursor {
             .request(|reply| {
                 Command::Object(Box::new(move |db| {
                     let requested = stop.clone();
-                    db.progress_handler(1000, Some(move || requested.load(Ordering::Acquire)));
+                    let _ =
+                        db.progress_handler(1000, Some(move || requested.load(Ordering::Acquire)));
                     let result = read(db, &sql, width, size, max, index, &mut spool, &stop);
-                    db.progress_handler(0, None::<fn() -> bool>);
+                    let _ = db.progress_handler(0, None::<fn() -> bool>);
                     let _ = reply.send(result.map(|page| (page, !db.is_autocommit())));
                 }))
             })

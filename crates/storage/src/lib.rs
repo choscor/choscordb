@@ -704,12 +704,12 @@ impl ConnectionProfile {
     }
 }
 fn check_profile_capacity(db: &Connection) -> Result<()> {
-    let count: usize = db.query_row(
+    let count: i64 = db.query_row(
         "SELECT count(*) FROM (SELECT 1 FROM connection_profiles LIMIT 1000)",
         [],
         |r| r.get(0),
     )?;
-    if count >= MAX_PROFILES {
+    if count >= MAX_PROFILES as i64 {
         return Err(StorageError::ResourceLimit);
     }
     Ok(())

@@ -236,9 +236,10 @@ fn oversized_corrupt_payload_is_rejected_before_json_decoding() {
     let mut store = Storage::open(&path).unwrap();
     store.save_workspace(&[document()]).unwrap();
     let db = rusqlite::Connection::open(path).unwrap();
+    let oversized_payload = i64::try_from(MAX_COLLECTION_BYTES + 1).unwrap();
     db.execute(
         "UPDATE editor_documents SET data=CAST(zeroblob(?1) AS TEXT)",
-        [MAX_COLLECTION_BYTES + 1],
+        [oversized_payload],
     )
     .unwrap();
     assert!(matches!(
@@ -350,7 +351,8 @@ fn oversized_first_history_record_is_an_error_not_false_eof() {
     let path = dir.path().join("db");
     let store = Storage::open(&path).unwrap();
     let db = rusqlite::Connection::open(path).unwrap();
-    db.execute("INSERT INTO query_history(id,timestamp,data) VALUES ('bad',100,CAST(zeroblob(?1) AS TEXT))", [MAX_COLLECTION_BYTES + 1]).unwrap();
+    let oversized_payload = i64::try_from(MAX_COLLECTION_BYTES + 1).unwrap();
+    db.execute("INSERT INTO query_history(id,timestamp,data) VALUES ('bad',100,CAST(zeroblob(?1) AS TEXT))", [oversized_payload]).unwrap();
     assert!(matches!(
         store.history(100, 0),
         Err(StorageError::ResourceLimit)
