@@ -8,7 +8,7 @@ workspace = true
 [dependencies]
 choscordb-driver-api = { path = "../driver-api" }
 async-trait = "0.1"
-rusqlite = { version = "0.37", features = ["bundled", "column_decltype", "hooks"] }
+rusqlite = { version = "0.40", features = ["bundled", "column_decltype", "hooks"] }
 tokio = { version = "1", features = ["sync", "rt", "macros", "time"] }
 tempfile = "3"
 serde_json = "1"

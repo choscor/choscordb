@@ -23,5 +23,5 @@ thiserror = "2"
 [dev-dependencies]
 choscordb-driver-postgres = { path = "../driver-postgres" }
 choscordb-driver-sqlite = { path = "../driver-sqlite" }
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 tempfile = "3"
