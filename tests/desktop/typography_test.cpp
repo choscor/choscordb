@@ -93,6 +93,8 @@ class TypographyTest final : public QObject {
         using namespace choscordb::design;
         Text text("Database");
         text.resize(200, 40);
+        text.show();
+        QCoreApplication::processEvents();
         QImage previous;
         for (const auto weight : {QFont::Normal, QFont::Medium, QFont::DemiBold, QFont::Bold}) {
             text.setWeight(weight);

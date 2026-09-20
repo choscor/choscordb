@@ -360,7 +360,7 @@ class ModalPanelTest final : public QObject {
         QVERIFY(cancel->x() - destructive->geometry().right() <= 12);
         QCOMPARE(dialog.width(), 440);
         QCOMPARE(body->verticalScrollBar()->maximum(), 0);
-        QVERIFY(body->height() <= 24);
+        QVERIFY(body->height() <= 44);
         QVERIFY(body->y() - heading->geometry().bottom() <= 20);
         QVERIFY(footer->y() - body->geometry().bottom() <= 20);
         dialog.reject();

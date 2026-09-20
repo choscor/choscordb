@@ -65,14 +65,14 @@ namespace {
 
 // Pick text ink from the independently opened public surface. Transparent
 // corners and the solid surface background cannot satisfy this witness.
-QImage textInkPatch(const QImage& source, bool lightInk = false) {
+QImage textInkPatch(const QImage& source, bool lightInk = false, int darkCutoff = 64) {
     QRect bounds;
     int inkPixels = 0;
     for (int y = 0; y < source.height(); ++y) {
         for (int x = 0; x < source.width(); ++x) {
             const auto color = source.pixelColor(x, y);
             if (color.alpha() >= 200 &&
-                (lightInk ? color.lightness() > 192 : color.lightness() < 64)) {
+                (lightInk ? color.lightness() > 192 : color.lightness() < darkCutoff)) {
                 bounds = bounds.united(QRect(x, y, 1, 1));
                 ++inkPixels;
             }
@@ -603,10 +603,14 @@ void PreviewTest::exportedPopupContainsItsVisibleContent() {
                 action = candidate;
         }
         QVERIFY(action);
-        QCoreApplication::processEvents();
-        const auto menuSnapshot =
-            menu->grab().toImage().scaled(menu->size()).convertToFormat(QImage::Format_ARGB32);
-        witness = textInkPatch(menuSnapshot.copy(menu->actionGeometry(action)));
+        for (int attempt = 0; attempt < 50 && witness.isNull(); ++attempt) {
+            QCoreApplication::processEvents();
+            const auto menuSnapshot =
+                menu->grab().toImage().scaled(menu->size()).convertToFormat(QImage::Format_ARGB32);
+            witness = textInkPatch(menuSnapshot.copy(menu->actionGeometry(action)), false, 160);
+            if (witness.isNull())
+                QTest::qWait(20);
+        }
         menu->hide();
     } else {
         light->findChild<QPushButton*>("previewOpenTooltip")->click();

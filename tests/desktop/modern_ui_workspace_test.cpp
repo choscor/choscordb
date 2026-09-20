@@ -421,7 +421,7 @@ void ModernUiTest::sqlCompositionKeepsTabsFirstAndPinsResultActions() {
     run->trigger();
     auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
     QTRY_VERIFY(messages->isVisible());
-    QVERIFY(messages->toPlainText().contains("missing_table"));
+    QTRY_VERIFY(messages->toPlainText().contains("missing_table"));
     QVERIFY(footer->isVisible());
     QVERIFY(exportButton->isVisible());
     QTRY_VERIFY(run->isEnabled());

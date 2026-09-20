@@ -63,7 +63,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes build-essential pkg-config libdbus-1-dev libssl-dev libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
+          sudo apt-get install --yes build-essential pkg-config libdbus-1-dev libssl-dev fonts-dejavu-core libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
       - name: Install pinned Python build tools
         run: python -m pip install --requirement scripts/ci/requirements.txt
       - name: Check all Rust targets and features
@@ -135,7 +135,7 @@ jobs:
       - name: Install PostgreSQL 17 and native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes postgresql-common build-essential pkg-config libdbus-1-dev libssl-dev libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
+          sudo apt-get install --yes postgresql-common build-essential pkg-config libdbus-1-dev libssl-dev fonts-dejavu-core libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install --yes postgresql-17
           sudo systemctl stop postgresql.service
