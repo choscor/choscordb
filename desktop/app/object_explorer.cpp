@@ -81,13 +81,19 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     pages_->addWidget(ddl_);
     pages_->addWidget(new QWidget(pages_));
     layout->addWidget(pages_, 1);
+    auto* headerBody = new QWidget(this);
+    headerBody->setObjectName("objectHeader");
+    auto* header = new QHBoxLayout(headerBody);
+    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
+    header->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
+                               metrics.spacingSmall);
+    layout->insertWidget(0, headerBody);
     auto* footerBody = new QWidget(this);
     footerBody->setObjectName("objectFooter");
     footerBody->setProperty("designSurface", "subtle");
     footerBody->setAttribute(Qt::WA_StyledBackground);
     auto* footer = new QHBoxLayout(footerBody);
     footer_ = footer;
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     footer->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
                                metrics.spacingSmall);
     status_ = new design::Text(tr("Select a table or view in the sidebar."), this);
@@ -95,26 +101,31 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
     footer->addWidget(status_, 1);
-    retry_ = new design::Button(tr("Retry"), this);
+    retry_ = new design::Button(tr("Retry"), headerBody);
     retry_->setObjectName("objectRetry");
     retry_->hide();
-    footer->addWidget(retry_);
-    auto* refresh = new design::Button(tr("Refresh"), this);
+    header->addWidget(retry_);
+    reconnect_ = new design::Button(tr("Reconnect…"), headerBody);
+    reconnect_->setObjectName("objectReconnect");
+    reconnect_->hide();
+    header->addWidget(reconnect_);
+    connect(reconnect_, &QPushButton::clicked, this, &ObjectExplorer::reconnectRequested);
+    auto* refresh = new design::Button(tr("Refresh"), headerBody);
     refresh->setVariant(design::ButtonVariant::Outline);
     refresh->setButtonSize(design::ButtonSize::Small);
     refresh->setDesignIcon(design::Icon::Refresh);
     refresh_ = refresh;
     refresh_->setObjectName("objectRefresh");
     refresh_->setEnabled(false);
-    footer->addWidget(refresh_);
-    auto* open = new design::Button(tr("Open query"), this);
+    header->addWidget(refresh_);
+    auto* open = new design::Button(tr("Open query"), headerBody);
     open->setVariant(design::ButtonVariant::Outline);
     open->setButtonSize(design::ButtonSize::Small);
     open_ = open;
     open_->setObjectName("objectOpenQuery");
-    footer->addWidget(open_);
+    header->addWidget(open_);
     connect(open_, &QPushButton::clicked, this, [this] { generateSql("select"); });
-    auto* generate = new design::Button(tr("Generate SQL"), this);
+    auto* generate = new design::Button(tr("Generate SQL"), headerBody);
     generate->setButtonSize(design::ButtonSize::Small);
     generate_ = generate;
     generate_->setObjectName("objectGenerateSql");
@@ -127,7 +138,8 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         generationActions_.insert(kind, action);
         connect(action, &QAction::triggered, this, [this, kind] { generateSql(kind); });
     }
-    footer->addWidget(generate_);
+    header->addWidget(generate_);
+    header->addStretch(1);
     updateActions();
     connect(refresh_, &QPushButton::clicked, this, &ObjectExplorer::requestPane);
     layout->addWidget(footerBody);
@@ -141,7 +153,9 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         }
         activePane_ = index;
         updateFooter();
-        requestPane();
+        emit paneChanged(index);
+        if (!restoredInert_)
+            requestPane();
     });
     connect(retry_, &QPushButton::clicked, this, &ObjectExplorer::requestPane);
     connect(
@@ -149,18 +163,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         [this](const BridgeEvent& event) {
             if (event.kind != "disconnected" || connection_ != event.id)
                 return;
-            connection_.reset();
-            columns_.clear();
-            columnsLoaded_ = false;
-            updateActions();
-            requestToken_ = 0;
-            model_->clear();
-            ddl_->clear();
-            retry_->hide();
-            refresh_->setEnabled(false);
-            tabs_->setEnabled(false);
-            setStatus("disconnected", tr("%1 · Disconnected").arg(label_));
-            emit objectChanged();
+            setDisconnected();
         },
         Qt::DirectConnection);
     connect(adapter_, &EngineAdapter::objectInspectionReady, this,
@@ -192,13 +195,24 @@ void ObjectExplorer::openObject(quint64 connection, const QString& object, const
                   tr("Finish or cancel the active Data operation before changing objects."));
         return;
     }
-    if (connection_ == connection && object_ == object && kind_ == kind &&
-        properties_ == properties) {
+    if (connection_ == connection && object_ == object && kind_ == kind) {
         label_ = label;
-        tabs_->setCurrentIndex(0);
+        properties_ = properties;
+        activateRestoredObject();
+        return;
+    }
+    if (!connection_ && restoredInert_ && object_ == object && kind_ == kind) {
+        connection_ = connection;
+        label_ = label;
+        properties_ = properties;
+        reconnect_->hide();
+        updateActions();
+        activateRestoredObject();
         return;
     }
     connection_ = connection;
+    restoredInert_ = false;
+    reconnect_->hide();
     columns_.clear();
     columnsLoaded_ = false;
     tabs_->setEnabled(true);
@@ -217,6 +231,62 @@ void ObjectExplorer::openObject(quint64 connection, const QString& object, const
     activePane_ = 0;
     emit objectChanged();
     requestPane();
+}
+void ObjectExplorer::restoreObject(std::optional<quint64> connection, const QString& object,
+                                   const QString& label, const QString& kind,
+                                   const QVariantList& properties) {
+    if (operationBusy_)
+        return;
+    connection_ = connection;
+    object_ = object;
+    label_ = label;
+    kind_ = kind;
+    properties_ = properties;
+    columns_.clear();
+    columnsLoaded_ = false;
+    requestToken_ = 0;
+    restoredInert_ = true;
+    model_->clear();
+    ddl_->clear();
+    const bool basic = kind == "index" || kind == "sequence" || kind == "function";
+    tabs_->setTabText(0, basic ? tr("Details") : tr("Columns"));
+    for (int i = 1; i < 5; ++i)
+        tabs_->setTabVisible(i, !basic || i == 3);
+    reconnect_->setVisible(!connection_);
+    updateActions();
+    updateFooter();
+    setStatus(connection_ ? "restored" : "disconnected",
+              connection_ ? tr("%1 · Select this tab to load fresh metadata.").arg(label_)
+                          : tr("%1 · Connection unavailable. Reconnect manually.").arg(label_));
+    refresh_->setEnabled(false);
+    emit objectChanged();
+}
+void ObjectExplorer::activateRestoredObject() {
+    if (!restoredInert_ || !connection_)
+        return;
+    restoredInert_ = false;
+    requestPane();
+}
+void ObjectExplorer::selectPane(int index) {
+    if (index < 0 || index >= tabs_->count() || !tabs_->isTabVisible(index))
+        return;
+    tabs_->setCurrentIndex(index);
+}
+void ObjectExplorer::setDisconnected() {
+    connection_.reset();
+    restoredInert_ = true;
+    columns_.clear();
+    columnsLoaded_ = false;
+    requestToken_ = 0;
+    model_->clear();
+    ddl_->clear();
+    retry_->hide();
+    reconnect_->show();
+    refresh_->setEnabled(false);
+    updateActions();
+    updateFooter();
+    setStatus("disconnected", tr("%1 · Connection unavailable. Reconnect manually.").arg(label_));
+    emit objectChanged();
 }
 void ObjectExplorer::requestPane() {
     if (!connection_ || operationBusy_)
@@ -316,7 +386,7 @@ void ObjectExplorer::setStatus(const QString& state, const QString& text) {
         // The Data footer already carries its result origin. Keep the guard's
         // explanation visible without adding a second footer or hiding Cancel.
         if (auto* main = qobject_cast<MainWindow*>(window()))
-            main->showNotice(text);
+            main->showToast(text, ToastVariant::Warning);
         else
             status_->show();
     }
@@ -416,6 +486,10 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
 }
 void ObjectExplorer::installDataWidget(QWidget* widget) {
     auto* previous = pages_->widget(2);
+    for (auto& action : dataHeaderActions_)
+        if (action)
+            action->deleteLater();
+    dataHeaderActions_.clear();
     if (dataFooter_) {
         footer_->removeWidget(dataFooter_);
         dataFooter_->setParent(previous);
@@ -424,6 +498,16 @@ void ObjectExplorer::installDataWidget(QWidget* widget) {
     pages_->removeWidget(previous);
     pages_->insertWidget(2, widget);
     if (auto* data = qobject_cast<ObjectDataWorkspace*>(widget)) {
+        auto* header = findChild<QWidget*>("objectHeader");
+        auto* headerLayout = qobject_cast<QHBoxLayout*>(header->layout());
+        for (const char* name : {"objectDataExport", "objectDataRefresh", "objectDataCancel"}) {
+            if (auto* action = data->findChild<QPushButton*>(name)) {
+                data->footerWidget()->layout()->removeWidget(action);
+                action->setParent(header);
+                headerLayout->addWidget(action);
+                dataHeaderActions_.append(action);
+            }
+        }
         dataFooter_ = data->footerWidget();
         if (dataFooter_) {
             widget->layout()->removeWidget(dataFooter_);
@@ -436,7 +520,11 @@ void ObjectExplorer::installDataWidget(QWidget* widget) {
     previous->deleteLater();
 }
 void ObjectExplorer::updateFooter() {
-    const bool data = dataFooter_ && tabs_->currentIndex() == 4;
+    const bool data = dataFooter_ && tabs_->currentIndex() == 4 && connection_.has_value();
+    for (const auto& action : dataHeaderActions_)
+        if (action)
+            action->setVisible(data && (action->objectName() != "objectDataCancel" ||
+                                        action->property("busy").toBool()));
     if (dataFooter_)
         dataFooter_->setVisible(data);
     status_->setVisible(!data);
@@ -454,12 +542,24 @@ void ObjectExplorer::setOperationBusy(bool busy) {
 void ObjectExplorer::updateActions() {
     const bool ready = connection_.has_value() && !operationBusy_ && kind_ != "index" &&
                        kind_ != "sequence" && kind_ != "function";
+    const auto unavailable =
+        !connection_     ? tr("Reconnect this object's connection to use SQL actions.")
+        : operationBusy_ ? tr("Finish or cancel the active Data operation.")
+                         : tr("SQL generation is unavailable for this object type.");
     open_->setEnabled(ready);
+    open_->setToolTip(ready ? tr("Open a new query draft for this object.") : unavailable);
     generate_->setEnabled(ready);
-    for (auto it = generationActions_.begin(); it != generationActions_.end(); ++it)
-        it.value()->setEnabled(ready &&
-                               (it.key() == "select" || it.key() == "delete" ||
-                                (columnsLoaded_ && (it.key() == "insert" || !columns_.isEmpty()))));
+    generate_->setToolTip(ready ? tr("Generate SQL without running it.") : unavailable);
+    for (auto it = generationActions_.begin(); it != generationActions_.end(); ++it) {
+        const bool enabled =
+            ready && (it.key() == "select" || it.key() == "delete" ||
+                      (columnsLoaded_ && (it.key() == "insert" || !columns_.isEmpty())));
+        it.value()->setEnabled(enabled);
+        it.value()->setToolTip(
+            enabled ? QString{}
+            : ready ? tr("Load the object's columns before generating this statement.")
+                    : unavailable);
+    }
 }
 void ObjectExplorer::generateSql(const QString& kind) {
     if (!connection_ || operationBusy_ || kind_ == "index" || kind_ == "sequence" ||

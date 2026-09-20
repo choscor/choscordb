@@ -2,6 +2,7 @@
 #include <QModelIndex>
 #include <QObject>
 #include <QPointer>
+#include <QVariant>
 class QMenu;
 class QTreeView;
 class QLineEdit;
@@ -27,6 +28,8 @@ class NavigatorController final : public QObject {
   signals:
     void disconnectRequested(quint64 connection);
     void sqlGenerated(quint64 connection, const QString& sql);
+    void ddlRequested(quint64 connection, const QString& objectId, const QString& label,
+                      const QString& kind, const QVariantList& properties);
     void generationFailed(const QString& error);
     void searchStatusChanged(const QString& status);
 

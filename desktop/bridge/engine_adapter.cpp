@@ -250,11 +250,12 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                 emit shutdownReady();
             }
         }
-        const bool recoveryTerminal = kind == "workspace_restored" || kind == "workspace_saved" ||
-                                      kind == "recovery_failed" || kind == "history_listed" ||
-                                      kind == "history_cleared" || kind == "history_policy" ||
-                                      kind == "history_flushed" || kind == "editor_preferences" ||
-                                      kind == "query_preferences" || kind == "appearance_layout";
+        const bool recoveryTerminal =
+            kind == "workspace_restored" || kind == "workspace_tabs_restored" ||
+            kind == "workspace_saved" || kind == "recovery_failed" || kind == "history_listed" ||
+            kind == "history_cleared" || kind == "history_policy" || kind == "history_flushed" ||
+            kind == "editor_preferences" || kind == "query_preferences" ||
+            kind == "appearance_layout";
         if (recoveryTerminal && d_->activeRecovery == event.request_token) {
             const auto token = event.request_token;
             QTimer::singleShot(0, this, [this, token] {
@@ -307,6 +308,32 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                                      d.selection_anchor, d.modified});
             }
             emit workspaceRestored(event.request_token, documents);
+        } else if (kind == "workspace_tabs_restored") {
+            QList<SavedWorkspaceTab> tabs;
+            tabs.reserve(static_cast<qsizetype>(event.workspace_tabs.size()));
+            for (const auto& tab : event.workspace_tabs) {
+                SavedWorkspaceTab value;
+                value.isObject = tab.is_object;
+                if (tab.is_object) {
+                    value.profileId = string(tab.profile_id);
+                    value.objectType = string(tab.object_type);
+                    value.objectId = string(tab.object_id);
+                    value.label = string(tab.label);
+                    value.pane = tab.pane;
+                } else {
+                    const auto& d = tab.document;
+                    value.document = {string(d.id),
+                                      string(d.title),
+                                      string(d.sql),
+                                      d.has_profile ? string(d.profile_id) : QString{},
+                                      d.has_file ? string(d.file_path) : QString{},
+                                      d.cursor_offset,
+                                      d.selection_anchor,
+                                      d.modified};
+                }
+                tabs.append(std::move(value));
+            }
+            emit workspaceTabsRestored(event.request_token, tabs, event.active_tab);
         } else if (kind == "workspace_saved")
             emit workspaceSaved(event.request_token);
         else if (kind == "recovery_failed")
@@ -622,6 +649,66 @@ bool EngineAdapter::resetAppearanceLayout(quint64 token) {
 }
 bool EngineAdapter::restoreWorkspace(quint64 token) {
     return queueRecovery(token, [this, token] { return workspace_restore(*d_->engine, token); });
+}
+bool EngineAdapter::restoreWorkspaceTabs(quint64 token) {
+    return queueRecovery(token,
+                         [this, token] { return workspace_tabs_restore(*d_->engine, token); });
+}
+bool EngineAdapter::saveWorkspaceTabs(const QList<SavedWorkspaceTab>& tabs, quint32 activeIndex,
+                                      quint64 token) {
+    const auto limits = recoveryLimits();
+    if (static_cast<quint64>(tabs.size()) > limits.maxDocuments ||
+        (tabs.isEmpty() ? activeIndex != 0 : activeIndex >= static_cast<quint32>(tabs.size()))) {
+        emit recoveryFailed(token, tr("Workspace recovery limit reached."));
+        return false;
+    }
+    quint64 retained = 0;
+    for (const auto& tab : tabs) {
+        for (const auto* field :
+             {&tab.document.id, &tab.document.title, &tab.document.sql, &tab.document.profileId,
+              &tab.document.filePath, &tab.profileId, &tab.objectType, &tab.objectId, &tab.label}) {
+            retained +=
+                static_cast<quint64>(qMax(field->size(), field->capacity())) * sizeof(QChar);
+            if (retained > limits.maxCollectionBytes * 2) {
+                emit recoveryFailed(token, tr("Workspace recovery limit reached."));
+                return false;
+            }
+        }
+    }
+    return queueRecovery(
+        token,
+        [this, tabs, activeIndex, token] {
+            rust::Vec<WorkspaceTabDto> values;
+            values.reserve(static_cast<size_t>(tabs.size()));
+            for (const auto& tab : tabs) {
+                WorkspaceTabDto value;
+                value.is_object = tab.isObject;
+                if (tab.isObject) {
+                    value.profile_id = rustString(tab.profileId);
+                    value.object_type = rustString(tab.objectType);
+                    value.object_id = rustString(tab.objectId);
+                    value.label = rustString(tab.label);
+                    value.pane = tab.pane;
+                } else {
+                    const auto& d = tab.document;
+                    value.document.id = rustString(d.id);
+                    value.document.title = rustString(d.title);
+                    const auto sql = d.sql.toUtf8();
+                    value.document.sql =
+                        rust::String(sql.constData(), static_cast<size_t>(sql.size()));
+                    value.document.has_profile = !d.profileId.isEmpty();
+                    value.document.profile_id = rustString(d.profileId);
+                    value.document.has_file = !d.filePath.isEmpty();
+                    value.document.file_path = rustString(d.filePath);
+                    value.document.cursor_offset = d.cursorOffset;
+                    value.document.selection_anchor = d.selectionAnchor;
+                    value.document.modified = d.modified;
+                }
+                values.push_back(std::move(value));
+            }
+            return workspace_tabs_save(*d_->engine, std::move(values), activeIndex, token);
+        },
+        retained);
 }
 bool EngineAdapter::saveWorkspace(const QList<SavedEditorDocument>& documents, quint64 token) {
     // Transport guards precede CXX copies. Core additionally validates escaped

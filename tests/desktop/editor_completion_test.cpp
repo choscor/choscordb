@@ -134,14 +134,19 @@ class EditorCompletionTest : public QObject {
         QTRY_COMPARE(model->index(0, 0, table).data(choscordb::NavigatorModel::KindRole).toString(),
                      QString("column"));
         auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        const auto target = window.findChild<QComboBox*>("connectionSelector")->currentData();
+        QVERIFY(target.isValid());
+        QCOMPARE(target.toULongLong(), id);
         auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
         editor->setText("ma");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 2);
         editor->setFocus();
         QTRY_VERIFY(editor->hasFocus());
-        action->trigger();
         auto* controller = window.findChild<choscordb::EditorCompletionController*>();
         QVERIFY(controller);
+        action->trigger();
         auto* completer = controller->findChild<QCompleter*>();
         QTRY_VERIFY(completer->popup()->isVisible());
         QCOMPARE(completer->completionModel()->rowCount(), 1);

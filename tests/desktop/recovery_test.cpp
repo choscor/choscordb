@@ -1,10 +1,14 @@
 #include "app/main_window.h"
+#include "app/object_explorer.h"
+#include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QClipboard>
 #include <QComboBox>
 #include <QFile>
+#include <QListWidget>
+#include <QPushButton>
 #include <QScopeGuard>
 #include <QSemaphore>
 #include <QSignalSpy>
@@ -36,21 +40,21 @@ class RecoveryTest : public QObject {
             QTRY_COMPARE(saved.count(), 1);
         }
         MainWindow window(nullptr, path);
-        auto* initialEditor = window.findChild<SqlEditor*>();
-        QVERIFY(initialEditor);
-        const auto initialSql = initialEditor->text();
+        auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        QVERIFY(tabs);
+        QCOMPARE(tabs->count(), 0);
         QApplication::clipboard()->setText("injected paste");
         for (auto* action : window.findChildren<QAction*>())
             if (action->shortcut() == QKeySequence::Paste)
                 action->trigger();
-        QCOMPARE(initialEditor->text(), initialSql);
+        QCOMPARE(tabs->count(), 0);
         for (auto* action : window.findChildren<QAction*>())
             if (action->shortcut() == QKeySequence::Replace ||
                 action->shortcut() == QKeySequence::Find)
                 QVERIFY(!action->isEnabled());
-        window.show();
         auto* controller = window.findChild<WorkspaceRecoveryController*>();
         QVERIFY(controller);
+        controller->start();
         QTRY_VERIFY(controller->isReady());
         const auto documents = controller->snapshot();
         QCOMPARE(documents.size(), 1);
@@ -65,22 +69,18 @@ class RecoveryTest : public QObject {
         QVERIFY(connections);
         QCOMPARE(connections->count(), 1);
         QVERIFY(!connections->currentData().isValid());
-        QVERIFY(window.grab().save(QStringLiteral("native-recovery.png")));
-        auto* tabs = window.findChild<QTabWidget*>("editorTabs");
-        QVERIFY(tabs);
         auto* editor = qobject_cast<SqlEditor*>(tabs->currentWidget());
         QVERIFY(editor);
         const auto updatedSql = QString::fromUtf8("SELECT 'é';\nSELECT 'saved at close';");
         editor->setText(updatedSql);
         editor->setModified(true);
-        QSignalSpy closed(controller, &WorkspaceRecoveryController::closeReady);
-        window.close();
-        QTRY_COMPARE(closed.count(), 1);
-        QTRY_VERIFY(!window.isVisible());
+        QSignalSpy persisted(controller, &WorkspaceRecoveryController::persistenceSucceeded);
+        controller->flush();
+        QTRY_VERIFY(persisted.count() >= 1);
         MainWindow restarted(nullptr, path);
-        restarted.show();
         auto* restoredController = restarted.findChild<WorkspaceRecoveryController*>();
         QVERIFY(restoredController);
+        restoredController->start();
         QTRY_VERIFY(restoredController->isReady());
         const auto restoredDocuments = restoredController->snapshot();
         QCOMPARE(restoredDocuments.size(), 1);
@@ -88,8 +88,97 @@ class RecoveryTest : public QObject {
         QCOMPARE(restoredDocuments[0].profileId, QString("absent"));
         QCOMPARE(restoredDocuments[0].filePath, QString("/missing/recovered.sql"));
         QVERIFY(restoredDocuments[0].modified);
-        restarted.close();
-        QTRY_VERIFY(!restarted.isVisible());
+    }
+    void mixedWorkspaceRestoresObjectAndSqlWithoutConnecting() {
+        QTemporaryDir directory;
+        const auto path = directory.filePath("mixed.sqlite");
+        SavedWorkspaceTab object;
+        object.isObject = true;
+        object.profileId = "profile:missing-profile";
+        object.objectType = "table";
+        object.objectId = "public.orders";
+        object.label = "orders";
+        object.pane = 3;
+        SavedWorkspaceTab sql;
+        sql.document.id = "draft";
+        sql.document.title = "Draft";
+        sql.document.sql = "SELECT 17;";
+        sql.document.cursorOffset = 10;
+        sql.document.selectionAnchor = 10;
+        sql.document.modified = true;
+        {
+            EngineAdapter adapter(nullptr, path);
+            QSignalSpy saved(&adapter, &EngineAdapter::workspaceSaved);
+            QVERIFY(adapter.saveWorkspaceTabs({object, sql}, 0, 1));
+            QTRY_COMPARE(saved.count(), 1);
+        }
+        MainWindow window(nullptr, path);
+        auto* controller = window.findChild<WorkspaceRecoveryController*>();
+        auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        QVERIFY(controller);
+        QVERIFY(tabs);
+        controller->start();
+        QTRY_VERIFY(controller->isReady());
+        QCOMPARE(tabs->count(), 2);
+        QCOMPARE(tabs->currentIndex(), 0);
+        auto* explorer = qobject_cast<ObjectExplorer*>(tabs->widget(0));
+        QVERIFY(explorer);
+        QCOMPARE(explorer->property("objectProfileId").toString(), object.profileId);
+        QCOMPARE(explorer->property("objectId").toString(), object.objectId);
+        QCOMPARE(explorer->paneIndex(), int(object.pane));
+        QVERIFY(explorer->needsConnection());
+        auto* workspace = window.findChild<QueryWorkspace*>();
+        QSignalSpy unexpectedReads(workspace->adapter(), &EngineAdapter::objectInspectionReady);
+        QSignalSpy unexpectedFailures(workspace->adapter(), &EngineAdapter::objectInspectionFailed);
+        QTest::qWait(30);
+        QCOMPARE(unexpectedReads.count(), 0);
+        QCOMPARE(unexpectedFailures.count(), 0);
+        SavedProfile profile;
+        profile.id = "missing-profile";
+        profile.name = "Recovered connection";
+        profile.path = ":memory:";
+        workspace->adapter()->saveProfile(profile, 45);
+        auto* savedConnections = window.findChild<QListWidget*>("savedConnections");
+        QTRY_COMPARE(savedConnections->count(), 1);
+        auto* reconnect = explorer->findChild<QPushButton*>("objectReconnect");
+        QVERIFY(reconnect);
+        reconnect->click();
+        QTRY_VERIFY(!explorer->needsConnection());
+        auto* editor = qobject_cast<SqlEditor*>(tabs->widget(1));
+        QVERIFY(editor);
+        QCOMPARE(editor->text(), sql.document.sql);
+        QVERIFY(editor->isModified());
+        QSignalSpy persisted(controller, &WorkspaceRecoveryController::persistenceSucceeded);
+        tabs->setCurrentIndex(1);
+        controller->flush();
+        QTRY_VERIFY(persisted.count() >= 1);
+        MainWindow restarted(nullptr, path);
+        auto* restored = restarted.findChild<WorkspaceRecoveryController*>();
+        auto* restoredTabs = restarted.findChild<QTabWidget*>("editorTabs");
+        QVERIFY(restored);
+        QVERIFY(restoredTabs);
+        restored->start();
+        QTRY_VERIFY(restored->isReady());
+        QCOMPARE(restoredTabs->count(), 2);
+        QCOMPARE(restoredTabs->currentIndex(), 1);
+        QCOMPARE(qobject_cast<ObjectExplorer*>(restoredTabs->widget(0))->paneIndex(),
+                 int(object.pane));
+        QCOMPARE(qobject_cast<SqlEditor*>(restoredTabs->widget(1))->text(), sql.document.sql);
+        QSignalSpy persistedAgain(restored, &WorkspaceRecoveryController::persistenceSucceeded);
+        restoredTabs->setCurrentIndex(0);
+        restored->flush();
+        QTRY_VERIFY(persistedAgain.count() >= 1);
+        MainWindow objectActive(nullptr, path);
+        auto* finalRecovery = objectActive.findChild<WorkspaceRecoveryController*>();
+        auto* finalTabs = objectActive.findChild<QTabWidget*>("editorTabs");
+        QVERIFY(finalRecovery);
+        QVERIFY(finalTabs);
+        finalRecovery->start();
+        QTRY_VERIFY(finalRecovery->isReady());
+        QCOMPARE(finalTabs->count(), 2);
+        QCOMPARE(finalTabs->currentIndex(), 0);
+        QCOMPARE(qobject_cast<ObjectExplorer*>(finalTabs->widget(0))->paneIndex(),
+                 int(object.pane));
     }
 
     void pendingFileReadDefersCloseUntilLatestBufferCanBeSaved() {

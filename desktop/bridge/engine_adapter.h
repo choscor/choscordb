@@ -65,6 +65,12 @@ struct SavedEditorDocument {
     quint64 cursorOffset = 0, selectionAnchor = 0;
     bool modified = false;
 };
+struct SavedWorkspaceTab {
+    bool isObject = false;
+    SavedEditorDocument document;
+    QString profileId, objectType, objectId, label;
+    quint32 pane = 0;
+};
 struct PageCacheUsage {
     quint64 hits;
     quint64 misses;
@@ -139,6 +145,9 @@ class EngineAdapter final : public QObject {
     bool setHistoryPolicy(const HistoryPolicy& policy, quint64 token);
     bool restoreWorkspace(quint64 token);
     bool saveWorkspace(const QList<SavedEditorDocument>& documents, quint64 token);
+    bool saveWorkspaceTabs(const QList<SavedWorkspaceTab>& tabs, quint32 activeIndex,
+                           quint64 token);
+    bool restoreWorkspaceTabs(quint64 token);
     void listProfiles(quint64 token);
     void saveProfile(const SavedProfile& profile, quint64 token);
     void saveProfileWithPassword(const SavedProfile& profile, const QString& password,
@@ -190,6 +199,8 @@ class EngineAdapter final : public QObject {
                                const choscordb::AppearanceLayout& appearance);
     void historyPolicyReady(quint64 token, const choscordb::HistoryPolicy& policy);
     void workspaceRestored(quint64 token, const QList<choscordb::SavedEditorDocument>& documents);
+    void workspaceTabsRestored(quint64 token, const QList<choscordb::SavedWorkspaceTab>& tabs,
+                               quint32 activeIndex);
     void workspaceSaved(quint64 token);
     void recoveryFailed(quint64 token, const QString& error);
     void profilesReady(quint64 token, const QList<choscordb::SavedProfile>& profiles);
@@ -226,6 +237,7 @@ class EngineAdapter final : public QObject {
 Q_DECLARE_METATYPE(choscordb::SavedProfile)
 
 Q_DECLARE_METATYPE(choscordb::SavedEditorDocument)
+Q_DECLARE_METATYPE(choscordb::SavedWorkspaceTab)
 
 Q_DECLARE_METATYPE(choscordb::SavedHistoryEntry)
 Q_DECLARE_METATYPE(choscordb::HistoryPolicy)

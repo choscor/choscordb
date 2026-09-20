@@ -82,9 +82,9 @@ void EditorPreferencesController::initialize(EngineAdapter* adapter) {
                 pendingSaves_.remove(token);
                 if (token == loadToken) {
                     loading_ = false;
-                    window_->showNotice(
+                    window_->showToast(
                         tr("Preferences could not be loaded: %1. Open Preferences to retry.")
-                            .arg(error));
+                            .arg(error), ToastVariant::Danger);
                 }
             });
     adapter_->getEditorPreferences(loadToken);
@@ -92,7 +92,7 @@ void EditorPreferencesController::initialize(EngineAdapter* adapter) {
 void EditorPreferencesController::apply(const EditorPreferences& value) {
     const auto error = shortcutValidationError(value, catalog_);
     if (!error.isEmpty()) {
-        window_->showNotice(error);
+        window_->showToast(error, ToastVariant::Danger);
         return;
     }
     preferences_ = value;

@@ -1,5 +1,7 @@
 //! Inert workspace and history operations on the shared bounded metadata worker.
-use crate::{EditorDocument, Engine, Event, HistoryEntry, HistoryPolicy, SubmitError};
+use crate::{
+    EditorDocument, Engine, Event, HistoryEntry, HistoryPolicy, SubmitError, WorkspaceSnapshot,
+};
 use choscordb_driver_api::{DriverError, ErrorKind};
 use choscordb_storage::{Storage, StorageError};
 
@@ -13,7 +15,9 @@ pub(crate) enum Command {
     SetEditorPreferences(crate::EditorPreferences, u64),
     Flush(u64),
     Save(Vec<EditorDocument>, u64),
+    SaveTabs(WorkspaceSnapshot, u64),
     Restore(u64),
+    RestoreTabs(u64),
     List(u32, u32, u64),
     Clear(u64),
     Policy(u64),
@@ -32,7 +36,9 @@ impl Command {
             | Self::SetEditorPreferences(_, t)
             | Self::Flush(t)
             | Self::Save(_, t)
+            | Self::SaveTabs(_, t)
             | Self::Restore(t)
+            | Self::RestoreTabs(t)
             | Self::List(_, _, t)
             | Self::Clear(t)
             | Self::Policy(t)
@@ -137,9 +143,17 @@ pub(crate) fn execute(storage: &mut Storage, command: Command) -> Result<Event, 
             storage.save_workspace(&documents).map_err(failure)?;
             Event::WorkspaceSaved { request_token }
         }
+        Command::SaveTabs(snapshot, _) => {
+            storage.save_workspace_tabs(&snapshot).map_err(failure)?;
+            Event::WorkspaceSaved { request_token }
+        }
         Command::Restore(_) => Event::WorkspaceRestored {
             request_token,
             documents: storage.restore_workspace().map_err(failure)?,
+        },
+        Command::RestoreTabs(_) => Event::WorkspaceTabsRestored {
+            request_token,
+            snapshot: storage.restore_workspace_tabs().map_err(failure)?,
         },
         Command::List(limit, offset, _) => Event::HistoryListed {
             request_token,
@@ -231,6 +245,7 @@ impl Engine {
             Command::SetQueryPreferences(preferences, _) => preferences.validate(),
             Command::SetEditorPreferences(preferences, _) => preferences.validate(),
             Command::Save(documents, _) => choscordb_storage::validate_workspace(documents),
+            Command::SaveTabs(snapshot, _) => choscordb_storage::validate_workspace_tabs(snapshot),
             Command::List(limit, offset, _) => {
                 choscordb_storage::validate_history_page(*limit, *offset)
             }
@@ -262,6 +277,16 @@ impl Engine {
     }
     pub fn workspace_restore(&self, token: u64) -> Result<(), SubmitError> {
         self.submit_recovery(Command::Restore(token))
+    }
+    pub fn workspace_tabs_save(
+        &self,
+        snapshot: WorkspaceSnapshot,
+        token: u64,
+    ) -> Result<(), SubmitError> {
+        self.submit_recovery(Command::SaveTabs(snapshot, token))
+    }
+    pub fn workspace_tabs_restore(&self, token: u64) -> Result<(), SubmitError> {
+        self.submit_recovery(Command::RestoreTabs(token))
     }
     pub fn history_list(&self, limit: u32, offset: u32, token: u64) -> Result<(), SubmitError> {
         self.submit_recovery(Command::List(limit, offset, token))

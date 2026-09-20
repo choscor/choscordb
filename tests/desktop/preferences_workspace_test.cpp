@@ -255,6 +255,8 @@ class PreferencesWorkspaceTest : public QObject {
                 ->setKeySequence(QKeySequence("Ctrl+J"));
             apply->click();
             delete dialog;
+            QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+            window.findChild<QAction*>("newQuery")->trigger();
             auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
             QTRY_COMPARE(editor->lexer()->defaultFont().pointSize(), 19);
             auto* adapter = window.findChild<choscordb::EngineAdapter*>();
@@ -270,6 +272,8 @@ class PreferencesWorkspaceTest : public QObject {
         restarted.show();
         auto* tabs = restarted.findChild<QTabWidget*>("editorTabs");
         QTRY_VERIFY(tabs->isEnabled());
+        QTRY_VERIFY(restarted.findChild<QAction*>("newQuery")->isEnabled());
+        restarted.findChild<QAction*>("newQuery")->trigger();
         auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
         QTRY_COMPARE(editor->lexer()->defaultFont().pointSize(), 19);
         QCOMPARE(restarted.findChild<QAction*>("command_find")->shortcut(), QKeySequence("Ctrl+J"));
@@ -318,6 +322,7 @@ class PreferencesWorkspaceTest : public QObject {
         QFETCH(QString, binding);
         choscordb::MainWindow window;
         window.show();
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
         window.findChild<QAction*>("newQuery")->trigger();
         auto* tabs = window.findChild<QTabWidget*>("editorTabs");
         auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
@@ -359,6 +364,8 @@ class PreferencesWorkspaceTest : public QObject {
         choscordb::MainWindow window;
         window.show();
         auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
         auto* preferences = window.findChild<QAction*>("preferences");
         QVERIFY(preferences);

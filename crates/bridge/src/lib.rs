@@ -210,6 +210,16 @@ pub mod ffi {
         modified: bool,
     }
     #[derive(Default)]
+    struct WorkspaceTabDto {
+        is_object: bool,
+        document: EditorDocumentDto,
+        profile_id: String,
+        object_type: String,
+        object_id: String,
+        label: String,
+        pane: u32,
+    }
+    #[derive(Default)]
     struct HistoryEntryDto {
         id: String,
         has_profile: bool,
@@ -236,6 +246,8 @@ pub mod ffi {
         profile_id: String,
         profiles: Vec<ProfileDto>,
         documents: Vec<EditorDocumentDto>,
+        workspace_tabs: Vec<WorkspaceTabDto>,
+        active_tab: u32,
         history: Vec<HistoryEntryDto>,
         history_policy: HistoryPolicyDto,
         editor_preferences: EditorPreferencesDto,
@@ -341,6 +353,13 @@ pub mod ffi {
             token: u64,
         ) -> Submit;
         fn workspace_restore(engine: &mut BridgeEngine, token: u64) -> Submit;
+        fn workspace_tabs_save(
+            engine: &mut BridgeEngine,
+            tabs: Vec<WorkspaceTabDto>,
+            active_tab: u32,
+            token: u64,
+        ) -> Submit;
+        fn workspace_tabs_restore(engine: &mut BridgeEngine, token: u64) -> Submit;
         fn history_list(engine: &mut BridgeEngine, limit: u32, offset: u32, token: u64) -> Submit;
         fn query_preference_limits() -> QueryPreferenceLimitsDto;
         fn appearance_layout_get(engine: &mut BridgeEngine, token: u64) -> Submit;

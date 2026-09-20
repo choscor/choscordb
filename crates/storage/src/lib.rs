@@ -103,6 +103,36 @@ pub struct EditorDocument {
     pub modified: bool,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObjectTab {
+    pub profile_id: String,
+    pub object_type: String,
+    pub object_id: String,
+    pub label: String,
+    pub pane: u32,
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "data", rename_all = "snake_case")]
+pub enum WorkspaceTab {
+    Sql(EditorDocument),
+    Object(ObjectTab),
+}
+#[derive(Clone, PartialEq, Eq)]
+pub struct WorkspaceSnapshot {
+    pub tabs: Vec<WorkspaceTab>,
+    pub active_index: usize,
+}
+impl std::fmt::Debug for WorkspaceTab {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("WorkspaceTab([REDACTED])")
+    }
+}
+impl std::fmt::Debug for WorkspaceSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("WorkspaceSnapshot([REDACTED])")
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HistoryStatus {
     Completed,
@@ -346,6 +376,7 @@ impl Storage {
         validate_workspace(documents)?;
         let tx = self.db.transaction()?;
         tx.execute("DELETE FROM editor_documents", [])?;
+        tx.execute("DELETE FROM settings WHERE key='workspace_active_tab'", [])?;
         for (position, document) in documents.iter().enumerate() {
             tx.execute(
                 "INSERT INTO editor_documents(id,position,data) VALUES (?1,?2,?3)",
@@ -382,6 +413,67 @@ impl Storage {
             documents.push(document);
         }
         Ok(documents)
+    }
+    pub fn save_workspace_tabs(&mut self, snapshot: &WorkspaceSnapshot) -> Result<()> {
+        validate_workspace_tabs(snapshot)?;
+        let tx = self.db.transaction()?;
+        tx.execute("DELETE FROM editor_documents", [])?;
+        for (position, tab) in snapshot.tabs.iter().enumerate() {
+            let id = tab.storage_id();
+            tx.execute(
+                "INSERT INTO editor_documents(id,position,data) VALUES (?1,?2,?3)",
+                params![id, position as i64, serde_json::to_string(tab)?],
+            )?;
+        }
+        tx.execute("INSERT INTO settings(key,value) VALUES ('workspace_active_tab',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            [snapshot.active_index.to_string()])?;
+        tx.commit()?;
+        Ok(())
+    }
+    pub fn restore_workspace_tabs(&self) -> Result<WorkspaceSnapshot> {
+        let mut stmt = self
+            .db
+            .prepare("SELECT id,position,data FROM editor_documents ORDER BY position LIMIT 129")?;
+        let mut rows = stmt.query([])?;
+        let mut tabs = Vec::new();
+        let mut total = 0;
+        while let Some(row) = rows.next()? {
+            if tabs.len() == MAX_WORKSPACE_DOCUMENTS {
+                return Err(StorageError::ResourceLimit);
+            }
+            let data = bounded_data(row, 2, MAX_RECORD_BYTES, &mut total)?;
+            let (tab, expected_id, legacy_id): (WorkspaceTab, String, Option<String>) =
+                match serde_json::from_str::<WorkspaceTab>(data) {
+                    Ok(tab) => {
+                        let id = tab.storage_id();
+                        let legacy = match &tab {
+                            WorkspaceTab::Sql(d) => d.id.clone(),
+                            WorkspaceTab::Object(o) => {
+                                format!("object:{}:{}:{}", o.profile_id, o.object_type, o.object_id)
+                            }
+                        };
+                        (tab, id, Some(legacy))
+                    }
+                    Err(_) => {
+                        let document: EditorDocument = serde_json::from_str(data)
+                            .map_err(|_| StorageError::InvalidDocument)?;
+                        let id = document.id.clone();
+                        (WorkspaceTab::Sql(document), id, None)
+                    }
+                };
+            tab.validate()?;
+            let row_id = row.get_ref(0)?.as_str().ok();
+            if (row_id != Some(expected_id.as_str()) && row_id != legacy_id.as_deref())
+                || row.get::<_, i64>(1)? != tabs.len() as i64
+            {
+                return Err(StorageError::InvalidDocument);
+            }
+            tabs.push(tab);
+        }
+        let active_index = self.setting::<usize>("workspace_active_tab")?.unwrap_or(0);
+        let snapshot = WorkspaceSnapshot { tabs, active_index };
+        validate_workspace_tabs(&snapshot)?;
+        Ok(snapshot)
     }
     pub fn history_policy(&self) -> Result<HistoryPolicy> {
         let policy: HistoryPolicy = self.setting("history_policy")?.unwrap_or_default();
@@ -696,6 +788,60 @@ pub fn validate_workspace(documents: &[EditorDocument]) -> Result<()> {
             return Err(StorageError::InvalidDocument);
         }
         total = total.saturating_add(encoded_size(document, MAX_RECORD_BYTES)?);
+        if total > MAX_COLLECTION_BYTES {
+            return Err(StorageError::ResourceLimit);
+        }
+    }
+    Ok(())
+}
+impl WorkspaceTab {
+    fn storage_id(&self) -> String {
+        match self {
+            Self::Sql(d) => format!("sql:{}", d.id),
+            Self::Object(o) => format!(
+                "object:{}:{}:{}:{}:{}:{}",
+                o.profile_id.len(),
+                o.profile_id,
+                o.object_type.len(),
+                o.object_type,
+                o.object_id.len(),
+                o.object_id
+            ),
+        }
+    }
+    pub fn validate(&self) -> Result<()> {
+        match self {
+            Self::Sql(d) => d.validate(),
+            Self::Object(o) => {
+                document_field(&o.profile_id, 264)?;
+                document_field(&o.object_type, 128)?;
+                document_field(&o.object_id, 16 * 1024)?;
+                document_field(&o.label, 1024)?;
+                if o.pane > 4 {
+                    return Err(StorageError::InvalidDocument);
+                }
+                document_field(&self.storage_id(), 16 * 1024 + 512)
+            }
+        }
+    }
+}
+pub fn validate_workspace_tabs(snapshot: &WorkspaceSnapshot) -> Result<()> {
+    if snapshot.tabs.len() > MAX_WORKSPACE_DOCUMENTS {
+        return Err(StorageError::ResourceLimit);
+    }
+    if (!snapshot.tabs.is_empty() && snapshot.active_index >= snapshot.tabs.len())
+        || (snapshot.tabs.is_empty() && snapshot.active_index != 0)
+    {
+        return Err(StorageError::InvalidDocument);
+    }
+    let mut ids = std::collections::HashSet::new();
+    let mut total = 0usize;
+    for tab in &snapshot.tabs {
+        tab.validate()?;
+        if !ids.insert(tab.storage_id()) {
+            return Err(StorageError::InvalidDocument);
+        }
+        total = total.saturating_add(encoded_size(tab, MAX_RECORD_BYTES)?);
         if total > MAX_COLLECTION_BYTES {
             return Err(StorageError::ResourceLimit);
         }

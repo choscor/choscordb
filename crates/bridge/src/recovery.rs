@@ -33,6 +33,76 @@ pub fn workspace_restore(engine: &mut BridgeEngine, token: u64) -> ffi::Submit {
             .map_err(|e| e.to_string())
     })
 }
+pub fn workspace_tabs_save(
+    engine: &mut BridgeEngine,
+    tabs: Vec<ffi::WorkspaceTabDto>,
+    active_tab: u32,
+    token: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        let tabs = tabs
+            .into_iter()
+            .map(|tab| {
+                if tab.is_object {
+                    choscordb_core::WorkspaceTab::Object(choscordb_core::ObjectTab {
+                        profile_id: tab.profile_id,
+                        object_type: tab.object_type,
+                        object_id: tab.object_id,
+                        label: tab.label,
+                        pane: tab.pane,
+                    })
+                } else {
+                    choscordb_core::WorkspaceTab::Sql(from_document(tab.document))
+                }
+            })
+            .collect();
+        e.workspace_tabs_save(
+            choscordb_core::WorkspaceSnapshot {
+                tabs,
+                active_index: active_tab as usize,
+            },
+            token,
+        )
+        .map(|()| token)
+        .map_err(|e| e.to_string())
+    })
+}
+pub fn workspace_tabs_restore(engine: &mut BridgeEngine, token: u64) -> ffi::Submit {
+    submit(engine, |e| {
+        e.workspace_tabs_restore(token)
+            .map(|()| token)
+            .map_err(|e| e.to_string())
+    })
+}
+fn from_document(d: ffi::EditorDocumentDto) -> choscordb_core::EditorDocument {
+    choscordb_core::EditorDocument {
+        id: d.id,
+        title: d.title,
+        sql: d.sql,
+        profile_id: d.has_profile.then_some(d.profile_id),
+        file_path: d.has_file.then_some(d.file_path),
+        cursor_offset: d.cursor_offset,
+        selection_anchor: d.selection_anchor,
+        modified: d.modified,
+    }
+}
+pub(crate) fn workspace_tab(tab: choscordb_core::WorkspaceTab) -> ffi::WorkspaceTabDto {
+    match tab {
+        choscordb_core::WorkspaceTab::Sql(d) => ffi::WorkspaceTabDto {
+            document: document(d),
+            ..Default::default()
+        },
+        choscordb_core::WorkspaceTab::Object(o) => ffi::WorkspaceTabDto {
+            is_object: true,
+            profile_id: o.profile_id,
+            object_type: o.object_type,
+            object_id: o.object_id,
+            label: o.label,
+            pane: o.pane,
+            ..Default::default()
+        },
+    }
+}
 pub fn history_list(engine: &mut BridgeEngine, limit: u32, offset: u32, token: u64) -> ffi::Submit {
     submit(engine, |e| {
         e.history_list(limit, offset, token)

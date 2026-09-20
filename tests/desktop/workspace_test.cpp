@@ -329,6 +329,8 @@ class WorkspaceTest : public QObject {
                         ++finished;
                 });
         workspace->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         QTRY_VERIFY(run->isEnabled());
         auto executeSql = [&](const QString& sql) {
             auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
@@ -406,6 +408,8 @@ class WorkspaceTest : public QObject {
         auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
         auto* run = window.findChild<QAction*>("runStatement");
         workspace->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         QTRY_VERIFY(run->isEnabled());
         bool running = false;
         connect(workspace->adapter(), &choscordb::EngineAdapter::eventReady, &window,
@@ -456,6 +460,8 @@ class WorkspaceTest : public QObject {
         choscordb::MainWindow window;
         window.show();
         auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         auto* first = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
         const QString original = QString::fromUtf8("SELECT 'é cat';\nSELECT 'cat';");
         first->setText(original);
@@ -502,6 +508,7 @@ class WorkspaceTest : public QObject {
         choscordb::MainWindow window;
         window.resize(1280, 900);
         window.show();
+        window.findChild<QAction*>("newQuery")->trigger();
         auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
         QVERIFY(workspace);
         auto* editor = window.findChild<choscordb::SqlEditor*>();

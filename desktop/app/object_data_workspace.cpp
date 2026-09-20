@@ -128,6 +128,7 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
         if (sql_)
             sql_->setExternalWork(busy);
         refresh_->setEnabled(!busy && !object_.isEmpty());
+        cancelButton->setProperty("busy", busy);
         cancelButton->setVisible(busy);
         emit busyChanged(busy);
     });

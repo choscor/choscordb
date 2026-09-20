@@ -44,6 +44,8 @@ class QuerySettingsCorruptionTest : public QObject {
         QVERIFY(grid);
         QTRY_VERIFY(tabs->isEnabled());
         workspace->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         QTRY_VERIFY(run->isEnabled());
         int executions = 0;
         connect(

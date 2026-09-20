@@ -29,6 +29,8 @@ class ObjectDataWorkspaceTest : public QObject {
         window.show();
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
         sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         auto* run = window.findChild<QAction*>("runStatement");
         auto* editor = qobject_cast<choscordb::SqlEditor*>(
             window.findChild<QTabWidget*>("editorTabs")->currentWidget());
@@ -69,6 +71,8 @@ class ObjectDataWorkspaceTest : public QObject {
         window.show();
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
         sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         auto* run = window.findChild<QAction*>("runStatement");
         auto* editor = qobject_cast<choscordb::SqlEditor*>(
             window.findChild<QTabWidget*>("editorTabs")->currentWidget());
@@ -143,6 +147,8 @@ class ObjectDataWorkspaceTest : public QObject {
         window.show();
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
         sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         auto* run = window.findChild<QAction*>("runStatement");
         auto* editor = qobject_cast<choscordb::SqlEditor*>(
             window.findChild<QTabWidget*>("editorTabs")->currentWidget());

@@ -148,32 +148,6 @@ void applySpecimenTheme(QWidget& host) {
         }
     }
 }
-class FeedbackToastAnchor final : public QObject {
-  public:
-    FeedbackToastAnchor(QWidget* viewport, choscordb::ToastRegion* toast)
-        : QObject(viewport), viewport_(viewport), toast_(toast) {
-        viewport_->installEventFilter(this);
-    }
-    void place() {
-        const int width = qMin(320, qMax(1, viewport_->width() - 32));
-        toast_->setFixedWidth(width);
-        toast_->adjustSize();
-        toast_->move(qMax(0, viewport_->width() - toast_->width() - 16),
-                     qMax(0, viewport_->height() - toast_->height() - 16));
-        toast_->raise();
-    }
-
-  protected:
-    bool eventFilter(QObject* watched, QEvent* event) override {
-        if (watched == viewport_ && event->type() == QEvent::Resize)
-            place();
-        return QObject::eventFilter(watched, event);
-    }
-
-  private:
-    QWidget* viewport_;
-    choscordb::ToastRegion* toast_;
-};
 void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
     if (id == "numeric-fields") {
         auto* form = new QFormLayout;
@@ -389,8 +363,8 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         layout->addWidget(bar);
     } else if (id == "feedback") {
         auto* viewport = host->parentWidget();
-        auto* toast = new choscordb::ToastRegion(viewport);
-        auto* toastAnchor = new FeedbackToastAnchor(viewport, toast);
+        auto* toast = new choscordb::ToastRegion;
+        toast->attachTo(viewport);
         auto* duration = new QSpinBox(host);
         duration->setObjectName("previewToastSeconds");
         duration->setRange(1, 30);
@@ -415,10 +389,9 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
             auto* button = new Button(QString("Show %1 toast").arg(example.name), host);
             button->setObjectName(QString("previewToast_%1").arg(example.name));
             QObject::connect(button, &QPushButton::clicked, toast,
-                             [toast, toastAnchor, duration, example] {
+                             [toast, duration, example] {
                                  toast->showToast(example.title, example.body, example.variant,
                                                   duration->value() * 1000);
-                                 toastAnchor->place();
                              });
             actions->addWidget(button);
         }

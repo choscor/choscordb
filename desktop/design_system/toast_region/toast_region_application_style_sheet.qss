@@ -1,9 +1,10 @@
 QLabel#toastRegion {
-  background-color: %18;
+  background-color: @warningSurface;
   color: %17;
   border: %2px solid %3;
   border-radius: %16px;
   padding: %5px;
+  border-left: 4px solid %20;
 }
 
 QLabel#toastRegion[variant="success"] {

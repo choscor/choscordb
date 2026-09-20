@@ -1,5 +1,6 @@
 #include "design_system/toast_region/toast_region.h"
 #include <QAccessible>
+#include <QEvent>
 #include <QGraphicsOpacityEffect>
 #include <QPropertyAnimation>
 #include <QStyle>
@@ -25,9 +26,33 @@ ToastRegion::ToastRegion(QWidget* parent)
     });
     hide();
 }
-void ToastRegion::showNotice(const QString& text, int durationMs) {
-    showPersistent(text);
-    timer_->start(durationMs);
+void ToastRegion::attachTo(QWidget* host) {
+    if (!host)
+        return;
+    if (overlayHost_)
+        overlayHost_->removeEventFilter(this);
+    const bool visible = isVisible();
+    setParent(host);
+    overlayHost_ = host;
+    host->installEventFilter(this);
+    placeOverlay();
+    if (visible)
+        show();
+}
+bool ToastRegion::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == overlayHost_ && event->type() == QEvent::Resize)
+        placeOverlay();
+    return QLabel::eventFilter(watched, event);
+}
+void ToastRegion::placeOverlay() {
+    if (!overlayHost_)
+        return;
+    const int width = qMin(320, qMax(1, overlayHost_->width() - 32));
+    setFixedWidth(width);
+    adjustSize();
+    move(qMax(0, overlayHost_->width() - this->width() - 16),
+         qMax(0, overlayHost_->height() - this->height() - 16));
+    raise();
 }
 void ToastRegion::showToast(const QString& title, const QString& body, ToastVariant variant,
                             int durationMs) {
@@ -41,15 +66,8 @@ void ToastRegion::showToast(const QString& title, const QString& body, ToastVari
     display(QStringLiteral("<b>%1</b><br/>%2")
                 .arg(title.toHtmlEscaped(), body.toHtmlEscaped()));
     setAccessibleDescription(title + QStringLiteral(". ") + body);
-    timer_->start(durationMs);
-}
-void ToastRegion::showPersistent(const QString& text) {
-    setProperty("variant", QString());
-    style()->unpolish(this);
-    style()->polish(this);
-    setTextFormat(Qt::PlainText);
-    display(text);
-    setAccessibleDescription(text);
+    if (durationMs > 0)
+        timer_->start(durationMs);
 }
 void ToastRegion::display(const QString& text) {
     timer_->stop();
@@ -57,6 +75,8 @@ void ToastRegion::display(const QString& text) {
     dismissing_ = false;
     setText(text);
     setVisible(!text.isEmpty());
+    if (!text.isEmpty())
+        placeOverlay();
     if (!text.isEmpty()) {
         opacity_->setOpacity(0.0);
         fade_->setStartValue(0.0);

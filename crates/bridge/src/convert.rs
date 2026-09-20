@@ -151,6 +151,19 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
                 .collect();
             "workspace_restored"
         }
+        Event::WorkspaceTabsRestored {
+            request_token,
+            snapshot,
+        } => {
+            e.request_token = request_token;
+            e.active_tab = snapshot.active_index as u32;
+            e.workspace_tabs = snapshot
+                .tabs
+                .into_iter()
+                .map(super::recovery::workspace_tab)
+                .collect();
+            "workspace_tabs_restored"
+        }
         Event::HistoryListed {
             request_token,
             entries,

@@ -39,7 +39,7 @@ preserved by the component extraction.
 | Dialog shell | `dialog_shell/`: reusable nonmodal `QDialog` shell and content/status styles |
 | Dialog sections | `dialog_sections/`: compact header, growing body, and footer layout for dialogs |
 | Confirmation dialog | `confirmation_dialog/`: reusable QMessageBox contract and presentation |
-| Toast region | `toast_region/`: transient/persistent notices and accessibility announcement |
+| Toast region | `toast_region/`: host-attached success, warning, and danger overlays with accessibility announcement |
 | Shared glyphs | `control_glyphs/`: select/spin overlays and arrow painting; Qt retains hit testing |
 
 Stock Qt widgets remain stock widgets. Their owning modules supply styles and,

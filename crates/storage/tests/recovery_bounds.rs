@@ -12,6 +12,127 @@ fn document() -> EditorDocument {
     }
 }
 #[test]
+fn mixed_workspace_round_trips_order_active_pane_and_legacy_sql() {
+    let mut store = Storage::in_memory().unwrap();
+    let sql = document();
+    store.save_workspace(&[sql.clone()]).unwrap();
+    let old = store.restore_workspace_tabs().unwrap();
+    assert_eq!(old.tabs, vec![WorkspaceTab::Sql(sql.clone())]);
+    let object = WorkspaceTab::Object(ObjectTab {
+        profile_id: "profile-1".into(),
+        object_type: "table".into(),
+        object_id: "public.same".into(),
+        label: "same".into(),
+        pane: 3,
+    });
+    let snapshot = WorkspaceSnapshot {
+        tabs: vec![object.clone(), WorkspaceTab::Sql(sql), object],
+        active_index: 2,
+    };
+    assert!(store.save_workspace_tabs(&snapshot).is_err());
+    let snapshot = WorkspaceSnapshot {
+        tabs: snapshot.tabs[..2].to_vec(),
+        active_index: 1,
+    };
+    store.save_workspace_tabs(&snapshot).unwrap();
+    assert_eq!(store.restore_workspace_tabs().unwrap(), snapshot);
+    let invalid_active = WorkspaceSnapshot {
+        active_index: 2,
+        ..snapshot.clone()
+    };
+    assert!(store.save_workspace_tabs(&invalid_active).is_err());
+    assert_eq!(store.restore_workspace_tabs().unwrap(), snapshot);
+    let second_object = WorkspaceTab::Object(ObjectTab {
+        profile_id: "profile-2".into(),
+        object_type: "table".into(),
+        object_id: "public.same".into(),
+        label: "same".into(),
+        pane: 0,
+    });
+    let distinct = WorkspaceSnapshot {
+        tabs: vec![snapshot.tabs[0].clone(), second_object],
+        active_index: 0,
+    };
+    store.save_workspace_tabs(&distinct).unwrap();
+    assert_eq!(store.restore_workspace_tabs().unwrap(), distinct);
+    let mut invalid_pane = distinct.clone();
+    if let WorkspaceTab::Object(object) = &mut invalid_pane.tabs[1] {
+        object.pane = 5;
+    }
+    assert!(store.save_workspace_tabs(&invalid_pane).is_err());
+    assert_eq!(store.restore_workspace_tabs().unwrap(), distinct);
+}
+#[test]
+fn mixed_workspace_distinguishes_colons_and_sql_ids_from_object_ids() {
+    let mut store = Storage::in_memory().unwrap();
+    let first = WorkspaceTab::Object(ObjectTab {
+        profile_id: "a:b".into(),
+        object_type: "c".into(),
+        object_id: "d".into(),
+        label: "first".into(),
+        pane: 0,
+    });
+    let second = WorkspaceTab::Object(ObjectTab {
+        profile_id: "a".into(),
+        object_type: "b:c".into(),
+        object_id: "d".into(),
+        label: "second".into(),
+        pane: 1,
+    });
+    let mut sql = document();
+    sql.id = "object:a:b:c:d".into();
+    let snapshot = WorkspaceSnapshot {
+        tabs: vec![first, WorkspaceTab::Sql(sql), second],
+        active_index: 2,
+    };
+    store.save_workspace_tabs(&snapshot).unwrap();
+    assert_eq!(store.restore_workspace_tabs().unwrap(), snapshot);
+}
+#[test]
+fn object_recovery_accepts_namespaced_maximum_profile_id() {
+    let mut store = Storage::in_memory().unwrap();
+    let snapshot = WorkspaceSnapshot {
+        tabs: vec![WorkspaceTab::Object(ObjectTab {
+            profile_id: format!("profile:{}", "p".repeat(256)),
+            object_type: "table".into(),
+            object_id: "public.orders".into(),
+            label: "orders".into(),
+            pane: 4,
+        })],
+        active_index: 0,
+    };
+    store.save_workspace_tabs(&snapshot).unwrap();
+    assert_eq!(store.restore_workspace_tabs().unwrap(), snapshot);
+}
+#[test]
+fn reads_previous_tagged_mixed_row_ids() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let mut store = Storage::open(&path).unwrap();
+    let sql = WorkspaceTab::Sql(document());
+    let object = WorkspaceTab::Object(ObjectTab {
+        profile_id: "old-profile".into(),
+        object_type: "table".into(),
+        object_id: "public.orders".into(),
+        label: "orders".into(),
+        pane: 2,
+    });
+    let snapshot = WorkspaceSnapshot {
+        tabs: vec![sql, object],
+        active_index: 1,
+    };
+    store.save_workspace_tabs(&snapshot).unwrap();
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute("UPDATE editor_documents SET id='tab' WHERE position=0", [])
+        .unwrap();
+    db.execute(
+        "UPDATE editor_documents SET id='object:old-profile:table:public.orders' WHERE position=1",
+        [],
+    )
+    .unwrap();
+    assert_eq!(store.restore_workspace_tabs().unwrap(), snapshot);
+}
+#[test]
 fn invalid_recovery_positions_preserve_previous_workspace() {
     let mut store = Storage::in_memory().unwrap();
     let original = document();

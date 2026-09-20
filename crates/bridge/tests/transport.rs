@@ -342,6 +342,44 @@ fn recovery_transport_preserves_typed_documents_and_policy_without_connecting() 
     );
     assert!(drain_events(&mut engine).is_empty());
 }
+#[test]
+fn mixed_workspace_transport_preserves_order_active_and_object_pane() {
+    let mut engine = new_engine();
+    let sql = ffi::WorkspaceTabDto {
+        document: ffi::EditorDocumentDto {
+            id: "draft".into(),
+            title: "Draft".into(),
+            sql: "SELECT 7".into(),
+            cursor_offset: 8,
+            selection_anchor: 8,
+            modified: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let object = ffi::WorkspaceTabDto {
+        is_object: true,
+        profile_id: "profile".into(),
+        object_type: "table".into(),
+        object_id: "public.orders".into(),
+        label: "orders".into(),
+        pane: 3,
+        ..Default::default()
+    };
+    assert!(workspace_tabs_save(&mut engine, vec![object, sql], 0, 901).accepted);
+    assert_eq!(
+        await_event(&mut engine, "workspace_saved").request_token,
+        901
+    );
+    assert!(workspace_tabs_restore(&mut engine, 902).accepted);
+    let restored = await_event(&mut engine, "workspace_tabs_restored");
+    assert_eq!(restored.active_tab, 0);
+    assert_eq!(restored.workspace_tabs.len(), 2);
+    assert!(restored.workspace_tabs[0].is_object);
+    assert_eq!(restored.workspace_tabs[0].object_id, "public.orders");
+    assert_eq!(restored.workspace_tabs[0].pane, 3);
+    assert_eq!(restored.workspace_tabs[1].document.sql, "SELECT 7");
+}
 
 #[test]
 fn appearance_transport_preserves_typed_values_missing_and_reset() {

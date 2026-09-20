@@ -165,6 +165,38 @@ class PreviewTest final : public QObject {
         QCOMPARE(toast->geometry().bottom(), scroll->viewport()->height() - 17);
         QTRY_VERIFY_WITH_TIMEOUT(toast->isHidden(), 8000);
     }
+    void toastPortalIsPresentInBothThemes() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("feedback"));
+        window.show();
+        for (const auto* name : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(name);
+            QVERIFY(host);
+            auto* scroll = host->findChild<QScrollArea*>("previewContentScroll");
+            auto* toast = host->findChild<choscordb::ToastRegion*>("toastRegion");
+            QVERIFY(scroll && toast);
+            toast->showToast("Saved", "Portal specimen", choscordb::ToastVariant::Success, 0);
+            QCOMPARE(toast->parentWidget(), scroll->viewport());
+            QCOMPARE(toast->geometry().right(), scroll->viewport()->width() - 17);
+            QCOMPARE(toast->geometry().bottom(), scroll->viewport()->height() - 17);
+        }
+    }
+    void toastCanAttachAcrossWidgetTrees() {
+        QWidget source;
+        QWidget host;
+        host.resize(500, 300);
+        host.show();
+        choscordb::ToastRegion toast(&source);
+        toast.attachTo(&host);
+        toast.showToast("Saved", "Moved to overlay", choscordb::ToastVariant::Success, 5000);
+        QCOMPARE(toast.parentWidget(), &host);
+        QCOMPARE(toast.geometry().right(), host.width() - 17);
+        QCOMPARE(toast.geometry().bottom(), host.height() - 17);
+        host.resize(600, 400);
+        QCoreApplication::processEvents();
+        QCOMPARE(toast.geometry().right(), host.width() - 17);
+        QCOMPARE(toast.geometry().bottom(), host.height() - 17);
+    }
     void toastVariantsShowTitleBodyAndUseConfiguredTimeout() {
         choscordb::design::PreviewWindow window;
         QVERIFY(window.selectSpecimen("feedback"));
@@ -187,20 +219,22 @@ class PreviewTest final : public QObject {
             QVERIFY(toast->text().contains("<br/>"));
         }
         QTRY_VERIFY_WITH_TIMEOUT(toast->isHidden(), 2000);
-        toast->showPersistent("Plain notice");
-        QCOMPARE(toast->text(), QString("Plain notice"));
-        QCOMPARE(toast->textFormat(), Qt::PlainText);
-        QVERIFY(toast->property("variant").toString().isEmpty());
+        toast->showToast("Warning", "Persistent warning", choscordb::ToastVariant::Warning, 0);
+        QVERIFY(toast->text().contains("Persistent warning"));
+        QCOMPARE(toast->property("variant").toString(), QString("warning"));
         QTRY_VERIFY(opacity->opacity() > 0.9);
+        QTest::qWait(1200);
+        QVERIFY(toast->isVisible());
         toast->clearNotice();
         QTRY_VERIFY(opacity->opacity() < 0.1);
         QTRY_VERIFY(toast->isHidden());
-        toast->showNotice("First", 5000);
+        toast->showToast("Saved", "First", choscordb::ToastVariant::Success, 5000);
         toast->clearNotice();
-        toast->showNotice("Replacement", 5000);
+        toast->showToast("Error", "Replacement", choscordb::ToastVariant::Danger, 5000);
         QTRY_VERIFY(opacity->opacity() > 0.9);
         QVERIFY(toast->isVisible());
-        QCOMPARE(toast->text(), QString("Replacement"));
+        QVERIFY(toast->text().contains("Replacement"));
+        QCOMPARE(toast->property("variant").toString(), QString("danger"));
     }
     void nonmodalDialogSurfaceHasNoOutline() {
         choscordb::design::PreviewWindow window;

@@ -18,9 +18,10 @@ pub use choscordb_storage::{
     EditorPreferences, HistoryEntry, HistoryPolicy, HistoryStatus, MAX_APPEARANCE_LAYOUT_BYTES,
     MAX_COLLECTION_BYTES, MAX_EDITOR_FONT_SIZE, MAX_FONT_FAMILY_BYTES, MAX_QUERY_TIMEOUT_SECONDS,
     MAX_SCREEN_NAME_BYTES, MAX_SHORTCUT_SEQUENCE_BYTES, MAX_SQL_BYTES, MAX_WINDOW_DIMENSION,
-    MAX_WORKSPACE_DOCUMENTS, MIN_EDITOR_FONT_SIZE, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH,
+    MAX_WORKSPACE_DOCUMENTS, MIN_EDITOR_FONT_SIZE, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, ObjectTab,
     PostgresTls, ProfileConfiguration, QUERY_PREFERENCES_VERSION, QueryPreferences,
     ShortcutCommand, ShortcutOverride, ThemeMode, WindowGeometry, WorkspaceLayout,
+    WorkspaceSnapshot, WorkspaceTab,
 };
 mod store;
 use choscordb_driver_api::*;
@@ -536,6 +537,7 @@ impl Engine {
                 | Event::HistoryFlushed { .. }
                 | Event::WorkspaceSaved { .. }
                 | Event::WorkspaceRestored { .. }
+                | Event::WorkspaceTabsRestored { .. }
                 | Event::HistoryListed { .. }
                 | Event::HistoryCleared { .. }
                 | Event::HistoryPolicy { .. }

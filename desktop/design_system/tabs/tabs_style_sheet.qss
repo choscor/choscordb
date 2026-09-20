@@ -45,7 +45,7 @@ QTabBar[designTabVariant="document"]::tab {
   border-bottom: 0;
   border-top: 2px solid transparent;
   border-right: 1px solid @border;
-  padding: 0 20px 0 10px;
+  padding: 0 8px 0 10px;
   margin: 0;
 }
 

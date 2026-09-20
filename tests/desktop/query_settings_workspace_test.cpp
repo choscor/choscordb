@@ -25,6 +25,8 @@ class QuerySettingsWorkspaceTest : public QObject {
         auto* controller = window.findChild<choscordb::QueryWorkspace*>()
                                ->findChild<choscordb::QuerySettingsController*>();
         workspace->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         auto* run = window.findChild<QAction*>("runStatement");
         QTRY_VERIFY(run->isEnabled());
         auto* settings = window.findChild<QAction*>("querySettings");
@@ -90,6 +92,8 @@ class QuerySettingsWorkspaceTest : public QObject {
             auto* tabs = window.findChild<QTabWidget*>("editorTabs");
             QTRY_VERIFY(tabs->isEnabled());
             workspace->connectSqlite(":memory:");
+            QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+            window.findChild<QAction*>("newQuery")->trigger();
             QTRY_VERIFY(run->isEnabled());
             int executions = 0;
             connect(

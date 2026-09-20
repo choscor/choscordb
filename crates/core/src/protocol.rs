@@ -83,6 +83,10 @@ pub enum Event {
         request_token: u64,
         documents: Vec<crate::EditorDocument>,
     },
+    WorkspaceTabsRestored {
+        request_token: u64,
+        snapshot: crate::WorkspaceSnapshot,
+    },
     HistoryListed {
         request_token: u64,
         entries: Vec<crate::HistoryEntry>,

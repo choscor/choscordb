@@ -2,23 +2,16 @@
 #include "bridge/engine_adapter.h"
 #include "bridge/template_service.h"
 #include "choscordb-bridge/src/lib.rs.h"
-#include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/menu/menu.h"
-#include "design_system/theme.h"
 #include "models/navigator_model.h"
 #include <QApplication>
 #include <QClipboard>
-#include <QDialog>
-#include <QDialogButtonBox>
-#include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPersistentModelIndex>
-#include <QPlainTextEdit>
 #include <QSortFilterProxyModel>
 #include <QTimer>
 #include <QTreeView>
-#include <QVBoxLayout>
 #include <limits>
 namespace choscordb {
 namespace {
@@ -70,6 +63,7 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
                                          QWidget* dialogParent)
     : QObject(tree), model_(new NavigatorModel(this)), engine_(engine), tree_(tree),
       proxy_(new SelectedConnectionProxy(this)), filter_(filter) {
+    Q_UNUSED(dialogParent);
     auto* proxy = proxy_;
     proxy->setSourceModel(model_);
     proxy->setRecursiveFilteringEnabled(true);
@@ -110,7 +104,7 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
             });
     connect(
         engine, &EngineAdapter::eventReady, this,
-        [this, dialogParent](const BridgeEvent& e) {
+        [this](const BridgeEvent& e) {
             const auto kind = text(e.kind);
             if (kind == "disconnected")
                 model_->removeConnection(e.id);
@@ -147,23 +141,6 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
                                 .arg(text(e.error)));
                     }
                 }
-            } else if (kind == "ddl") {
-                auto* dialog = new DialogShell(dialogParent);
-                dialog->setAttribute(Qt::WA_DeleteOnClose);
-                dialog->setWindowTitle(tr("Object DDL"));
-                dialog->resize(design::dialogInitialSize(design::DialogSize::Ddl));
-                auto* layout = new QVBoxLayout(dialog);
-                layout->addWidget(dialog->createDescription(
-                    tr("Review the database definition reported by the active connection."),
-                    dialog));
-                auto* editor = new QPlainTextEdit;
-                editor->setReadOnly(true);
-                editor->setPlainText(text(e.ddl));
-                layout->addWidget(editor);
-                auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close);
-                connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
-                layout->addWidget(buttons);
-                dialog->show();
             }
         },
         Qt::DirectConnection);
@@ -219,9 +196,12 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
     ddl->setEnabled(objectKind == "table" || objectKind == "view" || objectKind == "index" ||
                     objectKind == "sequence" || objectKind == "function");
     connect(ddl, &QAction::triggered, this, [this, index] {
-        if (index.isValid() && engine_)
-            engine_->objectDdl(index.data(NavigatorModel::ConnectionRole).toULongLong(),
-                               index.data(NavigatorModel::ObjectIdRole).toString());
+        if (index.isValid())
+            emit ddlRequested(index.data(NavigatorModel::ConnectionRole).toULongLong(),
+                              index.data(NavigatorModel::ObjectIdRole).toString(),
+                              index.data(Qt::DisplayRole).toString(),
+                              index.data(NavigatorModel::KindRole).toString(),
+                              index.data(NavigatorModel::PropertiesRole).toList());
     });
     if (objectKind != "table" && objectKind != "view")
         return;

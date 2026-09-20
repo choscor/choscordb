@@ -45,6 +45,7 @@
 #include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -172,11 +173,71 @@ class HoveredTabCloseVisibility final : public QObject {
     QTabBar* tabs_;
 };
 
+class WorkspaceTabBar final : public QTabBar {
+  public:
+    using QTabBar::QTabBar;
+
+    void setHeader(QWidget* header) {
+        header_ = header;
+        header_->setParent(this);
+        header_->show();
+        updateGeometry();
+        layoutHeader();
+    }
+
+    QSize sizeHint() const override {
+        auto size = QTabBar::sizeHint();
+        if (header_ && !header_->isHidden())
+            size.rheight() += header_->sizeHint().height() + design::spacing(design::Spacing::Half);
+        return size;
+    }
+
+    QSize minimumSizeHint() const override {
+        auto size = QTabBar::minimumSizeHint();
+        if (header_ && !header_->isHidden())
+            size.rheight() +=
+                header_->minimumSizeHint().height() + design::spacing(design::Spacing::Half);
+        return size;
+    }
+
+    void setHeaderVisible(bool visible) {
+        if (!header_ || header_->isHidden() != visible)
+            return;
+        header_->setVisible(visible);
+        updateGeometry();
+        layoutHeader();
+    }
+
+  protected:
+    void resizeEvent(QResizeEvent* event) override {
+        QTabBar::resizeEvent(event);
+        layoutHeader();
+    }
+
+  private:
+    void layoutHeader() {
+        if (header_ && !header_->isHidden())
+            header_->setGeometry(0, QTabBar::sizeHint().height(), width(),
+                                 header_->sizeHint().height());
+    }
+    QPointer<QWidget> header_;
+};
+
+class WorkspaceTabs final : public QTabWidget {
+  public:
+    WorkspaceTabs() { setTabBar(new WorkspaceTabBar(this)); }
+    WorkspaceTabBar* workspaceBar() const { return static_cast<WorkspaceTabBar*>(tabBar()); }
+};
+
 } // namespace
 
-void MainWindow::showNotice(const QString& message) {
-    if (toast_)
-        toast_->showNotice(message);
+void MainWindow::showToast(const QString& message, ToastVariant variant) {
+    if (toast_) {
+        const auto title = variant == ToastVariant::Success ? tr("Success")
+                           : variant == ToastVariant::Warning ? tr("Warning")
+                                                               : tr("Error");
+        toast_->showToast(title, message, variant);
+    }
 }
 
 MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindow(parent) {
@@ -210,6 +271,13 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     open->setShortcut(QKeySequence::Open);
     auto* save = fileMenu->addAction(tr("Save SQL file…"));
     save->setShortcut(QKeySequence::Save);
+    auto* closeTab = fileMenu->addAction(tr("Close tab"));
+    closeTab->setObjectName("closeWorkspaceTab");
+    closeTab->setShortcut(QKeySequence::Close);
+    connect(closeTab, &QAction::triggered, this, [this] {
+        if (editors_ && editors_->currentIndex() >= 0)
+            emit editors_->tabCloseRequested(editors_->currentIndex());
+    });
     fileMenu->addSeparator();
     auto* quit =
         fileMenu->addAction(tr("Quit"), QKeySequence::Quit, qApp, &QApplication::closeAllWindows);
@@ -471,15 +539,19 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     connect(theme_, &design::ThemeManager::metricsChanged, this, refreshIcons);
     refreshIcons();
     auto* splitter = new QSplitter(Qt::Vertical);
-    editors_ = new QTabWidget;
+    auto* workspaceTabs = new WorkspaceTabs;
+    editors_ = workspaceTabs;
     editors_->setObjectName("editorTabs");
     connect(theme_, &design::ThemeManager::themeChanged, editors_, [this] {
-        const auto icon =
-            design::themedIcon(design::Icon::Code, theme_->resolvedTheme().colors.mutedText, 16);
-        for (int index = 0; index < editors_->count(); ++index)
-            editors_->setTabIcon(index, icon);
+        for (int index = 0; index < editors_->count(); ++index) {
+            const auto role = qobject_cast<ObjectExplorer*>(editors_->widget(index))
+                                  ? design::Icon::Table
+                                  : design::Icon::Code;
+            editors_->setTabIcon(
+                index, design::themedIcon(role, theme_->resolvedTheme().colors.mutedText, 16));
+        }
     });
-    connect(editors_, &QTabWidget::currentChanged, this, [this] {
+    connect(editors_, &QTabWidget::currentChanged, this, [this, workspaceTabs] {
         if (activeDocument_ && editors_->currentWidget() != activeDocument_ &&
             !allowDocumentChange()) {
             const QSignalBlocker blocker(editors_);
@@ -488,6 +560,18 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             return;
         }
         activeDocument_ = editors_->currentWidget();
+        if (auto* object = qobject_cast<ObjectExplorer*>(editors_->currentWidget())) {
+            lastObjectTab_ = object;
+            object->activateRestoredObject();
+        }
+        const bool sql = qobject_cast<SqlEditor*>(editors_->currentWidget()) != nullptr;
+        if (sql)
+            lastSqlDocument_ = qobject_cast<SqlEditor*>(editors_->currentWidget());
+        workspaceTabs->workspaceBar()->setHeaderVisible(sql);
+        if (sqlResultArea_)
+            sqlResultArea_->setVisible(sql);
+        if (search_ && !sql)
+            search_->hide();
         completion_->setEditor(qobject_cast<SqlEditor*>(editors_->currentWidget()));
         if (workspace_)
             workspace_->documentChanged();
@@ -526,7 +610,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     editorPaneLayout->setContentsMargins(0, 0, 0, 0);
     editorPaneLayout->setSpacing(0);
     editorPaneLayout->addWidget(editors_, 1);
-    editorPaneLayout->addWidget(toolbar);
+    workspaceTabs->workspaceBar()->setHeader(toolbar);
     splitter->addWidget(editorPane);
     auto* resultArea = new QWidget;
     auto* resultAreaLayout = new QVBoxLayout(resultArea);
@@ -600,7 +684,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     exportResult->setDesignIcon(design::Icon::Export);
     pager->addWidget(previousPage);
     pager->addWidget(nextPage);
-    pager->addWidget(queryOverflow);
+    toolbar->addWidget(queryOverflow);
     pager->addWidget(exportResult);
     const auto colorResultFooter = [this, resultFooter] {
         auto palette = resultFooter->palette();
@@ -619,6 +703,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     resultAreaLayout->addWidget(results, 1);
     resultAreaLayout->addWidget(resultFooter);
     splitter->addWidget(resultArea);
+    sqlResultArea_ = resultArea;
     splitter->setSizes({initialMetrics.initialEditorHeight, initialMetrics.initialResultsHeight});
     layout->addWidget(splitter);
     search_ = new SearchPanel(
@@ -733,17 +818,17 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     auto* centralHostLayout = new QVBoxLayout(centralHost);
     centralHostLayout->setContentsMargins(0, 0, 0, 0);
     centralHostLayout->setSpacing(0);
-    toast_ = new ToastRegion(centralHost);
+    toast_ = new ToastRegion;
     auto* toast = toast_;
-    centralHostLayout->addWidget(toast_);
     centralHostLayout->addWidget(screens_, 1);
     setCentralWidget(centralHost);
+    toast_->attachTo(centralHost);
     auto* completionNote = new QLabel(tr("Loaded objects"));
     completionNote->setObjectName("completionCatalogNote");
     completionNote->setToolTip(tr("Suggestions use loaded navigator objects. Expand nodes for more "
                                   "names; large catalogs may be limited."));
     completionNote->hide();
-    centralHostLayout->insertWidget(1, completionNote);
+    centralHostLayout->insertWidget(0, completionNote);
     connect(completion_, &EditorCompletionController::partialCatalog, completionNote,
             &QWidget::setVisible);
     connect(newQuery, &QAction::triggered, this, [this] { addEditor(); });
@@ -751,8 +836,9 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     connect(editors_, &QTabWidget::tabCloseRequested, this, [this](int index) {
         if (!allowDocumentChange())
             return;
-        auto* editor = qobject_cast<SqlEditor*>(editors_->widget(index));
-        if (editor->isModified() &&
+        auto* closing = editors_->widget(index);
+        auto* editor = qobject_cast<SqlEditor*>(closing);
+        if (editor && editor->isModified() &&
             ConfirmationDialog::question(this, tr("Close query"), tr("Discard unsaved changes?"),
                                          QMessageBox::Discard | QMessageBox::Cancel,
                                          QMessageBox::Cancel) != QMessageBox::Discard)
@@ -760,7 +846,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         if (!allowDocumentChange())
             return;
         editors_->removeTab(index);
-        editor->deleteLater();
+        closing->deleteLater();
         if (!editors_->count())
             showScreen(Screen::Start);
         if (recovery_)
@@ -788,7 +874,6 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             return;
         editor->saveFile(path);
     });
-    addEditor();
     connect(run, &QAction::triggered, this, [this] { showScreen(Screen::Sql); });
     workspace_ =
         new QueryWorkspace({connections, mode, run, cancel, commitAction, rollbackAction,
@@ -827,22 +912,13 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 compactState->setText(state);
                 compactState->setAccessibleName(tr("Execution status: %1").arg(state));
             });
-    auto* objectExplorer = new ObjectExplorer(workspace_->adapter(), screens_);
-    installObjectExplorer(objectExplorer);
-    auto* objectData = new ObjectDataWorkspace(workspace_, objectExplorer);
-    objectExplorer->installDataWidget(objectData);
-    connect(objectExplorer, &ObjectExplorer::dataRequested, objectData,
-            &ObjectDataWorkspace::openObject);
-    connect(objectExplorer, &ObjectExplorer::objectChanged, objectData,
-            &ObjectDataWorkspace::invalidate);
-    connect(objectData, &ObjectDataWorkspace::busyChanged, objectExplorer,
-            &ObjectExplorer::setOperationBusy);
-    connect(this, &MainWindow::objectContextSelected, objectExplorer,
-            [objectExplorer, tree](quint64 connection, const QString& object, const QString& label,
-                                   const QString& kind) {
-                objectExplorer->openObject(
-                    connection, object, label, kind,
-                    tree->currentIndex().data(NavigatorModel::PropertiesRole).toList());
+    auto* objectExplorer = makeObjectExplorer();
+    initialObjectExplorer_ = objectExplorer;
+    connect(this, &MainWindow::objectContextSelected, this,
+            [this, tree](quint64 connection, const QString& object, const QString& label,
+                         const QString& kind) {
+                openObjectTab(connection, object, label, kind,
+                              tree->currentIndex().data(NavigatorModel::PropertiesRole).toList());
             });
     connect(workspace_, &QueryWorkspace::openQueryRequested, this,
             &MainWindow::openConnectionQuery);
@@ -918,7 +994,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 continue;
             const auto id = connections->itemData(i).toULongLong();
             if (workspace_->profileIdForConnection(id) == profile.id) {
-                if (showScreen(Screen::Object)) {
+                if (allowDocumentChange()) {
                     browsingConnection_ = id;
                     lastBrowsedProfileId_ = profile.id;
                     if (navigatorController_)
@@ -972,6 +1048,17 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             dialog->setAttribute(Qt::WA_DeleteOnClose);
             dialog->open();
         }
+    };
+    reconnectProfile_ = [savedConnections, selectProfile](const QString& id) {
+        for (int i = 0; i < savedConnections->count(); ++i) {
+            auto* item = savedConnections->item(i);
+            if (item->data(Qt::UserRole).value<SavedProfile>().id != id)
+                continue;
+            savedConnections->setCurrentItem(item);
+            selectProfile(item);
+            return true;
+        }
+        return false;
     };
     connect(savedConnections, &QListWidget::itemClicked, this, selectProfile);
     connect(savedConnections, &QListWidget::itemActivated, this, selectProfile);
@@ -1029,7 +1116,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         lastBrowsedProfileId_ = pendingBrowseProfileId_;
         pendingBrowseProfileId_.clear();
         pendingBrowseProfileName_.clear();
-        if (showScreen(Screen::Object)) {
+        if (allowDocumentChange()) {
             browsingConnection_ = id;
             if (navigatorController_)
                 navigatorController_->setSelectedConnection(id);
@@ -1100,7 +1187,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 navigatorStatus->setText(error);
                 navigatorStatus->setToolTip(error);
                 if (!submittingBrowseProfile_ || pendingBrowseProfileId_.isEmpty()) {
-                    showNotice(error);
+                    showToast(error, ToastVariant::Danger);
                     return;
                 }
                 const auto name = pendingBrowseProfileName_;
@@ -1168,6 +1255,20 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         Qt::DirectConnection);
     if (!storagePath.isEmpty()) {
         recovery_ = new WorkspaceRecoveryController(editors_, [this] { return addEditor(); }, this);
+        recovery_->setObjectFactory([this](const SavedWorkspaceTab& tab) -> QWidget* {
+            auto* explorer = initialObjectExplorer_;
+            initialObjectExplorer_ = nullptr;
+            if (!explorer)
+                explorer = makeObjectExplorer();
+            explorer->setProperty("objectProfileId", tab.profileId);
+            explorer->setProperty("objectConnection", QVariant::fromValue<qulonglong>(0));
+            explorer->setProperty("objectId", tab.objectId);
+            explorer->setProperty("objectType", tab.objectType);
+            explorer->setProperty("objectLabel", tab.label);
+            explorer->restoreObject(std::nullopt, tab.objectId, tab.label, tab.objectType);
+            explorer->selectPane(static_cast<int>(tab.pane));
+            return explorer;
+        });
         auto* recoveryStatus = new QWidget;
         auto* recoveryLayout = new QHBoxLayout(recoveryStatus);
         recoveryLayout->setContentsMargins(0, 0, 0, 0);
@@ -1193,12 +1294,12 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                     open->setEnabled(enabled);
                     save->setEnabled(enabled);
                 });
-        connect(recovery_, &WorkspaceRecoveryController::restoreRequested, workspace_->adapter(),
-                &EngineAdapter::restoreWorkspace);
-        connect(recovery_, &WorkspaceRecoveryController::saveRequested, workspace_->adapter(),
-                &EngineAdapter::saveWorkspace);
-        connect(workspace_->adapter(), &EngineAdapter::workspaceRestored, recovery_,
-                &WorkspaceRecoveryController::restored);
+        connect(recovery_, &WorkspaceRecoveryController::restoreTabsRequested,
+                workspace_->adapter(), &EngineAdapter::restoreWorkspaceTabs);
+        connect(recovery_, &WorkspaceRecoveryController::saveTabsRequested, workspace_->adapter(),
+                &EngineAdapter::saveWorkspaceTabs);
+        connect(workspace_->adapter(), &EngineAdapter::workspaceTabsRestored, recovery_,
+                &WorkspaceRecoveryController::restoredTabs);
         connect(workspace_->adapter(), &EngineAdapter::workspaceSaved, recovery_,
                 &WorkspaceRecoveryController::saved);
         connect(workspace_->adapter(), &EngineAdapter::recoveryFailed, recovery_,
@@ -1243,8 +1344,11 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         connect(recovery_, &WorkspaceRecoveryController::mutationEnabled, search_,
                 &QWidget::setEnabled);
         connect(
-            recovery_, &WorkspaceRecoveryController::restoreCompleted, this,
-            [this](bool hasDocuments) { showScreen(hasDocuments ? Screen::Sql : Screen::Start); });
+            recovery_, &WorkspaceRecoveryController::restoreCompleted, this, [this](bool hasTabs) {
+                screens_->setCurrentIndex(static_cast<int>(hasTabs ? Screen::Sql : Screen::Start));
+                if (auto* object = qobject_cast<ObjectExplorer*>(editors_->currentWidget()))
+                    object->activateRestoredObject();
+            });
         recovery_->start();
     }
     history_ = new HistoryDock(workspace_->adapter(), this);
@@ -1260,7 +1364,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 if (warning.isEmpty())
                     toast->clearNotice();
                 else
-                    toast->showPersistent(warning);
+                    toast->showToast(tr("Warning"), warning, ToastVariant::Warning, 0);
             });
     connect(appearance_, &AppearanceController::flushReady, this, [this] {
         appearanceCloseApproved_ = true;
@@ -1279,7 +1383,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         if (!editor)
             return;
         if (!editor->restoreDocument(entry.sql.toUtf8(), {}, 0, 0, true)) {
-            showNotice(tr("History text could not be opened."));
+            showToast(tr("History text could not be opened."), ToastVariant::Danger);
             return;
         }
         editor->setProfileId(entry.profileId);
@@ -1337,6 +1441,11 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             });
     auto* navigatorController = new NavigatorController(workspace_->adapter(), tree, filter, this);
     navigatorController_ = navigatorController;
+    connect(navigatorController, &NavigatorController::ddlRequested, this,
+            [this](quint64 connection, const QString& objectId, const QString& label,
+                   const QString& kind, const QVariantList& properties) {
+                openObjectTab(connection, objectId, label, kind, properties, 3);
+            });
     connect(navigatorController, &NavigatorController::searchStatusChanged, navigatorStatus,
             [this, navigatorStatus](const QString& status) {
                 navigatorStatus->setText(
@@ -1372,6 +1481,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 }
                 auto object = current;
                 auto kind = object.data(NavigatorModel::KindRole).toString();
+                const auto selectedKind = kind;
                 while (object.isValid() && kind != "table" && kind != "view" && kind != "index" &&
                        kind != "sequence" && kind != "function" && kind != "schema" &&
                        kind != "connection") {
@@ -1385,12 +1495,19 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                     return;
                 browsingConnection_ = connection.toULongLong();
                 emit browsingConnectionChanged(*browsingConnection_);
-                if ((kind == "table" || kind == "view" || kind == "index" || kind == "sequence" ||
-                     kind == "function") &&
-                    showScreen(Screen::Object))
-                    emit objectContextSelected(
-                        *browsingConnection_, object.data(NavigatorModel::ObjectIdRole).toString(),
-                        object.data(NavigatorModel::QualifiedNameRole).toString(), kind);
+                if (kind == "table" || kind == "view" || kind == "index" || kind == "sequence" ||
+                    kind == "function") {
+                    const auto pane = selectedKind == "column"       ? 0
+                                      : selectedKind == "index"      ? 1
+                                      : selectedKind.contains("key") ? 2
+                                      : selectedKind == "ddl"        ? 3
+                                      : selectedKind == "data"       ? 4
+                                                                     : -1;
+                    openObjectTab(*browsingConnection_,
+                                  object.data(NavigatorModel::ObjectIdRole).toString(),
+                                  object.data(NavigatorModel::QualifiedNameRole).toString(), kind,
+                                  object.data(NavigatorModel::PropertiesRole).toList(), pane);
+                }
             });
     connect(tree->selectionModel(), &QItemSelectionModel::currentChanged, this,
             [tree, refreshNavigator, disconnectNavigator, refreshNavigatorAction,
@@ -1411,23 +1528,26 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     connect(navigatorController, &NavigatorController::disconnectRequested, workspace_,
             &QueryWorkspace::disconnectConnection);
     connect(navigatorController, &NavigatorController::generationFailed, this,
-            [toast](const QString& error) { toast->showNotice(error); });
+            [toast](const QString& error) {
+                toast->showToast(tr("Error"), error, ToastVariant::Danger);
+            });
     const auto openGeneratedSql = [this, connections](quint64 connection, const QString& sql) {
         if (databaseClosePending_ || !editors_->isEnabled() ||
             (recovery_ && (!recovery_->isReady() || recovery_->isClosing())))
             return;
         const int target = connections->findData(QVariant::fromValue<qulonglong>(connection));
         if (target < 0) {
-            showNotice(tr("The selected connection is no longer available."));
+            showToast(tr("The selected connection is no longer available."), ToastVariant::Danger);
             return;
         }
         if (target != connections->currentIndex() && !connections->isEnabled()) {
-            showNotice(tr("Finish the active query before switching connections to generate SQL."));
+            showToast(tr("Finish the active query before switching connections to generate SQL."),
+                      ToastVariant::Warning);
             return;
         }
         const auto bytes = sql.toUtf8();
         if (!sql.isValidUtf16() || bytes.size() > DocumentIo::MaximumBytes) {
-            showNotice(tr("Generated SQL exceeds editor limits."));
+            showToast(tr("Generated SQL exceeds editor limits."), ToastVariant::Danger);
             return;
         }
         auto* editor = addEditor();
@@ -1436,7 +1556,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         if (!editor->restoreDocument(bytes, {}, 0, 0, true)) {
             editors_->removeTab(editors_->indexOf(editor));
             editor->deleteLater();
-            showNotice(tr("Generated SQL could not be opened."));
+            showToast(tr("Generated SQL could not be opened."), ToastVariant::Danger);
             return;
         }
         connections->setCurrentIndex(target);
@@ -1447,12 +1567,13 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         editors_->setTabText(editors_->indexOf(editor),
                              editor->property("documentTitle").toString() + " •");
         editor->setFocus();
-        showNotice(tr("SQL generated. Review the draft before running."));
+        toast_->showToast(tr("SQL generated"), tr("Review the draft before running."),
+                          ToastVariant::Success);
         if (recovery_)
             recovery_->changed();
     };
     connect(navigatorController, &NavigatorController::sqlGenerated, this, openGeneratedSql);
-    connect(objectExplorer, &ObjectExplorer::sqlGenerated, this, openGeneratedSql);
+    openGeneratedSql_ = openGeneratedSql;
 
     auto rebuildCompletion = [this, connections, model = navigatorController->model()] {
         if (!connections->currentData().isValid()) {
@@ -1483,6 +1604,26 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 navigatorController->addConnection(id, connections->itemText(connections->findData(
                                                            QVariant::fromValue<qulonglong>(id))));
             });
+    connect(workspace_, &QueryWorkspace::connectionReady, this, [this](quint64 id) {
+        const auto profileId = workspace_->profileIdForConnection(id);
+        if (profileId.isEmpty())
+            return;
+        for (int i = 0; i < editors_->count(); ++i) {
+            auto* object = qobject_cast<ObjectExplorer*>(editors_->widget(i));
+            if (!object || !object->needsConnection())
+                continue;
+            const auto context = object->property("objectProfileId").toString();
+            if (context != QStringLiteral("profile:%1").arg(profileId))
+                continue;
+            object->setProperty("objectProfileId", QStringLiteral("profile:%1").arg(profileId));
+            object->setProperty("objectConnection", QVariant::fromValue<qulonglong>(id));
+            object->restoreObject(id, object->property("objectId").toString(),
+                                  object->property("objectLabel").toString(),
+                                  object->property("objectType").toString());
+            if (editors_->currentWidget() == object)
+                object->activateRestoredObject();
+        }
+    });
     constructing_ = false;
     showScreen(Screen::Start);
 }
@@ -1541,13 +1682,63 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 bool MainWindow::allowDocumentChange() {
     if (!workspace_ || workspace_->navigationAllowed())
         return true;
-    showNotice(tr("Finish or cancel the active database work before changing SQL "
-                  "documents. Cancel remains in the active workspace."));
+    showToast(tr("Finish or cancel the active database work before changing workspace "
+                 "tabs. Cancel remains in the active tab."),
+              ToastVariant::Warning);
     return false;
 }
 bool MainWindow::showScreen(Screen screen) {
     if (!screens_)
         return false;
+    if (screen == Screen::Object) {
+        if (lastObjectTab_ && editors_->indexOf(lastObjectTab_) >= 0) {
+            if (!allowDocumentChange())
+                return false;
+            editors_->setCurrentWidget(lastObjectTab_);
+            screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
+            return true;
+        }
+        for (int i = 0; i < editors_->count(); ++i) {
+            if (qobject_cast<ObjectExplorer*>(editors_->widget(i))) {
+                if (!allowDocumentChange())
+                    return false;
+                editors_->setCurrentIndex(i);
+                screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
+                return true;
+            }
+        }
+        showToast(tr("Open an object from the navigator to show its tab."), ToastVariant::Warning);
+        return false;
+    }
+    if (screen == Screen::Start && editors_->count()) {
+        showToast(tr("Close all workspace tabs to return to Start."), ToastVariant::Warning);
+        return false;
+    }
+    if (screen == Screen::Sql && editors_->count() &&
+        !qobject_cast<SqlEditor*>(editors_->currentWidget())) {
+        if (lastSqlDocument_ && editors_->indexOf(lastSqlDocument_) >= 0) {
+            if (!allowDocumentChange())
+                return false;
+            editors_->setCurrentWidget(lastSqlDocument_);
+            screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
+            lastSqlDocument_->setFocus();
+            return true;
+        }
+        bool foundSql = false;
+        for (int i = 0; i < editors_->count(); ++i) {
+            if (qobject_cast<SqlEditor*>(editors_->widget(i))) {
+                foundSql = true;
+                if (!allowDocumentChange())
+                    return false;
+                editors_->setCurrentIndex(i);
+                break;
+            }
+        }
+        if (!foundSql) {
+            addEditor();
+            return true;
+        }
+    }
     if (screens_->currentIndex() != static_cast<int>(screen) && !allowDocumentChange())
         return false;
     if (screen == Screen::Sql && !editors_->count()) {
@@ -1561,15 +1752,139 @@ bool MainWindow::showScreen(Screen screen) {
         editors_->currentWidget()->setFocus();
     return true;
 }
-void MainWindow::installObjectExplorer(QWidget* explorer) {
-    const auto index = static_cast<int>(Screen::Object);
-    const bool visible = screens_->currentIndex() == index;
-    auto* previous = screens_->widget(index);
-    screens_->removeWidget(previous);
-    screens_->insertWidget(index, explorer);
-    previous->deleteLater();
-    if (visible)
-        screens_->setCurrentIndex(index);
+ObjectExplorer* MainWindow::makeObjectExplorer() {
+    auto* explorer = new ObjectExplorer(workspace_->adapter(), this);
+    auto* data = new ObjectDataWorkspace(workspace_, explorer);
+    explorer->installDataWidget(data);
+    connect(explorer, &ObjectExplorer::dataRequested, data, &ObjectDataWorkspace::openObject);
+    connect(explorer, &ObjectExplorer::objectChanged, data, &ObjectDataWorkspace::invalidate);
+    connect(explorer, &ObjectExplorer::paneChanged, this, [this](int) {
+        if (recovery_)
+            recovery_->changed();
+    });
+    connect(data, &ObjectDataWorkspace::busyChanged, explorer, &ObjectExplorer::setOperationBusy);
+    connect(explorer, &ObjectExplorer::sqlGenerated, this,
+            [this](quint64 connection, const QString& sql) {
+                if (openGeneratedSql_)
+                    openGeneratedSql_(connection, sql);
+            });
+    connect(explorer, &ObjectExplorer::reconnectRequested, this, [this, explorer] {
+        const auto context = explorer->property("objectProfileId").toString();
+        const bool sessionContext = context.startsWith("session:");
+        const auto profileId = context.startsWith("profile:") ? context.mid(8) : QString{};
+        auto* selector = findChild<QComboBox*>("connectionSelector");
+        std::optional<quint64> target;
+        if (selector) {
+            for (int i = 0; i < selector->count(); ++i) {
+                if (!selector->itemData(i).isValid())
+                    continue;
+                const auto id = selector->itemData(i).toULongLong();
+                if (!sessionContext && !profileId.isEmpty() &&
+                    workspace_->profileIdForConnection(id) == profileId) {
+                    target = id;
+                    break;
+                }
+            }
+        }
+        if (!target && sessionContext)
+            target = browsingConnection_;
+        if (target) {
+            const auto linkedProfile = workspace_->profileIdForConnection(*target);
+            const auto reboundContext = sessionContext
+                                            ? linkedProfile.isEmpty()
+                                                  ? QStringLiteral("session:%1").arg(*target)
+                                                  : QStringLiteral("profile:%1").arg(linkedProfile)
+                                            : QStringLiteral("profile:%1").arg(profileId);
+            for (int i = 0; i < editors_->count(); ++i) {
+                auto* existing = qobject_cast<ObjectExplorer*>(editors_->widget(i));
+                if (!existing || existing == explorer ||
+                    existing->property("objectProfileId").toString() != reboundContext ||
+                    existing->property("objectType") != explorer->property("objectType") ||
+                    existing->property("objectId") != explorer->property("objectId"))
+                    continue;
+                if (!allowDocumentChange())
+                    return;
+                editors_->setCurrentWidget(existing);
+                existing->selectPane(explorer->paneIndex());
+                editors_->removeTab(editors_->indexOf(explorer));
+                explorer->deleteLater();
+                if (recovery_)
+                    recovery_->changed();
+                showToast(tr("This object is already open; its tab is selected."),
+                          ToastVariant::Warning);
+                return;
+            }
+            explorer->setProperty("objectProfileId", reboundContext);
+            explorer->setProperty("objectConnection", QVariant::fromValue<qulonglong>(*target));
+            explorer->openObject(*target, explorer->property("objectId").toString(),
+                                 explorer->property("objectLabel").toString(),
+                                 explorer->property("objectType").toString());
+            if (recovery_)
+                recovery_->changed();
+            return;
+        }
+        if (!sessionContext && !profileId.isEmpty() && reconnectProfile_) {
+            if (reconnectProfile_(profileId))
+                showToast(tr("Reconnecting the saved connection. Select this tab to load fresh "
+                             "metadata."),
+                          ToastVariant::Warning);
+            else
+                showToast(tr("The saved connection is unavailable. Restore it in the sidebar, "
+                             "then retry."),
+                          ToastVariant::Danger);
+        } else {
+            showToast(tr("Select a live connection in the sidebar, then choose Reconnect again."),
+                      ToastVariant::Warning);
+        }
+    });
+    return explorer;
+}
+void MainWindow::openObjectTab(quint64 connection, const QString& objectId, const QString& label,
+                               const QString& kind, const QVariantList& properties, int pane) {
+    if (!allowDocumentChange() || objectId.isEmpty())
+        return;
+    const auto profileId = workspace_->profileIdForConnection(connection);
+    const auto context = profileId.isEmpty() ? QStringLiteral("session:%1").arg(connection)
+                                             : QStringLiteral("profile:%1").arg(profileId);
+    for (int i = 0; i < editors_->count(); ++i) {
+        auto* explorer = qobject_cast<ObjectExplorer*>(editors_->widget(i));
+        if (!explorer || explorer->property("objectId").toString() != objectId ||
+            explorer->property("objectType").toString() != kind)
+            continue;
+        const auto existingContext = explorer->property("objectProfileId").toString();
+        if (existingContext != context)
+            continue;
+        explorer->setProperty("objectProfileId", context);
+        editors_->setCurrentIndex(i);
+        screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
+        explorer->setProperty("objectConnection", QVariant::fromValue<qulonglong>(connection));
+        explorer->setProperty("objectLabel", label);
+        explorer->openObject(connection, objectId, label, kind, properties);
+        if (pane >= 0)
+            explorer->selectPane(pane);
+        if (recovery_)
+            recovery_->changed();
+        return;
+    }
+    auto* explorer = initialObjectExplorer_;
+    initialObjectExplorer_ = nullptr;
+    if (!explorer)
+        explorer = makeObjectExplorer();
+    explorer->setProperty("objectProfileId", context);
+    explorer->setProperty("objectConnection", QVariant::fromValue<qulonglong>(connection));
+    explorer->setProperty("objectId", objectId);
+    explorer->setProperty("objectType", kind);
+    explorer->setProperty("objectLabel", label);
+    explorer->openObject(connection, objectId, label, kind, properties);
+    if (pane >= 0)
+        explorer->selectPane(pane);
+    const auto icon =
+        design::themedIcon(design::Icon::Table, theme_->resolvedTheme().colors.mutedText, 16);
+    const int index = editors_->addTab(explorer, icon, label);
+    editors_->setCurrentIndex(index);
+    screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
+    if (recovery_)
+        recovery_->changed();
 }
 void MainWindow::openConnectionQuery(quint64 connection) {
     auto* selector = findChild<QComboBox*>("connectionSelector");
@@ -1598,6 +1913,38 @@ SqlEditor* MainWindow::addEditor() {
         if (const auto* previous = qobject_cast<SqlEditor*>(editors_->currentWidget())) {
             editor->setConnectionTarget(previous->connectionTarget(), previous->targetLabel());
             editor->setProfileId(previous->property("profileId").toString());
+        } else if (const auto* object = qobject_cast<ObjectExplorer*>(editors_->currentWidget())) {
+            const auto id = object->property("objectConnection").toULongLong();
+            auto* selector = findChild<QComboBox*>("connectionSelector");
+            const auto index = selector->findData(QVariant::fromValue<qulonglong>(id));
+            if (index >= 0) {
+                editor->setConnectionTarget(id, selector->itemText(index));
+                editor->setProfileId(workspace_->profileIdForConnection(id));
+            }
+        } else if (auto* selector = findChild<QComboBox*>("connectionSelector")) {
+            auto target = selector->currentData().isValid()
+                              ? std::optional<quint64>(selector->currentData().toULongLong())
+                              : browsingConnection_;
+            if (!target) {
+                std::optional<quint64> soleConnection;
+                for (int i = 0; i < selector->count(); ++i) {
+                    if (!selector->itemData(i).isValid())
+                        continue;
+                    if (soleConnection) {
+                        soleConnection.reset();
+                        break;
+                    }
+                    soleConnection = selector->itemData(i).toULongLong();
+                }
+                target = soleConnection;
+            }
+            if (target) {
+                const auto index = selector->findData(QVariant::fromValue<qulonglong>(*target));
+                if (index >= 0) {
+                    editor->setConnectionTarget(*target, selector->itemText(index));
+                    editor->setProfileId(workspace_->profileIdForConnection(*target));
+                }
+            }
         }
     }
     const int index = editors_->addTab(

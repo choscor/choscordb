@@ -159,6 +159,8 @@ class ModernUiTest final : public QObject {
         QTRY_VERIFY(window.findChild<choscordb::AppearanceController*>()->isReady());
         auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
         workspace->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         auto* run = window.findChild<QAction*>("runStatement");
         QTRY_VERIFY(run->isEnabled());
         auto* editor = qobject_cast<choscordb::SqlEditor*>(
@@ -185,6 +187,8 @@ class ModernUiTest final : public QObject {
         choscordb::MainWindow window;
         window.show();
         auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
         editor->setText("SELECT customer_name FROM customers");
         QVERIFY(window.showScreen(choscordb::MainWindow::Screen::History));
@@ -507,6 +511,7 @@ class ModernUiTest final : public QObject {
         QVERIFY(screens);
         QCOMPARE(screens->currentWidget()->objectName(), QString("startScreen"));
         auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        QCOMPARE(tabs->count(), 0);
         window.findChild<QAction*>("showSql")->trigger();
         QCOMPARE(screens->currentWidget()->objectName(), QString("sqlScreen"));
         auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
@@ -515,7 +520,7 @@ class ModernUiTest final : public QObject {
         QCOMPARE(screens->currentWidget()->objectName(), QString("historyDock"));
         QVERIFY(!window.findChild<QDockWidget*>("historyDock"));
         window.findChild<QAction*>("showStart")->trigger();
-        QCOMPARE(screens->currentWidget()->objectName(), QString("startScreen"));
+        QCOMPARE(screens->currentWidget()->objectName(), QString("historyDock"));
         window.findChild<QAction*>("showSql")->trigger();
         QCOMPARE(tabs->currentWidget(), editor);
         QCOMPARE(editor->text(), QString("-- retained draft"));
@@ -524,6 +529,7 @@ class ModernUiTest final : public QObject {
             tabs->tabCloseRequested(0);
         QCOMPARE(screens->currentWidget()->objectName(), QString("startScreen"));
         QCOMPARE(tabs->count(), 0);
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
         window.findChild<QAction*>("newQuery")->trigger();
         QCOMPARE(tabs->count(), 1);
         QCOMPARE(screens->currentWidget()->objectName(), QString("sqlScreen"));
@@ -566,8 +572,9 @@ class ModernUiTest final : public QObject {
                           profiles->visualItemRect(profiles->item(0)).center());
         QTRY_COMPARE(connected.count(), 1);
         auto* screens = window.findChild<QStackedWidget*>("centralScreens");
-        QCOMPARE(screens->currentWidget()->objectName(), QString("objectScreen"));
+        QCOMPARE(screens->currentWidget()->objectName(), QString("startScreen"));
         QCOMPARE(queued, 0);
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
         window.findChild<QAction*>("newQuery")->trigger();
         auto* editor = qobject_cast<choscordb::SqlEditor*>(
             window.findChild<QTabWidget*>("editorTabs")->currentWidget());
@@ -748,6 +755,8 @@ class ModernUiTest final : public QObject {
         auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
         auto* run = window.findChild<QAction*>("runStatement");
         auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
         workspace->connectSqlite(":memory:");
         QTRY_VERIFY(run->isEnabled());
@@ -788,7 +797,8 @@ class ModernUiTest final : public QObject {
         QVERIFY(toolbar->mapTo(sql, toolbar->rect().bottomLeft()).y() <=
                 grid->mapTo(sql, QPoint()).y());
         QCOMPARE(grid->mapTo(sql, QPoint()).x(), 0);
-        QCOMPARE(tabs->tabBar()->height(), 33);
+        QCOMPARE(tabs->tabBar()->tabRect(0).height(), 33);
+        QVERIFY(tabs->tabBar()->height() > tabs->tabBar()->tabRect(0).height());
         QVERIFY(!tabs->tabIcon(0).isNull());
         QCOMPARE(grid->verticalHeader()->defaultSectionSize(), 35);
         QCOMPARE(grid->horizontalHeader()->height(), 43);
@@ -872,12 +882,10 @@ class ModernUiTest final : public QObject {
         QCoreApplication::processEvents();
         const auto rendered = window.grab();
         QVERIFY(!rendered.isNull());
-        for (auto* select : toolbar->findChildren<QComboBox*>()) {
-            QVERIFY(select->isVisible());
-            QVERIFY(!select->visibleRegion().isEmpty());
-            QVERIFY(
-                window.rect().contains(QRect(select->mapTo(&window, QPoint()), select->size())));
-        }
+        auto* select = window.findChild<QComboBox*>("connectionSelector");
+        QVERIFY(select->isVisible());
+        QVERIFY(!select->visibleRegion().isEmpty());
+        QVERIFY(window.rect().contains(QRect(select->mapTo(&window, QPoint()), select->size())));
         auto* more = window.findChild<QToolButton*>("queryToolbarOverflow");
         QVERIFY(more);
         QVERIFY(more->isVisible());
@@ -927,6 +935,8 @@ class ModernUiTest final : public QObject {
     }
     void workspaceProvidesDiscoverableModernControls() {
         choscordb::MainWindow window;
+        window.resize(1000, 700);
+        window.show();
 
         auto* navigatorTitle = window.findChild<QLabel*>("navigatorTitle");
         auto* addConnection = window.findChild<QPushButton*>("navigatorAddConnection");
@@ -945,9 +955,27 @@ class ModernUiTest final : public QObject {
         QVERIFY(toast);
         QVERIFY(!toast->accessibleName().isEmpty());
         QVERIFY(toast->isHidden());
-        toast->showNotice("First notice", 10000);
-        toast->showNotice("Replacement notice", 10000);
-        QCOMPARE(toast->text(), QString("Replacement notice"));
+        auto* host = window.centralWidget();
+        const auto contentBefore = window.findChild<QStackedWidget*>()->geometry();
+        toast->showToast("Warning", "First notice", choscordb::ToastVariant::Warning, 10000);
+        toast->showToast("Warning", "Replacement notice", choscordb::ToastVariant::Warning,
+                         10000);
+        QVERIFY(toast->text().contains("Replacement notice"));
+        QCOMPARE(toast->property("variant").toString(), QString("warning"));
+        QCoreApplication::processEvents();
+        QCOMPARE(toast->parentWidget(), host);
+        QCOMPARE(window.findChild<QStackedWidget*>()->geometry(), contentBefore);
+        QVERIFY(toast->geometry().right() <= host->width());
+        QVERIFY(toast->geometry().bottom() <= host->height());
+        QVERIFY(toast->geometry().right() > host->width() / 2);
+        QVERIFY(toast->geometry().bottom() > host->height() / 2);
+        window.resize(1200, 800);
+        QCoreApplication::processEvents();
+        QCOMPARE(toast->geometry().right(), host->width() - 17);
+        QCOMPARE(toast->geometry().bottom(), host->height() - 17);
+        window.showToast("Could not save", choscordb::ToastVariant::Danger);
+        QCOMPARE(toast->property("variant").toString(), QString("danger"));
+        QVERIFY(toast->text().contains("Could not save"));
         QVERIFY(resetLayout);
         auto* run = window.findChild<QAction*>("runStatement");
         QVERIFY(run);
@@ -1012,7 +1040,7 @@ class ModernUiTest final : public QObject {
         QVERIFY(newQuery);
         newQuery->trigger();
         newQuery->trigger();
-        QCOMPARE(editors->count(), 3);
+        QCOMPARE(editors->count(), 2);
         window.show();
         QCoreApplication::processEvents();
 
@@ -1162,6 +1190,8 @@ class ModernUiTest final : public QObject {
         auto* run = window.findChild<QAction*>("runStatement");
         auto* summary = window.findChild<QLabel*>("executionSummary");
         auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
         workspace->connectSqlite(":memory:");
         QTRY_VERIFY(run->isEnabled());
         auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());

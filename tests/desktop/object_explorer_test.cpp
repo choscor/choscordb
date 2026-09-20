@@ -16,6 +16,115 @@ using namespace choscordb;
 class ObjectExplorerTest final : public QObject {
     Q_OBJECT
   private slots:
+    void restoredObjectStaysInertUntilActivatedAndRetainsPane() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        const auto create = adapter.execute(*connection, "CREATE TABLE restored(id INTEGER)");
+        QVERIFY(create);
+        adapter.fetchPage(*create);
+        QTRY_COMPARE(finished, 1);
+        ObjectExplorer explorer(&adapter);
+        explorer.show();
+        QSignalSpy inspections(&adapter, &EngineAdapter::objectInspectionReady);
+        QSignalSpy failures(&adapter, &EngineAdapter::objectInspectionFailed);
+        explorer.restoreObject(*connection, R"(["main","restored"])", "restored");
+        explorer.selectPane(3);
+        QCOMPARE(explorer.paneIndex(), 3);
+        QTest::qWait(50);
+        QCOMPARE(inspections.count(), 0);
+        explorer.activateRestoredObject();
+        QVERIFY2(failures.isEmpty(),
+                 qPrintable(failures.isEmpty() ? QString{} : failures.first().at(3).toString()));
+        QTRY_COMPARE(inspections.count(), 1);
+        QTRY_VERIFY(explorer.findChild<QPlainTextEdit*>("objectDdl")
+                        ->toPlainText()
+                        .contains("CREATE TABLE restored"));
+        explorer.activateRestoredObject();
+        QTest::qWait(50);
+        QCOMPARE(inspections.count(), 1);
+    }
+    void missingRestoredConnectionOffersManualReconnect() {
+        EngineAdapter adapter;
+        ObjectExplorer explorer(&adapter);
+        explorer.show();
+        QSignalSpy inspections(&adapter, &EngineAdapter::objectInspectionReady);
+        QSignalSpy reconnect(&explorer, &ObjectExplorer::reconnectRequested);
+        explorer.restoreObject(std::nullopt, R"(["main","lost"])", "lost");
+        explorer.selectPane(3);
+        explorer.activateRestoredObject();
+        QCOMPARE(explorer.paneIndex(), 3);
+        QCOMPARE(inspections.count(), 0);
+        auto* status = explorer.findChild<QLabel*>("objectStatus");
+        QCOMPARE(status->property("state").toString(), QString("disconnected"));
+        auto* button = explorer.findChild<QPushButton*>("objectReconnect");
+        QVERIFY(button->isVisible());
+        button->click();
+        QCOMPARE(reconnect.count(), 1);
+    }
+    void actionsBelongToContextualHeaderAndStatusToFooter() {
+        EngineAdapter adapter;
+        ObjectExplorer explorer(&adapter);
+        auto* header = explorer.findChild<QWidget*>("objectHeader");
+        auto* footer = explorer.findChild<QWidget*>("objectFooter");
+        QVERIFY(header);
+        QVERIFY(footer);
+        for (const char* name : {"objectRefresh", "objectOpenQuery", "objectGenerateSql",
+                                 "objectRetry", "objectReconnect"}) {
+            auto* action = explorer.findChild<QPushButton*>(name);
+            QVERIFY(action);
+            QCOMPARE(action->parentWidget(), header);
+        }
+        QCOMPARE(explorer.findChild<QLabel*>("objectStatus")->parentWidget(), footer);
+        explorer.show();
+        QCoreApplication::processEvents();
+        auto* refresh = explorer.findChild<QPushButton*>("objectRefresh");
+        QVERIFY(refresh->geometry().left() < header->width() / 2);
+    }
+    void reopeningSameObjectKeepsSelectedPaneWithoutReadingAgain() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        const auto create = adapter.execute(*connection, "CREATE TABLE account(id INTEGER)");
+        QVERIFY(create);
+        adapter.fetchPage(*create);
+        QTRY_COMPARE(finished, 1);
+        ObjectExplorer explorer(&adapter);
+        explorer.show();
+        QSignalSpy inspections(&adapter, &EngineAdapter::objectInspectionReady);
+        const QString identity = R"(["main","account"])";
+        explorer.openObject(*connection, identity, "account");
+        auto* tabs = explorer.findChild<QTabBar*>("objectTabs");
+        QVERIFY(tabs);
+        tabs->setCurrentIndex(3);
+        QTRY_VERIFY(inspections.count() >= 2);
+        const int reads = inspections.count();
+        explorer.openObject(*connection, identity, "account");
+        QCOMPARE(tabs->currentIndex(), 3);
+        QTest::qWait(50);
+        QCOMPARE(inspections.count(), reads);
+        explorer.openObject(*connection, identity, "account", {},
+                            {QVariantMap{{"name", "Owner"}, {"value", "team"}}});
+        QCOMPARE(tabs->currentIndex(), 3);
+    }
     void schemaIndexShowsDetailsAndDoesNotGenerateTableSql() {
         EngineAdapter adapter;
         bool connected = false;
