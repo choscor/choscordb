@@ -43,7 +43,7 @@ void WorkspaceTest::connectsExecutesPagesAndCopies() {
     QTRY_COMPARE(f.connections.count(), 1);
     QVERIFY(f.connections.isEnabled());
     QVERIFY(f.mode.isEnabled());
-    QVERIFY(f.run.isEnabled());
+    QTRY_VERIFY(f.run.isEnabled());
     f.execute("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<1001) "
               "SELECT x FROM n");
     QTRY_COMPARE(f.grid.model()->rowCount(), 1000);

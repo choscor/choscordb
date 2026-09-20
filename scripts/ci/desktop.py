@@ -107,7 +107,7 @@ def main():
             "--timeout",
             "120",
         ]
-        if platform.system() == "Darwin":
+        if platform.system() in {"Darwin", "Windows"}:
             command.append("--verbose")
         run(
             command,
