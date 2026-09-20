@@ -120,6 +120,8 @@ struct AllocationCounter {
     std::size_t limit;
     std::size_t bytes = 0;
     bool add(std::size_t count, std::size_t width = 1) {
+        if (width == 0)
+            return true;
         if (count > (limit - bytes) / width)
             return false;
         bytes += count * width;

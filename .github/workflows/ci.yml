@@ -78,14 +78,6 @@ jobs:
         run: python scripts/ci/quality.py native-build
       - name: Run all native tests offscreen
         run: python scripts/ci/quality.py native-tests
-      - name: Diagnose native test crash
-        if: failure() && runner.os == 'Linux'
-        continue-on-error: true
-        run: |
-          if test -x build/ci/native/choscordb-result-model-tests; then
-            sudo apt-get install --yes gdb
-            gdb --batch -ex run -ex 'thread apply all bt' --args build/ci/native/choscordb-result-model-tests allocationBudgetIncludesCapacityAndRejectsAtomically
-          fi
   native-static-analysis:
     name: Native static analysis (LLVM 23)
     runs-on: ubuntu-24.04
