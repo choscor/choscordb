@@ -10,6 +10,6 @@ choscordb-driver-api = { path = "../driver-api" }
 choscordb-sql-language = { path = "../sql-language" }
 async-trait = "0.1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "process", "io-util"] }
-mysql_async = { version = "0.36", default-features = false, features = ["minimal-rust", "native-tls-tls"] }
+mysql_async = { version = "0.37", default-features = false, features = ["minimal-rust", "native-tls-tls"] }
 serde_json = "1"
 tempfile = "3"
