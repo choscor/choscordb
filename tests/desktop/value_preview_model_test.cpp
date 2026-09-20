@@ -67,7 +67,7 @@ class ValuePreviewModelTest : public QObject {
         const auto text = model.data(model.index(0, 1)).toString();
         QCOMPARE(text, QString("[Invalid UTF-8; hex] 61 ff 62 e2 82"));
         QCOMPARE(model.nextOffset(), 5ULL);
-        QVERIFY(model.setChunk(QByteArray(65536, char(0x80)), 1, 65537, false));
+        QVERIFY(model.setChunk(QByteArray(65536, '\x80'), 1, 65537, false));
         QCOMPARE(model.rowCount(), 256);
         QCOMPARE(model.data(model.index(0, 0)).toULongLong(), 1ULL);
         const auto invalid = model.data(model.index(0, 1)).toString();

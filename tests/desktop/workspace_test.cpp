@@ -484,6 +484,7 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
                             [](const auto& args) { return !args.at(1).toBool(); }));
     QTRY_VERIFY(f.messages.toPlainText().contains("rolled back"));
     qInfo("SHUTDOWN_TRACE after rollback message");
+    QTRY_VERIFY(f.run.isEnabled());
     bool unexpectedPrompt = false;
     QTimer finalTimer;
     finalTimer.setInterval(10);
