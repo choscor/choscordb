@@ -3,7 +3,10 @@
 pub use choscordb_driver_api::Secret;
 
 pub const MAX_SECRET_BYTES: usize = 16 * 1024;
-const SERVICE: &str = "org.choscordb.desktop";
+const SERVICE: &str = match option_env!("CHOSCORDB_CREDENTIAL_SERVICE") {
+    Some(service) => service,
+    None => "com.choscor.ChoscorDB",
+};
 pub type Result<T> = std::result::Result<T, CredentialError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,14 +62,19 @@ impl Default for NativeCredentialStore {
 }
 impl NativeCredentialStore {
     pub fn new() -> Self {
+        assert!(
+            SERVICE == "com.choscor.ChoscorDB"
+                || SERVICE == "com.choscor.ChoscorDB.tests.rehearsal",
+            "Invalid compiled credential service"
+        );
         Self {
             service: SERVICE.into(),
         }
     }
     /// Isolated native tests must never share the production namespace.
     pub fn for_test_namespace(namespace: &str) -> Result<Self> {
-        if !namespace.starts_with("org.choscordb.tests.")
-            || namespace.len() <= "org.choscordb.tests.".len()
+        if !namespace.starts_with("com.choscor.ChoscorDB.tests.")
+            || namespace.len() <= "com.choscor.ChoscorDB.tests.".len()
             || namespace.len() > 256
             || namespace.contains('\0')
         {
@@ -221,8 +229,8 @@ mod tests {
         for invalid in [
             "",
             SERVICE,
-            "org.choscordb.tests.",
-            "org.choscordb.tests.a\0b",
+            "com.choscor.ChoscorDB.tests.",
+            "com.choscor.ChoscorDB.tests.a\0b",
         ] {
             assert!(matches!(
                 NativeCredentialStore::for_test_namespace(invalid),
@@ -230,7 +238,8 @@ mod tests {
             ));
         }
         assert!(
-            NativeCredentialStore::for_test_namespace("org.choscordb.tests.credentials").is_ok()
+            NativeCredentialStore::for_test_namespace("com.choscor.ChoscorDB.tests.credentials")
+                .is_ok()
         );
         for error in [
             CredentialError::Missing,

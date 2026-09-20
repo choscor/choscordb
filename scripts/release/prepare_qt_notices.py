@@ -83,7 +83,12 @@ def prepare(archive, output, svg_archive=None):
                     member = members[name]
                     if not member.isfile():
                         raise ValueError("Qt attribution is not regular")
-                    records = json.loads(source.extractfile(member).read())
+                    # Pinned Qt attribution records use literal multiline text
+                    # strings. Preserve their bytes while accepting that upstream
+                    # format; archive digests and referenced paths stay validated.
+                    records = json.loads(
+                        source.extractfile(member).read(), strict=False
+                    )
                     if isinstance(records, dict):
                         records = [records]
                     for record in records:

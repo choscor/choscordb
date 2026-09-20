@@ -9,39 +9,45 @@ import notices_sbom as generator
 
 
 class NoticesTest(unittest.TestCase):
+    def test_sparkle_runtime_has_explicit_inventory_owner(self):
+        base = self.stage / "choscordb.app/Contents"
+        framework = base / "Frameworks/Sparkle.framework/Versions/B"
+        framework.mkdir(parents=True)
+        (framework / "Sparkle").write_bytes(b"sparkle runtime")
+        (framework / "Resources").mkdir()
+        (framework / "Resources/Info.plist").write_bytes(
+            plistlib.dumps({"CFBundleShortVersionString": "2.9.6"})
+        )
+        notices = base / "Resources/licenses/Sparkle"
+        notices.mkdir()
+        (notices / "LICENSE").write_text("Sparkle MIT license")
+        (notices / "source.json").write_text(
+            json.dumps(
+                {
+                    "version": "2.9.6",
+                    "sha256": "52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192",
+                    "url": "https://github.com/sparkle-project/Sparkle/releases/download/2.9.6/Sparkle-2.9.6.tar.xz",
+                    "license": "MIT",
+                }
+            )
+        )
+        self.refresh_manifest()
+        result = self.generate()
+        doc = json.loads((result / "sbom.spdx.json").read_text())
+        self.assertEqual(
+            [p["versionInfo"] for p in doc["packages"] if p["name"] == "Sparkle"],
+            ["2.9.6"],
+        )
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.addCleanup(
-            lambda previous=generator.LUCIDE_ICON_HASHES: setattr(
-                generator, "LUCIDE_ICON_HASHES", previous
-            )
-        )
-        generator.LUCIDE_ICON_HASHES = {
-            "play.svg": hashlib.sha256(b"lucide play").hexdigest(),
-            "square.svg": hashlib.sha256(b"lucide square").hexdigest(),
-            "plus.svg": hashlib.sha256(b"lucide plus").hexdigest(),
-        }
         self.stage = self.root / "stage"
         self.stage.mkdir()
         payload = {
             "choscordb.app/Contents/MacOS/choscordb": b"application",
             "choscordb.app/Contents/Resources/licenses/LICENSE": b"application GPL",
-            "choscordb.app/Contents/Resources/licenses/LICENSE-LUCIDE": b"Lucide ISC and Feather MIT",
-            "choscordb.app/Contents/Resources/licenses/SOURCE-LUCIDE.json": json.dumps(
-                {
-                    "source": "https://github.com/lucide-icons/lucide",
-                    "version": "1.27.0",
-                    "commit": "4aec3f8",
-                    "license": "ISC AND MIT",
-                    "icons": generator.LUCIDE_ICON_HASHES,
-                }
-            ).encode(),
-            "choscordb.app/Contents/Resources/icons/app-mark.svg": b"original mark",
-            "choscordb.app/Contents/Resources/icons/play.svg": b"lucide play",
-            "choscordb.app/Contents/Resources/icons/square.svg": b"lucide square",
-            "choscordb.app/Contents/Resources/icons/plus.svg": b"lucide plus",
             "choscordb.app/Contents/Resources/licenses/QScintilla/LICENSE": b"qscintilla GPL",
             "choscordb.app/Contents/Resources/licenses/QScintilla/source.json": json.dumps(
                 {
@@ -53,17 +59,55 @@ class NoticesTest(unittest.TestCase):
             "choscordb.app/Contents/Frameworks/libqscintilla.dylib": b"qsci",
             "choscordb.app/Contents/Frameworks/QtCore.framework/Versions/A/QtCore": b"qt",
             "choscordb.app/Contents/Frameworks/QtCore.framework/Versions/A/Resources/Info.plist": plistlib.dumps(
-                {"CFBundleShortVersionString": "6.8.3"}
+                {"CFBundleShortVersionString": "6.8", "CFBundleVersion": "6.8.3"}
             ),
             "choscordb.app/Contents/PlugIns/platforms/libqcocoa.dylib": b"plugin",
         }
+        repository = Path(__file__).resolve().parents[2]
+        icons = repository / "desktop/resources/icons"
+        for name in ["LICENSE-LUCIDE", "SOURCE-LUCIDE.json"]:
+            payload["choscordb.app/Contents/Resources/licenses/" + name] = (
+                icons / name
+            ).read_bytes()
+        for icon in icons.glob("*.svg"):
+            payload["choscordb.app/Contents/Resources/icons/" + icon.name] = (
+                icon.read_bytes()
+            )
+        fonts = repository / "desktop/resources/fonts"
+        for name in ["OFL.txt", "SOURCE-GEIST.json"]:
+            payload["choscordb.app/Contents/Resources/licenses/" + name] = (
+                fonts / name
+            ).read_bytes()
+        shadcn = repository / "docs/licenses/shadcn"
+        for source_name, staged_name in [
+            ("LICENSE.md", "LICENSE-SHADCN"),
+            ("manifest.json", "SOURCE-SHADCN.json"),
+        ]:
+            payload["choscordb.app/Contents/Resources/licenses/" + staged_name] = (
+                shadcn / source_name
+            ).read_bytes()
         for name, data in payload.items():
             path = self.stage / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
         self.source = self.root / "source.json"
         self.source.write_text(
-            json.dumps({"source_kind": "working-tree snapshot", "files": []})
+            json.dumps(
+                {
+                    "source_kind": "working-tree snapshot",
+                    "files": [
+                        {
+                            "path": path.relative_to(repository).as_posix(),
+                            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                            "size": path.stat().st_size,
+                        }
+                        for path in sorted(
+                            [*icons.iterdir(), *fonts.iterdir(), *shadcn.iterdir()]
+                        )
+                        if path.is_file()
+                    ],
+                }
+            )
         )
         self.refresh_manifest()
         self.qt = self.root / "qt-notices"
@@ -184,6 +228,113 @@ class NoticesTest(unittest.TestCase):
             "aarch64-apple-darwin",
         )
 
+    def test_shadcn_adaptations_have_verified_attribution(self):
+        document = json.loads((self.generate() / "sbom.spdx.json").read_text())
+        shadcn = [p for p in document["packages"] if p["name"] == "shadcn/ui"]
+        self.assertEqual(len(shadcn), 1)
+        self.assertEqual(
+            shadcn[0]["versionInfo"], "2b3e6d4f8d9161fe5c19340dc383aade392012dd"
+        )
+        self.assertEqual(shadcn[0]["licenseDeclared"], "MIT")
+        self.assertIn("base-nova", shadcn[0]["sourceInfo"])
+        license_path = (
+            self.stage / "choscordb.app/Contents/Resources/licenses/LICENSE-SHADCN"
+        )
+        license_path.write_text("unreviewed replacement")
+        self.refresh_manifest()
+        with self.assertRaisesRegex(ValueError, "shadcn"):
+            self.generate("changed-shadcn-license")
+
+    def test_embedded_geist_has_license_and_verified_source_hashes(self):
+        document = json.loads((self.generate() / "sbom.spdx.json").read_text())
+        geist = [p for p in document["packages"] if p["name"] == "Geist"]
+        self.assertEqual(len(geist), 1)
+        self.assertEqual(
+            geist[0]["versionInfo"], "10dc7658f13c38a474cde201bb09a4617267545b"
+        )
+        self.assertEqual(geist[0]["licenseDeclared"], "OFL-1.1")
+        self.assertIn(
+            "85a1c6b18a6b0a06dfe9fd4f6d6a5d4979f74ec861eaef4bc7868b5492b8a117",
+            geist[0]["sourceInfo"],
+        )
+        source = json.loads(self.source.read_text())
+        for entry in source["files"]:
+            if entry["path"] == "desktop/resources/fonts/Geist-Bold.ttf":
+                entry["sha256"] = "0" * 64
+        self.source.write_text(json.dumps(source))
+        self.refresh_manifest()
+        with self.assertRaisesRegex(ValueError, "Geist"):
+            self.generate("changed-font")
+
+    def test_reviewed_icon_and_font_notices_reject_changed_payload_bytes(self):
+        for relative, diagnostic in [
+            ("icons/eye-off.svg", "Icon"),
+            ("licenses/SOURCE-LUCIDE.json", "Lucide"),
+            ("licenses/LICENSE-LUCIDE", "Lucide"),
+            ("licenses/SOURCE-GEIST.json", "Geist"),
+            ("licenses/OFL.txt", "Geist"),
+            ("licenses/SOURCE-SHADCN.json", "shadcn"),
+        ]:
+            with self.subTest(relative=relative):
+                path = self.stage / "choscordb.app/Contents/Resources" / relative
+                original = path.read_bytes()
+                path.write_bytes(original + b"changed")
+                self.refresh_manifest()
+                with self.assertRaisesRegex(ValueError, diagnostic):
+                    self.generate()
+                path.write_bytes(original)
+                self.refresh_manifest()
+
+    def test_nested_duplicate_icon_cannot_hide_from_inventory(self):
+        icons = self.stage / "choscordb.app/Contents/Resources/icons"
+        (icons / "a").mkdir()
+        (icons / "a/eye-off.svg").write_bytes((icons / "eye-off.svg").read_bytes())
+        self.refresh_manifest()
+        with self.assertRaisesRegex(ValueError, "icon inventory"):
+            self.generate()
+
+    def test_qt_full_patch_version_is_required_despite_shared_short_version(self):
+        self.generate()
+        info = (
+            self.stage
+            / "choscordb.app/Contents/Frameworks/QtCore.framework/Versions/A/Resources/Info.plist"
+        )
+        info.write_bytes(
+            plistlib.dumps(
+                {"CFBundleShortVersionString": "6.8", "CFBundleVersion": "6.8.4"}
+            )
+        )
+        self.refresh_manifest()
+        with self.assertRaisesRegex(ValueError, "Qt framework versions"):
+            self.generate("wrong-qt-patch")
+        info.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "6.8"}))
+        self.refresh_manifest()
+        with self.assertRaisesRegex(ValueError, "Qt framework versions"):
+            self.generate("unknown-qt-patch")
+
+    def test_current_icon_inventory_uses_reviewed_assets(self):
+        document = json.loads((self.generate() / "sbom.spdx.json").read_text())
+        packages = {p["SPDXID"]: p["name"] for p in document["packages"]}
+        files = {f["SPDXID"]: f["fileName"] for f in document["files"]}
+        icons = {
+            files[r["relatedSpdxElement"]].split("/icons/")[1]: packages[
+                r["spdxElementId"]
+            ]
+            for r in document["relationships"]
+            if r["relationshipType"] == "CONTAINS"
+            and "/icons/" in files[r["relatedSpdxElement"]]
+        }
+        self.assertEqual(len(icons), 24)
+        self.assertEqual(icons["refresh-cw.svg"], "Lucide Icons")
+        self.assertEqual(icons["eye-off.svg"], "Lucide Icons")
+        self.assertEqual(icons["code.svg"], "ChoscorDB")
+        self.assertEqual(icons["app-mark.svg"], "ChoscorDB")
+        unknown = self.stage / "choscordb.app/Contents/Resources/icons/mystery.svg"
+        unknown.write_bytes(b"unreviewed")
+        self.refresh_manifest()
+        with self.assertRaisesRegex(ValueError, "icon"):
+            self.generate("unknown-icon")
+
     def test_deterministic_spdx_ownership_licenses_and_checksums(self):
         first, second = self.generate(), self.generate("second")
         for p in first.rglob("*"):
@@ -278,12 +429,20 @@ class NoticesTest(unittest.TestCase):
         document = json.loads((self.generate() / "sbom.spdx.json").read_text())
         self.assertEqual(
             {p["name"] for p in document["packages"]},
-            {"ChoscorDB", "Qt", "QScintilla", "Lucide Icons", "dependency"},
+            {
+                "ChoscorDB",
+                "Qt",
+                "QScintilla",
+                "Lucide Icons",
+                "Geist",
+                "shadcn/ui",
+                "dependency",
+            },
         )
         lucide = next(p for p in document["packages"] if p["name"] == "Lucide Icons")
         self.assertEqual(lucide["versionInfo"], "1.27.0")
         self.assertEqual(lucide["licenseDeclared"], "ISC AND MIT")
-        self.assertIn("4aec3f8", lucide["sourceInfo"])
+        self.assertIn("4aec3f892fd6c23063bc2fead83c899b5d412b1c", lucide["sourceInfo"])
         self.cargo["packages"][0]["name"] = "different-root"
         self.metadata.write_text(json.dumps(self.cargo))
         with self.assertRaisesRegex(ValueError, "root"):

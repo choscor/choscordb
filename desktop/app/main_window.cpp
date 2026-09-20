@@ -1,5 +1,6 @@
 #include "app/main_window.h"
 #include "app/appearance_controller.h"
+#include "app/application_data.h"
 #include "app/editor_preferences.h"
 #include "app/navigator_controller.h"
 #include "app/object_data_workspace.h"
@@ -1048,9 +1049,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         if (auto* editor = addEditor())
             editor->openFile(path);
     });
-    const auto savedDirectory =
-        QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
-            .filePath("sql");
+    const auto savedDirectory = QDir(applicationDataDirectory()).filePath("sql");
     auto filterSavedFiles = [savedFiles, savedSearch] {
         const auto query = savedSearch->text().trimmed();
         const auto filterItem = [&](const auto& self, QTreeWidgetItem* item,
@@ -1170,9 +1169,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             return;
         auto path = editor->filePath();
         if (path.isEmpty()) {
-            const auto directory =
-                QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
-                    .filePath("sql");
+            const auto directory = QDir(applicationDataDirectory()).filePath("sql");
             if (!QDir().mkpath(directory)) {
                 showToast(tr("Could not create saved SQL directory: %1").arg(directory),
                           ToastVariant::Danger);
@@ -1684,6 +1681,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         connect(discardClose, &QAction::triggered, recovery_,
                 &WorkspaceRecoveryController::closeWithoutRecovery);
         connect(cancelClose, &QAction::triggered, this, [this, hideRecovery, workspaceTabs] {
+            updateInstall_ = {};
             appearanceCloseApproved_ = false;
             recovery_->cancelClose();
             workspaceTabs->workspaceBar()->setProperty("recoveryActive", false);
@@ -1722,6 +1720,14 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         connect(recovery_, &WorkspaceRecoveryController::errorOccurred, this,
                 [this, showRecovery, recoveryMessage, startNew, discardClose, cancelClose,
                  workspaceTabs](const QString& error, bool closing) {
+                    if (closing && updateInstall_) {
+                        updateInstall_ = {};
+                        appearanceCloseApproved_ = false;
+                        recoveryCloseApproved_ = false;
+                        recovery_->cancelClose();
+                        showToast(tr("Update postponed: %1").arg(error), ToastVariant::Warning);
+                        return;
+                    }
                     recoveryMessage->setText(recoveryMessage->fontMetrics().elidedText(
                         error, Qt::ElideRight, recoveryMessage->width()));
                     recoveryMessage->setToolTip(error);
@@ -1833,6 +1839,11 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 else
                     toast->showToast(tr("Warning"), warning, ToastVariant::Warning, 0);
             });
+    connect(appearance_, &AppearanceController::flushFailed, this, [this](const QString& error) {
+        updateInstall_ = {};
+        appearanceCloseApproved_ = false;
+        showToast(tr("Close postponed: %1").arg(error), ToastVariant::Warning);
+    });
     connect(appearance_, &AppearanceController::flushReady, this, [this] {
         appearanceCloseApproved_ = true;
         QTimer::singleShot(0, this, [this] { close(); });
@@ -1921,6 +1932,18 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             [this](const QString& error, bool retryable) {
                 QTimer::singleShot(0, this, [this, error, retryable] {
                     setEnabled(true);
+                    if (updateInstall_) {
+                        updateInstall_ = {};
+                        databaseClosePending_ = false;
+                        appearanceCloseApproved_ = false;
+                        recoveryCloseApproved_ = false;
+                        if (recovery_)
+                            recovery_->cancelClose();
+                        workspace_->cancelShutdown();
+                        history_->setEnabled(true);
+                        showToast(tr("Update postponed: %1").arg(error), ToastVariant::Warning);
+                        return;
+                    }
                     ConfirmationDialog box(QMessageBox::Warning, tr("History could not be flushed"),
                                            error, QMessageBox::NoButton, this);
                     box.setTextFormat(Qt::PlainText);
@@ -2139,11 +2162,28 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     constructing_ = false;
     showScreen(Screen::Start);
 }
+void MainWindow::requestUpdateRestart(std::function<void()> install) {
+    if (!install || databaseClosePending_)
+        return;
+    updateInstall_ = std::move(install);
+    close();
+}
+void MainWindow::finishClose(QCloseEvent* event) {
+    if (updateInstall_) {
+        event->ignore();
+        setEnabled(false);
+        QTimer::singleShot(0, this, std::move(updateInstall_));
+        updateInstall_ = {};
+    } else {
+        event->accept();
+    }
+}
 void MainWindow::closeEvent(QCloseEvent* event) {
     for (int i = 0; i < editors_->count(); ++i) {
         if (auto* object = qobject_cast<ObjectExplorer*>(editors_->widget(i))) {
             if (auto* data = object->findChild<ObjectDataWorkspace*>();
                 data && !data->resolvePendingEdits()) {
+                updateInstall_ = {};
                 event->ignore();
                 return;
             }
@@ -2154,7 +2194,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
         return;
     }
     if (databaseCloseApproved_) {
-        event->accept();
+        finishClose(event);
         return;
     }
     if (databaseClosePending_) {
@@ -2174,6 +2214,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
                     this, tr("Close workspace"), tr("Discard unsaved changes in the workspace?"),
                     QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
                 if (answer != QMessageBox::Discard) {
+                    updateInstall_ = {};
                     appearanceCloseApproved_ = false;
                     event->ignore();
                     return;
@@ -2183,6 +2224,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
         }
     }
     if (workspace_ && !workspace_->confirmShutdown()) {
+        updateInstall_ = {};
         appearanceCloseApproved_ = false;
         recoveryCloseApproved_ = false;
         if (recovery_)
@@ -2198,7 +2240,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
         workspace_->beginShutdown();
         return;
     }
-    event->accept();
+    finishClose(event);
 }
 bool MainWindow::allowDocumentChange() {
     if (!workspace_ || workspace_->navigationAllowed())

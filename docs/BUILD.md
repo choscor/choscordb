@@ -1,8 +1,8 @@
 # Build and run
 
-ChoscorDB uses the `choscordb` executable, `CHOSCORDB_*` environment variables and CMake options, and the `org.choscordb.desktop` credential service. Application data lives under the ChoscorDB application directory in `choscordb.sqlite`. Profiles, history, recovery data, and credentials from earlier project names are not migrated automatically.
+ChoscorDB uses the `choscordb` executable, `CHOSCORDB_*` environment variables and CMake options, and the `com.choscor.ChoscorDB` credential service and macOS bundle identity. On macOS, application data lives in `~/Library/Application Support/com.choscor.ChoscorDB/choscordb.sqlite`. Profiles, history, preferences, and recovery share this database. The identity change starts fresh: old development data and credential entries are neither read, migrated, overwritten, nor deleted. Updates using the new identity continue to use the same saved data and credential references.
 
-The executable supports the current functionality-only MVP scope: SQLite and PostgreSQL, saved connection profiles with macOS credentials, lazy navigation, editor completion/preferences, paged and cached results, large-value inspection, copying, export, history, and recovery. Distribution work is deferred to a later iteration. See `architecture/implementation-status.md`.
+The executable supports SQLite and PostgreSQL, saved connection profiles with macOS credentials, lazy navigation, editor completion/preferences, paged and cached results, large-value inspection, copying, export, history, and recovery. See [macOS releases](MACOS_RELEASE.md) for the separate Apple Silicon production workflow, requiring macOS 26.0 or newer. Normal development builds require no signing or update configuration and do not check the production update feed.
 
 ## Prerequisites
 
@@ -25,6 +25,11 @@ open build/dev/choscordb.app
 Intel Homebrew normally uses `/usr/local` instead. Homebrew's Qt bottle determines the supported macOS version; this is a local development build, not a redistributable release package. Set `CMAKE_OSX_DEPLOYMENT_TARGET` explicitly when preparing a deployment toolchain, and use Qt/QScintilla binaries built for that target.
 
 On other systems, supply the Qt and QScintilla installation roots through `CMAKE_PREFIX_PATH`, then use the same configure/build/test presets. Windows/Linux verification and installation work are deferred with distribution.
+
+`Cargo.toml`'s `workspace.package.version` is the authoritative stable `X.Y.Z`
+application version. CMake reads it for bundle and executable metadata. Change it
+and the corresponding `CHANGELOG.md` entry explicitly when preparing a release;
+packaging never edits version files.
 
 Choose Connection → New SQLite session and enter a database path or `:memory:`. Run the current SQL statement with the toolbar or Ctrl+Return. Expand the navigator to fetch objects. Results fetch one page at a time; Next page requests more rows and Previous page retrieves saved rows without rerunning SQL. Commit/Rollback are available in manual mode. A selection containing multiple statements is explicitly rejected by SQLite; it never executes only a prefix silently.
 

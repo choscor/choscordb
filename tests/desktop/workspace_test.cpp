@@ -1,5 +1,8 @@
+#include "app/appearance_controller.h"
+#include "app/application_data.h"
 #include "app/main_window.h"
 #include "app/query_workspace.h"
+#include "app/updater.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
@@ -76,6 +79,137 @@ struct WorkspaceFixture {
 class WorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void developmentUpdaterHasNoEnabledActions_data() {
+        QTest::addColumn<bool>("isolated");
+        QTest::newRow("normal-development") << false;
+        QTest::newRow("isolated-automation") << true;
+    }
+    void developmentUpdaterHasNoEnabledActions() {
+        QFETCH(bool, isolated);
+        QTemporaryDir directory;
+        choscordb::MainWindow window(nullptr, directory.filePath("updater.sqlite"));
+        choscordb::installNativeUpdater(window, isolated);
+        QVERIFY(!window.findChild<QAction*>("checkForUpdates"));
+        QVERIFY(!window.findChild<QAction*>("automaticUpdateChecks"));
+        QVERIFY(!window.findChild<QAction*>("installDownloadedUpdate"));
+    }
+    void productionDataUsesOneIdentityDirectory() {
+        const auto originalOrganization = QCoreApplication::organizationName();
+        QCoreApplication::setOrganizationName("Unrelated Qt organization");
+        const auto actual = choscordb::applicationDataDirectory();
+        QCoreApplication::setOrganizationName(originalOrganization);
+        QCOMPARE(actual, QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
+                             .filePath("com.choscor.ChoscorDB"));
+    }
+    void updateAppearanceFailurePostponesInstallation() {
+        QTemporaryDir directory;
+        const auto path = directory.filePath("failed-update.sqlite");
+        choscordb::MainWindow window(nullptr, path);
+        window.show();
+        auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>();
+        QTRY_VERIFY(recovery->isReady());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+        QVERIFY(editor);
+        choscordb::EngineAdapter fixture(nullptr, directory.filePath("fixture.sqlite"));
+        bool connected = false, executed = false;
+        connect(&fixture, &choscordb::EngineAdapter::eventReady, &window,
+                [&](const choscordb::BridgeEvent& event) {
+                    connected = connected || event.kind == "connected";
+                    executed = executed || event.kind == "query_finished";
+                });
+        const auto connection = fixture.connectSqlite(path);
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        const auto query = fixture.execute(
+            *connection, "CREATE TRIGGER reject_appearance BEFORE INSERT ON appearance_layout "
+                         "BEGIN SELECT RAISE(ABORT, 'fixture persistence failure'); END");
+        QVERIFY(query);
+        fixture.fetchPage(*query);
+        QTRY_VERIFY(executed);
+        auto* appearance = window.findChild<choscordb::AppearanceController*>();
+        QTRY_VERIFY(appearance->isReady());
+        QSignalSpy failures(appearance, &choscordb::AppearanceController::warningChanged);
+        window.resize(window.width() + 100, window.height() + 50);
+        int installs = 0;
+        window.requestUpdateRestart([&] { ++installs; });
+        QTRY_VERIFY(!failures.isEmpty());
+        QTest::qWait(100);
+        QCOMPARE(installs, 0);
+        QVERIFY(window.isVisible());
+        QVERIFY(window.isEnabled());
+        QVERIFY(editor->isEnabled());
+    }
+    void updatePersistenceFailureKeepsWorkspaceUsable() {
+        QTemporaryDir directory;
+        const auto path = directory.filePath("failed-update.sqlite");
+        choscordb::MainWindow window(nullptr, path);
+        window.show();
+        auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>();
+        QTRY_VERIFY(recovery->isReady());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+        QVERIFY(editor);
+        choscordb::EngineAdapter fixture(nullptr, directory.filePath("fixture.sqlite"));
+        bool connected = false, executed = false;
+        connect(&fixture, &choscordb::EngineAdapter::eventReady, &window,
+                [&](const choscordb::BridgeEvent& event) {
+                    connected = connected || event.kind == "connected";
+                    executed = executed || event.kind == "query_finished";
+                });
+        const auto connection = fixture.connectSqlite(path);
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        const auto query = fixture.execute(
+            *connection, "CREATE TRIGGER reject_recovery BEFORE INSERT ON editor_documents "
+                         "BEGIN SELECT RAISE(ABORT, 'fixture persistence failure'); END");
+        QVERIFY(query);
+        fixture.fetchPage(*query);
+        QTRY_VERIFY(executed);
+        editor->setText("SELECT 'must not discard'");
+        QSignalSpy failures(recovery, &choscordb::WorkspaceRecoveryController::errorOccurred);
+        int installs = 0;
+        window.requestUpdateRestart([&] { ++installs; });
+        QTRY_VERIFY(!failures.isEmpty());
+        QTRY_VERIFY(editor->isEnabled());
+        QCOMPARE(installs, 0);
+        QVERIFY(window.isVisible());
+        QVERIFY(!window.findChild<QAction*>("closeWithoutRecovery")->isEnabled());
+        QCOMPARE(editor->text(), QString("SELECT 'must not discard'"));
+    }
+    void updateRestartWaitsForRecoveryAndDatabaseShutdown() {
+        QTemporaryDir directory;
+        const auto path = directory.filePath("update.sqlite");
+        choscordb::MainWindow window(nullptr, path);
+        window.show();
+        auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>();
+        QTRY_VERIFY(recovery->isReady());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+        QVERIFY(editor);
+        editor->setText("SELECT 'preserved across update'");
+        auto* adapter = window.findChild<choscordb::QueryWorkspace*>()->adapter();
+        QSignalSpy saved(adapter, &choscordb::EngineAdapter::workspaceSaved);
+        QSignalSpy stopped(adapter, &choscordb::EngineAdapter::shutdownReady);
+        int installs = 0;
+        window.requestUpdateRestart([&] {
+            QVERIFY(!saved.isEmpty());
+            QCOMPARE(stopped.count(), 1);
+            ++installs;
+        });
+        QCOMPARE(installs, 0);
+        QTRY_COMPARE(installs, 1);
+        choscordb::EngineAdapter reopened(nullptr, path);
+        QSignalSpy restored(&reopened, &choscordb::EngineAdapter::workspaceTabsRestored);
+        QVERIFY(reopened.restoreWorkspaceTabs(981));
+        QTRY_COMPARE(restored.count(), 1);
+        const auto documents = qvariant_cast<QList<choscordb::SavedWorkspaceTab>>(restored[0][1]);
+        QCOMPARE(documents.size(), 1);
+        QCOMPARE(documents[0].document.sql, QString("SELECT 'preserved across update'"));
+    }
     void formErrorsAppearBelowTheRelevantFields() {
         choscordb::EngineAdapter adapter;
         choscordb::ProfileDialog profile(&adapter);
@@ -424,6 +558,70 @@ class WorkspaceTest : public QObject {
             qvariant_cast<QList<choscordb::SavedHistoryEntry>>(entries.at(0).at(1));
         QCOMPARE(persisted.size(), 1);
         QCOMPARE(persisted[0].sql, QString("SELECT 4"));
+    }
+    void cancelledUpdateDoesNotInstallOnLaterNormalClose() {
+        QTemporaryDir directory;
+        const auto path = directory.filePath("metadata.sqlite");
+        choscordb::MainWindow window(nullptr, path);
+        window.show();
+        auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>();
+        QTRY_VERIFY(recovery->isReady());
+        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+        auto* run = window.findChild<QAction*>("runStatement");
+        workspace->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        QTRY_VERIFY(run->isEnabled());
+        bool running = false;
+        connect(workspace->adapter(), &choscordb::EngineAdapter::eventReady, &window,
+                [&](const choscordb::BridgeEvent& e) {
+                    if (QString::fromUtf8(e.kind.data(), static_cast<qsizetype>(e.kind.size())) ==
+                            "query_state" &&
+                        QString::fromUtf8(e.state.data(), static_cast<qsizetype>(e.state.size())) ==
+                            "running")
+                        running = true;
+                });
+        const QString sql = "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE "
+                            "x<100000000) SELECT sum(x) FROM n";
+        auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+        editor->setText(sql);
+        editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+        run->trigger();
+        QTRY_VERIFY(running);
+        bool cancelled = false;
+        QTimer chooser;
+        chooser.setInterval(5);
+        connect(&chooser, &QTimer::timeout, &window, [&] {
+            for (auto* widget : QApplication::topLevelWidgets())
+                if (auto* box = qobject_cast<QMessageBox*>(widget)) {
+                    if (!cancelled) {
+                        cancelled = true;
+                        box->button(QMessageBox::Cancel)->click();
+                        chooser.stop();
+                        return;
+                    }
+                    for (auto* button : box->buttons())
+                        if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+                            chooser.stop();
+                            button->click();
+                            return;
+                        }
+                }
+        });
+        int installs = 0;
+        chooser.start();
+        window.requestUpdateRestart([&] { ++installs; });
+        QTRY_VERIFY(cancelled);
+        QCOMPARE(installs, 0);
+        QVERIFY(window.isVisible());
+        QVERIFY(window.isEnabled());
+        QVERIFY(editor->isEnabled());
+        // A later ordinary close must not reuse the cancelled installation approval.
+        chooser.start();
+        window.close();
+        QTRY_VERIFY(!window.isVisible());
+        QCOMPARE(installs, 0);
     }
     void closingActiveQueryFlushesDisconnectedHistory() {
         QTemporaryDir directory;

@@ -40,6 +40,7 @@ class AppearanceController final : public QObject {
     void resolvedChoicesChanged(const choscordb::AppearanceLayout& appearance);
     void accessibilityPolicyChanged(bool forcedContrast, bool reducedMotion);
     void flushReady();
+    void flushFailed(const QString& message);
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

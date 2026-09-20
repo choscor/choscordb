@@ -1,5 +1,7 @@
 #include "app/appearance_controller.h"
+#include "app/application_data.h"
 #include "app/main_window.h"
+#include "app/updater.h"
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
@@ -8,9 +10,11 @@
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QApplication::setApplicationName("ChoscorDB");
-    QApplication::setOrganizationName("ChoscorDB");
+    QApplication::setOrganizationName(CHOSCORDB_APP_ID);
+    QApplication::setApplicationVersion(CHOSCORDB_VERSION);
     QCommandLineParser args;
     args.addHelpOption();
+    args.addVersionOption();
     args.addOption({"smoke-test", "Launch and exit through the Qt event loop."});
     args.addOption({"screenshot", "Save a workspace screenshot then exit.", "path"});
     args.addOption({"screenshot-theme", "Theme for a screenshot (system, light, or dark).", "theme",
@@ -19,8 +23,7 @@ int main(int argc, char** argv) {
                     "1280x900"});
     args.process(app);
     const auto storagePath =
-        QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
-            .filePath("choscordb.sqlite");
+        QDir(choscordb::applicationDataDirectory()).filePath("choscordb.sqlite");
     choscordb::MainWindow window(nullptr, storagePath);
     const auto applyScreenshotOptions = [&] {
         const auto requestedTheme = args.value("screenshot-theme");
@@ -36,6 +39,7 @@ int main(int argc, char** argv) {
         }
     };
     window.show();
+    choscordb::installNativeUpdater(window, args.isSet("smoke-test") || args.isSet("screenshot"));
     if (args.isSet("screenshot")) {
         QTimer::singleShot(400, &window, applyScreenshotOptions);
         QTimer::singleShot(700, &app,

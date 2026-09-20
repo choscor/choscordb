@@ -371,8 +371,8 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void savedPanelFiltersFolderTreeAndReusesEditedTab() {
         QStandardPaths::setTestModeEnabled(true);
         const auto directory =
-            QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
-                .filePath("sql");
+            QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
+                .filePath("com.choscor.ChoscorDB/sql");
         QVERIFY(QDir().mkpath(directory + "/nested"));
         const auto name =
             QStringLiteral("sidebar-test-%1.sql").arg(QCoreApplication::applicationPid());

@@ -60,6 +60,34 @@ class QtNoticesTest(unittest.TestCase):
                     notices.prepare(bad, output)
             self.assertFalse(output.exists())
 
+    def test_upstream_multiline_attribution_keeps_original_bytes_and_license(self):
+        # Qt 6.8.3's attribution format allows literal newlines inside text fields.
+        attribution = (
+            b'{"Copyright":"First author\nSecond author","LicenseFile":"COPYING"}'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            archive = self.fixture(
+                directory,
+                {
+                    f"{notices.ROOT}/src/3rdparty/demo/qt_attribution.json": attribution,
+                    f"{notices.ROOT}/src/3rdparty/demo/COPYING": b"attributed license",
+                },
+            )
+            with patch.object(
+                notices, "SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
+            ):
+                output = notices.prepare(archive, Path(directory) / "notices")
+            self.assertEqual(
+                (
+                    output / "attributions/src/3rdparty/demo/qt_attribution.json"
+                ).read_bytes(),
+                attribution,
+            )
+            self.assertEqual(
+                (output / "referenced/src/3rdparty/demo/COPYING").read_bytes(),
+                b"attributed license",
+            )
+
     def test_missing_license_files_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             archive = self.fixture(directory)

@@ -22,6 +22,7 @@ ROOT_FILES = (
     "CMakePresets.json",
     "Cargo.lock",
     "Cargo.toml",
+    "CHANGELOG.md",
     "LICENSE",
     "README.md",
     "deny.toml",
@@ -160,7 +161,8 @@ def source_files(root):
             )
             for child in names:
                 path = parent / child
-                if excluded_file(child):
+                build_artwork = name == "desktop" and child.lower().endswith(".png")
+                if excluded_file(child) and not build_artwork:
                     continue
                 if not stat.S_ISREG(path.stat().st_mode):
                     raise ValueError(

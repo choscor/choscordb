@@ -24,6 +24,13 @@ class SourceArchiveTest(unittest.TestCase):
         for name in source_archive.ROOT_FILES:
             (self.root / name).write_text(name)
 
+    def test_build_required_artwork_is_in_source_archive(self):
+        (self.root / "desktop/app/icon.png").parent.mkdir(parents=True)
+        (self.root / "desktop/app/icon.png").write_bytes(b"artwork")
+        output = self.generate()
+        with tarfile.open(output / "choscordb-source.tar.gz") as archive:
+            self.assertIn("choscordb-source/desktop/app/icon.png", archive.getnames())
+
     def generate(self, name="output"):
         output = Path(self.temporary.name) / name
         source_archive.create_candidate(self.root, output)

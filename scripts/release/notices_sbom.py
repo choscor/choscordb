@@ -13,11 +13,15 @@ import uuid
 from prepare_qt_notices import SHA256 as QTBASE_SHA256, SVG_SHA256 as QTSVG_SHA256
 
 QT_SOURCE_HASHES = {"qtbase": QTBASE_SHA256, "qtsvg": QTSVG_SHA256}
-LUCIDE_ICON_HASHES = {
-    "play.svg": "0768356979f97d6bfe7e15f1cf1cb1b83235af619610b58d902882b8fe836f81",
-    "plus.svg": "953f772bcb213f466e8a69a2a65362b38d39b59a77c635ab5361e92a89dc6ed4",
-    "square.svg": "4d6b8dc9b4dc5e95e32d4a881359de077c7b53ae4e02e623b588c558739158e1",
-}
+LUCIDE_SOURCE_SHA256 = (
+    "07fb3b3ab252ba24434853227543fa93578e09908dfa35d63be88c38dd264678"
+)
+
+GEIST_SOURCE_SHA256 = "1190ba834ead1873d41bbe2210659a927e1eef2ae252ed8d995fe05e17e476a6"
+
+SHADCN_SOURCE_SHA256 = (
+    "8e2b3b92fdc4aa4a8b9b81b372ced0cd2a785e25365d157ef450b0773d44f81f"
+)
 
 QT_PLUGINS = {
     "platforms/libqcocoa.dylib",
@@ -236,7 +240,7 @@ def generate(
         qt_entries.extend(module["copied_files"])
     qt_texts = checked_texts(qt_notices, qt_entries)
     versions = {
-        plistlib.loads(data).get("CFBundleShortVersionString")
+        plistlib.loads(data).get("CFBundleVersion")
         for name, data in payload.items()
         if re.search(r"/Qt[^/]+\.framework/", name) and name.endswith("/Info.plist")
     }
@@ -266,21 +270,93 @@ def generate(
     ]
     if len(lucide_sources) != 1:
         raise ValueError("Lucide icon provenance is missing or ambiguous")
-    lucide_record = json.loads(payload[lucide_sources[0]])
-    if (
-        lucide_record.get("version") != "1.27.0"
-        or lucide_record.get("commit") != "4aec3f8"
-        or lucide_record.get("license") != "ISC AND MIT"
-        or lucide_record.get("source") != "https://github.com/lucide-icons/lucide"
-        or lucide_record.get("icons") != LUCIDE_ICON_HASHES
-    ):
+    if digest(payload[lucide_sources[0]]) != LUCIDE_SOURCE_SHA256:
         raise ValueError("Lucide icon provenance does not match the reviewed source")
-    for icon, expected in LUCIDE_ICON_HASHES.items():
+    lucide_record = json.loads(payload[lucide_sources[0]])
+    if digest(payload[lucide_licenses[0]]) != lucide_record["licenseSha256"]:
+        raise ValueError("Lucide icon license does not match reviewed source")
+    lucide_icons = lucide_record["icons"]
+    local_icons = {
+        name: record["sha256"]
+        for name, record in lucide_record["referenceAdditions"]["icons"].items()
+    }
+    source_hashes = {entry["path"]: entry["sha256"] for entry in source["files"]}
+    for path, expected in [
+        ("desktop/resources/icons/SOURCE-LUCIDE.json", LUCIDE_SOURCE_SHA256),
+        ("desktop/resources/icons/LICENSE-LUCIDE", lucide_record["licenseSha256"]),
+    ]:
+        if source_hashes.get(path) != expected:
+            raise ValueError(
+                "Lucide icon source snapshot does not match reviewed provenance"
+            )
+    icon_hashes = {**lucide_icons, **local_icons}
+    icon_hashes["app-mark.svg"] = source_hashes.get(
+        "desktop/resources/icons/app-mark.svg"
+    )
+    icon_prefix = app_licenses[0].removesuffix("licenses/LICENSE") + "icons/"
+    staged_icons = {icon: icon_prefix + icon for icon in icon_hashes}
+    actual_icon_paths = {
+        name
+        for name in payload
+        if "/Resources/icons/" in name and name.endswith(".svg")
+    }
+    if actual_icon_paths != set(staged_icons.values()):
+        raise ValueError("Staged icon inventory differs from reviewed assets")
+    for icon, expected in icon_hashes.items():
+        if (
+            digest(payload[staged_icons[icon]]) != expected
+            or source_hashes.get("desktop/resources/icons/" + icon) != expected
+        ):
+            raise ValueError(
+                "Icon does not match reviewed adaptation and source: " + icon
+            )
+
+    def reviewed_asset(name, expected, label):
         matches = [
-            name for name in payload if name.endswith("/Resources/icons/" + icon)
+            path for path in payload if path.endswith("/Resources/licenses/" + name)
         ]
         if len(matches) != 1 or digest(payload[matches[0]]) != expected:
-            raise ValueError("Lucide icon does not match reviewed adaptation: " + icon)
+            raise ValueError(
+                label + " notice is missing or differs from reviewed source"
+            )
+        return matches[0]
+
+    geist_source = reviewed_asset("SOURCE-GEIST.json", GEIST_SOURCE_SHA256, "Geist")
+    geist_record = json.loads(payload[geist_source])
+    if (
+        source_hashes.get("desktop/resources/fonts/SOURCE-GEIST.json")
+        != GEIST_SOURCE_SHA256
+    ):
+        raise ValueError("Geist source snapshot does not match reviewed provenance")
+    for entry in geist_record["files"]:
+        if (
+            source_hashes.get("desktop/resources/fonts/" + entry["local"])
+            != entry["sha256"]
+        ):
+            raise ValueError(
+                "Geist embedded font/source hashes do not match reviewed source"
+            )
+    geist_license = reviewed_asset(
+        "OFL.txt",
+        "c683bfbcc7e087f5d37a54ef628f10387c451a83ddc459b151403a164ac46c90",
+        "Geist",
+    )
+
+    shadcn_source = reviewed_asset("SOURCE-SHADCN.json", SHADCN_SOURCE_SHA256, "shadcn")
+    shadcn_record = json.loads(payload[shadcn_source])
+    shadcn_license = reviewed_asset(
+        "LICENSE-SHADCN",
+        "1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f",
+        "shadcn",
+    )
+    for path, expected in [
+        ("docs/licenses/shadcn/manifest.json", SHADCN_SOURCE_SHA256),
+        ("docs/licenses/shadcn/LICENSE.md", digest(payload[shadcn_license])),
+    ]:
+        if source_hashes.get(path) != expected:
+            raise ValueError(
+                "shadcn attribution/source hashes do not match reviewed source"
+            )
 
     packages, package_ids, license_outputs = [], {}, {}
 
@@ -349,6 +425,73 @@ def generate(
         "https://github.com/lucide-icons/lucide",
     )
     packages[-1]["sourceInfo"] = "Reviewed source commit " + lucide_record["commit"]
+    geist_id = package(
+        "geist",
+        "Geist",
+        geist_record["revision"],
+        "OFL-1.1",
+        {"OFL.txt": payload[geist_license]},
+        geist_record["repository"],
+    )
+    packages[-1]["sourceInfo"] = (
+        "Embedded Qt font resources; reviewed revision "
+        + geist_record["revision"]
+        + "; source SHA256: "
+        + ", ".join(
+            entry["local"] + "=" + entry["sha256"] for entry in geist_record["files"]
+        )
+    )
+    shadcn_id = package(
+        "shadcn-ui",
+        "shadcn/ui",
+        shadcn_record["revision"],
+        "MIT",
+        {"LICENSE.md": payload[shadcn_license]},
+        shadcn_record["repository"],
+    )
+    packages[-1]["sourceInfo"] = (
+        "Native Qt style adaptations of "
+        + shadcn_record["preset"]
+        + "; reviewed upstream revision "
+        + shadcn_record["revision"]
+        + "; provenance SHA256 "
+        + SHADCN_SOURCE_SHA256
+    )
+    sparkle_id = None
+    sparkle_files = [name for name in payload if "/Sparkle.framework/" in name]
+    if sparkle_files:
+        records = [
+            name for name in payload if name.endswith("/licenses/Sparkle/source.json")
+        ]
+        if len(records) != 1:
+            raise ValueError("Sparkle provenance is missing or ambiguous")
+        record = json.loads(payload[records[0]])
+        if record != {
+            "version": "2.9.6",
+            "sha256": "52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192",
+            "url": "https://github.com/sparkle-project/Sparkle/releases/download/2.9.6/Sparkle-2.9.6.tar.xz",
+            "license": "MIT",
+        }:
+            raise ValueError("Sparkle provenance does not match reviewed pin")
+        infos = [
+            plistlib.loads(payload[name])
+            for name in sparkle_files
+            if name.endswith("/Resources/Info.plist")
+            and "/XPCServices/" not in name
+            and ".app/" not in name.split("Sparkle.framework/", 1)[1]
+        ]
+        if not infos or any(
+            info.get("CFBundleShortVersionString") != "2.9.6" for info in infos
+        ):
+            raise ValueError("Sparkle framework version does not match notices")
+        sparkle_id = package(
+            "sparkle",
+            "Sparkle",
+            record["version"],
+            "MIT",
+            text_files(stage / PurePosixPath(records[0]).parent),
+            record["url"],
+        )
     metadata = json.loads(cargo_metadata.read_bytes())
     cargo_ids, proc_macro_ids = [], []
     selected = normal_dependency_packages(metadata, cargo_root_package)
@@ -478,7 +621,15 @@ def generate(
         ],
     )
     relationships.extend(sqlite_relationships)
-    for package_id in [qt_id, qsci_id, lucide_id, *cargo_ids]:
+    for package_id in [
+        qt_id,
+        qsci_id,
+        lucide_id,
+        geist_id,
+        shadcn_id,
+        *([sparkle_id] if sparkle_id else []),
+        *cargo_ids,
+    ]:
         relationships.append(
             {
                 "spdxElementId": app_id,
@@ -512,8 +663,16 @@ def generate(
                 "/Resources/licenses/LICENSE-LUCIDE",
                 "/Resources/licenses/SOURCE-LUCIDE.json",
             )
-        ) or re.search(r"/Resources/icons/(play|square|plus)\.svg$", name):
+        ) or name in {staged_icons[icon] for icon in lucide_icons}:
             owner = lucide_id
+        elif name in {shadcn_source, shadcn_license}:
+            owner = shadcn_id
+        elif name in {geist_source, geist_license}:
+            owner = geist_id
+        elif "/Sparkle.framework/" in name or "/licenses/Sparkle/" in name:
+            if sparkle_id is None:
+                raise ValueError("Sparkle notice has no matching runtime")
+            owner = sparkle_id
         elif "qscintilla" in name.lower():
             owner = qsci_id
         elif (

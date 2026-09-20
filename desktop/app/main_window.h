@@ -27,6 +27,7 @@ class MainWindow final : public QMainWindow {
   public:
     enum class Screen { Start, Sql, Object, History };
     bool showScreen(Screen screen);
+    void requestUpdateRestart(std::function<void()> install);
     void openConnectionQuery(quint64 connection);
     void showToast(const QString& message, ToastVariant variant);
     std::optional<quint64> browsingConnection() const { return browsingConnection_; }
@@ -50,6 +51,8 @@ class MainWindow final : public QMainWindow {
     QStackedWidget* screens_ = nullptr;
     ToastRegion* toast_ = nullptr;
     bool constructing_ = true;
+    std::function<void()> updateInstall_;
+    void finishClose(QCloseEvent* event);
     SqlEditor* addEditor();
     ObjectExplorer* makeObjectExplorer();
     void openObjectTab(quint64 connection, const QString& objectId, const QString& label,

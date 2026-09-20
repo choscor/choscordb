@@ -4,7 +4,8 @@ use choscordb_credentials::{CredentialError, CredentialStore, NativeCredentialSt
 #[ignore = "Requires an unlocked OS credential store; writes only a fresh isolated test entry"]
 fn isolated_native_round_trip() {
     let store =
-        NativeCredentialStore::for_test_namespace("org.choscordb.tests.credentials").unwrap();
+        NativeCredentialStore::for_test_namespace("com.choscor.ChoscorDB.tests.credentials")
+            .unwrap();
     let reference = uuid::Uuid::new_v4().to_string();
     struct Cleanup<'a>(&'a NativeCredentialStore, &'a str);
     impl Drop for Cleanup<'_> {

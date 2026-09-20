@@ -34,6 +34,14 @@ Ninja 1.11.1.4, actionlint 1.7.7, and cargo-deny 0.20.2. Patch updates to LLVM
 
 Qt installation uses the project's [documented aqt CLI](https://aqtinstall.readthedocs.io/en/v3.3.0/cli.html). Architecture names were checked against live `aqt list-qt ... --arch 6.8.3` metadata for all three hosts. macOS QScintilla is compiled only for the runner's native architecture. `MACOSX_DEPLOYMENT_TARGET=13.0` is shared by Rust's native dependencies, qmake, and CMake in CI. This is a build setting, not evidence of an installation smoke test on macOS 13.
 
+The unsigned CI matrix remains a development compatibility check. Production
+macOS releases use a separate isolated toolchain with an arm64, macOS 26.0 target
+for application code, Rust/native dependencies, and QScintilla. The release
+verifier inspects every bundled Mach-O architecture and minimum OS. See
+[macOS releases](MACOS_RELEASE.md) for signing, notarization, and publication.
+Neither CI nor a successful local macOS 26.5 run proves launch on macOS 26.0;
+that manual check is required before the first public release.
+
 Windows enters the [MSVC developer environment](https://github.com/ilammy/msvc-dev-cmd) before invoking Rust, qmake/nmake, or CMake/Ninja. Windows steps use the default PowerShell shell, avoiding the GNU `link.exe` collision associated with a Bash shell. Qt's DLL directory and QScintilla's DLL directory are added to the subprocess PATH during tests. Linux installs Qt's X11/font/OpenGL runtime dependencies and D-Bus development headers for the native Secret Service credential adapter; tests use `QT_QPA_PLATFORM=offscreen` on every OS. This exercises widget/model logic, not a real window-manager accessibility or packaging test.
 
 ## QScintilla bootstrap
@@ -101,7 +109,7 @@ The desktop helper keeps Qt, QScintilla, and the native build beneath `build/ci`
 
 ## First-party scope and exclusions
 
-Rust checks cover every workspace crate, target, and feature. C/C++ formatting,
+Rust checks cover every workspace crate, target, and feature. C/C++/Objective-C++ formatting,
 warnings, clang-tidy, headers, sanitizers, and coverage cover handwritten files
 under `desktop/` and `tests/`, including headers. Ruff covers repository-owned
 Python under `scripts/`. Generated CXX and Qt/MOC output, Qt, QScintilla,

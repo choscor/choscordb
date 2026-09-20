@@ -1,0 +1,2 @@
+# Build-only SVG renderer; Cairo is a native prerequisite. Neither ships in the app.
+CairoSVG==2.9.1

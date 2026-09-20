@@ -124,7 +124,7 @@ AppearanceController::AppearanceController(design::ThemeManager* theme, EngineAd
                 }
                 if (flushRequested_) {
                     flushRequested_ = false;
-                    emit flushReady();
+                    emit flushFailed(error);
                 }
             });
     token_ = nextToken();

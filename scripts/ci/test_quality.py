@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+from pathlib import Path
 import subprocess
 import tempfile
 import unittest
@@ -126,8 +127,16 @@ class QualityCommandTest(unittest.TestCase):
         self.assertTrue(files)
         self.assertEqual(files, sorted(files))
         self.assertTrue(all(path.parts[0] in {"desktop", "tests"} for path in files))
-        suffixes = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"}
+        suffixes = {".c", ".cc", ".cpp", ".cxx", ".mm", ".h", ".hh", ".hpp", ".hxx"}
         self.assertTrue(all(path.suffix in suffixes for path in files))
+
+    def test_native_updater_sources_are_in_formatting_scope(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "desktop").mkdir()
+            (root / "desktop/updater.mm").write_text("// Objective-C++\n")
+            with patch.object(quality, "ROOT", root):
+                self.assertEqual(quality.cpp_files(), [Path("desktop/updater.mm")])
 
     def test_commands_are_printed_before_execution(self):
         output = io.StringIO()

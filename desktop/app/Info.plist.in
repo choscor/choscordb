@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>choscordb</string>
+<key>CFBundleIdentifier</key><string>@CHOSCORDB_APP_ID@</string>
+<key>CFBundleName</key><string>ChoscorDB</string>
+<key>CFBundleDisplayName</key><string>ChoscorDB</string>
+<key>CFBundleIconFile</key><string>AppIcon.icns</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>@PROJECT_VERSION@</string>
+<key>CFBundleVersion</key><string>@PROJECT_VERSION@</string>
+<key>LSMinimumSystemVersion</key><string>26.0</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>SUFeedURL</key><string>@CHOSCORDB_UPDATE_FEED_URL@</string>
+<key>SUPublicEDKey</key><string>@CHOSCORDB_SPARKLE_PUBLIC_KEY@</string>
+<key>SUAutomaticallyUpdate</key><false/>
+<key>SUAllowsAutomaticUpdates</key><false/>
+</dict></plist>
