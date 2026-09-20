@@ -3,7 +3,6 @@
 #include <QAbstractItemView>
 #include <QCompleter>
 #include <QCoreApplication>
-#include <QDebug>
 #include <QEvent>
 #include <QFutureWatcher>
 #include <QHash>
@@ -114,10 +113,6 @@ bool EditorCompletionController::eventFilter(QObject* watched, QEvent* event) {
     return QObject::eventFilter(watched, event);
 }
 void EditorCompletionController::launch() {
-#ifdef Q_OS_WIN
-    qInfo() << "COMPLETION_TRACE launch" << busy_ << bool(editor_) << (editor_ && editor_->isVisible())
-            << (editor_ && editor_->hasFocus()) << generation_;
-#endif
     if (busy_)
         return;
     pending_ = false;
@@ -140,11 +135,6 @@ void EditorCompletionController::launch() {
         watcher, &QFutureWatcher<CompletionPage>::finished, this,
         [this, watcher, target, generation, revision, cursor] {
             const auto page = watcher->result();
-#ifdef Q_OS_WIN
-            qInfo() << "COMPLETION_TRACE result" << page.valid << page.items.size() << generation
-                    << generation_ << (target && target->hasFocus()) << (target && target->isVisible())
-                    << (target && revision == target->revision());
-#endif
             watcher->deleteLater();
             busy_ = false;
             if (target && target == editor_ && generation == generation_ &&
