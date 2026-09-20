@@ -68,26 +68,35 @@ class DisconnectWorkspaceTest : public QObject {
     void suspendedResultRequiresCloseConfirmation() {
         Fixture f;
         QSignalSpy connected(&f.workspace, &choscordb::QueryWorkspace::connectionReady);
+        qInfo("DISCONNECT_TRACE before connect");
         f.workspace.connectSqlite(":memory:");
         QTRY_COMPARE(connected.count(), 1);
+        qInfo("DISCONNECT_TRACE connected");
         f.editor.setText("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE "
                          "x<1001) SELECT x FROM n");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         f.run.trigger();
+        qInfo("DISCONNECT_TRACE submitted");
         // Cold hosted macOS workers can exceed Qt Test's five-second default here.
         QTRY_COMPARE_WITH_TIMEOUT(f.grid.model()->rowCount(), 1000, 30000);
+        qInfo("DISCONNECT_TRACE first page");
         QTRY_VERIFY(f.run.isEnabled());
         answer(&f.window, false);
+        qInfo("DISCONNECT_TRACE before first confirmation");
         QVERIFY(!f.workspace.confirmShutdown());
+        qInfo("DISCONNECT_TRACE after first confirmation");
         QCOMPARE(f.connections.count(), 1);
         QCOMPARE(f.grid.model()->rowCount(), 1000);
         f.next.click();
         QTRY_COMPARE(f.grid.model()->rowCount(), 1);
+        qInfo("DISCONNECT_TRACE next page");
         f.previous.click();
         QTRY_COMPARE(f.grid.model()->rowCount(), 1000);
+        qInfo("DISCONNECT_TRACE previous page");
         // Archived navigation is not an unfinished database execution.
         answer(&f.window, false);
         QVERIFY(f.workspace.confirmShutdown());
+        qInfo("DISCONNECT_TRACE final confirmation");
     }
     void transactionCancelPreservesWriteAndAcceptanceRollsItBack() {
         QTemporaryDir directory;

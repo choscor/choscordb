@@ -42,6 +42,7 @@
 #include <QTreeView>
 #include <QTreeWidget>
 #include <QtTest>
+#include <cstdint>
 
 void NavigatorSqlWorkspaceTest::objectTabsUseConnectionAndQualifiedIdentity() {
     choscordb::MainWindow window;
@@ -403,7 +404,8 @@ void NavigatorSqlWorkspaceTest::documentsKeepTargetsAndImmutableResultOrigin() {
     QTRY_COMPARE(connected.count(), 2);
     QCOMPARE(selector->currentData(), firstConnection);
     first->setText(QString("-- retained line\n").repeated(100));
-    first->SendScintilla(QsciScintilla::SCI_APPENDTEXT, 8UL, "-- edit\n");
+    first->SendScintilla(QsciScintilla::SCI_APPENDTEXT, static_cast<std::uintptr_t>(8),
+                         "-- edit\n");
     first->setSelection(45, 3, 45, 9);
     first->setFirstVisibleLine(40);
     const auto firstText = first->text();

@@ -37,6 +37,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QtTest>
+#include <algorithm>
 
 void WorkspaceTest::unsavedConnectionsRetainTheirDriver() {
     WorkspaceFixture fixture;
@@ -476,11 +477,33 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
     QVERIFY(f.workspace.confirmShutdown());
     qInfo("SHUTDOWN_TRACE after approve confirmation");
     QVERIFY(approved);
+    QSignalSpy transactionState(&f.workspace, &choscordb::QueryWorkspace::transactionStateChanged);
     f.rollback.trigger();
     qInfo("SHUTDOWN_TRACE after rollback trigger");
+    QTRY_VERIFY(std::any_of(transactionState.begin(), transactionState.end(),
+                            [](const auto& args) { return !args.at(1).toBool(); }));
     QTRY_VERIFY(f.messages.toPlainText().contains("rolled back"));
     qInfo("SHUTDOWN_TRACE after rollback message");
+    bool unexpectedPrompt = false;
+    QTimer finalTimer;
+    finalTimer.setInterval(10);
+    connect(&finalTimer, &QTimer::timeout, &f.parent, [&] {
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            auto* box = qobject_cast<QMessageBox*>(widget);
+            if (!box || !box->isVisible())
+                continue;
+            if (auto* button = box->button(QMessageBox::Cancel)) {
+                unexpectedPrompt = true;
+                finalTimer.stop();
+                button->click();
+                return;
+            }
+        }
+    });
+    finalTimer.start();
     QVERIFY(f.workspace.confirmShutdown());
+    finalTimer.stop();
+    QVERIFY(!unexpectedPrompt);
 }
 
 void WorkspaceTest::mainWindowHistoryRecordsOpensDisablesAndFlushes() {
