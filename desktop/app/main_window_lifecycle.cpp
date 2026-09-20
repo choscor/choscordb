@@ -261,8 +261,8 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                     QString profileName =
                         entry.profileId.isEmpty() ? tr("Unsaved connection") : entry.profileId;
                     for (int i = 0; i < savedConnections->count(); ++i) {
-                        const auto profile =
-                            savedConnections->item(i)->data(Qt::UserRole).value<SavedProfile>();
+                        const auto profileData = savedConnections->item(i)->data(Qt::UserRole);
+                        const auto profile = profileData.value<SavedProfile>();
                         if (profile.id == entry.profileId) {
                             profileName = profile.name;
                             break;

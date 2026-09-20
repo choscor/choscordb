@@ -32,7 +32,7 @@ jobs:
           curl --fail --show-error --silent https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor --yes --output /usr/share/keyrings/apt.llvm.org.gpg
           echo 'deb [signed-by=/usr/share/keyrings/apt.llvm.org.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' | sudo tee /etc/apt/sources.list.d/llvm23.list
           sudo apt-get update
-          sudo apt-get install --yes clang-format-23
+          sudo apt-get install --yes clang-format-23 pkg-config libdbus-1-dev
       - name: Run fast repository quality gates
         run: python scripts/ci/quality.py fast
   platform:
