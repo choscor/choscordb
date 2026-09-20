@@ -1,8 +1,8 @@
 #include "design_system/control_glyphs/control_glyphs.h"
 #include "design_system/style/scoped_theme.h"
 #include "design_system/theme.h"
-#include <QAbstractSpinBox>
 #include <QAbstractItemView>
+#include <QAbstractSpinBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QEvent>

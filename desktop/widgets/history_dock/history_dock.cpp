@@ -95,6 +95,12 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     auto* layout = new QVBoxLayout(body);
     layout->setContentsMargins(0, metrics.spacingMedium, 0, 0);
     layout->setSpacing(metrics.spacingMedium);
+    auto* toolbarBody = new QWidget(body);
+    toolbarBody->setObjectName("historyToolbar");
+    auto* toolbar = new QHBoxLayout(toolbarBody);
+    toolbar->setContentsMargins(design::spacing(design::Spacing::Three), 0,
+                                design::spacing(design::Spacing::Three), 0);
+    layout->addWidget(toolbarBody);
     auto* filters = new QHBoxLayout;
     filters->setContentsMargins(design::spacing(design::Spacing::Three), 0,
                                 design::spacing(design::Spacing::Three), 0);
@@ -124,15 +130,18 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     refresh_ = new design::Button(tr("Refresh"), body);
     refresh_->setObjectName("refreshHistory");
     clear_->setVariant(design::ButtonVariant::Destructive);
+    clear_->setDesignIcon(design::Icon::Close);
+    clear_->setAccessibleName(tr("Clear history"));
+    clear_->setToolTip(tr("Clear history…"));
+    clear_->setText({});
     refresh_->setVariant(design::ButtonVariant::Outline);
     refresh_->setDesignIcon(design::Icon::Refresh);
-    clear_->setButtonSize(design::ButtonSize::Small);
+    clear_->setButtonSize(design::ButtonSize::IconSmall);
     refresh_->setButtonSize(design::ButtonSize::Small);
     status_ = new design::Text({}, body);
     status_->setObjectName("historyStatus");
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
-    layout->addWidget(status_);
     model_ = new HistoryModel(this);
     table_ = new QTableView(body);
     table_->setObjectName("historyTable");
@@ -189,9 +198,15 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     footer->setContentsMargins(
         design::spacing(design::Spacing::Three), design::spacing(design::Spacing::OneHalf),
         design::spacing(design::Spacing::Three), design::spacing(design::Spacing::OneHalf));
-    auto* manage = new QToolButton(footerBody);
+    auto* manage = new QToolButton(toolbarBody);
     manage->setObjectName("historyManage");
     manage->setText(tr("Manage history"));
+    manage->setAccessibleName(tr("Manage history"));
+    manage->setToolTip(tr("Manage history"));
+    manage->setIcon(design::themedIcon(design::Icon::ChevronDown,
+                                       design::resolvedThemeForWidget(*manage).colors.foreground,
+                                       design::dimension(design::Dimension::Icon)));
+    manage->setToolButtonStyle(Qt::ToolButtonIconOnly);
     manage->setPopupMode(QToolButton::InstantPopup);
     auto* manageMenu = new QMenu(manage);
     auto* recordAction = new QWidgetAction(manageMenu);
@@ -221,20 +236,28 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     previous_->setButtonSize(design::ButtonSize::IconSmall);
     previous_->setText({});
     previous_->setAccessibleName(tr("Previous history page"));
+    previous_->setToolTip(tr("Previous history page"));
     next_->setButtonSize(design::ButtonSize::IconSmall);
     next_->setText({});
     next_->setAccessibleName(tr("Next history page"));
-    open_->setButtonSize(design::ButtonSize::Small);
+    next_->setToolTip(tr("Next history page"));
+    open_->setDesignIcon(design::Icon::Code);
+    open_->setAccessibleName(tr("Open in new query"));
+    open_->setToolTip(tr("Open in new query"));
+    open_->setText({});
+    open_->setButtonSize(design::ButtonSize::IconSmall);
     auto* paging = new design::ButtonGroup(Qt::Horizontal, body);
     paging->setObjectName("historyPaging");
     paging->addButton(previous_);
     paging->addButton(next_);
-    footer->addWidget(paging);
+    toolbar->addWidget(manage);
+    toolbar->addWidget(clear_);
+    toolbar->addWidget(open_);
+    toolbar->addStretch();
     footer->addWidget(page_);
+    footer->addWidget(status_);
     footer->addStretch();
-    footer->addWidget(manage);
-    footer->addWidget(clear_);
-    footer->addWidget(open_);
+    footer->addWidget(paging);
     layout->addWidget(footerBody);
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(0, 0, 0, 0);

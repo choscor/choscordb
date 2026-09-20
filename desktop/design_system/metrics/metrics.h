@@ -114,9 +114,9 @@ struct DesignMetrics final {
     int objectColumnRowHeight = 33;
     int sidebarInset = 11;
     int sidebarTopInset = 9;
-    int initialEditorResultsSplit = 430;
-    int initialEditorHeight = 420;
-    int initialResultsHeight = 340;
+    int initialEditorResultsSplit = 500;
+    int initialEditorHeight = 380;
+    int initialResultsHeight = 380;
     int initialHistoryHeight = 360;
     int minimumNavigatorWidth = 96;
     int minimumHistoryHeight = 80;

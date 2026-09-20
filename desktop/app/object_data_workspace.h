@@ -13,6 +13,7 @@ class ObjectDataWorkspace final : public QWidget {
     void invalidate();
     bool resolvePendingEdits();
     QWidget* footerWidget() const { return footer_; }
+    QWidget* toolbarWidget() const { return toolbar_; }
   signals:
     void busyChanged(bool busy);
 
@@ -21,6 +22,7 @@ class ObjectDataWorkspace final : public QWidget {
     QueryWorkspace* result_ = nullptr;
     QPushButton* refresh_ = nullptr;
     QWidget* footer_ = nullptr;
+    QWidget* toolbar_ = nullptr;
     quint64 connection_ = 0;
     QString object_, label_, kind_;
 };

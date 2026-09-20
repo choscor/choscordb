@@ -42,16 +42,22 @@ def violations(root=ROOT):
             for match in STRING.finditer(source):
                 current = match.group(1) or match.group(2)
                 adjacent = (
-                    adjacent + current if not source[previous_end : match.start()].strip() else current
+                    adjacent + current
+                    if not source[previous_end : match.start()].strip()
+                    else current
                 )
                 previous_end = match.end()
                 if CSS_RULE.search(adjacent):
                     number = source.count("\n", 0, match.start()) + 1
-                    problems.append(f"{path.relative_to(root)}:{number}: inline QSS declaration")
+                    problems.append(
+                        f"{path.relative_to(root)}:{number}: inline QSS declaration"
+                    )
                     adjacent = ""
             for loaded in LOAD_PATH.findall(source):
                 if loaded not in resources:
-                    problems.append(f"{path.relative_to(root)}: missing QSS alias {loaded}")
+                    problems.append(
+                        f"{path.relative_to(root)}: missing QSS alias {loaded}"
+                    )
         if path.suffix != ".qss":
             continue
         relative = path.relative_to(root)
@@ -59,7 +65,9 @@ def violations(root=ROOT):
             problems.append(f"{relative}: filename must use snake_case")
         alias = f"{path.parent.name}/{path.name}"
         if resources.get(alias) != path.resolve():
-            problems.append(f"{relative}: missing or incorrect styles.qrc alias {alias}")
+            problems.append(
+                f"{relative}: missing or incorrect styles.qrc alias {alias}"
+            )
         content = path.read_text(encoding="utf-8")
         if not content.strip():
             problems.append(f"{relative}: empty stylesheet")
@@ -67,7 +75,9 @@ def violations(root=ROOT):
             problems.append(f"{relative}: unbalanced rule braces")
         for number, line in enumerate(content.splitlines(), 1):
             if ("{" in line and "}" in line) or line.count(";") > 1:
-                problems.append(f"{relative}:{number}: put declarations on separate lines")
+                problems.append(
+                    f"{relative}:{number}: put declarations on separate lines"
+                )
     for path in sorted(resources.values()):
         if not path.is_file():
             problems.append(f"{path}: missing QSS resource")

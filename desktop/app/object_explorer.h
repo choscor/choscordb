@@ -55,8 +55,8 @@ class ObjectExplorer final : public QWidget {
     QStackedWidget* pages_;
     QPlainTextEdit* ddl_;
     QLabel* status_;
-    QPushButton* retry_;
-    QPushButton* reconnect_;
+    QAction* retry_;
+    QAction* reconnect_;
     QPushButton* refresh_;
     QPushButton* open_;
     QPushButton* generate_;

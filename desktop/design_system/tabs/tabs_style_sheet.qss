@@ -40,12 +40,14 @@ QTabBar::tab:selected {
 }
 
 QTabBar[designTabVariant="document"]::tab {
+  min-width: 112px;
+  max-width: 112px;
   min-height: @documentTabHeight;
   max-height: @documentTabHeight;
   border-bottom: 0;
   border-top: 2px solid transparent;
   border-right: 1px solid @border;
-  padding: 0 8px 0 10px;
+  padding: 0 2px;
   margin: 0;
 }
 

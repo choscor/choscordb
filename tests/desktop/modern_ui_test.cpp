@@ -2,6 +2,7 @@
 #include "app/main_window.h"
 #include "app/object_explorer.h"
 #include "app/query_workspace.h"
+#include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
@@ -56,6 +57,60 @@ class ModernUiTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void resultActionsUseIconsInToolbarAndFootersOnlyContainPagination() {
+        choscordb::MainWindow window;
+        auto* toolbar = window.findChild<QToolBar*>("queryToolbar");
+        auto* footer = window.findChild<QWidget*>("sqlResultFooter");
+        QVERIFY(toolbar && footer);
+        const auto buttons = footer->findChildren<QPushButton*>();
+        QCOMPARE(buttons.size(), 2);
+        QVERIFY(footer->isAncestorOf(window.findChild<QPushButton*>("previousPage")));
+        QVERIFY(footer->isAncestorOf(window.findChild<QPushButton*>("nextPage")));
+        for (const char* name :
+             {"queryResultAddRow", "queryResultDeleteRows", "queryResultRestoreRows",
+              "queryResultSetNull", "queryResultDiscardEdits", "queryResultApplyEdits",
+              "exportResult"}) {
+            auto* button = window.findChild<QPushButton*>(name);
+            QVERIFY(button);
+            QVERIFY(toolbar->isAncestorOf(button));
+            QVERIFY(button->text().isEmpty());
+            QVERIFY(!button->icon().isNull());
+            QVERIFY(!button->accessibleName().isEmpty());
+            QVERIFY(!button->toolTip().isEmpty());
+        }
+        for (auto* action : toolbar->actions()) {
+            auto* widget = toolbar->widgetForAction(action);
+            QVERIFY(!widget || widget->sizePolicy().horizontalPolicy() != QSizePolicy::Expanding);
+        }
+        auto* startFooter = window.findChild<QWidget*>("startFooter");
+        QVERIFY(startFooter->findChildren<QPushButton*>().isEmpty());
+        auto* startToolbar = window.findChild<QWidget*>("startToolbar");
+        QVERIFY(startToolbar);
+        QVERIFY(startToolbar->isAncestorOf(window.findChild<QPushButton*>("startNewConnection")));
+    }
+    void recoveryKeepsUnavailableToolbarActionsDisabled() {
+        QTemporaryDir storage;
+        choscordb::MainWindow window(nullptr, storage.filePath("workspace.sqlite"));
+        window.show();
+        auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>();
+        QTRY_VERIFY(recovery->isReady());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* save = window.findChild<QPushButton*>("saveSqlButton");
+        QVERIFY(save->isEnabled());
+        QVERIFY(QMetaObject::invokeMethod(recovery, "errorOccurred", Qt::DirectConnection,
+                                          Q_ARG(QString, QStringLiteral("Save failed")),
+                                          Q_ARG(bool, true)));
+        QVERIFY(!save->isEnabled());
+        window.findChild<QAction*>("cancelRecoveryClose")->trigger();
+        QVERIFY(save->isEnabled());
+        for (const char* name :
+             {"runStatementButton", "cancelQueryButton", "queryResultAddRow",
+              "queryResultDeleteRows", "queryResultApplyEdits", "exportResult"}) {
+            auto* button = window.findChild<QPushButton*>(name);
+            QVERIFY(button->isVisible());
+            QVERIFY2(!button->isEnabled(), name);
+        }
+    }
     void startUsesPanelAndMutedSupportingText() {
         choscordb::MainWindow window;
         window.show();
@@ -67,7 +122,8 @@ class ModernUiTest final : public QObject {
             QVERIFY(appearance->preview(mode));
             QCoreApplication::processEvents();
             const auto pixels = start->grab();
-            QCOMPARE(pixels.toImage().pixelColor(QPoint(20, 20) * pixels.devicePixelRatio()),
+            QCOMPARE(pixels.toImage().pixelColor(QPoint(start->width() / 2, 60) *
+                                                 pixels.devicePixelRatio()),
                      QColor(mode == "light" ? "#ffffff" : "#20272b"));
             auto* hint = start->findChild<QLabel*>("startHint");
             QVERIFY(hint);
@@ -88,7 +144,7 @@ class ModernUiTest final : public QObject {
         QTRY_COMPARE(sidebar->width(), 260);
         auto* title = window.findChild<QLabel*>("navigatorTitle");
         QVERIFY(!window.findChild<QStatusBar*>());
-        auto* navBody = title->parentWidget();
+        auto* navBody = sidebar->widget();
         QVERIFY(navBody);
         QCOMPARE(navBody->layout()->contentsMargins().top(),
                  choscordb::design::spacing(choscordb::design::Spacing::One));
@@ -96,7 +152,7 @@ class ModernUiTest final : public QObject {
         QCOMPARE(title->font().pixelSize(), 10);
         // Qt stores font tracking in 1/64px units.
         QVERIFY(qAbs(title->font().letterSpacing() - 1.3) < 1.0 / 64);
-        auto* tree = window.findChild<QTreeView*>();
+        auto* tree = window.findChild<QTreeView*>("databaseNavigator");
         const auto pixels = tree->viewport()->grab().toImage();
         QCOMPARE(pixels.pixelColor(QPoint(4, 4) * pixels.devicePixelRatio()), QColor("#fafbfb"));
         auto* start = window.findChild<QWidget*>("startScreen");
@@ -142,7 +198,10 @@ class ModernUiTest final : public QObject {
              {choscordb::design::ThemeMode::Light, choscordb::design::ThemeMode::Dark}) {
             theme->setMode(mode);
             QCoreApplication::processEvents();
+            QTRY_VERIFY(profiles->viewport()->rect().contains(
+                profiles->visualItemRect(profiles->item(profiles->count() - 1))));
             const auto pixels = profiles->viewport()->grab().toImage();
+
             for (int row = 0; row < profiles->count(); ++row) {
                 auto* item = profiles->item(row);
                 const auto driver =
@@ -153,7 +212,7 @@ class ModernUiTest final : public QObject {
             }
         }
     }
-    void completedResultsFillTheViewportAndHideCancel() {
+    void completedResultsKeepContentWidthsAndDisableCancel() {
         choscordb::MainWindow window;
         window.show();
         QTRY_VERIFY(window.findChild<choscordb::AppearanceController*>()->isReady());
@@ -178,10 +237,21 @@ class ModernUiTest final : public QObject {
         QTRY_COMPARE(window.findChild<QLabel*>("executionSummary")->property("state").toString(),
                      QString("completed"));
         QCoreApplication::processEvents();
-        QVERIFY(!window.findChild<QPushButton*>("cancelQueryButton")->isVisible());
+        QVERIFY(window.findChild<QPushButton*>("cancelQueryButton")->isVisible());
+        QVERIFY(!window.findChild<QPushButton*>("cancelQueryButton")->isEnabled());
         auto* header = grid->horizontalHeader();
-        QTRY_COMPARE(header->sectionViewportPosition(6) + header->sectionSize(6),
-                     grid->viewport()->width());
+        QVERIFY(!header->stretchLastSection());
+        QList<int> widths;
+        for (int column = 0; column < 7; ++column) {
+            const auto width = header->sectionSize(column);
+            QVERIFY(width >= 80 && width <= 400);
+            widths.append(width);
+        }
+        const int previousViewportWidth = grid->viewport()->width();
+        window.resize(window.width() + 200, window.height());
+        QTRY_VERIFY(grid->viewport()->width() > previousViewportWidth);
+        for (int column = 0; column < 7; ++column)
+            QCOMPARE(header->sectionSize(column), widths.at(column));
     }
     void findFromHistoryReturnsToExistingSqlAndDoesNotCreateClosedDocuments() {
         choscordb::MainWindow window;
@@ -363,7 +433,7 @@ class ModernUiTest final : public QObject {
                 auto* grid = window.findChild<QTableView*>("queryResults");
                 QTRY_COMPARE(grid->model()->rowCount(), 8);
                 QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
-                auto* tree = window.findChild<QTreeView*>();
+                auto* tree = window.findChild<QTreeView*>("databaseNavigator");
                 auto* proxy = qobject_cast<QSortFilterProxyModel*>(tree->model());
                 auto* navigator = window.findChild<choscordb::NavigatorModel*>();
                 QVERIFY(proxy && navigator);
@@ -402,8 +472,7 @@ class ModernUiTest final : public QObject {
                 QTRY_VERIFY(window.findChild<QPushButton*>("objectDataExport")->isEnabled());
                 capture("object-data");
                 QVERIFY(window.showScreen(choscordb::MainWindow::Screen::History));
-                QTRY_VERIFY(window.findChild<QTableView*>("historyTable")->model()->rowCount() >=
-                            3);
+                QTRY_VERIFY(window.findChild<QListWidget*>("sidebarHistoryItems")->count() >= 3);
                 capture("history");
                 window.findChild<QAction*>("preferences")->trigger();
                 auto* preferences = window.findChild<QDialog*>("preferencesDialog");
@@ -470,7 +539,7 @@ class ModernUiTest final : public QObject {
             auto* appearance = window.findChild<choscordb::AppearanceController*>();
             QTRY_VERIFY(appearance->isReady());
             QCOMPARE(appearance->persisted().navigatorWidth, quint32(260));
-            QCOMPARE(appearance->persisted().editorResultsSplit, quint16(430));
+            QCOMPARE(appearance->persisted().editorResultsSplit, quint16(500));
         }
         {
             choscordb::EngineAdapter adapter(nullptr, path);
@@ -494,14 +563,14 @@ class ModernUiTest final : public QObject {
         QTRY_COMPARE(restored.findChild<QDockWidget*>("navigator")->width(), 312);
         appearance->resetLayout();
         QTRY_COMPARE(appearance->persisted().navigatorWidth, quint32(260));
-        QTRY_COMPARE(appearance->persisted().editorResultsSplit, quint16(430));
+        QTRY_COMPARE(appearance->persisted().editorResultsSplit, quint16(500));
         QSignalSpy saved(appearance, &choscordb::AppearanceController::saveFinished);
         appearance->stageReset();
         appearance->applyPreview();
         QTRY_COMPARE(saved.count(), 1);
         QVERIFY(saved.first().first().toBool());
         QCOMPARE(appearance->persisted().navigatorWidth, quint32(260));
-        QCOMPARE(appearance->persisted().editorResultsSplit, quint16(430));
+        QCOMPARE(appearance->persisted().editorResultsSplit, quint16(500));
     }
     void centralScreensPreserveDraftsAndLastCloseReturnsToStart() {
         choscordb::MainWindow window;
@@ -517,10 +586,10 @@ class ModernUiTest final : public QObject {
         auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
         editor->setText("-- retained draft");
         window.findChild<QAction*>("showHistory")->trigger();
-        QCOMPARE(screens->currentWidget()->objectName(), QString("historyDock"));
-        QVERIFY(!window.findChild<QDockWidget*>("historyDock"));
+        QCOMPARE(screens->currentWidget()->objectName(), QString("sqlScreen"));
+        QCOMPARE(window.findChild<QStackedWidget*>("sidebarPanels")->currentIndex(), 2);
         window.findChild<QAction*>("showStart")->trigger();
-        QCOMPARE(screens->currentWidget()->objectName(), QString("historyDock"));
+        QCOMPARE(screens->currentWidget()->objectName(), QString("sqlScreen"));
         window.findChild<QAction*>("showSql")->trigger();
         QCOMPARE(tabs->currentWidget(), editor);
         QCOMPARE(editor->text(), QString("-- retained draft"));
@@ -550,7 +619,7 @@ class ModernUiTest final : public QObject {
         workspace->adapter()->saveProfile(profile, 991);
         QTRY_COMPARE(profiles->count(), 1);
         QVERIFY(profiles->item(0)->text().contains("Start SQLite"));
-        QCOMPARE(profiles->visualItemRect(profiles->item(0)).height(), 45);
+        QCOMPARE(profiles->visualItemRect(profiles->item(0)).height(), 42);
         QVERIFY(profiles->height() < 100);
         QVERIFY(!profiles->item(0)->icon().isNull());
         auto* startIcon = window.findChild<QLabel*>("startDatabaseIcon");
@@ -778,7 +847,8 @@ class ModernUiTest final : public QObject {
         QTest::mouseClick(cancel, Qt::LeftButton);
         QTRY_VERIFY(run->isEnabled());
         window.findChild<QAction*>("showHistory")->trigger();
-        QCOMPARE(screens->currentWidget()->objectName(), QString("historyDock"));
+        QCOMPARE(screens->currentWidget()->objectName(), QString("sqlScreen"));
+        QCOMPARE(window.findChild<QStackedWidget*>("sidebarPanels")->currentIndex(), 2);
     }
     void sqlCompositionKeepsTabsFirstAndPinsResultActions() {
         choscordb::MainWindow window;
@@ -804,16 +874,33 @@ class ModernUiTest final : public QObject {
         QCOMPARE(grid->horizontalHeader()->height(), 43);
         QVERIFY(grid->showGrid());
         QVERIFY(!grid->wordWrap());
-        QVERIFY(grid->horizontalHeader()->stretchLastSection());
-        auto* views = window.findChild<QComboBox*>("resultViewSelector");
-        QVERIFY(views);
-        QVERIFY(views->mapTo(sql, QPoint()).y() > grid->mapTo(sql, grid->rect().bottomLeft()).y());
+        QVERIFY(!grid->horizontalHeader()->stretchLastSection());
+        auto* footer = window.findChild<QWidget*>("sqlResultFooter");
+        QVERIFY(footer);
+        QVERIFY(footer->mapTo(sql, QPoint()).y() > grid->mapTo(sql, grid->rect().bottomLeft()).y());
         QVERIFY(exportButton->isVisible());
         QVERIFY(
             sql->rect().contains(QRect(exportButton->mapTo(sql, QPoint()), exportButton->size())));
-        views->setCurrentIndex(1);
-        QVERIFY(window.findChild<QPlainTextEdit*>("queryMessages")->isVisible());
+        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+        workspace->connectSqlite(":memory:");
+        auto* run = window.findChild<QAction*>("runStatement");
+        QTRY_VERIFY(run->isEnabled());
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+        QVERIFY(editor);
+        editor->setText("SELECT * FROM missing_table;");
+        run->trigger();
+        auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
+        QTRY_VERIFY(messages->isVisible());
+        QVERIFY(messages->toPlainText().contains("missing_table"));
+        QVERIFY(footer->isVisible());
         QVERIFY(exportButton->isVisible());
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("SELECT 1;");
+        run->trigger();
+        QTRY_COMPARE(grid->model()->rowCount(), 1);
+        QTRY_VERIFY(grid->isVisible());
+        QVERIFY(!messages->isVisible());
+        QVERIFY(footer->isVisible());
     }
     void workspaceHasNoOnboardingActionStrip() {
         choscordb::MainWindow window;
@@ -958,8 +1045,7 @@ class ModernUiTest final : public QObject {
         auto* host = window.centralWidget();
         const auto contentBefore = window.findChild<QStackedWidget*>()->geometry();
         toast->showToast("Warning", "First notice", choscordb::ToastVariant::Warning, 10000);
-        toast->showToast("Warning", "Replacement notice", choscordb::ToastVariant::Warning,
-                         10000);
+        toast->showToast("Warning", "Replacement notice", choscordb::ToastVariant::Warning, 10000);
         QVERIFY(toast->text().contains("Replacement notice"));
         QCOMPARE(toast->property("variant").toString(), QString("warning"));
         QCoreApplication::processEvents();
@@ -985,7 +1071,7 @@ class ModernUiTest final : public QObject {
 
     void navigatorContextActionsSupportKeyboardFocusAndMenus() {
         choscordb::MainWindow window;
-        auto* tree = window.findChild<QTreeView*>();
+        auto* tree = window.findChild<QTreeView*>("databaseNavigator");
         auto* refresh = window.findChild<QPushButton*>("navigatorRefresh");
         auto* disconnect = window.findChild<QPushButton*>("navigatorDisconnect");
         auto* refreshAction = window.findChild<QAction*>("navigatorRefreshAction");

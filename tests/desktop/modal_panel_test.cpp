@@ -1,6 +1,6 @@
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
-#include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/dialog_sections/dialog_sections.h"
+#include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/modal_panel/modal_panel.h"
 #include "design_system/theme_manager.h"
 #include <QDialogButtonBox>
@@ -343,8 +343,8 @@ class ModalPanelTest final : public QObject {
         parent.show();
         choscordb::ConfirmationDialog dialog(
             QMessageBox::Warning, "Delete synthetic record?",
-            "This preview records your choice only. No data is changed.",
-            QMessageBox::Cancel, &parent);
+            "This preview records your choice only. No data is changed.", QMessageBox::Cancel,
+            &parent);
         dialog.addButton("Delete", QMessageBox::DestructiveRole);
         dialog.show();
         QApplication::processEvents();

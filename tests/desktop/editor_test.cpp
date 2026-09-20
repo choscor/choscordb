@@ -1,6 +1,6 @@
+#include "design_system/menu/menu.h"
 #include "design_system/theme.h"
 #include "design_system/theme_manager.h"
-#include "design_system/menu/menu.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QContextMenuEvent>
 #include <QFile>
@@ -30,7 +30,8 @@ class EditorTest : public QObject {
         QTimer::singleShot(0, &editor, [&] {
             QMenu* menu = nullptr;
             for (auto* widget : QApplication::topLevelWidgets())
-                if (auto* candidate = qobject_cast<QMenu*>(widget); candidate && candidate->isVisible())
+                if (auto* candidate = qobject_cast<QMenu*>(widget);
+                    candidate && candidate->isVisible())
                     menu = candidate;
             if (menu) {
                 actual = menu->pos();
@@ -49,8 +50,8 @@ class EditorTest : public QObject {
         editor.resize(400, 160);
         editor.show();
         QCoreApplication::processEvents();
-        const auto digitWidth = editor.SendScintilla(
-            QsciScintilla::SCI_TEXTWIDTH, QsciScintilla::STYLE_LINENUMBER, "0");
+        const auto digitWidth = editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH,
+                                                     QsciScintilla::STYLE_LINENUMBER, "0");
         QVERIFY(editor.marginWidth(0) >= digitWidth * 3);
         QVERIFY(editor.marginWidth(0) < digitWidth * 5);
         const auto image = editor.grab().toImage();

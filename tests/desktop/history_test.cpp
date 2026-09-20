@@ -16,6 +16,43 @@
 class HistoryTest : public QObject {
     Q_OBJECT
   private slots:
+    void actionsUseAnIconToolbarAndFooterOnlyShowsStatusAndPaging() {
+        choscordb::EngineAdapter adapter;
+        choscordb::HistoryDock history(&adapter);
+        history.resize(800, 600);
+        history.show();
+        QTRY_VERIFY(history.findChild<QPushButton*>("refreshHistory")->isEnabled());
+        auto* table = history.findChild<QTableView*>("historyTable");
+        auto* footer = history.findChild<QWidget*>("historyFooter");
+        QVERIFY(footer);
+        const int tableTop = table->mapTo(&history, QPoint{}).y();
+        int previousRight = -1;
+        for (const auto* name : {"historyManage", "clearHistory", "openHistoryQuery"}) {
+            auto* action = history.findChild<QAbstractButton*>(name);
+            QVERIFY(action);
+            QVERIFY(action->isVisible());
+            QVERIFY(!footer->isAncestorOf(action));
+            QVERIFY(action->mapTo(&history, action->rect().bottomRight()).y() < tableTop);
+            QVERIFY(!action->icon().isNull());
+            QVERIFY(!action->accessibleName().isEmpty());
+            QVERIFY(!action->toolTip().isEmpty());
+            QVERIFY(action->mapTo(&history, QPoint{}).x() > previousRight);
+            previousRight = action->mapTo(&history, action->rect().topRight()).x();
+        }
+        const auto footerButtons = footer->findChildren<QAbstractButton*>();
+        QCOMPARE(footerButtons.size(), 2);
+        auto* previous = history.findChild<QPushButton*>("historyPrevious");
+        auto* next = history.findChild<QPushButton*>("historyNext");
+        QVERIFY(footerButtons.contains(previous));
+        QVERIFY(footerButtons.contains(next));
+        auto* range = history.findChild<QLabel*>("historyRange");
+        auto* status = history.findChild<QLabel*>("historyStatus");
+        QVERIFY(footer->isAncestorOf(range));
+        QVERIFY(footer->isAncestorOf(status));
+        QVERIFY(range->mapTo(footer, range->rect().topRight()).x() <
+                previous->mapTo(footer, QPoint{}).x());
+        QVERIFY(next->mapTo(footer, next->rect().topRight()).x() > footer->width() - 40);
+    }
     void queryRowsUseFullWidthAndFullTextPreviewIsExplicit() {
         choscordb::EngineAdapter adapter;
         choscordb::HistoryDock history(&adapter);

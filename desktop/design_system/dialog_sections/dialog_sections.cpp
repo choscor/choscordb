@@ -27,9 +27,15 @@ DialogSections::DialogSections(QWidget* parent) : QWidget(parent) {
     applyCompactSpacing();
 }
 
-QHBoxLayout* DialogSections::headerLayout() const { return header_; }
-QVBoxLayout* DialogSections::bodyLayout() const { return body_; }
-QHBoxLayout* DialogSections::footerLayout() const { return footer_; }
+QHBoxLayout* DialogSections::headerLayout() const {
+    return header_;
+}
+QVBoxLayout* DialogSections::bodyLayout() const {
+    return body_;
+}
+QHBoxLayout* DialogSections::footerLayout() const {
+    return footer_;
+}
 
 void DialogSections::applyCompactSpacing() {
     const auto metrics = resolveMetrics(Density::Compact, true);

@@ -125,7 +125,7 @@ pub(crate) async fn edit_target<C: GenericClient + Sync>(
             name: row.get(0),
             database_type: row.get(1),
             nullable: !row.get::<_, bool>(2),
-            generated: row.get::<_, &str>(3) != "",
+            generated: !row.get::<_, &str>(3).is_empty(),
             key: false,
         });
     }

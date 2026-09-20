@@ -1,8 +1,8 @@
 #include "design_system/menu/menu.h"
 #include "design_system/theme.h"
 #include <QEvent>
-#include <QGuiApplication>
 #include <QGraphicsEffect>
+#include <QGuiApplication>
 #include <QImage>
 #include <QMenu>
 #include <QPainter>
@@ -99,8 +99,7 @@ class MenuShadowEffect final : public QGraphicsEffect {
                     auto* row = reinterpret_cast<QRgb*>(colored.scanLine(y));
                     for (int x = 0; x < width; ++x) {
                         const int opacity = qRound(alpha[y * width + x] * layer.opacity);
-                        row[x] = qRgba(color.red() * opacity / 255,
-                                       color.green() * opacity / 255,
+                        row[x] = qRgba(color.red() * opacity / 255, color.green() * opacity / 255,
                                        color.blue() * opacity / 255, opacity);
                     }
                 }

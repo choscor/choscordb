@@ -15,7 +15,7 @@ fn document() -> EditorDocument {
 fn mixed_workspace_round_trips_order_active_pane_and_legacy_sql() {
     let mut store = Storage::in_memory().unwrap();
     let sql = document();
-    store.save_workspace(&[sql.clone()]).unwrap();
+    store.save_workspace(std::slice::from_ref(&sql)).unwrap();
     let old = store.restore_workspace_tabs().unwrap();
     assert_eq!(old.tabs, vec![WorkspaceTab::Sql(sql.clone())]);
     let object = WorkspaceTab::Object(ObjectTab {

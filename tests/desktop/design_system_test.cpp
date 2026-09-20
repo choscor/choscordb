@@ -43,13 +43,15 @@ class DesignSystemTest final : public QObject {
                                              manager.resolvedTheme().colors.danger.name()};
             int index = 0;
             for (const auto* variant : {"success", "warning", "danger"}) {
-                const auto selector = QStringLiteral("QLabel#toastRegion[variant=\"%1\"]")
-                                          .arg(variant);
+                const auto selector =
+                    QStringLiteral("QLabel#toastRegion[variant=\"%1\"]").arg(variant);
                 const auto rule = sheet.mid(sheet.indexOf(selector)).section('}', 0, 0);
-                QVERIFY2(rule.contains(QStringLiteral("background-color: %1")
-                                           .arg(expected.at(index))), qPrintable(rule));
-                QVERIFY2(rule.contains(QStringLiteral("border-left: 4px solid %1")
-                                           .arg(borders.at(index))), qPrintable(rule));
+                QVERIFY2(
+                    rule.contains(QStringLiteral("background-color: %1").arg(expected.at(index))),
+                    qPrintable(rule));
+                QVERIFY2(rule.contains(
+                             QStringLiteral("border-left: 4px solid %1").arg(borders.at(index))),
+                         qPrintable(rule));
                 ++index;
             }
         }
@@ -62,9 +64,10 @@ class DesignSystemTest final : public QObject {
             const auto sheet = applicationStyleSheet(manager.resolvedTheme(), manager.metrics());
             const auto titleRule = sheet.mid(sheet.indexOf(QStringLiteral("QDockWidget::title")));
             QVERIFY(titleRule.startsWith(QStringLiteral("QDockWidget::title")));
-            QVERIFY2(titleRule.section('}', 0, 0).contains(
-                QStringLiteral("color: %1;").arg(manager.resolvedTheme().colors.text.name())),
-                     qPrintable(titleRule.section('}', 0, 0)));
+            QVERIFY2(
+                titleRule.section('}', 0, 0).contains(
+                    QStringLiteral("color: %1;").arg(manager.resolvedTheme().colors.text.name())),
+                qPrintable(titleRule.section('}', 0, 0)));
         }
     }
 

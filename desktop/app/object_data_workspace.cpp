@@ -54,39 +54,49 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     auto* footer = new QHBoxLayout(footer_);
     footer->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
                                metrics.spacingSmall);
-    auto makeButton = [this, footer](const QString& text, const char* name) {
-        auto* button = new design::Button(text, footer_);
+    toolbar_ = new QWidget(this);
+    toolbar_->setObjectName("objectDataToolbar");
+    auto* toolbar = new QHBoxLayout(toolbar_);
+    toolbar->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
+                                metrics.spacingSmall);
+    layout->insertWidget(0, toolbar_);
+    auto makeButton = [](QHBoxLayout* target, const QString& label, const char* name,
+                         design::Icon icon) {
+        auto* button = new design::Button({}, target->parentWidget());
         button->setObjectName(name);
+        button->setAccessibleName(label);
+        button->setToolTip(label);
         button->setVariant(design::ButtonVariant::Outline);
-        button->setButtonSize(design::ButtonSize::Small);
-        footer->addWidget(button);
+        button->setButtonSize(design::ButtonSize::IconSmall);
+        button->setDesignIcon(icon);
+        target->addWidget(button);
         return button;
     };
     footer->addWidget(summary, 1);
-    auto* previous = makeButton({}, "objectDataPrevious");
-    previous->setAccessibleName(tr("Previous page"));
-    previous->setToolTip(tr("Previous page"));
-    previous->setDesignIcon(design::Icon::ChevronLeft);
-    previous->setButtonSize(design::ButtonSize::IconSmall);
-    auto* next = makeButton({}, "objectDataNext");
-    next->setAccessibleName(tr("Next page"));
-    next->setToolTip(tr("Next page"));
-    next->setDesignIcon(design::Icon::ChevronRight);
-    next->setButtonSize(design::ButtonSize::IconSmall);
-    auto* exportButton = makeButton(tr("Export…"), "objectDataExport");
-    auto* addRow = makeButton(tr("Add row"), "objectDataAddRow");
-    auto* deleteRows = makeButton(tr("Delete selected"), "objectDataDeleteRows");
-    auto* restoreRows = makeButton(tr("Restore selected"), "objectDataRestoreRows");
-    auto* setNull = makeButton(tr("Set NULL"), "objectDataSetNull");
-    auto* applyEdits = makeButton(tr("Apply…"), "objectDataApply");
-    auto* discardEdits = makeButton(tr("Discard"), "objectDataDiscard");
-    auto* refresh = makeButton({}, "objectDataRefresh");
-    refresh_ = refresh;
-    refresh->setAccessibleName(tr("Refresh object data"));
-    refresh->setToolTip(tr("Refresh object data"));
-    refresh->setDesignIcon(design::Icon::Refresh);
-    refresh->setButtonSize(design::ButtonSize::IconSmall);
-    auto* cancelButton = makeButton(tr("Cancel"), "objectDataCancel");
+    auto* previous =
+        makeButton(footer, tr("Previous page"), "objectDataPrevious", design::Icon::ChevronLeft);
+    auto* next = makeButton(footer, tr("Next page"), "objectDataNext", design::Icon::ChevronRight);
+    auto* exportButton =
+        makeButton(toolbar, tr("Export…"), "objectDataExport", design::Icon::Export);
+    auto* addRow = makeButton(toolbar, tr("Add row"), "objectDataAddRow", design::Icon::Add);
+    auto* deleteRows =
+        makeButton(toolbar, tr("Delete selected"), "objectDataDeleteRows", design::Icon::Close);
+    auto* restoreRows =
+        makeButton(toolbar, tr("Restore selected"), "objectDataRestoreRows", design::Icon::Refresh);
+    auto* setNull = makeButton(toolbar, tr("Set NULL"), "objectDataSetNull", design::Icon::Square);
+    // Keep the shared edit controls as command/state bindings for the table menu.
+    for (auto* button : {addRow, deleteRows, restoreRows, setNull}) {
+        toolbar->removeWidget(button);
+        button->hide();
+    }
+    auto* applyEdits = makeButton(toolbar, tr("Apply…"), "objectDataApply", design::Icon::Check);
+    auto* discardEdits =
+        makeButton(toolbar, tr("Discard"), "objectDataDiscard", design::Icon::Cancel);
+    refresh_ =
+        makeButton(toolbar, tr("Refresh object data"), "objectDataRefresh", design::Icon::Refresh);
+    auto* cancelButton =
+        makeButton(toolbar, tr("Cancel"), "objectDataCancel", design::Icon::Cancel);
+    toolbar->addStretch(1);
     layout->addWidget(footer_);
     // Reuse the production result lifecycle on the same engine. Object mode has
     // no SQL document and never enables execution/transaction/profile commands.
@@ -128,10 +138,10 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
         this);
     connect(cancel, &QAction::changed, cancelButton, [cancel, cancelButton] {
         cancelButton->setEnabled(cancel->isEnabled());
-        cancelButton->setText(cancel->text());
+        cancelButton->setAccessibleName(cancel->text());
+        cancelButton->setToolTip(cancel->text());
     });
     cancelButton->setEnabled(cancel->isEnabled());
-    cancelButton->hide();
     connect(cancelButton, &QPushButton::clicked, cancel, &QAction::trigger);
     connect(refresh_, &QPushButton::clicked, this,
             [this] { openObject(connection_, object_, label_, kind_); });
@@ -143,7 +153,6 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
             sql_->setExternalWork(busy);
         refresh_->setEnabled(!busy && !object_.isEmpty());
         cancelButton->setProperty("busy", busy);
-        cancelButton->setVisible(busy);
         emit busyChanged(busy);
     });
     connect(sql_, &QueryWorkspace::activityChanged, this,

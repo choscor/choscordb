@@ -304,12 +304,14 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
     } else if (id == "tabs") {
         auto* tabs = new QTabWidget(host);
         tabs->tabBar()->setProperty("designTabVariant", "document");
+        tabs->tabBar()->setElideMode(Qt::ElideRight);
+        tabs->tabBar()->setExpanding(false);
         tabs->setTabsClosable(true);
         tabs->setMovable(true);
         for (int i = 0; i < 8; ++i) {
             tabs->addTab(new QLabel("Sample document content", tabs),
-                         i == 0 ? "Document · modified"
-                                : QString("Long document %1 · 日本語").arg(i));
+                         themedIcon(Icon::Code, resolvedThemeForWidget(*host).colors.mutedText, 16),
+                         i == 0 ? "abc.sql" : QString("History query %1 · 日本語").arg(i));
         }
         QObject::connect(tabs, &QTabWidget::tabCloseRequested, tabs, [tabs](int index) {
             auto* page = tabs->widget(index);
@@ -343,9 +345,14 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         dockHost->addDockWidget(Qt::LeftDockWidgetArea, dock);
         dockHost->setCentralWidget(new QLabel("Drag the sidebar boundary", dockHost));
         layout->addWidget(dockHost, 1);
-        auto* splitter = new QSplitter(host);
-        splitter->addWidget(new QLabel("Navigator side", splitter));
-        splitter->addWidget(new QPlainTextEdit("Drag the shared splitter handle.", splitter));
+        auto* splitter = new QSplitter(Qt::Vertical, host);
+        splitter->setObjectName("previewEditorResultsSplit");
+        splitter->addWidget(new QPlainTextEdit("SELECT 1;", splitter));
+        splitter->addWidget(new QLabel("Results · drag to resize", splitter));
+        const DesignMetrics metrics;
+        splitter->setSizes({metrics.initialEditorHeight, metrics.initialResultsHeight});
+        splitter->setStretchFactor(0, 1);
+        splitter->setStretchFactor(1, 1);
         layout->addWidget(splitter, 1);
         auto* line = new QFrame(host);
         line->setFrameShape(QFrame::HLine);
@@ -486,7 +493,8 @@ void populateIcons(QWidget* host, QVBoxLayout* layout) {
         auto* disabled = new IconDisplay(entry.role, 16, true, host);
         grid->addWidget(disabled, row++, column);
     }
-    layout->addWidget(new QLabel("Name · 12 / 14 / 16 / 20 / 24 logical pixels · disabled", host));
+    layout->addWidget(
+        new QLabel("Semantic name · 12 / 14 / 16 / 20 / 24 logical pixels · disabled", host));
     layout->addLayout(grid);
     layout->addStretch();
 }
@@ -615,6 +623,7 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
         new Text(destructive ? "This preview records your choice only. No data is changed."
                              : "A reusable panel with a real keyboard focus boundary.",
                  dialog);
+    description->setObjectName("previewDialogDescription");
     description->setWordWrap(true);
     content->addWidget(description);
     auto* input = new QLineEdit(dialog);
@@ -732,6 +741,15 @@ void populateFields(QWidget* host, QVBoxLayout* layout) {
     layout->addStretch();
 }
 void populateButtons(QWidget* host, QVBoxLayout* layout) {
+    auto* sidebarTab = new Button("Connections", host);
+    sidebarTab->setObjectName("previewSidebarTab");
+    sidebarTab->setVariant(ButtonVariant::Ghost);
+    sidebarTab->setButtonContext(ButtonContext::SidebarTab);
+    sidebarTab->setDesignIcon(Icon::Database);
+    sidebarTab->setCheckable(true);
+    sidebarTab->setChecked(true);
+    layout->addWidget(sidebarTab);
+
     const QList<QPair<QString, ButtonVariant>> variants = {
         {"default", ButtonVariant::Default},         {"secondary", ButtonVariant::Secondary},
         {"outline", ButtonVariant::Outline},         {"ghost", ButtonVariant::Ghost},

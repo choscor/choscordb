@@ -2,8 +2,8 @@
 #include "design_system/menu/menu.h"
 #include "design_system/theme_manager.h"
 
-#include <QAbstractItemView>
 #include <QAbstractButton>
+#include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
@@ -132,13 +132,14 @@ class ControlStyleTest final : public QObject {
         combo.hidePopup();
         QCoreApplication::processEvents();
         const auto dpr = openArrow.devicePixelRatio();
-        const auto arrowArea = QRect(qRound((combo.width() - 24) * dpr), 0,
-                                     qRound(24 * dpr), qRound(combo.height() * dpr));
+        const auto arrowArea = QRect(qRound((combo.width() - 24) * dpr), 0, qRound(24 * dpr),
+                                     qRound(combo.height() * dpr));
         QVERIFY(combo.grab().toImage().copy(arrowArea) != openArrow.copy(arrowArea));
         combo.showPopup();
         QCoreApplication::processEvents();
         QCOMPARE(view->window()->style()->pixelMetric(QStyle::PM_DefaultFrameWidth, nullptr,
-                                                       view->window()), 0);
+                                                      view->window()),
+                 0);
         const auto viewImage = view->grab().toImage();
         QCOMPARE(viewImage.pixelColor(viewImage.width() - 1, viewImage.height() / 2),
                  QColor("#e7ebed"));
@@ -229,8 +230,7 @@ class ControlStyleTest final : public QObject {
                     strongestOutsideAlpha =
                         qMax(strongestOutsideAlpha, menuImage.pixelColor(x, y).alpha());
         QVERIFY2(strongestOutsideAlpha >= 10 && strongestOutsideAlpha <= 30,
-                 qPrintable(QString("Menu shadow outside panel: %1")
-                                .arg(strongestOutsideAlpha)));
+                 qPrintable(QString("Menu shadow outside panel: %1").arg(strongestOutsideAlpha)));
         QVERIFY(menu.windowFlags().testFlag(Qt::NoDropShadowWindowHint));
         QVERIFY(submenu->windowFlags().testFlag(Qt::NoDropShadowWindowHint));
         saveNativeSurface(root,
@@ -275,9 +275,9 @@ class ControlStyleTest final : public QObject {
         option.editable = combo.isEditable();
         option.frame = combo.hasFrame();
         const auto textArea = combo.style()->subControlRect(QStyle::CC_ComboBox, &option,
-                                                             QStyle::SC_ComboBoxEditField, &combo);
+                                                            QStyle::SC_ComboBoxEditField, &combo);
         const auto buttonArea = combo.style()->subControlRect(QStyle::CC_ComboBox, &option,
-                                                               QStyle::SC_ComboBoxArrow, &combo);
+                                                              QStyle::SC_ComboBoxArrow, &combo);
         QVERIFY(textArea.right() >= buttonArea.left() - 12);
         const auto capture = combo.grab();
         const auto image = capture.toImage();
@@ -361,6 +361,37 @@ class ControlStyleTest final : public QObject {
         QCOMPARE(document.pixelColor(qRound(4 * scale), qRound(12 * scale)), QColor("#ffffff"));
         QCOMPARE(tabs.height(), 33);
     }
+    void documentOverflowDoesNotPaintTornEdges() {
+        using namespace choscordb::design;
+        QWidget root;
+        ThemeManager theme;
+        theme.applyTo(root);
+        QTabBar tabs(&root);
+        tabs.setProperty("designTabVariant", "document");
+        tabs.setExpanding(false);
+        tabs.setTabsClosable(true);
+        for (int i = 0; i < 8; ++i)
+            tabs.addTab(QString("History query %1").arg(i));
+        tabs.resize(350, 33);
+        root.resize(350, 60);
+        root.show();
+        tabs.setCurrentIndex(7);
+        QCoreApplication::processEvents();
+        QVERIFY(tabs.findChild<QToolButton*>("ScrollLeftButton")->isVisible());
+        QStyleOptionTab option;
+        option.initFrom(&tabs);
+        option.rect = QRect(0, 0, 8, 33);
+        for (auto edge : {QStyle::PE_IndicatorTabTearLeft, QStyle::PE_IndicatorTabTearRight}) {
+            QImage image(8, 33, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            tabs.style()->drawPrimitive(edge, &option, &painter, &tabs);
+            painter.end();
+            QImage clear(image.size(), image.format());
+            clear.fill(Qt::transparent);
+            QCOMPARE(image, clear);
+        }
+    }
     void closableDocumentTabsUseCompactHeight() {
         using namespace choscordb::design;
         QWidget root;
@@ -368,8 +399,10 @@ class ControlStyleTest final : public QObject {
         theme.applyTo(root);
         QTabBar tabs(&root);
         tabs.setProperty("designTabVariant", "document");
+        tabs.setExpanding(false);
         tabs.setTabsClosable(true);
         tabs.addTab("Query · modified");
+        tabs.addTab("A much longer history query title");
         root.show();
         QCoreApplication::processEvents();
         QCOMPARE(tabs.sizeHint().height(), 33);
@@ -379,6 +412,9 @@ class ControlStyleTest final : public QObject {
         auto* close = tabs.tabButton(0, side);
         QVERIFY(close);
         QVERIFY(tabs.tabRect(0).contains(close->geometry()));
+        QCOMPARE(tabs.tabRect(0).width(), tabs.tabRect(1).width());
+        QVERIFY2(tabs.tabRect(0).width() <= 118,
+                 qPrintable(QString::number(tabs.tabRect(0).width())));
     }
     void inputTrackingResetsBodyTrackingAndRemainsEditable() {
         using namespace choscordb::design;
@@ -630,7 +666,7 @@ class ControlStyleTest final : public QObject {
                     ++selectedInk;
         QVERIFY(selectedInk > 10);
     }
-    void navigationRowsUseTheSeparateReferenceSize() {
+    void navigationRowsUseCompactGeometry() {
         using namespace choscordb::design;
         QWidget root;
         ThemeManager theme;
@@ -642,7 +678,7 @@ class ControlStyleTest final : public QObject {
         tree.resize(300, 120);
         root.show();
         QCoreApplication::processEvents();
-        QCOMPARE(tree.visualItemRect(tree.topLevelItem(0)).height(), 33);
+        QCOMPARE(tree.visualItemRect(tree.topLevelItem(0)).height(), 28);
         tree.setCurrentItem(tree.topLevelItem(0));
         const auto row = tree.visualItemRect(tree.topLevelItem(0));
         QCOMPARE(tree.viewport()->grab().toImage().pixelColor(row.right() - 12, row.center().y()),
@@ -669,13 +705,13 @@ class ControlStyleTest final : public QObject {
         const auto row = tree.visualItemRect(tree.topLevelItem(0));
         QTest::mouseMove(tree.viewport(), QPoint(row.center().x(), row.bottom() + 10));
         QTest::mouseMove(tree.viewport(), row.center());
-        QTRY_COMPARE_WITH_TIMEOUT(
-            ([&] {
-                const auto image = tree.viewport()->grab().toImage();
-                const auto scale = image.devicePixelRatio();
-                return image.pixelColor(qRound(row.right() * scale), qRound(row.top() * scale));
-            }()),
-            QColor("#f2f5f4"), 1000);
+        QTRY_COMPARE_WITH_TIMEOUT(([&] {
+                                      const auto image = tree.viewport()->grab().toImage();
+                                      const auto scale = image.devicePixelRatio();
+                                      return image.pixelColor(qRound(row.right() * scale),
+                                                              qRound(row.top() * scale));
+                                  }()),
+                                  QColor("#f2f5f4"), 1000);
     }
     void listSelectionFillsSquareRowCorners() {
         using namespace choscordb::design;
@@ -1165,8 +1201,7 @@ class ControlStyleTest final : public QObject {
             radio.style()->subElementRect(QStyle::SE_RadioButtonIndicator, &option, &radio);
         QCOMPARE(indicator.size(), QSize(18, 18));
         const auto image = radio.grab().toImage();
-        QCOMPARE(image.pixelColor(indicator.center().x(), indicator.top() + 3),
-                 QColor("#287f66"));
+        QCOMPARE(image.pixelColor(indicator.center().x(), indicator.top() + 3), QColor("#287f66"));
         QCOMPARE(image.pixelColor(indicator.center()), QColor(Qt::white));
     }
     void disabledCheckedIndicatorUsesMutedGreenOutlineAndCheck() {

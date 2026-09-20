@@ -20,8 +20,11 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QImage>
+#include <QKeySequenceEdit>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSignalSpy>
 #include <QtTest>
 
@@ -119,6 +122,39 @@ class SecondaryDesignTest final : public QObject {
             QCOMPARE(capture.toImage().pixelColor(point * capture.devicePixelRatio()),
                      mode == design::ThemeMode::Light ? QColor("#ffffff") : QColor("#20272b"));
         }
+        preferences.close();
+    }
+
+    void compactPreferencesKeepScrollablePagesUsable() {
+        using namespace choscordb;
+        EngineAdapter adapter;
+        QList<ShortcutDescriptor> shortcuts;
+        for (int index = 0; index < 20; ++index)
+            shortcuts.append(
+                {QString::number(index), QString("Synthetic action %1").arg(index), {}});
+        PreferencesDialog preferences(&adapter, shortcuts);
+        design::ThemeManager theme;
+        theme.applyTo(preferences);
+        preferences.show();
+        QCoreApplication::processEvents();
+        QCOMPARE(preferences.height(), 412);
+        auto* tabs = preferences.findChild<QTabWidget*>("preferencesSections");
+        QVERIFY(tabs);
+        tabs->setCurrentIndex(4);
+        QCoreApplication::processEvents();
+        auto* scroll = qobject_cast<QScrollArea*>(tabs->currentWidget());
+        QVERIFY(scroll);
+        auto* lastShortcut = scroll->findChild<QKeySequenceEdit*>("shortcut_19");
+        QVERIFY(lastShortcut);
+        QVERIFY(scroll->verticalScrollBar()->maximum() > 0);
+        scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
+        QCoreApplication::processEvents();
+        QVERIFY(scroll->viewport()->rect().contains(lastShortcut->mapTo(
+            scroll->viewport(), QPoint(lastShortcut->width() / 2, lastShortcut->height() - 1))));
+        auto* apply = preferences.findChild<QPushButton*>("preferencesApply");
+        QVERIFY(apply);
+        QVERIFY(preferences.rect().contains(
+            QRect(apply->mapTo(&preferences, QPoint{}), apply->size())));
         preferences.close();
     }
 

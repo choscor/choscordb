@@ -167,6 +167,10 @@ void Button::paintEvent(QPaintEvent*) {
         foreground = colors.primary;
         break;
     }
+    if (context_ == ButtonContext::SidebarTab && isChecked()) {
+        background = colors.subtleAccent;
+        foreground = colors.sidebarAccentForeground;
+    }
     if (context_ == ButtonContext::Choice && isChecked()) {
         background = colors.subtleAccent;
         foreground = colors.sidebarAccentForeground;

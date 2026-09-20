@@ -95,8 +95,11 @@ void DialogShell::applyLayoutMetrics() {
 }
 
 void DialogShell::ensureContentHeight() {
-    if (auto* root = layout(); root && root->hasHeightForWidth())
-        setMinimumHeight(root->totalHeightForWidth(width()));
+    if (auto* root = layout(); root && root->hasHeightForWidth()) {
+        // Scrollable content may prefer more room without requiring it. Only grow
+        // for the layout's minimum, including labels that wrap at this width.
+        setMinimumHeight(root->totalMinimumHeightForWidth(width()));
+    }
 }
 
 } // namespace choscordb

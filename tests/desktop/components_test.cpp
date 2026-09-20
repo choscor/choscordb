@@ -9,6 +9,27 @@
 class ComponentsTest final : public QObject {
     Q_OBJECT
   private slots:
+    void sidebarSelectionUsesGreenAccent() {
+        using namespace choscordb::design;
+        for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
+            QWidget root;
+            ThemeManager theme;
+            theme.setMode(mode);
+            theme.applyTo(root);
+            Button button("", &root);
+            button.setVariant(ButtonVariant::Ghost);
+            button.setButtonContext(ButtonContext::SidebarTab);
+            button.setCheckable(true);
+            button.resize(100, 29);
+            root.show();
+            button.setChecked(true);
+            const auto selected = button.grab().toImage();
+            const auto colors = resolvedThemeForWidget(button).colors;
+            QCOMPARE(selected.pixelColor(20, 14), colors.subtleAccent);
+            button.setChecked(false);
+            QVERIFY(button.grab().toImage().pixelColor(20, 14) != colors.subtleAccent);
+        }
+    }
     void primaryKeyboardFocusContrastsWithTheActionFill_data() {
         QTest::addColumn<bool>("dark");
         QTest::addColumn<QColor>("expectedRing");
@@ -167,7 +188,7 @@ class ComponentsTest final : public QObject {
         Button button("Save");
         const int normalWidth = button.sizeHint().width();
         button.setLoading(true);
-        QCOMPARE(button.sizeHint().width(), normalWidth + 26);
+        QCOMPARE(button.sizeHint().width(), normalWidth + 22);
         button.setButtonSize(ButtonSize::Icon);
         QCOMPARE(button.sizeHint(), QSize(36, 36));
     }
@@ -213,8 +234,7 @@ class ComponentsTest final : public QObject {
         const int scale = qRound(image.devicePixelRatio());
         const int seam = next.x() * scale;
         const int sampleY = 5 * scale;
-        QVERIFY(image.pixelColor(seam, sampleY) !=
-                image.pixelColor(seam - scale, sampleY));
+        QVERIFY(image.pixelColor(seam, sampleY) != image.pixelColor(seam - scale, sampleY));
         previous.setFocus(Qt::TabFocusReason);
         QTest::keyClick(&previous, Qt::Key_Tab);
         QVERIFY(next.hasFocus());

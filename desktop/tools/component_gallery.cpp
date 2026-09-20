@@ -16,9 +16,7 @@ int main(int argc, char** argv) {
     parser.addHelpOption();
     parser.addOption(
         {"export", "Write a deterministic PNG and .json metadata, then exit.", "path"});
-    parser.addOption({"section",
-                      "Select Tokens, Typography, Icons, or Components.",
-                      "name"});
+    parser.addOption({"section", "Select Tokens, Typography, Icons, or Components.", "name"});
     parser.addOption({"specimen", "Select a specimen ID (see --list).", "id"});
     parser.addOption(
         {"single", "Export only the Light specimen (640x900); default comparison is 1280x900."});

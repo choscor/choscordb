@@ -102,15 +102,16 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
     footer->addWidget(status_, 1);
-    retry_ = new design::Button(tr("Retry"), headerBody);
+    setContextMenuPolicy(Qt::ActionsContextMenu);
+    retry_ = new QAction(tr("Retry"), this);
     retry_->setObjectName("objectRetry");
-    retry_->hide();
-    header->addWidget(retry_);
-    reconnect_ = new design::Button(tr("Reconnect…"), headerBody);
+    retry_->setEnabled(false);
+    addAction(retry_);
+    reconnect_ = new QAction(tr("Reconnect…"), this);
     reconnect_->setObjectName("objectReconnect");
-    reconnect_->hide();
-    header->addWidget(reconnect_);
-    connect(reconnect_, &QPushButton::clicked, this, &ObjectExplorer::reconnectRequested);
+    reconnect_->setEnabled(false);
+    addAction(reconnect_);
+    connect(reconnect_, &QAction::triggered, this, &ObjectExplorer::reconnectRequested);
     auto* refresh = new design::Button(tr("Refresh"), headerBody);
     refresh->setVariant(design::ButtonVariant::Outline);
     refresh->setButtonSize(design::ButtonSize::Small);
@@ -141,6 +142,16 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     }
     header->addWidget(generate_);
     header->addStretch(1);
+    for (auto* button : {refresh_, open_, generate_}) {
+        button->setAccessibleName(button->text());
+        button->setToolTip(button->text());
+        button->setText({});
+        auto* iconButton = qobject_cast<design::Button*>(button);
+        iconButton->setButtonSize(design::ButtonSize::IconSmall);
+        iconButton->setDesignIcon(button == open_       ? design::Icon::File
+                                  : button == generate_ ? design::Icon::Code
+                                                        : design::Icon::Refresh);
+    }
     updateActions();
     connect(refresh_, &QPushButton::clicked, this, &ObjectExplorer::requestPane);
     layout->addWidget(footerBody);
@@ -158,7 +169,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         if (!restoredInert_)
             requestPane();
     });
-    connect(retry_, &QPushButton::clicked, this, &ObjectExplorer::requestPane);
+    connect(retry_, &QAction::triggered, this, &ObjectExplorer::requestPane);
     connect(
         adapter_, &EngineAdapter::eventReady, this,
         [this](const BridgeEvent& event) {
@@ -186,7 +197,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                 model_->clear();
                 setStatus("failed", tr("Metadata failed: %1").arg(error));
                 refresh_->setEnabled(!operationBusy_);
-                retry_->show();
+                retry_->setEnabled(true);
             });
 }
 void ObjectExplorer::openObject(quint64 connection, const QString& object, const QString& label,
@@ -206,14 +217,14 @@ void ObjectExplorer::openObject(quint64 connection, const QString& object, const
         connection_ = connection;
         label_ = label;
         properties_ = properties;
-        reconnect_->hide();
+        reconnect_->setEnabled(false);
         updateActions();
         activateRestoredObject();
         return;
     }
     connection_ = connection;
     restoredInert_ = false;
-    reconnect_->hide();
+    reconnect_->setEnabled(false);
     columns_.clear();
     columnsLoaded_ = false;
     tabs_->setEnabled(true);
@@ -253,7 +264,7 @@ void ObjectExplorer::restoreObject(std::optional<quint64> connection, const QStr
     tabs_->setTabText(0, basic ? tr("Details") : tr("Columns"));
     for (int i = 1; i < 5; ++i)
         tabs_->setTabVisible(i, !basic || i == 3);
-    reconnect_->setVisible(!connection_);
+    reconnect_->setEnabled(!connection_);
     updateActions();
     updateFooter();
     setStatus(connection_ ? "restored" : "disconnected",
@@ -281,8 +292,8 @@ void ObjectExplorer::setDisconnected() {
     requestToken_ = 0;
     model_->clear();
     ddl_->clear();
-    retry_->hide();
-    reconnect_->show();
+    retry_->setEnabled(false);
+    reconnect_->setEnabled(true);
     refresh_->setEnabled(false);
     updateActions();
     updateFooter();
@@ -300,8 +311,7 @@ void ObjectExplorer::requestPane() {
     }
     model_->clear();
     ddl_->clear();
-    retry_->hide();
-    refresh_->setVisible(tabs_->currentIndex() != 4);
+    retry_->setEnabled(false);
     refresh_->setEnabled(false);
     if (tabs_->currentIndex() == 0 &&
         (kind_ == "index" || kind_ == "sequence" || kind_ == "function")) {
@@ -505,14 +515,14 @@ void ObjectExplorer::installDataWidget(QWidget* widget) {
     if (auto* data = qobject_cast<ObjectDataWorkspace*>(widget)) {
         auto* header = findChild<QWidget*>("objectHeader");
         auto* headerLayout = qobject_cast<QHBoxLayout*>(header->layout());
-        for (const char* name : {"objectDataExport", "objectDataRefresh", "objectDataCancel"}) {
-            if (auto* action = data->findChild<QPushButton*>(name)) {
-                data->footerWidget()->layout()->removeWidget(action);
-                action->setParent(header);
-                headerLayout->addWidget(action);
-                dataHeaderActions_.append(action);
-            }
-        }
+        auto* toolbar = data->toolbarWidget();
+        data->layout()->removeWidget(toolbar);
+        toolbar->setParent(header);
+        auto* toolbarLayout = qobject_cast<QHBoxLayout*>(toolbar->layout());
+        toolbarLayout->setContentsMargins(0, 0, 0, 0);
+        delete toolbarLayout->takeAt(toolbarLayout->count() - 1);
+        headerLayout->insertWidget(headerLayout->count() - 1, toolbar);
+        dataHeaderActions_.append(toolbar);
         dataFooter_ = data->footerWidget();
         if (dataFooter_) {
             widget->layout()->removeWidget(dataFooter_);
@@ -528,17 +538,17 @@ void ObjectExplorer::updateFooter() {
     const bool data = dataFooter_ && tabs_->currentIndex() == 4 && connection_.has_value();
     for (const auto& action : dataHeaderActions_)
         if (action)
-            action->setVisible(data && (action->objectName() != "objectDataCancel" ||
-                                        action->property("busy").toBool()));
+            action->setEnabled(data);
     if (dataFooter_)
         dataFooter_->setVisible(data);
     status_->setVisible(!data);
-    refresh_->setVisible(!data);
+    refresh_->setEnabled(!data && !operationBusy_ && connection_.has_value() && !requestToken_);
 }
 void ObjectExplorer::setOperationBusy(bool busy) {
     operationBusy_ = busy;
     updateActions();
-    refresh_->setEnabled(!busy && connection_.has_value() && !requestToken_);
+    refresh_->setEnabled(!busy && tabs_->currentIndex() != 4 && connection_.has_value() &&
+                         !requestToken_);
     if (busy)
         activePane_ = tabs_->currentIndex();
     else if (status_->property("state") == "busy")

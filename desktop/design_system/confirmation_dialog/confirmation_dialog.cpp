@@ -154,8 +154,7 @@ void ConfirmationDialog::prepareContent() {
                 const int row = cell.row + 1 - (cell.row >= 2 ? 1 : 0);
                 const int rows = cell.row == 0 && cell.rows > 1 ? cell.rows - 1 : cell.rows;
                 const int column = cell.column > 1 ? cell.column - 1 : cell.column;
-                grid->addItem(cell.item, row, column, rows, cell.columns,
-                              cell.item->alignment());
+                grid->addItem(cell.item, row, column, rows, cell.columns, cell.item->alignment());
             }
             grid->addWidget(heading_, 0, 0, 1, qMax(1, columns - 1));
         }

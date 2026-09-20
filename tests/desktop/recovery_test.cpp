@@ -140,9 +140,9 @@ class RecoveryTest : public QObject {
         workspace->adapter()->saveProfile(profile, 45);
         auto* savedConnections = window.findChild<QListWidget*>("savedConnections");
         QTRY_COMPARE(savedConnections->count(), 1);
-        auto* reconnect = explorer->findChild<QPushButton*>("objectReconnect");
+        auto* reconnect = explorer->findChild<QAction*>("objectReconnect");
         QVERIFY(reconnect);
-        reconnect->click();
+        reconnect->trigger();
         QTRY_VERIFY(!explorer->needsConnection());
         auto* editor = qobject_cast<SqlEditor*>(tabs->widget(1));
         QVERIFY(editor);

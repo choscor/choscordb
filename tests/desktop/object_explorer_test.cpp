@@ -66,9 +66,12 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(inspections.count(), 0);
         auto* status = explorer.findChild<QLabel*>("objectStatus");
         QCOMPARE(status->property("state").toString(), QString("disconnected"));
-        auto* button = explorer.findChild<QPushButton*>("objectReconnect");
-        QVERIFY(button->isVisible());
-        button->click();
+        QVERIFY(!explorer.findChild<QPushButton*>("objectReconnect"));
+        auto* action = explorer.findChild<QAction*>("objectReconnect");
+        QVERIFY(action);
+        QVERIFY(explorer.actions().contains(action));
+        QVERIFY(action->isEnabled());
+        action->trigger();
         QCOMPARE(reconnect.count(), 1);
     }
     void actionsBelongToContextualHeaderAndStatusToFooter() {
@@ -78,15 +81,24 @@ class ObjectExplorerTest final : public QObject {
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
         QVERIFY(header);
         QVERIFY(footer);
-        for (const char* name : {"objectRefresh", "objectOpenQuery", "objectGenerateSql",
-                                 "objectRetry", "objectReconnect"}) {
+        for (const char* name : {"objectRefresh", "objectOpenQuery", "objectGenerateSql"}) {
             auto* action = explorer.findChild<QPushButton*>(name);
             QVERIFY(action);
             QCOMPARE(action->parentWidget(), header);
+            QVERIFY(action->text().isEmpty());
+            QVERIFY(!action->icon().isNull());
+            QVERIFY(!action->accessibleName().isEmpty());
         }
         QCOMPARE(explorer.findChild<QLabel*>("objectStatus")->parentWidget(), footer);
         explorer.show();
         QCoreApplication::processEvents();
+        for (const char* name : {"objectRetry", "objectReconnect"}) {
+            QVERIFY(!explorer.findChild<QPushButton*>(name));
+            auto* action = explorer.findChild<QAction*>(name);
+            QVERIFY(action);
+            QVERIFY(explorer.actions().contains(action));
+            QVERIFY(!action->isEnabled());
+        }
         auto* refresh = explorer.findChild<QPushButton*>("objectRefresh");
         QVERIFY(refresh->geometry().left() < header->width() / 2);
     }
@@ -319,9 +331,10 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(later);
         adapter.fetchPage(*later);
         QTRY_COMPARE(finished, 3);
-        auto* retry = explorer.findChild<QPushButton*>("objectRetry");
-        QVERIFY(retry->isVisible());
-        QTest::mouseClick(retry, Qt::LeftButton);
+        auto* retry = explorer.findChild<QAction*>("objectRetry");
+        QVERIFY(retry);
+        QVERIFY(retry->isEnabled());
+        retry->trigger();
         QTRY_COMPARE(status->property("state").toString(), QString("loaded"));
         auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
         QVERIFY(ddl->toPlainText().contains("CREATE TABLE later"));

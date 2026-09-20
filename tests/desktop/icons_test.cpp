@@ -155,6 +155,8 @@ class IconsTest final : public QObject {
         QVERIFY(names.contains("search"));
         QVERIFY(names.contains("database"));
         QVERIFY(names.contains("copy"));
+        QVERIFY(names.contains("cancel"));
+        QVERIFY(names.contains("square"));
         QCOMPARE(names.removeDuplicates(), 0);
     }
 

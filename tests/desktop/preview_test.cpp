@@ -1,6 +1,7 @@
 #include "design_system/button/button.h"
 #include "design_system/control_style.h"
 #include "design_system/dialog_sections/dialog_sections.h"
+#include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/field/field.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/text/text.h"
@@ -41,7 +42,10 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSpinBox>
+#include <QSplitter>
 #include <QSvgRenderer>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QTableView>
 #include <QTableWidget>
 #include <QTemporaryDir>
@@ -128,6 +132,38 @@ class PreviewTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void editorResultsSplitUsesEqualPanesInBothThemes() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("separators-splitters"));
+        window.show();
+        QCoreApplication::processEvents();
+        for (const auto* name : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(name);
+            QVERIFY(host);
+            auto* splitter = host->findChild<QSplitter*>("previewEditorResultsSplit");
+            QVERIFY(splitter);
+            QCOMPARE(splitter->orientation(), Qt::Vertical);
+            const auto sizes = splitter->sizes();
+            QVERIFY(qAbs(sizes[0] - sizes[1]) <= 2);
+        }
+    }
+
+    void documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
+        choscordb::design::PreviewWindow window;
+        QVERIFY(window.selectSpecimen("tabs"));
+        window.show();
+        QCoreApplication::processEvents();
+        for (const auto* theme : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(theme);
+            QVERIFY(host);
+            auto* tabs = host->findChild<QTabWidget*>();
+            QVERIFY(tabs);
+            QCOMPARE(tabs->tabText(0), QString("abc.sql"));
+            QVERIFY(!tabs->tabIcon(0).isNull());
+            QCOMPARE(tabs->tabBar()->tabRect(0).width(), tabs->tabBar()->tabRect(1).width());
+            QVERIFY(tabs->tabBar()->tabRect(0).width() <= 118);
+        }
+    }
     void richTextParagraphsHaveCompactSpacing() {
         choscordb::design::PreviewWindow window;
         QVERIFY(window.selectSpecimen("textareas"));
@@ -285,25 +321,30 @@ class PreviewTest final : public QObject {
         choscordb::design::PreviewWindow window;
         QVERIFY(window.selectSpecimen("nonmodal"));
         window.show();
-        auto* host = window.findChild<QWidget*>("previewLight");
-        QVERIFY(host);
-        auto* open = host->findChild<QPushButton*>("previewOpenDialog");
-        auto* dialog = host->findChild<QDialog*>("previewActualDialog");
-        QVERIFY(open && dialog);
-        open->click();
-        QTRY_VERIFY(dialog->isVisible());
-        dialog->resize(338, dialog->height());
-        QCoreApplication::processEvents();
-        choscordb::design::Text* description = nullptr;
-        for (auto* label : dialog->findChildren<choscordb::design::Text*>()) {
-            if (label->wordWrap())
-                description = label;
+        for (const auto* theme : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(theme);
+            QVERIFY(host);
+            auto* open = host->findChild<QPushButton*>("previewOpenDialog");
+            auto* dialog = host->findChild<choscordb::DialogShell*>("previewActualDialog");
+            QVERIFY(open && dialog);
+            open->click();
+            QTRY_VERIFY(dialog->isVisible());
+            auto* description =
+                host->findChild<choscordb::design::Text*>("previewDialogDescription");
+            QVERIFY(description);
+            for (const int width : {338, 280}) {
+                dialog->resize(width, 1);
+                QCoreApplication::processEvents();
+                QVERIFY(description->heightForWidth(description->width()) >
+                        description->sizeHint().height());
+                QVERIFY(description->height() >= description->heightForWidth(description->width()));
+                for (auto* button : dialog->findChildren<QPushButton*>()) {
+                    QVERIFY(dialog->rect().contains(
+                        QRect(button->mapTo(dialog, QPoint{}), button->size())));
+                }
+            }
+            dialog->reject();
         }
-        QVERIFY(description);
-        QVERIFY(description->heightForWidth(description->width()) >
-                description->sizeHint().height());
-        QVERIFY(description->height() >= description->heightForWidth(description->width()));
-        dialog->reject();
     }
     void galleryOpenKeepsAppModalityAndNativeCorners_data() {
         QTest::addColumn<QString>("specimen");
@@ -687,12 +728,19 @@ class PreviewTest final : public QObject {
     void iconsShowNamedProductionAssetsAtSupportedSizes() {
         choscordb::design::PreviewWindow window;
         QVERIFY(window.selectSpecimen("icons"));
-        auto* light = window.findChild<QWidget*>("previewLight");
-        for (int size : {12, 14, 16, 20, 24}) {
-            auto* icon = light->findChild<QLabel*>(QString("icon-database-%1").arg(size));
-            QVERIFY(icon);
-            QCOMPARE(icon->sizeHint(), QSize(size, size));
-            QCOMPARE(icon->accessibleName(), QString("database · %1 pixels").arg(size));
+        for (const auto* theme : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(theme);
+            QVERIFY(host);
+            for (const auto* name : {"database", "cancel", "square"}) {
+                for (int size : {12, 14, 16, 20, 24}) {
+                    const auto icons =
+                        host->findChildren<QLabel*>(QString("icon-%1-%2").arg(name).arg(size));
+                    QCOMPARE(icons.size(), 1);
+                    auto* icon = icons.front();
+                    QCOMPARE(icon->sizeHint(), QSize(size, size));
+                    QCOMPARE(icon->accessibleName(), QString("%1 · %2 pixels").arg(name).arg(size));
+                }
+            }
         }
     }
 
@@ -755,15 +803,39 @@ class PreviewTest final : public QObject {
         auto* readOnly = light->findChild<QLineEdit*>("field-readonly");
         QVERIFY(readOnly);
         QVERIFY(readOnly->isReadOnly());
-        auto* invalid = light->findChild<QLineEdit*>("field-invalid");
-        QVERIFY(invalid);
-        QVERIFY(invalid->property("invalid").toBool());
-        auto* error = light->findChild<QLabel*>("field-error");
-        QVERIFY(error);
-        QVERIFY(error->text().contains("required"));
-        QCOMPARE(error->property("designRole").toString(), QString("fieldError"));
+        for (const auto* theme : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(theme);
+            QVERIFY(host);
+            auto* invalid = host->findChild<QLineEdit*>("field-invalid");
+            QVERIFY(invalid);
+            QVERIFY(invalid->property("invalid").toBool());
+            auto* validation = dynamic_cast<choscordb::design::FieldValidation*>(
+                host->findChild<QWidget*>("field-validation"));
+            QVERIFY(validation);
+            QCOMPARE(validation->control(), invalid);
+            QCOMPARE(validation->error(), QString("A value is required."));
+            QCOMPARE(invalid->accessibleDescription(), QString("A value is required."));
+            auto* error = validation->findChild<QLabel*>();
+            QVERIFY(error);
+            QCOMPARE(error->text(), QString("A value is required."));
+            QCOMPARE(error->property("designRole").toString(), QString("fieldError"));
+            QVERIFY(error->isVisible());
+        }
     }
 
+    void sidebarTabSpecimenUsesProductionContextInBothThemes() {
+        using namespace choscordb::design;
+        PreviewWindow window;
+        QVERIFY(window.selectSpecimen("buttons"));
+        for (const auto* name : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(name);
+            QVERIFY(host);
+            auto* tab = host->findChild<Button*>("previewSidebarTab");
+            QVERIFY(tab);
+            QCOMPARE(tab->buttonContext(), ButtonContext::SidebarTab);
+            QVERIFY(tab->isChecked());
+        }
+    }
     void buttonsUseProductionVariantsAndStates() {
         using namespace choscordb::design;
         PreviewWindow window;

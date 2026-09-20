@@ -1,5 +1,6 @@
 #include "app/main_window.h"
 #include "app/object_data_workspace.h"
+#include "app/object_explorer.h"
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -15,6 +16,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -25,7 +27,99 @@
 #include <QtTest>
 class ObjectDataWorkspaceTest : public QObject {
     Q_OBJECT
+    static void triggerTableAction(QTableView* grid, const QString& label) {
+        QTimer::singleShot(0, grid, [label] {
+            auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            QVERIFY(menu);
+            const auto actions = menu->actions();
+            menu->close();
+            for (auto* action : actions) {
+                if (action->text() == label) {
+                    QVERIFY(action->isEnabled());
+                    action->trigger();
+                    return;
+                }
+            }
+            QFAIL(qPrintable("Missing table action: " + label));
+        });
+        grid->customContextMenuRequested(QPoint(10, 10));
+    }
+
   private slots:
+    void actionsStayAboveResultsAndFooterOnlyContainsPagination() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(1000, 600);
+        data.show();
+        auto* footer = data.footerWidget();
+        QCOMPARE(footer->findChildren<QPushButton*>().size(), 2);
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        for (const char* name : {"objectDataAddRow", "objectDataDeleteRows",
+                                 "objectDataRestoreRows", "objectDataSetNull"})
+            QVERIFY(!data.findChild<QPushButton*>(name)->isVisible());
+        QTimer::singleShot(0, &data, [] {
+            auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            QVERIFY(menu);
+            const auto actions = menu->actions();
+            menu->close();
+            QStringList labels;
+            for (auto* action : actions)
+                if (!action->isSeparator())
+                    labels << action->text();
+            QCOMPARE(labels,
+                     QStringList({"Copy selected cells", "Copy selected rows", "Copy current page",
+                                  "Add row", "Delete selected", "Restore selected", "Set NULL"}));
+            for (auto* action : actions)
+                if (!action->isSeparator())
+                    QVERIFY(!action->isEnabled());
+        });
+        grid->customContextMenuRequested(QPoint(10, 10));
+        for (const char* name : {"objectDataExport", "objectDataApply", "objectDataDiscard",
+                                 "objectDataRefresh", "objectDataCancel"}) {
+            auto* button = data.findChild<QPushButton*>(name);
+            QVERIFY(button);
+            QVERIFY(!footer->isAncestorOf(button));
+            QVERIFY(button->text().isEmpty());
+            QVERIFY(!button->icon().isNull());
+            QVERIFY(!button->accessibleName().isEmpty());
+            QVERIFY(!button->toolTip().isEmpty());
+            QVERIFY(button->isVisible());
+            QVERIFY(button->mapTo(&data, QPoint()).y() < grid->mapTo(&data, QPoint()).y());
+        }
+    }
+    void explorerKeepsDataActionsVisibleAndDisablesThemOnOtherPanes() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectExplorer explorer(sql->adapter());
+        explorer.resize(1000, 600);
+        auto* data = new choscordb::ObjectDataWorkspace(sql);
+        explorer.installDataWidget(data);
+        explorer.restoreObject(1, R"(["main","records"])", "records");
+        explorer.selectPane(4);
+        explorer.show();
+        QCoreApplication::processEvents();
+        auto* header = explorer.findChild<QWidget*>("objectHeader");
+        auto* footer = explorer.findChild<QWidget*>("objectFooter");
+        QCOMPARE(footer->findChildren<QPushButton*>().size(), 2);
+        auto* generate = explorer.findChild<QPushButton*>("objectGenerateSql");
+        int right = generate->geometry().right();
+        for (const char* name :
+             {"objectDataExport", "objectDataApply", "objectDataDiscard", "objectDataRefresh"}) {
+            auto* action = explorer.findChild<QPushButton*>(name);
+            QVERIFY(header->isAncestorOf(action));
+            QVERIFY(action->isVisible());
+            QVERIFY(action->mapTo(header, QPoint()).x() > right);
+            QVERIFY(action->mapTo(header, QPoint()).x() - right < 30);
+            right = action->mapTo(header, QPoint()).x() + action->width() - 1;
+        }
+        QVERIFY(explorer.findChild<QPushButton*>("objectDataCancel")->isVisible());
+        QVERIFY(!explorer.findChild<QPushButton*>("objectDataCancel")->isEnabled());
+        explorer.selectPane(0);
+        QVERIFY(!explorer.findChild<QPushButton*>("objectDataAddRow")->isVisible());
+        QVERIFY(!footer->findChild<QPushButton*>("objectDataNext")->isVisible());
+        QVERIFY(explorer.findChild<QPushButton*>("objectRefresh")->isVisible());
+    }
     void binaryOriginalAllowsInsertButPreventsUnsafeRowChanges() {
         choscordb::MainWindow window;
         window.show();
@@ -85,15 +179,15 @@ class ObjectDataWorkspaceTest : public QObject {
         auto* grid = data.findChild<QTableView*>("objectDataResults");
         auto* add = data.findChild<QPushButton*>("objectDataAddRow");
         QTRY_VERIFY(add->isEnabled());
-        add->click();
+        triggerTableAction(grid, "Add row");
         QVERIFY(grid->model()->setData(grid->model()->index(0, 0), QString("3")));
         QCOMPARE(grid->model()->index(0, 1).data().toString(), QString());
-        add->click();
+        triggerTableAction(grid, "Add row");
         QVERIFY(grid->model()->setData(grid->model()->index(1, 0), QString("4")));
         grid->setCurrentIndex(grid->model()->index(1, 1));
         auto* setNull = data.findChild<QPushButton*>("objectDataSetNull");
         QTRY_VERIFY(setNull->isEnabled());
-        setNull->click();
+        triggerTableAction(grid, "Set NULL");
         QVERIFY(grid->model()->index(1, 1).data(Qt::UserRole).toBool());
         QTimer::singleShot(0, &data, [] {
             auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
@@ -229,14 +323,19 @@ class ObjectDataWorkspaceTest : public QObject {
         auto* grid = data.findChild<QTableView*>("objectDataResults");
         QTRY_COMPARE(grid->model()->rowCount(), 2);
         QTRY_VERIFY(grid->model()->flags(grid->model()->index(0, 1)) & Qt::ItemIsEditable);
+        for (const char* name : {"objectDataAddRow", "objectDataDeleteRows", "objectDataApply"}) {
+            auto* action = data.findChild<QPushButton*>(name);
+            QVERIFY(!action->toolTip().isEmpty());
+            QVERIFY(action->text().isEmpty());
+        }
         QVERIFY(!(grid->model()->flags(grid->model()->index(0, 0)) & Qt::ItemIsEditable));
         grid->setSelectionMode(QAbstractItemView::MultiSelection);
         grid->selectRow(0);
         grid->selectRow(1);
-        data.findChild<QPushButton*>("objectDataDeleteRows")->click();
+        triggerTableAction(grid, "Delete selected");
         QVERIFY(grid->model()->index(0, 0).data(Qt::ToolTipRole).toString().contains("deletion"));
         QVERIFY(grid->model()->index(1, 0).data(Qt::ToolTipRole).toString().contains("deletion"));
-        data.findChild<QPushButton*>("objectDataRestoreRows")->click();
+        triggerTableAction(grid, "Restore selected");
         QVERIFY(!grid->model()->index(0, 0).data(Qt::ToolTipRole).toString().contains("deletion"));
         QVERIFY(!grid->model()->index(1, 0).data(Qt::ToolTipRole).toString().contains("deletion"));
         QVERIFY(grid->model()->setData(grid->model()->index(0, 1), QString("after")));

@@ -84,7 +84,8 @@ void EditorPreferencesController::initialize(EngineAdapter* adapter) {
                     loading_ = false;
                     window_->showToast(
                         tr("Preferences could not be loaded: %1. Open Preferences to retry.")
-                            .arg(error), ToastVariant::Danger);
+                            .arg(error),
+                        ToastVariant::Danger);
                 }
             });
     adapter_->getEditorPreferences(loadToken);

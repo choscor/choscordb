@@ -252,6 +252,19 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 connect(action, &QAction::triggered, this,
                         [copyScope, scope] { copyScope(scope); });
             }
+            if (widgets_.objectReadOnly) {
+                menu.addSeparator();
+                for (auto* button : {widgets_.addRow, widgets_.deleteRows, widgets_.restoreRows,
+                                     widgets_.setNull}) {
+                    if (!button)
+                        continue;
+                    auto* action = menu.addAction(button->accessibleName());
+                    action->setObjectName(button->objectName());
+                    action->setEnabled(button->isEnabled());
+                    action->setToolTip(button->toolTip());
+                    connect(action, &QAction::triggered, button, &QPushButton::click);
+                }
+            }
             menu.exec(
                 design::detail::contextMenuPosition(widgets_.grid->viewport()->mapToGlobal(point)));
         });
@@ -770,12 +783,14 @@ void QueryWorkspace::updateActions() {
     if (widgets_.addRow)
         widgets_.addRow->setToolTip(
             model_->canInsert()
-                ? QString{}
+                ? widgets_.addRow->accessibleName()
                 : (editReason_.isEmpty() ? tr("This result is read only.") : editReason_));
     if (widgets_.deleteRows)
         widgets_.deleteRows->setEnabled(model_->canDelete() && model_->rowCount() && !inFlight);
     if (widgets_.deleteRows)
-        widgets_.deleteRows->setToolTip(model_->canDelete() ? QString{} : editReason_);
+        widgets_.deleteRows->setToolTip(model_->canDelete() || editReason_.isEmpty()
+                                            ? widgets_.deleteRows->accessibleName()
+                                            : editReason_);
     if (widgets_.restoreRows)
         widgets_.restoreRows->setEnabled(model_->canDelete() && model_->hasPendingEdits() &&
                                          !inFlight);
@@ -794,7 +809,7 @@ void QueryWorkspace::updateActions() {
                     (pendingTransactions_.contains(*queryConnection_) ||
                      (widgets_.transactionActive && widgets_.transactionActive(*queryConnection_)))
                 ? tr("Commit or roll back the manual transaction before applying grid changes.")
-                : QString{});
+                : widgets_.applyEdits->accessibleName());
     if (widgets_.discardEdits)
         widgets_.discardEdits->setEnabled(model_->hasPendingEdits() && !inFlight);
     emit activityChanged(inFlight);

@@ -206,8 +206,8 @@ void paintDialogSurface(QWidget& widget, bool drawBorder) {
     painter.setBrush(colors.popover);
     painter.setPen(drawBorder ? QPen(colors.border, 1) : Qt::NoPen);
     const auto cornerRadius = resolveMetrics(Density::Compact, true).dialogRadius;
-    const auto bounds = drawBorder ? QRectF(widget.rect()).adjusted(.5, .5, -.5, -.5)
-                                   : QRectF(widget.rect());
+    const auto bounds =
+        drawBorder ? QRectF(widget.rect()).adjusted(.5, .5, -.5, -.5) : QRectF(widget.rect());
     painter.drawRoundedRect(bounds, cornerRadius, cornerRadius);
 }
 } // namespace choscordb::design

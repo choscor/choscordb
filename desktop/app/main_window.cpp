@@ -25,6 +25,7 @@
 #include "widgets/editor_completion/editor_completion.h"
 #include "widgets/history_dock/history_dock.h"
 #include "widgets/search_panel/search_panel.h"
+#include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QApplication>
@@ -63,6 +64,7 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QTreeView>
+#include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWidgetAction>
 
@@ -367,11 +369,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     navBody->setProperty("designSurface", "sidebar");
     navBody->setAttribute(Qt::WA_StyledBackground);
     auto* navLayout = new QVBoxLayout(navBody);
-    auto* navHeader = new QHBoxLayout;
-    auto* navTitle = new design::Text(tr("Connections").toUpper(), navBody);
-    navTitle->setObjectName("navigatorTitle");
-    navTitle->setTypographyRole(design::TypographyRole::SectionCaption);
-    navTitle->setForegroundRole(QPalette::PlaceholderText);
+    auto* connectionSection = new SidebarSection(tr("Connections"), navBody);
+    connectionSection->titleLabel()->setObjectName("navigatorTitle");
     auto* addConnection = new design::Button(tr("+"), navBody);
     addConnection->setObjectName("navigatorAddConnection");
     addConnection->setAccessibleName(tr("New connection"));
@@ -391,10 +390,12 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         button->setVariant(design::ButtonVariant::Ghost);
         button->setButtonSize(design::ButtonSize::IconSmall);
     }
-    navLayout->setContentsMargins(initialMetrics.sidebarInset, initialMetrics.spacingSmall,
-                                  initialMetrics.sidebarInset, initialMetrics.spacingMedium);
+    navLayout->setContentsMargins(0, initialMetrics.spacingSmall, 0, initialMetrics.spacingMedium);
     navLayout->setSpacing(initialMetrics.spacingSmall);
     auto* sidebarTabs = new QHBoxLayout;
+    sidebarTabs->setSpacing(0);
+    const int sidebarInset = design::spacing(design::Spacing::OneHalf);
+    sidebarTabs->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     auto* sidebarPanels = new QStackedWidget(navBody);
     sidebarPanels->setObjectName("sidebarPanels");
     for (const auto& tab : {QPair{QStringLiteral("sidebarConnections"), tr("Connections")},
@@ -405,11 +406,15 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         button->setAccessibleName(tab.second);
         button->setToolTip(tab.second);
         button->setCheckable(true);
+        button->setButtonContext(design::ButtonContext::SidebarTab);
         button->setVariant(design::ButtonVariant::Ghost);
         button->setButtonSize(design::ButtonSize::IconSmall);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         button->setDesignIcon(tab.first == "sidebarConnections" ? design::Icon::Database
                               : tab.first == "sidebarSaved"     ? design::Icon::File
                                                                 : design::Icon::Code);
+        button->setMinimumWidth(0);
+        button->setMaximumWidth(QWIDGETSIZE_MAX);
         const int index = sidebarTabs->count();
         connect(button, &QPushButton::clicked, sidebarPanels, [sidebarPanels, navBody, index] {
             sidebarPanels->setCurrentIndex(index);
@@ -421,20 +426,17 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                             index));
             }
         });
-        sidebarTabs->addWidget(button);
+        sidebarTabs->addWidget(button, 1);
     }
     navLayout->addLayout(sidebarTabs);
     auto* connectionsPanel = new QWidget(sidebarPanels);
     auto* connectionsLayout = new QVBoxLayout(connectionsPanel);
-    connectionsLayout->setContentsMargins(0, 0, 0, 0);
+    connectionsLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     connectionsLayout->setSpacing(initialMetrics.spacingSmall);
-    navHeader->setSpacing(initialMetrics.spacingSmall);
-    navHeader->addWidget(navTitle);
-    navHeader->addStretch();
-    navHeader->addWidget(refreshNavigator);
-    navHeader->addWidget(disconnectNavigator);
-    navHeader->addWidget(addConnection);
-    connectionsLayout->addLayout(navHeader);
+    connectionSection->addAction(refreshNavigator);
+    connectionSection->addAction(disconnectNavigator);
+    connectionSection->addAction(addConnection);
+    connectionsLayout->addWidget(connectionSection);
     auto* savedConnections = new QListWidget(navBody);
     savedConnections->setObjectName("savedConnections");
     savedConnections->setAccessibleName(tr("Saved database connections"));
@@ -443,57 +445,66 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     savedConnections->setProperty("designSurface", "sidebar");
     savedConnections->setMouseTracking(true);
     savedConnections->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
-    connectionsLayout->addWidget(savedConnections);
-    auto* objectSection = new design::Text(tr("Schema & objects").toUpper(), navBody);
-    objectSection->setTypographyRole(design::TypographyRole::SectionCaption);
-    objectSection->setForegroundRole(QPalette::PlaceholderText);
-    connectionsLayout->addWidget(objectSection);
+    connectionSection->contentLayout()->addWidget(savedConnections);
+    auto* objectSection = new SidebarSection(tr("Schema & objects"), navBody);
+    connectionsLayout->addWidget(objectSection, 1);
     auto* filter = new QLineEdit;
     filter->setPlaceholderText(tr("Filter objects…"));
     filter->setAccessibleName(tr("Filter database objects"));
-    connectionsLayout->addWidget(filter);
+    objectSection->contentLayout()->addWidget(filter);
     auto* tree = new QTreeView;
     tree->setObjectName("databaseNavigator");
     tree->setProperty("designSurface", "sidebar");
     tree->setItemDelegate(new NavigatorIconDelegate(tree));
     tree->setAccessibleName(tr("Database navigator"));
     tree->setHeaderHidden(true);
-    connectionsLayout->addWidget(tree, 3);
+    objectSection->contentLayout()->addWidget(tree, 3);
     auto* navigatorStatus = new QLabel(tr("Disconnected"), navBody);
     navigatorStatus->setObjectName("navigatorStatus");
     navigatorStatus->setAccessibleName(tr("Navigator connection status: Disconnected"));
-    connectionsLayout->addWidget(navigatorStatus);
+    objectSection->contentLayout()->addWidget(navigatorStatus);
     sidebarPanels->addWidget(connectionsPanel);
     auto* savedPanel = new QWidget(sidebarPanels);
     auto* savedLayout = new QVBoxLayout(savedPanel);
-    savedLayout->setContentsMargins(0, 0, 0, 0);
-    auto* savedTitle = new design::Text(tr("SAVED SQL"), savedPanel);
-    savedLayout->addWidget(savedTitle);
-    auto* savedStatus = new QLabel(savedPanel);
+    savedLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
+    auto* savedSection = new SidebarSection(tr("Saved SQL"), savedPanel);
+    savedLayout->addWidget(savedSection);
+    auto* savedSearch = new QLineEdit(savedSection);
+    savedSearch->setObjectName("sidebarSavedSearch");
+    savedSearch->setPlaceholderText(tr("Filter saved SQL…"));
+    savedSearch->setAccessibleName(tr("Filter saved SQL files"));
+    savedSection->contentLayout()->addWidget(savedSearch);
+    auto* savedStatus = new QLabel(savedSection);
     savedStatus->setObjectName("sidebarSavedStatus");
     savedStatus->setWordWrap(true);
-    savedLayout->addWidget(savedStatus);
-    auto* savedFiles = new QListWidget(savedPanel);
+    savedSection->contentLayout()->addWidget(savedStatus);
+    auto* savedFiles = new QTreeWidget(savedSection);
     savedFiles->setObjectName("sidebarSavedFiles");
     savedFiles->setAccessibleName(tr("Saved SQL files"));
-    savedLayout->addWidget(savedFiles, 1);
+    savedFiles->setHeaderHidden(true);
+    savedFiles->setItemDelegate(new NavigatorIconDelegate(savedFiles));
+    savedFiles->setProperty("designSurface", "sidebar");
+    savedSection->contentLayout()->addWidget(savedFiles, 1);
     sidebarPanels->addWidget(savedPanel);
     auto* historyPanel = new QWidget(sidebarPanels);
     auto* historyLayout = new QVBoxLayout(historyPanel);
-    historyLayout->setContentsMargins(0, 0, 0, 0);
-    auto* historyTitle = new design::Text(tr("RECENT HISTORY"), historyPanel);
-    historyLayout->addWidget(historyTitle);
-    auto* historyStatus = new QLabel(historyPanel);
+    historyLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
+    auto* historySection = new SidebarSection(tr("Recent history"), historyPanel);
+    historyLayout->addWidget(historySection);
+    auto* historySearch = new QLineEdit(historySection);
+    historySearch->setObjectName("sidebarHistorySearch");
+    historySearch->setPlaceholderText(tr("Filter recent history…"));
+    historySearch->setAccessibleName(tr("Filter recent query history"));
+    historySection->contentLayout()->addWidget(historySearch);
+    auto* historyStatus = new QLabel(historySection);
     historyStatus->setObjectName("sidebarHistoryStatus");
     historyStatus->setWordWrap(true);
-    historyLayout->addWidget(historyStatus);
-    auto* historyItems = new QListWidget(historyPanel);
+    historySection->contentLayout()->addWidget(historyStatus);
+    auto* historyItems = new QListWidget(historySection);
     historyItems->setObjectName("sidebarHistoryItems");
     historyItems->setAccessibleName(tr("Recent query history"));
-    historyLayout->addWidget(historyItems, 1);
-    auto* allHistory = new design::Button(tr("View full history"), historyPanel);
-    allHistory->setObjectName("sidebarFullHistory");
-    historyLayout->addWidget(allHistory);
+    historyItems->setProperty("designSurface", "sidebar");
+    historySection->contentLayout()->addWidget(historyItems, 1);
     sidebarPanels->addWidget(historyPanel);
     navLayout->addWidget(sidebarPanels, 1);
     navBody->findChild<QPushButton*>("sidebarConnections")->setChecked(true);
@@ -521,12 +532,11 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     connections->addItem(tr("No active connection"));
     connections->setEnabled(false);
     toolbar->addWidget(connections);
-    auto* toolbarSpacer = new QWidget(toolbar);
-    toolbarSpacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    toolbar->addWidget(toolbarSpacer);
-    auto* saveButton = new design::Button(tr("Save"), toolbar);
+    auto* saveButton = new design::Button({}, toolbar);
+    saveButton->setDesignIcon(design::Icon::File);
+    saveButton->setToolTip(tr("Save"));
     saveButton->setObjectName("saveSqlButton");
-    saveButton->setButtonSize(design::ButtonSize::Small);
+    saveButton->setButtonSize(design::ButtonSize::IconSmall);
     saveButton->setButtonContext(design::ButtonContext::EditorAction);
     saveButton->setVariant(design::ButtonVariant::Outline);
     saveButton->setAccessibleName(tr("Save SQL file"));
@@ -538,12 +548,13 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     run->setObjectName("runStatement");
     run->setShortcut(QKeySequence("Ctrl+Return"));
     run->setEnabled(false);
-    auto* runButton = new design::Button(tr("Run"), toolbar);
+    auto* runButton = new design::Button({}, toolbar);
+    runButton->setDesignIcon(design::Icon::Run);
+    runButton->setToolTip(tr("Run"));
     runButton->setObjectName("runStatementButton");
     runButton->setAccessibleName(tr("Run selection or current statement"));
-    runButton->setButtonSize(design::ButtonSize::Small);
+    runButton->setButtonSize(design::ButtonSize::IconSmall);
     runButton->setButtonContext(design::ButtonContext::EditorAction);
-    runButton->setDesignIcon(design::Icon::Run);
     runButton->setEnabled(false);
     toolbar->addWidget(runButton);
     connect(runButton, &QPushButton::clicked, run, &QAction::trigger);
@@ -554,18 +565,21 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     });
     auto* cancel = queryMenu->addAction(tr("Cancel"));
     cancel->setEnabled(false);
-    auto* cancelButton = new design::Button(tr("Cancel"), toolbar);
+    auto* cancelButton = new design::Button({}, toolbar);
+    cancelButton->setDesignIcon(design::Icon::Cancel);
+    cancelButton->setToolTip(tr("Cancel"));
     cancelButton->setObjectName("cancelQueryButton");
-    cancelButton->setButtonSize(design::ButtonSize::Small);
+    cancelButton->setAccessibleName(tr("Cancel"));
+    cancelButton->setButtonSize(design::ButtonSize::IconSmall);
     cancelButton->setButtonContext(design::ButtonContext::EditorAction);
     cancelButton->setVariant(design::ButtonVariant::Outline);
     cancelButton->setEnabled(false);
-    auto* cancelWidgetAction = toolbar->addWidget(cancelButton);
-    cancelWidgetAction->setVisible(false);
+    toolbar->addWidget(cancelButton);
     connect(cancelButton, &QPushButton::clicked, cancel, &QAction::trigger);
     connect(cancel, &QAction::changed, cancelButton, [cancel, cancelButton] {
         cancelButton->setEnabled(cancel->isEnabled());
-        cancelButton->setText(cancel->text());
+        cancelButton->setAccessibleName(cancel->text());
+        cancelButton->setToolTip(cancel->text());
     });
     auto* mode = new QComboBox;
     mode->setObjectName("transactionMode");
@@ -581,7 +595,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     auto* queryOverflow = new QToolButton(this);
     queryOverflow->setProperty("designRole", "menuButton");
     queryOverflow->setObjectName("queryToolbarOverflow");
-    queryOverflow->setText(tr("More"));
+    queryOverflow->setToolButtonStyle(Qt::ToolButtonIconOnly);
     queryOverflow->setAccessibleName(tr("Query session and result actions"));
     queryOverflow->setToolTip(tr("Query session and result actions"));
     queryOverflow->setPopupMode(QToolButton::InstantPopup);
@@ -598,10 +612,12 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     preferences_->addAction("commit", commitAction);
     preferences_->addAction("rollback", rollbackAction);
     const auto refreshIcons = [this, run, cancel, addConnection, refreshNavigator,
-                               disconnectNavigator, toolbar] {
+                               disconnectNavigator, toolbar, queryOverflow] {
         const auto resolved = theme_->resolvedTheme();
         const auto metrics = theme_->metrics();
         toolbar->setIconSize(QSize(metrics.iconSmall, metrics.iconSmall));
+        queryOverflow->setIcon(
+            design::themedIcon(design::Icon::ChevronDown, resolved.colors.text, metrics.iconSmall));
         setWindowIcon(
             design::themedIcon(design::Icon::AppMark, resolved.colors.action, metrics.iconLarge));
         run->setIcon(
@@ -664,6 +680,49 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     editors_->tabBar()->setElideMode(Qt::ElideRight);
     editors_->tabBar()->setProperty("designTabVariant", "document");
     new HoveredTabCloseVisibility(editors_->tabBar());
+    editors_->tabBar()->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(editors_->tabBar(), &QWidget::customContextMenuRequested, this,
+            [this](const QPoint& position) {
+                auto* bar = editors_->tabBar();
+                const int clicked = bar->tabAt(position);
+                if (clicked < 0)
+                    return;
+                auto* menu = new QMenu(this);
+                menu->setObjectName("editorTabContextMenu");
+                menu->setAttribute(Qt::WA_DeleteOnClose);
+                const auto addCloseAction = [this, menu](const QString& label,
+                                                         const QList<QPointer<QWidget>>& targets) {
+                    auto* action = menu->addAction(label);
+                    action->setEnabled(!targets.isEmpty());
+                    connect(action, &QAction::triggered, this, [this, targets] {
+                        for (const auto& target : targets) {
+                            if (!target)
+                                continue;
+                            const int index = editors_->indexOf(target);
+                            if (index < 0)
+                                continue;
+                            emit editors_->tabCloseRequested(index);
+                            // A rejected close cancels the rest of the batch.
+                            if (target && editors_->indexOf(target) >= 0)
+                                break;
+                        }
+                    });
+                };
+                QList<QPointer<QWidget>> others, all, right;
+                for (int index = editors_->count() - 1; index >= 0; --index) {
+                    auto* document = editors_->widget(index);
+                    all.append(document);
+                    if (index != clicked)
+                        others.append(document);
+                    if (index > clicked)
+                        right.append(document);
+                }
+                addCloseAction(tr("Close"), {editors_->widget(clicked)});
+                addCloseAction(tr("Close Others"), others);
+                addCloseAction(tr("Close All"), all);
+                addCloseAction(tr("Close to the Right"), right);
+                menu->popup(design::detail::contextMenuPosition(bar->mapToGlobal(position)));
+            });
     auto* listTabs = viewMenu->addAction(tr("Editor tabs…"));
     listTabs->setObjectName("listEditorTabs");
     listTabs->setShortcut(QKeySequence("Ctrl+Shift+L"));
@@ -689,7 +748,14 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     editorPaneLayout->setContentsMargins(0, 0, 0, 0);
     editorPaneLayout->setSpacing(0);
     editorPaneLayout->addWidget(editors_, 1);
-    workspaceTabs->workspaceBar()->setHeader(toolbar);
+    auto* toolbarHost = new QWidget;
+    toolbarHost->setObjectName("queryToolbarContainer");
+    auto* toolbarLayout = new QVBoxLayout(toolbarHost);
+    toolbarLayout->setContentsMargins(initialMetrics.spacingSmall, initialMetrics.spacingSmall,
+                                      initialMetrics.spacingSmall, initialMetrics.spacingSmall);
+    toolbarLayout->setSpacing(0);
+    toolbarLayout->addWidget(toolbar);
+    workspaceTabs->workspaceBar()->setHeader(toolbarHost);
     splitter->addWidget(editorPane);
     auto* resultArea = new QWidget;
     auto* resultAreaLayout = new QVBoxLayout(resultArea);
@@ -728,11 +794,12 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     auto* pager = new QHBoxLayout(resultFooter);
     pager->setContentsMargins(initialMetrics.spacingMedium, initialMetrics.spacingSmall,
                               initialMetrics.spacingMedium, initialMetrics.spacingSmall);
-    pager->addWidget(empty, 1);
+    pager->addWidget(empty);
     auto* compactState = new design::Text(tr("Disconnected"), resultFooter);
     compactState->setObjectName("executionStateCompact");
     compactState->setTypographyRole(design::TypographyRole::Small);
     pager->addWidget(compactState);
+    pager->addStretch(1);
     auto* previousPage = new design::Button({});
     previousPage->setAccessibleName(tr("Previous page"));
     previousPage->setToolTip(tr("Previous page"));
@@ -745,8 +812,10 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     nextPage->setButtonSize(design::ButtonSize::IconSmall);
     nextPage->setObjectName("nextPage");
     nextPage->setEnabled(false);
-    auto* exportResult = new design::Button(tr("Export"));
-    exportResult->setButtonSize(design::ButtonSize::Small);
+    auto* exportResult = new design::Button({});
+    exportResult->setButtonSize(design::ButtonSize::IconSmall);
+    exportResult->setAccessibleName(tr("Export"));
+    exportResult->setToolTip(tr("Export"));
     exportResult->setObjectName("exportResult");
     exportResult->setEnabled(false);
     for (auto* button : {previousPage, nextPage})
@@ -757,23 +826,32 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     exportResult->setDesignIcon(design::Icon::Export);
     pager->addWidget(previousPage);
     pager->addWidget(nextPage);
-    const auto addGridAction = [pager, resultFooter](const QString& label, const char* name) {
-        auto* button = new design::Button(label, resultFooter);
+    const auto addGridAction = [toolbar](const QString& label, const char* name,
+                                         design::Icon icon) {
+        auto* button = new design::Button({}, toolbar);
+        button->setAccessibleName(label);
+        button->setToolTip(label);
+        button->setDesignIcon(icon);
         button->setObjectName(name);
-        button->setButtonSize(design::ButtonSize::Small);
+        button->setButtonSize(design::ButtonSize::IconSmall);
         button->setVariant(design::ButtonVariant::Outline);
         button->setEnabled(false);
-        pager->addWidget(button);
+        toolbar->addWidget(button);
         return button;
     };
-    auto* addResultRow = addGridAction(tr("Add row"), "queryResultAddRow");
-    auto* deleteResultRows = addGridAction(tr("Delete rows"), "queryResultDeleteRows");
-    auto* restoreResultRows = addGridAction(tr("Restore rows"), "queryResultRestoreRows");
-    auto* nullResultCell = addGridAction(tr("Set NULL"), "queryResultSetNull");
-    auto* discardResultEdits = addGridAction(tr("Discard"), "queryResultDiscardEdits");
-    auto* applyResultEdits = addGridAction(tr("Apply"), "queryResultApplyEdits");
+    auto* addResultRow = addGridAction(tr("Add row"), "queryResultAddRow", design::Icon::Add);
+    auto* deleteResultRows =
+        addGridAction(tr("Delete rows"), "queryResultDeleteRows", design::Icon::Close);
+    auto* restoreResultRows =
+        addGridAction(tr("Restore rows"), "queryResultRestoreRows", design::Icon::Refresh);
+    auto* nullResultCell =
+        addGridAction(tr("Set NULL"), "queryResultSetNull", design::Icon::Square);
+    auto* discardResultEdits =
+        addGridAction(tr("Discard"), "queryResultDiscardEdits", design::Icon::Cancel);
+    auto* applyResultEdits =
+        addGridAction(tr("Apply"), "queryResultApplyEdits", design::Icon::Check);
     toolbar->addWidget(queryOverflow);
-    pager->addWidget(exportResult);
+    toolbar->addWidget(exportResult);
     const auto colorResultFooter = [this, resultFooter] {
         auto palette = resultFooter->palette();
         palette.setColor(QPalette::Window, theme_->resolvedTheme().colors.subtleAccent);
@@ -884,12 +962,22 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     startStatus->setForegroundRole(QPalette::PlaceholderText);
     startActions->addWidget(startStatus);
     startActions->addStretch();
-    auto* startConnect = new design::Button(tr("New connection"), start);
+    auto* startConnect = new design::Button({}, start);
     startConnect->setObjectName("startNewConnection");
-    startConnect->setButtonSize(design::ButtonSize::Small);
+    startConnect->setButtonSize(design::ButtonSize::IconSmall);
+    startConnect->setAccessibleName(tr("New connection"));
+    startConnect->setToolTip(tr("New connection"));
     startConnect->setDesignIcon(design::Icon::Add);
     connect(startConnect, &QPushButton::clicked, newConnection, &QAction::trigger);
-    startActions->addWidget(startConnect);
+    auto* startToolbar = new QWidget(start);
+    startToolbar->setObjectName("startToolbar");
+    auto* startToolbarLayout = new QHBoxLayout(startToolbar);
+    startToolbarLayout->setContentsMargins(
+        initialMetrics.spacingMedium, initialMetrics.spacingSmall, initialMetrics.spacingMedium,
+        initialMetrics.spacingSmall);
+    startToolbarLayout->addWidget(startConnect);
+    startToolbarLayout->addStretch();
+    startLayout->insertWidget(0, startToolbar);
     startLayout->addWidget(startFooter);
     screens_->addWidget(start);
     screens_->addWidget(central);
@@ -958,7 +1046,24 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     const auto savedDirectory =
         QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
             .filePath("sql");
-    auto refreshSavedFiles = [savedFiles, savedStatus, savedDirectory] {
+    auto filterSavedFiles = [savedFiles, savedSearch] {
+        const auto query = savedSearch->text().trimmed();
+        const auto filterItem = [&](const auto& self, QTreeWidgetItem* item,
+                                    const QString& path) -> bool {
+            const auto relativePath = path + item->text(0);
+            bool matches = relativePath.contains(query, Qt::CaseInsensitive);
+            for (int i = 0; i < item->childCount(); ++i)
+                matches = self(self, item->child(i), relativePath + '/') || matches;
+            item->setHidden(!matches);
+            if (!query.isEmpty() && matches && item->childCount())
+                item->setExpanded(true);
+            return matches;
+        };
+        for (int i = 0; i < savedFiles->topLevelItemCount(); ++i)
+            filterItem(filterItem, savedFiles->topLevelItem(i), {});
+    };
+    connect(savedSearch, &QLineEdit::textChanged, this, filterSavedFiles);
+    auto refreshSavedFiles = [savedFiles, savedStatus, savedDirectory, filterSavedFiles] {
         savedFiles->clear();
         const QDir directory(savedDirectory);
         if (!directory.exists()) {
@@ -970,30 +1075,53 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 QObject::tr("Saved SQL directory cannot be read: %1").arg(savedDirectory));
             return;
         }
-        QDirIterator files(savedDirectory, {"*.sql"}, QDir::Files | QDir::NoSymLinks);
+        QDirIterator files(savedDirectory, {"*.sql"}, QDir::Files | QDir::NoSymLinks,
+                           QDirIterator::Subdirectories);
         constexpr int limit = 1000;
-        while (files.hasNext() && savedFiles->count() < limit) {
+        int count = 0;
+        QHash<QString, QTreeWidgetItem*> folders;
+        while (files.hasNext() && count < limit) {
             const auto path = files.next();
-            auto* item = new QListWidgetItem(QFileInfo(path).fileName(), savedFiles);
-            item->setData(Qt::UserRole, path);
+            const auto parts = directory.relativeFilePath(path).split('/');
+            QTreeWidgetItem* parent = savedFiles->invisibleRootItem();
+            QString folderPath;
+            for (int i = 0; i + 1 < parts.size(); ++i) {
+                folderPath += parts.at(i) + '/';
+                auto* folder = folders.value(folderPath);
+                if (!folder) {
+                    folder = new QTreeWidgetItem(parent, {parts.at(i)});
+                    folder->setData(0, NavigatorModel::KindRole, "schema");
+                    folders.insert(folderPath, folder);
+                }
+                parent = folder;
+            }
+            auto* item = new QTreeWidgetItem(parent, {parts.last()});
+            item->setData(0, Qt::UserRole, path);
+            item->setToolTip(0, directory.relativeFilePath(path));
+            item->setData(0, NavigatorModel::KindRole, "file");
+            ++count;
         }
+        savedFiles->sortItems(0, Qt::AscendingOrder);
         savedStatus->setText(files.hasNext() ? QObject::tr("Showing the first %1 files.").arg(limit)
-                             : savedFiles->count() ? QString{}
-                                                   : QObject::tr("No saved SQL files yet."));
+                             : count         ? QString{}
+                                             : QObject::tr("No saved SQL files yet."));
+        filterSavedFiles();
     };
     refreshSavedFiles_ = refreshSavedFiles;
     connect(sidebarPanels, &QStackedWidget::currentChanged, this, [refreshSavedFiles](int index) {
         if (index == 1)
             refreshSavedFiles();
     });
-    auto openSavedItem = [this](QListWidgetItem* item) {
+    auto openSavedItem = [this](QTreeWidgetItem* item) {
+        const auto path = item->data(0, Qt::UserRole).toString();
+        if (path.isEmpty())
+            return;
         if (!allowDocumentChange() || databaseClosePending_ ||
             (recovery_ && (!recovery_->isReady() || recovery_->isClosing()))) {
             showToast(tr("Saved file cannot be opened while the workspace is busy."),
                       ToastVariant::Warning);
             return;
         }
-        const auto path = item->data(Qt::UserRole).toString();
         const auto identity = [](const QString& value) {
             const QFileInfo info(value);
             const auto canonical = info.canonicalFilePath();
@@ -1029,8 +1157,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
             editor->openFile(path);
         }
     };
-    connect(savedFiles, &QListWidget::itemClicked, this, openSavedItem);
-    connect(savedFiles, &QListWidget::itemActivated, this, openSavedItem);
+    connect(savedFiles, &QTreeWidget::itemClicked, this, openSavedItem);
+    connect(savedFiles, &QTreeWidget::itemActivated, this, openSavedItem);
     connect(save, &QAction::triggered, this, [this] {
         auto* editor = qobject_cast<SqlEditor*>(editors_->currentWidget());
         if (!editor)
@@ -1130,12 +1258,10 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         }
     });
     connect(workspace_, &QueryWorkspace::executionStateChanged, this,
-            [this, empty, compactState, cancelButton, cancelWidgetAction](const QString& state) {
+            [this, empty, compactState, cancelButton](const QString& state) {
                 const bool active =
                     state == "queued" || state == "running" || state == "cancelling";
                 const bool restoreFocus = !active && cancelButton->hasFocus();
-                cancelWidgetAction->setVisible(active);
-                cancelButton->setVisible(active);
                 if (restoreFocus && editors_->currentWidget())
                     editors_->currentWidget()->setFocus();
                 empty->setToolTip(empty->text());
@@ -1143,6 +1269,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                 compactState->setAccessibleName(tr("Execution status: %1").arg(state));
             });
     auto* objectExplorer = makeObjectExplorer();
+    objectExplorer->hide(); // Not part of the workspace until its first object tab opens.
     initialObjectExplorer_ = objectExplorer;
     connect(this, &MainWindow::objectContextSelected, this,
             [this, tree](quint64 connection, const QString& object, const QString& label,
@@ -1508,56 +1635,50 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         recoveryLayout->setContentsMargins(0, 0, 0, 0);
         auto* recoveryMessage = new QLabel;
         recoveryMessage->setTextFormat(Qt::PlainText);
-        recoveryMessage->setFixedWidth(180);
-        auto* retry = new design::Button(tr("Retry"));
+        recoveryMessage->setFixedWidth(
+            recoveryMessage->fontMetrics().horizontalAdvance(tr("Workspace recovery failed")));
+        auto* recoveryMenu = new QMenu(tr("Workspace recovery"), fileMenu);
+        recoveryMenu->setObjectName("workspaceRecoveryMenu");
+        fileMenu->insertMenu(quit, recoveryMenu);
+        auto* retry = recoveryMenu->addAction(tr("Retry workspace recovery"));
         retry->setObjectName("retryWorkspaceRecovery");
-        retry->setAccessibleName(tr("Retry workspace recovery"));
-        auto* startNew = new design::Button(tr("Start new"));
+        auto* startNew = recoveryMenu->addAction(tr("Start new workspace"));
         startNew->setObjectName("startNewWorkspace");
-        startNew->setAccessibleName(tr("Start new workspace"));
-        startNew->setVariant(design::ButtonVariant::Destructive);
-        auto* discardClose = new design::Button(tr("Close anyway"));
+        auto* discardClose = recoveryMenu->addAction(tr("Close without recovery"));
         discardClose->setObjectName("closeWithoutRecovery");
-        discardClose->setAccessibleName(tr("Close without recovery"));
-        discardClose->setVariant(design::ButtonVariant::Destructive);
-        auto* cancelClose = new design::Button(tr("Keep open"));
+        auto* cancelClose = recoveryMenu->addAction(tr("Keep workspace open"));
         cancelClose->setObjectName("cancelRecoveryClose");
-        cancelClose->setAccessibleName(tr("Keep workspace open"));
         recoveryLayout->addWidget(recoveryMessage);
-        recoveryLayout->addWidget(retry);
-        recoveryLayout->addWidget(startNew);
-        recoveryLayout->addWidget(discardClose);
-        recoveryLayout->addWidget(cancelClose);
-        auto* recoveryAction =
-            toolbar->insertWidget(toolbar->actions().constFirst(), recoveryStatus);
-        recoveryAction->setVisible(false);
-        recoveryStatus->hide();
-        auto normalActions = std::make_shared<QList<QPair<QAction*, bool>>>();
-        const auto showRecovery = [toolbar, recoveryAction, recoveryStatus, normalActions] {
-            if (normalActions->isEmpty()) {
-                for (auto* action : toolbar->actions()) {
-                    if (action != recoveryAction) {
-                        normalActions->append({action, action->isVisible()});
-                        action->setVisible(false);
-                    }
-                }
-            }
-            recoveryAction->setVisible(true);
-            recoveryStatus->show();
+        auto* recoveryHeader = new QWidget;
+        recoveryHeader->setObjectName("workspaceToolbar");
+        auto* recoveryHeaderLayout = new QHBoxLayout(recoveryHeader);
+        recoveryHeaderLayout->setContentsMargins(0, 0, 0, 0);
+        recoveryHeaderLayout->setSpacing(0);
+        recoveryHeaderLayout->addWidget(recoveryStatus);
+        recoveryHeaderLayout->addWidget(toolbarHost, 1);
+        workspaceTabs->workspaceBar()->setHeader(recoveryHeader);
+        recoveryMessage->hide();
+        for (auto* action : {retry, startNew, discardClose, cancelClose})
+            action->setEnabled(false);
+        // Disable the common ancestor so lifecycle updates can still change each
+        // action's own enabled state while recovery blocks normal interaction.
+        const auto showRecovery = [toolbar, recoveryMessage, retry] {
+            toolbar->setEnabled(false);
+            recoveryMessage->show();
+            retry->setEnabled(true);
         };
-        const auto hideRecovery = [recoveryAction, recoveryStatus, normalActions] {
-            recoveryAction->setVisible(false);
-            recoveryStatus->hide();
-            for (const auto& entry : *normalActions)
-                entry.first->setVisible(entry.second);
-            normalActions->clear();
+        const auto hideRecovery = [toolbar, recoveryMessage, retry, startNew, discardClose,
+                                   cancelClose] {
+            recoveryMessage->hide();
+            for (auto* action : {retry, startNew, discardClose, cancelClose})
+                action->setEnabled(false);
+            toolbar->setEnabled(true);
         };
-        connect(retry, &QPushButton::clicked, recovery_, &WorkspaceRecoveryController::retry);
-        connect(startNew, &QPushButton::clicked, recovery_,
-                &WorkspaceRecoveryController::startEmpty);
-        connect(discardClose, &QPushButton::clicked, recovery_,
+        connect(retry, &QAction::triggered, recovery_, &WorkspaceRecoveryController::retry);
+        connect(startNew, &QAction::triggered, recovery_, &WorkspaceRecoveryController::startEmpty);
+        connect(discardClose, &QAction::triggered, recovery_,
                 &WorkspaceRecoveryController::closeWithoutRecovery);
-        connect(cancelClose, &QPushButton::clicked, this, [this, hideRecovery, workspaceTabs] {
+        connect(cancelClose, &QAction::triggered, this, [this, hideRecovery, workspaceTabs] {
             appearanceCloseApproved_ = false;
             recovery_->cancelClose();
             workspaceTabs->workspaceBar()->setProperty("recoveryActive", false);
@@ -1600,9 +1721,9 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                         error, Qt::ElideRight, recoveryMessage->width()));
                     recoveryMessage->setToolTip(error);
                     recoveryMessage->setAccessibleName(error);
-                    startNew->setVisible(!closing && !recovery_->isReady());
-                    discardClose->setVisible(closing);
-                    cancelClose->setVisible(closing);
+                    startNew->setEnabled(!closing && !recovery_->isReady());
+                    discardClose->setEnabled(closing);
+                    cancelClose->setEnabled(closing);
                     showRecovery();
                     workspaceTabs->workspaceBar()->setProperty("recoveryActive", true);
                     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
@@ -1623,6 +1744,16 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
         recovery_->start();
     }
     history_ = new HistoryDock(workspace_->adapter(), this);
+    auto filterHistory = [historyItems, historySearch] {
+        const auto query = historySearch->text().trimmed();
+        for (int i = 0; i < historyItems->count(); ++i) {
+            auto* item = historyItems->item(i);
+            const auto entry = item->data(Qt::UserRole).value<SavedHistoryEntry>();
+            item->setHidden(
+                !(item->text() + '\n' + entry.sql).contains(query, Qt::CaseInsensitive));
+        }
+    };
+    connect(historySearch, &QLineEdit::textChanged, this, filterHistory);
     auto refreshRecentHistory = [this, historyStatus, historyItems] {
         if (!workspace_)
             return;
@@ -1639,7 +1770,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                     refreshRecentHistory();
             });
     connect(workspace_->adapter(), &EngineAdapter::historyListed, this,
-            [this, historyItems, historyStatus,
+            [this, historyItems, historyStatus, filterHistory,
              savedConnections](quint64 token, const QList<SavedHistoryEntry>& entries) {
                 if (token != sidebarHistoryToken_ || !token)
                     return;
@@ -1665,6 +1796,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
                                             historyItems);
                     item->setData(Qt::UserRole, QVariant::fromValue(entry));
                 }
+                filterHistory();
                 historyStatus->setText(entries.isEmpty() ? tr("No query history yet.") : QString{});
             });
     connect(workspace_->adapter(), &EngineAdapter::recoveryFailed, this,
@@ -1680,12 +1812,11 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     };
     connect(historyItems, &QListWidget::itemClicked, this, openHistoryItem);
     connect(historyItems, &QListWidget::itemActivated, this, openHistoryItem);
-    connect(allHistory, &QPushButton::clicked, this, [this] { showScreen(Screen::History); });
     connect(history_, &HistoryDock::noticeRequested, this,
             [this](const QString& message) { showToast(message, ToastVariant::Warning); });
     connect(preferences_, &EditorPreferencesController::historyPolicyConfirmed, history_,
             &HistoryDock::applyConfirmedPolicy);
-    screens_->addWidget(history_);
+    history_->hide();
     appearance_ = new AppearanceController(theme_, workspace_->adapter(), this, navigator, splitter,
                                            history_);
     preferences_->setAppearanceController(appearance_);
@@ -2073,6 +2204,13 @@ bool MainWindow::allowDocumentChange() {
     return false;
 }
 bool MainWindow::showScreen(Screen screen) {
+    if (screen == Screen::History) {
+        if (auto* tab = findChild<QPushButton*>("sidebarHistory")) {
+            tab->click();
+            return true;
+        }
+        return false;
+    }
     if (!screens_)
         return false;
     if (screen == Screen::Object) {
@@ -2131,8 +2269,6 @@ bool MainWindow::showScreen(Screen screen) {
         return true;
     }
     screens_->setCurrentIndex(static_cast<int>(screen));
-    if (screen == Screen::History && history_)
-        history_->refresh();
     if (screen == Screen::Sql && editors_->currentWidget())
         editors_->currentWidget()->setFocus();
     return true;
