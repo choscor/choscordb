@@ -432,7 +432,8 @@ void NavigatorSqlWorkspaceTest::documentsKeepTargetsAndImmutableResultOrigin() {
     QCOMPARE(summary->text(), origin);
     run->trigger();
     QTRY_COMPARE(grid->model()->rowCount(), 1);
-    QTRY_COMPARE(grid->model()->data(grid->model()->index(0, 0)).toString(),
+    QTRY_COMPARE(QDir::fromNativeSeparators(
+                     grid->model()->data(grid->model()->index(0, 0)).toString()),
                  QFileInfo(directory.filePath("second.sqlite")).canonicalFilePath());
     QTRY_VERIFY(run->isEnabled());
     QVERIFY(summary->text().contains("second.sqlite"));

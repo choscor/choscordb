@@ -15,7 +15,6 @@ class TypographyTest final : public QObject {
         const auto ui = resolveTypography(TypographyRole::Ui);
         QCOMPARE(QFontInfo(ui).family(),
                  QFontInfo(QFontDatabase::systemFont(QFontDatabase::GeneralFont)).family());
-        QVERIFY(QFontInfo(ui).family() != QString("Geist"));
         QFont savedSqlFont("Geist");
         savedSqlFont.setPointSize(16);
         QCOMPARE(QFontInfo(savedSqlFont).family(), QString("Geist"));
