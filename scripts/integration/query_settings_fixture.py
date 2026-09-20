@@ -38,7 +38,9 @@ def main():
                     connection.execute(
                         "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY)"
                     )
-                    connection.execute("INSERT INTO schema_migrations(version) VALUES (1)")
+                    connection.execute(
+                        "INSERT INTO schema_migrations(version) VALUES (1)"
+                    )
                     connection.execute(
                         "INSERT INTO settings(key,value) VALUES ('query_preferences',?)",
                         (corrupt,),

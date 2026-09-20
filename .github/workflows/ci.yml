@@ -77,29 +77,7 @@ jobs:
       - name: Strict native build
         run: python scripts/ci/quality.py native-build
       - name: Run all native tests offscreen
-        shell: bash
-        run: |
-          if [ "${{ matrix.runner }}" = macos-15 ]; then
-            (
-              while :; do
-                test_pid=$(pgrep -f '/choscordb-disconnect-workspace-tests' | head -n 1 || true)
-                if [ -n "$test_pid" ]; then
-                  sleep 20
-                  if kill -0 "$test_pid" 2>/dev/null; then
-                    sample "$test_pid" 5 -file /tmp/choscordb-disconnect-sample.txt || true
-                    if test -f /tmp/choscordb-disconnect-sample.txt; then
-                      cat /tmp/choscordb-disconnect-sample.txt
-                    fi
-                  fi
-                  break
-                fi
-                sleep 1
-              done
-            ) &
-            watch_pid=$!
-            trap 'kill "$watch_pid" 2>/dev/null || true' EXIT
-          fi
-          python scripts/ci/quality.py native-tests
+        run: python scripts/ci/quality.py native-tests
   native-static-analysis:
     name: Native static analysis (LLVM 23)
     runs-on: ubuntu-24.04
