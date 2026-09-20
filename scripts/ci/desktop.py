@@ -99,15 +99,18 @@ def main():
         )
         run(["cmake", "--build", "build/ci/native", "--parallel", "2"], env=env)
     elif args.stage == "test":
+        command = [
+            "ctest",
+            "--test-dir",
+            "build/ci/native",
+            "--output-on-failure",
+            "--timeout",
+            "120",
+        ]
+        if platform.system() == "Darwin":
+            command.append("--verbose")
         run(
-            [
-                "ctest",
-                "--test-dir",
-                "build/ci/native",
-                "--output-on-failure",
-                "--timeout",
-                "120",
-            ],
+            command,
             env=env,
         )
     else:

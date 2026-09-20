@@ -674,16 +674,16 @@ bool EngineAdapter::applyEditBatch(quint64 connection,
             CellDto cell;
             if (std::holds_alternative<std::monostate>(value))
                 cell.kind = "null";
-            else if (const auto* v = std::get_if<bool>(&value)) {
+            else if (const auto* booleanValue = std::get_if<bool>(&value)) {
                 cell.kind = "boolean";
-                cell.boolean = *v;
-            } else if (const auto* v = std::get_if<qint64>(&value)) {
+                cell.boolean = *booleanValue;
+            } else if (const auto* integerValue = std::get_if<qint64>(&value)) {
                 cell.kind = "integer";
-                cell.integer = *v;
-            } else if (const auto* v = std::get_if<double>(&value)) {
+                cell.integer = *integerValue;
+            } else if (const auto* realValue = std::get_if<double>(&value)) {
                 cell.kind = "real";
-                cell.real = *v;
-            } else if (const auto* v = std::get_if<QString>(&value)) {
+                cell.real = *realValue;
+            } else if (const auto* textValue = std::get_if<QString>(&value)) {
                 cell.kind = type.startsWith("numeric") || type.startsWith("decimal") ? "decimal"
                             : type == "date"                                         ? "date"
                             : type == "time" || type.startsWith("time ")             ? "time"
@@ -691,10 +691,10 @@ bool EngineAdapter::applyEditBatch(quint64 connection,
                             : type == "uuid"                                         ? "uuid"
                             : type == "json" || type == "jsonb"                      ? "json"
                                                                                      : "text";
-                cell.text = rustString(*v);
-            } else if (const auto* v = std::get_if<QByteArray>(&value)) {
+                cell.text = rustString(*textValue);
+            } else if (const auto* binaryValue = std::get_if<QByteArray>(&value)) {
                 cell.kind = "binary";
-                for (char byte : *v)
+                for (char byte : *binaryValue)
                     cell.bytes.push_back(static_cast<uint8_t>(byte));
             } else {
                 emit commandFailed(tr("Deferred values cannot be bound to grid edits."));

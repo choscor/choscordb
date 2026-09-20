@@ -34,8 +34,8 @@ foreach(object IN LISTS CHOSCORDB_COVERAGE_OBJECTS)
   list(APPEND object_arguments -object "${object}")
 endforeach()
 execute_process(
-  COMMAND "${CHOSCORDB_LLVM_COV}" export -format=lcov -instr-profile="${profile_data}" "${primary_object}" ${object_arguments}
-    -ignore-filename-regex="(^|/)(build|third_party|_deps)/"
+  COMMAND "${CHOSCORDB_LLVM_COV}" export -format=lcov "-instr-profile=${profile_data}" "${primary_object}" ${object_arguments}
+    "-ignore-filename-regex=(^|/)(build|third_party|_deps)/"
   OUTPUT_FILE "${lcov_file}"
   RESULT_VARIABLE export_result
 )
