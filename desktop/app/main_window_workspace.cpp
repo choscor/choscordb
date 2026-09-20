@@ -99,8 +99,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             return;
         auto* closing = editors_->widget(index);
         if (auto* object = qobject_cast<ObjectExplorer*>(closing)) {
-            if (auto* data = object->findChild<ObjectDataWorkspace*>();
-                data && !data->resolvePendingEdits())
+            if (auto* objectData = object->findChild<ObjectDataWorkspace*>();
+                objectData && !objectData->resolvePendingEdits())
                 return;
         }
         auto* editor = qobject_cast<SqlEditor*>(closing);

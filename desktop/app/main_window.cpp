@@ -90,8 +90,8 @@ void MainWindow::finishClose(QCloseEvent* event) {
 void MainWindow::closeEvent(QCloseEvent* event) {
     for (int i = 0; i < editors_->count(); ++i) {
         if (auto* object = qobject_cast<ObjectExplorer*>(editors_->widget(i))) {
-            if (auto* data = object->findChild<ObjectDataWorkspace*>();
-                data && !data->resolvePendingEdits()) {
+            if (auto* objectData = object->findChild<ObjectDataWorkspace*>();
+                objectData && !objectData->resolvePendingEdits()) {
                 updateInstall_ = {};
                 event->ignore();
                 return;
@@ -231,21 +231,23 @@ bool MainWindow::showScreen(Screen screen) {
 }
 ObjectExplorer* MainWindow::makeObjectExplorer() {
     auto* explorer = new ObjectExplorer(workspace_->adapter(), this);
-    auto* data = new ObjectDataWorkspace(workspace_, explorer);
-    explorer->installDataWidget(data);
-    connect(explorer, &ObjectExplorer::dataRequested, data, &ObjectDataWorkspace::openObject);
-    connect(explorer, &ObjectExplorer::objectChanged, data, &ObjectDataWorkspace::invalidate);
+    auto* objectData = new ObjectDataWorkspace(workspace_, explorer);
+    explorer->installDataWidget(objectData);
+    connect(explorer, &ObjectExplorer::dataRequested, objectData, &ObjectDataWorkspace::openObject);
+    connect(explorer, &ObjectExplorer::objectChanged, objectData, &ObjectDataWorkspace::invalidate);
     connect(explorer, &ObjectExplorer::paneChanged, this, [this](int) {
         if (recovery_)
             recovery_->changed();
     });
-    connect(data, &ObjectDataWorkspace::busyChanged, explorer, &ObjectExplorer::setOperationBusy);
-    connect(data, &ObjectDataWorkspace::busyChanged, data, [data](bool busy) {
+    connect(objectData, &ObjectDataWorkspace::busyChanged, explorer,
+            &ObjectExplorer::setOperationBusy);
+    connect(objectData, &ObjectDataWorkspace::busyChanged, objectData, [objectData](bool busy) {
         if (busy)
-            progressToast(data)->showProgress(QObject::tr("Object data"),
-                                              QObject::tr("Working with object data…"));
+            progressToast(objectData)
+                ->showProgress(QObject::tr("Object data"),
+                               QObject::tr("Working with object data…"));
         else
-            clearProgressToast(data);
+            clearProgressToast(objectData);
     });
     connect(explorer, &ObjectExplorer::sqlGenerated, this,
             [this](quint64 connection, const QString& sql) {

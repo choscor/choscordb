@@ -357,15 +357,16 @@ void ObjectExplorer::requestPane() {
                 {new QStandardItem(tr("Metadata")),
                  new QStandardItem(tr("Unavailable: no additional properties were provided"))});
         for (const auto& property : properties_) {
-            const auto data = property.toMap();
-            const auto availability = data.value("availability").toString();
-            const auto value = availability == "unsupported"
-                                   ? tr("Unsupported: %1").arg(data.value("reason").toString())
-                               : availability == "unavailable"
-                                   ? tr("Unavailable: %1").arg(data.value("reason").toString())
-                                   : data.value("value").toString();
-            model_->appendRow(
-                {new QStandardItem(data.value("name").toString()), new QStandardItem(value)});
+            const auto propertyData = property.toMap();
+            const auto availability = propertyData.value("availability").toString();
+            const auto value =
+                availability == "unsupported"
+                    ? tr("Unsupported: %1").arg(propertyData.value("reason").toString())
+                : availability == "unavailable"
+                    ? tr("Unavailable: %1").arg(propertyData.value("reason").toString())
+                    : propertyData.value("value").toString();
+            model_->appendRow({new QStandardItem(propertyData.value("name").toString()),
+                               new QStandardItem(value)});
         }
         table_->resizeColumnsToContents();
         refresh_->setEnabled(!operationBusy_);
@@ -513,18 +514,18 @@ void ObjectExplorer::installDataWidget(QWidget* widget) {
     }
     pages_->removeWidget(previous);
     pages_->insertWidget(2, widget);
-    if (auto* data = qobject_cast<ObjectDataWorkspace*>(widget)) {
+    if (auto* objectData = qobject_cast<ObjectDataWorkspace*>(widget)) {
         auto* header = findChild<QWidget*>("objectHeader");
         auto* headerLayout = qobject_cast<QHBoxLayout*>(header->layout());
-        auto* toolbar = data->toolbarWidget();
-        data->layout()->removeWidget(toolbar);
+        auto* toolbar = objectData->toolbarWidget();
+        objectData->layout()->removeWidget(toolbar);
         toolbar->setParent(header);
         auto* toolbarLayout = qobject_cast<QHBoxLayout*>(toolbar->layout());
         toolbarLayout->setContentsMargins(0, 0, 0, 0);
         delete toolbarLayout->takeAt(toolbarLayout->count() - 1);
         headerLayout->insertWidget(headerLayout->count() - 1, toolbar);
         dataHeaderActions_.append(toolbar);
-        dataFooter_ = data->footerWidget();
+        dataFooter_ = objectData->footerWidget();
         if (dataFooter_) {
             widget->layout()->removeWidget(dataFooter_);
             dataFooter_->setParent(footer_->parentWidget());
@@ -536,13 +537,13 @@ void ObjectExplorer::installDataWidget(QWidget* widget) {
     previous->deleteLater();
 }
 void ObjectExplorer::updateFooter() {
-    const bool data = dataFooter_ && tabs_->currentIndex() == 4 && connection_.has_value();
+    const bool dataVisible = dataFooter_ && tabs_->currentIndex() == 4 && connection_.has_value();
     for (const auto& action : dataHeaderActions_)
         if (action)
-            action->setEnabled(data);
+            action->setEnabled(dataVisible);
     if (dataFooter_)
-        dataFooter_->setVisible(data);
-    status_->setVisible(!data);
+        dataFooter_->setVisible(dataVisible);
+    status_->setVisible(!dataVisible);
     refresh_->setEnabled(!operationBusy_ && connection_.has_value() && !requestToken_);
 }
 void ObjectExplorer::setOperationBusy(bool busy) {
