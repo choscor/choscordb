@@ -225,7 +225,8 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
         const auto query = historySearch->text().trimmed();
         for (int i = 0; i < historyItems->count(); ++i) {
             auto* item = historyItems->item(i);
-            const auto entry = item->data(Qt::UserRole).value<SavedHistoryEntry>();
+            const auto entryData = item->data(Qt::UserRole);
+            const auto entry = entryData.value<SavedHistoryEntry>();
             item->setHidden(
                 !(item->text() + '\n' + entry.sql).contains(query, Qt::CaseInsensitive));
         }
@@ -286,7 +287,8 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                     historyStatus->setText(tr("Recent history could not be loaded: %1").arg(error));
             });
     auto openHistoryItem = [this](QListWidgetItem* item) {
-        const auto entry = item->data(Qt::UserRole).value<SavedHistoryEntry>();
+        const auto entryData = item->data(Qt::UserRole);
+        const auto entry = entryData.value<SavedHistoryEntry>();
         sidebarHistoryOpen_ = true;
         emit history_->openRequested(entry);
         sidebarHistoryOpen_ = false;

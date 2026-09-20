@@ -434,7 +434,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto selectProfile = [this, connections, savedConnections](QListWidgetItem* item) {
         if (!item || !allowDocumentChange())
             return;
-        const auto profile = item->data(Qt::UserRole).value<SavedProfile>();
+        const auto profileData = item->data(Qt::UserRole);
+        const auto profile = profileData.value<SavedProfile>();
         pendingBrowseConnection_.reset();
         pendingBrowseProfileId_.clear();
         pendingBrowseProfileName_.clear();
@@ -518,7 +519,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 if (!item || !allowDocumentChange())
                     return;
                 savedConnections->setCurrentItem(item);
-                const auto profile = item->data(Qt::UserRole).value<SavedProfile>();
+                const auto profileData = item->data(Qt::UserRole);
+                const auto profile = profileData.value<SavedProfile>();
                 std::optional<quint64> session;
                 for (int i = 0; i < connections->count(); ++i) {
                     if (connections->itemData(i).isValid()) {

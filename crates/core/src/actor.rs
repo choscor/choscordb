@@ -1281,7 +1281,8 @@ pub(crate) async fn run(
     // before any cursor finalizer can run, even if native cancellation failed.
     let _ = connection.close().await;
     if let Some(mut old) = sql_active.take() {
-        let _ = old.cursor.close().await;
+        // The connection is closed; a cursor finalizer cannot make progress if
+        // its worker has already stopped. Dropping it releases local resources.
         if let Some(history) = &mut old.history {
             history.fail(ErrorKind::Disconnected).await;
         }
@@ -1293,8 +1294,7 @@ pub(crate) async fn run(
         )
         .await;
     }
-    if let Some(mut old) = object_active.take() {
-        let _ = old.cursor.close().await;
+    if let Some(old) = object_active.take() {
         failure(
             &events,
             old.id,
