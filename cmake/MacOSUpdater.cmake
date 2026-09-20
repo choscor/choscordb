@@ -1,7 +1,7 @@
 option(CHOSCORDB_PRODUCTION_RELEASE "Enable the signed macOS release updater" OFF)
 option(CHOSCORDB_UPDATE_REHEARSAL "Enable the isolated signed update rehearsal" OFF)
 set(CHOSCORDB_REHEARSAL_FEED_URL "" CACHE STRING "Isolated HTTPS rehearsal appcast URL")
-set(CHOSCORDB_SPARKLE_FEED_URL "https://cdn.choscor.com/choscordb-appcast.xml" CACHE STRING "Production HTTPS appcast URL")
+set(CHOSCORDB_SPARKLE_FEED_URL "https://github.com/choscor/choscordb/releases/latest/download/choscordb-appcast.xml" CACHE STRING "Production HTTPS appcast URL")
 set(CHOSCORDB_SPARKLE_ROOT "" CACHE PATH "Verified Sparkle distribution prefix")
 set(CHOSCORDB_SPARKLE_PUBLIC_KEY "" CACHE STRING "ChoscorDB public Ed25519 update key")
 if(APPLE AND (CHOSCORDB_PRODUCTION_RELEASE OR CHOSCORDB_UPDATE_REHEARSAL))

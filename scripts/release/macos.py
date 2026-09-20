@@ -109,7 +109,7 @@ SPARKLE_VERSION = "2.9.6"
 SPARKLE_SHA256 = "52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192"
 SPARKLE_URL = f"https://github.com/sparkle-project/Sparkle/releases/download/{SPARKLE_VERSION}/Sparkle-{SPARKLE_VERSION}.tar.xz"
 ACCOUNT = "com.choscor.ChoscorDB"
-BASE_URL = "https://cdn.choscor.com"
+BASE_URL = "https://github.com/choscor/choscordb/releases"
 NS = "http://www.andymatuschak.org/xml-namespaces/sparkle"
 ET.register_namespace("sparkle", NS)
 
@@ -159,6 +159,59 @@ def production_base(value):
             "Production base URL must be HTTPS without credentials, query, fragment or trailing slash"
         )
     return value
+
+
+def release_base(value):
+    """Accept only a public GitHub repository's canonical releases root."""
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc != "github.com"
+        or parsed.query
+        or parsed.fragment
+        or not re.fullmatch(r"/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+/releases", parsed.path)
+        or parsed.path.split("/")[2] in {".", ".."}
+    ):
+        raise ValueError(
+            "Release base URL must be https://github.com/OWNER/REPO/releases; "
+            "rebuild releases configured for a previous host"
+        )
+    return value
+
+
+def feed_url(base):
+    return release_base(base) + "/latest/download/choscordb-appcast.xml"
+
+
+def artifact_url(base, version, name):
+    stable(version)
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", name) or name in {".", ".."}:
+        raise ValueError("Invalid release artifact name")
+    return release_base(base) + f"/download/v{version}/{name}"
+
+
+def write_appcast(path, base_url, version, dmg, signature):
+    rss = ET.Element("rss", version="2.0")
+    channel = ET.SubElement(rss, "channel")
+    ET.SubElement(channel, "title").text = "ChoscorDB"
+    item = ET.SubElement(channel, "item")
+    ET.SubElement(item, "title").text = "ChoscorDB " + version
+    ET.SubElement(item, "{" + NS + "}version").text = version
+    ET.SubElement(item, "{" + NS + "}shortVersionString").text = version
+    ET.SubElement(item, "{" + NS + "}minimumSystemVersion").text = "26.0"
+    ET.SubElement(
+        item,
+        "enclosure",
+        {
+            "url": artifact_url(base_url, version, dmg.name),
+            "length": str(dmg.stat().st_size),
+            "type": "application/octet-stream",
+            "{" + NS + "}edSignature": signature,
+            "{" + NS + "}version": version,
+            "{" + NS + "}shortVersionString": version,
+        },
+    )
+    ET.ElementTree(rss).write(path, encoding="utf-8", xml_declaration=True)
 
 
 def host_tools():
@@ -605,8 +658,8 @@ def verify_manifest(path, sparkle_tools=None):
     version = data["version"]
     if not re.fullmatch("[0-9a-f]{40}", data.get("source_commit", "")):
         raise ValueError("Release source commit is invalid")
-    base_url = production_base(data.get("base_url", ""))
-    if data.get("feed_url") != base_url + "/choscordb-appcast.xml":
+    base_url = release_base(data.get("base_url", ""))
+    if data.get("feed_url") != feed_url(base_url):
         raise ValueError("Manifest feed configuration is not production")
     artifacts = data.get("artifacts", [])
     seen = set()
@@ -680,7 +733,7 @@ def verify_manifest(path, sparkle_tools=None):
     enclosure = items[0].find("enclosure")
     if (
         enclosure is None
-        or enclosure.get("url") != base_url + "/" + dmg.name
+        or enclosure.get("url") != artifact_url(base_url, version, dmg.name)
         or enclosure.get("length") != str(dmg.stat().st_size)
         or items[0].findtext("{" + NS + "}version") != version
     ):
@@ -738,7 +791,7 @@ def verify_manifest(path, sparkle_tools=None):
 
 def package(args):
     root = args.root.resolve()
-    base_url = production_base(args.base_url)
+    base_url = release_base(args.base_url)
     record = preflight(root, args.version)
     host_tools()
     dependencies = args.dependencies.resolve(strict=True)
@@ -831,7 +884,7 @@ def package(args):
             "-DCHOSCORDB_PRODUCTION_RELEASE=ON",
             f"-DCHOSCORDB_SPARKLE_ROOT={sparkle}",
             f"-DCHOSCORDB_SPARKLE_PUBLIC_KEY={public}",
-            f"-DCHOSCORDB_SPARKLE_FEED_URL={base_url}/choscordb-appcast.xml",
+            f"-DCHOSCORDB_SPARKLE_FEED_URL={feed_url(base_url)}",
             "-DCMAKE_OSX_DEPLOYMENT_TARGET=26.0",
             "-DCMAKE_OSX_ARCHITECTURES=arm64",
             f"-DCMAKE_PREFIX_PATH={qt};{qsci}",
@@ -863,7 +916,7 @@ def package(args):
     strip_development_payload(app)
     thin_and_check(app, thin=True)
     verify_payload_privacy(app, [Path.home(), root])
-    check_bundle(app, version, public, base_url + "/choscordb-appcast.xml")
+    check_bundle(app, version, public, feed_url(base_url))
     refresh_stage_manifest(prefix)
     metadata = output / "cargo-metadata.json"
     metadata.write_text(
@@ -951,29 +1004,7 @@ def package(args):
     signature = run(
         [sparkle / "bin/sign_update", "--account", ACCOUNT, "-p", dmg]
     ).strip()
-    rss = ET.Element("rss", version="2.0")
-    channel = ET.SubElement(rss, "channel")
-    ET.SubElement(channel, "title").text = "ChoscorDB"
-    item = ET.SubElement(channel, "item")
-    ET.SubElement(item, "title").text = "ChoscorDB " + version
-    ET.SubElement(item, "{" + NS + "}version").text = version
-    ET.SubElement(item, "{" + NS + "}shortVersionString").text = version
-    ET.SubElement(item, "{" + NS + "}minimumSystemVersion").text = "26.0"
-    ET.SubElement(
-        item,
-        "enclosure",
-        {
-            "url": base_url + "/" + dmg.name,
-            "length": str(dmg.stat().st_size),
-            "type": "application/octet-stream",
-            "{" + NS + "}edSignature": signature,
-            "{" + NS + "}version": version,
-            "{" + NS + "}shortVersionString": version,
-        },
-    )
-    ET.ElementTree(rss).write(
-        output / "choscordb-appcast.xml", encoding="utf-8", xml_declaration=True
-    )
+    write_appcast(output / "choscordb-appcast.xml", base_url, version, dmg, signature)
     artifacts = []
 
     def artifact(path, role):
@@ -1063,7 +1094,7 @@ def package(args):
         "production": True,
         "status": "verified",
         "base_url": base_url,
-        "feed_url": base_url + "/choscordb-appcast.xml",
+        "feed_url": feed_url(base_url),
         "sparkle_public_key": public,
         "app_path": "staged/ChoscorDB.app",
         "dependencies": dep_record,

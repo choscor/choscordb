@@ -4,6 +4,10 @@ Status: Approved for implementation
 Date: 2026-09-20
 Source: Brainstorm with the repository owner; reference application in the maintainer's separate local Agents checkout.
 
+Publication requirements updated by the owner: GitHub Releases is the sole host;
+only the two DMGs and appcast are uploaded. The release skill creates and pushes
+the exact-source tag before publishing a verified GitHub draft.
+
 ## Outcome and conversation decisions
 
 Give the maintainer a repeatable local workflow to build, sign, notarize, verify, and separately publish ChoscorDB. Users install a DMG and receive authenticated updates without losing database work or saved application state.
@@ -19,7 +23,7 @@ The owner chose platform-specific updaters, with Sparkle on macOS first. Windows
 - Dependency pins and bootstrap behavior are documented in `docs/CI.md`, `scripts/ci/desktop.py`, `scripts/ci/bootstrap_qscintilla.py`, `scripts/ci/requirements.txt`, and `rust-toolchain.toml`. The current native dependency baseline is Qt 6.8.3 and QScintilla 2.14.1. Reconcile actual SDK/dependency compatibility during implementation; do not silently substitute Homebrew packages or raise the agreed minimum OS.
 - The current bundle ID in `CMakeLists.txt` and credential service in `crates/credentials/src/lib.rs` are `org.choscordb.desktop`. `desktop/app/main.cpp` derives storage through Qt application/organization names and `QStandardPaths`.
 - `MainWindow::closeEvent` in `desktop/app/main_window.cpp` resolves pending table edits, flushes preferences/recovery, requests shutdown confirmation, and waits for database shutdown. `QueryWorkspace::confirmShutdown` handles active work and transactions.
-- The reference app's `scripts/package.sh` and built `dist/Agents.app/Contents/Info.plist` both use `com.choscor.Agents`. Its package/upload scripts demonstrate Developer ID signing, notarization, Sparkle, and R2 publishing. They are examples, not code to copy unchanged: their automatic tagging, version detection, and shared Sparkle-key assumptions differ from this spec.
+- The reference app's `scripts/package.sh` and built `dist/Agents.app/Contents/Info.plist` both use `com.choscor.Agents`. Its scripts demonstrate Developer ID signing, notarization, and Sparkle. They are examples, not code to copy unchanged: their hosting, automatic tagging, version detection, and shared Sparkle-key assumptions differ from this spec.
 - The inspected local machine is arm64 on macOS 26.5. This is not evidence of successful execution on macOS 26.0.
 
 ## Scope and identity
@@ -60,15 +64,16 @@ Provide documented repository-owned commands for dependency preparation, product
 ### Publish
 
 - Provide a separate explicit publish command and a dry-run that displays intended destinations/actions without changing local feed history or remote objects.
-- Use Cloudflare R2 bucket `choscor-downloads` and base URL `https://cdn.choscor.com`, configurable through documented settings. Authenticate through existing local tooling; never embed credentials.
-- Publish the agreed names `ChoscorDB-X.Y.Z.dmg`, `ChoscorDB.dmg`, and `choscordb-appcast.xml`, plus version-associated source/metadata artifacts. Do not touch Agents artifacts.
+- Use GitHub Releases at `https://github.com/choscor/choscordb/releases`, configurable for GitHub forks through documented settings. Authenticate through existing local `gh` configuration; never embed credentials.
+- Publish only `ChoscorDB-X.Y.Z.dmg`, `ChoscorDB.dmg`, and `choscordb-appcast.xml`. Keep source/metadata artifacts as local verification inputs. Do not touch other applications' artifacts.
 - Select a release through an explicit version or unambiguous verified manifest; never guess from lexicographic or modification-time ordering of DMGs.
 - Refuse invalid signatures, missing notarization, incomplete verification, changed artifacts, mismatched versions, or incompatible feed configuration.
 - Treat versioned artifacts as immutable: reject different bytes at an already published version; permit retries with identical bytes. Protect against an older/stale publication replacing a newer stable feed or latest alias.
-- Preserve previous appcast entries, validate existing remote state, upload immutable payload/source/metadata first, then update the latest download and finally the feed. Verify public download availability before exposing the new feed. Do not infer remote absence from authentication/network errors.
-- Partial failures remain diagnosable and retryable. The feed must never advertise an unavailable artifact. Document the single-maintainer publication model and prevent overlapping local publishes.
+- Preserve historical releases under their tags. Upload the versioned DMG, identical latest DMG, and single-release appcast in that order to a draft, verifying each asset before proceeding. Publish the complete draft as latest, then verify public URLs. Do not infer remote absence from authentication/network errors.
+- The signed bundle reads `releases/latest/download/choscordb-appcast.xml`; each enclosure points to `releases/download/vX.Y.Z/ChoscorDB-X.Y.Z.dmg`. The original 0.1.0 bundle cannot change hosts in place; its authorized replacement requires a newly signed build and manual reinstall without writing to the former host.
+- Partial failures remain diagnosable and retryable. Do not expose an incomplete draft. Public-verification failures after publication must explicitly report the already-public state. Document the single-maintainer publication model and prevent overlapping local publishes.
 - Fix a faulty public release by shipping a higher version. No automated app/data downgrade or deletion of prior releases.
-- Local explicit Git tagging/pushing remains a documented maintainer step, separate from packaging and publishing.
+- Local explicit Git tagging/pushing remains separate from packaging. The release skill pushes an annotated tag at the manifest's exact source commit; the publisher requires that remote tag before creating a GitHub release.
 
 ## User update behavior
 
@@ -91,7 +96,7 @@ Provide documented repository-owned commands for dependency preparation, product
 | Correct identity and clean start leave legacy data untouched | Installed bundle metadata; launch with fixture old/new Application Support directories; native credential API tests using isolated renamed test namespaces; never test against real saved secrets |
 | Final app/DMG are validly signed, notarized, and stapled | Real `codesign`, `notarytool`, `stapler`, and Gatekeeper assessments against final artifacts, with recorded results |
 | Version, changelog, source, signatures, checksums, and inventory agree | CLI validation of the final release manifest and artifacts, including altered-artifact rejection |
-| Publishing is safe to retry and feed-last | Publish CLI against a controlled object-store/tool fixture: dry-run, partial upload, identical retry, conflicting version, stale feed, unavailable public download, and overlapping invocation cases |
+| Publishing is safe to retry and exposes only a complete release | Publish CLI against controlled GitHub/tool fixtures: dry-run, partial draft upload, identical retry, conflicting version/tag, stale latest, unavailable public download, and overlapping invocation cases |
 | New update is offered; no update and failures behave appropriately | App menu/settings through the desktop updater boundary and controlled feeds; real Sparkle exercised by the signed rehearsal |
 | Restart cancellation/persistence failures preserve the running workspace | App-level shutdown/update tests through user actions, real recovery and query-workspace seams, isolated SQLite data and owned database fixtures where needed |
 | Signed A → B replacement succeeds and preserves new-identity data | Two real signed/notarized test releases with a controlled nonproduction feed, dedicated test credentials/key/data, and observed install/relaunch/version/state |

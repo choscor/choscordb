@@ -328,7 +328,7 @@ class NoticesTest(unittest.TestCase):
         self.assertEqual(icons["refresh-cw.svg"], "Lucide Icons")
         self.assertEqual(icons["eye-off.svg"], "Lucide Icons")
         self.assertEqual(icons["code.svg"], "ChoscorDB")
-        self.assertEqual(icons["app-mark.svg"], "ChoscorDB")
+        self.assertEqual(icons["app-mark.svg"], "Lucide Icons")
         unknown = self.stage / "choscordb.app/Contents/Resources/icons/mystery.svg"
         unknown.write_bytes(b"unreviewed")
         self.refresh_manifest()

@@ -14,7 +14,7 @@ from prepare_qt_notices import SHA256 as QTBASE_SHA256, SVG_SHA256 as QTSVG_SHA2
 
 QT_SOURCE_HASHES = {"qtbase": QTBASE_SHA256, "qtsvg": QTSVG_SHA256}
 LUCIDE_SOURCE_SHA256 = (
-    "07fb3b3ab252ba24434853227543fa93578e09908dfa35d63be88c38dd264678"
+    "102cdaf604413ecfda82cf14afd53cdfb0c1598197477e3cb5d5c8b861e21e4a"
 )
 
 GEIST_SOURCE_SHA256 = "1190ba834ead1873d41bbe2210659a927e1eef2ae252ed8d995fe05e17e476a6"
@@ -290,9 +290,6 @@ def generate(
                 "Lucide icon source snapshot does not match reviewed provenance"
             )
     icon_hashes = {**lucide_icons, **local_icons}
-    icon_hashes["app-mark.svg"] = source_hashes.get(
-        "desktop/resources/icons/app-mark.svg"
-    )
     icon_prefix = app_licenses[0].removesuffix("licenses/LICENSE") + "icons/"
     staged_icons = {icon: icon_prefix + icon for icon in icon_hashes}
     actual_icon_paths = {

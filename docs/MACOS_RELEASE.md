@@ -133,29 +133,73 @@ commit. Software inventory uses a `candidate-X.Y.Z` identifier because that is
 the existing source provenance convention, while production bundle/feed/manifest
 versions remain X.Y.Z. Release signature metadata contains no private key.
 
-## Explicit publication
+## GitHub Release publication
 
-See `python scripts/release/publish.py --help`. Publication is a separate action
-using existing local AWS-compatible tooling credentials and an HTTPS R2 endpoint.
-The defaults are bucket `choscor-downloads` and `https://cdn.choscor.com`.
-Package with `--base-url HTTPS_URL` (or `CHOSCORDB_RELEASE_BASE_URL`) to select
-another production CDN; the publisher must use the same base URL. This embeds
-the matching feed in the signed app, so configuration cannot change afterward.
-Only ChoscorDB names are used; Agents objects are never touched. Run dry-run
-first, then explicitly publish the verified manifest. Dry-run reads remote
-state but does not write local feed history or remote objects.
+The repository's [release-new-version skill](../.agents/skills/release-new-version/SKILL.md)
+coordinates notes, quality checks, packaging, an exact-source-commit tag push,
+and GitHub Release publication. Invoke it with a version and the intended scope
+(prepare, publish an existing build, or release end to end). Packaging itself
+never tags or publishes.
 
-The publisher preserves previous feed entries, uploads immutable versioned
-payload/source/metadata first, verifies public availability, updates the latest
-alias and finally the feed. Retry interrupted publication with the same manifest
-and identical bytes. A version already containing different bytes is rejected.
-An older release cannot replace a newer feed. A local lock prevents overlapping
-publishes on this machine; operations assume one maintainer and no concurrent
-writers from other machines. Keep that operational restriction when using R2.
-Repair a faulty public release by shipping a higher version; never downgrade
-application data or delete old release artifacts automatically. Git tagging and
-pushing are separate optional maintainer actions after verification, for example
-`git tag vX.Y.Z COMMIT` and an explicit later `git push origin vX.Y.Z`.
+GitHub Releases is the only upload destination. Use `gh` authenticated locally
+with permission to create releases and upload assets, and `curl` for public
+verification. Credentials and tool configuration stay outside the repository.
+The default release base is `https://github.com/choscor/choscordb/releases`.
+Forks select `https://github.com/OWNER/REPO/releases` with `package --base-url`
+or `CHOSCORDB_RELEASE_BASE_URL`. The publisher infers the repository from the
+verified manifest and rejects a conflicting explicit `--repo`.
+
+Sparkle uses these URLs:
+
+- Feed: `https://github.com/choscor/choscordb/releases/latest/download/choscordb-appcast.xml`
+- Latest DMG: `https://github.com/choscor/choscordb/releases/latest/download/ChoscorDB.dmg`
+- Versioned DMG: `https://github.com/choscor/choscordb/releases/download/vX.Y.Z/ChoscorDB-X.Y.Z.dmg`
+
+The stable feed is embedded in the signed app; the appcast enclosure references
+its immutable versioned DMG. Each release carries a single-release appcast.
+Historical assets remain under their original tags. GitHub's latest-release
+redirect selects the stable feed, so publishing a prerelease or an older version
+must not change the stable channel. See [GitHub's release API](https://docs.github.com/en/rest/releases/releases)
+and [Sparkle's publishing guide](https://sparkle-project.org/documentation/publishing/).
+
+After local verification, create an annotated `vX.Y.Z` tag at the manifest's exact
+`source_commit` and push only that tag. The publisher requires that remote tag
+to exist and resolve to the same commit. Prepare reviewed notes in an ignored
+file under `build/`, then run:
+
+```sh
+python scripts/release/publish.py --manifest build/releases/X.Y.Z/ChoscorDB-X.Y.Z-manifest.json --notes-file build/release-notes-X.Y.Z.md --dry-run
+python scripts/release/publish.py --manifest build/releases/X.Y.Z/ChoscorDB-X.Y.Z-manifest.json --notes-file build/release-notes-X.Y.Z.md
+```
+
+Publication creates or resumes a GitHub draft and uploads exactly three files:
+`ChoscorDB-X.Y.Z.dmg` first, identical bytes as `ChoscorDB.dmg` next, and
+`choscordb-appcast.xml` last. It verifies uploaded bytes before proceeding and
+publishes the draft as latest only after all assets match. Public downloads and
+the stable feed are verified afterward. A public-verification failure reports
+that publication has already occurred; it cannot atomically undo a GitHub release.
+
+Source archives, license archives, checksums, SBOMs, and manifests stay local;
+full local verification still checks them. Retain these materials and bundled
+notices for dependency redistribution requirements. No build logs, credential
+configuration, or local paths belong in notes or attachments.
+
+Retry with the same manifest, notes, and bytes. Matching assets are reused;
+conflicting assets, tags, and releases are not overwritten. A local lock prevents
+overlapping commands on this machine; use one maintainer at a time across
+machines. Ship a higher version to fix a faulty public release. The workflow
+never force-moves tags or deletes previous releases.
+
+### Existing 0.1.0 installations
+
+The original 0.1.0 app embeds the former hosting URL. Changing the source
+configuration does not change installed copies. The maintainer requested a
+rebuilt 0.1.0 release with the GitHub feed and new icon, replacing that tag and
+release. Users who installed the original build must download and reinstall
+the replacement manually; Sparkle cannot discover a same-version replacement
+through a different feed. Subsequent releases should increase the version.
+Legacy manifests using the former host are rejected and must not be relabeled
+as new GitHub-configured builds.
 
 ## Required rollout evidence
 

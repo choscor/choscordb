@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""Explicit, serialized R2 publication. AWS CLI uses the maintainer's local credentials."""
+"""Publish verified macOS artifacts exclusively through GitHub Releases."""
 
 import argparse
 import contextlib
 import fcntl
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import tempfile
-import urllib.request
 import xml.etree.ElementTree as ET
 
 SPARKLE = "http://www.andymatuschak.org/xml-namespaces/sparkle"
-ET.register_namespace("sparkle", SPARKLE)
 FEED = "choscordb-appcast.xml"
 LATEST = "ChoscorDB.dmg"
 
@@ -43,7 +42,8 @@ def parse_feed(data, base_url):
                 raise ValueError("conflicting appcast version metadata")
         if (
             version in versions
-            or enclosure.get("url") != f"{base_url}/ChoscorDB-{version}.dmg"
+            or enclosure.get("url")
+            != f"{base_url}/download/v{version}/ChoscorDB-{version}.dmg"
         ):
             raise ValueError("incompatible feed configuration")
         if enclosure.get(
@@ -63,203 +63,9 @@ def parse_feed(data, base_url):
     return root, channel, versions
 
 
-def publish(
-    root, manifest, store, dry_run=False, manifest_bytes=None, historical_verifier=None
-):
-    version = manifest["version"]
-    current = version_tuple(version)
-    base = manifest["base_url"].rstrip("/")
-    if manifest["feed_url"] != base + "/" + FEED:
-        raise ValueError("incompatible feed configuration")
-    payload = {}
-    for artifact in manifest["artifacts"]:
-        name = artifact["path"]
-        if Path(name).name != name or name in payload:
-            raise ValueError("invalid artifact name")
-        if name not in (LATEST, FEED) and not (
-            name == f"ChoscorDB-{version}.dmg"
-            or name.startswith(f"ChoscorDB-{version}-")
-            or name.startswith(f"choscordb-{version}-")
-        ):
-            raise ValueError("metadata artifacts must be version-associated")
-        data = (root / name).read_bytes()
-        if (
-            len(data) != artifact["size"]
-            or hashlib.sha256(data).hexdigest() != artifact["sha256"]
-        ):
-            raise ValueError("artifact hash mismatch")
-        payload[name] = data
-    if manifest_bytes is not None:
-        payload[f"ChoscorDB-{version}-manifest.json"] = manifest_bytes
-    dmg = f"ChoscorDB-{version}.dmg"
-    if not {dmg, LATEST, FEED}.issubset(payload) or payload[LATEST] != payload[dmg]:
-        raise ValueError("incomplete release or mismatched latest")
-    new_root, new_channel, new_versions = parse_feed(payload[FEED], base)
-    if set(new_versions) != {version}:
-        raise ValueError("package appcast must contain exactly selected release")
-    if int(new_versions[version].find("enclosure").get("length")) != len(payload[dmg]):
-        raise ValueError("appcast length mismatch")
-    previous = store.get(FEED)
-    if previous is not None:
-        old_root, old_channel, old_versions = parse_feed(previous, base)
-        if max(map(version_tuple, old_versions)) > current:
-            raise ValueError("stale publication would replace newer release")
-        for old_version, old_item in old_versions.items():
-            key = f"ChoscorDB-{old_version}.dmg"
-            old_payload = store.get(key)
-            enclosure = old_item.find("enclosure")
-            if old_payload is None or len(old_payload) != int(enclosure.get("length")):
-                raise ValueError("missing or invalid historical payload: " + key)
-            if historical_verifier is not None:
-                historical_verifier(
-                    old_payload, enclosure.get(f"{{{SPARKLE}}}edSignature")
-                )
-            store.available(key, old_payload)
-        if version in old_versions:
-            old_enclosure = old_versions[version].find("enclosure")
-            if old_enclosure.attrib != new_versions[version].find("enclosure").attrib:
-                raise ValueError("immutable appcast version conflict")
-        else:
-            old_channel.insert(0, new_versions[version])
-        new_root = old_root
-    merged = ET.tostring(new_root, encoding="utf-8", xml_declaration=True)
-    immutable = {
-        name: data for name, data in payload.items() if name not in (LATEST, FEED)
-    }
-    existing = {}
-    for name, data in immutable.items():
-        existing[name] = store.get(name)
-        if existing[name] is not None and existing[name] != data:
-            raise ValueError("immutable artifact conflict: " + name)
-    # A latest alias without a feed indicates an interrupted first publication.
-    # Only identical bytes are safe; otherwise its release age is unknowable.
-    latest = store.get(LATEST)
-    if previous is None and latest is not None and latest != payload[LATEST]:
-        raise ValueError("unverifiable latest alias without feed")
-    if previous is not None and latest != payload[LATEST]:
-        newest = max(old_versions, key=version_tuple)
-        published_dmg = store.get(f"ChoscorDB-{newest}.dmg")
-        if published_dmg is None or latest != published_dmg:
-            raise ValueError(
-                "unverifiable latest alias; retry the interrupted release first"
-            )
-    for name in [*immutable, LATEST, FEED]:
-        print(
-            ("Would publish " if dry_run else "Publish ")
-            + getattr(store, "bucket", "controlled-store")
-            + "/"
-            + name
-            + " -> "
-            + base
-            + "/"
-            + name
-        )
-    if dry_run:
-        return
-    for name, data in immutable.items():
-        if existing[name] is None:
-            store.put(name, data)
-        store.available(name, data)
-    # Detect unexpected remote changes before touching the mutable objects.
-    if store.get(FEED) != previous or store.get(LATEST) != latest:
-        raise ValueError("remote release changed during publication")
-    store.put(LATEST, payload[LATEST])
-    store.available(LATEST, payload[LATEST])
-    store.put(FEED, merged)
-    store.available(FEED, merged)
-
-
-def verify_historical_signature(sparkle_tools, data, signature):
-    from macos import run
-
-    with tempfile.TemporaryDirectory(prefix="choscordb-history-verify-") as directory:
-        artifact = Path(directory) / "update.dmg"
-        artifact.write_bytes(data)
-        run(
-            [
-                Path(sparkle_tools) / "bin/sign_update",
-                "--account",
-                "com.choscor.ChoscorDB",
-                "--verify",
-                artifact,
-                signature,
-            ]
-        )
-
-
-class R2Store:
-    def __init__(self, bucket, endpoint, base_url):
-        self.bucket, self.endpoint, self.base_url = (
-            bucket,
-            endpoint,
-            base_url.rstrip("/"),
-        )
-
-    def command(self, arguments):
-        result = subprocess.run(
-            ["aws", "--endpoint-url", self.endpoint, "s3api", *arguments],
-            capture_output=True,
-            timeout=120,
-        )
-        if result.returncode:
-            # Do not print CLI stderr: provider diagnostics may contain account details.
-            if b"(NoSuchKey)" in result.stderr:
-                return False
-            raise ValueError(
-                "R2 request failed; check local AWS credentials/network configuration"
-            )
-        return True
-
-    def get(self, key):
-        with tempfile.TemporaryDirectory(prefix="choscordb-read-") as directory:
-            path = Path(directory) / "object"
-            if not self.command(
-                ["get-object", "--bucket", self.bucket, "--key", key, str(path)]
-            ):
-                return None
-            return path.read_bytes()
-
-    def put(self, key, data):
-        with tempfile.TemporaryDirectory(prefix="choscordb-write-") as directory:
-            path = Path(directory) / "object"
-            path.write_bytes(data)
-            kind = (
-                "application/xml"
-                if key.endswith(".xml")
-                else "application/octet-stream"
-            )
-            if not self.command(
-                [
-                    "put-object",
-                    "--bucket",
-                    self.bucket,
-                    "--key",
-                    key,
-                    "--body",
-                    str(path),
-                    "--content-type",
-                    kind,
-                    "--cache-control",
-                    "no-cache"
-                    if key in (LATEST, FEED)
-                    else "public, max-age=31536000, immutable",
-                ]
-            ):
-                raise ValueError("R2 upload failed")
-
-    def available(self, key, data):
-        request = urllib.request.Request(
-            self.base_url + "/" + key, headers={"Cache-Control": "no-cache"}
-        )
-        with urllib.request.urlopen(request, timeout=60) as response:
-            digest = hashlib.file_digest(response, "sha256").hexdigest()
-        if digest != hashlib.sha256(data).hexdigest():
-            raise ValueError("public download unavailable or bytes differ: " + key)
-
-
 @contextlib.contextmanager
 def publication_lock():
-    # Per-user, independent of checkout, bucket, and selected manifest.
+    # Per-user, independent of checkout, repository, and selected manifest.
     path = Path(tempfile.gettempdir()) / f"choscordb-publish-{os.getuid()}.lock"
     with path.open("a") as handle:
         try:
@@ -269,61 +75,314 @@ def publication_lock():
         yield
 
 
+def publish(root, manifest, store, dry_run=False, notes_file=None):
+    from macos import release_base, feed_url, artifact_url
+
+    version = manifest["version"]
+    current = version_tuple(version)
+    base = release_base(manifest["base_url"])
+    if manifest["feed_url"] != feed_url(base):
+        raise ValueError("incompatible feed configuration")
+    payload = {}
+    for artifact in manifest["artifacts"]:
+        name = artifact["path"]
+        if Path(name).name != name or name in payload:
+            raise ValueError("invalid artifact name")
+        path = root / name
+        with path.open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()
+        if path.stat().st_size != artifact["size"] or digest != artifact["sha256"]:
+            raise ValueError("artifact hash mismatch")
+        payload[name] = digest
+    names = [f"ChoscorDB-{version}.dmg", LATEST, FEED]
+    if not set(names).issubset(payload) or payload[names[0]] != payload[LATEST]:
+        raise ValueError("incomplete release or mismatched latest")
+    _, _, versions = parse_feed((root / FEED).read_bytes(), base)
+    if set(versions) != {version}:
+        raise ValueError("package appcast must contain exactly selected release")
+    if (
+        int(versions[version].find("enclosure").get("length"))
+        != (root / names[0]).stat().st_size
+    ):
+        raise ValueError("appcast length mismatch")
+    tag = "v" + version
+    notes = notes_file.read_text(encoding="utf-8").rstrip("\n") if notes_file else None
+
+    def preflight():
+        if store.tag_commit(tag) != manifest["source_commit"]:
+            raise ValueError("remote tag does not match verified source commit")
+        releases = store.releases()
+        for release in releases:
+            if release["draft"] or release["prerelease"]:
+                continue
+            candidate = release["tag_name"]
+            if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", candidate):
+                if version_tuple(candidate[1:]) > current:
+                    raise ValueError("stale publication would replace newer release")
+        matching = [r for r in releases if r["tag_name"] == tag]
+        if len(matching) > 1:
+            raise ValueError("ambiguous remote release")
+        selected = matching[0] if matching else None
+        if selected is not None and notes is not None:
+            body = selected.get("body") or ""
+            if (
+                not isinstance(body, str)
+                or body.replace("\r\n", "\n").rstrip("\n") != notes
+            ):
+                raise ValueError("release notes conflict; review remote notes manually")
+        return selected
+
+    release = preflight()
+    if release and release["prerelease"]:
+        raise ValueError("stable release conflicts with prerelease")
+    assets = store.assets(release) if release else {}
+    if set(assets) - set(names):
+        raise ValueError("unexpected assets in remote release; review manually")
+    for name, asset in assets.items():
+        if store.digest(asset) != payload[name]:
+            raise ValueError("immutable artifact conflict: " + name)
+    if release and not release["draft"] and set(assets) != set(names):
+        raise ValueError("public release is incomplete; review manually")
+    for name in names:
+        print(
+            ("Would publish " if dry_run else "Verify/publish ")
+            + artifact_url(base, version, name)
+        )
+    if dry_run:
+        return
+    if notes_file is None:
+        raise ValueError("release notes file is required")
+    if release is None:
+        preflight()
+        release = store.create(tag, notes_file)
+    if release["draft"]:
+        for name in names:
+            fresh = preflight()
+            if fresh is None or fresh["id"] != release["id"] or not fresh["draft"]:
+                raise ValueError("remote release changed during publication")
+            assets = store.assets(fresh)
+            if set(assets) - set(names):
+                raise ValueError("unexpected remote assets")
+            if name not in assets:
+                store.upload(tag, root / name)
+                assets = store.assets(fresh)
+            if name not in assets or store.digest(assets[name]) != payload[name]:
+                raise ValueError("uploaded asset bytes differ: " + name)
+        fresh = preflight()
+        if fresh is None or fresh["id"] != release["id"] or not fresh["draft"]:
+            raise ValueError("remote release changed before publication")
+        assets = store.assets(fresh)
+        if set(assets) != set(names) or any(
+            store.digest(assets[name]) != payload[name] for name in names
+        ):
+            raise ValueError("remote assets changed before publication")
+        try:
+            store.finish(tag)
+        except ValueError as error:
+            raise ValueError(
+                "Release may already be published; retry to verify remote state before announcing"
+            ) from error
+    try:
+        for name in names:
+            store.available(artifact_url(base, version, name), payload[name])
+        store.available(base + "/latest/download/" + LATEST, payload[LATEST])
+        store.available(feed_url(base), payload[FEED])
+    except ValueError as error:
+        raise ValueError(
+            "Release is published, but public verification failed; retry verification before announcing"
+        ) from error
+
+
+class GitHubStore:
+    def __init__(self, repo):
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+            raise ValueError("invalid GitHub repository")
+        self.repo = repo
+
+    def command(self, arguments, output=None):
+        try:
+            result = subprocess.run(
+                ["gh", *arguments],
+                stdout=output if output else subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=600,
+                env={**os.environ, "GH_HOST": "github.com", "GH_PROMPT_DISABLED": "1"},
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            raise ValueError(
+                "GitHub request failed; check local gh authentication/network"
+            ) from None
+        if result.returncode:
+            raise ValueError(
+                "GitHub request failed; check local gh authentication/network"
+            )
+        return result.stdout
+
+    def api(self, endpoint):
+        try:
+            return json.loads(
+                self.command(["api", "repos/" + self.repo + "/" + endpoint])
+            )
+        except (json.JSONDecodeError, UnicodeError):
+            raise ValueError("invalid GitHub response") from None
+
+    def tag_commit(self, tag):
+        obj = self.api("git/ref/tags/" + tag)["object"]
+        for _ in range(8):
+            if obj["type"] == "commit":
+                return obj["sha"]
+            if obj["type"] != "tag":
+                break
+            obj = self.api("git/tags/" + obj["sha"])["object"]
+        raise ValueError("remote tag does not resolve to a commit")
+
+    def releases(self):
+        # A successful complete list establishes absence; no HTTP failure means absent.
+        records = []
+        page = 1
+        while True:
+            batch = self.api(f"releases?per_page=100&page={page}")
+            if not isinstance(batch, list):
+                raise ValueError("invalid GitHub release list")
+            records.extend(batch)
+            if len(batch) < 100:
+                return records
+            page += 1
+
+    def create(self, tag, notes):
+        self.command(
+            [
+                "release",
+                "create",
+                tag,
+                "--repo",
+                self.repo,
+                "--verify-tag",
+                "--draft",
+                "--title",
+                "ChoscorDB " + tag[1:],
+                "--notes-file",
+                str(notes),
+            ]
+        )
+        return self.api("releases/tags/" + tag)
+
+    def assets(self, release):
+        result = {}
+        page = 1
+        while True:
+            batch = self.api(
+                f"releases/{release['id']}/assets?per_page=100&page={page}"
+            )
+            if not isinstance(batch, list):
+                raise ValueError("invalid GitHub asset list")
+            for asset in batch:
+                if asset["name"] in result:
+                    raise ValueError("duplicate remote asset")
+                result[asset["name"]] = asset
+            if len(batch) < 100:
+                return result
+            page += 1
+
+    def digest(self, asset):
+        with tempfile.TemporaryFile() as handle:
+            self.command(
+                [
+                    "api",
+                    "repos/" + self.repo + "/releases/assets/" + str(asset["id"]),
+                    "-H",
+                    "Accept: application/octet-stream",
+                ],
+                output=handle,
+            )
+            handle.seek(0)
+            return hashlib.file_digest(handle, "sha256").hexdigest()
+
+    def upload(self, tag, path):
+        self.command(["release", "upload", tag, str(path), "--repo", self.repo])
+
+    def finish(self, tag):
+        self.command(
+            ["release", "edit", tag, "--repo", self.repo, "--draft=false", "--latest"]
+        )
+
+    def available(self, url, digest):
+        with tempfile.TemporaryDirectory(prefix="choscordb-download-") as directory:
+            path = Path(directory) / "object"
+            try:
+                result = subprocess.run(
+                    [
+                        "curl",
+                        "--disable",
+                        "--fail",
+                        "--silent",
+                        "--show-error",
+                        "--location",
+                        "--proto",
+                        "=https",
+                        "--proto-redir",
+                        "=https",
+                        "--connect-timeout",
+                        "30",
+                        "--max-time",
+                        "600",
+                        "--header",
+                        "Cache-Control: no-cache",
+                        "--output",
+                        str(path),
+                        url,
+                    ],
+                    capture_output=True,
+                    timeout=610,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                raise ValueError("public download failed; check curl/network") from None
+            if result.returncode:
+                raise ValueError("public download failed; check public URL/network")
+            with path.open("rb") as handle:
+                actual = hashlib.file_digest(handle, "sha256").hexdigest()
+            if actual != digest:
+                raise ValueError("public download bytes differ")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--sparkle-tools", type=Path)
+    parser.add_argument("--notes-file", type=Path)
     parser.add_argument(
-        "--sparkle-tools",
-        type=Path,
-        help="Local Sparkle tool root; defaults to CHOSCORDB_SPARKLE_TOOLS or build/release-dependencies/sparkle",
-    )
-    parser.add_argument(
-        "--version", help="Optional assertion against selected manifest"
-    )
-    parser.add_argument(
-        "--bucket", default=os.environ.get("R2_BUCKET", "choscor-downloads")
-    )
-    parser.add_argument("--endpoint-url", default=os.environ.get("R2_ENDPOINT_URL"))
-    parser.add_argument(
-        "--base-url",
-        default=os.environ.get("CHOSCORDB_RELEASE_BASE_URL", "https://cdn.choscor.com"),
+        "--repo", help="Optional assertion against manifest GitHub repository"
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     try:
-        from macos import resolve_sparkle_tools, verify_manifest
+        from macos import release_base, resolve_sparkle_tools, verify_manifest
 
-        sparkle_tools = resolve_sparkle_tools(args.sparkle_tools)
-        manifest = verify_manifest(args.manifest.resolve(), sparkle_tools)
-        if args.version and args.version != manifest["version"]:
-            raise ValueError("selected version does not match verified manifest")
-        if args.base_url.rstrip("/") != manifest["base_url"]:
-            raise ValueError("incompatible feed configuration")
-        if not args.endpoint_url or not args.endpoint_url.startswith("https://"):
-            raise ValueError("set R2_ENDPOINT_URL to the HTTPS R2 S3 endpoint")
-        store = R2Store(args.bucket, args.endpoint_url, args.base_url)
-        # Dry-run does not create even a local lock file.
+        if not args.dry_run and (
+            args.notes_file is None or not args.notes_file.is_file()
+        ):
+            raise ValueError("provide --notes-file with reviewed public release notes")
+        manifest = verify_manifest(
+            args.manifest.resolve(), resolve_sparkle_tools(args.sparkle_tools)
+        )
+        base = release_base(manifest["base_url"])
+        repo = base.removeprefix("https://github.com/").removesuffix("/releases")
+        if args.repo and args.repo != repo:
+            raise ValueError("repository does not match verified manifest")
         with contextlib.nullcontext() if args.dry_run else publication_lock():
-            print(f"Destination: R2 bucket {args.bucket}; public URL {args.base_url}")
             publish(
                 args.manifest.resolve().parent,
                 manifest,
-                store,
+                GitHubStore(repo),
                 args.dry_run,
-                args.manifest.read_bytes(),
-                lambda data, signature: verify_historical_signature(
-                    sparkle_tools, data, signature
-                ),
+                args.notes_file,
             )
         return 0
-    except (
-        ValueError,
-        OSError,
-        KeyError,
-        ET.ParseError,
-        subprocess.TimeoutExpired,
-    ) as error:
+    except (ValueError, KeyError, ET.ParseError) as error:
         print("Publication refused: " + str(error))
+        return 1
+    except (OSError, subprocess.TimeoutExpired):
+        print("Publication refused: local tool or file operation failed")
         return 1
 
 

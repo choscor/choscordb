@@ -15,6 +15,84 @@ import tarfile
 CLI = Path(__file__).with_name("macos.py")
 
 
+class GitHubReleaseURLs(unittest.TestCase):
+    def test_generated_feed_uses_versioned_github_asset_and_preserves_signature(self):
+        import macos
+        import xml.etree.ElementTree as ET
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dmg = root / "ChoscorDB-1.2.3.dmg"
+            dmg.write_bytes(b"signed dmg bytes")
+            signature = base64.b64encode(bytes(range(64))).decode()
+            for base, expected in [
+                (
+                    "https://github.com/choscor/choscordb/releases",
+                    "https://github.com/choscor/choscordb/releases/download/v1.2.3/ChoscorDB-1.2.3.dmg",
+                ),
+                (
+                    "https://github.com/example/fork/releases",
+                    "https://github.com/example/fork/releases/download/v1.2.3/ChoscorDB-1.2.3.dmg",
+                ),
+            ]:
+                with self.subTest(base=base):
+                    path = root / "choscordb-appcast.xml"
+                    macos.write_appcast(path, base, "1.2.3", dmg, signature)
+                    item = ET.parse(path).find("./channel/item")
+                    enclosure = item.find("enclosure")
+                    self.assertEqual(enclosure.get("url"), expected)
+                    self.assertEqual(enclosure.get("length"), "16")
+                    self.assertEqual(
+                        enclosure.get("{" + macos.NS + "}edSignature"), signature
+                    )
+                    self.assertEqual(
+                        item.findtext("{" + macos.NS + "}version"), "1.2.3"
+                    )
+
+    def test_release_urls_reject_noncanonical_hosts_and_paths(self):
+        import macos
+
+        for base in [
+            "https://old-downloads.example.invalid",
+            "http://github.com/owner/repo/releases",
+            "https://github.com.evil.test/owner/repo/releases",
+            "https://user@github.com/owner/repo/releases",
+            "https://github.com:443/owner/repo/releases",
+            "https://github.com/owner/repo/releases/",
+            "https://github.com/owner/repo/releases?query=1",
+            "https://github.com/owner/repo/releases#fragment",
+            "https://github.com/owner/../releases",
+        ]:
+            with self.subTest(base=base), self.assertRaisesRegex(ValueError, "rebuild"):
+                macos.release_base(base)
+        self.assertEqual(
+            macos.feed_url("https://github.com/example/fork/releases"),
+            "https://github.com/example/fork/releases/latest/download/choscordb-appcast.xml",
+        )
+
+    def test_old_manifest_requires_rebuild_before_artifact_verification(self):
+        import macos
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            manifest = {
+                "format_version": 1,
+                "production": True,
+                "status": "verified",
+                "version": "1.2.3",
+                "source_commit": "a" * 40,
+                "base_url": "https://old-downloads.example.invalid",
+                "feed_url": "https://old-downloads.example.invalid/choscordb-appcast.xml",
+            }
+            path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError, "rebuild"):
+                macos.verify_manifest(path)
+            manifest["base_url"] = "https://github.com/choscor/choscordb/releases"
+            path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError, "feed configuration"):
+                macos.verify_manifest(path)
+
+
 class ReleaseCLI(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -209,11 +287,15 @@ if name=='cmake':
                 )
                 self.assertNotEqual(result.returncode, 0, result.stdout)
                 calls = log.read_text()
-                self.assertNotIn("aws ", calls)
+                self.assertNotIn("gh ", calls)
                 self.assertNotIn("upload", calls)
                 self.assertFalse((output / "ChoscorDB-1.2.3-manifest.json").exists())
                 if failure == "configure":
                     self.assertIn("cmake -S", calls)
+                    self.assertIn(
+                        "-DCHOSCORDB_SPARKLE_FEED_URL=https://github.com/choscor/choscordb/releases/latest/download/choscordb-appcast.xml",
+                        calls,
+                    )
                     self.assertTrue((output / "INCOMPLETE.json").is_file())
                     self.assertTrue(
                         (output / "source/choscordb-source.tar.gz").is_file()
@@ -282,8 +364,8 @@ class ManifestCLI(unittest.TestCase):
                 "status": "verified",
                 "version": "1.2.3",
                 "source_commit": "a" * 40,
-                "base_url": "https://cdn.choscor.com",
-                "feed_url": "https://cdn.choscor.com/choscordb-appcast.xml",
+                "base_url": "https://github.com/choscor/choscordb/releases",
+                "feed_url": "https://github.com/choscor/choscordb/releases/latest/download/choscordb-appcast.xml",
                 "artifacts": [
                     {
                         "path": "ChoscorDB-1.2.3.dmg",
@@ -336,8 +418,8 @@ class ManifestCLI(unittest.TestCase):
                 "status": "verified",
                 "version": "1.2.3",
                 "source_commit": "a" * 40,
-                "base_url": "https://cdn.choscor.com",
-                "feed_url": "https://cdn.choscor.com/choscordb-appcast.xml",
+                "base_url": "https://github.com/choscor/choscordb/releases",
+                "feed_url": "https://github.com/choscor/choscordb/releases/latest/download/choscordb-appcast.xml",
                 "artifacts": artifacts,
             }
             path = root / "manifest.json"

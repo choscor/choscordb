@@ -118,6 +118,9 @@ class IconsTest final : public QObject {
         using namespace choscordb::design;
         for (const auto& definition : iconCatalog()) {
             const auto role = definition.role;
+            if (role == Icon::AppMark) {
+                continue; // The app identity keeps its own colors, checked below.
+            }
             for (const auto& color : {QColor("#171717"), QColor("#fafafa")}) {
                 const auto icon = themedIcon(role, color, 20);
                 const auto pixmap = icon.pixmap(QSize(20, 20), 2.0);
@@ -140,6 +143,22 @@ class IconsTest final : public QObject {
                 QVERIFY(hasStroke);
             }
         }
+    }
+
+    void appIdentityKeepsWhiteGlyphAndGreenBackgroundAcrossThemes() {
+        using namespace choscordb::design;
+        QVERIFY(iconResourceDecodes(Icon::AppMark));
+        const auto dark = themedIcon(Icon::AppMark, QColor("#171717"), 128)
+                              .pixmap(QSize(128, 128), 2.0)
+                              .toImage();
+        const auto light = themedIcon(Icon::AppMark, QColor("#fafafa"), 128)
+                               .pixmap(QSize(128, 128), 2.0)
+                               .toImage();
+        QCOMPARE(dark, light);
+        QCOMPARE(dark.size(), QSize(256, 256));
+        QCOMPARE(dark.pixelColor(0, 0).alpha(), 0);
+        QCOMPARE(dark.pixelColor(128, 32), QColor("#16A34A"));
+        QCOMPARE(dark.pixelColor(128, 52), QColor(Qt::white));
     }
 
     void semanticCatalogIncludesApplicationActions() {
