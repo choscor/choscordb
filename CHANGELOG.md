@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.3]
+
+- Refined dialogs, menus, selects, and tooltips so they stay contained within
+  their workspace, with stronger nested-modal focus and keyboard handling.
+- Improved result-table presentation and editor completion behavior across the
+  desktop interface.
+- Updated the application mark to a white paw print on the ChoscorDB orange
+  gradient.
+
 ## [0.1.2]
 
 - Added full-result filtering and type-aware sorting across SQL Results and
