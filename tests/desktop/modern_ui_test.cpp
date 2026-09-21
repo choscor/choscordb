@@ -218,8 +218,8 @@ void ModernUiTest::savedProfileBadgesDistinguishDriversInBothThemes() {
     const auto* navLayout = qobject_cast<QVBoxLayout*>(title->parentWidget()->layout());
     QVERIFY(navLayout);
     QCOMPARE(navLayout->spacing(), choscordb::design::spacing(choscordb::design::Spacing::One));
-    QCOMPARE(profiles->geometry().top() - navLayout->itemAt(0)->geometry().bottom() - 1,
-             navLayout->spacing());
+    QTRY_COMPARE(profiles->geometry().top() - navLayout->itemAt(0)->geometry().bottom() - 1,
+                 navLayout->spacing());
     QTRY_VERIFY(!profiles->verticalScrollBar()->isVisible());
     QCOMPARE(profiles->spacing(), choscordb::design::spacing(choscordb::design::Spacing::Half));
     QCOMPARE(profiles->visualItemRect(profiles->item(1)).top() -
