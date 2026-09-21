@@ -4,10 +4,11 @@
 import argparse
 import json
 import os
-from pathlib import Path
 import sqlite3
 import subprocess
 import tempfile
+from contextlib import closing
+from pathlib import Path
 
 
 def main():
@@ -31,16 +32,19 @@ def main():
             prefix=f"choscordb-query-settings-{name}-"
         ) as directory:
             database = Path(directory) / "metadata.sqlite"
-            with sqlite3.connect(database) as connection:
-                connection.executescript(schema)
-                connection.execute(
-                    "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY)"
-                )
-                connection.execute("INSERT INTO schema_migrations(version) VALUES (1)")
-                connection.execute(
-                    "INSERT INTO settings(key,value) VALUES ('query_preferences',?)",
-                    (corrupt,),
-                )
+            with closing(sqlite3.connect(database)) as connection:
+                with connection:
+                    connection.executescript(schema)
+                    connection.execute(
+                        "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY)"
+                    )
+                    connection.execute(
+                        "INSERT INTO schema_migrations(version) VALUES (1)"
+                    )
+                    connection.execute(
+                        "INSERT INTO settings(key,value) VALUES ('query_preferences',?)",
+                        (corrupt,),
+                    )
             environment = os.environ.copy()
             environment["CHOSCORDB_TEST_CORRUPT_QUERY_SETTINGS_DATABASE"] = str(
                 database
@@ -56,7 +60,7 @@ def main():
                 check=True,
                 timeout=90,
             )
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection:
                 row = connection.execute(
                     "SELECT value FROM settings WHERE key='query_preferences'"
                 ).fetchone()

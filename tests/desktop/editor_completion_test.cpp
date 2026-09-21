@@ -34,6 +34,7 @@ class EditorCompletionTest : public QObject {
         controller.setEditor(&editor);
         editor.setText("sel");
         editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 3);
+        QCoreApplication::processEvents();
         controller.requestCompletion();
         auto* popup = controller.findChild<QCompleter*>()->popup();
         QTRY_VERIFY(popup->isVisible());
@@ -76,6 +77,7 @@ class EditorCompletionTest : public QObject {
                                           {"users", "\"audit\".\"users\"", "table"}}));
         editor.setText("us");
         editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 2);
+        QCoreApplication::processEvents();
         controller.requestCompletion();
         auto* completer = controller.findChild<QCompleter*>();
         QTRY_VERIFY(completer->popup()->isVisible());
@@ -142,6 +144,7 @@ class EditorCompletionTest : public QObject {
         auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
         editor->setText("ma");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 2);
+        QCoreApplication::processEvents();
         editor->setFocus();
         QTRY_VERIFY(editor->hasFocus());
         auto* controller = window.findChild<choscordb::EditorCompletionController*>();
@@ -169,6 +172,7 @@ class EditorCompletionTest : public QObject {
         const int beforeTyping = metadataRequests;
         editor->setText("SELECT users.na");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 15);
+        QCoreApplication::processEvents();
         window.activateWindow();
         editor->setFocus();
         QTRY_VERIFY(editor->hasFocus());
@@ -184,6 +188,7 @@ class EditorCompletionTest : public QObject {
         selectorForNone->setCurrentIndex(selectorForNone->findData(connected.last().at(0)));
         editor->setText("us");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 2);
+        QCoreApplication::processEvents();
         window.activateWindow();
         editor->setFocus();
         QTRY_VERIFY(editor->hasFocus());
@@ -218,6 +223,7 @@ class EditorCompletionTest : public QObject {
         editor.setText("SELECT * FROM main.é");
         editor.SendScintilla(QsciScintilla::SCI_GOTOPOS,
                              editor.SendScintilla(QsciScintilla::SCI_GETLENGTH));
+        QCoreApplication::processEvents();
         controller.requestCompletion();
         auto* completer = controller.findChild<QCompleter*>();
         QTRY_VERIFY_WITH_TIMEOUT(completer->popup()->isVisible(), 2000);
