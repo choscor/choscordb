@@ -115,10 +115,12 @@ pub mod ffi {
         tls: String,
         root_certificate: String,
         credential_ref: String,
+        ssh_credential_ref: String,
         ssh_enabled: bool,
         ssh_host: String,
         ssh_port: u16,
         ssh_user: String,
+        ssh_authentication: String,
         ssh_identity_file: String,
     }
     #[derive(Default)]
@@ -445,11 +447,29 @@ pub mod ffi {
             password: &str,
             token: u64,
         ) -> Submit;
+        fn profile_save_secrets(
+            engine: &mut BridgeEngine,
+            profile: ProfileDto,
+            database_action: &str,
+            database_secret: &str,
+            ssh_action: &str,
+            ssh_secret: &str,
+            token: u64,
+        ) -> Submit;
         fn profile_test_secret(
             engine: &mut BridgeEngine,
             profile: ProfileDto,
             password: &str,
             has_password: bool,
+            token: u64,
+        ) -> Submit;
+        fn profile_test_secrets(
+            engine: &mut BridgeEngine,
+            profile: ProfileDto,
+            database_secret: &str,
+            has_database_secret: bool,
+            ssh_secret: &str,
+            has_ssh_secret: bool,
             token: u64,
         ) -> Submit;
         fn profile_connect_secret(
@@ -458,7 +478,16 @@ pub mod ffi {
             password: &str,
             has_password: bool,
         ) -> Submit;
+        fn profile_connect_secrets(
+            engine: &mut BridgeEngine,
+            profile: ProfileDto,
+            database_secret: &str,
+            has_database_secret: bool,
+            ssh_secret: &str,
+            has_ssh_secret: bool,
+        ) -> Submit;
         fn initialization_error(engine: &BridgeEngine) -> String;
+        fn ssh_askpass_exit_code() -> i32;
         fn connect_sqlite(engine: &mut BridgeEngine, path: &str, read_only: bool) -> Submit;
         fn connect_postgres(
             engine: &mut BridgeEngine,
@@ -604,6 +633,9 @@ pub mod ffi {
         ) -> SqlRange;
     }
 }
+pub fn ssh_askpass_exit_code() -> i32 {
+    choscordb_driver_api::run_ssh_askpass_if_requested().unwrap_or(-1)
+}
 pub struct BridgeEngine {
     engine: Option<Engine>,
     error: String,
@@ -716,6 +748,7 @@ pub fn connect_postgres(
                 database: database.into(),
                 user: user.into(),
                 password: Some(Secret::new(password)),
+                ssh_secret: None,
                 ssh: None,
                 tls: if verify_tls {
                     TlsMode::VerifyFull
@@ -1128,6 +1161,16 @@ fn profile(dto: ffi::ProfileDto) -> std::result::Result<choscordb_core::Connecti
                 host: dto.ssh_host,
                 port: dto.ssh_port,
                 user: dto.ssh_user,
+                authentication: match dto.ssh_authentication.as_str() {
+                    "agent" => choscordb_driver_api::SshAuthentication::Agent,
+                    "public_key" => choscordb_driver_api::SshAuthentication::PublicKey,
+                    "" if dto.ssh_identity_file.is_empty() => {
+                        choscordb_driver_api::SshAuthentication::Agent
+                    }
+                    "" => choscordb_driver_api::SshAuthentication::PublicKey,
+                    "password" => choscordb_driver_api::SshAuthentication::Password,
+                    _ => return Err("Invalid SSH authentication method".into()),
+                },
                 identity_file: (!dto.ssh_identity_file.is_empty()).then_some(dto.ssh_identity_file),
             }),
             host: dto.host,
@@ -1153,6 +1196,16 @@ fn profile(dto: ffi::ProfileDto) -> std::result::Result<choscordb_core::Connecti
                 host: dto.ssh_host,
                 port: dto.ssh_port,
                 user: dto.ssh_user,
+                authentication: match dto.ssh_authentication.as_str() {
+                    "agent" => choscordb_driver_api::SshAuthentication::Agent,
+                    "public_key" => choscordb_driver_api::SshAuthentication::PublicKey,
+                    "" if dto.ssh_identity_file.is_empty() => {
+                        choscordb_driver_api::SshAuthentication::Agent
+                    }
+                    "" => choscordb_driver_api::SshAuthentication::PublicKey,
+                    "password" => choscordb_driver_api::SshAuthentication::Password,
+                    _ => return Err("Invalid SSH authentication method".into()),
+                },
                 identity_file: (!dto.ssh_identity_file.is_empty()).then_some(dto.ssh_identity_file),
             }),
             tls: PostgresTls {
@@ -1173,6 +1226,7 @@ fn profile(dto: ffi::ProfileDto) -> std::result::Result<choscordb_core::Connecti
         group_id: (!dto.group_id.is_empty()).then_some(dto.group_id),
         configuration,
         credential_ref: (!dto.credential_ref.is_empty()).then_some(dto.credential_ref),
+        ssh_credential_ref: (!dto.ssh_credential_ref.is_empty()).then_some(dto.ssh_credential_ref),
     };
     profile
         .validate()
@@ -1236,16 +1290,36 @@ pub fn profile_save_secret(
     password: &str,
     token: u64,
 ) -> ffi::Submit {
+    profile_save_secrets(engine, dto, action, password, "keep", "", token)
+}
+fn credential_update(
+    action: &str,
+    value: &str,
+) -> std::result::Result<choscordb_core::CredentialUpdate, String> {
+    match action {
+        "keep" => Ok(choscordb_core::CredentialUpdate::Keep),
+        "clear" => Ok(choscordb_core::CredentialUpdate::Clear),
+        "replace" => Ok(choscordb_core::CredentialUpdate::Replace(
+            secret(value, true)?.expect("present secret"),
+        )),
+        _ => Err("Invalid credential update".into()),
+    }
+}
+pub fn profile_save_secrets(
+    engine: &mut BridgeEngine,
+    dto: ffi::ProfileDto,
+    database_action: &str,
+    database_secret: &str,
+    ssh_action: &str,
+    ssh_secret: &str,
+    token: u64,
+) -> ffi::Submit {
     submit(engine, |e| {
-        let update = match action {
-            "keep" => choscordb_core::CredentialUpdate::Keep,
-            "clear" => choscordb_core::CredentialUpdate::Clear,
-            "replace" => choscordb_core::CredentialUpdate::Replace(
-                secret(password, true)?.expect("present secret"),
-            ),
-            _ => return Err("Invalid credential update".into()),
+        let updates = choscordb_core::CredentialUpdates {
+            database: credential_update(database_action, database_secret)?,
+            ssh: credential_update(ssh_action, ssh_secret)?,
         };
-        e.profile_save_with_secret(profile(dto)?, update, token)
+        e.profile_save_with_secrets(profile(dto)?, updates, token)
             .map(|()| token)
             .map_err(|e| e.to_string())
     })
@@ -1257,10 +1331,28 @@ pub fn profile_test_secret(
     has_password: bool,
     token: u64,
 ) -> ffi::Submit {
+    profile_test_secrets(engine, dto, password, has_password, "", false, token)
+}
+pub fn profile_test_secrets(
+    engine: &mut BridgeEngine,
+    dto: ffi::ProfileDto,
+    database_secret: &str,
+    has_database_secret: bool,
+    ssh_secret: &str,
+    has_ssh_secret: bool,
+    token: u64,
+) -> ffi::Submit {
     submit(engine, |e| {
-        e.test_profile(profile(dto)?, secret(password, has_password)?, token)
-            .map(|()| token)
-            .map_err(|e| e.to_string())
+        e.test_profile_with_secrets(
+            profile(dto)?,
+            choscordb_core::ProfileSecrets {
+                database: secret(database_secret, has_database_secret)?,
+                ssh: secret(ssh_secret, has_ssh_secret)?,
+            },
+            token,
+        )
+        .map(|()| token)
+        .map_err(|e| e.to_string())
     })
 }
 pub fn profile_connect_secret(
@@ -1269,10 +1361,26 @@ pub fn profile_connect_secret(
     password: &str,
     has_password: bool,
 ) -> ffi::Submit {
+    profile_connect_secrets(engine, dto, password, has_password, "", false)
+}
+pub fn profile_connect_secrets(
+    engine: &mut BridgeEngine,
+    dto: ffi::ProfileDto,
+    database_secret: &str,
+    has_database_secret: bool,
+    ssh_secret: &str,
+    has_ssh_secret: bool,
+) -> ffi::Submit {
     submit(engine, |e| {
-        e.connect_profile(profile(dto)?, secret(password, has_password)?)
-            .map(pack)
-            .map_err(|e| e.to_string())
+        e.connect_profile_with_secrets(
+            profile(dto)?,
+            choscordb_core::ProfileSecrets {
+                database: secret(database_secret, has_database_secret)?,
+                ssh: secret(ssh_secret, has_ssh_secret)?,
+            },
+        )
+        .map(pack)
+        .map_err(|e| e.to_string())
     })
 }
 

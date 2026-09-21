@@ -603,6 +603,7 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
         name: value.name,
         group_id: value.group_id.unwrap_or_default(),
         credential_ref: value.credential_ref.unwrap_or_default(),
+        ssh_credential_ref: value.ssh_credential_ref.unwrap_or_default(),
         ..Default::default()
     };
     match value.configuration {
@@ -635,6 +636,12 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
                 dto.ssh_host = ssh.host;
                 dto.ssh_port = ssh.port;
                 dto.ssh_user = ssh.user;
+                dto.ssh_authentication = match ssh.authentication {
+                    SshAuthentication::Agent => "agent",
+                    SshAuthentication::PublicKey => "public_key",
+                    SshAuthentication::Password => "password",
+                }
+                .into();
                 dto.ssh_identity_file = ssh.identity_file.unwrap_or_default();
             }
         }
@@ -662,6 +669,12 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
                 dto.ssh_host = ssh.host;
                 dto.ssh_port = ssh.port;
                 dto.ssh_user = ssh.user;
+                dto.ssh_authentication = match ssh.authentication {
+                    SshAuthentication::Agent => "agent",
+                    SshAuthentication::PublicKey => "public_key",
+                    SshAuthentication::Password => "password",
+                }
+                .into();
                 dto.ssh_identity_file = ssh.identity_file.unwrap_or_default();
             }
         }

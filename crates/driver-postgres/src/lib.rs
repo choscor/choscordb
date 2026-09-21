@@ -143,13 +143,15 @@ struct Cancellation {
     token: tokio_postgres::CancelToken,
     tls: MakeTlsConnector,
     ssh: Option<SshTunnel>,
+    ssh_secret: Option<Secret>,
     host: String,
     port: u16,
 }
 impl Cancellation {
     async fn send_cancel(&self) -> Result<()> {
         if let Some(settings) = &self.ssh {
-            let mut stream = ssh::Stream::open(settings, &self.host, self.port)?;
+            let mut stream =
+                ssh::Stream::open(settings, self.ssh_secret.as_ref(), &self.host, self.port)?;
             let tls = <MakeTlsConnector as MakeTlsConnect<ssh::Stream>>::make_tls_connect(
                 &mut self.tls.clone(),
                 &self.host,
@@ -237,6 +239,7 @@ impl DatabaseDriver for PostgresDriver {
             database,
             user,
             password,
+            ssh_secret,
             tls,
             root_certificate,
             ssh,
@@ -348,7 +351,7 @@ impl DatabaseDriver for PostgresDriver {
             }
         };
         let (client, mut messages) = if let Some(settings) = &ssh {
-            let stream = ssh::Stream::open(settings, &host, port)?;
+            let stream = ssh::Stream::open(settings, ssh_secret.as_ref(), &host, port)?;
             let tls = <MakeTlsConnector as MakeTlsConnect<ssh::Stream>>::make_tls_connect(
                 &mut connector.clone(),
                 &host,
@@ -397,6 +400,7 @@ impl DatabaseDriver for PostgresDriver {
             token: client.cancel_token(),
             tls: connector,
             ssh,
+            ssh_secret,
             host,
             port,
         });

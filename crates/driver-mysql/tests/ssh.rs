@@ -11,6 +11,7 @@ fn options(trusted: bool) -> ConnectionOptions {
         database: "choscordb_test".into(),
         user: "root".into(),
         password: Some(Secret::new("choscordb-test-password")),
+        ssh_secret: None,
         tls: TlsMode::Disable,
         root_certificate: None,
         ssh: Some(SshTunnel {
@@ -20,6 +21,7 @@ fn options(trusted: bool) -> ConnectionOptions {
                 .parse()
                 .unwrap(),
             user: "root".into(),
+            authentication: SshAuthentication::PublicKey,
             identity_file: Some(std::env::var("CHOSCORDB_SSH_IDENTITY").expect("fixture identity")),
         }),
     }

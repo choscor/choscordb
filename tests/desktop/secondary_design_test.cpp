@@ -272,6 +272,9 @@ class SecondaryDesignTest final : public QObject {
         QVERIFY(save->isVisible());
         QVERIFY(dialog.rect().contains(QRect(save->mapTo(&dialog, QPoint()), save->size())));
         QVERIFY(dialog.findChild<QLineEdit*>("profilePassword")->isVisible());
+        QVERIFY(dialog.findChild<QLineEdit*>("profilePassword")
+                    ->placeholderText()
+                    .contains("passwordless", Qt::CaseInsensitive));
     }
 
     void mysqlProfileChoiceUsesServerFieldsAndDefaultPortWithSsh() {
@@ -301,6 +304,25 @@ class SecondaryDesignTest final : public QObject {
         QVERIFY(mysqlSsh->isVisible());
         mysqlSsh->setChecked(true);
         QVERIFY(dialog.findChild<QLineEdit*>("profileSshHost")->isVisible());
+        auto* authentication = dialog.findChild<QComboBox*>("profileSshAuthentication");
+        auto* identity = dialog.findChild<QLineEdit*>("profileSshIdentityFile");
+        auto* secret = dialog.findChild<QLineEdit*>("profileSshSecret");
+        auto* remember = dialog.findChild<QCheckBox*>("profileRememberSshSecret");
+        QVERIFY(authentication && identity && secret && remember);
+        QCOMPARE(authentication->count(), 3);
+        authentication->setCurrentIndex(authentication->findData("agent"));
+        QVERIFY(!identity->isVisible());
+        QVERIFY(!secret->isVisible());
+        authentication->setCurrentIndex(authentication->findData("public_key"));
+        QVERIFY(identity->isVisible());
+        QVERIFY(secret->isVisible());
+        QCOMPARE(secret->echoMode(), QLineEdit::Password);
+        secret->setText("key-passphrase");
+        authentication->setCurrentIndex(authentication->findData("password"));
+        QVERIFY(!identity->isVisible());
+        QVERIFY(secret->isVisible());
+        QVERIFY(secret->text().isEmpty());
+        QVERIFY(remember->isVisible());
         port->setValue(3307);
         dialog.findChild<QPushButton*>("profileDriverSqlite")->click();
         mysql->click();
@@ -330,6 +352,9 @@ class SecondaryDesignTest final : public QObject {
         QCOMPARE(port->value(), 22);
         port->setValue(2222);
         dialog.findChild<QLineEdit*>("profileSshUser")->setText("operator");
+        dialog.findChild<QComboBox*>("profileSshAuthentication")
+            ->setCurrentIndex(
+                dialog.findChild<QComboBox*>("profileSshAuthentication")->findData("public_key"));
         dialog.findChild<QLineEdit*>("profileSshIdentityFile")->setText("/keys/test");
         QSignalSpy saved(&adapter, &EngineAdapter::profileSaved);
         save->click();
@@ -339,6 +364,7 @@ class SecondaryDesignTest final : public QObject {
         QCOMPARE(profile.sshHost, QString("bastion.example"));
         QCOMPARE(profile.sshPort, quint16(2222));
         QCOMPARE(profile.sshUser, QString("operator"));
+        QCOMPARE(profile.sshAuthentication, QString("public_key"));
         QCOMPARE(profile.sshIdentityFile, QString("/keys/test"));
         QTRY_VERIFY(save->isEnabled());
         QCOMPARE(host->text(), QString("bastion.example"));

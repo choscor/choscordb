@@ -10,6 +10,7 @@ fn profile(id: &str) -> ConnectionProfile {
             read_only: false,
         },
         credential_ref: None,
+        ssh_credential_ref: None,
     }
 }
 fn event(engine: &mut Engine) -> Event {

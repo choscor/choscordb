@@ -65,6 +65,9 @@ pub struct ConnectionProfile {
     pub configuration: ProfileConfiguration,
     /// Opaque identifier for an OS credential item, never the credential itself.
     pub credential_ref: Option<String>,
+    /// Opaque identifier for an OS credential item containing an SSH password or key passphrase.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh_credential_ref: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -249,7 +252,7 @@ impl Storage {
         let tx = self
             .db
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let previous = credential_reference(&tx, &profile.id)?;
+        let previous = credential_references(&tx, &profile.id)?;
         let exists: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM connection_profiles WHERE id=?1)",
             [&profile.id],
@@ -259,7 +262,10 @@ impl Storage {
             check_profile_capacity(&tx)?;
         }
         tx.execute("INSERT INTO connection_profiles(id, data) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET data=excluded.data", params![profile.id, data])?;
-        if let Some(reference) = previous.filter(|r| Some(r) != profile.credential_ref.as_ref()) {
+        for reference in previous.into_iter().flatten().filter(|reference| {
+            Some(reference) != profile.credential_ref.as_ref()
+                && Some(reference) != profile.ssh_credential_ref.as_ref()
+        }) {
             enqueue_cleanup(&tx, &reference)?;
         }
         tx.commit()?;
@@ -300,6 +306,7 @@ impl Storage {
         profile.id = id.into();
         profile.name = name.into();
         profile.credential_ref = None;
+        profile.ssh_credential_ref = None;
         let data = encode_profile(&profile)?;
         let tx = self
             .db
@@ -317,9 +324,9 @@ impl Storage {
         let tx = self
             .db
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let previous = credential_reference(&tx, id)?;
+        let previous = credential_references(&tx, id)?;
         let removed = tx.execute("DELETE FROM connection_profiles WHERE id=?1", [id])? != 0;
-        if let Some(reference) = previous {
+        for reference in previous.into_iter().flatten() {
             enqueue_cleanup(&tx, &reference)?;
         }
         tx.commit()?;
@@ -356,10 +363,10 @@ impl Storage {
         enqueue_cleanup(&self.db, reference)
     }
     pub fn credential_is_referenced(&self, reference: &str) -> Result<bool> {
-        Ok(self
-            .profiles()?
-            .iter()
-            .any(|p| p.credential_ref.as_deref() == Some(reference)))
+        Ok(self.profiles()?.iter().any(|p| {
+            p.credential_ref.as_deref() == Some(reference)
+                || p.ssh_credential_ref.as_deref() == Some(reference)
+        }))
     }
     /// Application-owned preferences only. Never pass credentials or connection strings.
     pub fn set_setting<T: Serialize>(&mut self, key: &str, value: &T) -> Result<()> {
@@ -591,7 +598,11 @@ impl std::fmt::Debug for HistoryEntry {
 impl ProfileConfiguration {
     /// Convert all stored options without weakening TLS. Resolve the credential
     /// separately through the OS adapter; credentials never enter this DTO.
-    pub fn connection_options(&self, password: Option<Secret>) -> ConnectionOptions {
+    pub fn connection_options(
+        &self,
+        password: Option<Secret>,
+        ssh_secret: Option<Secret>,
+    ) -> ConnectionOptions {
         match self {
             Self::Sqlite { path, read_only } => ConnectionOptions::Sqlite {
                 path: path.into(),
@@ -610,6 +621,7 @@ impl ProfileConfiguration {
                 database: database.clone(),
                 user: user.clone(),
                 password,
+                ssh_secret,
                 ssh: ssh.clone(),
                 tls: tls.mode.clone(),
                 root_certificate: tls.root_certificate_path.as_ref().map(Into::into),
@@ -627,6 +639,7 @@ impl ProfileConfiguration {
                 database: database.clone(),
                 user: user.clone(),
                 password,
+                ssh_secret,
                 tls: tls.mode.clone(),
                 root_certificate: tls.root_certificate_path.as_ref().map(Into::into),
                 ssh: ssh.clone(),
@@ -652,7 +665,14 @@ impl ConnectionProfile {
     pub fn validate(&self) -> Result<()> {
         validate_field(&self.id, 256)?;
         validate_field(&self.name, 1024)?;
-        for field in [&self.group_id, &self.credential_ref].into_iter().flatten() {
+        for field in [
+            &self.group_id,
+            &self.credential_ref,
+            &self.ssh_credential_ref,
+        ]
+        .into_iter()
+        .flatten()
+        {
             validate_field(field, 16 * 1024)?;
         }
         match &self.configuration {
@@ -773,13 +793,14 @@ fn enqueue_cleanup(db: &Connection, reference: &str) -> Result<()> {
     Ok(())
 }
 
-fn credential_reference(db: &Connection, id: &str) -> Result<Option<String>> {
+fn credential_references(db: &Connection, id: &str) -> Result<[Option<String>; 2]> {
     let mut statement = db.prepare("SELECT id,data FROM connection_profiles WHERE id=?1")?;
     let mut rows = statement.query([id])?;
-    rows.next()?
-        .map(decode_profile)
-        .transpose()
-        .map(|p| p.and_then(|p| p.credential_ref))
+    rows.next()?.map(decode_profile).transpose().map(|profile| {
+        profile.map_or([None, None], |profile| {
+            [profile.credential_ref, profile.ssh_credential_ref]
+        })
+    })
 }
 
 /// SQL positions use UTF-8 byte offsets, matching Scintilla.

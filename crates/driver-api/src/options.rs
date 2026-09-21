@@ -74,13 +74,21 @@ impl std::fmt::Debug for Secret {
         f.write_str("[REDACTED]")
     }
 }
-/// SSH authentication uses OpenSSH's agent or an optional private-key file.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SshAuthentication {
+    Agent,
+    #[default]
+    PublicKey,
+    Password,
+}
+/// SSH authentication uses OpenSSH with an explicit authentication method.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct SshTunnel {
     pub host: String,
     pub port: u16,
     pub user: String,
+    pub authentication: SshAuthentication,
     pub identity_file: Option<String>,
 }
 impl SshTunnel {
@@ -95,6 +103,12 @@ impl SshTunnel {
             || self.identity_file.as_ref().is_some_and(|path| {
                 path.trim().is_empty() || path.len() > 16 * 1024 || path.contains('\0')
             })
+            || match self.authentication {
+                SshAuthentication::Agent | SshAuthentication::Password => {
+                    self.identity_file.is_some()
+                }
+                SshAuthentication::PublicKey => self.identity_file.is_none(),
+            }
         {
             return Err(DriverError::new(
                 ErrorKind::InvalidInput,
@@ -102,6 +116,36 @@ impl SshTunnel {
             ));
         }
         Ok(())
+    }
+}
+impl<'de> Deserialize<'de> for SshTunnel {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Stored {
+            host: String,
+            port: u16,
+            user: String,
+            authentication: Option<SshAuthentication>,
+            identity_file: Option<String>,
+        }
+        let stored = Stored::deserialize(deserializer)?;
+        let authentication = stored.authentication.unwrap_or_else(|| {
+            if stored.identity_file.is_some() {
+                SshAuthentication::PublicKey
+            } else {
+                SshAuthentication::Agent
+            }
+        });
+        Ok(Self {
+            host: stored.host,
+            port: stored.port,
+            user: stored.user,
+            authentication,
+            identity_file: stored.identity_file,
+        })
     }
 }
 #[derive(Debug)]
@@ -116,6 +160,7 @@ pub enum ConnectionOptions {
         database: String,
         user: String,
         password: Option<Secret>,
+        ssh_secret: Option<Secret>,
         tls: TlsMode,
         root_certificate: Option<std::path::PathBuf>,
         ssh: Option<SshTunnel>,
@@ -126,6 +171,7 @@ pub enum ConnectionOptions {
         database: String,
         user: String,
         password: Option<Secret>,
+        ssh_secret: Option<Secret>,
         tls: TlsMode,
         root_certificate: Option<std::path::PathBuf>,
         ssh: Option<SshTunnel>,

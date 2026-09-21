@@ -10,7 +10,7 @@ mod operation;
 mod profiles;
 mod query_history;
 mod recovery;
-pub use profiles::CredentialUpdate;
+pub use profiles::{CredentialUpdate, CredentialUpdates, ProfileSecrets};
 mod protocol;
 pub use choscordb_storage::{
     APPEARANCE_LAYOUT_VERSION, Accent, AccentPreset, AppearanceLayout, ConnectionProfile,

@@ -16,9 +16,12 @@ MySQL SQL exports encode text as UTF-8 hexadecimal expressions using
 [CONVERT](https://dev.mysql.com/doc/refman/8.4/en/cast-functions.html), so quote
 and backslash contents survive differing server SQL modes.
 
-SSH profiles use the same OpenSSH key/agent authentication and strict host-key
-verification as PostgreSQL. The original database hostname remains the TLS
-verification name when traffic passes through the tunnel.
+SSH profiles support password, public-key, and agent authentication with strict
+host-key verification. An encrypted private key can use a session-only or securely
+saved passphrase. SSH passwords and passphrases are supplied through the local
+askpass broker and do not enter profile metadata or command arguments. The original
+database hostname remains the TLS verification name when traffic passes through
+the tunnel.
 
 InnoDB table grids support reviewed, bound INSERT/UPDATE/DELETE batches. Updates
 and deletes require a primary key and compare the original values; a conflict
@@ -108,6 +111,9 @@ For the disposable SSH integration fixture (Docker and OpenSSH required), run:
 ```sh
 CHOSCORDB_MYSQL_CONTAINER=choscordb-mysql-test python3 scripts/integration/mysql_ssh_fixture.py
 ```
+
+This exercises unencrypted public-key forwarding, strict host-key rejection,
+SSH password authentication, and an encrypted private key with a passphrase.
 
 It creates temporary keys and host-key storage, runs a real SSH server alongside
 the MySQL fixture, and cleans up its resources without changing `~/.ssh`.

@@ -43,9 +43,10 @@ fn mysql_options_preserve_endpoint_tls_and_transient_secret() {
         tls,
         root_certificate,
         ssh: _,
+        ssh_secret: _,
     } = profile
         .configuration
-        .connection_options(Some(Secret::new("transient")))
+        .connection_options(Some(Secret::new("transient")), None)
     else {
         panic!("wrong driver")
     };
@@ -85,7 +86,7 @@ fn invalid_mysql_settings_cannot_replace_saved_profile() {
 #[test]
 fn mysql_ssh_profile_round_trips_and_validates() {
     let mut json = profile_json();
-    json["configuration"]["ssh"] = serde_json::json!({"host":"bastion.example","port":2222,"user":"tunnel","identity_file":null});
+    json["configuration"]["ssh"] = serde_json::json!({"host":"bastion.example","port":2222,"user":"tunnel","authentication":"agent","identity_file":null});
     let profile: ConnectionProfile =
         serde_json::from_value(json.clone()).expect("MySQL SSH profile");
     let mut storage = Storage::in_memory().unwrap();

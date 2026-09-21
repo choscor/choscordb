@@ -1,6 +1,8 @@
 //! OpenSSH owns host-key verification and agent/key authentication. Its stdio
 //! forwarding keeps the remote database address off the local TCP interface.
-use choscordb_driver_api::{DriverError, ErrorKind, Result, SshTunnel};
+use choscordb_driver_api::{
+    DriverError, ErrorKind, Result, Secret, SshAskpass, SshTunnel, configure_ssh_authentication,
+};
 use std::{
     pin::Pin,
     process::Stdio,
@@ -20,12 +22,18 @@ pub(crate) struct Stream {
     child: Option<Child>,
     input: ChildStdin,
     output: ChildStdout,
+    _askpass: Option<SshAskpass>,
 }
 impl Stream {
     pub(crate) fn take_process(&mut self) -> Process {
         Process(self.child.take())
     }
-    pub(crate) fn open(settings: &SshTunnel, host: &str, port: u16) -> Result<Self> {
+    pub(crate) fn open(
+        settings: &SshTunnel,
+        secret: Option<&Secret>,
+        host: &str,
+        port: u16,
+    ) -> Result<Self> {
         settings.validate()?;
         let destination = if host.contains(':') {
             format!("[{host}]:{port}")
@@ -33,26 +41,25 @@ impl Stream {
             format!("{host}:{port}")
         };
         let mut command = Command::new("ssh");
+        command.args([
+            "-T",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "-o",
+            "ConnectionAttempts=1",
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-o",
+            "ControlMaster=no",
+            "-o",
+            "ControlPath=none",
+            "-o",
+            "PermitLocalCommand=no",
+        ]);
+        let askpass = configure_ssh_authentication(&mut command, settings, secret)?;
         command
-            .args([
-                "-T",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "StrictHostKeyChecking=yes",
-                "-o",
-                "ConnectTimeout=15",
-                "-o",
-                "ConnectionAttempts=1",
-                "-o",
-                "ExitOnForwardFailure=yes",
-                "-o",
-                "ControlMaster=no",
-                "-o",
-                "ControlPath=none",
-                "-o",
-                "PermitLocalCommand=no",
-            ])
             .arg("-p")
             .arg(settings.port.to_string())
             .arg("-l")
@@ -81,9 +88,11 @@ impl Stream {
             child: Some(child),
             input,
             output,
+            _askpass: askpass,
         })
     }
 }
+
 pub(crate) struct Process(Option<Child>);
 impl Process {
     pub(crate) async fn finish(&mut self) -> Result<()> {

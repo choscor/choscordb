@@ -116,6 +116,7 @@ impl DatabaseDriver for MysqlDriver {
             database,
             user,
             password,
+            ssh_secret,
             tls,
             root_certificate,
             ssh,
@@ -172,7 +173,7 @@ impl DatabaseDriver for MysqlDriver {
             None
         };
         let tunnel = match ssh {
-            Some(ssh) => Some(ssh::Tunnel::open(&ssh, &host, port).await?),
+            Some(ssh) => Some(ssh::Tunnel::open(&ssh, ssh_secret, &host, port).await?),
             None => None,
         };
         let opts: Opts = OptsBuilder::default()

@@ -36,6 +36,7 @@ class ProfileDialog final : public DialogShell {
     void setBusy(bool busy, const QString& message = {});
     void updateDriver();
     bool discardChanges();
+    bool validateSshDraft(const SavedProfile& profile);
     void connectDraft(bool openQuery);
     void dispatchProfileAction();
     QPointer<EngineAdapter> adapter_;
@@ -48,6 +49,7 @@ class ProfileDialog final : public DialogShell {
     bool connectAfterSave_ = false;
     bool openQueryAfterConnect_ = false;
     bool preservePasswordOnRefresh_ = false;
+    bool preserveSshSecretOnRefresh_ = false;
     quint64 token_ = 0;
     quint64 revision_ = 0;
     bool busy_ = false;
@@ -62,11 +64,11 @@ class ProfileDialog final : public DialogShell {
     QWidget* postgresFields_;
     QWidget* sshFields_;
     QLineEdit *name_, *path_, *host_, *database_, *user_, *rootCertificate_, *password_;
-    QComboBox *driver_, *tls_;
-    QCheckBox *readOnly_, *rememberPassword_;
+    QComboBox *driver_, *tls_, *sshAuthentication_;
+    QCheckBox *readOnly_, *rememberPassword_, *rememberSshSecret_;
     QSpinBox* port_;
     QCheckBox* sshEnabled_;
-    QLineEdit *sshHost_, *sshUser_, *sshIdentityFile_;
+    QLineEdit *sshHost_, *sshUser_, *sshIdentityFile_, *sshSecret_;
     QSpinBox* sshPort_;
     QLabel* status_;
     design::FieldValidation* nameValidation_;

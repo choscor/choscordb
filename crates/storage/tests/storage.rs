@@ -10,6 +10,7 @@ fn profile() -> ConnectionProfile {
             read_only: true,
         },
         credential_ref: None,
+        ssh_credential_ref: None,
     }
 }
 
@@ -188,6 +189,7 @@ fn postgres_profile_persists_only_credential_references() {
             tls: PostgresTls::default(),
         },
         credential_ref: Some("choscordb/pg/password".into()),
+        ssh_credential_ref: None,
     };
     let mut store = Storage::open(&path).unwrap();
     store.save_profile(&p).unwrap();
@@ -311,7 +313,7 @@ fn every_supported_profile_option_reaches_driver_unchanged() {
         };
         let encoded = serde_json::to_string(&config).unwrap();
         let restored: ProfileConfiguration = serde_json::from_str(&encoded).unwrap();
-        match restored.connection_options(Some(Secret::new("private-password"))) {
+        match restored.connection_options(Some(Secret::new("private-password")), None) {
             ConnectionOptions::Postgres {
                 ssh: None,
                 host,
@@ -321,6 +323,7 @@ fn every_supported_profile_option_reaches_driver_unchanged() {
                 password,
                 tls,
                 root_certificate,
+                ssh_secret: _,
             } => {
                 assert_eq!(
                     (host.as_str(), port, database.as_str(), user.as_str()),
@@ -337,7 +340,7 @@ fn every_supported_profile_option_reaches_driver_unchanged() {
         }
         assert!(!encoded.contains("private-password"));
     }
-    match profile().configuration.connection_options(None) {
+    match profile().configuration.connection_options(None, None) {
         ConnectionOptions::Sqlite { path, read_only } => {
             assert_eq!(path, std::path::PathBuf::from("/tmp/data.sqlite"));
             assert!(read_only);

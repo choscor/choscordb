@@ -24,6 +24,7 @@ fn settings() -> ConnectionOptions {
         password: config
             .get_password()
             .map(|value| Secret::new(std::str::from_utf8(value).unwrap())),
+        ssh_secret: None,
         tls: if std::env::var_os("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE").is_some() {
             TlsMode::VerifyFull
         } else {
@@ -38,6 +39,7 @@ fn settings() -> ConnectionOptions {
                     .parse()
                     .unwrap(),
                 user: std::env::var("CHOSCORDB_TEST_POSTGRES_SSH_USER").expect("SSH fixture user"),
+                authentication: SshAuthentication::PublicKey,
                 identity_file: std::env::var("CHOSCORDB_TEST_POSTGRES_SSH_IDENTITY").ok(),
             }),
         root_certificate: std::env::var_os("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE")
@@ -649,6 +651,7 @@ async fn oversized_tls_root_is_rejected_before_connection() {
         database: "postgres".into(),
         user: "fixture".into(),
         password: None,
+        ssh_secret: None,
         tls: TlsMode::VerifyFull,
         ssh: None,
         root_certificate: Some(file.path().into()),

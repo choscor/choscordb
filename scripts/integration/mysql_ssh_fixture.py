@@ -41,17 +41,31 @@ def main():
                 "-f",
                 str(directory / key),
             )
+        run(
+            "ssh-keygen",
+            "-q",
+            "-t",
+            "ed25519",
+            "-N",
+            "choscordb-key-passphrase",
+            "-f",
+            str(directory / "identity-encrypted"),
+        )
+        (directory / "authorized_keys").write_text(
+            (directory / "identity.pub").read_text()
+            + (directory / "identity-encrypted.pub").read_text()
+        )
         (directory / "sshd_config").write_text(
             "\n".join(
                 [
                     "Port 22",
                     "ListenAddress 0.0.0.0",
                     "HostKey /fixture/host",
-                    "AuthorizedKeysFile /fixture/identity.pub",
+                    "AuthorizedKeysFile /fixture/authorized_keys",
                     "StrictModes no",
                     "PermitRootLogin yes",
                     "PubkeyAuthentication yes",
-                    "PasswordAuthentication no",
+                    "PasswordAuthentication yes",
                     "KbdInteractiveAuthentication no",
                     "AllowTcpForwarding yes",
                     "UsePAM no",
@@ -79,7 +93,7 @@ def main():
                 "/bin/sh",
                 "postgres:17-alpine",
                 "-c",
-                "apk add --no-cache openssh >/dev/null && passwd -d root >/dev/null && exec /usr/sbin/sshd -D -e -f /fixture/sshd_config",
+                "apk add --no-cache openssh >/dev/null && echo 'root:choscordb-ssh-password' | chpasswd && exec /usr/sbin/sshd -D -e -f /fixture/sshd_config",
                 stdout=subprocess.DEVNULL,
             )
             port = (
@@ -102,6 +116,9 @@ def main():
                 CHOSCORDB_REAL_SSH=ssh,
                 CHOSCORDB_SSH_PORT=port,
                 CHOSCORDB_SSH_IDENTITY=str(directory / "identity"),
+                CHOSCORDB_SSH_ENCRYPTED_IDENTITY=str(directory / "identity-encrypted"),
+                CHOSCORDB_SSH_KEY_PASSPHRASE="choscordb-key-passphrase",
+                CHOSCORDB_SSH_PASSWORD="choscordb-ssh-password",
                 CHOSCORDB_SSH_KNOWN_HOSTS=str(directory / "known_hosts"),
             )
             env["PATH"] = str(directory) + os.pathsep + env["PATH"]
@@ -145,6 +162,17 @@ def main():
                 "--",
                 "--include-ignored",
                 "--test-threads=1",
+                cwd=root,
+                env=env,
+            )
+            run(
+                "cargo",
+                "run",
+                "-p",
+                "choscordb-driver-mysql",
+                "--example",
+                "ssh_auth",
+                "--locked",
                 cwd=root,
                 env=env,
             )

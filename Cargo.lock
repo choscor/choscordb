@@ -360,6 +360,8 @@ dependencies = [
  "async-trait",
  "serde",
  "serde_json",
+ "tokio",
+ "uuid",
  "zeroize",
 ]
 

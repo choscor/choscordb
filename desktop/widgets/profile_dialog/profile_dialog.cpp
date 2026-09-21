@@ -166,6 +166,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     password_ = line("profilePassword");
     password_->setEchoMode(QLineEdit::Password);
     password_->setMaxLength(16384);
+    password_->setPlaceholderText(tr("Optional — leave blank for passwordless authentication"));
     pg->addRow(tr("&Password"), password_);
     rememberPassword_ = new QCheckBox(tr("Save password in OS credential store"), form_);
     rememberPassword_->setObjectName("profileRememberPassword");
@@ -211,18 +212,32 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     sshLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
     sshHost_ = line("profileSshHost");
     sshUser_ = line("profileSshUser");
+    sshAuthentication_ = new QComboBox(sshFields);
+    sshAuthentication_->setObjectName("profileSshAuthentication");
+    sshAuthentication_->addItem(tr("SSH agent"), "agent");
+    sshAuthentication_->addItem(tr("Public key"), "public_key");
+    sshAuthentication_->addItem(tr("Password"), "password");
     sshIdentityFile_ = line("profileSshIdentityFile");
     sshIdentityFile_->setPlaceholderText(tr("Optional — use SSH agent or default keys"));
+    sshSecret_ = line("profileSshSecret");
+    sshSecret_->setEchoMode(QLineEdit::Password);
+    sshSecret_->setMaxLength(16384);
+    rememberSshSecret_ = new QCheckBox(tr("Save SSH credential in OS credential store"), sshFields);
+    rememberSshSecret_->setObjectName("profileRememberSshSecret");
     sshPort_ = new QSpinBox(sshFields);
     sshPort_->setObjectName("profileSshPort");
     sshPort_->setRange(1, 65535);
     sshLayout->addRow(tr("SSH host"), sshHost_);
     sshLayout->addRow(tr("SSH port"), sshPort_);
     sshLayout->addRow(tr("SSH username"), sshUser_);
+    sshLayout->addRow(tr("Authentication"), sshAuthentication_);
     sshLayout->addRow(tr("SSH private key file"), sshIdentityFile_);
+    sshLayout->addRow(tr("SSH passphrase"), sshSecret_);
+    sshLayout->addRow(rememberSshSecret_);
     sshLayout->addRow(createDescription(
-        tr("Uses system OpenSSH with your SSH agent or key file. The server must already be "
-           "trusted in SSH known hosts. Unlock encrypted keys in your agent first. "
+        tr("Uses system OpenSSH. Passwords and private-key passphrases can remain session-only or "
+           "be saved in the OS credential store. The server must already be trusted in SSH known "
+           "hosts. "
            "The database host and port are reached from the SSH server."),
         sshFields));
     pg->addRow(sshFields);
@@ -239,6 +254,38 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
             ++revision_;
         }
     });
+    const auto updateSshAuthentication = [this, sshLayout] {
+        const auto authentication = sshAuthentication_->currentData().toString();
+        const bool agent = authentication == "agent";
+        const bool publicKey = authentication == "public_key";
+        sshLayout->setRowVisible(sshIdentityFile_, publicKey);
+        sshLayout->setRowVisible(sshSecret_, !agent);
+        sshLayout->setRowVisible(rememberSshSecret_, !agent);
+        if (auto* label = qobject_cast<QLabel*>(sshLayout->labelForField(sshSecret_)))
+            label->setText(publicKey ? tr("SSH passphrase") : tr("SSH password"));
+        sshIdentityFile_->setPlaceholderText(tr("Private key file"));
+        sshSecret_->setPlaceholderText(publicKey ? tr("Optional for an unencrypted key")
+                                                 : tr("SSH password"));
+    };
+    connect(sshAuthentication_, &QComboBox::currentIndexChanged, this,
+            [this, updateSshAuthentication] {
+                if (!filling_) {
+                    sshSecret_->clear();
+                    sshSecret_->setModified(false);
+                }
+                updateSshAuthentication();
+                if (!filling_) {
+                    dirty_ = true;
+                    ++revision_;
+                }
+            });
+    connect(rememberSshSecret_, &QCheckBox::toggled, this, [this] {
+        if (!filling_) {
+            dirty_ = true;
+            ++revision_;
+        }
+    });
+    updateSshAuthentication();
     sshFields->hide();
     formLayout->addRow(postgresFields_);
     status_ = createInlineStatus(this);
@@ -384,6 +431,9 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                 const auto sessionPassword =
                     preservePasswordOnRefresh_ ? password_->text() : QString();
                 const bool passwordModified = password_->isModified();
+                const auto sessionSshSecret =
+                    preserveSshSecretOnRefresh_ ? sshSecret_->text() : QString();
+                const bool sshSecretModified = sshSecret_->isModified();
                 if (!pendingSelection_.isEmpty()) {
                     const auto id = pendingSelection_;
                     pendingSelection_.clear();
@@ -393,6 +443,11 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                     password_->setText(sessionPassword);
                     password_->setModified(passwordModified);
                     preservePasswordOnRefresh_ = false;
+                }
+                if (preserveSshSecretOnRefresh_) {
+                    sshSecret_->setText(sessionSshSecret);
+                    sshSecret_->setModified(sshSecretModified);
+                    preserveSshSecretOnRefresh_ = false;
                 }
                 if (connectAfterSave_) {
                     connectAfterSave_ = false;
@@ -405,14 +460,23 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                 if (token != token_)
                     return;
                 preservePasswordOnRefresh_ = savingDraft_ && !rememberPassword_->isChecked();
+                preserveSshSecretOnRefresh_ = savingDraft_ && !rememberSshSecret_->isChecked() &&
+                                              sshAuthentication_->currentData() != "agent";
                 const auto sessionPassword =
                     preservePasswordOnRefresh_ ? password_->text() : QString();
                 const bool passwordModified = password_->isModified();
+                const auto sessionSshSecret =
+                    preserveSshSecretOnRefresh_ ? sshSecret_->text() : QString();
+                const bool sshSecretModified = sshSecret_->isModified();
                 savingDraft_ = false;
                 setDraft(profile);
                 if (preservePasswordOnRefresh_) {
                     password_->setText(sessionPassword);
                     password_->setModified(passwordModified);
+                }
+                if (preserveSshSecretOnRefresh_) {
+                    sshSecret_->setText(sessionSshSecret);
+                    sshSecret_->setModified(sshSecretModified);
                 }
                 refreshNotice_ =
                     warning.isEmpty() ? tr("Profile saved.") : tr("Profile saved. %1").arg(warning);
@@ -498,14 +562,19 @@ void ProfileDialog::connectDraft(bool openQuery) {
     }
     if (value.id.isEmpty())
         value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    if (!validateSshDraft(value))
+        return;
     ++token_;
     setBusy(true, tr("Connecting…"));
     connectionSubmissionError_.clear();
     connecting_ = true;
     const bool hasPassword = (value.driver == "postgres" || value.driver == "mysql") &&
                              (password_->isModified() || !password_->text().isEmpty());
-    const auto id = adapter_->connectProfileWithPassword(
-        value, hasPassword ? password_->text() : QString(), hasPassword);
+    const bool hasSshSecret = value.sshEnabled && value.sshAuthentication != "agent" &&
+                              (sshSecret_->isModified() || !sshSecret_->text().isEmpty());
+    const auto id = adapter_->connectProfileWithSecrets(
+        value, hasPassword ? password_->text() : QString(), hasPassword,
+        hasSshSecret ? sshSecret_->text() : QString(), hasSshSecret);
     connecting_ = false;
     if (!id) {
         setBusy(false, connectionSubmissionError_.isEmpty()
@@ -537,7 +606,13 @@ SavedProfile ProfileDialog::draft() const {
     value.sshHost = sshHost_->text();
     value.sshPort = static_cast<quint16>(sshPort_->value());
     value.sshUser = sshUser_->text();
-    value.sshIdentityFile = sshIdentityFile_->text();
+    value.sshAuthentication = sshAuthentication_->currentData().toString();
+    if (value.sshAuthentication != current_.sshAuthentication ||
+        (value.sshAuthentication == "public_key" &&
+         sshIdentityFile_->text() != current_.sshIdentityFile))
+        value.sshCredentialRef.clear();
+    value.sshIdentityFile =
+        value.sshAuthentication == "public_key" ? sshIdentityFile_->text() : QString();
     return value;
 }
 void ProfileDialog::setDraft(const SavedProfile& value) {
@@ -559,11 +634,24 @@ void ProfileDialog::setDraft(const SavedProfile& value) {
     sshHost_->setText(value.sshHost);
     sshPort_->setValue(value.sshPort ? value.sshPort : 22);
     sshUser_->setText(value.sshUser);
+    auto sshAuthentication = value.sshAuthentication;
+    if (sshAuthentication.isEmpty())
+        sshAuthentication = value.sshIdentityFile.isEmpty() ? "agent" : "public_key";
+    const auto sshAuthenticationIndex = sshAuthentication_->findData(sshAuthentication);
+    sshAuthentication_->setCurrentIndex(sshAuthenticationIndex < 0 ? 0 : sshAuthenticationIndex);
     sshIdentityFile_->setText(value.sshIdentityFile);
+    sshSecret_->clear();
+    sshSecret_->setModified(false);
+    sshSecret_->setPlaceholderText(value.sshCredentialRef.isEmpty()
+                                       ? (sshAuthentication == "public_key"
+                                              ? tr("Optional for an unencrypted key")
+                                              : tr("SSH password"))
+                                       : tr("Saved SSH credential — leave unchanged to keep"));
+    rememberSshSecret_->setChecked(!value.sshCredentialRef.isEmpty());
     password_->clear();
     password_->setModified(false);
     password_->setPlaceholderText(value.credentialRef.isEmpty()
-                                      ? tr("Session password")
+                                      ? tr("Optional — leave blank for passwordless authentication")
                                       : tr("Saved password — leave unchanged to keep"));
     rememberPassword_->setChecked(!value.credentialRef.isEmpty());
     filling_ = false;
@@ -665,23 +753,41 @@ void ProfileDialog::saveDraft(const SavedProfile& profile) {
     }
     if (value.id.isEmpty())
         value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    if (!validateSshDraft(value))
+        return;
     const auto password = password_->text();
     const bool modified = password_->isModified();
     const bool remember = rememberPassword_->isChecked();
+    const auto sshSecret = sshSecret_->text();
+    const bool sshSecretModified = sshSecret_->isModified();
+    const bool rememberSshSecret = rememberSshSecret_->isChecked();
     setDraft(value);
     password_->setText(password);
     password_->setModified(modified);
     rememberPassword_->setChecked(remember);
+    sshSecret_->setText(sshSecret);
+    sshSecret_->setModified(sshSecretModified);
+    rememberSshSecret_->setChecked(rememberSshSecret);
     dirty_ = true;
     ++revision_;
     QString action = "clear";
     if ((value.driver == "postgres" || value.driver == "mysql") && remember)
         action =
             modified || !password.isEmpty() || value.credentialRef.isEmpty() ? "replace" : "keep";
+    QString sshAction = "clear";
+    if (value.sshEnabled && value.sshAuthentication != "agent" && rememberSshSecret) {
+        if (sshSecretModified)
+            sshAction = sshSecret.isEmpty() ? "clear" : "replace";
+        else if (!sshSecret.isEmpty())
+            sshAction = "replace";
+        else if (!value.sshCredentialRef.isEmpty())
+            sshAction = "keep";
+    }
     savingDraft_ = true;
     setBusy(true, tr("Saving profile…"));
-    adapter_->saveProfileWithPassword(value, action == "replace" ? password : QString(), action,
-                                      ++token_);
+    adapter_->saveProfileWithSecrets(value, action == "replace" ? password : QString(), action,
+                                     sshAction == "replace" ? sshSecret : QString(), sshAction,
+                                     ++token_);
 }
 void ProfileDialog::testDraft(const SavedProfile& profile) {
     if (busy_ || !adapter_)
@@ -694,11 +800,32 @@ void ProfileDialog::testDraft(const SavedProfile& profile) {
     }
     if (value.id.isEmpty())
         value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    if (!validateSshDraft(value))
+        return;
     setBusy(true, tr("Testing connection…"));
     const bool hasPassword = (value.driver == "postgres" || value.driver == "mysql") &&
                              (password_->isModified() || !password_->text().isEmpty());
-    adapter_->testProfileWithPassword(value, hasPassword ? password_->text() : QString(),
-                                      hasPassword, ++token_);
+    const bool hasSshSecret = value.sshEnabled && value.sshAuthentication != "agent" &&
+                              (sshSecret_->isModified() || !sshSecret_->text().isEmpty());
+    adapter_->testProfileWithSecrets(value, hasPassword ? password_->text() : QString(),
+                                     hasPassword, hasSshSecret ? sshSecret_->text() : QString(),
+                                     hasSshSecret, ++token_);
+}
+bool ProfileDialog::validateSshDraft(const SavedProfile& profile) {
+    if (!profile.sshEnabled)
+        return true;
+    if (profile.sshAuthentication == "public_key" && profile.sshIdentityFile.trimmed().isEmpty()) {
+        setBusy(false, tr("Choose an SSH private key file."));
+        sshIdentityFile_->setFocus();
+        return false;
+    }
+    if (profile.sshAuthentication == "password" && sshSecret_->text().isEmpty() &&
+        profile.sshCredentialRef.isEmpty()) {
+        setBusy(false, tr("Enter the SSH password."));
+        sshSecret_->setFocus();
+        return false;
+    }
+    return true;
 }
 bool ProfileDialog::discardChanges() {
     if (busy_ || !adapter_)

@@ -40,6 +40,7 @@ fn mysql_profile_connects_streams_typed_rows_and_disconnects_through_engine() {
                 name: "MySQL fixture".into(),
                 group_id: None,
                 credential_ref: None,
+                ssh_credential_ref: None,
                 configuration: ProfileConfiguration::Mysql {
                     ssh: None,
                     host: "127.0.0.1".into(),
@@ -128,6 +129,7 @@ fn cancelling_slow_mysql_object_is_prompt_and_preserves_main_session() {
         database: "choscordb_test".into(),
         user: "root".into(),
         password: Some(Secret::new("choscordb-test-password")),
+        ssh_secret: None,
         tls: TlsMode::Disable,
         root_certificate: None,
     };
@@ -220,6 +222,7 @@ fn direct_engine() -> (Engine, choscordb_driver_api::ConnectionId) {
                 database: "choscordb_test".into(),
                 user: "root".into(),
                 password: Some(Secret::new("choscordb-test-password")),
+                ssh_secret: None,
                 tls: TlsMode::Disable,
                 root_certificate: None,
                 ssh: None,
