@@ -136,7 +136,7 @@ class ResultModelTest : public QObject {
     }
     void binaryCopyIsCompleteAndSparseCopyPreservesCoordinates() {
         ResultTableModel model;
-        const QByteArray binary(100, char(0xab));
+        const QByteArray binary(100, '\xab');
         QVERIFY(model.setPage({column("a", "blob"), column("b", "text"), column("c", "text")},
                               {{binary, QString("b"), QString("c")},
                                {QString("d"), QString("e"), QString("f")},

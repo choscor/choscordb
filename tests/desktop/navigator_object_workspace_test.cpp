@@ -42,6 +42,7 @@
 #include <QTreeView>
 #include <QTreeWidget>
 #include <QtTest>
+#include <cstdint>
 
 void NavigatorSqlWorkspaceTest::objectTabsUseConnectionAndQualifiedIdentity() {
     choscordb::MainWindow window;
@@ -403,7 +404,8 @@ void NavigatorSqlWorkspaceTest::documentsKeepTargetsAndImmutableResultOrigin() {
     QTRY_COMPARE(connected.count(), 2);
     QCOMPARE(selector->currentData(), firstConnection);
     first->setText(QString("-- retained line\n").repeated(100));
-    first->SendScintilla(QsciScintilla::SCI_APPENDTEXT, 8UL, "-- edit\n");
+    first->SendScintilla(QsciScintilla::SCI_APPENDTEXT, static_cast<std::uintptr_t>(8),
+                         "-- edit\n");
     first->setSelection(45, 3, 45, 9);
     first->setFirstVisibleLine(40);
     const auto firstText = first->text();
@@ -430,8 +432,9 @@ void NavigatorSqlWorkspaceTest::documentsKeepTargetsAndImmutableResultOrigin() {
     QCOMPARE(summary->text(), origin);
     run->trigger();
     QTRY_COMPARE(grid->model()->rowCount(), 1);
-    QTRY_COMPARE(grid->model()->data(grid->model()->index(0, 0)).toString(),
-                 QFileInfo(directory.filePath("second.sqlite")).canonicalFilePath());
+    QTRY_COMPARE(
+        QDir::fromNativeSeparators(grid->model()->data(grid->model()->index(0, 0)).toString()),
+        QFileInfo(directory.filePath("second.sqlite")).canonicalFilePath());
     QTRY_VERIFY(run->isEnabled());
     QVERIFY(summary->text().contains("second.sqlite"));
     QVERIFY(summary->text() != origin);

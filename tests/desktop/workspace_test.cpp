@@ -37,6 +37,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QtTest>
+#include <algorithm>
 
 void WorkspaceTest::unsavedConnectionsRetainTheirDriver() {
     WorkspaceFixture fixture;
@@ -430,7 +431,6 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
     f.execute("SELECT 1");
     QTRY_VERIFY(f.run.isEnabled());
     bool cancelled = false;
-    qInfo("SHUTDOWN_TRACE before cancel confirmation");
     QTimer cancelTimer;
     cancelTimer.setInterval(10);
     connect(&cancelTimer, &QTimer::timeout, &f.parent, [&] {
@@ -439,7 +439,6 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
             if (!box || !box->isVisible())
                 continue;
             if (auto* button = box->button(QMessageBox::Cancel)) {
-                qInfo("SHUTDOWN_TRACE clicking cancel");
                 cancelled = true;
                 cancelTimer.stop();
                 button->click();
@@ -449,11 +448,9 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
     });
     cancelTimer.start();
     QVERIFY(!f.workspace.confirmShutdown());
-    qInfo("SHUTDOWN_TRACE after cancel confirmation");
     QVERIFY(cancelled);
     QVERIFY(f.run.isEnabled());
     bool approved = false;
-    qInfo("SHUTDOWN_TRACE before approve confirmation");
     QTimer approveTimer;
     approveTimer.setInterval(10);
     connect(&approveTimer, &QTimer::timeout, &f.parent, [&] {
@@ -463,7 +460,6 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
                 continue;
             for (auto* button : box->buttons()) {
                 if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
-                    qInfo("SHUTDOWN_TRACE clicking approve");
                     approved = true;
                     approveTimer.stop();
                     button->click();
@@ -474,13 +470,33 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
     });
     approveTimer.start();
     QVERIFY(f.workspace.confirmShutdown());
-    qInfo("SHUTDOWN_TRACE after approve confirmation");
     QVERIFY(approved);
+    QSignalSpy transactionState(&f.workspace, &choscordb::QueryWorkspace::transactionStateChanged);
     f.rollback.trigger();
-    qInfo("SHUTDOWN_TRACE after rollback trigger");
+    QTRY_VERIFY(std::any_of(transactionState.begin(), transactionState.end(),
+                            [](const auto& args) { return !args.at(1).toBool(); }));
     QTRY_VERIFY(f.messages.toPlainText().contains("rolled back"));
-    qInfo("SHUTDOWN_TRACE after rollback message");
+    QTRY_VERIFY(f.run.isEnabled());
+    bool unexpectedPrompt = false;
+    QTimer finalTimer;
+    finalTimer.setInterval(10);
+    connect(&finalTimer, &QTimer::timeout, &f.parent, [&] {
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            auto* box = qobject_cast<QMessageBox*>(widget);
+            if (!box || !box->isVisible())
+                continue;
+            if (auto* button = box->button(QMessageBox::Cancel)) {
+                unexpectedPrompt = true;
+                finalTimer.stop();
+                button->click();
+                return;
+            }
+        }
+    });
+    finalTimer.start();
     QVERIFY(f.workspace.confirmShutdown());
+    finalTimer.stop();
+    QVERIFY(!unexpectedPrompt);
 }
 
 void WorkspaceTest::mainWindowHistoryRecordsOpensDisablesAndFlushes() {

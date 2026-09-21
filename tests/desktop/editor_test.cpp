@@ -14,6 +14,7 @@
 #include <Qsci/qscilexersql.h>
 #include <QtConcurrentRun>
 #include <QtTest>
+#include <cstdint>
 class EditorTest : public QObject {
     Q_OBJECT
   private slots:
@@ -99,7 +100,8 @@ class EditorTest : public QObject {
         QVERIFY2(defaultCaps >= 8, qPrintable(QString::number(defaultCaps)));
         QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 24L);
         const auto defaultWidth =
-            editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH, QsciLexerSQL::Default, "MMMM");
+            editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH,
+                                 static_cast<std::uintptr_t>(QsciLexerSQL::Default), "MMMM");
         // Platform fixed-font fallback differs under Qt's offscreen plugin.
         // Its absolute advance is not a reference constant; compare actual
         // glyph growth after the user's larger point-size preference instead.
@@ -109,8 +111,9 @@ class EditorTest : public QObject {
         QCoreApplication::processEvents();
         QVERIFY(capHeight() >= 16);
         QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 24L);
-        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH, QsciLexerSQL::Default, "MMMM") >
-                defaultWidth * 1.5);
+        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH,
+                                     static_cast<std::uintptr_t>(QsciLexerSQL::Default),
+                                     "MMMM") > defaultWidth * 1.5);
         editor.insertAt(";", 1, 4);
         editor.setSelection(0, 1, 0, 3);
         const auto revision = editor.revision();

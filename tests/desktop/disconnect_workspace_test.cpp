@@ -70,6 +70,7 @@ class DisconnectWorkspaceTest : public QObject {
         QSignalSpy connected(&f.workspace, &choscordb::QueryWorkspace::connectionReady);
         f.workspace.connectSqlite(":memory:");
         QTRY_COMPARE(connected.count(), 1);
+        QTRY_VERIFY(f.run.isEnabled());
         f.editor.setText("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE "
                          "x<1001) SELECT x FROM n");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
@@ -112,6 +113,7 @@ class DisconnectWorkspaceTest : public QObject {
         f.mode.setCurrentIndex(1);
         f.editor.setText("INSERT INTO work VALUES (7)");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+        QTRY_VERIFY(f.run.isEnabled());
         f.run.trigger();
         QTRY_COMPARE(finished, 2);
         QTRY_VERIFY(f.commit.isEnabled());
@@ -173,6 +175,7 @@ class DisconnectWorkspaceTest : public QObject {
         f.editor.setText("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE "
                          "x<100000000) SELECT sum(x) FROM n");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+        QTRY_VERIFY(f.run.isEnabled());
         f.run.trigger();
         QTRY_COMPARE(schemas, 1);
         QTRY_VERIFY(f.cancel.isEnabled());
@@ -209,6 +212,7 @@ class DisconnectWorkspaceTest : public QObject {
         f.editor.setText("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE "
                          "x<1000000) SELECT x FROM n");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+        QTRY_VERIFY(f.run.isEnabled());
         f.run.trigger();
         // Generating the first page can exceed Qt Test's default on hosted macOS.
         QTRY_COMPARE_WITH_TIMEOUT(f.grid.model()->rowCount(), 1000, 30000);
