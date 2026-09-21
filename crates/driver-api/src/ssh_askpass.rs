@@ -215,8 +215,41 @@ fn run_ssh_askpass() -> std::io::Result<()> {
     }
     let mut bytes = zeroize::Zeroizing::new(vec![0; length]);
     socket.read_exact(&mut bytes)?;
+    let value =
+        zeroize::Zeroizing::new(String::from_utf8(std::mem::take(&mut *bytes)).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid SSH secret")
+        })?);
+    let sanitized = sanitize_askpass_output(&value)?;
     let mut stdout = std::io::stdout().lock();
-    stdout.write_all(&bytes)?;
+    stdout.write_all(sanitized.as_bytes())?;
     stdout.write_all(b"\n")?;
     stdout.flush()
+}
+
+fn sanitize_askpass_output(value: &str) -> std::io::Result<zeroize::Zeroizing<String>> {
+    let sanitized = zeroize::Zeroizing::new(value.replace(['\r', '\n'], ""));
+    if sanitized.len() != value.len() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "invalid SSH secret",
+        ));
+    }
+    Ok(sanitized)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_askpass_output;
+
+    #[test]
+    fn askpass_output_is_one_unchanged_line() {
+        assert_eq!(
+            sanitize_askpass_output("correct horse battery staple")
+                .unwrap()
+                .as_str(),
+            "correct horse battery staple"
+        );
+        assert!(sanitize_askpass_output("forged\nentry").is_err());
+        assert!(sanitize_askpass_output("forged\rentry").is_err());
+    }
 }
