@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.2]
+
+- Added full-result filtering and type-aware sorting across SQL Results and
+  Object Data, integrated with paging, copying, and export.
+- Added staged row duplication for editable results, preserving the existing
+  review-before-apply workflow.
+- Added explicit SSH agent, public-key, and password authentication, including
+  optional secure storage for SSH passwords and passphrases.
+- Added passwordless database authentication support and strengthened
+  cross-platform test reliability.
+
 ## [0.1.1]
 
 - Added MySQL connections with TLS verification and optional SSH tunneling.
