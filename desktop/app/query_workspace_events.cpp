@@ -1,6 +1,7 @@
 #include "app/query_settings.h"
 #include "app/query_workspace.h"
 #include "app/query_workspace_p.h"
+#include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
 #include "bridge/result_column_adapter.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -112,9 +113,10 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             message(tr("Applied %1 grid changes (%2 rows affected).")
                         .arg(e.edit_affected_rows.size())
                         .arg(total));
+            preserveViewOnRefresh_ = true;
             if (widgets_.objectReadOnly && queryConnection_)
                 openObjectData(*queryConnection_, objectId_, resultOrigin_,
-                               querySettings_->preferences(), objectKind_);
+                               querySettings_->preferences(), objectKind_, true);
             else if (queryConnection_ && !executedSql_.isEmpty()) {
                 if (query_)
                     adapter_->releaseQuery(*query_);
@@ -123,11 +125,22 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                 query_ = adapter_->execute(*queryConnection_, executedSql_, true,
                                            connectionProfiles_.value(*queryConnection_),
                                            querySettings_->preferences());
+                if (query_)
+                    viewRefreshQuery_ = query_;
+                else {
+                    preserveViewOnRefresh_ = false;
+                    clearViewState();
+                    message(tr("The previous result view was invalidated because refresh could "
+                               "not start."));
+                }
                 busy_ = query_.has_value();
                 executionFinished_ = !busy_;
             }
-        } else
+        } else {
+            deferredViewRequest_ = false;
+            filterBar_->restoreApplied();
             message(tr("Grid changes were not applied: %1").arg(text(e.error)));
+        }
         updateActions();
         return;
     }
@@ -196,6 +209,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             query_.reset();
             queryConnection_.reset();
             currentPage_.reset();
+            clearViewState();
             setExecutionState(QStringLiteral("disconnected"), tr("○ Disconnected"));
         }
         updateActions();
@@ -219,6 +233,39 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     }
     if (!query_ || e.id != *query_)
         return;
+    if (kind == "result_view_progress") {
+        setExecutionState(
+            QStringLiteral("running"),
+            tr("◷ Preparing result view · %1 rows scanned").arg(e.result_view_scanned_rows));
+        updateActions();
+        return;
+    }
+    if (kind == "result_view_applied") {
+        viewFilters_ = proposedViewFilters_;
+        viewSortColumn_ = proposedViewSortColumn_;
+        viewSortDirection_ = proposedViewSortDirection_;
+        filterBar_->markApplied(viewFilters_);
+        updateSortIndicator();
+        viewBusy_ = false;
+        fetching_ = true;
+        currentPage_.reset();
+        hasMore_ = false;
+        adapter_->fetchPageAt(*query_, 0);
+        setExecutionState(QStringLiteral("running"),
+                          tr("◷ Loading result view · %1 matching rows").arg(e.result_view_rows));
+        updateActions();
+        return;
+    }
+    if (kind == "result_view_failed") {
+        viewBusy_ = false;
+        if (proposedFiltersFromDraft_)
+            filterBar_->restoreApplied();
+        filterBar_->setBusy(false);
+        message(tr("Result view was not changed: %1").arg(text(e.error)));
+        setExecutionState(QStringLiteral("completed"), tr("✓ Previous result view restored"));
+        updateActions();
+        return;
+    }
     if (kind == "query_state") {
         const auto state = text(e.state);
         // Terminal state notices precede their detailed outcome. Keep the
@@ -245,6 +292,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         columns_.reserve(e.columns.size());
         for (const auto& c : e.columns)
             columns_.push_back(resultColumn(c));
+        filterBar_->setColumns(columns_);
         if (!widgets_.objectReadOnly && queryConnection_ && !executedSql_.isEmpty() &&
             driverForConnection(*queryConnection_) != "mysql") {
             editTargetToken_ = nextEditRequestToken();
@@ -306,6 +354,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             hasMoreResults_ = false;
         } else {
             configureEditability();
+            filterBar_->setColumns(columns_, model_->rows());
             // setPage destroyed the old Qt buffers before we release their reservation.
             if (visibleLease_) {
                 const auto lease = *visibleLease_;
@@ -325,11 +374,26 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             visibleLease_ = e.lease_id;
             currentPage_ = e.page_index;
             hasMore_ = e.has_more;
-            setExecutionState(QStringLiteral("completed"),
-                              tr("✓ Completed · Page %1 · %2 rows · %3 KiB visible")
-                                  .arg(e.page_index + 1)
-                                  .arg(e.row_count)
-                                  .arg(model_->residentBytes() / 1024));
+            setExecutionState(
+                QStringLiteral("completed"),
+                e.row_count == 0 && !viewFilters_.isEmpty()
+                    ? tr("✓ No rows match the active filters · Clear filters to restore all rows")
+                    : tr("✓ Completed · Page %1 · %2 rows · %3 KiB visible")
+                          .arg(e.page_index + 1)
+                          .arg(e.row_count)
+                          .arg(model_->residentBytes() / 1024));
+            filterBar_->setBusy(false);
+            if (deferredViewRequest_ && !model_->hasPendingEdits()) {
+                deferredViewRequest_ = false;
+                preserveViewOnRefresh_ = false;
+                submitResultView(deferredViewFilters_, deferredViewSortColumn_,
+                                 deferredViewSortDirection_);
+            } else if (preserveViewOnRefresh_) {
+                preserveViewOnRefresh_ = false;
+                viewRefreshQuery_.reset();
+                if (!viewFilters_.isEmpty() || viewSortColumn_ >= 0)
+                    submitResultView(viewFilters_, viewSortColumn_, viewSortDirection_);
+            }
         }
         busy_ = false;
         updateActions();
@@ -376,6 +440,12 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         setExecutionState(QStringLiteral("completed"), summary);
         updateActions();
     } else if (kind == "query_failed") {
+        if (preserveViewOnRefresh_ && viewRefreshQuery_ == query_) {
+            preserveViewOnRefresh_ = false;
+            viewRefreshQuery_.reset();
+            clearViewState();
+            message(tr("The previous result view was invalidated because refresh failed."));
+        }
         cancellationPending_ = false;
         executionFinished_ = true;
         busy_ = false;

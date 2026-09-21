@@ -20,6 +20,7 @@ class ExportDialog final : public DialogShell {
     explicit ExportDialog(EngineAdapter* adapter, QWidget* parent = nullptr);
     ~ExportDialog() override;
     void setQuery(quint64 query);
+    void setResultViewActive(bool active);
     void clearQuery();
     void startExportTo(const QString& path, const QString& format, const QStringList& table = {},
                        bool postgres = false);
@@ -58,6 +59,7 @@ class ExportDialog final : public DialogShell {
     design::Button* start_;
     design::Button* cancel_;
     QLabel* status_;
+    QLabel* scope_;
     design::FieldValidation *formatValidation_, *destinationValidation_, *tableValidation_;
 };
 } // namespace choscordb

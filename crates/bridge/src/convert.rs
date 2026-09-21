@@ -463,6 +463,26 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             e.state = format!("{state:?}").to_lowercase();
             "query_state"
         }
+        Event::ResultViewProgress {
+            query,
+            scanned_rows,
+            buffered_rows,
+        } => {
+            e.id = pack(query);
+            e.result_view_scanned_rows = scanned_rows;
+            e.result_view_buffered_rows = buffered_rows;
+            "result_view_progress"
+        }
+        Event::ResultViewApplied { query, rows } => {
+            e.id = pack(query);
+            e.result_view_rows = rows;
+            "result_view_applied"
+        }
+        Event::ResultViewFailed { query, error: err } => {
+            e.id = pack(query);
+            error(&mut e, err);
+            "result_view_failed"
+        }
         Event::Schema {
             query,
             columns,

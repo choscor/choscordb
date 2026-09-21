@@ -39,6 +39,67 @@ fn typed_transport_connects_and_streams_sqlite_without_json() {
     assert_eq!(page.cells[3].bytes, vec![0, 255]);
     assert!(shutdown(&mut engine).accepted);
 }
+
+#[test]
+fn result_view_commands_transport_typed_filters_sort_pages_and_clear() {
+    let mut engine = new_engine();
+    let connection = connect_sqlite(&mut engine, ":memory:", false);
+    assert!(connection.accepted, "{}", connection.error);
+    await_event(&mut engine, "connected");
+    let query = execute(
+        &mut engine,
+        connection.id,
+        "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<206) SELECT CASE WHEN x=206 THEN NULL ELSE printf('row%03d',206-x) END, x FROM c",
+        100,
+        0,
+        true,
+    );
+    assert!(query.accepted, "{}", query.error);
+    await_event(&mut engine, "schema");
+    let applied = apply_result_view(
+        &mut engine,
+        query.id,
+        vec![ffi::ResultFilterDto {
+            column: 1,
+            operation: "greater_than".into(),
+            value_kind: "integer".into(),
+            value: "100".into(),
+        }],
+        0,
+        "ascending",
+        100,
+    );
+    assert!(applied.accepted, "{}", applied.error);
+    assert_eq!(
+        await_event(&mut engine, "result_view_applied").result_view_rows,
+        106
+    );
+    assert!(fetch_page_at(&mut engine, query.id, 1, 100).accepted);
+    let page = await_event(&mut engine, "stored_page");
+    assert_eq!(page.first_row, 100);
+    assert_eq!(page.cells[0].text, "row101");
+    assert_eq!(page.cells[10].kind, "null");
+    assert!(clear_result_view(&mut engine, query.id).accepted);
+    assert_eq!(
+        await_event(&mut engine, "result_view_applied").result_view_rows,
+        206
+    );
+
+    let invalid = apply_result_view(
+        &mut engine,
+        query.id,
+        vec![ffi::ResultFilterDto {
+            column: 0,
+            operation: "regex".into(),
+            value_kind: "text".into(),
+            value: ".*".into(),
+        }],
+        0,
+        "",
+        100,
+    );
+    assert!(!invalid.accepted);
+}
 #[test]
 fn invalid_inputs_return_outcomes_and_utf8_ranges_remain_bytes() {
     let mut engine = new_engine();

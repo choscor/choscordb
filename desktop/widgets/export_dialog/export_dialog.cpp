@@ -34,7 +34,8 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
       schema_(new QLineEdit(this)), table_(new QLineEdit(this)), sqlFields_(new QWidget(this)),
       browse_(new design::Button(tr("&Browse…"), this)),
       start_(new design::Button(tr("&Export"), this)),
-      cancel_(new design::Button(tr("Cancel export"), this)), status_(createInlineStatus(this)) {
+      cancel_(new design::Button(tr("Cancel export"), this)), status_(createInlineStatus(this)),
+      scope_(createDescription({}, this)) {
     browse_->setVariant(design::ButtonVariant::Outline);
     start_->setDesignIcon(design::Icon::Export);
     cancel_->setVariant(design::ButtonVariant::Secondary);
@@ -109,8 +110,8 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     auto* bodyLayout = new QVBoxLayout(body);
     bodyLayout->setContentsMargins(metrics.modalContentInset, metrics.modalFooterInset,
                                    metrics.modalContentInset, metrics.modalFooterInset);
-    bodyLayout->addWidget(createDescription(
-        tr("Export the current result without loading the complete result into memory."), body));
+    bodyLayout->addWidget(scope_);
+    setResultViewActive(false);
     bodyLayout->addLayout(form);
     bodyLayout->addWidget(sqlFields_);
     bodyLayout->addWidget(status_);
@@ -174,6 +175,13 @@ void ExportDialog::setQuery(quint64 query) {
     if (!isRunning())
         status_->setText(tr("Choose a destination and export format."));
     updateActions();
+}
+void ExportDialog::setResultViewActive(bool active) {
+    scope_->setText(active ? tr("Export the complete filtered and sorted result in its displayed "
+                                "order without loading it into memory.")
+                           : tr("Export the complete current result without loading it into "
+                                "memory."));
+    scope_->setObjectName("exportScope");
 }
 void ExportDialog::clearQuery() {
     query_.reset();

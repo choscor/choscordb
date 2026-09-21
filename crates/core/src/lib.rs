@@ -10,6 +10,7 @@ mod operation;
 mod profiles;
 mod query_history;
 mod recovery;
+mod result_view;
 pub use profiles::CredentialUpdate;
 mod protocol;
 pub use choscordb_storage::{
@@ -26,6 +27,7 @@ pub use choscordb_storage::{
 mod store;
 use choscordb_driver_api::*;
 pub use protocol::*;
+pub use result_view::{FilterCondition, FilterOperator, ResultSort, SortDirection, value_matches};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{
     runtime::Runtime,
@@ -44,6 +46,7 @@ struct QuerySlot {
     connection: ConnectionId,
     cancellation: watch::Sender<bool>,
     released: watch::Sender<bool>,
+    view_cancellation: watch::Sender<bool>,
 }
 
 pub struct Engine {
@@ -261,10 +264,12 @@ impl Engine {
         let event_permit = event_sender.try_reserve().map_err(map_send)?;
         let (cancellation, cancel_rx) = watch::channel(false);
         let (released, _) = watch::channel(false);
+        let (view_cancellation, _) = watch::channel(false);
         let id = self.queries.insert(QuerySlot {
             connection,
             cancellation,
             released,
+            view_cancellation,
         });
         event_permit.send(Event::QueryState {
             query: id,
@@ -392,6 +397,49 @@ impl Engine {
                     .subscribe(),
             },
         )
+    }
+    pub fn apply_result_view(
+        &mut self,
+        query: QueryId,
+        filters: Vec<FilterCondition>,
+        sort: Option<ResultSort>,
+        page_size: PageSize,
+    ) -> std::result::Result<(), SubmitError> {
+        let slot = self
+            .queries
+            .get_mut(query)
+            .ok_or(SubmitError::StaleHandle)?;
+        slot.view_cancellation.send_replace(false);
+        let owner = slot.connection;
+        let cancellation = slot.view_cancellation.subscribe();
+        self.submit(
+            owner,
+            actor::Command::ApplyResultView {
+                query,
+                filters,
+                sort,
+                page_size,
+                cancellation,
+            },
+        )
+    }
+    pub fn cancel_result_view(&self, query: QueryId) -> std::result::Result<(), SubmitError> {
+        // Observed between bounded cursor fetches. A driver call already in flight is
+        // allowed to finish so the captured original cursor remains resumable.
+        self.queries
+            .get(query)
+            .ok_or(SubmitError::StaleHandle)?
+            .view_cancellation
+            .send_replace(true);
+        Ok(())
+    }
+    pub fn clear_result_view(&self, query: QueryId) -> std::result::Result<(), SubmitError> {
+        let owner = self
+            .queries
+            .get(query)
+            .ok_or(SubmitError::StaleHandle)?
+            .connection;
+        self.submit(owner, actor::Command::ClearResultView { query })
     }
     /// Read a persisted ordinal, or continue the original cursor at the next ordinal.
     /// Previously fetched pages and deferred readers survive a new query until release.
@@ -596,6 +644,11 @@ impl Engine {
             .get(query)
             .ok_or(SubmitError::StaleHandle)?
             .released
+            .send_replace(true);
+        self.queries
+            .get(query)
+            .ok_or(SubmitError::StaleHandle)?
+            .view_cancellation
             .send_replace(true);
         self.submit(owner, actor::Command::Release(query))?;
         self.queries.remove(query);
