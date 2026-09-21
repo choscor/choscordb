@@ -1,6 +1,7 @@
 #include "app/query_workspace.h"
 #include "app/query_settings.h"
 #include "app/query_workspace_p.h"
+#include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
 #include "bridge/result_column_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
@@ -12,6 +13,7 @@
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
 #include <QAction>
 #include <QApplication>
+#include <QBoxLayout>
 #include <QClipboard>
 #include <QComboBox>
 #include <QDialog>
@@ -20,8 +22,10 @@
 #include <QFileInfo>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLayout>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPersistentModelIndex>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QShortcut>
@@ -39,12 +43,47 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                                       : new EngineAdapter(this, widgets_.storagePath)),
       model_(new ResultTableModel(this)) {
     widgets_.grid->setModel(model_);
+    auto* resultParent = widgets_.grid->parentWidget();
+    filterBar_ = new ResultFilterBar(resultParent ? resultParent : widgets_.grid);
+    if (auto* layout = resultParent ? qobject_cast<QBoxLayout*>(resultParent->layout()) : nullptr) {
+        const int index = layout->indexOf(widgets_.grid);
+        if (index >= 0)
+            layout->insertWidget(index, filterBar_);
+    } else
+        filterBar_->hide();
     widgets_.grid->horizontalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
     widgets_.grid->verticalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
     connect(widgets_.grid->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             [this] { updateActions(); });
     connect(widgets_.grid->selectionModel(), &QItemSelectionModel::currentChanged, this,
             [this](const QModelIndex&, const QModelIndex&) { updateActions(); });
+    connect(filterBar_, &ResultFilterBar::applyRequested, this,
+            [this](const QList<ResultFilterCondition>& filters) {
+                requestResultView(filters, viewSortColumn_, viewSortDirection_);
+            });
+    connect(filterBar_, &ResultFilterBar::clearRequested, this,
+            [this] { requestResultView({}, viewSortColumn_, viewSortDirection_); });
+    widgets_.grid->horizontalHeader()->setSectionsClickable(true);
+    connect(widgets_.grid->horizontalHeader(), &QHeaderView::sectionClicked, this,
+            [this](int column) {
+                if (std::any_of(model_->rows().begin(), model_->rows().end(),
+                                [column](const auto& row) {
+                                    return column >= 0 && column < static_cast<int>(row.size()) &&
+                                           std::holds_alternative<DeferredValue>(row[column]);
+                                })) {
+                    message(tr("Large deferred values cannot be sorted."));
+                    return;
+                }
+                QString direction = QStringLiteral("ascending");
+                qint32 nextColumn = column;
+                if (viewSortColumn_ == column && viewSortDirection_ == "ascending")
+                    direction = QStringLiteral("descending");
+                else if (viewSortColumn_ == column && viewSortDirection_ == "descending") {
+                    nextColumn = -1;
+                    direction.clear();
+                }
+                requestResultView(viewFilters_, nextColumn, direction);
+            });
     if (!widgets_.objectReadOnly)
         widgets_.grid->setToolTip(
             tr("Query results are read only because the source table and key cannot be verified."));
@@ -67,6 +106,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 });
             }
             export_->setQuery(*query_);
+            export_->setResultViewActive(!viewFilters_.isEmpty() || viewSortColumn_ >= 0);
             export_->show();
             export_->raise();
         });
@@ -119,6 +159,13 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     });
     connect(widgets_.run, &QAction::triggered, this, &QueryWorkspace::execute);
     connect(widgets_.cancel, &QAction::triggered, this, [this] {
+        if (query_ && viewBusy_) {
+            if (adapter_->cancelResultView(*query_)) {
+                setExecutionState(QStringLiteral("cancelling"), tr("◷ Cancelling result view…"));
+                updateActions();
+            }
+            return;
+        }
         if (query_ && queryAvailable()) {
             if (!adapter_->cancelQuery(*query_))
                 return;
@@ -186,6 +233,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 hasMoreResults_ = false;
                 currentPage_.reset();
                 executionFinished_ = false;
+                clearViewState();
                 adapter_->nextResultSet(*query_);
             }
         }
@@ -228,10 +276,12 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         widgets_.grid, &QTableView::customContextMenuRequested, this,
         [this, copyScope](const QPoint& point) {
             QMenu menu(widgets_.grid);
+            menu.setToolTipsVisible(true);
             const bool current = widgets_.grid->model() == model_ &&
                                  widgets_.grid->selectionModel() &&
                                  widgets_.grid->selectionModel()->model() == model_;
             const bool selected = current && widgets_.grid->selectionModel()->hasSelection();
+            const QPersistentModelIndex clicked = widgets_.grid->indexAt(point);
             const QStringList names = {"copySelectedCells", "copySelectedRows", "copyCurrentPage"};
             const QStringList labels = {tr("Copy selected cells"), tr("Copy selected rows"),
                                         tr("Copy current page")};
@@ -247,6 +297,34 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             if (widgets_.addRow || widgets_.deleteRows || widgets_.restoreRows ||
                 widgets_.setNull) {
                 menu.addSeparator();
+                if (widgets_.addRow) {
+                    auto* duplicate = menu.addAction(tr("Duplicate row"));
+                    duplicate->setObjectName("duplicateRow");
+                    duplicate->setEnabled(current && clicked.isValid() && model_->canInsert() &&
+                                          !workInFlight());
+                    duplicate->setToolTip(model_->canInsert()
+                                              ? tr("Duplicate the row under the pointer")
+                                              : (editReason_.isEmpty()
+                                                     ? tr("This result is read only.")
+                                                     : editReason_));
+                    connect(duplicate, &QAction::triggered, this, [this, clicked] {
+                        if (!clicked.isValid() || clicked.model() != model_)
+                            return;
+                        QString error;
+                        bool duplicated = false;
+                        if (editKey_.size() == static_cast<size_t>(model_->columnCount())) {
+                            std::vector<bool> copyable(editKey_.size());
+                            for (size_t column = 0; column < copyable.size(); ++column)
+                                copyable[column] = !editKey_[column] && !editGenerated_[column] &&
+                                                   !editColumnNames_[column].isEmpty();
+                            duplicated = model_->duplicateRow(clicked.row(), copyable, &error);
+                        } else {
+                            duplicated = model_->duplicateRow(clicked.row(), &error);
+                        }
+                        if (!duplicated && !error.isEmpty())
+                            message(error);
+                    });
+                }
                 for (auto* button : {widgets_.addRow, widgets_.deleteRows, widgets_.restoreRows,
                                      widgets_.setNull}) {
                     if (!button)
@@ -271,9 +349,6 @@ QueryWorkspace::~QueryWorkspace() {
     delete detail_;
     delete export_;
     delete profiles_;
-}
-EngineAdapter* QueryWorkspace::adapter() const {
-    return adapter_.data();
 }
 void QueryWorkspace::clearResult() {
     if (export_)
@@ -532,7 +607,7 @@ bool QueryWorkspace::queryAvailable() const {
     return queryConnection_ && connectionAvailable(*queryConnection_);
 }
 bool QueryWorkspace::workInFlight() const {
-    return externalWork_ || executionModeToken_ != 0 ||
+    return externalWork_ || executionModeToken_ != 0 || viewBusy_ ||
            ((cancellationPending_ || busy_ || fetching_ || exporting_) &&
             !(queryConnection_ && disconnecting_.contains(*queryConnection_)));
 }
@@ -548,8 +623,8 @@ void QueryWorkspace::disconnectConnection(quint64 connection) {
     const auto index = widgets_.connections->findData(QVariant::fromValue<qulonglong>(connection));
     const auto label = widgets_.connections->itemText(index);
     const bool transaction = pendingTransactions_.contains(connection);
-    const bool active =
-        queryConnection_ == connection && (busy_ || fetching_ || exporting_ || !executionFinished_);
+    const bool active = queryConnection_ == connection &&
+                        (busy_ || fetching_ || viewBusy_ || exporting_ || !executionFinished_);
     QString notice =
         tr("Disconnect %1? Any uncommitted transaction will be rolled back.").arg(label);
     if (active)
@@ -630,11 +705,16 @@ QueryPreferences QueryWorkspace::queryPreferences() const {
     return querySettings_->preferences();
 }
 void QueryWorkspace::openObjectData(quint64 connection, const QString& object, const QString& label,
-                                    const QueryPreferences& preferences, const QString& kind) {
+                                    const QueryPreferences& preferences, const QString& kind,
+                                    bool preserveView) {
     if (!widgets_.objectReadOnly || !adapter_ || workInFlight() || stopping_)
         return;
     if (!resolvePendingEdits())
         return;
+    preserveViewOnRefresh_ = preserveView;
+    viewRefreshQuery_.reset();
+    if (!preserveView)
+        clearViewState();
     if (query_)
         adapter_->releaseQuery(*query_);
     clearResult();
@@ -661,6 +741,13 @@ void QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
     widgets_.messages->clear();
     message(tr("Object data: %1").arg(label));
     query_ = adapter_->openObjectData(connection, object, preferences);
+    if (preserveView && query_)
+        viewRefreshQuery_ = query_;
+    else if (preserveView && !query_) {
+        preserveViewOnRefresh_ = false;
+        clearViewState();
+        message(tr("The previous result view was invalidated because refresh could not start."));
+    }
     if (query_ && kind == QStringLiteral("table")) {
         editTargetToken_ = nextEditRequestToken();
         adapter_->inspectEditTarget(connection, object, editTargetToken_);
@@ -679,7 +766,9 @@ void QueryWorkspace::invalidateResult() {
         invalidatePending_ = true;
         if (exporting_ && export_)
             export_->clearQuery();
-        if (adapter_ && query_ && (busy_ || fetching_))
+        if (adapter_ && query_ && viewBusy_)
+            adapter_->cancelResultView(*query_);
+        else if (adapter_ && query_ && (busy_ || fetching_))
             cancellationPending_ = adapter_->cancelQuery(*query_);
         setExecutionState(QStringLiteral("cancelling"), tr("◷ Cancelling…"));
         updateActions();
@@ -696,6 +785,7 @@ void QueryWorkspace::invalidateResult() {
     hasMore_ = false;
     hasMoreResults_ = false;
     resultOrigin_.clear();
+    clearViewState();
     setExecutionState(QStringLiteral("disconnected"), tr("Open Data to read an object."));
     updateActions();
 }
@@ -745,21 +835,6 @@ std::optional<quint64> QueryWorkspace::selectedConnection() const {
     const auto* editor = widgets_.currentEditor();
     return editor ? editor->connectionTarget() : std::nullopt;
 }
-void QueryWorkspace::message(const QString& value) {
-    widgets_.messages->appendPlainText(value);
-}
-void QueryWorkspace::setExecutionState(const QString& state, const QString& detail) {
-    widgets_.summary->setProperty("state", state);
-    const auto status = detail.isEmpty() ? state : detail;
-    const auto label =
-        resultOrigin_.isEmpty() ? status : resultOrigin_ + QStringLiteral(" · ") + status;
-    widgets_.summary->setText(label);
-    widgets_.summary->setToolTip(label);
-    widgets_.summary->setAccessibleName(tr("Execution status: %1").arg(label));
-    widgets_.summary->style()->unpolish(widgets_.summary);
-    widgets_.summary->style()->polish(widgets_.summary);
-    emit executionStateChanged(state);
-}
 void QueryWorkspace::updateActions() {
     if (invalidatePending_ && !workInFlight()) {
         invalidateResult();
@@ -772,7 +847,8 @@ void QueryWorkspace::updateActions() {
     widgets_.mode->setEnabled(connected && !inFlight);
     widgets_.run->setEnabled(connected && !inFlight && querySettings_->isReady());
     widgets_.cancel->setEnabled(!cancellationPending_ && query_.has_value() &&
-                                (busy_ || executionModeToken_ != 0) && queryAvailable() &&
+                                (busy_ || viewBusy_ || executionModeToken_ != 0) &&
+                                queryAvailable() &&
                                 widgets_.summary->property("state") != "cancelling");
     widgets_.cancel->setText(widgets_.summary->property("state") == "cancelling" ? tr("Cancelling…")
                                                                                  : tr("Cancel"));
@@ -887,6 +963,7 @@ void QueryWorkspace::execute() {
         return;
     if (query_ && queryAvailable())
         adapter_->releaseQuery(*query_);
+    clearViewState();
     const auto bytes = sql.toUtf8();
     executedSql_ = QString::fromUtf8(bytes.mid(static_cast<qsizetype>(range.start),
                                                static_cast<qsizetype>(range.end - range.start)));
@@ -917,41 +994,6 @@ void QueryWorkspace::execute() {
     cancellationPending_ = false;
     setExecutionState(busy_ ? QStringLiteral("queued") : QStringLiteral("failed"),
                       busy_ ? tr("◷ Queued") : tr("! Submission failed"));
-    updateActions();
-}
-bool QueryWorkspace::confirmShutdown() {
-    const bool transaction = !pendingTransactions_.isEmpty();
-    const bool active =
-        externalWork_ || busy_ || fetching_ || exporting_ || (query_ && !executionFinished_);
-    if (!transaction && !active)
-        return true;
-    ConfirmationDialog box(
-        QMessageBox::Warning, tr("Close database sessions"),
-        transaction
-            ? tr("Uncommitted transactions will be rolled back and active work cancelled.")
-            : tr("Active database work will be cancelled and any uncommitted changes rolled back."),
-        QMessageBox::NoButton, widgets_.dialogParent);
-    box.setTextFormat(Qt::PlainText);
-    auto* close =
-        box.addButton(transaction ? tr("Roll back and close") : tr("Cancel work and close"),
-                      QMessageBox::DestructiveRole);
-    auto* cancel = box.addButton(QMessageBox::Cancel);
-    box.setDefaultButton(cancel);
-    box.exec();
-    return box.clickedButton() == close;
-}
-void QueryWorkspace::beginShutdown() {
-    stopping_ = true;
-    updateActions();
-    adapter_->beginShutdown();
-}
-void QueryWorkspace::cancelShutdown() {
-    stopping_ = false;
-    updateActions();
-}
-void QueryWorkspace::shutdown() {
-    stopping_ = true;
-    adapter_->shutdown();
     updateActions();
 }
 } // namespace choscordb

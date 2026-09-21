@@ -338,6 +338,7 @@ dependencies = [
  "choscordb-storage",
  "fs2",
  "rusqlite",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",

@@ -583,6 +583,38 @@ void EngineAdapter::fetchPageAt(quint64 query, quint64 index) {
     if (!reply.accepted)
         emit commandFailed(string(reply.error));
 }
+bool EngineAdapter::applyResultView(quint64 query, const QList<ResultFilterCondition>& filters,
+                                    qint32 sortColumn, const QString& sortDirection) {
+    rust::Vec<ResultFilterDto> values;
+    values.reserve(static_cast<size_t>(filters.size()));
+    for (const auto& filter : filters) {
+        ResultFilterDto value;
+        value.column = filter.column;
+        value.operation = rustString(filter.operation);
+        value.value_kind = rustString(filter.valueKind);
+        value.value = rustString(filter.value);
+        values.push_back(std::move(value));
+    }
+    const auto direction = sortDirection.toUtf8();
+    auto reply = apply_result_view(*d_->engine, query, std::move(values),
+                                   sortColumn < 0 ? 0u : static_cast<quint32>(sortColumn),
+                                   utf8View(direction), pageSizeForQuery(query));
+    if (!reply.accepted)
+        emit commandFailed(string(reply.error));
+    return reply.accepted;
+}
+bool EngineAdapter::cancelResultView(quint64 query) {
+    auto reply = cancel_result_view(*d_->engine, query);
+    if (!reply.accepted)
+        emit commandFailed(string(reply.error));
+    return reply.accepted;
+}
+bool EngineAdapter::clearResultView(quint64 query) {
+    auto reply = clear_result_view(*d_->engine, query);
+    if (!reply.accepted)
+        emit commandFailed(string(reply.error));
+    return reply.accepted;
+}
 bool EngineAdapter::cancelQuery(quint64 query) {
     auto reply = cancel(*d_->engine, query);
     if (!reply.accepted)

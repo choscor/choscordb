@@ -267,17 +267,25 @@ fn value(v: mysql_async::Value, c: &mysql_async::Column) -> Result<Value> {
             if c.column_type() == T::MYSQL_TYPE_DATE {
                 Value::Date(format!("{y:04}-{m:02}-{d:02}"))
             } else {
-                Value::Timestamp(format!(
-                    "{y:04}-{m:02}-{d:02} {h:02}:{min:02}:{s:02}.{micros:06}"
-                ))
+                Value::Timestamp(format_mysql_timestamp(y, m, d, h, min, s, micros))
             }
         }
-        M::Time(negative, days, h, m, s, micros) => Value::Time(format!(
-            "{}{:02}:{m:02}:{s:02}.{micros:06}",
-            if negative { "-" } else { "" },
-            days as u64 * 24 + h as u64
-        )),
+        M::Time(negative, days, h, m, s, micros) => {
+            Value::Time(format_mysql_time(negative, days, h, m, s, micros))
+        }
     })
+}
+
+fn format_mysql_timestamp(y: u16, m: u8, d: u8, h: u8, min: u8, s: u8, micros: u32) -> String {
+    format!("{y:04}-{m:02}-{d:02} {h:02}:{min:02}:{s:02}.{micros:06}")
+}
+
+fn format_mysql_time(negative: bool, days: u32, h: u8, m: u8, s: u8, micros: u32) -> String {
+    format!(
+        "{}{:02}:{m:02}:{s:02}.{micros:06}",
+        if negative { "-" } else { "" },
+        days as u64 * 24 + h as u64
+    )
 }
 fn transaction_active(conn: &Conn) -> Option<bool> {
     conn.last_ok_packet().map(|p| {
@@ -708,5 +716,15 @@ mod tests {
         assert_eq!(MysqlDriver.id(), "mysql");
         assert!(MysqlDriver.capabilities().transactions);
         assert!(!MysqlDriver.capabilities().server_cursors);
+    }
+
+    #[test]
+    fn formats_temporal_values_without_losing_mysql_duration_semantics() {
+        assert_eq!(format_mysql_time(false, 0, 10, 30, 0, 0), "10:30:00.000000");
+        assert_eq!(format_mysql_time(true, 2, 1, 2, 3, 4), "-49:02:03.000004");
+        assert_eq!(
+            format_mysql_timestamp(2026, 9, 21, 10, 30, 0, 0),
+            "2026-09-21 10:30:00.000000"
+        );
     }
 }

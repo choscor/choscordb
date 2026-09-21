@@ -59,6 +59,12 @@ pub mod ffi {
         byte_length: u64,
         database_type: String,
     }
+    struct ResultFilterDto {
+        column: u32,
+        operation: String,
+        value_kind: String,
+        value: String,
+    }
     struct EditStatementDto {
         sql: String,
         params: Vec<CellDto>,
@@ -296,6 +302,9 @@ pub mod ffi {
         query_id: u64,
         exported_rows: u64,
         exported_bytes: u64,
+        result_view_rows: u64,
+        result_view_scanned_rows: u64,
+        result_view_buffered_rows: u64,
         chunk_offset: u64,
         total_bytes: u64,
         chunk_kind: String,
@@ -584,6 +593,16 @@ pub mod ffi {
             index: u64,
             page_size: u32,
         ) -> Submit;
+        fn apply_result_view(
+            engine: &mut BridgeEngine,
+            query: u64,
+            filters: Vec<ResultFilterDto>,
+            sort_column: u32,
+            sort_direction: &str,
+            page_size: u32,
+        ) -> Submit;
+        fn cancel_result_view(engine: &mut BridgeEngine, query: u64) -> Submit;
+        fn clear_result_view(engine: &mut BridgeEngine, query: u64) -> Submit;
         fn start_export(
             engine: &mut BridgeEngine,
             query: u64,
@@ -841,6 +860,100 @@ pub fn fetch_page_at(
         e.fetch_page_at(unpack(query), index, size)
             .map(|()| query)
             .map_err(|e| e.to_string())
+    })
+}
+fn filter_value(kind: &str, value: String) -> std::result::Result<Option<Value>, String> {
+    Ok(Some(match kind {
+        "" => return Ok(None),
+        "boolean" => Value::Bool(value.parse().map_err(|_| "Invalid boolean filter value")?),
+        "integer" => Value::Integer(value.parse().map_err(|_| "Invalid integer filter value")?),
+        "real" => Value::Real(value.parse().map_err(|_| "Invalid real filter value")?),
+        "decimal" => Value::Decimal(value),
+        "text" => Value::Text(value),
+        "date" => Value::Date(value),
+        "time" => Value::Time(value),
+        "timestamp" => Value::Timestamp(value),
+        "uuid" => Value::Uuid(value),
+        "json" => Value::Json(value),
+        "binary" => {
+            if !value.len().is_multiple_of(2) {
+                return Err(
+                    "Binary filter value must contain an even number of hexadecimal digits".into(),
+                );
+            }
+            let bytes = (0..value.len())
+                .step_by(2)
+                .map(|index| {
+                    u8::from_str_radix(&value[index..index + 2], 16)
+                        .map_err(|_| "Invalid hexadecimal binary filter value".to_string())
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Value::Binary(bytes)
+        }
+        _ => return Err("Invalid filter value type".into()),
+    }))
+}
+pub fn apply_result_view(
+    engine: &mut BridgeEngine,
+    query: u64,
+    filters: Vec<ffi::ResultFilterDto>,
+    sort_column: u32,
+    sort_direction: &str,
+    page_size: u32,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        let filters = filters
+            .into_iter()
+            .map(|filter| {
+                let operator = match filter.operation.as_str() {
+                    "contains" => choscordb_core::FilterOperator::Contains,
+                    "equals" => choscordb_core::FilterOperator::Equals,
+                    "not_equals" => choscordb_core::FilterOperator::NotEquals,
+                    "less_than" => choscordb_core::FilterOperator::LessThan,
+                    "less_than_or_equal" => choscordb_core::FilterOperator::LessThanOrEqual,
+                    "greater_than" => choscordb_core::FilterOperator::GreaterThan,
+                    "greater_than_or_equal" => choscordb_core::FilterOperator::GreaterThanOrEqual,
+                    "is_null" => choscordb_core::FilterOperator::IsNull,
+                    "is_not_null" => choscordb_core::FilterOperator::IsNotNull,
+                    _ => return Err("Invalid filter operator".to_string()),
+                };
+                Ok(choscordb_core::FilterCondition {
+                    column: filter.column as usize,
+                    operator,
+                    value: filter_value(&filter.value_kind, filter.value)?,
+                })
+            })
+            .collect::<std::result::Result<Vec<_>, String>>()?;
+        let sort = match sort_direction {
+            "" => None,
+            "ascending" => Some(choscordb_core::ResultSort {
+                column: sort_column as usize,
+                direction: choscordb_core::SortDirection::Ascending,
+            }),
+            "descending" => Some(choscordb_core::ResultSort {
+                column: sort_column as usize,
+                direction: choscordb_core::SortDirection::Descending,
+            }),
+            _ => return Err("Invalid sort direction".into()),
+        };
+        let page_size = PageSize::new(page_size).map_err(|error| error.message)?;
+        e.apply_result_view(unpack(query), filters, sort, page_size)
+            .map(|()| query)
+            .map_err(|error| error.to_string())
+    })
+}
+pub fn cancel_result_view(engine: &mut BridgeEngine, query: u64) -> ffi::Submit {
+    submit(engine, |e| {
+        e.cancel_result_view(unpack(query))
+            .map(|()| query)
+            .map_err(|error| error.to_string())
+    })
+}
+pub fn clear_result_view(engine: &mut BridgeEngine, query: u64) -> ffi::Submit {
+    submit(engine, |e| {
+        e.clear_result_view(unpack(query))
+            .map(|()| query)
+            .map_err(|error| error.to_string())
     })
 }
 macro_rules! command {

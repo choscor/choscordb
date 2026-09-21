@@ -122,6 +122,9 @@ choscordb_add_library(choscordb-desktop
   desktop/app/workspace_recovery.cpp
   desktop/app/query_workspace.cpp
   desktop/app/query_workspace_events.cpp
+  desktop/app/query_workspace_lifecycle.cpp
+  desktop/app/query_workspace_view.cpp
+  desktop/app/result_filter_bar.cpp
   desktop/app/object_data_workspace.cpp
   desktop/app/object_explorer.cpp
   desktop/app/navigator_controller.cpp

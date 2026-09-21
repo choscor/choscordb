@@ -67,6 +67,16 @@ pub(crate) enum Command {
         index: Option<u64>,
         released: watch::Receiver<bool>,
     },
+    ApplyResultView {
+        query: QueryId,
+        filters: Vec<crate::FilterCondition>,
+        sort: Option<crate::ResultSort>,
+        page_size: PageSize,
+        cancellation: watch::Receiver<bool>,
+    },
+    ClearResultView {
+        query: QueryId,
+    },
     Metadata {
         parent: Option<ObjectId>,
         request_token: u64,
@@ -312,6 +322,7 @@ pub(crate) async fn run(
     let mut object_active: Option<Active> = None;
     let mut readers = std::collections::HashMap::<QueryId, crate::deferred::Reader>::new();
     let mut stores = std::collections::HashMap::<QueryId, crate::store::Store>::new();
+    let mut views = std::collections::HashMap::<QueryId, crate::store::Store>::new();
     loop {
         if *shutdown.borrow() {
             break;
@@ -413,6 +424,8 @@ pub(crate) async fn run(
                 object: Some(_), ..
             } => true,
             Command::Fetch { query, .. }
+            | Command::ApplyResultView { query, .. }
+            | Command::ClearResultView { query }
             | Command::Export { query, .. }
             | Command::LoadValue { query, .. }
             | Command::LoadValueChunk { query, .. }
@@ -811,6 +824,7 @@ pub(crate) async fn run(
                             )
                             .await?;
                             stores.insert(query, store);
+                            views.remove(&query);
                             cache.remove(query);
                             current.completed = false;
                             current.fetched_rows = 0;
@@ -873,7 +887,12 @@ pub(crate) async fn run(
                     .await;
                     continue;
                 };
-                let count = match store.count() {
+                let view_active = views.contains_key(&query);
+                let count = match if view_active {
+                    views.get(&query).unwrap().count()
+                } else {
+                    store.count()
+                } {
                     Ok(count) => count,
                     Err(error) => {
                         send(&events, Event::QueryFailed { query, error }).await;
@@ -910,11 +929,19 @@ pub(crate) async fn run(
                 };
                 if let Some(index) = index {
                     if index < count {
-                        let read = if let Some(stored) = cache.read(query, index) {
+                        let read = if view_active {
+                            views
+                                .get_mut(&query)
+                                .unwrap()
+                                .read_reserved(index, lease)
+                                .await
+                        } else if let Some(stored) = cache.read(query, index) {
                             Ok((stored, lease))
                         } else {
                             let read = store.read_reserved(index, lease).await;
-                            if let Ok((stored, _)) = &read {
+                            if let Ok((stored, _)) = &read
+                                && !view_active
+                            {
                                 cache.insert(&memory, query, stored);
                             }
                             read
@@ -1038,6 +1065,304 @@ pub(crate) async fn run(
                     break;
                 }
             }
+            Command::ApplyResultView {
+                query,
+                filters,
+                sort,
+                page_size,
+                cancellation,
+            } => {
+                let result = async {
+                    let store = stores.get_mut(&query).ok_or_else(|| {
+                        DriverError::new(ErrorKind::StaleHandle, "Stored result is unavailable")
+                    })?;
+                    if let Some(current) = active.as_mut().filter(|a| a.id == query && !a.completed)
+                    {
+                        // Observe view cancellation between bounded fetches. Let an in-flight
+                        // database operation settle so the original cursor remains resumable;
+                        // query cancellation, timeout and shutdown remain authoritative.
+                        loop {
+                            if *cancellation.borrow() {
+                                return Err(DriverError::new(
+                                    ErrorKind::Cancelled,
+                                    "Result view cancelled",
+                                ));
+                            }
+                            let outcome = fetch_stored(
+                                current,
+                                store,
+                                (),
+                                current.page_size,
+                                raw_limit,
+                                None,
+                                &mut shutdown,
+                                grace,
+                                &events,
+                            )
+                            .await;
+                            let stored = outcome.result?.0;
+                            send(
+                                &events,
+                                Event::ResultViewProgress {
+                                    query,
+                                    scanned_rows: current.fetched_rows,
+                                    buffered_rows: 0,
+                                },
+                            )
+                            .await;
+                            if *cancellation.borrow() {
+                                return Err(DriverError::new(
+                                    ErrorKind::Cancelled,
+                                    "Result view cancelled",
+                                ));
+                            }
+                            if !stored.page.has_more {
+                                complete_result(current, &events).await;
+                                break;
+                            }
+                            if outcome.poisoned {
+                                return Err(DriverError::new(
+                                    ErrorKind::Internal,
+                                    "Result cursor could not be settled",
+                                ));
+                            }
+                        }
+                    }
+                    let count = store.count()?;
+                    let columns = store.schema_reserved(()).await?.0;
+                    if let Some(sort) = sort {
+                        let column = columns.get(sort.column).ok_or_else(|| {
+                            DriverError::new(ErrorKind::InvalidInput, "Sort column is out of range")
+                        })?;
+                        if column.database_type.to_ascii_uppercase().contains("JSON") {
+                            return Err(DriverError::new(
+                                ErrorKind::InvalidInput,
+                                "JSON columns cannot be sorted safely",
+                            ));
+                        }
+                    }
+                    let committed_disk_bytes = store
+                        .disk_bytes()?
+                        .checked_add(
+                            views
+                                .get(&query)
+                                .map(crate::store::Store::disk_bytes)
+                                .transpose()?
+                                .unwrap_or_default(),
+                        )
+                        .ok_or_else(|| {
+                            DriverError::new(
+                                ErrorKind::ResourceLimit,
+                                "Result view disk budget overflow",
+                            )
+                        })?;
+                    let view_disk_bytes = store_config
+                        .max_disk_bytes
+                        .checked_sub(committed_disk_bytes)
+                        .ok_or_else(|| {
+                            DriverError::new(
+                                ErrorKind::ResourceLimit,
+                                "Result view exceeds the aggregate result-store disk budget",
+                            )
+                        })?;
+                    let mut view_store_config = store_config.clone();
+                    view_store_config.max_disk_bytes = view_disk_bytes;
+                    let mut direct_view = if sort.is_none() {
+                        Some(
+                            crate::store::Store::create_reserved(
+                                columns.clone(),
+                                view_store_config.clone(),
+                                store_directory.clone(),
+                                (),
+                            )
+                            .await?
+                            .0,
+                        )
+                    } else {
+                        None
+                    };
+                    let mut sorter = if let Some(sort) = sort {
+                        Some(
+                            crate::store::SortedRows::new(
+                                sort.direction,
+                                view_disk_bytes,
+                                raw_limit,
+                                store_directory.clone(),
+                            )
+                            .await?,
+                        )
+                    } else {
+                        None
+                    };
+                    let mut pending = Vec::with_capacity(page_size.get() as usize);
+                    let mut direct_page_index = 0_u64;
+                    let mut row_count = 0_u64;
+                    let mut sort_sample = None;
+                    for index in 0..count {
+                        if *cancellation.borrow() {
+                            return Err(DriverError::new(
+                                ErrorKind::Cancelled,
+                                "Result view cancelled",
+                            ));
+                        }
+                        let stored = store.read_reserved(index, ()).await?.0;
+                        let scanned_rows = stored.first_row + stored.page.rows.len() as u64;
+                        let mut sorted_batch = Vec::new();
+                        for row in stored.page.rows {
+                            let sort_key = if let Some(sort) = sort {
+                                crate::result_view::validate_sort_value(&row, sort)?;
+                                let value = crate::result_view::sort_key(
+                                    &row[sort.column],
+                                    &columns[sort.column].database_type,
+                                )?;
+                                if !matches!(&value, Value::Null) {
+                                    if let Some(sample) = &sort_sample {
+                                        crate::result_view::sort_compare(
+                                            sample,
+                                            &value,
+                                            sort.direction,
+                                        )?;
+                                    } else {
+                                        sort_sample = Some(value.clone());
+                                    }
+                                }
+                                Some(value)
+                            } else {
+                                None
+                            };
+                            if crate::result_view::row_matches(&row, &filters)? {
+                                row_count = row_count.checked_add(1).ok_or_else(|| {
+                                    DriverError::new(
+                                        ErrorKind::ResourceLimit,
+                                        "Result view row count overflow",
+                                    )
+                                })?;
+                                if sort.is_some() {
+                                    sorted_batch.push((sort_key.expect("sort key exists"), row));
+                                } else {
+                                    if pending.len() == page_size.get() as usize {
+                                        direct_view
+                                                .as_mut()
+                                                .expect("direct view exists without a sort")
+                                                .append_reserved(
+                                                    ResultPage {
+                                                        index: direct_page_index,
+                                                        rows: std::mem::replace(
+                                                            &mut pending,
+                                                            Vec::with_capacity(
+                                                                page_size.get() as usize
+                                                            ),
+                                                        ),
+                                                        has_more: true,
+                                                    },
+                                                    (),
+                                                )
+                                                .await?;
+                                        direct_page_index += 1;
+                                    }
+                                    pending.push(row);
+                                    if pending.len() > 1
+                                        && crate::result_view::page_estimated_bytes(&pending)
+                                            > raw_limit
+                                    {
+                                        let overflow = pending.pop().expect("pending is nonempty");
+                                        direct_view
+                                            .as_mut()
+                                            .expect("direct view exists without a sort")
+                                            .append_reserved(
+                                                ResultPage {
+                                                    index: direct_page_index,
+                                                    rows: std::mem::replace(
+                                                        &mut pending,
+                                                        Vec::with_capacity(
+                                                            page_size.get() as usize,
+                                                        ),
+                                                    ),
+                                                    has_more: true,
+                                                },
+                                                (),
+                                            )
+                                            .await?;
+                                        direct_page_index += 1;
+                                        pending.push(overflow);
+                                    }
+                                }
+                            }
+                        }
+                        let buffered_rows = if sorter.is_some() {
+                            sorted_batch.len() as u64
+                        } else {
+                            pending.len() as u64
+                        };
+                        if let Some(sorter) = &mut sorter {
+                            sorter.insert(sorted_batch).await?;
+                        }
+                        send(
+                            &events,
+                            Event::ResultViewProgress {
+                                query,
+                                scanned_rows,
+                                buffered_rows,
+                            },
+                        )
+                        .await;
+                    }
+                    let view = if let Some(sorter) = sorter {
+                        sorter
+                            .finish(
+                                columns,
+                                view_store_config.clone(),
+                                store_directory.clone(),
+                                page_size.get() as usize,
+                                cancellation.clone(),
+                            )
+                            .await?
+                    } else {
+                        let mut view = direct_view.expect("direct view exists without a sort");
+                        view.append_reserved(
+                            ResultPage {
+                                index: direct_page_index,
+                                rows: pending,
+                                has_more: false,
+                            },
+                            (),
+                        )
+                        .await?;
+                        view
+                    };
+                    if let Some(previous) = views.remove(&query) {
+                        previous.dispose().await;
+                    }
+                    views.insert(query, view);
+                    Ok(row_count)
+                }
+                .await;
+                match result {
+                    Ok(rows) => send(&events, Event::ResultViewApplied { query, rows }).await,
+                    Err(error) => send(&events, Event::ResultViewFailed { query, error }).await,
+                }
+            }
+            Command::ClearResultView { query } => {
+                if let Some(view) = views.remove(&query) {
+                    view.dispose().await;
+                }
+                match stores.get(&query).and_then(|store| store.rows().ok()) {
+                    Some(rows) => send(&events, Event::ResultViewApplied { query, rows }).await,
+                    None => {
+                        send(
+                            &events,
+                            Event::ResultViewFailed {
+                                query,
+                                error: DriverError::new(
+                                    ErrorKind::StaleHandle,
+                                    "Stored result is unavailable",
+                                ),
+                            },
+                        )
+                        .await
+                    }
+                }
+            }
             Command::Export {
                 export,
                 query,
@@ -1046,6 +1371,11 @@ pub(crate) async fn run(
                 cancellation,
                 released,
             } => {
+                let export_stores = if views.contains_key(&query) {
+                    &mut views
+                } else {
+                    &mut stores
+                };
                 let poisoned = export::run(
                     export,
                     query,
@@ -1053,7 +1383,7 @@ pub(crate) async fn run(
                     format,
                     cancellation,
                     released,
-                    &mut stores,
+                    export_stores,
                     &readers,
                     active,
                     &memory,
@@ -1264,6 +1594,7 @@ pub(crate) async fn run(
             }
             Command::Release(query) => {
                 stores.remove(&query);
+                views.remove(&query);
                 readers.remove(&query);
                 cache.remove(query);
                 if active.as_ref().is_some_and(|a| a.id == query) {

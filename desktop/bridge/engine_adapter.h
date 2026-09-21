@@ -54,6 +54,12 @@ struct QueryPreferences {
     QueryPreferences();
     quint32 version, pageSize, timeoutSeconds;
 };
+struct ResultFilterCondition {
+    quint32 column = 0;
+    QString operation;
+    QString valueKind;
+    QString value;
+};
 struct QueryPreferenceLimits {
     quint32 version, minPageSize, maxPageSize, defaultPageSize, maxTimeoutSeconds;
 };
@@ -186,6 +192,10 @@ class EngineAdapter final : public QObject {
     void nextResultSet(quint64 query);
     void fetchPage(quint64 query);
     void fetchPageAt(quint64 query, quint64 index);
+    bool applyResultView(quint64 query, const QList<ResultFilterCondition>& filters,
+                         qint32 sortColumn = -1, const QString& sortDirection = {});
+    bool cancelResultView(quint64 query);
+    bool clearResultView(quint64 query);
     bool cancelQuery(quint64 query);
     std::optional<quint64> startExport(quint64 query, const QString& path, const QString& format,
                                        const QStringList& table = {}, bool postgres = false);

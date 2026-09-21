@@ -223,6 +223,19 @@ pub enum Event {
         query: QueryId,
         state: QueryState,
     },
+    ResultViewProgress {
+        query: QueryId,
+        scanned_rows: u64,
+        buffered_rows: u64,
+    },
+    ResultViewApplied {
+        query: QueryId,
+        rows: u64,
+    },
+    ResultViewFailed {
+        query: QueryId,
+        error: DriverError,
+    },
     Schema {
         query: QueryId,
         columns: Vec<Column>,
