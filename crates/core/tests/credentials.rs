@@ -1,9 +1,11 @@
 use choscordb_core::{
-    ConnectionProfile, CredentialUpdate, Engine, EngineConfig, Event, PostgresTls,
-    ProfileConfiguration, SubmitError,
+    ConnectionProfile, CredentialUpdate, CredentialUpdates, Engine, EngineConfig, Event,
+    PostgresTls, ProfileConfiguration, ProfileSecrets, SubmitError,
 };
 use choscordb_credentials::{CredentialError, CredentialStore, Secret};
-use choscordb_driver_api::{Connection, ConnectionOptions, DatabaseDriver, DriverCapabilities};
+use choscordb_driver_api::{
+    Connection, ConnectionOptions, DatabaseDriver, DriverCapabilities, SshAuthentication, SshTunnel,
+};
 use std::{
     collections::HashMap,
     sync::{
@@ -17,6 +19,68 @@ struct Vault {
     items: Mutex<HashMap<String, String>>,
     fail_put: AtomicBool,
     fail_delete: AtomicBool,
+}
+
+#[test]
+fn database_and_ssh_secrets_have_independent_secure_references() {
+    let directory = tempfile::tempdir().unwrap();
+    let metadata = directory.path().join("metadata.sqlite");
+    let vault = Arc::new(Vault::default());
+    let mut engine = Engine::new_with_credentials(
+        EngineConfig {
+            storage_path: Some(metadata.clone()),
+            ..Default::default()
+        },
+        vec![],
+        vault.clone(),
+    )
+    .unwrap();
+    engine
+        .profile_save_with_secrets(
+            profile(),
+            CredentialUpdates {
+                database: CredentialUpdate::Replace(Secret::new("database-secret")),
+                ssh: CredentialUpdate::Replace(Secret::new("ssh-secret")),
+            },
+            90,
+        )
+        .unwrap();
+    let Event::ProfileSaved { profile, .. } = event(&mut engine) else {
+        panic!("profile save failed")
+    };
+    let database_ref = profile.credential_ref.clone().unwrap();
+    let ssh_ref = profile.ssh_credential_ref.clone().unwrap();
+    assert_ne!(database_ref, ssh_ref);
+    assert_eq!(
+        vault.get(&database_ref).unwrap().expose(),
+        "database-secret"
+    );
+    assert_eq!(vault.get(&ssh_ref).unwrap().expose(), "ssh-secret");
+    let bytes = std::fs::read(&metadata).unwrap();
+    for secret in ["database-secret", "ssh-secret"] {
+        assert!(
+            !bytes
+                .windows(secret.len())
+                .any(|value| value == secret.as_bytes())
+        );
+    }
+
+    engine
+        .profile_save_with_secrets(
+            profile,
+            CredentialUpdates {
+                database: CredentialUpdate::Keep,
+                ssh: CredentialUpdate::Clear,
+            },
+            91,
+        )
+        .unwrap();
+    let Event::ProfileSaved { profile, .. } = event(&mut engine) else {
+        panic!("profile update failed")
+    };
+    assert_eq!(profile.credential_ref.as_ref(), Some(&database_ref));
+    assert!(profile.ssh_credential_ref.is_none());
+    assert_eq!(vault.items.lock().unwrap().len(), 1);
 }
 impl CredentialStore for Vault {
     fn get(&self, r: &str) -> choscordb_credentials::Result<Secret> {
@@ -60,6 +124,7 @@ fn profile() -> ConnectionProfile {
             tls: PostgresTls::default(),
         },
         credential_ref: None,
+        ssh_credential_ref: None,
     }
 }
 fn event(engine: &mut Engine) -> Event {
@@ -202,7 +267,7 @@ fn failed_metadata_publication_removes_new_key_and_preserves_old() {
     );
 }
 struct PasswordDriver {
-    received: Arc<Mutex<Vec<String>>>,
+    received: Arc<Mutex<Vec<(String, String)>>>,
 }
 #[async_trait::async_trait]
 impl DatabaseDriver for PasswordDriver {
@@ -216,13 +281,20 @@ impl DatabaseDriver for PasswordDriver {
         &self,
         options: ConnectionOptions,
     ) -> choscordb_driver_api::Result<Box<dyn Connection>> {
-        let ConnectionOptions::Postgres { password, .. } = options else {
+        let ConnectionOptions::Postgres {
+            password,
+            ssh_secret,
+            ..
+        } = options
+        else {
             panic!()
         };
-        self.received
-            .lock()
-            .unwrap()
-            .push(password.map(|p| p.expose().to_owned()).unwrap_or_default());
+        self.received.lock().unwrap().push((
+            password.map(|p| p.expose().to_owned()).unwrap_or_default(),
+            ssh_secret
+                .map(|p| p.expose().to_owned())
+                .unwrap_or_default(),
+        ));
         choscordb_driver_sqlite::SqliteDriver
             .connect(ConnectionOptions::Sqlite {
                 path: ":memory:".into(),
@@ -252,7 +324,14 @@ fn connect_and_test_resolve_credentials_without_persisting_overrides() {
         .test_profile(p.clone(), Some(Secret::new("once")), 3)
         .unwrap();
     assert!(matches!(event(&mut engine), Event::ProfileTested { .. }));
-    assert_eq!(*received.lock().unwrap(), vec!["saved", "saved", "once"]);
+    assert_eq!(
+        *received.lock().unwrap(),
+        vec![
+            ("saved".into(), String::new()),
+            ("saved".into(), String::new()),
+            ("once".into(), String::new())
+        ]
+    );
     vault.items.lock().unwrap().clear();
     engine.test_profile(p.clone(), None, 4).unwrap();
     assert!(matches!(event(&mut engine), Event::ProfileFailed { .. }));
@@ -262,6 +341,65 @@ fn connect_and_test_resolve_credentials_without_persisting_overrides() {
     assert_eq!(
         engine.test_profile(profile(), Some(Secret::new("x".repeat(16385))), 5),
         Err(SubmitError::ResourceLimit)
+    );
+}
+
+#[test]
+fn connect_resolves_saved_ssh_secret_and_session_overrides() {
+    let vault = Arc::new(Vault::default());
+    let received = Arc::new(Mutex::new(vec![]));
+    let mut engine = Engine::new_with_credentials(
+        EngineConfig::default(),
+        vec![Arc::new(PasswordDriver {
+            received: received.clone(),
+        })],
+        vault,
+    )
+    .unwrap();
+    let mut value = profile();
+    let ProfileConfiguration::Postgres { ssh, .. } = &mut value.configuration else {
+        panic!()
+    };
+    *ssh = Some(SshTunnel {
+        host: "bastion.example".into(),
+        port: 22,
+        user: "operator".into(),
+        authentication: SshAuthentication::Password,
+        identity_file: None,
+    });
+    engine
+        .profile_save_with_secrets(
+            value,
+            CredentialUpdates {
+                database: CredentialUpdate::Replace(Secret::new("saved-db")),
+                ssh: CredentialUpdate::Replace(Secret::new("saved-ssh")),
+            },
+            20,
+        )
+        .unwrap();
+    let Event::ProfileSaved { profile, .. } = event(&mut engine) else {
+        panic!()
+    };
+    engine
+        .test_profile_with_secrets(profile.clone(), ProfileSecrets::default(), 21)
+        .unwrap();
+    assert!(matches!(event(&mut engine), Event::ProfileTested { .. }));
+    engine
+        .connect_profile_with_secrets(
+            profile,
+            ProfileSecrets {
+                database: Some(Secret::new("once-db")),
+                ssh: Some(Secret::new("once-ssh")),
+            },
+        )
+        .unwrap();
+    assert!(matches!(event(&mut engine), Event::Connected { .. }));
+    assert_eq!(
+        *received.lock().unwrap(),
+        vec![
+            ("saved-db".into(), "saved-ssh".into()),
+            ("once-db".into(), "once-ssh".into())
+        ]
     );
 }
 #[test]

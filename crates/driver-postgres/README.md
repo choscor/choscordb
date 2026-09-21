@@ -73,11 +73,13 @@ host, port, and username. Optionally enter a private-key file path. Keep the
 PostgreSQL host and port set to the database address reachable from the SSH
 server (for example, `localhost:5432` for a database on that server).
 
-The application runs the system `ssh` executable using key or agent
-authentication. An encrypted key must already be unlocked in the agent; SSH
-password and interactive passphrase prompts are not supported. Verify and trust
-the server key with OpenSSH before connecting. Unknown or changed host keys fail
-closed. OpenSSH configuration can supply identities and proxy settings.
+Choose SSH agent, public key, or password authentication. Public-key profiles
+accept an optional encrypted-key passphrase. Passwords and passphrases can stay
+session-only or be saved in the operating-system credential store. They are
+delivered to the system `ssh` executable through the application's authenticated
+loopback askpass broker and never appear in command arguments or profile files.
+Verify and trust the server key with OpenSSH before connecting. Unknown or changed
+host keys fail closed. OpenSSH configuration can supply proxy settings.
 
 Each database connection owns its SSH process and forwards over standard input
 and output without opening a local listening port. Connection failures never
@@ -86,4 +88,5 @@ forward to the same database; closing or dropping a connection terminates its
 tunnel. SSH connection and cancellation handshakes have a 15-second deadline.
 TLS settings remain independent of SSH: verification uses the configured
 PostgreSQL hostname and optional root certificate. Saved profiles contain only
-SSH settings and the key path, never key contents or SSH credentials.
+SSH settings, the key path, and opaque credential references, never key contents
+or SSH credentials.

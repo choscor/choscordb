@@ -20,6 +20,7 @@ fn options() -> ConnectionOptions {
         database: get("CHOSCORDB_TEST_POSTGRES_DATABASE"),
         user: get("CHOSCORDB_TEST_POSTGRES_USER"),
         password: Some(Secret::new(get("CHOSCORDB_TEST_POSTGRES_PASSWORD"))),
+        ssh_secret: None,
         tls: TlsMode::VerifyFull,
         root_certificate: Some(get("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE").into()),
     }

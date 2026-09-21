@@ -47,6 +47,7 @@ class WorkspaceTest : public QObject {
     void profileAdapterPersistsAcrossRestart();
     void profileFailuresKeepDraftAndShowConnectionCodes();
     void passwordDraftSurvivesTestConnectAndFailedRemember();
+    void sshSecretDraftSurvivesFailedSecureSave();
     void mysqlSelectedScriptNavigatesDifferentResultSchemas();
     void mysqlGridEditsReviewBoundValuesAndPersistChanges();
     void mysqlModeRefreshDoesNotExecuteChangedEditorInput();

@@ -28,12 +28,14 @@ async fn ssh_connection_never_falls_back_to_direct_database() {
             database: "postgres".into(),
             user: "test".into(),
             password: None,
+            ssh_secret: None,
             tls: TlsMode::Disable,
             root_certificate: None,
             ssh: Some(SshTunnel {
                 host: "127.0.0.1".into(),
                 port: ssh_port,
                 user: "test".into(),
+                authentication: SshAuthentication::Agent,
                 identity_file: None,
             }),
         })
@@ -47,4 +49,34 @@ async fn ssh_connection_never_falls_back_to_direct_database() {
         "database received a direct connection"
     );
     server.abort();
+}
+
+#[tokio::test]
+async fn ssh_password_authentication_requires_a_secret() {
+    let result = PostgresDriver
+        .connect(ConnectionOptions::Postgres {
+            host: "db.internal".into(),
+            port: 5432,
+            database: "postgres".into(),
+            user: "test".into(),
+            password: None,
+            ssh_secret: None,
+            tls: TlsMode::Disable,
+            root_certificate: None,
+            ssh: Some(SshTunnel {
+                host: "bastion.example".into(),
+                port: 22,
+                user: "operator".into(),
+                authentication: SshAuthentication::Password,
+                identity_file: None,
+            }),
+        })
+        .await;
+    assert!(matches!(
+        result,
+        Err(DriverError {
+            kind: ErrorKind::Authentication,
+            ..
+        })
+    ));
 }

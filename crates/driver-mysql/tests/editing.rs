@@ -12,6 +12,7 @@ async fn connect() -> Box<dyn Connection> {
             database: "choscordb_test".into(),
             user: "root".into(),
             password: Some(Secret::new("choscordb-test-password")),
+            ssh_secret: None,
             tls: TlsMode::Disable,
             root_certificate: None,
             ssh: None,

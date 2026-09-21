@@ -2,12 +2,16 @@
 #include "app/application_data.h"
 #include "app/main_window.h"
 #include "app/updater.h"
+#include "choscordb-bridge/src/lib.rs.h"
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
 #include <QStandardPaths>
 #include <QTimer>
 int main(int argc, char** argv) {
+    const auto askpass = choscordb::ssh_askpass_exit_code();
+    if (askpass >= 0)
+        return askpass;
     QApplication app(argc, argv);
     QApplication::setApplicationName("ChoscorDB");
     QApplication::setOrganizationName(CHOSCORDB_APP_ID);

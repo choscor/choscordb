@@ -19,11 +19,11 @@ struct ReviewedEditStatement {
 struct Submit;
 struct SavedProfile {
     QString id, name, groupId, driver = "sqlite", path, host, database, user;
-    QString tls = "verify_full", rootCertificate, credentialRef;
+    QString tls = "verify_full", rootCertificate, credentialRef, sshCredentialRef;
     bool readOnly = false;
     quint16 port = 5432;
     bool sshEnabled = false;
-    QString sshHost, sshUser, sshIdentityFile;
+    QString sshHost, sshUser, sshAuthentication = "agent", sshIdentityFile;
     quint16 sshPort = 22;
 };
 struct SavedHistoryEntry {
@@ -169,10 +169,20 @@ class EngineAdapter final : public QObject {
     void saveProfile(const SavedProfile& profile, quint64 token);
     void saveProfileWithPassword(const SavedProfile& profile, const QString& password,
                                  const QString& action, quint64 token);
+    void saveProfileWithSecrets(const SavedProfile& profile, const QString& databaseSecret,
+                                const QString& databaseAction, const QString& sshSecret,
+                                const QString& sshAction, quint64 token);
     void testProfileWithPassword(const SavedProfile& profile, const QString& password,
                                  bool hasPassword, quint64 token);
+    void testProfileWithSecrets(const SavedProfile& profile, const QString& databaseSecret,
+                                bool hasDatabaseSecret, const QString& sshSecret, bool hasSshSecret,
+                                quint64 token);
     std::optional<quint64> connectProfileWithPassword(const SavedProfile& profile,
                                                       const QString& password, bool hasPassword);
+    std::optional<quint64> connectProfileWithSecrets(const SavedProfile& profile,
+                                                     const QString& databaseSecret,
+                                                     bool hasDatabaseSecret,
+                                                     const QString& sshSecret, bool hasSshSecret);
     void duplicateProfile(const QString& source, const QString& id, const QString& name,
                           quint64 token);
     void deleteProfile(const QString& id, quint64 token);

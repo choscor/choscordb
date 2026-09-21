@@ -10,9 +10,9 @@ mod operation;
 mod profiles;
 mod query_history;
 mod recovery;
-mod result_view;
-pub use profiles::CredentialUpdate;
+pub use profiles::{CredentialUpdate, CredentialUpdates, ProfileSecrets};
 mod protocol;
+mod result_view;
 pub use choscordb_storage::{
     APPEARANCE_LAYOUT_VERSION, Accent, AccentPreset, AppearanceLayout, ConnectionProfile,
     DEFAULT_EDITOR_FONT_SIZE, Density, EDITOR_PREFERENCES_VERSION, EditorDocument,

@@ -209,6 +209,41 @@ void WorkspaceTest::passwordDraftSurvivesTestConnectAndFailedRemember() {
     QVERIFY(dialog->grab().save("native-profile-password.png"));
 }
 
+void WorkspaceTest::sshSecretDraftSurvivesFailedSecureSave() {
+    WorkspaceFixture f;
+    QTRY_COMPARE(f.connections.count(), 1);
+    f.newConnection.trigger();
+    auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
+    QVERIFY(dialog);
+    auto* save = dialog->findChild<QPushButton*>("profileSave");
+    auto* secret = dialog->findChild<QLineEdit*>("profileSshSecret");
+    auto* remember = dialog->findChild<QCheckBox*>("profileRememberSshSecret");
+    auto* status = dialog->findChild<QLabel*>("profileStatus");
+    QVERIFY(save && secret && remember && status);
+    QTRY_VERIFY(save->isEnabled());
+    choscordb::SavedProfile profile;
+    profile.id = "ssh-secret-draft";
+    profile.name = "SSH password draft";
+    profile.driver = "postgres";
+    profile.host = "localhost";
+    profile.database = "app";
+    profile.user = "user";
+    profile.port = 1;
+    profile.sshEnabled = true;
+    profile.sshHost = "bastion.example";
+    profile.sshUser = "operator";
+    profile.sshAuthentication = "password";
+    secret->setText("ssh-private-marker");
+    secret->setModified(true);
+    remember->setChecked(true);
+    dialog->saveDraft(profile);
+    QTRY_VERIFY(save->isEnabled());
+    QVERIFY(status->text().contains("unavailable", Qt::CaseInsensitive));
+    QCOMPARE(secret->text(), QString("ssh-private-marker"));
+    QVERIFY(secret->isModified());
+    QVERIFY(!status->text().contains("ssh-private-marker"));
+}
+
 void WorkspaceTest::mysqlSelectedScriptNavigatesDifferentResultSchemas() {
     if (qEnvironmentVariable("CHOSCORDB_TEST_MYSQL").isEmpty())
         QSKIP("Requires the isolated MySQL fixture environment");

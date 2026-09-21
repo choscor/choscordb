@@ -14,6 +14,23 @@ pub enum CredentialUpdate {
     Replace(Secret),
     Clear,
 }
+pub struct CredentialUpdates {
+    pub database: CredentialUpdate,
+    pub ssh: CredentialUpdate,
+}
+impl CredentialUpdates {
+    fn database(update: CredentialUpdate) -> Self {
+        Self {
+            database: update,
+            ssh: CredentialUpdate::Keep,
+        }
+    }
+}
+#[derive(Default)]
+pub struct ProfileSecrets {
+    pub database: Option<Secret>,
+    pub ssh: Option<Secret>,
+}
 use tokio::{
     runtime::Handle,
     sync::{mpsc, watch},
@@ -22,7 +39,7 @@ pub(crate) enum Command {
     HistoryWrite(crate::query_history::Write),
     Recovery(crate::recovery::Command),
     List(u64),
-    Save(ConnectionProfile, CredentialUpdate, u64),
+    Save(Box<ConnectionProfile>, CredentialUpdates, u64),
     Resolve(String, oneshot::Sender<Result<Secret, DriverError>>),
     Duplicate(String, String, String, u64),
     Delete(String, u64),
@@ -175,7 +192,8 @@ fn cleanup(storage: &mut Storage, credentials: &dyn CredentialStore) -> Result<(
         .profiles()
         .map_err(storage_error)?
         .into_iter()
-        .filter_map(|p| p.credential_ref)
+        .flat_map(|p| [p.credential_ref, p.ssh_credential_ref])
+        .flatten()
         .collect();
     for reference in storage
         .pending_credential_cleanup()
@@ -214,42 +232,45 @@ fn execute(
                 profiles: storage.profiles().map_err(storage_error)?,
             })
         }
-        Command::Save(mut profile, update, request_token) => {
-            let previous = storage
-                .profile(&profile.id)
-                .map_err(storage_error)?
-                .and_then(|p| p.credential_ref);
-            let new_reference = match update {
-                CredentialUpdate::Keep => {
-                    profile.credential_ref = previous;
-                    None
+        Command::Save(mut profile, updates, request_token) => {
+            let previous = storage.profile(&profile.id).map_err(storage_error)?;
+            let mut created = Vec::new();
+            let database = prepare_credential_update(
+                storage,
+                credentials,
+                previous.as_ref().and_then(|p| p.credential_ref.clone()),
+                updates.database,
+            );
+            let database = match database {
+                Ok((reference, new_reference)) => {
+                    created.extend(new_reference);
+                    reference
                 }
-                CredentialUpdate::Clear => {
-                    profile.credential_ref = None;
-                    None
+                Err(error) => return Err(error),
+            };
+            let ssh = prepare_credential_update(
+                storage,
+                credentials,
+                previous.and_then(|p| p.ssh_credential_ref),
+                updates.ssh,
+            );
+            let ssh = match ssh {
+                Ok((reference, new_reference)) => {
+                    created.extend(new_reference);
+                    reference
                 }
-                CredentialUpdate::Replace(secret) => {
-                    let reference = uuid::Uuid::new_v4().to_string();
-                    // Persist recovery intent before OS publication, including process crashes.
-                    storage
-                        .queue_credential_cleanup(&reference)
-                        .map_err(storage_error)?;
-                    credentials
-                        .put(&reference, &secret)
-                        .map_err(credential_error)?;
-                    profile.credential_ref = Some(reference.clone());
-                    Some(reference)
+                Err(error) => {
+                    discard_created_credentials(storage, credentials, &created);
+                    return Err(error);
                 }
             };
+            profile.credential_ref = database;
+            profile.ssh_credential_ref = ssh;
             if let Err(error) = storage.save_profile(&profile) {
-                if let Some(reference) = new_reference
-                    && credentials.delete(&reference).is_ok()
-                {
-                    let _ = storage.acknowledge_credential_cleanup(&reference);
-                }
+                discard_created_credentials(storage, credentials, &created);
                 return Err(storage_error(error));
             }
-            if let Some(reference) = new_reference {
+            for reference in created {
                 let _ = storage.acknowledge_credential_cleanup(&reference);
             }
             let warning = cleanup(storage, credentials)
@@ -257,7 +278,7 @@ fn execute(
                 .map(|_| "Profile saved; credential cleanup will be retried".into());
             Ok(Event::ProfileSaved {
                 request_token,
-                profile,
+                profile: *profile,
                 warning,
             })
         }
@@ -282,6 +303,41 @@ fn execute(
         Command::Resolve(..) | Command::Recovery(_) | Command::HistoryWrite(_) => unreachable!(),
     }
 }
+
+fn prepare_credential_update(
+    storage: &mut Storage,
+    credentials: &dyn CredentialStore,
+    previous: Option<String>,
+    update: CredentialUpdate,
+) -> Result<(Option<String>, Option<String>), DriverError> {
+    match update {
+        CredentialUpdate::Keep => Ok((previous, None)),
+        CredentialUpdate::Clear => Ok((None, None)),
+        CredentialUpdate::Replace(secret) => {
+            let reference = uuid::Uuid::new_v4().to_string();
+            storage
+                .queue_credential_cleanup(&reference)
+                .map_err(storage_error)?;
+            if let Err(error) = credentials.put(&reference, &secret) {
+                let _ = storage.acknowledge_credential_cleanup(&reference);
+                return Err(credential_error(error));
+            }
+            Ok((Some(reference.clone()), Some(reference)))
+        }
+    }
+}
+
+fn discard_created_credentials(
+    storage: &mut Storage,
+    credentials: &dyn CredentialStore,
+    references: &[String],
+) {
+    for reference in references {
+        if credentials.delete(reference).is_ok() {
+            let _ = storage.acknowledge_credential_cleanup(reference);
+        }
+    }
+}
 impl Engine {
     pub fn profile_list(&self, token: u64) -> Result<(), SubmitError> {
         self.submit_profile(Command::List(token))
@@ -298,7 +354,20 @@ impl Engine {
         if let CredentialUpdate::Replace(secret) = &update {
             validate_secret(secret)?;
         }
-        self.submit_profile(Command::Save(profile, update, token))
+        self.profile_save_with_secrets(profile, CredentialUpdates::database(update), token)
+    }
+    pub fn profile_save_with_secrets(
+        &self,
+        profile: ConnectionProfile,
+        updates: CredentialUpdates,
+        token: u64,
+    ) -> Result<(), SubmitError> {
+        for update in [&updates.database, &updates.ssh] {
+            if let CredentialUpdate::Replace(secret) = update {
+                validate_secret(secret)?;
+            }
+        }
+        self.submit_profile(Command::Save(Box::new(profile), updates, token))
     }
     pub fn profile_duplicate(
         &self,
@@ -335,9 +404,24 @@ impl Engine {
         password: Option<Secret>,
         request_token: u64,
     ) -> Result<(), SubmitError> {
+        self.test_profile_with_secrets(
+            profile,
+            ProfileSecrets {
+                database: password,
+                ssh: None,
+            },
+            request_token,
+        )
+    }
+    pub fn test_profile_with_secrets(
+        &self,
+        profile: ConnectionProfile,
+        secrets: ProfileSecrets,
+        request_token: u64,
+    ) -> Result<(), SubmitError> {
         self.ensure_running()?;
         validate(&profile)?;
-        if let Some(secret) = &password {
+        for secret in [&secrets.database, &secrets.ssh].into_iter().flatten() {
             validate_secret(secret)?;
         }
         let driver_id = match profile.configuration {
@@ -358,14 +442,16 @@ impl Engine {
         let events = self.events_tx.clone();
         let mut shutdown = self.shutdown.subscribe();
         let commands = self.profiles.clone();
-        let reference = profile.credential_ref.clone();
+        let database_reference = profile.credential_ref.clone();
+        let ssh_reference = profile.ssh_credential_ref.clone();
         self.runtime.as_ref().ok_or(SubmitError::ShuttingDown)?.spawn(async move {
             let _permit = permit;
             let result = tokio::select! { biased;
                 _ = shutdown.wait_for(|s| *s) => return,
                 result = tokio::time::timeout(Duration::from_secs(10), async {
-                    let password = resolve(&commands, reference, password).await?;
-                    let mut connection = driver.connect(profile.configuration.connection_options(password)).await?;
+                    let password = resolve(&commands, database_reference, secrets.database).await?;
+                    let ssh_secret = resolve(&commands, ssh_reference, secrets.ssh).await?;
+                    let mut connection = driver.connect(profile.configuration.connection_options(password, ssh_secret)).await?;
                     connection.close().await
                 }) => result.unwrap_or_else(|_| Err(DriverError::new(ErrorKind::Timeout, "Connection test timed out"))),
             };
@@ -428,6 +514,7 @@ struct ProfileDriver {
     inner: Arc<dyn DatabaseDriver>,
     commands: mpsc::Sender<Command>,
     reference: Option<String>,
+    ssh_reference: Option<String>,
 }
 #[async_trait::async_trait]
 impl DatabaseDriver for ProfileDriver {
@@ -441,10 +528,24 @@ impl DatabaseDriver for ProfileDriver {
         &self,
         mut options: ConnectionOptions,
     ) -> choscordb_driver_api::Result<Box<dyn Connection>> {
-        if let ConnectionOptions::Postgres { password, .. }
-        | ConnectionOptions::Mysql { password, .. } = &mut options
+        if let ConnectionOptions::Postgres {
+            password,
+            ssh_secret,
+            ..
+        }
+        | ConnectionOptions::Mysql {
+            password,
+            ssh_secret,
+            ..
+        } = &mut options
         {
             *password = resolve(&self.commands, self.reference.clone(), password.take()).await?;
+            *ssh_secret = resolve(
+                &self.commands,
+                self.ssh_reference.clone(),
+                ssh_secret.take(),
+            )
+            .await?;
         }
         self.inner.connect(options).await
     }
@@ -455,9 +556,22 @@ impl Engine {
         profile: ConnectionProfile,
         password: Option<Secret>,
     ) -> Result<ConnectionId, SubmitError> {
+        self.connect_profile_with_secrets(
+            profile,
+            ProfileSecrets {
+                database: password,
+                ssh: None,
+            },
+        )
+    }
+    pub fn connect_profile_with_secrets(
+        &mut self,
+        profile: ConnectionProfile,
+        secrets: ProfileSecrets,
+    ) -> Result<ConnectionId, SubmitError> {
         self.ensure_running()?;
         validate(&profile)?;
-        if let Some(secret) = &password {
+        for secret in [&secrets.database, &secrets.ssh].into_iter().flatten() {
             validate_secret(secret)?;
         }
         let id = match profile.configuration {
@@ -474,8 +588,14 @@ impl Engine {
             inner,
             commands: self.profiles.clone(),
             reference: profile.credential_ref.clone(),
+            ssh_reference: profile.ssh_credential_ref.clone(),
         });
-        self.connect_driver(driver, profile.configuration.connection_options(password))
+        self.connect_driver(
+            driver,
+            profile
+                .configuration
+                .connection_options(secrets.database, secrets.ssh),
+        )
     }
 }
 

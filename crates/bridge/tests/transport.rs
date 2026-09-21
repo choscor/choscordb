@@ -341,6 +341,42 @@ fn unavailable_credential_store_keeps_saved_profile_and_redacts_secret() {
 }
 
 #[test]
+fn unavailable_credential_store_redacts_ssh_secret() {
+    let mut engine = new_engine();
+    let dto = ffi::ProfileDto {
+        id: "ssh-secret".into(),
+        name: "SSH secret".into(),
+        driver: "postgres".into(),
+        host: "db.internal".into(),
+        port: 5432,
+        database: "app".into(),
+        user: "user".into(),
+        tls: "verify_full".into(),
+        ssh_enabled: true,
+        ssh_host: "bastion.example".into(),
+        ssh_port: 22,
+        ssh_user: "operator".into(),
+        ssh_authentication: "password".into(),
+        ..Default::default()
+    };
+    assert!(
+        profile_save_secrets(
+            &mut engine,
+            dto,
+            "keep",
+            "",
+            "replace",
+            "ssh-private-marker",
+            19,
+        )
+        .accepted
+    );
+    let failure = await_event(&mut engine, "profile_failed");
+    assert!(failure.error.contains("unavailable"));
+    assert!(!failure.error.contains("ssh-private-marker"));
+}
+
+#[test]
 fn recovery_transport_preserves_typed_documents_and_policy_without_connecting() {
     let mut engine = new_engine();
     let document = ffi::EditorDocumentDto {
@@ -618,7 +654,8 @@ fn postgres_ssh_profile_survives_save_reload_and_duplicate() {
             ssh_host: "bastion.example".into(),
             ssh_port: 2222,
             ssh_user: "operator".into(),
-            ssh_identity_file: "/keys/database".into(),
+            ssh_authentication: "password".into(),
+            ssh_identity_file: "".into(),
             ..Default::default()
         };
         assert!(profile_save(&mut engine, profile, 80).accepted);
@@ -633,7 +670,8 @@ fn postgres_ssh_profile_survives_save_reload_and_duplicate() {
     assert_eq!(profile.ssh_host, "bastion.example");
     assert_eq!(profile.ssh_port, 2222);
     assert_eq!(profile.ssh_user, "operator");
-    assert_eq!(profile.ssh_identity_file, "/keys/database");
+    assert_eq!(profile.ssh_authentication, "password");
+    assert!(profile.ssh_identity_file.is_empty());
     assert_eq!(profile.host, "db.internal");
     assert_eq!(profile.port, 5433);
 }

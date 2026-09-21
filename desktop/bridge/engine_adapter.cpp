@@ -25,10 +25,12 @@ ProfileDto profileDto(const SavedProfile& value) {
     dto.tls = rustString(value.tls);
     dto.root_certificate = rustString(value.rootCertificate);
     dto.credential_ref = rustString(value.credentialRef);
+    dto.ssh_credential_ref = rustString(value.sshCredentialRef);
     dto.ssh_enabled = value.sshEnabled;
     dto.ssh_host = rustString(value.sshHost);
     dto.ssh_port = value.sshPort;
     dto.ssh_user = rustString(value.sshUser);
+    dto.ssh_authentication = rustString(value.sshAuthentication);
     dto.ssh_identity_file = rustString(value.sshIdentityFile);
     return dto;
 }
@@ -47,10 +49,13 @@ SavedProfile savedProfile(const ProfileDto& dto) {
     value.tls = dto.tls.empty() ? QStringLiteral("verify_full") : string(dto.tls);
     value.rootCertificate = string(dto.root_certificate);
     value.credentialRef = string(dto.credential_ref);
+    value.sshCredentialRef = string(dto.ssh_credential_ref);
     value.sshEnabled = dto.ssh_enabled;
     value.sshHost = string(dto.ssh_host);
     value.sshPort = dto.ssh_port ? dto.ssh_port : 22;
     value.sshUser = string(dto.ssh_user);
+    value.sshAuthentication = dto.ssh_authentication.empty() ? QStringLiteral("public_key")
+                                                             : string(dto.ssh_authentication);
     value.sshIdentityFile = string(dto.ssh_identity_file);
     return value;
 }
@@ -469,15 +474,25 @@ void EngineAdapter::saveProfile(const SavedProfile& profile, quint64 token) {
 }
 void EngineAdapter::saveProfileWithPassword(const SavedProfile& profile, const QString& password,
                                             const QString& action, quint64 token) {
+    saveProfileWithSecrets(profile, password, action, {}, "keep", token);
+}
+void EngineAdapter::saveProfileWithSecrets(const SavedProfile& profile,
+                                           const QString& databaseSecret,
+                                           const QString& databaseAction, const QString& sshSecret,
+                                           const QString& sshAction, quint64 token) {
     if (d_->closing || d_->stopping) {
         emit profileFailed(token, tr("Workspace is closing."));
         return;
     }
-    auto passwordBytes = password.toUtf8();
-    const auto actionBytes = action.toUtf8();
-    auto result = profile_save_secret(*d_->engine, profileDto(profile), utf8View(actionBytes),
-                                      utf8View(passwordBytes), token);
-    passwordBytes.fill(0);
+    auto databaseBytes = databaseSecret.toUtf8();
+    auto sshBytes = sshSecret.toUtf8();
+    const auto databaseActionBytes = databaseAction.toUtf8();
+    const auto sshActionBytes = sshAction.toUtf8();
+    auto result = profile_save_secrets(*d_->engine, profileDto(profile),
+                                       utf8View(databaseActionBytes), utf8View(databaseBytes),
+                                       utf8View(sshActionBytes), utf8View(sshBytes), token);
+    databaseBytes.fill(0);
+    sshBytes.fill(0);
     if (!result.accepted)
         emit profileFailed(token, string(result.error));
 }
@@ -508,10 +523,18 @@ void EngineAdapter::testProfile(const SavedProfile& profile, quint64 token) {
 }
 void EngineAdapter::testProfileWithPassword(const SavedProfile& profile, const QString& password,
                                             bool hasPassword, quint64 token) {
-    auto bytes = password.toUtf8();
-    auto result =
-        profile_test_secret(*d_->engine, profileDto(profile), utf8View(bytes), hasPassword, token);
-    bytes.fill(0);
+    testProfileWithSecrets(profile, password, hasPassword, {}, false, token);
+}
+void EngineAdapter::testProfileWithSecrets(const SavedProfile& profile,
+                                           const QString& databaseSecret, bool hasDatabaseSecret,
+                                           const QString& sshSecret, bool hasSshSecret,
+                                           quint64 token) {
+    auto databaseBytes = databaseSecret.toUtf8();
+    auto sshBytes = sshSecret.toUtf8();
+    auto result = profile_test_secrets(*d_->engine, profileDto(profile), utf8View(databaseBytes),
+                                       hasDatabaseSecret, utf8View(sshBytes), hasSshSecret, token);
+    databaseBytes.fill(0);
+    sshBytes.fill(0);
     if (!result.accepted)
         emit profileFailed(token, string(result.error));
 }
@@ -521,14 +544,23 @@ std::optional<quint64> EngineAdapter::connectProfile(const SavedProfile& profile
 std::optional<quint64> EngineAdapter::connectProfileWithPassword(const SavedProfile& profile,
                                                                  const QString& password,
                                                                  bool hasPassword) {
+    return connectProfileWithSecrets(profile, password, hasPassword, {}, false);
+}
+std::optional<quint64> EngineAdapter::connectProfileWithSecrets(const SavedProfile& profile,
+                                                                const QString& databaseSecret,
+                                                                bool hasDatabaseSecret,
+                                                                const QString& sshSecret,
+                                                                bool hasSshSecret) {
     if (d_->closing || d_->stopping) {
         emit profileConnectFailed(tr("Workspace is closing."));
         return std::nullopt;
     }
-    auto bytes = password.toUtf8();
-    auto result =
-        profile_connect_secret(*d_->engine, profileDto(profile), utf8View(bytes), hasPassword);
-    bytes.fill(0);
+    auto databaseBytes = databaseSecret.toUtf8();
+    auto sshBytes = sshSecret.toUtf8();
+    auto result = profile_connect_secrets(*d_->engine, profileDto(profile), utf8View(databaseBytes),
+                                          hasDatabaseSecret, utf8View(sshBytes), hasSshSecret);
+    databaseBytes.fill(0);
+    sshBytes.fill(0);
     if (!result.accepted) {
         emit profileConnectFailed(string(result.error));
         return std::nullopt;

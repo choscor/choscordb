@@ -3,10 +3,12 @@ use choscordb_storage::{ConnectionProfile, Storage};
 fn json() -> serde_json::Value {
     serde_json::json!({
         "id": "ssh", "name": "Remote Postgres", "group_id": null, "credential_ref": null,
+        "ssh_credential_ref": "secure-ssh-item",
         "configuration": {"driver": "postgres", "host": "db.internal", "port": 5433,
             "database": "app", "user": "dbuser",
             "tls": {"mode": "VerifyFull", "root_certificate_path": null},
             "ssh": {"host": "bastion.example", "port": 2222, "user": "operator",
+                "authentication": "public_key",
                 "identity_file": "/home/operator/.ssh/id_ed25519"}}
     })
 }
@@ -25,11 +27,13 @@ fn ssh_profile_survives_save_reload_and_duplicate() {
     assert_eq!(serde_json::to_value(&restored).unwrap(), json());
     let copy = storage.duplicate_profile("ssh", "copy", "Copy").unwrap();
     assert_eq!(copy.configuration, restored.configuration);
+    assert!(copy.credential_ref.is_none());
+    assert!(copy.ssh_credential_ref.is_none());
 }
 
 #[test]
 fn legacy_profile_remains_direct_and_ssh_settings_reach_driver() {
-    use choscordb_driver_api::ConnectionOptions;
+    use choscordb_driver_api::{ConnectionOptions, SshAuthentication};
     let mut value = json();
     value["configuration"]
         .as_object_mut()
@@ -37,7 +41,7 @@ fn legacy_profile_remains_direct_and_ssh_settings_reach_driver() {
         .remove("ssh");
     let legacy: ConnectionProfile = serde_json::from_value(value).unwrap();
     assert!(matches!(
-        legacy.configuration.connection_options(None),
+        legacy.configuration.connection_options(None, None),
         ConnectionOptions::Postgres { ssh: None, .. }
     ));
     let remote: ConnectionProfile = serde_json::from_value(json()).unwrap();
@@ -46,7 +50,7 @@ fn legacy_profile_remains_direct_and_ssh_settings_reach_driver() {
         port,
         ssh: Some(ssh),
         ..
-    } = remote.configuration.connection_options(None)
+    } = remote.configuration.connection_options(None, None)
     else {
         panic!("SSH settings lost")
     };
@@ -65,6 +69,45 @@ fn legacy_profile_remains_direct_and_ssh_settings_reach_driver() {
             Some("/home/operator/.ssh/id_ed25519")
         )
     );
+    assert_eq!(ssh.authentication, SshAuthentication::PublicKey);
+}
+
+#[test]
+fn legacy_ssh_profile_defaults_to_public_key_authentication() {
+    use choscordb_driver_api::SshAuthentication;
+    let mut value = json();
+    value.as_object_mut().unwrap().remove("ssh_credential_ref");
+    value["configuration"]["ssh"]
+        .as_object_mut()
+        .unwrap()
+        .remove("authentication");
+    let profile: ConnectionProfile = serde_json::from_value(value).unwrap();
+    let choscordb_storage::ProfileConfiguration::Postgres { ssh: Some(ssh), .. } =
+        profile.configuration
+    else {
+        panic!("SSH settings lost")
+    };
+    assert_eq!(ssh.authentication, SshAuthentication::PublicKey);
+    assert!(profile.ssh_credential_ref.is_none());
+}
+
+#[test]
+fn legacy_ssh_profile_without_identity_defaults_to_agent() {
+    use choscordb_driver_api::SshAuthentication;
+    let mut value = json();
+    value.as_object_mut().unwrap().remove("ssh_credential_ref");
+    value["configuration"]["ssh"]
+        .as_object_mut()
+        .unwrap()
+        .remove("authentication");
+    value["configuration"]["ssh"]["identity_file"] = serde_json::Value::Null;
+    let profile: ConnectionProfile = serde_json::from_value(value).unwrap();
+    let choscordb_storage::ProfileConfiguration::Postgres { ssh: Some(ssh), .. } =
+        profile.configuration
+    else {
+        panic!("SSH settings lost")
+    };
+    assert_eq!(ssh.authentication, SshAuthentication::Agent);
 }
 
 #[test]
