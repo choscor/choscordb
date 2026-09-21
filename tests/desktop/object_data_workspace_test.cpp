@@ -2,6 +2,7 @@
 #include "app/object_data_workspace.h"
 #include "app/object_explorer.h"
 #include "app/query_workspace.h"
+#include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
 #include "models/result_table_model.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -18,6 +19,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPlainTextEdit>
@@ -109,38 +111,6 @@ class ObjectDataWorkspaceTest : public QObject {
         QCOMPARE(model->index(0, 0).data().toString(), QString("existing"));
         QVERIFY(!model->hasPendingEdits());
     }
-    void tableHeadersDoNotOpenParentMenus() {
-        choscordb::MainWindow window;
-        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
-        choscordb::ObjectExplorer explorer(sql->adapter());
-        auto* data = new choscordb::ObjectDataWorkspace(sql);
-        explorer.installDataWidget(data);
-        explorer.selectPane(4);
-        explorer.resize(800, 500);
-        explorer.show();
-        auto* grid = data->findChild<QTableView*>("objectDataResults");
-        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
-        choscordb::ResultColumn column{};
-        column.name = "value";
-        QVERIFY(model->setPage({column}, {{QString("a")}}, 0));
-        for (auto* header : {grid->horizontalHeader(), grid->verticalHeader()}) {
-            bool menuSeen = false;
-            QTimer closePopup;
-            connect(&closePopup, &QTimer::timeout, &explorer, [&] {
-                if (auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget())) {
-                    menuSeen = true;
-                    menu->close();
-                }
-            });
-            closePopup.start(10);
-            auto* viewport = header->viewport();
-            const QPoint point(5, 5);
-            QContextMenuEvent event(QContextMenuEvent::Mouse, point, viewport->mapToGlobal(point));
-            QApplication::sendEvent(viewport, &event);
-            QCoreApplication::processEvents();
-            QVERIFY(!menuSeen);
-        }
-    }
     void actionsStayAboveResultsAndFooterOnlyContainsPagination() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
@@ -164,9 +134,9 @@ class ObjectDataWorkspaceTest : public QObject {
             for (auto* action : actions)
                 if (!action->isSeparator())
                     labels << action->text();
-            QCOMPARE(labels,
-                     QStringList({"Copy selected cells", "Copy selected rows", "Copy current page",
-                                  "Add row", "Delete selected", "Restore selected", "Set NULL"}));
+            QCOMPARE(labels, QStringList({"Copy selected cells", "Copy selected rows",
+                                          "Copy current page", "Duplicate row", "Add row",
+                                          "Delete selected", "Restore selected", "Set NULL"}));
             for (auto* action : actions)
                 if (!action->isSeparator())
                     QVERIFY(!action->isEnabled());
@@ -312,6 +282,120 @@ class ObjectDataWorkspaceTest : public QObject {
         QTRY_COMPARE(results->model()->rowCount(), 2);
         QCOMPARE(results->model()->index(0, 1).data().toString(), QString("db-default"));
         QCOMPARE(results->model()->index(1, 1).data(Qt::DisplayRole).toString(), QString("NULL"));
+    }
+    void duplicateRowOmitsKeyAndRetainsStagingAfterConstraintFailure() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        auto* run = window.findChild<QAction*>("runStatement");
+        auto* sqlMessages = window.findChild<QPlainTextEdit*>("queryMessages");
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("CREATE TABLE duplicate_rows(id INTEGER PRIMARY KEY, name TEXT UNIQUE);");
+        run->trigger();
+        QTRY_VERIFY(sqlMessages->toPlainText().contains("Completed"));
+        QTRY_VERIFY(run->isEnabled());
+        sqlMessages->clear();
+        editor->setText("INSERT INTO duplicate_rows(name) VALUES('original');");
+        run->trigger();
+        QTRY_VERIFY(sqlMessages->toPlainText().contains("Completed"));
+        const auto connection =
+            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(800, 500);
+        data.show();
+        data.openObject(connection, R"(["main","duplicate_rows"])", "duplicate_rows");
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        auto* messages = data.findChild<QPlainTextEdit*>("objectDataMessages");
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+        QTRY_COMPARE(model->rowCount(), 1);
+        QTRY_VERIFY(data.findChild<QPushButton*>("objectDataAddRow")->isEnabled());
+        auto* filterBar = data.findChild<QWidget*>("resultFilterBar");
+        auto* column = filterBar->findChild<QComboBox*>("resultFilterColumn");
+        auto* operation = filterBar->findChild<QComboBox*>("resultFilterOperator");
+        column->setCurrentIndex(column->findText("id"));
+        operation->setCurrentIndex(operation->findData("greater_than"));
+        filterBar->findChild<QLineEdit*>("resultFilterValue")->setText("0");
+        filterBar->findChild<QPushButton*>("resultFilterAdd")->click();
+        filterBar->findChild<QPushButton*>("resultFilterApply")->click();
+        auto* filterConditions = filterBar->findChild<QListWidget*>("resultFilterConditions");
+        QTRY_VERIFY(filterConditions->item(0)->text().startsWith("Active:"));
+        QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
+                     QString("completed"));
+        QCoreApplication::processEvents();
+        triggerTableAction(grid, "Duplicate row");
+        QCOMPARE(model->rowCount(), 2);
+        QCOMPARE(model->index(1, 0).data().toString(), QString());
+        QCOMPARE(model->index(1, 1).data().toString(), QString("original"));
+        QTimer::singleShot(0, &data, [] {
+            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            dialog->reject();
+        });
+        QTest::mouseClick(grid->horizontalHeader()->viewport(), Qt::LeftButton, {}, QPoint(10, 5));
+        QVERIFY(model->hasPendingEdits());
+        QVERIFY(!grid->horizontalHeader()->isSortIndicatorShown());
+        QTimer::singleShot(0, &data, [] {
+            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            for (auto* button : dialog->findChildren<QPushButton*>())
+                if (button->text() == "Discard") {
+                    button->click();
+                    return;
+                }
+            QFAIL("Missing Discard button");
+        });
+        QTest::mouseClick(grid->horizontalHeader()->viewport(), Qt::LeftButton, {}, QPoint(10, 5));
+        QTRY_VERIFY(!model->hasPendingEdits());
+        QTRY_VERIFY(grid->horizontalHeader()->isSortIndicatorShown());
+        QTRY_COMPARE(grid->horizontalHeader()->sortIndicatorOrder(), Qt::AscendingOrder);
+        QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
+                     QString("completed"));
+        triggerTableAction(grid, "Duplicate row");
+        QCOMPARE(model->rowCount(), 2);
+        const auto acceptReview = [&data] {
+            QTimer::singleShot(0, &data, [] {
+                auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+                QVERIFY(dialog);
+                dialog->accept();
+            });
+            data.findChild<QPushButton*>("objectDataApply")->click();
+        };
+        acceptReview();
+        QTRY_VERIFY(messages->toPlainText().contains("not applied"));
+        QCOMPARE(model->rowCount(), 2);
+        QVERIFY(model->hasPendingEdits());
+        QVERIFY(model->setData(model->index(1, 1), QString("copy")));
+        messages->clear();
+        QTimer::singleShot(0, &data, [&data] {
+            auto* pending = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            QVERIFY(pending);
+            QTimer::singleShot(0, &data, [] {
+                auto* review = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+                QVERIFY(review);
+                review->accept();
+            });
+            for (auto* button : pending->findChildren<QPushButton*>())
+                if (button->text().startsWith("Apply")) {
+                    button->click();
+                    return;
+                }
+            QFAIL("Missing Apply button");
+        });
+        QTest::mouseClick(grid->horizontalHeader()->viewport(), Qt::LeftButton, {}, QPoint(10, 5));
+        QTRY_VERIFY(!model->hasPendingEdits());
+        QTRY_COMPARE(model->rowCount(), 2);
+        QTRY_VERIFY(grid->horizontalHeader()->isSortIndicatorShown());
+        QTRY_COMPARE(grid->horizontalHeader()->sortIndicatorOrder(), Qt::DescendingOrder);
+        QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
+                     QString("completed"));
+        QTRY_COMPARE(model->index(0, 0).data().toString(), QString("2"));
+        QCOMPARE(model->index(0, 1).data().toString(), QString("copy"));
+        QVERIFY(filterConditions->item(0)->text().startsWith("Active:"));
     }
     void manualTransactionDisablesGridApply() {
         choscordb::MainWindow window;

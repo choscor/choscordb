@@ -72,6 +72,72 @@ class ResultModelTest : public QObject {
         QVERIFY(!model.deleted()[0]);
         QVERIFY(!model.hasPendingEdits());
     }
+    void duplicateRowCopiesCurrentTypedInsertableValues() {
+        ResultTableModel model;
+        QAbstractItemModelTester tester(&model,
+                                        QAbstractItemModelTester::FailureReportingMode::QtTest);
+        const QByteArray binary("\0typed", 6);
+        QVERIFY(model.setPage({column("id", "integer"), column("name", "text"),
+                               column("missing", "text"), column("empty", "text"),
+                               column("count", "integer"), column("enabled", "boolean"),
+                               column("payload", "blob")},
+                              {{qint64(7), QString("before"), std::monostate{}, QString(""),
+                                qint64(23), true, binary}},
+                              0));
+        model.setEditableColumns({false, true, true, true, true, true, false}, true, true,
+                                 {true, true, true, true, true, true, true});
+        QVERIFY(model.setData(model.index(0, 1), QString("after")));
+
+        QSignalSpy inserted(&model, &QAbstractItemModel::rowsInserted);
+        QString error;
+        QVERIFY(model.duplicateRow(0, {false, true, true, true, true, true, true}, &error));
+        QVERIFY(error.isEmpty());
+        QCOMPARE(inserted.count(), 1);
+        QCOMPARE(model.rowCount(), 2);
+        QVERIFY(model.inserted()[1]);
+        QVERIFY(!model.touched()[1][0]);
+        for (int column = 1; column < model.columnCount(); ++column)
+            QVERIFY(model.touched()[1][column]);
+        QVERIFY(std::holds_alternative<std::monostate>(model.rows()[1][0]));
+        QCOMPARE(std::get<QString>(model.rows()[1][1]), QString("after"));
+        QVERIFY(std::holds_alternative<std::monostate>(model.rows()[1][2]));
+        QCOMPARE(std::get<QString>(model.rows()[1][3]), QString(""));
+        QCOMPARE(std::get<qint64>(model.rows()[1][4]), qint64(23));
+        QCOMPARE(std::get<bool>(model.rows()[1][5]), true);
+        QCOMPARE(std::get<QByteArray>(model.rows()[1][6]), binary);
+    }
+    void duplicateRowRejectsDeferredValuesWithoutPartialMutation() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("id", "integer"), column("payload", "blob")},
+                              {{qint64(4), DeferredValue{9, 500000, "blob"}}}, 0));
+        model.setEditableColumns({false, false}, true, true, {false, true});
+        QSignalSpy inserted(&model, &QAbstractItemModel::rowsInserted);
+        QSignalSpy pending(&model, &ResultTableModel::pendingEditsChanged);
+        QString error;
+
+        QVERIFY(!model.duplicateRow(0, &error));
+        QVERIFY(error.contains("load", Qt::CaseInsensitive));
+        QCOMPARE(inserted.count(), 0);
+        QCOMPARE(pending.count(), 0);
+        QCOMPARE(model.rowCount(), 1);
+        QCOMPARE(std::get<DeferredValue>(model.rows()[0][1]).handle, quint64(9));
+        QVERIFY(!model.hasPendingEdits());
+    }
+    void duplicateRowRejectsBudgetOverflowWithoutPartialMutation() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("value", "text")}, {{QString("kept")}}, 0));
+        model.setEditableColumns({true}, true, true, {true});
+        QVERIFY(model.setByteBudget(model.residentBytes()));
+        QSignalSpy inserted(&model, &QAbstractItemModel::rowsInserted);
+        QString error;
+
+        QVERIFY(!model.duplicateRow(0, &error));
+        QVERIFY(error.contains("memory", Qt::CaseInsensitive));
+        QCOMPARE(inserted.count(), 0);
+        QCOMPARE(model.rowCount(), 1);
+        QCOMPARE(model.data(model.index(0, 0)).toString(), QString("kept"));
+        QVERIFY(!model.hasPendingEdits());
+    }
     void nullAndEmptyAreDistinct() {
         ResultTableModel model;
         QAbstractItemModelTester tester(&model,

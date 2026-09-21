@@ -1,4 +1,5 @@
 #pragma once
+#include "bridge/engine_adapter.h"
 #include "models/result_table_model.h"
 #include <QHash>
 #include <QObject>
@@ -20,6 +21,7 @@ class ValueDetailDialog;
 class ExportDialog;
 class ProfileDialog;
 class QuerySettingsController;
+class ResultFilterBar;
 class EngineAdapter;
 struct BridgeEvent;
 struct SavedProfile;
@@ -80,7 +82,7 @@ class QueryWorkspace final : public QObject {
     void setExternalWork(bool busy);
     void openObjectData(quint64 connection, const QString& object, const QString& label,
                         const QueryPreferences& preferences,
-                        const QString& kind = QStringLiteral("table"));
+                        const QString& kind = QStringLiteral("table"), bool preserveView = false);
     void invalidateResult();
     bool hasPendingEdits() const { return model_->hasPendingEdits(); }
     bool activeManualTransaction(quint64 connection) const {
@@ -107,6 +109,12 @@ class QueryWorkspace final : public QObject {
     std::optional<quint64> executionModeConnection_;
     bool applyStagedEdits();
     void configureEditability();
+    void requestResultView(const QList<ResultFilterCondition>& filters, qint32 sortColumn,
+                           const QString& sortDirection);
+    void submitResultView(const QList<ResultFilterCondition>& filters, qint32 sortColumn,
+                          const QString& sortDirection);
+    void updateSortIndicator();
+    void clearViewState();
     void clearResult();
     void handleEvent(const BridgeEvent& event);
     void updateActions();
@@ -119,6 +127,7 @@ class QueryWorkspace final : public QObject {
     Widgets widgets_;
     QPointer<EngineAdapter> adapter_;
     QuerySettingsController* querySettings_ = nullptr;
+    ResultFilterBar* filterBar_ = nullptr;
     ResultTableModel* model_;
     ValueDetailDialog* detail_ = nullptr;
     ExportDialog* export_ = nullptr;
@@ -154,5 +163,11 @@ class QueryWorkspace final : public QObject {
     bool stopping_ = false;
     bool externalWork_ = false, invalidatePending_ = false;
     bool cancellationPending_ = false;
+    QList<ResultFilterCondition> viewFilters_, proposedViewFilters_, deferredViewFilters_;
+    qint32 viewSortColumn_ = -1, proposedViewSortColumn_ = -1, deferredViewSortColumn_ = -1;
+    QString viewSortDirection_, proposedViewSortDirection_, deferredViewSortDirection_;
+    bool viewBusy_ = false, deferredViewRequest_ = false, preserveViewOnRefresh_ = false;
+    bool proposedFiltersFromDraft_ = false;
+    std::optional<quint64> viewRefreshQuery_;
 };
 } // namespace choscordb

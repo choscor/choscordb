@@ -51,6 +51,8 @@ class ResultTableModel final : public QAbstractTableModel {
     bool setData(const QModelIndex& index, const QVariant& value, int role = Qt::EditRole) override;
     bool setNull(const QModelIndex& index);
     bool addRow();
+    bool duplicateRow(int row, QString* error = nullptr);
+    bool duplicateRow(int row, const std::vector<bool>& copyable, QString* error = nullptr);
     void markDeleted(const QModelIndexList& selection, bool deleted);
     void discardEdits();
     bool hasPendingEdits() const;

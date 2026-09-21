@@ -299,6 +299,47 @@ bool ResultTableModel::addRow() {
     emit pendingEditsChanged(true);
     return true;
 }
+bool ResultTableModel::duplicateRow(int row, QString* error) {
+    return duplicateRow(row, insertEditable_, error);
+}
+bool ResultTableModel::duplicateRow(int row, const std::vector<bool>& copyable, QString* error) {
+    if (error)
+        error->clear();
+    const auto fail = [error](const QString& message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    if (!canInsert_ || row < 0 || row >= rowCount() || copyable.size() != columns_.size())
+        return fail(tr("This result cannot insert a duplicate row."));
+    if (rows_.size() >= 10000)
+        return fail(tr("The visible page already has the maximum number of rows."));
+    Row duplicate(columns_.size());
+    std::vector<bool> touched(columns_.size(), false);
+    for (size_t column = 0; column < columns_.size(); ++column) {
+        if (!insertEditable_[column] || !copyable[column])
+            continue;
+        if (std::holds_alternative<DeferredValue>(rows_[row][column]))
+            return fail(tr("Load a complete value before duplicating this row."));
+        duplicate[column] = rows_[row][column];
+        touched[column] = true;
+    }
+    const auto bytes = columns_.size() * (sizeof(Cell) + sizeof(std::size_t)) + sizeof(Row) +
+                       sizeof(std::vector<bool>) + sizeof(std::vector<std::size_t>) +
+                       (columns_.size() + 7) / 8 + 2;
+    if (bytes > byteBudget_ - residentBytes_ - stagedBytes_)
+        return fail(tr("Duplicating this row would exceed the result grid memory limit."));
+    beginInsertRows({}, rowCount(), rowCount());
+    rows_.push_back(std::move(duplicate));
+    touched_.push_back(std::move(touched));
+    editBytes_.emplace_back(columns_.size(), 0);
+    inserted_.push_back(true);
+    deleted_.push_back(false);
+    stagedBytes_ += bytes;
+    endInsertRows();
+    emit pendingEditsChanged(true);
+    return true;
+}
 void ResultTableModel::markDeleted(const QModelIndexList& selection, bool deleted) {
     std::vector<int> selectedRows;
     for (const auto& i : selection) {
