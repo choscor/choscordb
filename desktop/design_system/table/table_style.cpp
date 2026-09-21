@@ -1,5 +1,6 @@
 #include "design_system/table/table_style.h"
 #include "design_system/style/style_resource.h"
+#include <QApplication>
 #include <QPointer>
 #include <QStyledItemDelegate>
 #include <QTableView>
@@ -23,11 +24,15 @@ class RowHoverDelegate final : public QStyledItemDelegate {
     void paint(QPainter* painter, const QStyleOptionViewItem& option,
                const QModelIndex& index) const override {
         QStyleOptionViewItem rowOption(option);
+        initStyleOption(&rowOption, index);
         if (index.row() == hoveredRow_)
-            rowOption.state |= QStyle::State_MouseOver;
-        else
-            rowOption.state &= ~QStyle::State_MouseOver;
-        QStyledItemDelegate::paint(painter, rowOption, index);
+            rowOption.backgroundBrush = rowOption.palette.brush(QPalette::Highlight);
+        // Qt 6.8 switches a hovered stylesheet item to a Windows-style painter,
+        // which changes the native macOS text geometry. Paint the hover through
+        // BackgroundRole instead and keep one painter for every item state.
+        rowOption.state &= ~QStyle::State_MouseOver;
+        auto* style = rowOption.widget ? rowOption.widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &rowOption, painter, rowOption.widget);
     }
 
   private:
@@ -45,8 +50,8 @@ QString tableItemStyleSheet() {
     return loadStyleSheet(QStringLiteral("table/table_item_style_sheet.qss"));
 }
 
-void configureResultTable(QTableView& table) {
-    table.setShowGrid(true);
+void configureResultTable(QTableView& table, bool showGrid) {
+    table.setShowGrid(showGrid);
     table.setGridStyle(Qt::SolidLine);
     table.setItemDelegate(new RowHoverDelegate(table));
 }

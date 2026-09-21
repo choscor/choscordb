@@ -1,4 +1,5 @@
 #include "editor_completion.h"
+#include "design_system/menu/embedded_popup.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemView>
 #include <QCompleter>
@@ -42,6 +43,7 @@ void EditorCompletionController::setEditor(SqlEditor* editor) {
         editor_->removeEventFilter(this);
     editor_ = editor;
     completer_->setWidget(editor);
+    design::detail::embedPopup(completer_->popup(), editor, false, false);
     if (!editor)
         return;
     editor->setAutoCompletionSource(QsciScintilla::AcsNone);
@@ -56,6 +58,7 @@ void EditorCompletionController::setEditor(SqlEditor* editor) {
     }));
     editorConnections_.append(connect(editor, &QObject::destroyed, this, [this] {
         dismiss();
+        design::detail::embedPopup(completer_->popup(), nullptr, false, false);
         timer_->stop();
         pending_ = false;
     }));
@@ -77,6 +80,16 @@ bool EditorCompletionController::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() == QEvent::KeyPress && completer_->popup()->isVisible()) {
         const auto* keyEvent = static_cast<QKeyEvent*>(event);
         const auto key = keyEvent->key();
+        if (watched == editor_ && keyEvent->modifiers() == Qt::NoModifier &&
+            (key == Qt::Key_Up || key == Qt::Key_Down || key == Qt::Key_PageUp ||
+             key == Qt::Key_PageDown)) {
+            // The embedded list keeps typing focus in the editor. Route its
+            // navigation keys to the same view QCompleter used as a popup.
+            QKeyEvent navigation(QEvent::KeyPress, key, Qt::NoModifier);
+            QCoreApplication::sendEvent(completer_->popup(), &navigation);
+            event->accept();
+            return true;
+        }
         if ((key == Qt::Key_Return || key == Qt::Key_Enter || key == Qt::Key_Tab ||
              key == Qt::Key_Backtab) &&
             (key == Qt::Key_Backtab ||

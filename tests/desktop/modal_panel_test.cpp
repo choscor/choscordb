@@ -3,15 +3,19 @@
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/modal_panel/modal_panel.h"
 #include "design_system/theme_manager.h"
+#include <QAbstractItemView>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPainter>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QShortcut>
 #include <QSignalSpy>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -22,6 +26,212 @@
 class ModalPanelTest final : public QObject {
     Q_OBJECT
   private slots:
+    void modalIsPartOfOwnerWindow_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("panel") << 0;
+        QTest::newRow("confirmation") << 1;
+        QTest::newRow("dialog-shell") << 2;
+    }
+    void modalIsPartOfOwnerWindow() {
+        QFETCH(int, kind);
+        QWidget owner;
+        owner.resize(960, 640);
+        std::unique_ptr<QDialog> dialog;
+        if (kind == 1) {
+            dialog = std::make_unique<choscordb::ConfirmationDialog>(
+                QMessageBox::Question, "Confirm", "Continue?", QMessageBox::Cancel, &owner);
+        } else if (kind == 2) {
+            auto shell = std::make_unique<choscordb::DialogShell>(&owner);
+            shell->setAppModal();
+            auto* layout = new QVBoxLayout(shell.get());
+            layout->addWidget(new QLineEdit(shell.get()));
+            dialog = std::move(shell);
+        } else {
+            dialog = std::make_unique<choscordb::design::ModalPanel>(&owner);
+            auto* layout = new QVBoxLayout(dialog.get());
+            layout->addWidget(new QLineEdit(dialog.get()));
+        }
+        owner.show();
+        QCoreApplication::processEvents();
+        QVERIFY(!dialog->isVisible());
+        QVERIFY(!choscordb::design::DialogPresentation::activeDialog(&owner));
+        dialog->show();
+        QCoreApplication::processEvents();
+        QVERIFY2(!dialog->isWindow(),
+                 "The live modal must be a child surface, not a separate native window");
+        QCOMPARE(dialog->window(), &owner);
+        QVERIFY(owner.rect().contains(QRect(dialog->mapTo(&owner, QPoint()), dialog->size())));
+        owner.resize(320, 260);
+        QCoreApplication::processEvents();
+        QVERIFY(owner.rect().contains(QRect(dialog->mapTo(&owner, QPoint()), dialog->size())));
+        QCOMPARE(dialog->geometry().center(), owner.rect().center());
+        owner.move(owner.pos() + QPoint(35, 45));
+        QCoreApplication::processEvents();
+        QCOMPARE(dialog->geometry().center(), owner.rect().center());
+        dialog->reject();
+    }
+    void embeddedPopupsInsideModalKeepLiveInputAndEscapeScoped() {
+        QWidget owner;
+        owner.resize(800, 600);
+        choscordb::design::ThemeManager theme;
+        theme.installOn(qApp);
+        theme.applyTo(owner);
+        choscordb::design::ModalPanel panel(&owner);
+        QVBoxLayout layout(&panel);
+        QComboBox combo(&panel);
+        combo.addItems({"One", "Two", "Three"});
+        QPushButton menuButton("Actions", &panel);
+        QMenu menu(&menuButton);
+        auto* action = menu.addAction("Run action");
+        QSignalSpy triggered(action, &QAction::triggered);
+        connect(&menuButton, &QPushButton::clicked, &menu,
+                [&] { menu.popup(menuButton.mapToGlobal(QPoint(0, menuButton.height()))); });
+        layout.addWidget(&combo);
+        layout.addWidget(&menuButton);
+        owner.show();
+        owner.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&owner));
+        QVERIFY(!panel.isVisible());
+        QVERIFY(!combo.view()->isVisible());
+        QVERIFY(!menu.isVisible());
+        panel.open();
+        QTRY_VERIFY(panel.isVisible());
+        QVERIFY(!combo.view()->isVisible());
+        const auto clickCombo = [&] {
+            QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, {},
+                              combo.mapTo(&owner, QPoint(combo.width() - 10, combo.height() / 2)));
+        };
+        clickCombo();
+        QTRY_VERIFY(combo.view()->isVisible());
+        QCOMPARE(combo.view()->parentWidget()->parentWidget(), &owner);
+        QVERIFY(!panel.isAncestorOf(combo.view()));
+        QTest::keyClick(owner.windowHandle(), Qt::Key_Down);
+        QTest::keyClick(owner.windowHandle(), Qt::Key_Return);
+        QTRY_COMPARE(combo.currentIndex(), 1);
+        QVERIFY(!combo.view()->isVisible());
+        QVERIFY(panel.isVisible());
+        clickCombo();
+        QTRY_VERIFY(combo.view()->isVisible());
+        QTest::keyClick(owner.windowHandle(), Qt::Key_Escape);
+        QTRY_VERIFY(!combo.view()->isVisible());
+        QVERIFY(panel.isVisible());
+        QCOMPARE(combo.currentIndex(), 1);
+        QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, {},
+                          menuButton.mapTo(&owner, menuButton.rect().center()));
+        QTRY_VERIFY(menu.isVisible());
+        QCOMPARE(menu.parentWidget(), &owner);
+        QVERIFY(!panel.isAncestorOf(&menu));
+        QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, {},
+                          menu.mapTo(&owner, menu.actionGeometry(action).center()));
+        QTRY_COMPARE(triggered.count(), 1);
+        QVERIFY(!menu.isVisible());
+        QVERIFY(panel.isVisible());
+        QCOMPARE(choscordb::design::DialogPresentation::activeDialog(&owner), &panel);
+        QTest::keyClick(owner.windowHandle(), Qt::Key_Escape);
+        QTRY_VERIFY(!panel.isVisible());
+    }
+    void nestedConfirmationKeepsExecAndOwnerInputContracts() {
+        QWidget owner;
+        owner.resize(800, 600);
+        QLineEdit original(&owner);
+        original.setGeometry(20, 20, 180, 30);
+        owner.show();
+        owner.activateWindow();
+        original.setFocus();
+        QTRY_VERIFY(original.hasFocus());
+        QShortcut ownerShortcut(QKeySequence(Qt::CTRL | Qt::Key_K), &owner);
+        QSignalSpy shortcutActivated(&ownerShortcut, &QShortcut::activated);
+        choscordb::design::ModalPanel panel(&owner);
+        QVBoxLayout layout(&panel);
+        QLineEdit field(&panel);
+        layout.addWidget(&field);
+        panel.open();
+        field.setFocus();
+        QTRY_VERIFY(field.hasFocus());
+        QTest::keyClick(owner.windowHandle(), Qt::Key_K, Qt::ControlModifier);
+        QCOMPARE(shortcutActivated.count(), 0);
+        bool liveChild = false;
+        bool panelBlocked = false;
+        QTimer::singleShot(0, &owner, [&] {
+            auto* dialog = qobject_cast<QMessageBox*>(
+                choscordb::design::DialogPresentation::activeDialog(&owner));
+            if (!dialog)
+                return;
+            liveChild = !dialog->isWindow() && dialog->window() == &owner;
+            field.setFocus();
+            panelBlocked = !field.hasFocus();
+            auto* cancel = dialog->button(QMessageBox::Cancel);
+            QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, {},
+                              cancel->mapTo(&owner, cancel->rect().center()));
+        });
+        QCOMPARE(choscordb::ConfirmationDialog::question(&panel, "Cancel task?", "Keep editing?",
+                                                         QMessageBox::Ok | QMessageBox::Cancel,
+                                                         QMessageBox::Cancel),
+                 QMessageBox::Cancel);
+        QVERIFY(liveChild);
+        QVERIFY(panelBlocked);
+        QVERIFY(panel.isVisible());
+        QCOMPARE(choscordb::design::DialogPresentation::activeDialog(&owner), &panel);
+        QTRY_VERIFY(field.hasFocus());
+        const QPoint before = panel.pos();
+        owner.move(owner.pos() + QPoint(30, 40));
+        QCoreApplication::processEvents();
+        QCOMPARE(panel.pos(), before);
+        QCOMPARE(panel.geometry().center(), owner.rect().center());
+        panel.reject();
+        QTRY_VERIFY(original.hasFocus());
+        QTest::keyClick(owner.windowHandle(), Qt::Key_K, Qt::ControlModifier);
+        QCOMPARE(shortcutActivated.count(), 1);
+    }
+    void parentlessModalKeepsNativeFallback() {
+        choscordb::design::ModalPanel panel(nullptr);
+        QVBoxLayout layout(&panel);
+        layout.addWidget(new QLineEdit(&panel));
+        panel.open();
+        QVERIFY(panel.isWindow());
+        QVERIFY(panel.isModal());
+        QCOMPARE(choscordb::design::DialogPresentation::activeDialog(), &panel);
+        QSignalSpy rejected(&panel, &QDialog::rejected);
+        panel.reject();
+        QCOMPARE(rejected.count(), 1);
+    }
+    void backdropRecaptureExcludesCurrentAndHigherModals() {
+        QWidget owner;
+        owner.resize(800, 600);
+        choscordb::design::ThemeManager theme;
+        theme.setMode(choscordb::design::ThemeMode::Light);
+        theme.applyTo(owner);
+        owner.show();
+        choscordb::design::ModalPanel panel(&owner);
+        QVBoxLayout layout(&panel);
+        auto* marker = new QWidget(&panel);
+        marker->setFixedSize(180, 80);
+        marker->setStyleSheet("background: rgb(240, 20, 180)");
+        layout.addWidget(marker);
+        panel.open();
+        auto* backdrop = owner.findChild<QWidget*>("modalBackdrop");
+        QVERIFY(backdrop);
+        choscordb::ConfirmationDialog nested(QMessageBox::Question, "Nested confirmation",
+                                             "Close this panel?", QMessageBox::Cancel, &panel);
+        nested.open();
+        theme.setMode(choscordb::design::ThemeMode::Dark);
+        theme.applyTo(owner);
+        QCoreApplication::processEvents();
+        const auto layers = owner.findChildren<QWidget*>("modalBackdrop");
+        QCOMPARE(layers.size(), 2);
+        const auto topImage = layers.last()->grab().toImage();
+        const auto topTint = topImage.pixelColor(qRound(8 * topImage.devicePixelRatio()),
+                                                 qRound(8 * topImage.devicePixelRatio()));
+        QVERIFY2(topTint.lightness() < 60, qPrintable(topTint.name()));
+        nested.reject();
+        QVERIFY(panel.isVisible());
+        const auto image = backdrop->grab().toImage();
+        const auto point = marker->mapTo(&owner, marker->rect().center());
+        const auto color = image.pixelColor(qRound(point.x() * image.devicePixelRatio()),
+                                            qRound(point.y() * image.devicePixelRatio()));
+        QVERIFY2(color.lightness() < 60, qPrintable(color.name()));
+        panel.reject();
+    }
     void dialogSectionsKeepCompactBarsAroundGrowingBody() {
         choscordb::design::DialogSections sections;
         sections.headerLayout()->addWidget(new QLabel("New connection", &sections));
@@ -57,12 +267,12 @@ class ModalPanelTest final : public QObject {
             }
         }
     }
-    void framelessModalsBlockAppWindowsAndRestoreFocus_data() {
+    void embeddedModalsBlockOwnerAndRestoreFocus_data() {
         QTest::addColumn<bool>("confirmation");
         QTest::newRow("panel") << false;
         QTest::newRow("confirmation") << true;
     }
-    void framelessModalsBlockAppWindowsAndRestoreFocus() {
+    void embeddedModalsBlockOwnerAndRestoreFocus() {
         QFETCH(bool, confirmation);
         QWidget owner, other;
         QVBoxLayout ownerLayout(&owner), otherLayout(&other);
@@ -94,14 +304,18 @@ class ModalPanelTest final : public QObject {
         QSignalSpy otherClicked(&otherAction, &QPushButton::clicked);
         dialog->show();
         dialog->activateWindow();
-        QTRY_COMPARE(QApplication::activeModalWidget(), dialog.get());
-        QCOMPARE(dialog->windowModality(), Qt::ApplicationModal);
-        QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, {},
+        QTRY_COMPARE(choscordb::design::DialogPresentation::activeDialog(), dialog.get());
+        QCOMPARE(dialog->windowModality(), Qt::NonModal);
+        // Presses routed through the actual owner window hit the backdrop,
+        // never an underlying control. Release is tested separately as dismissal.
+        QTest::mousePress(owner.windowHandle(), Qt::LeftButton, {},
                           ownerAction.mapTo(&owner, ownerAction.rect().center()));
         QTest::mouseClick(other.windowHandle(), Qt::LeftButton, {},
                           otherAction.mapTo(&other, otherAction.rect().center()));
         QCOMPARE(ownerClicked.count(), 0);
-        QCOMPARE(otherClicked.count(), 0);
+        QCOMPARE(otherClicked.count(), 1);
+        owner.activateWindow();
+        dialog->setFocus();
         for (int i = 0; i < 4; ++i) {
             QTest::keyClick(dialog.get(), Qt::Key_Tab);
             auto* focused = QApplication::focusWidget();
@@ -120,9 +334,9 @@ class ModalPanelTest final : public QObject {
         // underlying action once the application modal session has ended.
         QTest::mouseClick(other.windowHandle(), Qt::LeftButton, {},
                           otherAction.mapTo(&other, otherAction.rect().center()));
-        QCOMPARE(otherClicked.count(), 1);
+        QCOMPARE(otherClicked.count(), 2);
     }
-    void backdropDoesNotPaintAnOpaqueSourceBeneathThePanel() {
+    void backdropDoesNotPaintBlackShadowSourceBeneathThePanel() {
         QWidget parent;
         parent.resize(960, 640);
         choscordb::design::ThemeManager theme;
@@ -135,19 +349,46 @@ class ModalPanelTest final : public QObject {
         panel.show();
         auto* backdrop = parent.findChild<QWidget*>("modalBackdrop");
         QVERIFY(backdrop && backdrop->isVisible());
-        // QWidget capture isolates the app-owned backdrop from the top-level
-        // native dialog. Its hidden middle must contain only the dimmed owner,
-        // never the black source used to generate the external shadow.
+        // The sibling backdrop must contain only the dimmed canvas and the
+        // exterior shadow, never an opaque shadow source or mirrored panel.
         const auto capture = backdrop->grab();
         const auto image = capture.toImage();
         const auto center = backdrop->mapFromGlobal(panel.mapToGlobal(panel.rect().center()));
         const auto color = image.pixelColor(qRound(center.x() * capture.devicePixelRatio()),
                                             qRound(center.y() * capture.devicePixelRatio()));
-        QVERIFY2(qAbs(color.red() - 177) <= 1 && qAbs(color.green() - 183) <= 1 &&
-                     qAbs(color.blue() - 187) <= 1,
-                 qPrintable(color.name()));
+        QVERIFY2(color.lightness() > 150, qPrintable(color.name()));
         QTest::keyClick(&panel, Qt::Key_Escape);
         QVERIFY(!panel.isVisible());
+    }
+    void ownerWindowCaptureIncludesModalContent() {
+        class CaptureMarker final : public QWidget {
+          protected:
+            void paintEvent(QPaintEvent*) override {
+                QPainter painter(this);
+                painter.fillRect(rect(), QColor(240, 20, 180));
+            }
+        };
+        QWidget parent;
+        parent.resize(960, 640);
+        parent.setStyleSheet("background: rgb(20, 40, 60);");
+        parent.show();
+        choscordb::design::ModalPanel panel(&parent);
+        QVBoxLayout layout(&panel);
+        auto* marker = new CaptureMarker;
+        marker->setFixedSize(180, 80);
+        layout.addWidget(marker);
+        panel.show();
+        QCoreApplication::processEvents();
+
+        // The live child surface must be in the owner's own backing store.
+        const auto capture = parent.grab();
+        const auto point = parent.mapFromGlobal(marker->mapToGlobal(marker->rect().center()));
+        const auto color =
+            capture.toImage().pixelColor(qRound(point.x() * capture.devicePixelRatio()),
+                                         qRound(point.y() * capture.devicePixelRatio()));
+        QVERIFY2(color.red() > 220 && color.green() < 40 && color.blue() > 160,
+                 qPrintable(color.name()));
+        panel.reject();
     }
     void nativeCompositorKeepsAppOwnedModalCorners_data() {
         QTest::addColumn<bool>("confirmation");
@@ -199,7 +440,7 @@ class ModalPanelTest final : public QObject {
         // dialog clipping radius. Capture the compositor, not QWidget::grab.
         QVERIFY2(color.red() > 240 && color.green() > 240 && color.blue() > 240,
                  qPrintable(color.name()));
-        QVERIFY(dialog->isModal());
+        QVERIFY(!dialog->isWindow());
         QTest::keyClick(dialog.get(), Qt::Key_Escape);
         // QMessageBox animates its Escape button on macOS before closing.
         QTRY_VERIFY(!dialog->isVisible());
@@ -252,7 +493,7 @@ class ModalPanelTest final : public QObject {
         const auto image = parent.grab().toImage();
         const auto scale = image.devicePixelRatio();
         const auto below =
-            parent.mapFromGlobal(panel.geometry().bottomLeft()) + QPoint(panel.width() / 2, 8);
+            panel.mapTo(&parent, panel.rect().bottomLeft()) + QPoint(panel.width() / 2, 8);
         const QPoint sample(qRound(below.x() * scale), qRound(below.y() * scale));
         QVERIFY(image.rect().contains(sample));
         QVERIFY2(image.pixelColor(sample).lightness() <
@@ -380,7 +621,7 @@ class ModalPanelTest final : public QObject {
         dialog.show();
         QApplication::processEvents();
         const QRect ownerRect(parent.mapToGlobal(QPoint()), parent.size());
-        QVERIFY(ownerRect.contains(dialog.geometry()));
+        QVERIFY(ownerRect.contains(QRect(dialog.mapToGlobal(QPoint()), dialog.size())));
         auto* cancel = dialog.button(QMessageBox::Cancel);
         QVERIFY(cancel && cancel->isVisible());
         QCOMPARE(cancel->visibleRegion(), QRegion(cancel->rect()));
@@ -418,10 +659,29 @@ class ModalPanelTest final : public QObject {
         QCOMPARE(dialog.width(), 440);
         parent.resize(800, 600);
         QApplication::processEvents();
-        QCOMPARE(dialog.geometry().center(), parent.mapToGlobal(parent.rect().center()));
+        QCOMPARE(dialog.geometry().center(), parent.rect().center());
         auto* backdrop = parent.findChild<QWidget*>("modalBackdrop");
         QVERIFY(backdrop);
         QCOMPARE(backdrop->geometry(), parent.rect());
+        dialog.reject();
+    }
+    void openConfirmationRecentersAfterWindowZoomSettles() {
+        QWidget parent;
+        parent.setGeometry(100, 100, 640, 480);
+        parent.show();
+        choscordb::ConfirmationDialog dialog(QMessageBox::Warning, "Connection failed",
+                                             "Could not open Example Postgres.", QMessageBox::Ok,
+                                             &parent);
+        dialog.show();
+        const auto stalePosition = dialog.pos();
+
+        // A queued stale layout position must be superseded by the final
+        // owner geometry after a zoom/resize transition.
+        QTimer::singleShot(0, &dialog, [&dialog, stalePosition] { dialog.move(stalePosition); });
+        parent.resize(960, 640);
+        QCoreApplication::processEvents();
+
+        QCOMPARE(dialog.geometry().center(), parent.rect().center());
         dialog.reject();
     }
     void questionEscapeKeepsCancelResultAndRestoresKeyboardFocus() {
@@ -436,7 +696,8 @@ class ModalPanelTest final : public QObject {
         bool defaultWasCancel = false;
         bool focusContained = true;
         QTimer::singleShot(50, &parent, [&] {
-            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            auto* dialog =
+                qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             if (!dialog) {
                 focusContained = false;
                 return;
@@ -496,7 +757,7 @@ class ModalPanelTest final : public QObject {
         QVERIFY(dialog.windowFlags().testFlag(Qt::FramelessWindowHint));
         auto* backdrop = parent.findChild<QWidget*>("modalBackdrop");
         QVERIFY(backdrop && backdrop->isVisible());
-        QCOMPARE(dialog.geometry().center(), parent.mapToGlobal(parent.rect().center()));
+        QCOMPARE(dialog.geometry().center(), parent.rect().center());
         auto* heading = dialog.findChild<QLabel*>("confirmationHeading");
         QVERIFY(heading && heading->isVisible());
         QCOMPARE(heading->text(), QString("Delete profile"));
@@ -561,7 +822,7 @@ class ModalPanelTest final : public QObject {
         QSignalSpy accepted(&panel, &QDialog::accepted);
         QSignalSpy rejected(&panel, &QDialog::rejected);
         panel.show();
-        QVERIFY(panel.isModal());
+        QVERIFY(!panel.isWindow());
         auto* backdrop = parent.findChild<QWidget*>("modalBackdrop");
         QVERIFY(backdrop);
         QVERIFY(backdrop->isVisible());

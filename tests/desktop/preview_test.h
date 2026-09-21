@@ -16,8 +16,9 @@ class PreviewTest final : public QObject {
     void toastVariantsShowTitleBodyAndUseConfiguredTimeout();
     void nonmodalDialogSurfaceHasNoOutline();
     void nonmodalDialogGrowsWhenDescriptionWraps();
-    void galleryOpenKeepsAppModalityAndNativeCorners_data();
-    void galleryOpenKeepsAppModalityAndNativeCorners();
+    void galleryOpenKeepsOverlayInsideWindow_data();
+    void galleryOpenKeepsOverlayInsideWindow();
+    void popupSpecimensStayInsideWindowInBothThemes();
     void moreButtonUsesThemeSurface();
     void scrollSpecimensKeepTheirIndependentThemePaper();
     void narrowGalleryKeepsNavigationAndActionsReachable();

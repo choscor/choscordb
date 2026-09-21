@@ -1,6 +1,7 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/menu/embedded_popup.h"
 #include "models/result_table_model.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
@@ -111,6 +112,8 @@ class ResultCopyWorkspaceTest : public QObject {
         QVERIFY(model);
         QVERIFY(model->setPage({column("a"), column("b")},
                                {{qint64(1), QString("first")}, {qint64(2), QString("second")}}, 0));
+        grid.resize(640, 480);
+        grid.show();
         grid.selectionModel()->select(model->index(1, 0), QItemSelectionModel::Select);
         int queryEvents = 0;
         connect(workspace.adapter(), &choscordb::EngineAdapter::eventReady, &window,
@@ -125,7 +128,7 @@ class ResultCopyWorkspaceTest : public QObject {
         QApplication::clipboard()->setText("unchanged");
         bool menuSeen = false;
         QTimer::singleShot(0, &window, [&] {
-            auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
             menuSeen = true;
             auto* action = menu->findChild<QAction*>("copySelectedRows");
@@ -137,7 +140,7 @@ class ResultCopyWorkspaceTest : public QObject {
         QVERIFY(menuSeen);
         QCOMPARE(QApplication::clipboard()->text(), QString("2\tsecond"));
         QTimer::singleShot(0, &window, [&] {
-            auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
             auto* action = menu->findChild<QAction*>("copyCurrentPage");
             if (!action) {
@@ -151,7 +154,7 @@ class ResultCopyWorkspaceTest : public QObject {
         QCOMPARE(QApplication::clipboard()->text(), QString("1\tfirst\n2\tsecond"));
         QApplication::clipboard()->setText("keep on stale selection");
         QTimer::singleShot(0, &window, [&] {
-            auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
             auto* action = menu->findChild<QAction*>("copySelectedCells");
             if (!action) {
@@ -167,7 +170,7 @@ class ResultCopyWorkspaceTest : public QObject {
         QVERIFY(
             model->setPage({column("large")}, {{choscordb::DeferredValue{8, 100000, "text"}}}, 0));
         QTimer::singleShot(0, &window, [&] {
-            auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
             auto* action = menu->findChild<QAction*>("copyCurrentPage");
             if (!action) {

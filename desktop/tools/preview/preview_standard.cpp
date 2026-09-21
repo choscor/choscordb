@@ -67,7 +67,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         select->setAccessibleName("Synthetic selection");
         layout->addWidget(select);
         auto* status = new QLabel(
-            "Selection is local to this specimen; no preferences are read or saved.", host);
+            "The dropdown stays inside this window. Selection is local to this specimen.", host);
         status->setWordWrap(true);
         layout->addWidget(status);
         QObject::connect(select, &QComboBox::currentTextChanged, status,
@@ -335,6 +335,8 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         actions->addStretch();
         layout->addLayout(actions);
     } else if (id == "tooltip-popover") {
+        layout->addWidget(
+            new QLabel("Tooltips stay inside this window without taking focus.", host));
         auto* help = new Button("Show tooltip", host);
         help->setToolTip("Synthetic help text · Unicode Việt Nam · no external operation.");
         help->setObjectName("previewOpenTooltip");

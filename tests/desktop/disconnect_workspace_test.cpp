@@ -1,6 +1,7 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
@@ -42,11 +43,16 @@ struct Fixture {
                                          &exportResult,
                                          {}},
                                         &window};
-    Fixture() { mode.addItems({"Auto", "Manual"}); }
+    Fixture() {
+        window.resize(960, 640);
+        window.show();
+        mode.addItems({"Auto", "Manual"});
+    }
 };
 void answer(QObject* context, bool accept, bool* rollbackNotice = nullptr) {
     QTimer::singleShot(0, context, [accept, rollbackNotice] {
-        auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        auto* box =
+            qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
         QVERIFY(box);
         QCOMPARE(box->textFormat(), Qt::PlainText);
         if (rollbackNotice)
@@ -126,7 +132,8 @@ class DisconnectWorkspaceTest : public QObject {
         QTRY_COMPARE(finished, 3);
         QCOMPARE(f.grid.model()->index(0, 0).data().toString(), QString("1"));
         QTimer::singleShot(0, &f.window, [&] {
-            auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            auto* box =
+                qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(box);
             QVERIFY(box->defaultButton() == box->button(QMessageBox::Cancel));
             f.workspace.disconnectConnection(id); // Duplicate confirmation is ignored.
@@ -180,7 +187,8 @@ class DisconnectWorkspaceTest : public QObject {
         QTRY_COMPARE(schemas, 1);
         QTRY_VERIFY(f.cancel.isEnabled());
         QTimer::singleShot(0, &f.window, [&] {
-            auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            auto* box =
+                qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(box);
             QVERIFY(box->text().contains("cancel", Qt::CaseInsensitive));
             for (auto* button : box->buttons())
@@ -241,7 +249,8 @@ class DisconnectWorkspaceTest : public QObject {
         QTRY_VERIFY(dialog->isRunning());
         QTRY_VERIFY(exportProgress > 0); // Actual accepted export, not just destination preflight.
         QTimer::singleShot(0, &f.window, [&] {
-            auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            auto* box =
+                qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(box);
             QVERIFY(box->text().contains("export", Qt::CaseInsensitive));
             QVERIFY(box->text().contains("cancel", Qt::CaseInsensitive));
@@ -271,7 +280,8 @@ class DisconnectWorkspaceTest : public QObject {
         QTRY_COMPARE(connected.count(), 1);
         const auto id = connected.first().at(0).toULongLong();
         QTimer::singleShot(0, &f.window, [&] {
-            auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            auto* box =
+                qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(box);
             QVERIFY(f.workspace.adapter()->disconnectConnection(id));
             QTRY_COMPARE(f.connections.count(), 0);

@@ -4,6 +4,7 @@
 #include "app/query_workspace.h"
 #include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
+#include "design_system/menu/embedded_popup.h"
 #include "models/result_table_model.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -33,7 +34,7 @@ class ResultViewWorkspaceTest : public QObject {
     Q_OBJECT
     static void triggerTableAction(QTableView* grid, const QString& label) {
         QTimer::singleShot(0, grid, [label] {
-            auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
             const auto actions = menu->actions();
             menu->close();
@@ -90,7 +91,8 @@ class ResultViewWorkspaceTest : public QObject {
             bool menuSeen = false;
             QTimer closePopup;
             connect(&closePopup, &QTimer::timeout, &explorer, [&] {
-                if (auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget())) {
+                if (auto* menu =
+                        qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup())) {
                     menuSeen = true;
                     menu->close();
                 }

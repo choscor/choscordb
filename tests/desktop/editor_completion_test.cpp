@@ -10,7 +10,9 @@
 #include <QComboBox>
 #include <QCompleter>
 #include <QTabWidget>
+#include <QVBoxLayout>
 #include <QtTest>
+#include <memory>
 class EditorCompletionTest : public QObject {
     Q_OBJECT
   private slots:
@@ -60,10 +62,89 @@ class EditorCompletionTest : public QObject {
         QTest::keyClicks(&editor, "us");
         auto* popup = controller.findChild<QCompleter*>()->popup();
         QTRY_VERIFY(popup->isVisible());
+        QVERIFY2(!popup->isWindow(), "SQL suggestions must be part of the editor window");
+        QCOMPARE(popup->window(), editor.window());
         QCOMPARE(popup->model()->index(0, 0).data(Qt::UserRole).toString(),
                  QString("\"main\".\"users\""));
         QTest::keyClick(popup, Qt::Key_Escape);
         QCOMPARE(editor.text(), QString("us"));
+    }
+    void embeddedSuggestionsKeepTypingFocusAndFollowOwnerLifetime() {
+        choscordb::EditorCompletionController controller;
+        auto* completer = controller.findChild<QCompleter*>();
+        QPointer<QAbstractItemView> popup = completer->popup();
+        auto owner = std::make_unique<QWidget>();
+        owner->resize(640, 480);
+        auto* layout = new QVBoxLayout(owner.get());
+        auto* editor = new choscordb::SqlEditor(owner.get());
+        layout->addWidget(editor);
+        owner->show();
+        owner->activateWindow();
+        controller.setEditor(editor);
+        editor->setFocus();
+        QTRY_VERIFY(editor->hasFocus());
+        QTest::keyClicks(editor, "se");
+        QTRY_VERIFY(popup->isVisible());
+        QVERIFY(!popup->isWindow());
+        QVERIFY(editor->hasFocus());
+        QVERIFY(owner->rect().contains(QRect(popup->mapTo(owner.get(), QPoint()), popup->size())));
+        QTest::keyClick(owner->windowHandle(), Qt::Key_L);
+        QCOMPARE(editor->text(), QString("sel"));
+        QTRY_VERIFY(popup->isVisible());
+        QTest::keyClick(owner->windowHandle(), Qt::Key_Return);
+        QTRY_COMPARE(editor->text(), QString("SELECT"));
+        editor->undo();
+        QCOMPARE(editor->text(), QString("sel"));
+        controller.requestCompletion();
+        QTRY_VERIFY(popup->isVisible());
+        owner->resize(500, 300);
+        QVERIFY(!popup->isVisible());
+        controller.requestCompletion();
+        QTRY_VERIFY(popup->isVisible());
+        auto second = std::make_unique<choscordb::SqlEditor>();
+        second->resize(600, 400);
+        second->show();
+        second->activateWindow();
+        controller.setEditor(second.get());
+        second->setFocus();
+        QTRY_VERIFY(second->hasFocus());
+        QTest::keyClicks(second.get(), "sel");
+        QTRY_VERIFY(popup->isVisible());
+        QCOMPARE(popup.data(), completer->popup());
+        QCOMPARE(popup->window(), second->window());
+        owner.reset();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(popup);
+        QVERIFY(popup->isVisible());
+        QCOMPARE(popup->window(), second->window());
+        second.reset();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(popup);
+        QVERIFY(!popup->isVisible());
+        QVERIFY(!popup->parentWidget());
+        controller.setEditor(nullptr);
+    }
+    void embeddedSuggestionsNavigateWithoutMovingEditorCursor() {
+        choscordb::SqlEditor editor;
+        editor.resize(600, 400);
+        editor.show();
+        editor.activateWindow();
+        editor.setFocus();
+        QTRY_VERIFY(editor.hasFocus());
+        choscordb::EditorCompletionController controller;
+        controller.setEditor(&editor);
+        controller.setCatalog(choscordb::CompletionService(
+            {{"zxalpha", "zxalpha", "table"}, {"zxalpine", "zxalpine", "table"}}));
+        QTest::keyClicks(&editor, "zxa");
+        auto* popup = controller.findChild<QCompleter*>()->popup();
+        QTRY_VERIFY(popup->isVisible());
+        QCOMPARE(popup->model()->rowCount(), 2);
+        QTest::keyClick(editor.windowHandle(), Qt::Key_Down);
+        QVERIFY(popup->isVisible());
+        QCOMPARE(popup->currentIndex().row(), 1);
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_GETCURRENTPOS), 3L);
+        QTest::keyClick(editor.windowHandle(), Qt::Key_Return);
+        QTRY_COMPARE(editor.text(), QString("zxalpine"));
     }
     void duplicateNamesShowTheirDistinctQualifiedPaths() {
         choscordb::SqlEditor editor;

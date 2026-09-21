@@ -4,7 +4,7 @@
 
 namespace choscordb::design {
 
-// Application modal surface; standard QDialog rejection never accepts an action.
+// Owner-window modal surface; standard QDialog rejection never accepts an action.
 class ModalPanel : public QDialog {
     Q_OBJECT
   public:

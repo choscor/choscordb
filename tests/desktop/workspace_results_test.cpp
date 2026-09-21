@@ -6,6 +6,7 @@
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/field/field.h"
 #include "models/history_model.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -396,7 +397,7 @@ void WorkspaceTest::exportCancellationPreservesExistingDestination() {
     QTimer confirmation;
     confirmation.setInterval(10);
     connect(&confirmation, &QTimer::timeout, dialog, [&confirmation] {
-        for (auto* widget : QApplication::topLevelWidgets())
+        for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
             if (auto* box = qobject_cast<QMessageBox*>(widget)) {
                 confirmation.stop();
                 box->done(QMessageBox::Yes);

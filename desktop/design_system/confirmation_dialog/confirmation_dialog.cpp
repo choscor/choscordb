@@ -21,10 +21,9 @@ ConfirmationDialog::ConfirmationDialog(Icon icon, const QString& title, const QS
                                        StandardButtons buttons, QWidget* parent)
     : QMessageBox(icon, title, text, buttons, parent), sourceIcon_(icon), presentation_(*this) {
     setOption(QMessageBox::Option::DontUseNativeDialog);
-    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
+    presentation_.makeModal();
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_WindowPropagation);
-    QDialog::setWindowModality(Qt::ApplicationModal);
     setProperty("appDialog", true);
     setTextFormat(Qt::PlainText);
     QDialog::setWindowTitle(title);
@@ -32,8 +31,7 @@ ConfirmationDialog::ConfirmationDialog(Icon icon, const QString& title, const QS
 }
 void ConfirmationDialog::open() {
     // Connect finished/buttonClicked before this asynchronous entry point.
-    // The base open() would replace application modality with a native sheet.
-    QDialog::setWindowModality(Qt::ApplicationModal);
+    // Keep the embedded surface instead of requesting a native sheet.
     setResult(0);
     show();
 }

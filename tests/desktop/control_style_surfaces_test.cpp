@@ -359,7 +359,10 @@ void ControlStyleTest::menuHasRenderedTranslucentElevationOutsidePanel() {
     const ResolvedTheme theme{ResolvedAppearance::Light,
                               resolveColors(ResolvedAppearance::Light, {}), false};
     QWidget root;
+    root.setProperty("designTheme", QVariant::fromValue(theme));
     root.setStyleSheet(controlStyleSheet(theme));
+    root.resize(640, 400);
+    root.show();
     QMenu menu(&root);
     menu.addAction("Copy synthetic value");
     menu.popup(QPoint(50, 50));
@@ -541,11 +544,11 @@ void ControlStyleTest::toolButtonMenuPanelOpensBesideItsButton() {
                               resolveColors(ResolvedAppearance::Light, {}), false};
     QWidget root;
     root.setStyleSheet(controlStyleSheet(theme));
-    root.resize(600, 300);
+    root.resize(600, 500);
     root.move(100, 100);
     QToolButton button(&root);
     button.setText("More");
-    button.move(40, 40);
+    button.move(140, 140);
     QMenu menu(&button);
     menu.addAction("Commit");
     button.setMenu(&menu);
@@ -553,8 +556,8 @@ void ControlStyleTest::toolButtonMenuPanelOpensBesideItsButton() {
     menu.popup(button.mapToGlobal(QPoint(0, button.height())));
     QCoreApplication::processEvents();
     const int margin = detail::menuShadowMargin();
-    QCOMPARE(menu.geometry().left() + margin, button.mapToGlobal(QPoint()).x());
-    QCOMPARE(menu.geometry().top() + margin,
+    QCOMPARE(menu.mapToGlobal(QPoint()).x() + margin, button.mapToGlobal(QPoint()).x());
+    QCOMPARE(menu.mapToGlobal(QPoint()).y() + margin,
              button.mapToGlobal(QPoint(0, button.height() + 2)).y());
     menu.close();
 }
@@ -568,6 +571,7 @@ void ControlStyleTest::menusTabsAndScrollbarsUseSharedSurfacesAndRemainInteracti
     root.setFont(resolveTypography(TypographyRole::Ui));
     root.setStyle(&style);
     root.setPalette(applicationPalette(theme));
+    root.setProperty("designTheme", QVariant::fromValue(theme));
     root.setStyleSheet(controlStyleSheet(theme));
     QScrollBar scroll(Qt::Vertical, &root);
     scroll.setRange(0, 100);
@@ -576,7 +580,7 @@ void ControlStyleTest::menusTabsAndScrollbarsUseSharedSurfacesAndRemainInteracti
     tabs.addTab("Results");
     tabs.addTab("Messages");
     tabs.move(30, 10);
-    root.resize(260, 140);
+    root.resize(640, 400);
     root.show();
     QCOMPARE(scroll.sizeHint().width(), 10);
     QTest::keyClick(&scroll, Qt::Key_Down);

@@ -7,6 +7,8 @@
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
+#include "design_system/menu/embedded_popup.h"
 #include "design_system/menu/menu.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
@@ -58,7 +60,7 @@ void NavigatorSqlWorkspaceTest::sqlRowActionsLiveInResultContextMenu() {
                                "queryResultRestoreRows"};
     const auto invoke = [&](const QString& name, bool enabled) {
         QTimer::singleShot(0, grid, [&] {
-            auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
             menu->close();
             for (const auto& actionName : names) {
@@ -144,8 +146,9 @@ void NavigatorSqlWorkspaceTest::tabContextMenuFollowsCursor() {
     auto* menu = window.findChild<QMenu*>("editorTabContextMenu");
     QVERIFY(menu && menu->isVisible());
     const int margin = choscordb::design::detail::menuShadowMargin();
-    QCOMPARE(menu->pos().x() + margin, cursor.x());
-    const int offsetY = menu->pos().y() + margin - cursor.y();
+    const auto menuOrigin = menu->mapToGlobal(QPoint());
+    QCOMPARE(menuOrigin.x() + margin, cursor.x());
+    const int offsetY = menuOrigin.y() + margin - cursor.y();
     QVERIFY(offsetY >= 0 && offsetY <= menu->height());
 }
 
@@ -241,7 +244,8 @@ void NavigatorSqlWorkspaceTest::tabContextMenuStopsBulkCloseWhenDiscardIsCancell
     QVERIFY(menu);
     bool prompted = false;
     QTimer::singleShot(0, &window, [&] {
-        auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        auto* box =
+            qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
         QVERIFY(box);
         prompted = true;
         box->button(QMessageBox::Cancel)->click();
@@ -258,7 +262,8 @@ void NavigatorSqlWorkspaceTest::tabContextMenuStopsBulkCloseWhenDiscardIsCancell
     menu = window.findChild<QMenu*>("editorTabContextMenu");
     QVERIFY(menu);
     QTimer::singleShot(0, &window, [&] {
-        auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        auto* box =
+            qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
         QVERIFY(box);
         box->button(QMessageBox::Discard)->click();
     });

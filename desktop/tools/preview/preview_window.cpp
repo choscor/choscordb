@@ -249,6 +249,8 @@ void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     auto* dialog = new ModalPanel(host);
     dialog->setEdgeToEdgeContent(true);
     dialog->setObjectName("previewDialogSectionsModal");
+    open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
+    dialog->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
     dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
     dialog->resize(560, 360);
     auto* root = new QVBoxLayout(dialog);
@@ -287,8 +289,9 @@ void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     layout->addStretch();
 }
 void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool destructive) {
-    layout->addWidget(new QLabel(
-        "Inspect the real window: Tab/Shift+Tab, Escape, backdrop and focus restoration.", host));
+    layout->addWidget(new QLabel("Overlays stay inside this window. Check Tab/Shift+Tab, Escape, "
+                                 "backdrop and focus restoration.",
+                                 host));
     auto* open = new Button(modeless ? "Open nonmodal window" : "Open modal panel", host);
     open->setObjectName("previewOpenDialog");
     layout->addWidget(open);
@@ -301,6 +304,9 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
             "This preview records your choice only. No data is changed.", QMessageBox::Cancel,
             host);
         confirmation->setObjectName("previewActualDialog");
+        open->setProperty("previewSurface", QVariant::fromValue<QObject*>(confirmation));
+        confirmation->setProperty("designTheme",
+                                  QVariant::fromValue(resolvedThemeForWidget(*host)));
         confirmation->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
         auto* affirmative = confirmation->addButton("Delete", QMessageBox::DestructiveRole);
         confirmation->setDefaultButton(QMessageBox::Cancel);
@@ -318,8 +324,10 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
     QDialog* dialog = modeless ? static_cast<QDialog*>(new choscordb::DialogShell(host))
                                : static_cast<QDialog*>(new ModalPanel(host));
     dialog->setAttribute(Qt::WA_WindowPropagation);
+    dialog->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
     dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
     dialog->setObjectName("previewActualDialog");
+    open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
     dialog->setWindowTitle("Synthetic component preview");
     auto* content = new QVBoxLayout(dialog);
     auto* heading = new Text(destructive ? "Delete synthetic record?" : "Panel details", dialog);
@@ -361,10 +369,12 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
     layout->addStretch();
 }
 void populateMenu(QWidget* host, QVBoxLayout* layout) {
+    layout->addWidget(new QLabel("Menus and submenus stay inside this window.", host));
     auto* open = new Button("Open menu", host);
     open->setObjectName("previewOpenMenu");
     auto* menu = new QMenu(host);
     menu->setObjectName("previewActualMenu");
+    open->setProperty("previewSurface", QVariant::fromValue<QObject*>(menu));
     menu->addAction(themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.foreground, 16),
                     "Primary action")
         ->setShortcut(QKeySequence("Ctrl+Return"));
@@ -820,16 +830,21 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
             // popup/backdrop captures scoped to their own Light/Dark specimen.
             applySpecimenTheme(*host);
             host->layout()->activate();
+            host->show();
             const auto restoreHost = qScopeGuard([host, previousParent, previousGeometry] {
                 host->setParent(previousParent);
                 host->setGeometry(previousGeometry);
             });
-            QWidget* actual =
-                id == "menus"
-                    ? static_cast<QWidget*>(host->findChild<QMenu*>("previewActualMenu"))
-                    : static_cast<QWidget*>(host->findChild<QDialog*>("previewActualDialog"));
+            auto* trigger = host->findChild<QPushButton*>(id == "menus" ? "previewOpenMenu"
+                                                                        : "previewOpenDialog");
+            auto* actual =
+                trigger
+                    ? qobject_cast<QWidget*>(trigger->property("previewSurface").value<QObject*>())
+                    : nullptr;
             if (!actual)
                 return fail(tr("The selected surface is unavailable."));
+            if (surface == "modal")
+                actual->setParent(host, actual->windowFlags());
             actual->setAttribute(Qt::WA_DontShowOnScreen);
             actual->ensurePolished();
             if (id == "menus") {
@@ -891,7 +906,7 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
             auto* select = hosts[i]->findChild<QComboBox*>();
             select->showPopup();
             QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-            auto* popup = select->view()->window();
+            auto* popup = select->view()->parentWidget();
             if (!popup->isVisible())
                 return fail(tr("The real selector popup did not become ready."));
             painter.drawPixmap(QPoint(i * paneWidth + (paneWidth - popup->width()) / 2,

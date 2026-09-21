@@ -1,3 +1,4 @@
+#include "design_system/menu/embedded_popup.h"
 #include "design_system/menu/menu.h"
 #include "design_system/theme.h"
 #include "design_system/theme_manager.h"
@@ -30,7 +31,7 @@ class EditorTest : public QObject {
         bool found = false;
         QTimer::singleShot(0, &editor, [&] {
             QMenu* menu = nullptr;
-            for (auto* widget : QApplication::topLevelWidgets())
+            for (auto* widget : {choscordb::design::detail::activeEmbeddedPopup()})
                 if (auto* candidate = qobject_cast<QMenu*>(widget);
                     candidate && candidate->isVisible())
                     menu = candidate;

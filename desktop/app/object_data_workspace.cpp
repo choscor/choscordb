@@ -2,6 +2,7 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "design_system/button/button.h"
+#include "design_system/table/table_style.h"
 #include "design_system/theme.h"
 #include <QAction>
 #include <QComboBox>
@@ -31,7 +32,7 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     table->setAccessibleName(tr("Object data"));
     table->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
     table->setAlternatingRowColors(true);
-    table->setShowGrid(false);
+    design::configureResultTable(*table, false);
     table->setWordWrap(false);
     table->setFrameShape(QFrame::NoFrame);
     table->verticalHeader()->setDefaultSectionSize(metrics.objectDataRowHeight);

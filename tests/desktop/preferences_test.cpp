@@ -1,4 +1,5 @@
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/field/field.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/shortcut_catalog.h"
@@ -51,14 +52,16 @@ class PreferencesTest : public QObject {
         QSignalSpy clicked(&background, &QPushButton::clicked);
         dialog->show();
         dialog->activateWindow();
-        QTRY_COMPARE(QApplication::activeModalWidget(), dialog.get());
-        QTRY_VERIFY(dialog->isActiveWindow());
+        QTRY_COMPARE(choscordb::design::DialogPresentation::activeDialog(), dialog.get());
+        QTRY_VERIFY(owner.isActiveWindow());
+        QVERIFY(!dialog->isWindow());
+        QCOMPARE(dialog->window(), &owner);
         QTRY_VERIFY(QApplication::focusWidget() &&
                     (QApplication::focusWidget() == dialog.get() ||
                      dialog->isAncestorOf(QApplication::focusWidget())));
         QVERIFY(dialog->windowFlags().testFlag(Qt::FramelessWindowHint));
         QVERIFY(owner.findChild<QWidget*>("modalBackdrop")->isVisible());
-        QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, {},
+        QTest::mousePress(owner.windowHandle(), Qt::LeftButton, {},
                           background.mapTo(&owner, background.rect().center()));
         QCOMPARE(clicked.count(), 0);
         for (int i = 0; i < 12; ++i) {

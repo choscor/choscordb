@@ -1,9 +1,11 @@
 #include "design_system/select/select_popup.h"
+#include "design_system/menu/embedded_popup.h"
 #include "design_system/style/style_resource.h"
 #include "design_system/theme.h"
 #include <QAbstractItemDelegate>
 #include <QAbstractItemView>
 #include <QComboBox>
+#include <QFontComboBox>
 #include <QHelpEvent>
 #include <QPointer>
 #include <QStyledItemDelegate>
@@ -79,11 +81,36 @@ class NormalFontPopupDelegate final : public QAbstractItemDelegate {
 };
 } // namespace
 
+bool handleFontComboResize(QComboBox& combo, QEvent* event) {
+    if (event->type() != QEvent::Resize || !qobject_cast<QFontComboBox*>(&combo) ||
+        combo.property("designForwardingFontResize").toBool())
+        return false;
+    QPointer<QWidget> popup = combo.view()->parentWidget();
+    if (!popup->property("embeddedPopupOwner").isValid())
+        return false;
+    // QFontComboBox::event resizes view()->window(), assuming the view still
+    // belongs to a native popup. Give that one Qt event its original hierarchy,
+    // then restore the child surface. Forwarding preserves QComboBox's normal
+    // resize handling, including its editable line field geometry.
+    QPointer<QComboBox> origin = &combo;
+    combo.setProperty("designForwardingFontResize", true);
+    combo.hidePopup();
+    popup->setParent(&combo, (popup->windowFlags() & ~Qt::WindowType_Mask) | Qt::Popup);
+    popup->hide();
+    QApplication::sendEvent(&combo, event);
+    if (origin) {
+        origin->setProperty("designForwardingFontResize", false);
+        if (popup)
+            embedPopup(popup, origin);
+    }
+    return true;
+}
+
 void prepareComboPopup(QComboBox& combo) {
     auto* view = combo.view();
     if (!dynamic_cast<NormalFontPopupDelegate*>(view->itemDelegate()))
         view->setItemDelegate(new NormalFontPopupDelegate(view->itemDelegate(), view));
-    auto* popup = view->window();
+    auto* popup = view->parentWidget();
     const auto theme = resolvedThemeForWidget(combo);
     const auto& colors = theme.colors;
     popup->setObjectName("designComboPopup");
@@ -96,6 +123,7 @@ void prepareComboPopup(QComboBox& combo) {
     // visible border. Retain the native list/delegate for custom models.
     popup->setStyleSheet(
         loadStyleSheet(QStringLiteral("select/popup.qss")).arg(colors.popover.name()));
+    embedPopup(popup, &combo);
     view->setAttribute(Qt::WA_MacShowFocusRect, false);
     view->setPalette(applicationPalette(theme));
     view->setStyleSheet(loadStyleSheet(QStringLiteral("select/popup_view.qss"))

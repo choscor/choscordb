@@ -1,0 +1,20 @@
+Port 22
+ListenAddress 0.0.0.0
+HostKey /var/lib/choscordb-ssh/ssh_host_ed25519_key
+PidFile /tmp/sshd.pid
+
+AllowUsers choscordb
+PermitRootLogin no
+PasswordAuthentication yes
+PubkeyAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+
+AllowTcpForwarding yes
+PermitOpen postgres:5432 postgres-passwordless:5432
+X11Forwarding no
+AllowAgentForwarding no
+PermitTunnel no
+GatewayPorts no
+
+LogLevel VERBOSE

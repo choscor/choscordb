@@ -18,14 +18,16 @@ namespace choscordb::design::detail {
 class TooltipSurface final : public QWidget {
   public:
     TooltipSurface(const QString& text, QWidget* owner, const QRect& anchorRect)
-        : QWidget(owner->window(), Qt::ToolTip | Qt::FramelessWindowHint), owner_(owner) {
+        : QWidget(owner->window(), Qt::Widget), owner_(owner) {
         setObjectName("designTooltip");
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setProperty("embeddedPopupOwner", QVariant::fromValue<QObject*>(owner));
         setAccessibleName(text);
         setAttribute(Qt::WA_TranslucentBackground);
         setAttribute(Qt::WA_NoSystemBackground);
         setAttribute(Qt::WA_ShowWithoutActivating);
         setFont(resolveTypography(TypographyRole::Small));
-        const auto available = owner->screen()->availableGeometry();
+        const auto available = owner->window()->rect();
         const qreal contentWidth = qMax(1, qMin(296, available.width() - 40));
         const qreal contentHeight = qMax(1, available.height() - 34);
         textLayout_.setText(text);
@@ -51,22 +53,34 @@ class TooltipSurface final : public QWidget {
             layoutWidth = qMax(layoutWidth, line.naturalTextWidth());
         }
         textLayout_.endLayout();
-        resize(qCeil(layoutWidth) + 24, qCeil(layoutHeight) + 18);
-        const auto anchor = owner->mapToGlobal(QPoint(anchorRect.center().x(), anchorRect.top()));
+        resize(
+            QSize(qCeil(layoutWidth) + 24, qCeil(layoutHeight) + 18).boundedTo(available.size()));
+        const auto anchor =
+            owner->mapTo(owner->window(), QPoint(anchorRect.center().x(), anchorRect.top()));
         int y = anchor.y() - height() - 4;
         below_ = y < available.top();
         if (below_) {
-            y = owner->mapToGlobal(QPoint(0, anchorRect.bottom() + 1)).y() + 4;
+            y = owner->mapTo(owner->window(), QPoint(0, anchorRect.bottom() + 1)).y() + 4;
         }
         const int x =
             qBound(available.left(), anchor.x() - width() / 2, available.right() - width() + 1);
         move(x, qBound(available.top(), y, available.bottom() - height() + 1));
         arrowX_ = qBound(12, anchor.x() - x, width() - 12);
-        connect(owner, &QObject::destroyed, this, &QWidget::hide);
+        connect(owner, &QObject::destroyed, this, [this] {
+            setProperty("embeddedPopupOwner", QVariant());
+            hide();
+        });
+        owner->window()->installEventFilter(this);
         QTimer::singleShot(10000, this, &QWidget::hide);
     }
 
   protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::Resize || event->type() == QEvent::Hide ||
+            event->type() == QEvent::WindowDeactivate)
+            hide();
+        return false;
+    }
     void paintEvent(QPaintEvent*) override {
         QVariant themeValue;
         for (auto* ancestor = owner_.data(); ancestor; ancestor = ancestor->parentWidget()) {

@@ -27,7 +27,7 @@ class ControlGlyphOverlay final : public QWidget {
         } else if (auto* doubleSpin = qobject_cast<QDoubleSpinBox*>(owner)) {
             connect(doubleSpin, &QDoubleSpinBox::valueChanged, this, [this] { update(); });
         } else if (auto* combo = qobject_cast<QComboBox*>(owner)) {
-            combo->view()->window()->installEventFilter(this);
+            combo->view()->parentWidget()->installEventFilter(this);
         }
         show();
     }

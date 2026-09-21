@@ -1,9 +1,11 @@
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/control_style.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/field/field.h"
+#include "design_system/menu/embedded_popup.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/text/text.h"
 #include "design_system/toast_region/toast_region.h"
@@ -132,10 +134,10 @@ void PreviewTest::examplesOpenActualDismissibleSurfaces() {
     auto* open = light->findChild<QPushButton*>("previewOpenDialog");
     QVERIFY(open);
     open->click();
-    auto* dialog = window.findChild<QDialog*>("previewActualDialog");
+    auto* dialog = previewSurface<QDialog>(light);
     QVERIFY(dialog);
     QVERIFY(dialog->isVisible());
-    QVERIFY(dialog->isModal());
+    QCOMPARE(choscordb::design::DialogPresentation::activeDialog(), dialog);
     QTest::keyClick(dialog, Qt::Key_Escape);
     QVERIFY(!dialog->isVisible());
     QCOMPARE(dialog->result(), int(QDialog::Rejected));
@@ -143,7 +145,7 @@ void PreviewTest::examplesOpenActualDismissibleSurfaces() {
     auto* menuButton = light->findChild<QPushButton*>("previewOpenMenu");
     QVERIFY(menuButton);
     menuButton->click();
-    auto* menu = light->findChild<QMenu*>("previewActualMenu");
+    auto* menu = previewSurface<QMenu>(light, "previewOpenMenu");
     QVERIFY(menu);
     QVERIFY(menu->isVisible());
     QTest::keyClick(menu, Qt::Key_Escape);
@@ -435,9 +437,9 @@ void PreviewTest::dialogSectionsPreviewUsesRealComponentInBothThemes() {
         auto* host = window.findChild<QWidget*>(name);
         QVERIFY(host);
         auto* open = host->findChild<QPushButton*>("previewOpenDialogSections");
-        auto* dialog = host->findChild<QDialog*>("previewDialogSectionsModal");
+        auto* dialog = previewSurface<QDialog>(host, "previewOpenDialogSections");
         auto* sections =
-            host->findChild<choscordb::design::DialogSections*>("previewDialogSections");
+            dialog->findChild<choscordb::design::DialogSections*>("previewDialogSections");
         QVERIFY(open && dialog && sections);
         auto* dismiss =
             sections->findChild<choscordb::design::Button*>("previewDialogSectionsDismiss");
@@ -559,12 +561,12 @@ void PreviewTest::navigationTreeTogglesAndRenamesFromMenu() {
                                    tree->viewport()->mapToGlobal(label));
     QApplication::sendEvent(tree->viewport(), &contextEvent);
     QCOMPARE(menuRequested.size(), 1);
-    auto* menu = tree->findChild<QMenu*>();
+    auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
     QVERIFY(menu);
     auto* rename = menu->actions().isEmpty() ? nullptr : menu->actions().first();
     QVERIFY(rename);
     QCOMPARE(rename->text(), QStringLiteral("Rename"));
-    const QPoint visibleMenu = menu->geometry().topLeft() + menu->actionGeometry(rename).topLeft();
+    const QPoint visibleMenu = menu->mapToGlobal(menu->actionGeometry(rename).topLeft());
     QVERIFY(qAbs(visibleMenu.y() - contextEvent.globalY()) <= 10);
     rename->trigger();
     QTRY_VERIFY(tree->findChild<QLineEdit*>());
@@ -576,4 +578,38 @@ void PreviewTest::navigationTreeTogglesAndRenamesFromMenu() {
     QCOMPARE(editor->text(), QStringLiteral("Renamed group"));
     QTest::keyClick(editor, Qt::Key_Return);
     QTRY_COMPARE(group.data().toString(), QStringLiteral("Renamed group"));
+}
+
+void PreviewTest::popupSpecimensStayInsideWindowInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    window.resize(960, 640);
+    window.show();
+    for (const auto* specimen : {"menus", "selects"}) {
+        QVERIFY(window.selectSpecimen(specimen));
+        for (const auto* theme : {"previewLight", "previewDark"}) {
+            auto* host = window.findChild<QWidget*>(theme);
+            QVERIFY(host);
+            QWidget* popup = nullptr;
+            QComboBox* select = nullptr;
+            if (QString(specimen) == "menus") {
+                auto* menu = previewSurface<QMenu>(host, "previewOpenMenu");
+                QVERIFY(menu);
+                host->findChild<QPushButton*>("previewOpenMenu")->click();
+                popup = menu;
+            } else {
+                select = host->findChild<QComboBox*>();
+                QVERIFY(select);
+                select->showPopup();
+                popup = select->view()->parentWidget();
+            }
+            QTRY_VERIFY(popup->isVisible());
+            QVERIFY(!popup->isWindow());
+            QCOMPARE(popup->window(), &window);
+            QVERIFY(window.rect().contains(QRect(popup->mapTo(&window, QPoint()), popup->size())));
+            if (select)
+                select->hidePopup();
+            else
+                popup->hide();
+        }
+    }
 }

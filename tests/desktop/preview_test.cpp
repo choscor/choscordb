@@ -2,6 +2,7 @@
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/control_style.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/field/field.h"
@@ -308,7 +309,7 @@ void PreviewTest::nonmodalDialogSurfaceHasNoOutline() {
     auto* host = window.findChild<QWidget*>("previewLight");
     QVERIFY(host);
     auto* open = host->findChild<QPushButton*>("previewOpenDialog");
-    auto* dialog = host->findChild<QDialog*>("previewActualDialog");
+    auto* dialog = previewSurface<QDialog>(host);
     QVERIFY(open && dialog);
     open->click();
     QTRY_VERIFY(dialog->isVisible());
@@ -328,7 +329,7 @@ void PreviewTest::nonmodalDialogGrowsWhenDescriptionWraps() {
         auto* host = window.findChild<QWidget*>(theme);
         QVERIFY(host);
         auto* open = host->findChild<QPushButton*>("previewOpenDialog");
-        auto* dialog = host->findChild<choscordb::DialogShell*>("previewActualDialog");
+        auto* dialog = previewSurface<choscordb::DialogShell>(host);
         QVERIFY(open && dialog);
         open->click();
         QTRY_VERIFY(dialog->isVisible());
@@ -349,23 +350,27 @@ void PreviewTest::nonmodalDialogGrowsWhenDescriptionWraps() {
     }
 }
 
-void PreviewTest::galleryOpenKeepsAppModalityAndNativeCorners_data() {
+void PreviewTest::galleryOpenKeepsOverlayInsideWindow_data() {
     QTest::addColumn<QString>("specimen");
-    QTest::newRow("panel") << QString("dialogs");
-    QTest::newRow("confirmation") << QString("confirmations");
+    QTest::addColumn<bool>("dark");
+    QTest::newRow("panel-light") << QString("dialogs") << false;
+    QTest::newRow("panel-dark") << QString("dialogs") << true;
+    QTest::newRow("confirmation-light") << QString("confirmations") << false;
+    QTest::newRow("confirmation-dark") << QString("confirmations") << true;
 }
 
-void PreviewTest::galleryOpenKeepsAppModalityAndNativeCorners() {
+void PreviewTest::galleryOpenKeepsOverlayInsideWindow() {
     QFETCH(QString, specimen);
+    QFETCH(bool, dark);
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen(specimen));
     window.resize(1280, 900);
     window.show();
     window.activateWindow();
-    auto* host = window.findChild<QWidget*>("previewLight");
+    auto* host = window.findChild<QWidget*>(dark ? "previewDark" : "previewLight");
     QVERIFY(host);
     auto* open = host->findChild<QPushButton*>("previewOpenDialog");
-    auto* dialog = host->findChild<QDialog*>("previewActualDialog");
+    auto* dialog = previewSurface<QDialog>(host);
     QVERIFY(open && dialog);
     open->setFocus(Qt::TabFocusReason);
     QTRY_VERIFY(open->hasFocus());
@@ -373,9 +378,11 @@ void PreviewTest::galleryOpenKeepsAppModalityAndNativeCorners() {
     QTest::mouseClick(open, Qt::LeftButton);
     QTRY_VERIFY(dialog->isVisible());
     QCOMPARE(finished.count(), 0); // Opening remains asynchronous.
-    QCOMPARE(dialog->windowModality(), Qt::ApplicationModal);
+    QVERIFY(!dialog->isWindow());
+    QCOMPARE(dialog->window(), &window);
+    QVERIFY(window.rect().contains(QRect(dialog->mapTo(&window, QPoint()), dialog->size())));
     if (QGuiApplication::platformName() == "cocoa") {
-        QVERIFY(QTest::qWaitForWindowExposed(dialog));
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
         QTest::qWait(150);
         const auto position = dialog->mapToGlobal(QPoint());
         const auto capture = dialog->screen()->grabWindow(0, position.x(), position.y(),
@@ -389,7 +396,10 @@ void PreviewTest::galleryOpenKeepsAppModalityAndNativeCorners() {
         }
         const auto pixel = capture.toImage().pixelColor(qRound(5 * capture.devicePixelRatio()),
                                                         qRound(5 * capture.devicePixelRatio()));
-        QVERIFY2(pixel.red() > 240 && pixel.green() > 240 && pixel.blue() > 240,
+        const auto expected = choscordb::design::resolvedThemeForWidget(*dialog).colors.popover;
+        QVERIFY2(qAbs(pixel.red() - expected.red()) < 10 &&
+                     qAbs(pixel.green() - expected.green()) < 10 &&
+                     qAbs(pixel.blue() - expected.blue()) < 10,
                  qPrintable(pixel.name()));
     }
     QTest::keyClick(dialog, Qt::Key_Escape);
@@ -533,9 +543,10 @@ void PreviewTest::confirmationSpecimenUsesProductionCancellationBoundary() {
     auto* open = window.findChild<QPushButton*>("previewOpenDialog");
     QVERIFY(open);
     open->click();
-    auto* confirmation = window.findChild<choscordb::ConfirmationDialog*>("previewActualDialog");
+    auto* confirmation = qobject_cast<choscordb::ConfirmationDialog*>(
+        open->property("previewSurface").value<QObject*>());
     QVERIFY(confirmation);
-    QVERIFY(confirmation->isModal());
+    QCOMPARE(choscordb::design::DialogPresentation::activeDialog(), confirmation);
     auto* cancel = confirmation->button(QMessageBox::Cancel);
     QVERIFY(cancel);
     QCOMPARE(confirmation->defaultButton(), cancel);
@@ -580,7 +591,7 @@ void PreviewTest::exportedPopupContainsItsVisibleContent() {
         select->hidePopup();
     } else if (specimen == "dialogs") {
         light->findChild<QPushButton*>("previewOpenDialog")->click();
-        auto* dialog = light->findChild<QDialog*>("previewActualDialog");
+        auto* dialog = previewSurface<QDialog>(light);
         QVERIFY(dialog);
         QVERIFY(dialog->isVisible());
         QLabel* heading = nullptr;
@@ -594,7 +605,7 @@ void PreviewTest::exportedPopupContainsItsVisibleContent() {
         dialog->reject();
     } else if (specimen == "menus") {
         light->findChild<QPushButton*>("previewOpenMenu")->click();
-        auto* menu = light->findChild<QMenu*>("previewActualMenu");
+        auto* menu = previewSurface<QMenu>(light, "previewOpenMenu");
         QVERIFY(menu);
         QVERIFY(menu->isVisible());
         QAction* action = nullptr;
@@ -638,6 +649,8 @@ void PreviewTest::tooltipUsesTheProductionSurfaceInBothThemes() {
     auto* tooltip = window.findChild<QWidget*>("designTooltip");
     QVERIFY(tooltip);
     QVERIFY(tooltip->isVisible());
+    QVERIFY(!tooltip->isWindow());
+    QCOMPARE(tooltip->window(), &window);
     QVERIFY(tooltip->accessibleName().contains("Synthetic help"));
     const auto lightColor = tooltip->grab().toImage().pixelColor(10, 10);
     auto* dark = window.findChild<QWidget*>("previewDark");
@@ -645,6 +658,8 @@ void PreviewTest::tooltipUsesTheProductionSurfaceInBothThemes() {
     tooltip = window.findChild<QWidget*>("designTooltip");
     QVERIFY(tooltip);
     QVERIFY(tooltip->isVisible());
+    QVERIFY(!tooltip->isWindow());
+    QCOMPARE(tooltip->window(), &window);
     const auto darkColor = tooltip->grab().toImage().pixelColor(10, 10);
     QVERIFY(lightColor.lightness() < 128);
     QVERIFY(darkColor.lightness() > 128);
@@ -657,6 +672,8 @@ void PreviewTest::tooltipUsesTheProductionSurfaceInBothThemes() {
         tooltip = window.findChild<QWidget*>("designTooltip");
         QVERIFY(tooltip);
         QVERIFY(tooltip->isVisible());
+        QVERIFY(!tooltip->isWindow());
+        QCOMPARE(tooltip->window(), &window);
         QCOMPARE(tooltip->accessibleName(), QString("Example Postgres"));
     }
 }

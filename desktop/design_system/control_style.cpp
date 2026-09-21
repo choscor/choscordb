@@ -63,6 +63,13 @@ void ControlStyle::unpolish(QWidget* widget) {
 }
 bool ControlStyle::eventFilter(QObject* watched, QEvent* event) {
     auto* field = qobject_cast<QWidget*>(watched);
+    if (qobject_cast<QAbstractSpinBox*>(field) && event->type() == QEvent::Wheel) {
+        event->ignore();
+        return true;
+    }
+    if (auto* combo = qobject_cast<QComboBox*>(field);
+        combo && detail::handleFontComboResize(*combo, event))
+        return true;
     detail::positionSubmenu(field, event);
     if (auto* combo = qobject_cast<QComboBox*>(field);
         combo && (event->type() == QEvent::Show || event->type() == QEvent::PaletteChange)) {

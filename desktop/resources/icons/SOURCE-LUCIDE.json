@@ -23,7 +23,7 @@
     "eye-off.svg": "774bcd975c5de781a4ee778c76e5591bcdeb409955f7054847e7e6003da0a520"
   },
   "license": "ISC AND MIT",
-  "note": "Lucide license and original source revision retained. MVP referenceOverrides replace the named paths with the local visual authority; their original hashes are preserved below. Other listed assets remain Lucide adaptations/upstream assets. referenceAdditions are copied from the local MVP visual authority and are not Lucide imports. app-mark.svg is Choscor brand artwork, not a Lucide icon; its source is recorded with the local additions.",
+  "note": "Lucide license and original source revision retained. MVP referenceOverrides replace the named paths with the local visual authority; their original hashes are preserved below. Other listed assets remain Lucide adaptations/upstream assets. referenceAdditions are copied from the local MVP visual authority except app-mark.svg, which combines the Lucide paw-print with ChoscorDB's orange brand background.",
   "licenseSha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
   "referenceOverrides": {
     "source": "docs/mvp-design/prototype.js",
@@ -105,10 +105,10 @@
         "sha256": "0de70ce2b1f21cab9f6c1a64b66a49bb422c0f9a0c3c7725149499e947c3f885"
       },
       "app-mark.svg": {
-        "source": "https://choscor.com/assets/logo.png",
-        "sourceSha256": "f40e48624a0dcab97df736d0d722d1ff3aebfd9b9468d6df61253b525b91076d",
-        "sha256": "fdb81cc21f86597bb56cf631d376eb576fb93ffdce3d827047c2ea2a3ac150d7",
-        "changes": "Original transparent 1024px dog artwork embedded unchanged over a rounded orange-to-gold gradient."
+        "source": "https://github.com/lucide-icons/lucide/blob/4aec3f892fd6c23063bc2fead83c899b5d412b1c/icons/paw-print.svg",
+        "sourceSha256": "578001404e63e57af3da69c739f247f20d4ccc8a40882123c352d4160fe63996",
+        "sha256": "5d288b5fb2843f991e65cf94e7283244ac1330a58f057bfb60a5e91b7c232cda",
+        "changes": "Scaled the upstream paw-print, made its stroke white, and placed it over the existing rounded orange-to-gold gradient."
       }
     }
   }

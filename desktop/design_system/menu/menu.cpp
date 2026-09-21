@@ -1,4 +1,5 @@
 #include "design_system/menu/menu.h"
+#include "design_system/menu/embedded_popup.h"
 #include "design_system/theme.h"
 #include <QEvent>
 #include <QGraphicsEffect>
@@ -119,13 +120,17 @@ class MenuShadowEffect final : public QGraphicsEffect {
 };
 void polishMenu(QWidget* widget) {
     if (qobject_cast<QMenu*>(widget) && !widget->graphicsEffect()) {
+        auto* origin = widget->parentWidget();
         widget->setWindowFlag(Qt::NoDropShadowWindowHint);
         widget->setAttribute(Qt::WA_TranslucentBackground);
         widget->setGraphicsEffect(new MenuShadowEffect(widget));
+        embedPopup(widget, origin);
     }
 }
 void positionSubmenu(QWidget* field, QEvent* event) {
     if (auto* menu = qobject_cast<QMenu*>(field); menu && event->type() == QEvent::Show) {
+        if (menu->property("embeddedPopupOwner").isValid())
+            return;
         if (auto* button = qobject_cast<QToolButton*>(menu->parentWidget());
             button && button->menu() == menu) {
             const int margin = menuShadowMargin();

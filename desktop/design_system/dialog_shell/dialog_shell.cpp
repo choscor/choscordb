@@ -20,13 +20,11 @@ DialogShell::DialogShell(QWidget* parent) : QDialog(parent) {
 }
 
 void DialogShell::setAppModal() {
-    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
-    setAttribute(Qt::WA_TranslucentBackground);
-    setWindowModality(Qt::ApplicationModal);
+    presentation_->makeModal();
 }
 
 void DialogShell::open() {
-    if (windowModality() == Qt::ApplicationModal) {
+    if (property("embeddedModal").toBool() || windowModality() == Qt::ApplicationModal) {
         setResult(0);
         show();
     } else {

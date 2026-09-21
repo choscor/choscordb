@@ -3,6 +3,6 @@ QTableView::item:selected, QTreeView::item:selected, QListView::item:selected {
   color: @foreground;
 }
 
-QTableView::item:hover, QListView::item:hover {
+QListView::item:hover {
   background: @accent;
 }

@@ -16,5 +16,42 @@ services:
       timeout: 5s
       retries: 15
 
+  postgres-passwordless:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: choscordb_demo
+      POSTGRES_USER: choscordb
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres-passwordless-data:/var/lib/postgresql/data
+      - ./postgres.sql:/docker-entrypoint-initdb.d/10-demo.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U choscordb -d choscordb_demo"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  ssh:
+    build:
+      context: ./ssh
+    environment:
+      CHOSCORDB_SSH_PASSWORD: choscordb-ssh-password
+    ports:
+      - "127.0.0.1:${CHOSCORDB_DEMO_SSH_PORT:-2222}:22"
+    volumes:
+      - ssh-host-keys:/var/lib/choscordb-ssh
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres-passwordless:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 22"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
 volumes:
   postgres-data:
+  postgres-passwordless-data:
+  ssh-host-keys:

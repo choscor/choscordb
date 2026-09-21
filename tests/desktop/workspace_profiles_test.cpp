@@ -6,6 +6,7 @@
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/field/field.h"
 #include "models/history_model.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -63,7 +64,7 @@ void WorkspaceTest::savedProfilesCreateDuplicateTestDeleteAndConnect() {
     QTRY_COMPARE(list->count(), 2);
     QTRY_VERIFY(save->isEnabled());
     QTimer::singleShot(0, dialog, [] {
-        for (auto* widget : QApplication::topLevelWidgets())
+        for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
             if (auto* box = qobject_cast<QMessageBox*>(widget))
                 box->done(QMessageBox::Yes);
     });
@@ -265,7 +266,8 @@ void WorkspaceTest::mysqlSelectedScriptNavigatesDifferentResultSchemas() {
     bool rejected = false;
     QTimer reject;
     connect(&reject, &QTimer::timeout, &f.parent, [&] {
-        auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        auto* box =
+            qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
         if (box && box->windowTitle() == "Confirm SQL execution") {
             rejected = true;
             box->button(QMessageBox::Cancel)->click();
@@ -313,7 +315,8 @@ void WorkspaceTest::mysqlGridEditsReviewBoundValuesAndPersistChanges() {
     QString review;
     QTimer accept;
     QObject::connect(&accept, &QTimer::timeout, &f.parent, [&] {
-        auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+        auto* dialog =
+            qobject_cast<QDialog*>(choscordb::design::DialogPresentation::activeDialog());
         if (!dialog || dialog->windowTitle() != "Review grid changes")
             return;
         auto* preview = dialog->findChild<QPlainTextEdit*>("gridEditReview");

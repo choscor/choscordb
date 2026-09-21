@@ -189,7 +189,7 @@ class IconsTest final : public QObject {
                  QByteArray("2d59bc428916752528280eac03330d712164163e2f3c476409f5c25d8a7c2778"));
     }
 
-    void appIdentityKeepsDogAndOrangeGradientAcrossThemes() {
+    void appIdentityKeepsWhitePawAndOrangeGradientAcrossThemes() {
         using namespace choscordb::design;
         QVERIFY(iconResourceDecodes(Icon::AppMark));
         const auto dark = themedIcon(Icon::AppMark, QColor("#171717"), 128)
@@ -206,11 +206,16 @@ class IconsTest final : public QObject {
         QVERIFY(top.red() > 230 && top.green() > 60 && top.green() < 180);
         QVERIFY(bottom.red() > 230 && bottom.green() > 140 && bottom.green() < 230);
         QVERIFY(bottom.green() > top.green() + 30);
-        // The original dog's dark nose and cream muzzle remain visible.
-        const auto nose = dark.pixelColor(128, 140);
-        QVERIFY(nose.red() < 120 && nose.green() < 80 && nose.blue() < 40);
-        const auto muzzle = dark.pixelColor(128, 177);
-        QVERIFY(muzzle.red() > 230 && muzzle.green() > 170 && muzzle.blue() > 80);
+
+        // The Lucide paw-print is white and retains its four distinct pads.
+        const QList<QPoint> pawStrokeSamples{{120, 48}, {176, 80}, {192, 144}, {91, 112}};
+        for (const auto& point : pawStrokeSamples) {
+            const auto pixel = dark.pixelColor(point);
+            QVERIFY2(pixel.red() > 245 && pixel.green() > 245 && pixel.blue() > 245,
+                     qPrintable(QStringLiteral("Expected white paw stroke at %1,%2")
+                                    .arg(point.x())
+                                    .arg(point.y())));
+        }
     }
 
     void semanticCatalogIncludesApplicationActions() {

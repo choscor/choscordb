@@ -8,15 +8,12 @@
 
 namespace choscordb::design {
 ModalPanel::ModalPanel(QWidget* parent) : QDialog(parent), presentation_(*this) {
-    // Own the frameless surface and shadow. Application modality uses a regular
-    // Cocoa modal session instead of a native sheet with a second corner mask.
-    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
+    presentation_.makeModal();
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_WindowPropagation);
     if (parent) {
         setPalette(parent->palette());
     }
-    setWindowModality(Qt::ApplicationModal);
     setProperty("appDialog", true);
 }
 ModalPanel::~ModalPanel() = default;
@@ -29,9 +26,7 @@ void ModalPanel::setEdgeToEdgeContent(bool enabled) {
     }
 }
 void ModalPanel::open() {
-    // QDialog::open() forces window modality (a native sheet on Cocoa).
-    // Retain asynchronous opening while preserving the app-owned panel mode.
-    setWindowModality(Qt::ApplicationModal);
+    // Keep the asynchronous QDialog contract without requesting a native sheet.
     setResult(0);
     show();
 }

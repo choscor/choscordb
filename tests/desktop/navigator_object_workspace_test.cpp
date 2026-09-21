@@ -6,6 +6,7 @@
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/menu.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
@@ -525,7 +526,8 @@ void NavigatorSqlWorkspaceTest::disconnectMenuKeepsOtherSessionsAndDrafts() {
     QVERIFY(action);
     bool observed = false;
     QTimer::singleShot(0, &window, [&] {
-        auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        auto* box =
+            qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
         if (!box)
             return;
         observed = true;
@@ -537,7 +539,8 @@ void NavigatorSqlWorkspaceTest::disconnectMenuKeepsOtherSessionsAndDrafts() {
     QVERIFY(observed);
     QCOMPARE(navigator->model()->rowCount(), 2);
     QTimer::singleShot(0, &window, [] {
-        auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        auto* box =
+            qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
         QVERIFY(box);
         for (auto* button : box->buttons())
             if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
@@ -640,7 +643,7 @@ void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWit
     QCOMPARE(ddlObject->paneIndex(), 3);
     QTRY_VERIFY(
         ddlObject->findChild<QPlainTextEdit*>("objectDdl")->toPlainText().contains("CREATE TABLE"));
-    QCOMPARE(QApplication::activeModalWidget(), nullptr);
+    QCOMPARE(choscordb::design::DialogPresentation::activeDialog(), nullptr);
     tabs->tabCloseRequested(tabs->currentIndex());
     tabs->setCurrentWidget(original);
     auto* select = menu.findChild<QAction*>("generate_select");

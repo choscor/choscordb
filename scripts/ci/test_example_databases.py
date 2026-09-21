@@ -2,14 +2,19 @@
 
 from contextlib import closing
 import importlib.util
+import json
+import os
 from pathlib import Path
+import shutil
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SETUP_PATH = ROOT / "examples" / "databases" / "setup_sqlite.py"
+COMPOSE_PATH = ROOT / "examples" / "databases" / "compose.yaml"
 
 
 def load_setup_module():
@@ -22,6 +27,49 @@ def load_setup_module():
 
 
 class ExampleDatabaseTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("docker"), "Docker Compose is not installed")
+    def test_postgres_compose_exposes_password_and_passwordless_ssh_examples(self):
+        completed = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(COMPOSE_PATH),
+                "config",
+                "--format",
+                "json",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "CHOSCORDB_DEMO_SSH_PORT": "2222"},
+        )
+        config = json.loads(completed.stdout)
+        services = config["services"]
+
+        self.assertEqual(
+            services["postgres"]["environment"]["POSTGRES_PASSWORD"],
+            "choscordb-demo-password",
+        )
+        self.assertEqual(
+            services["postgres-passwordless"]["environment"][
+                "POSTGRES_HOST_AUTH_METHOD"
+            ],
+            "trust",
+        )
+        self.assertNotIn(
+            "POSTGRES_PASSWORD", services["postgres-passwordless"]["environment"]
+        )
+        self.assertEqual(
+            services["ssh"]["environment"]["CHOSCORDB_SSH_PASSWORD"],
+            "choscordb-ssh-password",
+        )
+        self.assertEqual(services["ssh"]["ports"][0]["published"], "2222")
+        self.assertEqual(
+            set(services["ssh"]["depends_on"]),
+            {"postgres", "postgres-passwordless"},
+        )
+
     def test_sqlite_setup_creates_queryable_demo_data(self):
         setup = load_setup_module()
         with tempfile.TemporaryDirectory() as directory:

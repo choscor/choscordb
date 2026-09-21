@@ -6,6 +6,10 @@ class ControlStyleTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void popupStaysInsideOwner_data();
+    void popupStaysInsideOwner();
+    void embeddedPopupInputAndLifetime();
+    void fontComboResizePreservesOwnerGeometry();
     void menuCheckmarkUsesTheSharedVectorPath();
     void treePointerSelectionDoesNotFrameTheEntireViewport();
     void comboPopupUsesOneBorderAndFilledSelection();
@@ -23,6 +27,7 @@ class ControlStyleTest final : public QObject {
     void standardConfirmationVariantsKeepSafeDefaultDistinct();
     void scopedSelectAndSpinRenderArrows_data();
     void scopedSelectAndSpinRenderArrows();
+    void spinBoxesIgnoreWheelButKeepButtonStepping();
     void scopedCheckboxUsesSemanticFill_data();
     void scopedCheckboxUsesSemanticFill();
     void scopedDarkButtonsAndTextSelectionUseSemanticColors();

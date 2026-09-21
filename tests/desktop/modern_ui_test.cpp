@@ -7,6 +7,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/menu.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
@@ -57,6 +58,7 @@
 
 void ModernUiTest::applicationMenusExposeHelpAndAbout() {
     choscordb::MainWindow window;
+    window.show();
     auto* help = window.findChild<QMenu*>("helpMenu");
     QVERIFY(help);
     QVERIFY(window.menuBar()->actions().contains(help->menuAction()));
@@ -376,24 +378,26 @@ void ModernUiTest::captureScreenFixtures() {
                                       .arg(state);
                 const auto pixmap = window.grab();
                 QVERIFY(pixmap.save(QDir(output).filePath(name)));
-                if (auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget())) {
+                if (auto* dialog = qobject_cast<QDialog*>(
+                        choscordb::design::DialogPresentation::activeDialog())) {
                     const auto dialogName = name.chopped(4) + "-dialog.png";
                     const auto dialogPixmap = dialog->grab();
                     QVERIFY(dialogPixmap.save(QDir(output).filePath(dialogName)));
                     const auto offset =
                         dialog->mapToGlobal(QPoint()) - window.mapToGlobal(QPoint());
-                    captures.append(
-                        QJsonObject{{"file", dialogName},
-                                    {"owner", name},
-                                    {"state", state},
-                                    {"theme", mode},
-                                    {"dialog", true},
-                                    {"ownerRelativeX", offset.x()},
-                                    {"ownerRelativeY", offset.y()},
-                                    {"clientWidth", dialog->width()},
-                                    {"clientHeight", dialog->height()},
-                                    {"devicePixelRatio", dialogPixmap.devicePixelRatio()},
-                                    {"activeModal", dialog->isModal()}});
+                    captures.append(QJsonObject{
+                        {"file", dialogName},
+                        {"owner", name},
+                        {"state", state},
+                        {"theme", mode},
+                        {"dialog", true},
+                        {"ownerRelativeX", offset.x()},
+                        {"ownerRelativeY", offset.y()},
+                        {"clientWidth", dialog->width()},
+                        {"clientHeight", dialog->height()},
+                        {"devicePixelRatio", dialogPixmap.devicePixelRatio()},
+                        {"activeModal",
+                         choscordb::design::DialogPresentation::activeDialog(&window) == dialog}});
                 }
                 auto* activeEditor = qobject_cast<choscordb::SqlEditor*>(
                     window.findChild<QTabWidget*>("editorTabs")->currentWidget());

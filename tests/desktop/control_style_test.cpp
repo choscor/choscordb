@@ -7,6 +7,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
+#include <QDoubleSpinBox>
 #include <QFontComboBox>
 #include <QHeaderView>
 #include <QHelpEvent>
@@ -30,6 +31,7 @@
 #include <QTableWidget>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QWheelEvent>
 #include <QtTest>
 
 namespace {
@@ -136,9 +138,9 @@ void ControlStyleTest::comboPopupUsesOneBorderAndFilledSelection() {
     QVERIFY(combo.grab().toImage().copy(arrowArea) != openArrow.copy(arrowArea));
     combo.showPopup();
     QCoreApplication::processEvents();
-    QCOMPARE(
-        view->window()->style()->pixelMetric(QStyle::PM_DefaultFrameWidth, nullptr, view->window()),
-        0);
+    QCOMPARE(view->parentWidget()->style()->pixelMetric(QStyle::PM_DefaultFrameWidth, nullptr,
+                                                        view->parentWidget()),
+             0);
     const auto viewImage = view->grab().toImage();
     QCOMPARE(viewImage.pixelColor(viewImage.width() - 1, viewImage.height() / 2),
              QColor("#e7ebed"));
@@ -152,7 +154,7 @@ void ControlStyleTest::comboPopupUsesOneBorderAndFilledSelection() {
     QCOMPARE(image.pixelColor(qRound((selected.right() - 15) * scale),
                               qRound(selected.center().y() * scale)),
              QColor("#ccebdc"));
-    saveNativeSurface(*view->window(), "native-combo-popup.png");
+    saveNativeSurface(*view->parentWidget(), "native-combo-popup.png");
     QTest::keyClick(view, Qt::Key_Down);
     QTest::keyClick(view, Qt::Key_Return);
     QCOMPARE(combo.currentText(), QString("SQLite"));
@@ -168,7 +170,7 @@ void ControlStyleTest::comboPopupUsesOneBorderAndFilledSelection() {
     QCOMPARE(dark.pixelColor(qRound((darkSelection.right() - 15) * darkScale),
                              qRound(darkSelection.center().y() * darkScale)),
              QColor("#254b38"));
-    saveNativeSurface(*view->window(), "native-combo-popup-dark.png");
+    saveNativeSurface(*view->parentWidget(), "native-combo-popup-dark.png");
     QTest::keyClick(view, Qt::Key_Escape);
     QVERIFY(!view->isVisible());
     QCOMPARE(combo.currentText(), QString("SQLite"));
@@ -609,6 +611,47 @@ void ControlStyleTest::scopedSelectAndSpinRenderArrows() {
              1);
 }
 
+void ControlStyleTest::spinBoxesIgnoreWheelButKeepButtonStepping() {
+    using namespace choscordb::design;
+    QWidget root;
+    ThemeManager theme;
+    theme.setMode(ThemeMode::Light);
+    theme.applyTo(root);
+    QSpinBox integer(&root);
+    QDoubleSpinBox decimal(&root);
+    const QList<QAbstractSpinBox*> spinBoxes{&integer, &decimal};
+    for (auto* spinBox : spinBoxes) {
+        spinBox->setGeometry(10, spinBox == &integer ? 10 : 60, 180, 32);
+    }
+    integer.setRange(0, 10);
+    integer.setValue(5);
+    decimal.setRange(0.0, 10.0);
+    decimal.setValue(5.0);
+    root.resize(210, 110);
+    root.show();
+    QApplication::processEvents();
+
+    for (auto* spinBox : spinBoxes) {
+        spinBox->setFocus();
+        QWheelEvent wheel(spinBox->rect().center(), spinBox->mapToGlobal(spinBox->rect().center()),
+                          {}, QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate,
+                          false);
+        QApplication::sendEvent(spinBox, &wheel);
+    }
+    QCOMPARE(integer.value(), 5);
+    QCOMPARE(decimal.value(), 5.0);
+
+    for (auto* spinBox : spinBoxes) {
+        QStyleOptionSpinBox option;
+        option.initFrom(spinBox);
+        const auto up = spinBox->style()->subControlRect(QStyle::CC_SpinBox, &option,
+                                                         QStyle::SC_SpinBoxUp, spinBox);
+        QTest::mouseClick(spinBox, Qt::LeftButton, {}, up.center());
+    }
+    QCOMPARE(integer.value(), 6);
+    QCOMPARE(decimal.value(), 6.0);
+}
+
 void ControlStyleTest::scopedCheckboxUsesSemanticFill_data() {
     QTest::addColumn<bool>("dark");
     QTest::addColumn<bool>("mixed");
@@ -644,3 +687,185 @@ void ControlStyleTest::scopedCheckboxUsesSemanticFill() {
 }
 
 QTEST_MAIN(ControlStyleTest)
+
+void ControlStyleTest::popupStaysInsideOwner_data() {
+    QTest::addColumn<QString>("kind");
+    QTest::newRow("menu") << QString("menu");
+    QTest::newRow("tooltip") << QString("tooltip");
+    QTest::newRow("select") << QString("select");
+}
+void ControlStyleTest::popupStaysInsideOwner() {
+    QFETCH(QString, kind);
+    QWidget owner;
+    choscordb::design::ThemeManager theme;
+    theme.applyTo(owner);
+    owner.setGeometry(200, 200, 500, 300);
+    QPushButton button("Anchor", &owner);
+    button.setGeometry(380, 240, 100, 30);
+    button.setToolTip("A tooltip contained in this window");
+    QMenu menu(&owner);
+    menu.addAction("Run query");
+    QComboBox combo(&owner);
+    combo.setGeometry(380, 200, 100, 30);
+    combo.addItems({"One", "Two", "Three"});
+    owner.show();
+    QCoreApplication::processEvents();
+    QWidget* popup = nullptr;
+    if (kind == "menu") {
+        menu.popup(button.mapToGlobal(QPoint(0, button.height())));
+        popup = &menu;
+    } else if (kind == "select") {
+        combo.showPopup();
+        popup = combo.view()->parentWidget();
+    } else {
+        QHelpEvent event(QEvent::ToolTip, button.rect().center(),
+                         button.mapToGlobal(button.rect().center()));
+        QApplication::sendEvent(&button, &event);
+        popup = owner.findChild<QWidget*>("designTooltip");
+    }
+    QVERIFY(popup);
+    QCoreApplication::processEvents();
+    QVERIFY2(!popup->isWindow(), "Popup must render as part of its owner window");
+    QCOMPARE(popup->window(), &owner);
+    QVERIFY(owner.rect().contains(QRect(popup->mapTo(&owner, QPoint()), popup->size())));
+    if (kind == "menu") {
+        theme.setMode(choscordb::design::ThemeMode::Dark);
+        theme.applyTo(owner);
+        QCOMPARE(popup->palette().color(QPalette::Window), QColor("#20272b"));
+        QVERIFY(popup->isVisible());
+        theme.setMode(choscordb::design::ThemeMode::Light);
+        theme.applyTo(owner);
+        QCOMPARE(popup->palette().color(QPalette::Window), QColor("#ffffff"));
+        QVERIFY(popup->isVisible());
+    }
+    if (kind == "tooltip") {
+        QVERIFY(popup->testAttribute(Qt::WA_TransparentForMouseEvents));
+        owner.resize(250, 180);
+        QVERIFY(!popup->isVisible());
+    }
+    popup->hide();
+}
+
+void ControlStyleTest::embeddedPopupInputAndLifetime() {
+    QWidget owner;
+    QWidget secondOwner;
+    choscordb::design::ThemeManager theme;
+    theme.applyTo(owner);
+    owner.setGeometry(200, 200, 640, 480);
+    QPushButton outside("Outside", &owner);
+    outside.setGeometry(500, 400, 100, 30);
+    QSignalSpy clicked(&outside, &QPushButton::clicked);
+    QMenu menu(&owner);
+    QAction* action = menu.addAction("Run query");
+    auto* submenu = menu.addMenu("Export");
+    QAction* nestedAction = submenu->addAction("CSV");
+    QComboBox combo(&owner);
+    combo.addItems({"One", "Two", "Three"});
+    combo.setGeometry(200, 100, 200, 30);
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowActive(&owner));
+    QVERIFY(!menu.isVisible());
+    QVERIFY(!combo.view()->isVisible());
+    QTimer::singleShot(0, &menu, [&] {
+        QVERIFY(!menu.isWindow());
+        menu.setActiveAction(action);
+        QTest::keyClick(owner.windowHandle(), Qt::Key_Return);
+    });
+    QCOMPARE(menu.exec(owner.mapToGlobal(QPoint(150, 150))), action);
+    QVERIFY(!menu.isVisible());
+    menu.popup(owner.mapToGlobal(QPoint(450, 250)));
+    menu.setActiveAction(submenu->menuAction());
+    QTest::keyClick(&menu, Qt::Key_Right);
+    QTRY_VERIFY(submenu->isVisible());
+    QVERIFY(!submenu->isWindow());
+    QVERIFY(owner.rect().contains(submenu->geometry()));
+    QSignalSpy triggered(nestedAction, &QAction::triggered);
+    submenu->setActiveAction(nestedAction);
+    QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, {},
+                      submenu->mapTo(&owner, submenu->actionGeometry(nestedAction).center()));
+    QCOMPARE(triggered.count(), 1);
+    QVERIFY(!menu.isVisible());
+    QVERIFY(!submenu->isVisible());
+    menu.popup(owner.mapToGlobal(QPoint(150, 150)));
+    menu.setActiveAction(submenu->menuAction());
+    QTest::keyClick(&menu, Qt::Key_Right);
+    QTRY_VERIFY(submenu->isVisible());
+    QSignalSpy parentTriggered(action, &QAction::triggered);
+    QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, {},
+                      menu.mapTo(&owner, menu.actionGeometry(action).center()));
+    QCOMPARE(parentTriggered.count(), 1);
+    QVERIFY(!menu.isVisible());
+    QVERIFY(!submenu->isVisible());
+    menu.popup(owner.mapToGlobal(QPoint(150, 150)));
+    QTest::mouseClick(&outside, Qt::LeftButton);
+    QVERIFY(!menu.isVisible());
+    QCOMPARE(clicked.count(), 0);
+    combo.showPopup();
+    QVERIFY(!combo.view()->parentWidget()->isWindow());
+    QTest::keyClick(combo.view(), Qt::Key_Down);
+    QTest::keyClick(combo.view(), Qt::Key_Return);
+    QCOMPARE(combo.currentIndex(), 1);
+    combo.showPopup();
+    QTest::keyClick(combo.view(), Qt::Key_Escape);
+    QVERIFY(!combo.view()->isVisible());
+    combo.showPopup();
+    QTest::mouseClick(&outside, Qt::LeftButton);
+    QVERIFY(!combo.view()->isVisible());
+    QCOMPARE(clicked.count(), 0);
+    auto* temporary = new QPushButton("Temporary", &owner);
+    auto* ownedMenu = new QMenu(temporary);
+    ownedMenu->addAction("Close");
+    ownedMenu->popup(owner.mapToGlobal(QPoint(150, 150)));
+    QPointer<QMenu> guard(ownedMenu);
+    delete temporary;
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY(guard.isNull());
+    secondOwner.resize(400, 300);
+    theme.applyTo(secondOwner);
+    combo.setParent(&secondOwner);
+    combo.move(20, 20);
+    combo.show();
+    secondOwner.show();
+    QCoreApplication::processEvents();
+    combo.showPopup();
+    QCOMPARE(combo.view()->parentWidget()->window(), &secondOwner);
+    QVERIFY(secondOwner.rect().contains(combo.view()->parentWidget()->geometry()));
+    combo.hidePopup();
+}
+
+void ControlStyleTest::fontComboResizePreservesOwnerGeometry() {
+    QWidget owner;
+    choscordb::design::ThemeManager theme;
+    theme.applyTo(owner);
+    owner.resize(1000, 600);
+    QFontComboBox combo(&owner);
+    combo.setGeometry(20, 20, 200, 32);
+    owner.show();
+    QCoreApplication::processEvents();
+    QCOMPARE(owner.size(), QSize(1000, 600));
+    const QSize originalSize = owner.size();
+    const QSize originalMinimum = owner.minimumSize();
+    const QSize originalMaximum = owner.maximumSize();
+    const int originalFieldWidth = combo.lineEdit()->width();
+    combo.resize(300, 32);
+    QCoreApplication::processEvents();
+    QCOMPARE(owner.size(), originalSize);
+    QCOMPARE(owner.minimumSize(), originalMinimum);
+    QCOMPARE(owner.maximumSize(), originalMaximum);
+    QVERIFY(combo.lineEdit()->width() > originalFieldWidth);
+    QVERIFY(combo.count() > 1);
+    combo.setCurrentIndex(0);
+    combo.showPopup();
+    QVERIFY(!combo.view()->parentWidget()->isWindow());
+    QCOMPARE(combo.view()->window(), &owner);
+    QVERIFY(owner.rect().contains(combo.view()->parentWidget()->geometry()));
+    QTest::keyClick(combo.view(), Qt::Key_Down);
+    QTest::keyClick(combo.view(), Qt::Key_Return);
+    QCOMPARE(combo.currentIndex(), 1);
+    combo.showPopup();
+    combo.resize(350, 32);
+    QVERIFY(!combo.view()->isVisible());
+    QCOMPARE(owner.size(), originalSize);
+    QCOMPARE(owner.minimumSize(), originalMinimum);
+    QCOMPARE(owner.maximumSize(), originalMaximum);
+}

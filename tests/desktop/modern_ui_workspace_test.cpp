@@ -6,6 +6,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/menu.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
@@ -310,8 +311,8 @@ void ModernUiTest::savedConnectionMenuDuplicatesTheChosenProfileWithoutConnectin
     QVERIFY(menu);
     QTRY_VERIFY(menu->isVisible());
     const QPoint panel =
-        menu->geometry().topLeft() + QPoint(choscordb::design::detail::menuShadowMargin(),
-                                            choscordb::design::detail::menuShadowMargin());
+        menu->mapToGlobal(QPoint()) + QPoint(choscordb::design::detail::menuShadowMargin(),
+                                             choscordb::design::detail::menuShadowMargin());
     QCOMPARE(panel, event.globalPos());
     auto* duplicate = menu->findChild<QAction*>("duplicateSavedConnection");
     QVERIFY(duplicate);
@@ -450,11 +451,24 @@ void ModernUiTest::liveAppearanceReachesAlreadyOpenConnectionPanelAndMenu() {
     appearance->applyPreview();
     QTRY_COMPARE(saved.count(), 1);
     QVERIFY(saved.at(0).at(0).toBool());
+    const auto ownerSize = window.size();
     window.findChild<QPushButton*>("navigatorAddConnection")->click();
     auto* profile = window.findChild<choscordb::ProfileDialog*>();
     QVERIFY(profile);
     QVERIFY(profile->isVisible());
-    QVERIFY(profile->isModal());
+    QVERIFY(!profile->isWindow());
+    QCOMPARE(profile->window(), &window);
+    QCOMPARE(window.size(), ownerSize);
+    QVERIFY(window.rect().contains(QRect(profile->mapTo(&window, QPoint()), profile->size())));
+    const auto capture = [&](const QString& name) {
+        const auto directory = qEnvironmentVariable("CHOSCORDB_TEST_CAPTURE_DIR");
+        if (!directory.isEmpty()) {
+            QVERIFY(QDir().mkpath(directory));
+            QVERIFY(window.grab().save(QDir(directory).filePath(name)));
+        }
+    };
+    capture("connection-overlay-light.png");
+    QCOMPARE(choscordb::design::DialogPresentation::activeDialog(), profile);
     QMenu menu(profile);
     menu.addAction("Synthetic action");
     QTRY_VERIFY(profile->isActiveWindow());
@@ -481,6 +495,7 @@ void ModernUiTest::liveAppearanceReachesAlreadyOpenConnectionPanelAndMenu() {
     QVERIFY(saved.at(1).at(0).toBool());
     QCOMPARE(surface(), QColor("#20272b"));
     menu.hide();
+    capture("connection-overlay-dark.png");
     profile->reject();
 }
 
@@ -775,6 +790,7 @@ void ModernUiTest::appearancePreviewsPersistAndRestoreAcrossRestart() {
 
 void ModernUiTest::preferencesUseSectionNavigationAndCancelableLivePreview() {
     choscordb::MainWindow window;
+    window.show();
     auto* appearance = window.findChild<choscordb::AppearanceController*>();
     auto* theme = window.findChild<choscordb::design::ThemeManager*>();
     QTRY_VERIFY(appearance->isReady());

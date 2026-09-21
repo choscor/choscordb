@@ -1,5 +1,7 @@
 #pragma once
 
+#include "design_system/dialog_presentation/dialog_presentation.h"
+
 #include "app/appearance_controller.h"
 #include "app/application_data.h"
 #include "app/main_window.h"
@@ -73,6 +75,8 @@ struct WorkspaceFixture {
                      editing ? &setNull : nullptr,
                      editing ? &applyEdits : nullptr,
                      editing ? &discardEdits : nullptr}) {
+        parent.resize(960, 640);
+        parent.show();
         mode.addItems({"Auto-commit", "Manual"});
         connections.setEnabled(false);
         mode.setEnabled(false);
@@ -113,7 +117,8 @@ struct WorkspaceFixture {
         // A repeating timer also handles prompts reached after nested events.
         QTimer confirm;
         QObject::connect(&confirm, &QTimer::timeout, &parent, [] {
-            auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            auto* box =
+                qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             if (box && box->windowTitle() == "Confirm SQL execution") {
                 if (auto* yes = box->button(QMessageBox::Yes))
                     yes->click();

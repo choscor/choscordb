@@ -7,6 +7,7 @@
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/field/field.h"
 #include "models/history_model.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -313,7 +314,10 @@ void WorkspaceTest::connectionPanelRetainsFailedSaveConnectDraftAndRetries() {
     f.newConnection.trigger();
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>();
     QVERIFY(dialog);
-    QVERIFY(dialog->isModal());
+    QCOMPARE(choscordb::design::DialogPresentation::activeDialog(), dialog);
+    QVERIFY(!dialog->isWindow());
+    QCOMPARE(dialog->window(), &f.parent);
+    QVERIFY(f.parent.rect().contains(QRect(dialog->mapTo(&f.parent, QPoint()), dialog->size())));
     auto* saveConnect = dialog->findChild<QPushButton*>("profileSaveConnect");
     QTRY_VERIFY(saveConnect->isEnabled());
     auto* name = dialog->findChild<QLineEdit*>("profileName");
@@ -394,7 +398,7 @@ void WorkspaceTest::sqlStartedTransactionRequiresCloseConfirmation() {
     const QString begin = "BEGIN TRANSACTION";
     if (choscordb::EngineAdapter::executionRange(begin, 0, 0, 0).confirmation)
         QTimer::singleShot(0, &f.parent, [] {
-            for (auto* widget : QApplication::topLevelWidgets())
+            for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
                 if (auto* box = qobject_cast<QMessageBox*>(widget))
                     box->button(QMessageBox::Yes)->click();
         });
@@ -403,7 +407,7 @@ void WorkspaceTest::sqlStartedTransactionRequiresCloseConfirmation() {
     QTRY_VERIFY(f.messages.toPlainText().contains("Completed"));
     bool asked = false;
     QTimer::singleShot(0, &f.parent, [&] {
-        for (auto* widget : QApplication::topLevelWidgets())
+        for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
             if (auto* box = qobject_cast<QMessageBox*>(widget)) {
                 asked = true;
                 box->button(QMessageBox::Cancel)->click();
@@ -415,7 +419,7 @@ void WorkspaceTest::sqlStartedTransactionRequiresCloseConfirmation() {
     f.editor.setText("COMMIT");
     if (choscordb::EngineAdapter::executionRange("COMMIT", 0, 0, 0).confirmation)
         QTimer::singleShot(0, &f.parent, [] {
-            for (auto* widget : QApplication::topLevelWidgets())
+            for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
                 if (auto* box = qobject_cast<QMessageBox*>(widget))
                     box->button(QMessageBox::Yes)->click();
         });
@@ -434,7 +438,7 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
     QTimer cancelTimer;
     cancelTimer.setInterval(10);
     connect(&cancelTimer, &QTimer::timeout, &f.parent, [&] {
-        for (auto* widget : QApplication::topLevelWidgets()) {
+        for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()}) {
             auto* box = qobject_cast<QMessageBox*>(widget);
             if (!box || !box->isVisible())
                 continue;
@@ -454,7 +458,7 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
     QTimer approveTimer;
     approveTimer.setInterval(10);
     connect(&approveTimer, &QTimer::timeout, &f.parent, [&] {
-        for (auto* widget : QApplication::topLevelWidgets()) {
+        for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()}) {
             auto* box = qobject_cast<QMessageBox*>(widget);
             if (!box || !box->isVisible())
                 continue;
@@ -481,7 +485,7 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
     QTimer finalTimer;
     finalTimer.setInterval(10);
     connect(&finalTimer, &QTimer::timeout, &f.parent, [&] {
-        for (auto* widget : QApplication::topLevelWidgets()) {
+        for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()}) {
             auto* box = qobject_cast<QMessageBox*>(widget);
             if (!box || !box->isVisible())
                 continue;
@@ -558,17 +562,17 @@ void WorkspaceTest::mainWindowHistoryRecordsOpensDisablesAndFlushes() {
     QVERIFY(!run->isEnabled());
     target->setCurrentIndex(target->findData(connection));
     QTRY_VERIFY(run->isEnabled());
-    auto* record = history->findChild<QCheckBox*>("recordHistory");
+    auto* record = window.findChild<QCheckBox*>("recordHistory");
     QTRY_VERIFY(record->isEnabled());
     record->click();
     QTRY_VERIFY(record->isEnabled());
     QVERIFY(!record->isChecked());
     executeSql("SELECT 3");
     history->refresh();
-    QTRY_VERIFY(history->findChild<QPushButton*>("refreshHistory")->isEnabled());
+    QTRY_VERIFY(window.findChild<QPushButton*>("refreshHistory")->isEnabled());
     QCOMPARE(model->rowCount(), 1);
     QTimer::singleShot(0, &window, [] {
-        for (auto* widget : QApplication::topLevelWidgets())
+        for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
             if (auto* box = qobject_cast<QMessageBox*>(widget))
                 box->button(QMessageBox::Yes)->click();
     });
@@ -624,7 +628,7 @@ void WorkspaceTest::cancelledUpdateDoesNotInstallOnLaterNormalClose() {
     QTimer chooser;
     chooser.setInterval(5);
     connect(&chooser, &QTimer::timeout, &window, [&] {
-        for (auto* widget : QApplication::topLevelWidgets())
+        for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
             if (auto* box = qobject_cast<QMessageBox*>(widget)) {
                 if (!cancelled) {
                     cancelled = true;
@@ -689,7 +693,7 @@ void WorkspaceTest::closingActiveQueryFlushesDisconnectedHistory() {
     QTimer chooser;
     chooser.setInterval(5);
     connect(&chooser, &QTimer::timeout, &window, [&] {
-        for (auto* widget : QApplication::topLevelWidgets())
+        for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
             if (auto* box = qobject_cast<QMessageBox*>(widget))
                 for (auto* button : box->buttons())
                     if (box->buttonRole(button) == QMessageBox::DestructiveRole) {

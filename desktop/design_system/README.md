@@ -15,7 +15,7 @@ preserved by the component extraction.
 | Label, badge, keyboard hint | `label/`, `badge/`, `kbd/`: QLabel role/state styles |
 | Fields | `field/`: shared single-line input, key-sequence and field-state rules; keyboard focus frame and focus painting |
 | Text area | `text_area/`: QPlainTextEdit/QTextEdit rules |
-| Select | `select/`: QComboBox rules and real Qt popup preparation |
+| Select | `select/`: QComboBox rules and owner-contained Qt popup preparation |
 | Spin box | `spin_box/`: QSpinBox/QDoubleSpinBox rules |
 | Checkbox | `checkbox/`: checkbox painting and disabled-state handling |
 | Switch | `switch/`: existing `designRole="switch"` track and thumb painting |
@@ -31,11 +31,11 @@ preserved by the component extraction.
 | Scrollbar | `scrollbar/`: scrollbar dimensions and states |
 | Splitter, separator | `splitter/`, `separator/`: handles and horizontal/vertical rules |
 | Progress | `progress/`: progress track/chunk styles |
-| Menu | `menu/`: menu styles, shadow, submenu placement and check painting |
-| Tooltip | `tooltip/`: tooltip styles, painted surface and event lifecycle |
+| Menu | `menu/`: owner-contained menus and shared popup presentation, shadow, submenu placement and check painting |
+| Tooltip | `tooltip/`: owner-contained painted surface and event lifecycle |
 | Dock | `dock/`: existing dock-title styles |
-| Dialog presentation | `dialog_presentation/`: shared backdrop, focus restoration, positioning and surface painting |
-| Modal panel | `modal_panel/`: application-modal `QDialog` surface |
+| Dialog presentation | `dialog_presentation/`: owner-contained modal surfaces, shared backdrop, focus boundary and restoration |
+| Modal panel | `modal_panel/`: owner-contained modal `QDialog` surface |
 | Dialog shell | `dialog_shell/`: reusable nonmodal `QDialog` shell and content/status styles |
 | Dialog sections | `dialog_sections/`: compact header, growing body, and footer layout for dialogs |
 | Confirmation dialog | `confirmation_dialog/`: reusable QMessageBox contract and presentation |

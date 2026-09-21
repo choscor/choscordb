@@ -4,6 +4,8 @@
 #include "app/query_workspace.h"
 #include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
+#include "design_system/menu/embedded_popup.h"
 #include "models/result_table_model.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -22,6 +24,7 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTabWidget>
@@ -32,8 +35,9 @@
 class ObjectDataWorkspaceTest : public QObject {
     Q_OBJECT
     static void triggerTableAction(QTableView* grid, const QString& label) {
+        grid->window()->show();
         QTimer::singleShot(0, grid, [label] {
-            auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
             const auto actions = menu->actions();
             menu->close();
@@ -50,6 +54,44 @@ class ObjectDataWorkspaceTest : public QObject {
     }
 
   private slots:
+    void hoveringCellHighlightsTheRowWithoutMovingText() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(500, 240);
+        data.show();
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+        choscordb::ResultColumn first{}, second{};
+        first.name = "sku";
+        second.name = "name";
+        QVERIFY(
+            model->setPage({first, second}, {{QString("MOU-WLS"), QString("Wireless mouse")}}, 0));
+        QCoreApplication::processEvents();
+
+        const auto firstCell = grid->visualRect(model->index(0, 0));
+        const auto secondCell = grid->visualRect(model->index(0, 1));
+        const auto textLeft = [&] {
+            const auto image = grid->viewport()->grab().toImage();
+            for (int x = firstCell.left() + 2; x < firstCell.right() - 2; ++x)
+                for (int y = firstCell.top() + 2; y < firstCell.bottom() - 2; ++y)
+                    if (image.pixelColor(x, y).lightness() < 100)
+                        return x;
+            return -1;
+        };
+        const int normalTextLeft = textLeft();
+
+        QMouseEvent hover(QEvent::MouseMove, firstCell.center(),
+                          grid->viewport()->mapToGlobal(firstCell.center()), Qt::NoButton,
+                          Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(grid->viewport(), &hover);
+        QCoreApplication::processEvents();
+        const auto hovered = grid->viewport()->grab().toImage();
+        QCOMPARE(hovered.pixelColor(secondCell.right() - 4, secondCell.center().y()),
+                 QColor("#ccebdc"));
+        QCOMPARE(textLeft(), normalTextLeft);
+    }
+
     void setNullAppliesToSelectedCells_data() {
         QTest::addColumn<bool>("objectTable");
         QTest::newRow("object") << true;
@@ -126,7 +168,7 @@ class ObjectDataWorkspaceTest : public QObject {
                                  "objectDataRestoreRows", "objectDataSetNull"})
             QVERIFY(!data.findChild<QPushButton*>(name)->isVisible());
         QTimer::singleShot(0, &data, [] {
-            auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
             const auto actions = menu->actions();
             menu->close();
@@ -266,7 +308,8 @@ class ObjectDataWorkspaceTest : public QObject {
         triggerTableAction(grid, "Set NULL");
         QVERIFY(grid->model()->index(1, 1).data(Qt::UserRole).toBool());
         QTimer::singleShot(0, &data, [] {
-            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            auto* dialog =
+                qobject_cast<QDialog*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(dialog);
             const auto review = dialog->findChild<QPlainTextEdit*>("gridEditReview")->toPlainText();
             QVERIFY(review.contains("DEFAULT") == false);
@@ -332,7 +375,8 @@ class ObjectDataWorkspaceTest : public QObject {
         QCOMPARE(model->index(1, 0).data().toString(), QString());
         QCOMPARE(model->index(1, 1).data().toString(), QString("original"));
         QTimer::singleShot(0, &data, [] {
-            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            auto* dialog =
+                qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(dialog);
             dialog->reject();
         });
@@ -340,7 +384,8 @@ class ObjectDataWorkspaceTest : public QObject {
         QVERIFY(model->hasPendingEdits());
         QVERIFY(!grid->horizontalHeader()->isSortIndicatorShown());
         QTimer::singleShot(0, &data, [] {
-            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            auto* dialog =
+                qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(dialog);
             for (auto* button : dialog->findChildren<QPushButton*>())
                 if (button->text() == "Discard") {
@@ -359,7 +404,8 @@ class ObjectDataWorkspaceTest : public QObject {
         QCOMPARE(model->rowCount(), 2);
         const auto acceptReview = [&data] {
             QTimer::singleShot(0, &data, [] {
-                auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+                auto* dialog =
+                    qobject_cast<QDialog*>(choscordb::design::DialogPresentation::activeDialog());
                 QVERIFY(dialog);
                 dialog->accept();
             });
@@ -372,10 +418,12 @@ class ObjectDataWorkspaceTest : public QObject {
         QVERIFY(model->setData(model->index(1, 1), QString("copy")));
         messages->clear();
         QTimer::singleShot(0, &data, [&data] {
-            auto* pending = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            auto* pending =
+                qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(pending);
             QTimer::singleShot(0, &data, [] {
-                auto* review = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+                auto* review =
+                    qobject_cast<QDialog*>(choscordb::design::DialogPresentation::activeDialog());
                 QVERIFY(review);
                 review->accept();
             });
@@ -463,7 +511,8 @@ class ObjectDataWorkspaceTest : public QObject {
         auto* apply = window.findChild<QPushButton*>("queryResultApplyEdits");
         QTRY_VERIFY(apply->isEnabled());
         QTimer::singleShot(0, &window, [] {
-            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            auto* dialog =
+                qobject_cast<QDialog*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(dialog);
             QVERIFY(dialog->findChild<QPlainTextEdit*>("gridEditReview")
                         ->toPlainText()
@@ -539,7 +588,8 @@ class ObjectDataWorkspaceTest : public QObject {
         QVERIFY(grid->model()->setData(grid->model()->index(0, 1), QString("after")));
         QVERIFY(explorer.findChild<QPushButton*>("objectDataApply")->isEnabled());
         QTimer::singleShot(0, &data, [] {
-            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            auto* dialog =
+                qobject_cast<QDialog*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(dialog);
             QVERIFY(dialog->findChild<QPlainTextEdit*>("gridEditReview")
                         ->toPlainText()
@@ -549,7 +599,8 @@ class ObjectDataWorkspaceTest : public QObject {
         explorer.findChild<QPushButton*>("objectDataApply")->click();
         QCOMPARE(grid->model()->index(0, 1).data().toString(), QString("after"));
         QTimer::singleShot(0, &data, [] {
-            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            auto* dialog =
+                qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(dialog);
             dialog->button(QMessageBox::Cancel)->click();
         });
@@ -559,7 +610,8 @@ class ObjectDataWorkspaceTest : public QObject {
         QVERIFY(refresh->isEnabled());
         QCOMPARE(grid->model()->index(0, 1).data().toString(), QString("after"));
         QTimer::singleShot(0, &data, [] {
-            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            auto* dialog =
+                qobject_cast<QDialog*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(dialog);
             dialog->accept();
         });
@@ -583,7 +635,8 @@ class ObjectDataWorkspaceTest : public QObject {
         QTRY_VERIFY(grid->model()->rowCount() == 2);
         QVERIFY(grid->model()->setData(grid->model()->index(0, 1), QString("discard-me")));
         QTimer::singleShot(0, &data, [] {
-            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            auto* dialog =
+                qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(dialog);
             for (auto* button : dialog->buttons())
                 if (button->text() == "Discard") {
@@ -624,7 +677,8 @@ class ObjectDataWorkspaceTest : public QObject {
         QVERIFY(!sql->navigationAllowed());
         bool prompted = false;
         QTimer::singleShot(0, &window, [&] {
-            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            auto* dialog =
+                qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             if (!dialog)
                 return;
             prompted = true;
@@ -700,7 +754,7 @@ class ObjectDataWorkspaceTest : public QObject {
         exportButton->click();
         auto* exportDialog = data.findChild<choscordb::ExportDialog*>();
         QVERIFY(exportDialog);
-        QVERIFY(exportDialog->isModal());
+        QCOMPARE(choscordb::design::DialogPresentation::activeDialog(), exportDialog);
         const auto destination = directory.filePath("objects.csv");
         exportDialog->findChild<QLineEdit*>("exportDestination")->setText(destination);
         exportDialog->findChild<QPushButton*>("exportStart")->click();
