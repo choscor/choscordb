@@ -9,6 +9,11 @@ class ControlStyleTest final : public QObject {
     void popupStaysInsideOwner_data();
     void popupStaysInsideOwner();
     void embeddedPopupInputAndLifetime();
+    void contextMenuUsesCursorAndDismissesOutside();
+    void contextMenuShadowClickDismisses();
+    void standardTextContextMenusUseCursorAndDismissOutside();
+    void scrolledTextContextMenuCopiesTheClickedLink();
+    void nativeToolbarContextMenuUsesCursor();
     void fontComboResizePreservesOwnerGeometry();
     void menuCheckmarkUsesTheSharedVectorPath();
     void treePointerSelectionDoesNotFrameTheEntireViewport();

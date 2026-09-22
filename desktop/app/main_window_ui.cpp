@@ -413,7 +413,7 @@ MainWindow::Ui MainWindow::buildUi() {
     saveButton->setButtonContext(design::ButtonContext::EditorAction);
     saveButton->setVariant(design::ButtonVariant::Outline);
     saveButton->setAccessibleName(tr("Save SQL file"));
-    toolbar->addWidget(saveButton);
+    saveButton->hide();
     connect(saveButton, &QPushButton::clicked, save, &QAction::trigger);
     connect(save, &QAction::changed, saveButton,
             [save, saveButton] { saveButton->setEnabled(save->isEnabled()); });
@@ -423,7 +423,7 @@ MainWindow::Ui MainWindow::buildUi() {
     run->setEnabled(false);
     auto* runButton = new design::Button({}, toolbar);
     runButton->setDesignIcon(design::Icon::Run);
-    runButton->setVariant(design::ButtonVariant::Outline);
+    runButton->setVariant(design::ButtonVariant::Default);
     runButton->setToolTip(tr("Run"));
     runButton->setObjectName("runStatementButton");
     runButton->setAccessibleName(tr("Run selection or current statement"));
@@ -448,7 +448,7 @@ MainWindow::Ui MainWindow::buildUi() {
     cancelButton->setButtonContext(design::ButtonContext::EditorAction);
     cancelButton->setVariant(design::ButtonVariant::Outline);
     cancelButton->setEnabled(false);
-    toolbar->addWidget(cancelButton);
+    cancelButton->hide();
     connect(cancelButton, &QPushButton::clicked, cancel, &QAction::trigger);
     connect(cancel, &QAction::changed, cancelButton, [cancel, cancelButton] {
         cancelButton->setEnabled(cancel->isEnabled());
@@ -594,7 +594,7 @@ MainWindow::Ui MainWindow::buildUi() {
                 addCloseAction(tr("Close Others"), others);
                 addCloseAction(tr("Close All"), all);
                 addCloseAction(tr("Close to the Right"), right);
-                menu->popup(design::detail::contextMenuPosition(bar->mapToGlobal(position)));
+                design::popupContextMenu(*menu, bar->mapToGlobal(position));
             });
     auto* listTabs = viewMenu->addAction(tr("Editor tabs…"));
     listTabs->setObjectName("listEditorTabs");
@@ -726,9 +726,9 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* nullResultCell =
         addGridAction(tr("Set NULL"), "queryResultSetNull", design::Icon::Square, false);
     auto* discardResultEdits =
-        addGridAction(tr("Discard"), "queryResultDiscardEdits", design::Icon::Cancel);
+        addGridAction(tr("Discard"), "queryResultDiscardEdits", design::Icon::Cancel, false);
     auto* applyResultEdits =
-        addGridAction(tr("Apply"), "queryResultApplyEdits", design::Icon::Check);
+        addGridAction(tr("Apply"), "queryResultApplyEdits", design::Icon::Check, false);
     toolbar->addWidget(queryOverflow);
     toolbar->addWidget(exportResult);
     const auto colorResultFooter = [this, resultFooter] {

@@ -6,6 +6,7 @@ class ModernUiTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void queryToolbarShowsOnlyRequestedControls();
     void applicationMenusExposeHelpAndAbout();
     void resultActionsUseIconsInToolbarAndFootersOnlyContainPagination();
     void recoveryKeepsUnavailableToolbarActionsDisabled();

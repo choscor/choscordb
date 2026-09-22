@@ -109,6 +109,7 @@ class QueryWorkspace final : public QObject {
     std::optional<quint64> executionModeConnection_;
     bool applyStagedEdits();
     void configureEditability();
+    void setupResultViewControls();
     void requestResultView(const QList<ResultFilterCondition>& filters, qint32 sortColumn,
                            const QString& sortDirection);
     void submitResultView(const QList<ResultFilterCondition>& filters, qint32 sortColumn,

@@ -5,7 +5,9 @@
 #include <QAbstractButton>
 #include <QAbstractItemView>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
+#include <QContextMenuEvent>
 #include <QDir>
 #include <QFontComboBox>
 #include <QHeaderView>
@@ -14,8 +16,10 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMainWindow>
 #include <QMenu>
 #include <QPainter>
+#include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRadioButton>
@@ -28,6 +32,9 @@
 #include <QSvgRenderer>
 #include <QTabBar>
 #include <QTableWidget>
+#include <QTextEdit>
+#include <QTimer>
+#include <QToolBar>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QtTest>
@@ -727,4 +734,160 @@ void ControlStyleTest::checkboxUsesReferenceGeometryAndKeyboardMixedState() {
     box.setEnabled(false);
     QTest::keyClick(&box, Qt::Key_Space);
     QCOMPARE(box.checkState(), Qt::Checked);
+}
+
+void ControlStyleTest::contextMenuUsesCursorAndDismissesOutside() {
+    using namespace choscordb::design;
+    QWidget owner;
+    ThemeManager theme;
+    theme.applyTo(owner);
+    owner.setGeometry(100, 100, 900, 650);
+    QToolButton origin(&owner);
+    origin.setGeometry(20, 20, 120, 32);
+    QPushButton outside("Outside", &owner);
+    outside.setGeometry(650, 550, 120, 32);
+    QMenu menu(&origin);
+    menu.addAction("Close");
+    menu.addAction("Close others");
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowActive(&owner));
+    for (const QPoint local : {QPoint(20, 20), QPoint(200, 150), QPoint(420, 300)}) {
+        const QPoint cursor = owner.mapToGlobal(local);
+        popupContextMenu(menu, cursor);
+        QVERIFY(menu.isVisible());
+        QCOMPARE(menu.mapToGlobal(QPoint(detail::menuShadowMargin(), detail::menuShadowMargin())),
+                 cursor);
+        QTest::mouseClick(&outside, Qt::LeftButton);
+        QVERIFY(!menu.isVisible());
+    }
+}
+
+void ControlStyleTest::standardTextContextMenusUseCursorAndDismissOutside() {
+    using namespace choscordb::design;
+    QWidget owner;
+    ThemeManager theme;
+    theme.applyTo(owner);
+    owner.setGeometry(100, 100, 900, 650);
+    QLineEdit line("Synthetic text", &owner);
+    QPlainTextEdit plain("Synthetic text", &owner);
+    QTextEdit rich("Synthetic text", &owner);
+    line.setGeometry(20, 20, 500, 32);
+    plain.setGeometry(20, 70, 500, 150);
+    rich.setGeometry(20, 240, 500, 150);
+    QPushButton outside("Outside", &owner);
+    outside.setGeometry(650, 550, 120, 32);
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowActive(&owner));
+    for (QWidget* target : {static_cast<QWidget*>(&line), plain.viewport(), rich.viewport()}) {
+        const QPoint cursor = target->mapToGlobal(QPoint(100, 15));
+        // Support both asynchronous menus and a nested menu event loop.
+        bool inspected = false;
+        QTimer::singleShot(0, &owner, [&, cursor] {
+            inspected = true;
+            QMenu* visible = nullptr;
+            for (auto* widget : QApplication::allWidgets())
+                if (auto* menu = qobject_cast<QMenu*>(widget); menu && menu->isVisible())
+                    visible = menu;
+            QVERIFY(visible);
+            const QPoint panel = visible->mapToGlobal(
+                QPoint(detail::menuShadowMargin(), detail::menuShadowMargin()));
+            QTest::mouseClick(&outside, Qt::LeftButton);
+            QVERIFY(!visible->isVisible());
+            QCOMPARE(panel, cursor);
+        });
+        QContextMenuEvent request(QContextMenuEvent::Mouse, QPoint(100, 15), cursor);
+        QApplication::sendEvent(target, &request);
+        QTRY_VERIFY(inspected);
+    }
+}
+
+void ControlStyleTest::contextMenuShadowClickDismisses() {
+    using namespace choscordb::design;
+    QWidget owner;
+    ThemeManager theme;
+    theme.applyTo(owner);
+    owner.resize(800, 600);
+    QMenu menu(&owner);
+    menu.addAction("Close");
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowActive(&owner));
+    popupContextMenu(menu, owner.mapToGlobal(QPoint(200, 150)));
+    QVERIFY(menu.isVisible());
+    QTest::mouseClick(&menu, Qt::LeftButton, {}, QPoint(2, 2));
+    QVERIFY(!menu.isVisible());
+}
+
+void ControlStyleTest::scrolledTextContextMenuCopiesTheClickedLink() {
+    using namespace choscordb::design;
+    QWidget owner;
+    ThemeManager theme;
+    theme.applyTo(owner);
+    owner.resize(1000, 800);
+    QTextEdit rich(&owner);
+    rich.setGeometry(100, 100, 600, 400);
+    rich.setTextInteractionFlags(Qt::TextBrowserInteraction);
+    rich.setHtml(QString("<p>Earlier paragraph</p>").repeated(40) +
+                 R"(<p><a href="https://example.invalid/target">Target link</a></p>)");
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowActive(&owner));
+    auto cursor = rich.document()->find("Target link");
+    QVERIFY(!cursor.isNull());
+    cursor.setPosition(cursor.selectionStart() + 2);
+    rich.setTextCursor(cursor);
+    rich.ensureCursorVisible();
+    QVERIFY(rich.verticalScrollBar()->value() > 0);
+    const QPoint point = rich.cursorRect(cursor).center();
+    QCOMPARE(rich.anchorAt(point), QString("https://example.invalid/target"));
+    bool inspected = false;
+    QTimer::singleShot(0, &owner, [&] {
+        inspected = true;
+        QMenu* menu = nullptr;
+        for (auto* candidate : owner.findChildren<QMenu*>())
+            if (candidate->isVisible())
+                menu = candidate;
+        QVERIFY(menu);
+        auto* copy = menu->findChild<QAction*>("link-copy");
+        QVERIFY(copy);
+        const bool enabled = copy->isEnabled();
+        QApplication::clipboard()->clear();
+        copy->trigger();
+        menu->hide();
+        QVERIFY(enabled);
+        QCOMPARE(QApplication::clipboard()->text(), QString("https://example.invalid/target"));
+    });
+    QContextMenuEvent request(QContextMenuEvent::Mouse, point, rich.viewport()->mapToGlobal(point));
+    QApplication::sendEvent(rich.viewport(), &request);
+    QTRY_VERIFY(inspected);
+}
+
+void ControlStyleTest::nativeToolbarContextMenuUsesCursor() {
+    using namespace choscordb::design;
+    QMainWindow owner;
+    ThemeManager theme;
+    theme.applyTo(owner);
+    owner.resize(1000, 800);
+    auto* toolbar = owner.addToolBar("Navigation");
+    toolbar->addAction("Synthetic action");
+    owner.show();
+    QVERIFY(QTest::qWaitForWindowActive(&owner));
+    const QPoint cursor = toolbar->mapToGlobal(QPoint(200, 10));
+    bool inspected = false;
+    QTimer::singleShot(0, &owner, [&] {
+        inspected = true;
+        QMenu* menu = nullptr;
+        for (auto* candidate : owner.findChildren<QMenu*>())
+            if (candidate->isVisible())
+                menu = candidate;
+        QVERIFY(menu);
+        const auto panel =
+            menu->mapToGlobal(QPoint(detail::menuShadowMargin(), detail::menuShadowMargin()));
+        const bool hasToggle = menu->actions().contains(toolbar->toggleViewAction());
+        QTest::mouseClick(&owner, Qt::LeftButton, {}, QPoint(800, 700));
+        QVERIFY(!menu->isVisible());
+        QVERIFY(hasToggle);
+        QCOMPARE(panel, cursor);
+    });
+    QContextMenuEvent request(QContextMenuEvent::Mouse, owner.mapFromGlobal(cursor), cursor);
+    QApplication::sendEvent(&owner, &request);
+    QTRY_VERIFY(inspected);
 }

@@ -161,17 +161,17 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
                 tree->setExpanded(index, !tree->isExpanded(index));
         });
         tree->setContextMenuPolicy(Qt::CustomContextMenu);
-        QObject::connect(
-            tree, &QTreeView::customContextMenuRequested, tree, [tree](const QPoint& point) {
-                const QModelIndex index = tree->indexAt(point);
-                if (!index.isValid())
-                    return;
-                auto* menu = new QMenu(tree);
-                menu->setAttribute(Qt::WA_DeleteOnClose);
-                QObject::connect(menu->addAction("Rename"), &QAction::triggered, tree,
-                                 [tree, index] { tree->edit(index); });
-                menu->popup(detail::contextMenuPosition(tree->viewport()->mapToGlobal(point)));
-            });
+        QObject::connect(tree, &QTreeView::customContextMenuRequested, tree,
+                         [tree](const QPoint& point) {
+                             const QModelIndex index = tree->indexAt(point);
+                             if (!index.isValid())
+                                 return;
+                             auto* menu = new QMenu(tree);
+                             menu->setAttribute(Qt::WA_DeleteOnClose);
+                             QObject::connect(menu->addAction("Rename"), &QAction::triggered, tree,
+                                              [tree, index] { tree->edit(index); });
+                             popupContextMenu(*menu, tree->viewport()->mapToGlobal(point));
+                         });
         tree->expandAll();
         layout->addWidget(tree, 1);
     } else if (id == "navigation-profile-row") {
@@ -292,6 +292,8 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         auto* viewport = host->parentWidget();
         auto* toast = new choscordb::ToastRegion;
         toast->attachTo(viewport);
+        layout->addWidget(
+            new QLabel("Dismiss any notification with its top-right X button.", host));
         auto* duration = new QSpinBox(host);
         duration->setObjectName("previewToastSeconds");
         duration->setRange(1, 30);
@@ -308,7 +310,9 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
             choscordb::ToastVariant variant;
         } examples[] = {
             {"success", "Saved", "Your changes have been saved.", choscordb::ToastVariant::Success},
-            {"warning", "Check your changes", "Some fields may need attention.",
+            {"warning", "Warning",
+             "Suggestions use loaded navigator objects. Expand nodes for more "
+             "names; large catalogs may be limited.",
              choscordb::ToastVariant::Warning},
             {"danger", "Could not save", "Please try again.", choscordb::ToastVariant::Danger},
         };

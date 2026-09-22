@@ -5,6 +5,7 @@
 #include "bridge/template_service.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
+#include "design_system/menu/menu.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
@@ -102,7 +103,12 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
     footer->addWidget(status_, 1);
-    setContextMenuPolicy(Qt::ActionsContextMenu);
+    setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(this, &QWidget::customContextMenuRequested, this, [this](const QPoint& position) {
+        QMenu menu(this);
+        menu.addActions(actions());
+        design::execContextMenu(menu, mapToGlobal(position));
+    });
     retry_ = new QAction(tr("Retry"), this);
     retry_->setObjectName("objectRetry");
     retry_->setEnabled(false);
@@ -125,7 +131,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     open->setButtonSize(design::ButtonSize::Small);
     open_ = open;
     open_->setObjectName("objectOpenQuery");
-    header->addWidget(open_);
+    open_->hide();
     connect(open_, &QPushButton::clicked, this, [this] { generateSql("select"); });
     auto* generate = new design::Button(tr("Generate SQL"), headerBody);
     generate->setButtonSize(design::ButtonSize::Small);
@@ -140,7 +146,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         generationActions_.insert(kind, action);
         connect(action, &QAction::triggered, this, [this, kind] { generateSql(kind); });
     }
-    header->addWidget(generate_);
+    generate_->hide();
     header->addStretch(1);
     for (auto* button : {refresh_, open_, generate_}) {
         button->setAccessibleName(button->text());

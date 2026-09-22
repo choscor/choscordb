@@ -91,11 +91,15 @@ class EmbeddedPopup final : public QObject {
             updateTheme();
             previousFocus_ = QApplication::focusWidget();
             QPoint requested = owner_->mapFromGlobal(surface_->pos());
-            if (auto* button = qobject_cast<QToolButton*>(origin_.data()))
+            const auto cursor = surface_->property("contextMenuCursor");
+            if (cursor.isValid())
+                requested = owner_->mapFromGlobal(cursor.toPoint()) -
+                            QPoint(menuShadowMargin(), menuShadowMargin());
+            else if (auto* button = qobject_cast<QToolButton*>(origin_.data()))
                 requested = button->mapTo(
                     owner_, QPoint(-menuShadowMargin(), button->height() + 2 - menuShadowMargin()));
             if (auto* parent = qobject_cast<QMenu*>(origin_.data());
-                parent && parent->isVisible()) {
+                !cursor.isValid() && parent && parent->isVisible()) {
                 const int right = parent->geometry().right() - 2 * menuShadowMargin() + 3;
                 const int left = parent->x() + 2 * menuShadowMargin() - surface_->width() - 2;
                 int x = parent->isRightToLeft() ? left : right;
@@ -108,12 +112,17 @@ class EmbeddedPopup final : public QObject {
             const QSize size = surface_->size().boundedTo(owner_->size());
             surface_->setMinimumSize(0, 0);
             surface_->resize(size);
-            surface_->move(qBound(0, requested.x(), owner_->width() - size.width()),
-                           qBound(0, requested.y(), owner_->height() - size.height()));
+            // Keep the visible context-menu panel inside its owner. Transparent
+            // shadow padding may be clipped at an edge without shifting the panel
+            // away from the invoking cursor.
+            const int inset = cursor.isValid() ? menuShadowMargin() : 0;
+            surface_->move(qBound(-inset, requested.x(), owner_->width() - size.width() + inset),
+                           qBound(-inset, requested.y(), owner_->height() - size.height() + inset));
             surface_->raise();
             if (takeFocus_)
                 surface_->setFocus(Qt::PopupFocusReason);
         } else if (watched == surface_ && event->type() == QEvent::Hide) {
+            surface_->setProperty("contextMenuCursor", QVariant());
             pointerPressed_ = false;
             pressedAction_.clear();
             if (takeFocus_ && origin_ && owner_->isVisible() && previousFocus_ &&
@@ -142,6 +151,13 @@ class EmbeddedPopup final : public QObject {
                             return true;
                         }
                     }
+                }
+                const int margin = menuShadowMargin();
+                const auto panel = menu->rect().adjusted(margin, margin, -margin, -margin);
+                if (event->type() == QEvent::MouseButtonPress &&
+                    !panel.contains(mouse->position().toPoint())) {
+                    dismissChain();
+                    return true;
                 }
                 if (action && (!action->isEnabled() || action->isSeparator()))
                     action = nullptr;

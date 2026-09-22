@@ -135,7 +135,9 @@ void ModernUiTest::recoveryKeepsUnavailableToolbarActionsDisabled() {
                              "queryResultDeleteRows", "queryResultApplyEdits", "exportResult"}) {
         auto* button = window.findChild<QPushButton*>(name);
         if (button->objectName() == "queryResultAddRow" ||
-            button->objectName() == "queryResultDeleteRows")
+            button->objectName() == "queryResultDeleteRows" ||
+            button->objectName() == "cancelQueryButton" ||
+            button->objectName() == "queryResultApplyEdits")
             QVERIFY(button->isHidden());
         else
             QVERIFY(button->isVisible());
@@ -272,7 +274,7 @@ void ModernUiTest::completedResultsKeepContentWidthsAndDisableCancel() {
     QTRY_COMPARE(window.findChild<QLabel*>("executionSummary")->property("state").toString(),
                  QString("completed"));
     QCoreApplication::processEvents();
-    QVERIFY(window.findChild<QPushButton*>("cancelQueryButton")->isVisible());
+    QVERIFY(window.findChild<QPushButton*>("cancelQueryButton")->isHidden());
     QVERIFY(!window.findChild<QPushButton*>("cancelQueryButton")->isEnabled());
     auto* header = grid->horizontalHeader();
     QVERIFY(!header->stretchLastSection());
@@ -569,3 +571,20 @@ void ModernUiTest::captureScreenFixtures() {
 }
 
 QTEST_MAIN(ModernUiTest)
+
+void ModernUiTest::queryToolbarShowsOnlyRequestedControls() {
+    choscordb::MainWindow window;
+    window.show();
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* toolbar = window.findChild<QToolBar*>("queryToolbar");
+    QVERIFY(toolbar);
+    for (const char* name : {"saveSqlButton", "cancelQueryButton", "queryResultDiscardEdits",
+                             "queryResultApplyEdits"}) {
+        auto* control = window.findChild<QWidget*>(name);
+        QVERIFY2(!control || control->isHidden(), name);
+    }
+    auto* run = window.findChild<choscordb::design::Button*>("runStatementButton");
+    QVERIFY(run);
+    QVERIFY(run->isVisible());
+    QCOMPARE(run->variant(), choscordb::design::ButtonVariant::Default);
+}

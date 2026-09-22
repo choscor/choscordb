@@ -160,8 +160,7 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
                     return;
                 QMenu menu(tree);
                 populateContextMenu(&menu, index);
-                menu.exec(
-                    design::detail::contextMenuPosition(tree->viewport()->mapToGlobal(point)));
+                design::execContextMenu(menu, tree->viewport()->mapToGlobal(point));
             });
 }
 void NavigatorController::refreshCurrent() {

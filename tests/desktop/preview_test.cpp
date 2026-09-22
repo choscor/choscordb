@@ -6,6 +6,7 @@
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/field/field.h"
+#include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/text/text.h"
 #include "design_system/toast_region/toast_region.h"
@@ -217,6 +218,23 @@ void PreviewTest::toastPortalIsPresentInBothThemes() {
         QCOMPARE(toast->parentWidget(), scroll->viewport());
         QCOMPARE(toast->geometry().right(), scroll->viewport()->width() - 17);
         QCOMPARE(toast->geometry().bottom(), scroll->viewport()->height() - 17);
+        auto* dismiss = toast->findChild<QToolButton*>("toastDismiss");
+        QVERIFY(dismiss);
+        QCOMPARE(dismiss->accessibleName(), QString("Dismiss notification"));
+        QVERIFY(dismiss->isVisible());
+        QVERIFY(dismiss->geometry().right() > toast->width() / 2);
+        QVERIFY(dismiss->geometry().top() < toast->height() / 2);
+        QVERIFY(toast->contentsRect().right() < dismiss->geometry().left());
+        QTest::mouseClick(dismiss, Qt::LeftButton);
+        QTRY_VERIFY(toast->isHidden());
+        toast->showToast("Warning",
+                         "Suggestions use loaded navigator objects. Expand nodes for "
+                         "more names; large catalogs may be limited.",
+                         choscordb::ToastVariant::Warning, 0);
+        QVERIFY(toast->isVisible());
+        QVERIFY(dismiss->isVisible());
+        QTest::mouseClick(dismiss, Qt::LeftButton);
+        QTRY_VERIFY(toast->isHidden());
     }
 }
 
@@ -735,3 +753,52 @@ void PreviewTest::standaloneExportsWithoutAProfile() {
 }
 
 QTEST_MAIN(PreviewTest)
+
+void PreviewTest::contextMenuSpecimenUsesCursorInBothThemes() {
+    using namespace choscordb::design;
+    PreviewWindow window;
+    window.resize(1200, 900);
+    window.show();
+    QVERIFY(window.selectSpecimen("menus"));
+    QVERIFY(QTest::qWaitForWindowActive(&window));
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        auto* content = host->findChild<QWidget*>("previewContent");
+        QVERIFY(content);
+        const QPoint local(60, 80);
+        const QPoint cursor = content->mapToGlobal(local);
+        QContextMenuEvent request(QContextMenuEvent::Mouse, local, cursor);
+        QApplication::sendEvent(content, &request);
+        auto* menu = previewSurface<QMenu>(host, "previewOpenMenu");
+        QVERIFY(menu);
+        QVERIFY(menu->isVisible());
+        QCOMPARE(menu->mapToGlobal(QPoint(detail::menuShadowMargin(), detail::menuShadowMargin())),
+                 cursor);
+        QTest::mouseClick(&window, Qt::LeftButton, {}, QPoint(5, 5));
+        QVERIFY(!menu->isVisible());
+    }
+}
+
+void PreviewTest::tableHoverPreservesBackgroundInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("tables"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        auto* table = host->findChild<QTableWidget*>();
+        QVERIFY(table);
+        table->setMouseTracking(true);
+        for (int row = 0; row < 2; ++row) {
+            const auto cell = table->visualItemRect(table->item(row, 0));
+            const auto before = table->viewport()->grab().toImage();
+            QTest::mouseMove(table->viewport(), cell.center());
+            QCoreApplication::processEvents();
+            const auto after = table->viewport()->grab().toImage();
+            const auto sample = cell.topLeft() + QPoint(3, 3);
+            QCOMPARE(after.pixelColor(sample), before.pixelColor(sample));
+        }
+    }
+}

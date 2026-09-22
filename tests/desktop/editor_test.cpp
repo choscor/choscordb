@@ -21,12 +21,12 @@ class EditorTest : public QObject {
   private slots:
     void contextMenuOpensAtPointer() {
         choscordb::SqlEditor editor;
-        editor.resize(500, 300);
+        editor.resize(1000, 750);
         editor.move(300, 250);
         editor.show();
         QCoreApplication::processEvents();
-        const QPoint local(180, 90);
-        const QPoint global = editor.mapToGlobal(local);
+        const QPoint local(200, 180);
+        const QPoint global = editor.viewport()->mapToGlobal(local);
         QPoint actual;
         bool found = false;
         QTimer::singleShot(0, &editor, [&] {
@@ -36,7 +36,8 @@ class EditorTest : public QObject {
                     candidate && candidate->isVisible())
                     menu = candidate;
             if (menu) {
-                actual = menu->pos();
+                const int margin = choscordb::design::detail::menuShadowMargin();
+                actual = menu->mapToGlobal(QPoint(margin, margin));
                 found = menu->isVisible() && !menu->actions().isEmpty();
                 menu->close();
             }
@@ -44,7 +45,7 @@ class EditorTest : public QObject {
         QContextMenuEvent event(QContextMenuEvent::Mouse, local, global);
         QApplication::sendEvent(editor.viewport(), &event);
         QVERIFY(found);
-        QCOMPARE(actual, choscordb::design::detail::contextMenuPosition(global));
+        QCOMPARE(actual, global);
     }
     void lineNumberGutterFitsContentAndFont() {
         choscordb::SqlEditor editor;

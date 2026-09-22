@@ -53,6 +53,7 @@
 #include <QToolButton>
 #include <QTreeView>
 #include <QVBoxLayout>
+#include <QWidgetAction>
 #include <Qsci/qscilexersql.h>
 #include <Qsci/qsciscintilla.h>
 
@@ -373,9 +374,15 @@ void ModernUiTest::activeWorkKeepsSqlVisibleAndRejectsPreferences() {
     }
     auto* cancel = window.findChild<QPushButton*>("cancelQueryButton");
     QVERIFY(cancel);
-    QVERIFY(cancel->isVisible());
-    QVERIFY(cancel->isEnabled());
-    QTest::mouseClick(cancel, Qt::LeftButton);
+    QVERIFY(cancel->isHidden());
+    auto* overflow = window.findChild<QToolButton*>("queryToolbarOverflow");
+    QVERIFY(overflow);
+    auto* cancelAction = window.findChild<QAction*>("command_cancel_query");
+    QVERIFY(cancelAction);
+    QVERIFY(!overflow->menu()->actions().contains(cancelAction));
+    QCOMPARE(cancelAction->text(), QString("Cancel"));
+    QVERIFY(cancelAction->isEnabled());
+    cancelAction->trigger();
     QTRY_VERIFY(run->isEnabled());
     window.findChild<QAction*>("showHistory")->trigger();
     QCOMPARE(screens->currentWidget()->objectName(), QString("sqlScreen"));
@@ -652,6 +659,12 @@ void ModernUiTest::transactionControlsStayInMoreMenuAtBothWidths() {
     QCOMPARE(overflow->text(), QString("More"));
     QCOMPARE(overflow->toolButtonStyle(), Qt::ToolButtonTextOnly);
     QVERIFY(overflow->icon().isNull());
+    QStringList actionLabels;
+    for (auto* action : overflow->menu()->actions())
+        if (!action->isSeparator() && !qobject_cast<QWidgetAction*>(action))
+            actionLabels.append(action->text());
+    QCOMPARE(actionLabels,
+             QStringList({"Commit", "Rollback", "Query settings…", "Open SQL file…"}));
     auto* mode = overflow->menu()->findChild<QComboBox*>("transactionMode");
     QVERIFY(mode);
     auto* workspace = window.findChild<choscordb::QueryWorkspace*>();

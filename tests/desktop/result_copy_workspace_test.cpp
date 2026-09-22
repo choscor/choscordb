@@ -1,3 +1,4 @@
+#include "app/query_settings.h"
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
@@ -115,14 +116,18 @@ class ResultCopyWorkspaceTest : public QObject {
         grid.resize(640, 480);
         grid.show();
         grid.selectionModel()->select(model->index(1, 0), QItemSelectionModel::Select);
-        int queryEvents = 0;
+        // Initial preference loading is unrelated to the context actions under test.
+        auto* settings = workspace.findChild<choscordb::QuerySettingsController*>();
+        QVERIFY(settings);
+        QTRY_VERIFY(settings->isReady());
+        QStringList queryEvents;
         connect(workspace.adapter(), &choscordb::EngineAdapter::eventReady, &window,
                 [&](const choscordb::BridgeEvent& event) {
                     const auto kind =
                         QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
                     if (kind.startsWith("query_") || kind == "schema" || kind == "stored_page" ||
                         kind == "connected")
-                        ++queryEvents;
+                        queryEvents.append(kind);
                 });
         QSignalSpy failures(workspace.adapter(), &choscordb::EngineAdapter::commandFailed);
         QApplication::clipboard()->setText("unchanged");
@@ -183,7 +188,7 @@ class ResultCopyWorkspaceTest : public QObject {
         emit grid.customContextMenuRequested(QPoint());
         QCOMPARE(QApplication::clipboard()->text(), QString("keep on stale selection"));
         QVERIFY(messages.toPlainText().contains("Export"));
-        QCOMPARE(queryEvents, 0);
+        QVERIFY2(queryEvents.isEmpty(), qPrintable(queryEvents.join(", ")));
         QCOMPARE(failures.count(), 0);
     }
 };

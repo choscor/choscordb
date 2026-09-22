@@ -1,7 +1,6 @@
 #include "app/query_workspace.h"
 #include "app/query_settings.h"
 #include "app/query_workspace_p.h"
-#include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
 #include "bridge/result_column_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
@@ -13,7 +12,6 @@
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
 #include <QAction>
 #include <QApplication>
-#include <QBoxLayout>
 #include <QClipboard>
 #include <QComboBox>
 #include <QDialog>
@@ -43,47 +41,13 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                                       : new EngineAdapter(this, widgets_.storagePath)),
       model_(new ResultTableModel(this)) {
     widgets_.grid->setModel(model_);
-    auto* resultParent = widgets_.grid->parentWidget();
-    filterBar_ = new ResultFilterBar(resultParent ? resultParent : widgets_.grid);
-    if (auto* layout = resultParent ? qobject_cast<QBoxLayout*>(resultParent->layout()) : nullptr) {
-        const int index = layout->indexOf(widgets_.grid);
-        if (index >= 0)
-            layout->insertWidget(index, filterBar_);
-    } else
-        filterBar_->hide();
     widgets_.grid->horizontalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
     widgets_.grid->verticalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
     connect(widgets_.grid->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             [this] { updateActions(); });
     connect(widgets_.grid->selectionModel(), &QItemSelectionModel::currentChanged, this,
             [this](const QModelIndex&, const QModelIndex&) { updateActions(); });
-    connect(filterBar_, &ResultFilterBar::applyRequested, this,
-            [this](const QList<ResultFilterCondition>& filters) {
-                requestResultView(filters, viewSortColumn_, viewSortDirection_);
-            });
-    connect(filterBar_, &ResultFilterBar::clearRequested, this,
-            [this] { requestResultView({}, viewSortColumn_, viewSortDirection_); });
-    widgets_.grid->horizontalHeader()->setSectionsClickable(true);
-    connect(widgets_.grid->horizontalHeader(), &QHeaderView::sectionClicked, this,
-            [this](int column) {
-                if (std::any_of(model_->rows().begin(), model_->rows().end(),
-                                [column](const auto& row) {
-                                    return column >= 0 && column < static_cast<int>(row.size()) &&
-                                           std::holds_alternative<DeferredValue>(row[column]);
-                                })) {
-                    message(tr("Large deferred values cannot be sorted."));
-                    return;
-                }
-                QString direction = QStringLiteral("ascending");
-                qint32 nextColumn = column;
-                if (viewSortColumn_ == column && viewSortDirection_ == "ascending")
-                    direction = QStringLiteral("descending");
-                else if (viewSortColumn_ == column && viewSortDirection_ == "descending") {
-                    nextColumn = -1;
-                    direction.clear();
-                }
-                requestResultView(viewFilters_, nextColumn, direction);
-            });
+    setupResultViewControls();
     if (!widgets_.objectReadOnly)
         widgets_.grid->setToolTip(
             tr("Query results are read only because the source table and key cannot be verified."));
@@ -336,8 +300,9 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                     connect(action, &QAction::triggered, button, &QPushButton::click);
                 }
             }
-            menu.exec(
-                design::detail::contextMenuPosition(widgets_.grid->viewport()->mapToGlobal(point)));
+            menu.addSeparator();
+            menu.addAction(widgets_.cancel);
+            design::execContextMenu(menu, widgets_.grid->viewport()->mapToGlobal(point));
         });
     updateActions();
 }

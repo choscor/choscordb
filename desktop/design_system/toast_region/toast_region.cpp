@@ -1,4 +1,5 @@
 #include "design_system/toast_region/toast_region.h"
+#include "design_system/icons.h"
 #include <QAccessible>
 #include <QEvent>
 #include <QGraphicsOpacityEffect>
@@ -6,6 +7,7 @@
 #include <QPropertyAnimation>
 #include <QStyle>
 #include <QTimer>
+#include <QToolButton>
 namespace choscordb {
 ToastRegion::ToastRegion(QWidget* parent)
     : QLabel(parent), timer_(new QTimer(this)), opacity_(new QGraphicsOpacityEffect(this)),
@@ -14,6 +16,15 @@ ToastRegion::ToastRegion(QWidget* parent)
     setAccessibleName(tr("Notifications"));
     setTextFormat(Qt::PlainText);
     setWordWrap(true);
+    // Reserve a separate column so wrapped notification text never meets the close button.
+    setContentsMargins(0, 0, 36, 0);
+    dismiss_ = new QToolButton(this);
+    dismiss_->setObjectName("toastDismiss");
+    dismiss_->setAccessibleName(tr("Dismiss notification"));
+    dismiss_->setToolTip(tr("Dismiss notification"));
+    dismiss_->setIconSize(QSize(14, 14));
+    dismiss_->setFixedSize(24, 24);
+    connect(dismiss_, &QToolButton::clicked, this, &ToastRegion::clearNotice);
     timer_->setSingleShot(true);
     connect(timer_, &QTimer::timeout, this, &ToastRegion::clearNotice);
     setGraphicsEffect(opacity_);
@@ -32,6 +43,10 @@ ToastRegion::ToastRegion(QWidget* parent)
     progress_->setTextVisible(false);
     progress_->hide();
     hide();
+}
+void ToastRegion::resizeEvent(QResizeEvent* event) {
+    QLabel::resizeEvent(event);
+    dismiss_->move(qMax(0, width() - dismiss_->width() - 6), 6);
 }
 void ToastRegion::attachTo(QWidget* host) {
     if (!host)
@@ -110,6 +125,8 @@ void ToastRegion::display(const QString& text) {
     timer_->stop();
     fade_->stop();
     dismissing_ = false;
+    dismiss_->setIcon(
+        design::themedIcon(design::Icon::Close, palette().color(QPalette::WindowText), 14));
     setText(text);
     setVisible(!text.isEmpty());
     if (!text.isEmpty())

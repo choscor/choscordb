@@ -93,6 +93,8 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     auto* applyEdits = makeButton(toolbar, tr("Apply…"), "objectDataApply", design::Icon::Check);
     auto* cancelButton =
         makeButton(toolbar, tr("Cancel"), "objectDataCancel", design::Icon::Cancel);
+    toolbar->removeWidget(cancelButton);
+    cancelButton->hide();
     toolbar->addStretch(1);
     layout->addWidget(footer_);
     // Reuse the production result lifecycle on the same engine. Object mode has

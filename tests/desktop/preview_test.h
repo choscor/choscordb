@@ -19,12 +19,14 @@ class PreviewTest final : public QObject {
     void galleryOpenKeepsOverlayInsideWindow_data();
     void galleryOpenKeepsOverlayInsideWindow();
     void popupSpecimensStayInsideWindowInBothThemes();
+    void contextMenuSpecimenUsesCursorInBothThemes();
     void moreButtonUsesThemeSurface();
     void scrollSpecimensKeepTheirIndependentThemePaper();
     void narrowGalleryKeepsNavigationAndActionsReachable();
     void standaloneCapturesRequestedThemeAndViewport_data();
     void standaloneCapturesRequestedThemeAndViewport();
     void confirmationSpecimenUsesProductionCancellationBoundary();
+    void tableHoverPreservesBackgroundInBothThemes();
     void initTestCase();
     void exportedPopupContainsItsVisibleContent_data();
     void exportedPopupContainsItsVisibleContent();

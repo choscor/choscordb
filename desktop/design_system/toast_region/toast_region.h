@@ -2,6 +2,7 @@
 #include <QLabel>
 #include <QPointer>
 class QTimer;
+class QToolButton;
 class QProgressBar;
 class QGraphicsOpacityEffect;
 class QPropertyAnimation;
@@ -21,6 +22,7 @@ class ToastRegion final : public QLabel {
     void clearNotice();
 
   protected:
+    void resizeEvent(QResizeEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
@@ -28,6 +30,7 @@ class ToastRegion final : public QLabel {
     void placeOverlay();
     QPointer<QWidget> overlayHost_;
     QTimer* timer_;
+    QToolButton* dismiss_;
     QProgressBar* progress_;
     QGraphicsOpacityEffect* opacity_;
     QPropertyAnimation* fade_;

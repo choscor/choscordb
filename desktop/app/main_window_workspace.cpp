@@ -557,8 +557,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                                 workspace_->manageSavedProfile(profile.id, operation);
                             });
                 }
-                menu->popup(design::detail::contextMenuPosition(
-                    savedConnections->viewport()->mapToGlobal(position)));
+                design::popupContextMenu(*menu,
+                                         savedConnections->viewport()->mapToGlobal(position));
             });
     connect(workspace_, &QueryWorkspace::connectionReady, this, [this](quint64 id) {
         if (pendingBrowseConnection_ != id)

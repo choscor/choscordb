@@ -1,13 +1,57 @@
 #include "app/query_workspace.h"
 #include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
+#include <QBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QStyle>
 #include <QTableView>
+#include <algorithm>
 
 namespace choscordb {
+void QueryWorkspace::setupResultViewControls() {
+    widgets_.grid->horizontalHeader()->setSectionsClickable(widgets_.objectReadOnly);
+    if (widgets_.objectReadOnly) {
+        auto* resultParent = widgets_.grid->parentWidget();
+        filterBar_ = new ResultFilterBar(resultParent ? resultParent : widgets_.grid);
+        if (auto* layout =
+                resultParent ? qobject_cast<QBoxLayout*>(resultParent->layout()) : nullptr) {
+            const int index = layout->indexOf(widgets_.grid);
+            if (index >= 0)
+                layout->insertWidget(index, filterBar_);
+        } else
+            filterBar_->hide();
+        connect(filterBar_, &ResultFilterBar::applyRequested, this,
+                [this](const QList<ResultFilterCondition>& filters) {
+                    requestResultView(filters, viewSortColumn_, viewSortDirection_);
+                });
+        connect(filterBar_, &ResultFilterBar::clearRequested, this,
+                [this] { requestResultView({}, viewSortColumn_, viewSortDirection_); });
+        connect(widgets_.grid->horizontalHeader(), &QHeaderView::sectionClicked, this,
+                [this](int column) {
+                    if (std::any_of(model_->rows().begin(), model_->rows().end(),
+                                    [column](const auto& row) {
+                                        return column >= 0 &&
+                                               column < static_cast<int>(row.size()) &&
+                                               std::holds_alternative<DeferredValue>(row[column]);
+                                    })) {
+                        message(tr("Large deferred values cannot be sorted."));
+                        return;
+                    }
+                    QString direction = QStringLiteral("ascending");
+                    qint32 nextColumn = column;
+                    if (viewSortColumn_ == column && viewSortDirection_ == "ascending")
+                        direction = QStringLiteral("descending");
+                    else if (viewSortColumn_ == column && viewSortDirection_ == "descending") {
+                        nextColumn = -1;
+                        direction.clear();
+                    }
+                    requestResultView(viewFilters_, nextColumn, direction);
+                });
+    }
+}
+
 EngineAdapter* QueryWorkspace::adapter() const {
     return adapter_.data();
 }
@@ -41,13 +85,14 @@ void QueryWorkspace::clearViewState() {
     proposedFiltersFromDraft_ = false;
     preserveViewOnRefresh_ = false;
     viewRefreshQuery_.reset();
-    filterBar_->reset();
+    if (filterBar_)
+        filterBar_->reset();
     updateSortIndicator();
 }
 
 void QueryWorkspace::requestResultView(const QList<ResultFilterCondition>& filters,
                                        qint32 sortColumn, const QString& sortDirection) {
-    if (!query_ || !queryAvailable() || workInFlight())
+    if (!widgets_.objectReadOnly || !query_ || !queryAvailable() || workInFlight())
         return;
     if (model_->hasPendingEdits()) {
         deferredViewFilters_ = filters;
@@ -67,7 +112,7 @@ void QueryWorkspace::requestResultView(const QList<ResultFilterCondition>& filte
 
 void QueryWorkspace::submitResultView(const QList<ResultFilterCondition>& filters,
                                       qint32 sortColumn, const QString& sortDirection) {
-    if (!query_)
+    if (!widgets_.objectReadOnly || !query_)
         return;
     proposedViewFilters_ = filters;
     proposedFiltersFromDraft_ = filterBar_->draftMatches(filters);

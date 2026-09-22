@@ -56,7 +56,7 @@ bool SqlEditor::viewportEvent(QEvent* event) {
     if (event->type() == QEvent::ContextMenu) {
         auto* context = static_cast<QContextMenuEvent*>(event);
         if (auto* menu = createStandardContextMenu()) {
-            menu->exec(design::detail::contextMenuPosition(context->globalPos()));
+            design::execContextMenu(*menu, context->globalPos());
             delete menu;
         }
         context->accept();

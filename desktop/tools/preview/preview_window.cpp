@@ -127,7 +127,8 @@ QList<Specimen> specimens() {
         {"Components", "confirmations", "Destructive confirmations",
          "desktop/design_system/confirmation_dialog/confirmation_dialog.cpp"},
         {"Components", "menus", "Menus and submenus", "desktop/design_system/menu/menu.cpp"},
-        {"Components", "feedback", "Toast", "desktop/design_system/toast_region/toast_region.cpp"},
+        {"Components", "feedback", "Toasts with dismiss buttons",
+         "desktop/design_system/toast_region/toast_region.cpp"},
     };
 }
 // Forced visual options live only in the developer host. Button's production
@@ -369,11 +370,15 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
     layout->addStretch();
 }
 void populateMenu(QWidget* host, QVBoxLayout* layout) {
-    layout->addWidget(new QLabel("Menus and submenus stay inside this window.", host));
+    layout->addWidget(new QLabel("Right-click this specimen to open a menu at the pointer.", host));
     auto* open = new Button("Open menu", host);
     open->setObjectName("previewOpenMenu");
     auto* menu = new QMenu(host);
     menu->setObjectName("previewActualMenu");
+    host->setContextMenuPolicy(Qt::CustomContextMenu);
+    QObject::connect(
+        host, &QWidget::customContextMenuRequested, menu,
+        [host, menu](const QPoint& point) { popupContextMenu(*menu, host->mapToGlobal(point)); });
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(menu));
     menu->addAction(themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.foreground, 16),
                     "Primary action")
@@ -749,6 +754,8 @@ void PreviewWindow::rebuildSpecimens() {
             populateTypography(content, contentLayout);
         } else if (id == "tables") {
             auto* table = new QTableWidget(content);
+            configureResultTable(*table, false);
+            table->setAlternatingRowColors(true);
             table->setColumnCount(2);
             table->setHorizontalHeaderLabels({"Name", "Value"});
             table->setRowCount(2);

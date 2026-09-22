@@ -31,6 +31,7 @@
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QToolButton>
 #include <QtTest>
 class ObjectDataWorkspaceTest : public QObject {
     Q_OBJECT
@@ -54,7 +55,7 @@ class ObjectDataWorkspaceTest : public QObject {
     }
 
   private slots:
-    void hoveringCellHighlightsTheRowWithoutMovingText() {
+    void hoveringCellPreservesTheRowBackgroundAndText() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
         choscordb::ObjectDataWorkspace data(sql);
@@ -80,6 +81,7 @@ class ObjectDataWorkspaceTest : public QObject {
             return -1;
         };
         const int normalTextLeft = textLeft();
+        const auto normal = grid->viewport()->grab().toImage();
 
         QMouseEvent hover(QEvent::MouseMove, firstCell.center(),
                           grid->viewport()->mapToGlobal(firstCell.center()), Qt::NoButton,
@@ -88,7 +90,7 @@ class ObjectDataWorkspaceTest : public QObject {
         QCoreApplication::processEvents();
         const auto hovered = grid->viewport()->grab().toImage();
         QCOMPARE(hovered.pixelColor(secondCell.right() - 4, secondCell.center().y()),
-                 QColor("#ccebdc"));
+                 normal.pixelColor(secondCell.right() - 4, secondCell.center().y()));
         QCOMPARE(textLeft(), normalTextLeft);
     }
 
@@ -176,15 +178,16 @@ class ObjectDataWorkspaceTest : public QObject {
             for (auto* action : actions)
                 if (!action->isSeparator())
                     labels << action->text();
-            QCOMPARE(labels, QStringList({"Copy selected cells", "Copy selected rows",
-                                          "Copy current page", "Duplicate row", "Add row",
-                                          "Delete selected", "Restore selected", "Set NULL"}));
+            QCOMPARE(labels,
+                     QStringList({"Copy selected cells", "Copy selected rows", "Copy current page",
+                                  "Duplicate row", "Add row", "Delete selected", "Restore selected",
+                                  "Set NULL", "Cancel"}));
             for (auto* action : actions)
                 if (!action->isSeparator())
                     QVERIFY(!action->isEnabled());
         });
         grid->customContextMenuRequested(QPoint(10, 10));
-        for (const char* name : {"objectDataExport", "objectDataApply", "objectDataCancel"}) {
+        for (const char* name : {"objectDataExport", "objectDataApply"}) {
             auto* button = data.findChild<QPushButton*>(name);
             QVERIFY(button);
             QVERIFY(!footer->isAncestorOf(button));
@@ -210,8 +213,11 @@ class ObjectDataWorkspaceTest : public QObject {
         auto* header = explorer.findChild<QWidget*>("objectHeader");
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
         QCOMPARE(footer->findChildren<QPushButton*>().size(), 2);
-        auto* generate = explorer.findChild<QPushButton*>("objectGenerateSql");
-        int right = generate->geometry().right();
+        for (const char* name : {"objectOpenQuery", "objectGenerateSql", "objectDataCancel"}) {
+            auto* control = explorer.findChild<QWidget*>(name);
+            QVERIFY2(!control || control->isHidden(), name);
+        }
+        int right = explorer.findChild<QPushButton*>("objectRefresh")->geometry().right();
         for (const char* name : {"objectDataExport", "objectDataApply"}) {
             auto* action = explorer.findChild<QPushButton*>(name);
             QVERIFY(header->isAncestorOf(action));
@@ -220,7 +226,7 @@ class ObjectDataWorkspaceTest : public QObject {
             QVERIFY(action->mapTo(header, QPoint()).x() - right < 30);
             right = action->mapTo(header, QPoint()).x() + action->width() - 1;
         }
-        QVERIFY(explorer.findChild<QPushButton*>("objectDataCancel")->isVisible());
+        QVERIFY(explorer.findChild<QPushButton*>("objectDataCancel")->isHidden());
         QVERIFY(!explorer.findChild<QPushButton*>("objectDataCancel")->isEnabled());
         auto* refresh = explorer.findChild<QPushButton*>("objectRefresh");
         QVERIFY(refresh->isEnabled());
@@ -510,16 +516,31 @@ class ObjectDataWorkspaceTest : public QObject {
         QVERIFY(grid->model()->setData(grid->model()->index(0, 1), QString("after")));
         auto* apply = window.findChild<QPushButton*>("queryResultApplyEdits");
         QTRY_VERIFY(apply->isEnabled());
-        QTimer::singleShot(0, &window, [] {
+        QTimer confirmEdits;
+        bool reviewed = false;
+        connect(&confirmEdits, &QTimer::timeout, &window, [&] {
+            if (auto* pending = qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+                for (auto* button : pending->buttons())
+                    if (pending->buttonRole(button) == QMessageBox::AcceptRole) {
+                        button->click();
+                        return;
+                    }
+            }
             auto* dialog =
                 qobject_cast<QDialog*>(choscordb::design::DialogPresentation::activeDialog());
-            QVERIFY(dialog);
-            QVERIFY(dialog->findChild<QPlainTextEdit*>("gridEditReview")
-                        ->toPlainText()
-                        .contains("shown") == false);
+            if (!dialog)
+                return;
+            auto* review = dialog->findChild<QPlainTextEdit*>("gridEditReview");
+            if (!review)
+                return;
+            QVERIFY(!review->toPlainText().contains("shown"));
+            reviewed = true;
             dialog->accept();
         });
-        apply->click();
+        confirmEdits.start(10);
+        run->trigger();
+        QTRY_VERIFY(reviewed);
+        confirmEdits.stop();
         QTRY_VERIFY(!apply->isEnabled());
         QTRY_COMPARE(grid->model()->index(0, 1).data().toString(), QString("after"));
         editor->setText("SELECT name FROM source_rows;");

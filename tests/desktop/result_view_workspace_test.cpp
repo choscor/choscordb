@@ -106,13 +106,23 @@ class ResultViewWorkspaceTest : public QObject {
             QVERIFY(!menuSeen);
         }
     }
-    void bothResultSurfacesExposeFilterControls() {
+    void onlyObjectDataExposesFilterAndSortControls() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
         choscordb::ObjectDataWorkspace data(sql);
-        for (auto* surface : QList<QWidget*>{&window, &data}) {
+        window.show();
+        data.show();
+        auto* sqlGrid = window.findChild<QTableView*>("queryResults");
+        QVERIFY(!sqlGrid->parentWidget()->findChild<QWidget*>("resultFilterBar"));
+        QVERIFY(!sqlGrid->horizontalHeader()->sectionsClickable());
+        QVERIFY(!sqlGrid->horizontalHeader()->isSortIndicatorShown());
+        QVERIFY(data.findChild<QTableView*>("objectDataResults")
+                    ->horizontalHeader()
+                    ->sectionsClickable());
+        for (auto* surface : QList<QWidget*>{&data}) {
             auto* bar = surface->findChild<QWidget*>("resultFilterBar");
             QVERIFY(bar);
+            QVERIFY(bar->isVisible());
             QVERIFY(bar->findChild<QComboBox*>("resultFilterColumn"));
             QVERIFY(bar->findChild<QComboBox*>("resultFilterOperator"));
             QVERIFY(bar->findChild<QLineEdit*>("resultFilterValue"));
@@ -120,6 +130,31 @@ class ResultViewWorkspaceTest : public QObject {
             QVERIFY(bar->findChild<QPushButton*>("resultFilterApply"));
             QVERIFY(bar->findChild<QPushButton*>("resultFilterClear"));
         }
+    }
+    void sqlResultHeaderClicksPreserveQueryOrder() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        auto* run = window.findChild<QAction*>("runStatement");
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("SELECT 3 AS value UNION ALL SELECT 1 UNION ALL SELECT 2");
+        run->trigger();
+        auto* grid = window.findChild<QTableView*>("queryResults");
+        QTRY_COMPARE(grid->model()->rowCount(), 3);
+        auto* header = grid->horizontalHeader();
+        QSignalSpy clicks(header, &QHeaderView::sectionClicked);
+        QTest::mouseClick(header->viewport(), Qt::LeftButton, {}, QPoint(10, 5));
+        QCOMPARE(clicks.count(), 0);
+        QVERIFY(!header->isSortIndicatorShown());
+        QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("3"));
+        QCOMPARE(grid->model()->index(1, 0).data().toString(), QString("1"));
+        QCOMPARE(grid->model()->index(2, 0).data().toString(), QString("2"));
+        QVERIFY(!grid->parentWidget()->findChild<QWidget*>("resultFilterBar"));
     }
     void mysqlMetadataKindsExposeTypedOperators() {
         choscordb::ResultFilterBar bar;
@@ -141,7 +176,7 @@ class ResultViewWorkspaceTest : public QObject {
         bar.findChild<QPushButton*>("resultFilterAdd")->click();
         QCOMPARE(bar.conditions().size(), 1);
     }
-    void sqlFiltersAndSortsTheCompletePagedResult() {
+    void objectDataFiltersAndSortsTheCompletePagedResult() {
         choscordb::MainWindow window;
         window.show();
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
@@ -151,9 +186,27 @@ class ResultViewWorkspaceTest : public QObject {
         auto* editor = qobject_cast<choscordb::SqlEditor*>(
             window.findChild<QTabWidget*>("editorTabs")->currentWidget());
         auto* run = window.findChild<QAction*>("runStatement");
-        auto* grid = window.findChild<QTableView*>("queryResults");
-        auto* summary = window.findChild<QLabel*>("executionSummary");
-        auto* next = window.findChild<QPushButton*>("nextPage");
+        auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
+        const auto execute = [&](const QString& statement) {
+            QTRY_VERIFY(run->isEnabled());
+            messages->clear();
+            editor->setText(statement);
+            run->trigger();
+            QTRY_VERIFY(messages->toPlainText().contains("Completed"));
+        };
+        execute("CREATE TABLE paged_rows(x INTEGER, label TEXT)");
+        execute("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<1005) "
+                "INSERT INTO paged_rows SELECT x, CASE WHEN x % 2 = 0 THEN 'ALPHA' ELSE 'beta' END "
+                "FROM n");
+        const auto connection =
+            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(900, 600);
+        data.show();
+        data.openObject(connection, R"(["main","paged_rows"])", "paged_rows");
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        auto* summary = data.findChild<QLabel*>("objectDataSummary");
+        auto* next = data.findChild<QPushButton*>("objectDataNext");
         auto* filterBar = grid->parentWidget()->findChild<QWidget*>("resultFilterBar");
         auto* column = filterBar->findChild<QComboBox*>("resultFilterColumn");
         auto* operation = filterBar->findChild<QComboBox*>("resultFilterOperator");
@@ -161,11 +214,6 @@ class ResultViewWorkspaceTest : public QObject {
         auto* add = filterBar->findChild<QPushButton*>("resultFilterAdd");
         auto* apply = filterBar->findChild<QPushButton*>("resultFilterApply");
         auto* clear = filterBar->findChild<QPushButton*>("resultFilterClear");
-        QTRY_VERIFY(run->isEnabled());
-        editor->setText(
-            "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<1005) "
-            "SELECT x, CASE WHEN x % 2 = 0 THEN 'ALPHA' ELSE 'beta' END AS label FROM n");
-        run->trigger();
         QTRY_COMPARE(grid->model()->rowCount(), 1000);
         QTRY_COMPARE(column->count(), 2);
         column->setCurrentIndex(0);
@@ -203,7 +251,7 @@ class ResultViewWorkspaceTest : public QObject {
         next->click();
         QTRY_COMPARE(grid->model()->rowCount(), 2);
         QCOMPARE(grid->model()->index(1, 0).data().toString(), QString("1005"));
-        window.findChild<QPushButton*>("previousPage")->click();
+        data.findChild<QPushButton*>("objectDataPrevious")->click();
         QTRY_COMPARE(grid->model()->rowCount(), 1000);
         QTest::mouseClick(grid->horizontalHeader()->viewport(), Qt::LeftButton, {}, QPoint(x, 5));
         QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("1005"));
@@ -215,8 +263,9 @@ class ResultViewWorkspaceTest : public QObject {
         QTest::mouseClick(grid->horizontalHeader()->viewport(), Qt::LeftButton, {}, QPoint(x, 5));
         QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("1"));
         QVERIFY(!grid->horizontalHeader()->isSortIndicatorShown());
-        editor->setText("SELECT 9 AS replacement;");
-        run->trigger();
+        execute("CREATE TABLE replacement(value INTEGER)");
+        execute("INSERT INTO replacement VALUES (9)");
+        data.openObject(connection, R"(["main","replacement"])", "replacement");
         QTRY_COMPARE(grid->model()->rowCount(), 1);
         QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("9"));
         QCOMPARE(conditions->count(), 0);

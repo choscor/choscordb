@@ -7,6 +7,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
+#include "design_system/menu/embedded_popup.h"
 #include "design_system/menu/menu.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
@@ -40,6 +41,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QTreeView>
 #include <QTreeWidget>
 #include <QtTest>
@@ -277,9 +279,9 @@ void NavigatorSqlWorkspaceTest::selectingObjectLoadsMetadataAndSeparateDataThenR
     QTRY_COMPARE(data->model()->rowCount(), 1);
     QCOMPARE(data->model()->index(0, 0).data().toString(), QString("7"));
     auto* dataExport = window.findChild<QPushButton*>("objectDataExport");
-    auto* openObjectQuery = window.findChild<QPushButton*>("objectOpenQuery");
+    auto* refreshObject = window.findChild<QPushButton*>("objectRefresh");
     QTRY_COMPARE(dataExport->mapTo(&window, dataExport->rect().center()).y(),
-                 openObjectQuery->mapTo(&window, openObjectQuery->rect().center()).y());
+                 refreshObject->mapTo(&window, refreshObject->rect().center()).y());
     QVERIFY(window.findChild<QPushButton*>("objectRefresh")->isVisible());
     QVERIFY(window.findChild<QPushButton*>("objectRefresh")->isEnabled());
     QVERIFY(!window.findChild<QLabel*>("objectStatus")->isVisible());
@@ -352,10 +354,22 @@ void NavigatorSqlWorkspaceTest::objectDataKeepsCancelPaneVisibleUntilAcknowledge
     QSignalSpy changed(explorer, &choscordb::ObjectExplorer::objectChanged);
     explorer->openObject(connection, R"(["main","another"])", "another");
     QCOMPARE(changed.count(), 0);
-    QVERIFY(cancel->isVisible());
-    QVERIFY(window.rect().contains(QRect(cancel->mapTo(&window, QPoint()), cancel->size())));
-    QVERIFY(!cancel->visibleRegion().isEmpty());
-    QTest::mouseClick(cancel, Qt::LeftButton);
+    QVERIFY(cancel->isHidden());
+    auto* objectGrid = explorer->findChild<QTableView*>("objectDataResults");
+    QVERIFY(objectGrid);
+    QTimer::singleShot(0, objectGrid, [] {
+        auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+        QVERIFY(menu);
+        QAction* cancelAction = nullptr;
+        for (auto* action : menu->actions())
+            if (action->text() == QString("Cancel"))
+                cancelAction = action;
+        QVERIFY(cancelAction);
+        QVERIFY(cancelAction->isEnabled());
+        menu->close();
+        cancelAction->trigger();
+    });
+    objectGrid->customContextMenuRequested(QPoint(10, 10));
     QTRY_VERIFY(workspace->navigationAllowed());
     QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(0).center());
     QCOMPARE(panes->currentIndex(), 0);
@@ -488,13 +502,11 @@ void NavigatorSqlWorkspaceTest::activeExecutionKeepsDocumentAndCancelReachable()
     auto* cancel = window.findChild<QAction*>("command_cancel_query");
     QVERIFY(cancel);
     QVERIFY(cancel->isEnabled());
-    auto* cancelButton = window.findChild<QPushButton*>("cancelQueryButton");
-    QVERIFY(cancelButton);
-    QVERIFY(cancelButton->isVisible());
-    QVERIFY(!cancelButton->visibleRegion().isEmpty());
-    QVERIFY(window.rect().contains(
-        QRect(cancelButton->mapTo(&window, QPoint()), cancelButton->size())));
-    QTest::mouseClick(cancelButton, Qt::LeftButton);
+    auto* queryOverflow = window.findChild<QToolButton*>("queryToolbarOverflow");
+    QVERIFY(queryOverflow);
+    QVERIFY(queryOverflow->isVisible());
+    QVERIFY(!queryOverflow->menu()->actions().contains(cancel));
+    cancel->trigger();
     QCOMPARE(cancel->text(), QString("Cancelling…"));
     QCOMPARE(window.findChild<QLabel*>("executionSummary")->property("state").toString(),
              QString("cancelling"));

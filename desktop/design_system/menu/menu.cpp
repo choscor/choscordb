@@ -1,6 +1,7 @@
 #include "design_system/menu/menu.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/theme.h"
+#include <QContextMenuEvent>
 #include <QEvent>
 #include <QGraphicsEffect>
 #include <QGuiApplication>
@@ -8,6 +9,7 @@
 #include <QMenu>
 #include <QPainter>
 #include <QScreen>
+#include <QTimer>
 #include <QToolButton>
 #include <vector>
 
@@ -124,8 +126,24 @@ void polishMenu(QWidget* widget) {
         widget->setWindowFlag(Qt::NoDropShadowWindowHint);
         widget->setAttribute(Qt::WA_TranslucentBackground);
         widget->setGraphicsEffect(new MenuShadowEffect(widget));
+        const auto cursor = origin ? origin->property("standardContextMenuCursor") : QVariant();
         embedPopup(widget, origin);
+        if (cursor.isValid()) {
+            widget->setProperty("contextMenuCursor", cursor);
+            origin->setProperty("standardContextMenuCursor", QVariant());
+        }
     }
+}
+void prepareStandardContextMenu(QWidget* widget, QEvent* event) {
+    if (!widget || event->type() != QEvent::ContextMenu ||
+        widget->contextMenuPolicy() != Qt::DefaultContextMenu)
+        return;
+    // Let Qt build its standard actions, including document-coordinate transforms
+    // for text and dock/toolbar toggles. Menu polish consumes only the screen anchor.
+    widget->setProperty("standardContextMenuCursor",
+                        static_cast<QContextMenuEvent*>(event)->globalPos());
+    QTimer::singleShot(0, widget,
+                       [widget] { widget->setProperty("standardContextMenuCursor", QVariant()); });
 }
 void positionSubmenu(QWidget* field, QEvent* event) {
     if (auto* menu = qobject_cast<QMenu*>(field); menu && event->type() == QEvent::Show) {
@@ -171,3 +189,22 @@ void positionSubmenu(QWidget* field, QEvent* event) {
 }
 
 } // namespace choscordb::design::detail
+
+namespace choscordb::design {
+namespace {
+void prepareContextMenu(QMenu& menu, const QPoint& cursor) {
+    menu.ensurePolished();
+    detail::polishMenu(&menu);
+    // Preserve the event position before QMenu applies native screen placement.
+    menu.setProperty("contextMenuCursor", cursor);
+}
+} // namespace
+void popupContextMenu(QMenu& menu, const QPoint& cursor) {
+    prepareContextMenu(menu, cursor);
+    menu.popup(detail::contextMenuPosition(cursor));
+}
+QAction* execContextMenu(QMenu& menu, const QPoint& cursor) {
+    prepareContextMenu(menu, cursor);
+    return menu.exec(detail::contextMenuPosition(cursor));
+}
+} // namespace choscordb::design

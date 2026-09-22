@@ -138,7 +138,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             }
         } else {
             deferredViewRequest_ = false;
-            filterBar_->restoreApplied();
+            if (filterBar_)
+                filterBar_->restoreApplied();
             message(tr("Grid changes were not applied: %1").arg(text(e.error)));
         }
         updateActions();
@@ -244,7 +245,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         viewFilters_ = proposedViewFilters_;
         viewSortColumn_ = proposedViewSortColumn_;
         viewSortDirection_ = proposedViewSortDirection_;
-        filterBar_->markApplied(viewFilters_);
+        if (filterBar_)
+            filterBar_->markApplied(viewFilters_);
         updateSortIndicator();
         viewBusy_ = false;
         fetching_ = true;
@@ -258,9 +260,10 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     }
     if (kind == "result_view_failed") {
         viewBusy_ = false;
-        if (proposedFiltersFromDraft_)
+        if (filterBar_ && proposedFiltersFromDraft_)
             filterBar_->restoreApplied();
-        filterBar_->setBusy(false);
+        if (filterBar_)
+            filterBar_->setBusy(false);
         message(tr("Result view was not changed: %1").arg(text(e.error)));
         setExecutionState(QStringLiteral("completed"), tr("✓ Previous result view restored"));
         updateActions();
@@ -292,7 +295,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         columns_.reserve(e.columns.size());
         for (const auto& c : e.columns)
             columns_.push_back(resultColumn(c));
-        filterBar_->setColumns(columns_);
+        if (filterBar_)
+            filterBar_->setColumns(columns_);
         if (!widgets_.objectReadOnly && queryConnection_ && !executedSql_.isEmpty() &&
             driverForConnection(*queryConnection_) != "mysql") {
             editTargetToken_ = nextEditRequestToken();
@@ -354,7 +358,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             hasMoreResults_ = false;
         } else {
             configureEditability();
-            filterBar_->setColumns(columns_, model_->rows());
+            if (filterBar_)
+                filterBar_->setColumns(columns_, model_->rows());
             // setPage destroyed the old Qt buffers before we release their reservation.
             if (visibleLease_) {
                 const auto lease = *visibleLease_;
@@ -382,7 +387,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                           .arg(e.page_index + 1)
                           .arg(e.row_count)
                           .arg(model_->residentBytes() / 1024));
-            filterBar_->setBusy(false);
+            if (filterBar_)
+                filterBar_->setBusy(false);
             if (deferredViewRequest_ && !model_->hasPendingEdits()) {
                 deferredViewRequest_ = false;
                 preserveViewOnRefresh_ = false;

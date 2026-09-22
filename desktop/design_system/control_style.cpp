@@ -63,6 +63,7 @@ void ControlStyle::unpolish(QWidget* widget) {
 }
 bool ControlStyle::eventFilter(QObject* watched, QEvent* event) {
     auto* field = qobject_cast<QWidget*>(watched);
+    detail::prepareStandardContextMenu(field, event);
     if (qobject_cast<QAbstractSpinBox*>(field) && event->type() == QEvent::Wheel) {
         event->ignore();
         return true;
