@@ -387,7 +387,7 @@ async fn produce_statement(
 ) -> Result<()> {
     let (expected, more_statements, cancel) = shape;
     if let Some(stmt) = &stmt {
-        let schema = columns(stmt.columns(), max)?;
+        let schema = columns(&stmt.columns(), max)?;
         if expected
             .as_ref()
             .is_some_and(|expected| expected != &schema)

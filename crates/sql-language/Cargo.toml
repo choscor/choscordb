@@ -8,6 +8,6 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-tree-sitter = "0.26"
+tree-sitter = "0.27"
 tree-sitter-sequel = "=0.3.11"
 regex = "1"

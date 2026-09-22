@@ -383,7 +383,7 @@ impl Connection for MysqlConnection {
             .await
             .map_err(|_| error(ErrorKind::Timeout, "MySQL object metadata timed out"))?
             .map_err(normalize)?;
-        let schema = columns(stmt.columns(), max)?;
+        let schema = columns(&stmt.columns(), max)?;
         conn.close(stmt).await.map_err(normalize)?;
         Ok(Box::new(ObjectCursor {
             conn: Some(conn),
