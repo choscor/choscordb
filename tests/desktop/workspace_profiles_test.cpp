@@ -26,6 +26,9 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -33,6 +36,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QSpinBox>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTemporaryDir>
@@ -146,7 +150,8 @@ void WorkspaceTest::profileFailuresKeepDraftAndShowConnectionCodes() {
     choscordb::SavedProfile profile;
     profile.id = "invalid-path";
     profile.name = "Unsaved draft";
-    dialog->saveDraft(profile);
+    name->setText(profile.name);
+    save->click();
     QTRY_VERIFY(save->isEnabled());
     QCOMPARE(name->text(), QString("Unsaved draft"));
     QVERIFY(status->text().contains("Invalid", Qt::CaseInsensitive));

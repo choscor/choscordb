@@ -118,6 +118,7 @@ class QueryWorkspace final : public QObject {
     void clearViewState();
     void clearResult();
     void handleEvent(const BridgeEvent& event);
+    bool connectionCanDisconnect(quint64 connection) const;
     void updateActions();
     bool connectionAvailable(quint64 connection) const;
     bool queryAvailable() const;

@@ -18,6 +18,9 @@
     <file alias="sqlite.svg">icons/sqlite.svg</file>
     <file alias="database.svg">icons/database.svg</file>
     <file alias="check.svg">icons/check.svg</file>
+    <file alias="commit.svg">icons/commit.svg</file>
+    <file alias="rollback.svg">icons/rollback.svg</file>
+    <file alias="settings.svg">icons/settings.svg</file>
     <file alias="triangle-alert.svg">icons/triangle-alert.svg</file>
     <file alias="circle-alert.svg">icons/circle-alert.svg</file>
     <file alias="loader-circle.svg">icons/loader-circle.svg</file>

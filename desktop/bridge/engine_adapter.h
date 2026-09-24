@@ -17,13 +17,38 @@ struct ReviewedEditStatement {
     std::optional<quint64> expectedRows;
 };
 struct Submit;
+struct SshHopCredential {
+    QString id, secret, action;
+    bool hasSecret = false;
+    QString privateKey, privateKeyAction;
+    bool hasPrivateKey = false;
+};
+struct SshPrivateKeyCredential {
+    QString secret, action;
+    bool hasSecret = false;
+};
+struct SshHostKeyTarget {
+    enum class Kind { Target, JumpId, JumpIndex } kind = Kind::Target;
+    QString id;
+    int index = -1;
+};
+struct SshHostKeyCandidate {
+    SshHostKeyTarget target;
+    QString originalHost, hostname, hostKeyAlias, keyType, publicKey, sha256, opaqueJson;
+    quint16 port = 22;
+};
 struct SavedProfile {
     QString id, name, groupId, driver = "sqlite", path, host, database, user;
     QString tls = "verify_full", rootCertificate, credentialRef, sshCredentialRef;
+    QString tlsClientIdentity, tlsCredentialRef, sshOptions, authentication;
+    QString proxyOptions, proxyCredentialRef;
+    QString sshJumpCredentialRefs;
+    QString sshPrivateKeyRef, sshJumpPrivateKeyRefs;
     bool readOnly = false;
     quint16 port = 5432;
     bool sshEnabled = false;
     QString sshHost, sshUser, sshAuthentication = "agent", sshIdentityFile;
+    QString sshIdentitySource = "file";
     quint16 sshPort = 22;
 };
 struct SavedHistoryEntry {
@@ -171,18 +196,35 @@ class EngineAdapter final : public QObject {
                                  const QString& action, quint64 token);
     void saveProfileWithSecrets(const SavedProfile& profile, const QString& databaseSecret,
                                 const QString& databaseAction, const QString& sshSecret,
-                                const QString& sshAction, quint64 token);
+                                const QString& sshAction, quint64 token,
+                                const QString& tlsSecret = {}, const QString& tlsAction = "keep",
+                                const QString& proxySecret = {},
+                                const QString& proxyAction = "keep",
+                                const QList<SshHopCredential>& sshHops = {},
+                                const SshPrivateKeyCredential& sshPrivateKey = {});
     void testProfileWithPassword(const SavedProfile& profile, const QString& password,
                                  bool hasPassword, quint64 token);
     void testProfileWithSecrets(const SavedProfile& profile, const QString& databaseSecret,
                                 bool hasDatabaseSecret, const QString& sshSecret, bool hasSshSecret,
-                                quint64 token);
+                                quint64 token, const QString& tlsSecret = {},
+                                bool hasTlsSecret = false, const QString& proxySecret = {},
+                                bool hasProxySecret = false,
+                                const QList<SshHopCredential>& sshHops = {},
+                                const SshPrivateKeyCredential& sshPrivateKey = {});
+    void inspectSshHostKeys(const SavedProfile& profile, const SshHostKeyTarget& target,
+                            const QList<SshHopCredential>& precedingHopCredentials, quint64 token);
+    void approveSshHostKey(const SshHostKeyCandidate& candidate, const QString& knownHostsPath,
+                           quint64 token);
+    bool validateConnectionProperties(const SavedProfile& profile, QString& error);
     std::optional<quint64> connectProfileWithPassword(const SavedProfile& profile,
                                                       const QString& password, bool hasPassword);
-    std::optional<quint64> connectProfileWithSecrets(const SavedProfile& profile,
-                                                     const QString& databaseSecret,
-                                                     bool hasDatabaseSecret,
-                                                     const QString& sshSecret, bool hasSshSecret);
+    std::optional<quint64>
+    connectProfileWithSecrets(const SavedProfile& profile, const QString& databaseSecret,
+                              bool hasDatabaseSecret, const QString& sshSecret, bool hasSshSecret,
+                              const QString& tlsSecret = {}, bool hasTlsSecret = false,
+                              const QString& proxySecret = {}, bool hasProxySecret = false,
+                              const QList<SshHopCredential>& sshHops = {},
+                              const SshPrivateKeyCredential& sshPrivateKey = {});
     void duplicateProfile(const QString& source, const QString& id, const QString& name,
                           quint64 token);
     void deleteProfile(const QString& id, quint64 token);
@@ -253,6 +295,10 @@ class EngineAdapter final : public QObject {
     void profileDeleted(quint64 token, const QString& id, const QString& warning);
     void profileFailed(quint64 token, const QString& error);
     void profileTested(quint64 token);
+    void sshHostKeysInspected(quint64 token,
+                              const QList<choscordb::SshHostKeyCandidate>& candidates);
+    void sshHostKeyApproved(quint64 token, const QString& outcome);
+    void sshHostKeyOperationFailed(quint64 token, const QString& error);
     void profileConnectFailed(const QString& error);
     // Direct connections only: the DTO reference lives for the current event dispatch.
     void eventReady(const choscordb::BridgeEvent& event);
@@ -279,6 +325,8 @@ class EngineAdapter final : public QObject {
 } // namespace choscordb
 
 Q_DECLARE_METATYPE(choscordb::SavedProfile)
+Q_DECLARE_METATYPE(choscordb::SshHostKeyCandidate)
+Q_DECLARE_METATYPE(QList<choscordb::SshHostKeyCandidate>)
 
 Q_DECLARE_METATYPE(choscordb::SavedEditorDocument)
 Q_DECLARE_METATYPE(choscordb::SavedWorkspaceTab)

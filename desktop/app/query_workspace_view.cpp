@@ -127,7 +127,8 @@ void QueryWorkspace::submitResultView(const QList<ResultFilterCondition>& filter
         proposedViewSortColumn_ = viewSortColumn_;
         proposedViewSortDirection_ = viewSortDirection_;
         if (proposedFiltersFromDraft_)
-            filterBar_->restoreApplied();
+            filterBar_->showValidationError(
+                tr("Filters could not be applied. See Messages for details."));
         return;
     }
     viewBusy_ = true;

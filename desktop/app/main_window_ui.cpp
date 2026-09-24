@@ -48,7 +48,6 @@
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
-#include <QWidgetAction>
 #ifdef CHOSCORDB_DEVELOPMENT_PREVIEW
 #include "tools/preview/preview_window.h"
 #endif
@@ -466,22 +465,27 @@ MainWindow::Ui MainWindow::buildUi() {
     commitAction->setEnabled(false);
     auto* rollbackAction = queryMenu->addAction(tr("Rollback"));
     rollbackAction->setEnabled(false);
-    auto* queryOverflow = new QToolButton(this);
-    queryOverflow->setProperty("designRole", "menuButton");
-    queryOverflow->setObjectName("queryToolbarOverflow");
-    queryOverflow->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    queryOverflow->setText(tr("More"));
-    queryOverflow->setAccessibleName(tr("Query session and result actions"));
-    queryOverflow->setToolTip(tr("Query session and result actions"));
-    queryOverflow->setPopupMode(QToolButton::InstantPopup);
-    auto* queryOverflowMenu = new QMenu(queryOverflow);
-    auto* modeAction = new QWidgetAction(queryOverflowMenu);
-    modeAction->setDefaultWidget(mode);
-    queryOverflowMenu->addAction(modeAction);
-    queryOverflowMenu->addSeparator();
-    queryOverflowMenu->addAction(commitAction);
-    queryOverflowMenu->addAction(rollbackAction);
-    queryOverflow->setMenu(queryOverflowMenu);
+    toolbar->addWidget(mode);
+    const auto addToolbarAction = [toolbar](QAction* action, const char* name, design::Icon icon) {
+        auto* button = new design::Button({}, toolbar);
+        button->setObjectName(name);
+        button->setAccessibleName(action->text());
+        button->setToolTip(action->text());
+        button->setDesignIcon(icon);
+        button->setVariant(design::ButtonVariant::Outline);
+        button->setButtonSize(design::ButtonSize::IconSmall);
+        button->setButtonContext(design::ButtonContext::EditorAction);
+        button->setEnabled(action->isEnabled());
+        toolbar->addWidget(button);
+        connect(button, &QPushButton::clicked, action, &QAction::trigger);
+        connect(action, &QAction::changed, button,
+                [button, action] { button->setEnabled(action->isEnabled()); });
+    };
+    addToolbarAction(commitAction, "toolbarCommit", design::Icon::Commit);
+    addToolbarAction(rollbackAction, "toolbarRollback", design::Icon::Rollback);
+    auto* querySettings = queryMenu->addAction(tr("Query settings…"));
+    querySettings->setObjectName("querySettings");
+    addToolbarAction(querySettings, "toolbarQuerySettings", design::Icon::Settings);
     preferences_->addAction("run_statement", run);
     preferences_->addAction("cancel_query", cancel);
     preferences_->addAction("commit", commitAction);
@@ -548,6 +552,15 @@ MainWindow::Ui MainWindow::buildUi() {
     editors_->setTabsClosable(true);
     editors_->setMovable(true);
     editors_->setDocumentMode(true);
+    auto* addSqlTab = new design::Button({}, editors_);
+    addSqlTab->setObjectName("addSqlTabButton");
+    addSqlTab->setAccessibleName(tr("New SQL query tab"));
+    addSqlTab->setToolTip(tr("New SQL query tab"));
+    addSqlTab->setDesignIcon(design::Icon::Add);
+    addSqlTab->setButtonSize(design::ButtonSize::Icon);
+    addSqlTab->setVariant(design::ButtonVariant::Ghost);
+    editors_->setCornerWidget(addSqlTab, Qt::TopRightCorner);
+    connect(addSqlTab, &QPushButton::clicked, newQuery, &QAction::trigger);
     editors_->tabBar()->setUsesScrollButtons(true);
     editors_->tabBar()->setExpanding(false);
     editors_->tabBar()->setElideMode(Qt::ElideRight);
@@ -729,7 +742,6 @@ MainWindow::Ui MainWindow::buildUi() {
         addGridAction(tr("Discard"), "queryResultDiscardEdits", design::Icon::Cancel, false);
     auto* applyResultEdits =
         addGridAction(tr("Apply"), "queryResultApplyEdits", design::Icon::Check, false);
-    toolbar->addWidget(queryOverflow);
     toolbar->addWidget(exportResult);
     const auto colorResultFooter = [this, resultFooter] {
         auto palette = resultFooter->palette();
@@ -899,7 +911,7 @@ MainWindow::Ui MainWindow::buildUi() {
         .mode = mode,
         .commitAction = commitAction,
         .rollbackAction = rollbackAction,
-        .queryOverflowMenu = queryOverflowMenu,
+        .querySettings = querySettings,
         .splitter = splitter,
         .workspaceTabs = workspaceTabs,
         .toolbarHost = toolbarHost,

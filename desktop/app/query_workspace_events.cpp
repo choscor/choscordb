@@ -146,6 +146,15 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         return;
     }
     if (kind == "connected") {
+        if (e.has_transaction_state) {
+            if (e.transaction_active) {
+                pendingTransactions_.insert(e.id);
+                manualModes_.insert(e.id, true);
+            } else {
+                pendingTransactions_.remove(e.id);
+            }
+            emit transactionStateChanged(e.id, e.transaction_active);
+        }
         const auto name = pendingConnections_.take(e.id);
         {
             const QSignalBlocker blocker(widgets_.connections);
@@ -261,7 +270,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     if (kind == "result_view_failed") {
         viewBusy_ = false;
         if (filterBar_ && proposedFiltersFromDraft_)
-            filterBar_->restoreApplied();
+            filterBar_->showValidationError(text(e.error));
         if (filterBar_)
             filterBar_->setBusy(false);
         message(tr("Result view was not changed: %1").arg(text(e.error)));

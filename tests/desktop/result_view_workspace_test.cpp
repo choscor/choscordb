@@ -156,6 +156,109 @@ class ResultViewWorkspaceTest : public QObject {
         QCOMPARE(grid->model()->index(2, 0).data().toString(), QString("2"));
         QVERIFY(!grid->parentWidget()->findChild<QWidget*>("resultFilterBar"));
     }
+    void filterRowsValidateOnlyWhenSubmitted() {
+        choscordb::ResultFilterBar bar;
+        choscordb::ResultColumn column{};
+        column.name = "id";
+        column.databaseType = "INTEGER";
+        bar.setColumns({column});
+        bar.show();
+        QSignalSpy requested(&bar, &choscordb::ResultFilterBar::applyRequested);
+        bar.findChild<QLineEdit*>("resultFilterValue")->setText("invalid");
+        bar.findChild<QPushButton*>("resultFilterAdd")->click();
+        QCOMPARE(bar.findChildren<QLineEdit*>("resultFilterValue").size(), 2);
+        auto* error = bar.findChild<QLabel*>("resultFilterError");
+        QVERIFY(!error->isVisible());
+        bar.findChild<QPushButton*>("resultFilterApply")->click();
+        QCOMPARE(requested.count(), 0);
+        QVERIFY(error->isVisible());
+        auto values = bar.findChildren<QLineEdit*>("resultFilterValue");
+        values[0]->setText("1");
+        values[1]->setText("2");
+        bar.findChild<QPushButton*>("resultFilterApply")->click();
+        QCOMPARE(requested.count(), 1);
+        QCOMPARE(bar.conditions().size(), 2);
+        QCOMPARE(bar.conditions()[1].value, QString("2"));
+    }
+    void sqlFilterModePreservesManualDraftAndBusyState() {
+        choscordb::ResultFilterBar bar;
+        choscordb::ResultColumn column{};
+        column.name = "name";
+        column.databaseType = "TEXT";
+        bar.setColumns({column});
+        bar.show();
+        auto* mode = bar.findChild<QPushButton*>("resultFilterMode");
+        QVERIFY(mode);
+        auto* value = bar.findChild<QLineEdit*>("resultFilterValue");
+        auto* operation = bar.findChild<QComboBox*>("resultFilterOperator");
+        for (const auto& name : {"like", "not_like", "in"})
+            QVERIFY(operation->findData(name) >= 0);
+        operation->setCurrentIndex(operation->findData("like"));
+        value->setText("A%");
+        mode->click();
+        auto* sql = bar.findChild<QLineEdit*>("resultFilterSql");
+        auto* conditions = bar.findChild<QListWidget*>("resultFilterConditions");
+        QVERIFY(sql->isVisible());
+        QVERIFY(!value->isVisible());
+        sql->setText("name LIKE 'B%' OR name = 'Alice'");
+        QCOMPARE(conditions->count(), 0);
+        QVERIFY(!conditions->isVisible());
+        QSignalSpy submitted(&bar, &choscordb::ResultFilterBar::applyRequested);
+        bar.findChild<QPushButton*>("resultFilterApply")->click();
+        QCOMPARE(submitted.count(), 1);
+        QCOMPARE(bar.conditions().first().operation, QString("sql"));
+        QCOMPARE(bar.conditions().first().value, QString("name LIKE 'B%' OR name = 'Alice'"));
+        bar.markApplied(bar.conditions());
+        QCOMPARE(conditions->count(), 1);
+        QCOMPARE(conditions->item(0)->text(),
+                 QString("Active: SQL name LIKE 'B%' OR name = 'Alice'"));
+        sql->setText("name = 'Bob'");
+        QCOMPARE(conditions->count(), 1);
+        QCOMPARE(conditions->item(0)->text(),
+                 QString("Active: SQL name LIKE 'B%' OR name = 'Alice'"));
+        bar.setBusy(true);
+        QVERIFY(!mode->isEnabled());
+        QVERIFY(!sql->isEnabled());
+        bar.setColumns({column});
+        bar.setBusy(false);
+        mode->click();
+        QVERIFY(operation->isEnabled());
+        QVERIFY(value->isEnabled());
+        QVERIFY(value->isVisible());
+        QCOMPARE(value->text(), QString("A%"));
+        QCOMPARE(operation->currentData().toString(), QString("like"));
+        bar.restoreApplied();
+        QVERIFY(sql->isVisible());
+        QCOMPARE(sql->text(), QString("name LIKE 'B%' OR name = 'Alice'"));
+        for (const auto& name : {"resultFilterMode", "resultFilterAdd", "resultFilterRemove",
+                                 "resultFilterApply", "resultFilterClear"}) {
+            auto* button = bar.findChild<QPushButton*>(name);
+            QVERIFY(button->text().isEmpty());
+            QVERIFY(!button->icon().isNull());
+            QVERIFY(!button->accessibleName().isEmpty());
+        }
+    }
+    void resultRefreshPreservesTypedFilterOperator() {
+        choscordb::ResultFilterBar bar;
+        choscordb::ResultColumn id{}, name{};
+        id.name = "id";
+        id.databaseType = "INTEGER";
+        name.name = "name";
+        name.databaseType = "TEXT";
+        bar.setColumns({id, name});
+        auto* column = bar.findChild<QComboBox*>("resultFilterColumn");
+        auto* operation = bar.findChild<QComboBox*>("resultFilterOperator");
+        column->setCurrentIndex(1);
+        operation->setCurrentIndex(operation->findData("like"));
+        bar.findChild<QLineEdit*>("resultFilterValue")->setText("A%");
+        bar.setBusy(true);
+        bar.setColumns({id, name});
+        bar.setBusy(false);
+        QCOMPARE(column->currentIndex(), 1);
+        QCOMPARE(operation->currentData().toString(), QString("like"));
+        QCOMPARE(bar.conditions().first().operation, QString("like"));
+        QCOMPARE(bar.conditions().first().value, QString("A%"));
+    }
     void mysqlMetadataKindsExposeTypedOperators() {
         choscordb::ResultFilterBar bar;
         choscordb::ResultColumn column{};
@@ -173,7 +276,7 @@ class ResultViewWorkspaceTest : public QObject {
         bar.setColumns({column}, {{QString("-49:02:03.000004")}});
         auto* value = bar.findChild<QLineEdit*>("resultFilterValue");
         value->setText("-49:02:03");
-        bar.findChild<QPushButton*>("resultFilterAdd")->click();
+        bar.findChild<QPushButton*>("resultFilterApply")->click();
         QCOMPARE(bar.conditions().size(), 1);
     }
     void objectDataFiltersAndSortsTheCompletePagedResult() {
@@ -211,7 +314,6 @@ class ResultViewWorkspaceTest : public QObject {
         auto* column = filterBar->findChild<QComboBox*>("resultFilterColumn");
         auto* operation = filterBar->findChild<QComboBox*>("resultFilterOperator");
         auto* value = filterBar->findChild<QLineEdit*>("resultFilterValue");
-        auto* add = filterBar->findChild<QPushButton*>("resultFilterAdd");
         auto* apply = filterBar->findChild<QPushButton*>("resultFilterApply");
         auto* clear = filterBar->findChild<QPushButton*>("resultFilterClear");
         QTRY_COMPARE(grid->model()->rowCount(), 1000);
@@ -219,28 +321,27 @@ class ResultViewWorkspaceTest : public QObject {
         column->setCurrentIndex(0);
         operation->setCurrentIndex(operation->findData("greater_than"));
         value->setText("3");
-        add->click();
         apply->click();
         QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("4"));
         QTRY_COMPARE(grid->model()->rowCount(), 1000);
         auto* conditions = filterBar->findChild<QListWidget*>("resultFilterConditions");
         const int x = grid->horizontalHeader()->sectionViewportPosition(0) + 10;
         QTRY_VERIFY(conditions->item(0)->text().startsWith("Active:"));
-        column->setCurrentIndex(1);
-        operation->setCurrentIndex(operation->findData("contains"));
-        value->setText("alpha");
-        add->click();
-        QCOMPARE(conditions->count(), 3);
+        filterBar->findChild<QPushButton*>("resultFilterAdd")->click();
+        auto columns = filterBar->findChildren<QComboBox*>("resultFilterColumn");
+        auto operations = filterBar->findChildren<QComboBox*>("resultFilterOperator");
+        auto values = filterBar->findChildren<QLineEdit*>("resultFilterValue");
+        columns[1]->setCurrentIndex(1);
+        operations[1]->setCurrentIndex(operations[1]->findData("contains"));
+        values[1]->setText("alpha");
+        QCOMPARE(conditions->count(), 1);
         QVERIFY(conditions->item(0)->text().startsWith("Active:"));
-        QVERIFY(conditions->item(1)->text().startsWith("Pending:"));
         QTest::mouseClick(grid->horizontalHeader()->viewport(), Qt::LeftButton, {}, QPoint(x, 5));
         QTRY_VERIFY(grid->horizontalHeader()->isSortIndicatorShown());
         QTRY_COMPARE(grid->horizontalHeader()->sortIndicatorOrder(), Qt::AscendingOrder);
         QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
-        QCOMPARE(conditions->count(), 3);
-        QVERIFY(conditions->item(1)->text().startsWith("Pending:"));
-        conditions->setCurrentRow(2);
-        filterBar->findChild<QPushButton*>("resultFilterRemove")->click();
+        QCOMPARE(conditions->count(), 1);
+        filterBar->findChildren<QPushButton*>("resultFilterRemove")[1]->click();
         QCOMPARE(conditions->count(), 1);
         QVERIFY(conditions->item(0)->text().startsWith("Active:"));
         grid->selectionModel()->select(grid->model()->index(0, 0),
@@ -306,7 +407,6 @@ class ResultViewWorkspaceTest : public QObject {
         auto* column = filterBar->findChild<QComboBox*>("resultFilterColumn");
         auto* operation = filterBar->findChild<QComboBox*>("resultFilterOperator");
         auto* value = filterBar->findChild<QLineEdit*>("resultFilterValue");
-        auto* add = filterBar->findChild<QPushButton*>("resultFilterAdd");
         auto* apply = filterBar->findChild<QPushButton*>("resultFilterApply");
         auto* clear = filterBar->findChild<QPushButton*>("resultFilterClear");
         QTRY_COMPARE(grid->model()->rowCount(), 2);
@@ -316,7 +416,6 @@ class ResultViewWorkspaceTest : public QObject {
             column->setCurrentIndex(column->findText(name));
             operation->setCurrentIndex(operation->findData(operationId));
             value->setText(operand);
-            add->click();
             apply->click();
             QTRY_COMPARE(grid->model()->rowCount(), 1);
             QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), expectedId);
@@ -334,28 +433,61 @@ class ResultViewWorkspaceTest : public QObject {
         column->setCurrentIndex(column->findText("note"));
         operation->setCurrentIndex(operation->findData("contains"));
         value->setText("draft");
-        add->click();
         auto* conditions = filterBar->findChild<QListWidget*>("resultFilterConditions");
-        QCOMPARE(conditions->count(), 1);
-        QVERIFY(conditions->item(0)->text().startsWith("Pending:"));
+        QCOMPARE(conditions->count(), 0);
+        QVERIFY(!conditions->isVisible());
         auto* diagnostics = data.findChild<QPlainTextEdit*>("objectDataMessages");
         diagnostics->clear();
         const int jsonColumn = column->findText("document");
         emit grid->horizontalHeader()->sectionClicked(jsonColumn);
         QTRY_VERIFY(diagnostics->toPlainText().contains("JSON"));
-        QCOMPARE(conditions->count(), 1);
-        QVERIFY(conditions->item(0)->text().startsWith("Pending:"));
+        QCOMPARE(conditions->count(), 0);
         conditions->setCurrentRow(0);
         filterBar->findChild<QPushButton*>("resultFilterRemove")->click();
         column->setCurrentIndex(column->findText("id"));
         operation->setCurrentIndex(operation->findData("greater_than"));
         value->setText("10");
-        add->click();
         apply->click();
         QTRY_COMPARE(grid->model()->rowCount(), 0);
         QCOMPARE(grid->model()->columnCount(), 7);
         QTRY_VERIFY(summary->text().contains("No rows match"));
         QVERIFY(clear->isEnabled());
+        clear->click();
+        QTRY_COMPARE(grid->model()->rowCount(), 2);
+        QTRY_VERIFY(apply->isEnabled());
+        auto* mode = filterBar->findChild<QPushButton*>("resultFilterMode");
+        QVERIFY(mode);
+        mode->click();
+        auto* sqlFilter = filterBar->findChild<QLineEdit*>("resultFilterSql");
+        sqlFilter->setText("id = 2 AND amount IN (1.5, 2)");
+        apply->click();
+        QTRY_COMPARE(grid->model()->rowCount(), 1);
+        QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("2"));
+        QTRY_VERIFY(apply->isEnabled());
+        sqlFilter->setText("id = (");
+        apply->click();
+        auto* error = filterBar->findChild<QLabel*>("resultFilterError");
+        QTRY_VERIFY(error->isVisible());
+        QTRY_VERIFY(apply->isEnabled());
+        QCOMPARE(sqlFilter->text(), QString("id = ("));
+        QCOMPARE(grid->model()->rowCount(), 1);
+        QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("2"));
+        sqlFilter->setText("id = 1");
+        apply->click();
+        QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("1"));
+        QTRY_VERIFY(apply->isEnabled());
+        mode->click();
+        column->setCurrentIndex(column->findText("id"));
+        operation->setCurrentIndex(operation->findData("in"));
+        value->setText("1,");
+        apply->click();
+        QTRY_VERIFY(error->isVisible());
+        QTRY_VERIFY(apply->isEnabled());
+        QCOMPARE(value->text(), QString("1,"));
+        QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("1"));
+        value->setText("2");
+        apply->click();
+        QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("2"));
     }
 };
 QTEST_MAIN(ResultViewWorkspaceTest)

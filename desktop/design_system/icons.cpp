@@ -143,6 +143,12 @@ QList<IconDefinition> iconCatalog() {
         {Icon::Database, QStringLiteral("database"),
          QStringLiteral("desktop/resources/icons/database.svg")},
         {Icon::Check, QStringLiteral("check"), QStringLiteral("desktop/resources/icons/check.svg")},
+        {Icon::Commit, QStringLiteral("commit"),
+         QStringLiteral("desktop/resources/icons/commit.svg")},
+        {Icon::Rollback, QStringLiteral("rollback"),
+         QStringLiteral("desktop/resources/icons/rollback.svg")},
+        {Icon::Settings, QStringLiteral("settings"),
+         QStringLiteral("desktop/resources/icons/settings.svg")},
         {Icon::Warning, QStringLiteral("triangle-alert"),
          QStringLiteral("desktop/resources/icons/triangle-alert.svg")},
         {Icon::Error, QStringLiteral("circle-alert"),
@@ -203,6 +209,12 @@ QString iconResourcePath(Icon icon) {
         return QStringLiteral(":/icons/database.svg");
     case Icon::Check:
         return QStringLiteral(":/icons/check.svg");
+    case Icon::Commit:
+        return QStringLiteral(":/icons/commit.svg");
+    case Icon::Rollback:
+        return QStringLiteral(":/icons/rollback.svg");
+    case Icon::Settings:
+        return QStringLiteral(":/icons/settings.svg");
     case Icon::Warning:
         return QStringLiteral(":/icons/triangle-alert.svg");
     case Icon::Error:

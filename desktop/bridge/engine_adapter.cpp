@@ -4,36 +4,15 @@
 #include <QQueue>
 #include <QSet>
 #include <QTimer>
+#include <algorithm>
 #include <vector>
 namespace choscordb {
+using engine_adapter_detail::addHopCredentials;
+using engine_adapter_detail::profileDto;
 using engine_adapter_detail::rustString;
 using engine_adapter_detail::string;
 using engine_adapter_detail::utf8View;
 namespace {
-ProfileDto profileDto(const SavedProfile& value) {
-    ProfileDto dto;
-    dto.group_id = rustString(value.groupId);
-    dto.id = rustString(value.id);
-    dto.name = rustString(value.name);
-    dto.driver = rustString(value.driver);
-    dto.path = rustString(value.path);
-    dto.read_only = value.readOnly;
-    dto.host = rustString(value.host);
-    dto.port = value.port;
-    dto.database = rustString(value.database);
-    dto.user = rustString(value.user);
-    dto.tls = rustString(value.tls);
-    dto.root_certificate = rustString(value.rootCertificate);
-    dto.credential_ref = rustString(value.credentialRef);
-    dto.ssh_credential_ref = rustString(value.sshCredentialRef);
-    dto.ssh_enabled = value.sshEnabled;
-    dto.ssh_host = rustString(value.sshHost);
-    dto.ssh_port = value.sshPort;
-    dto.ssh_user = rustString(value.sshUser);
-    dto.ssh_authentication = rustString(value.sshAuthentication);
-    dto.ssh_identity_file = rustString(value.sshIdentityFile);
-    return dto;
-}
 SavedProfile savedProfile(const ProfileDto& dto) {
     SavedProfile value;
     value.groupId = string(dto.group_id);
@@ -48,6 +27,15 @@ SavedProfile savedProfile(const ProfileDto& dto) {
     value.user = string(dto.user);
     value.tls = dto.tls.empty() ? QStringLiteral("verify_full") : string(dto.tls);
     value.rootCertificate = string(dto.root_certificate);
+    value.tlsClientIdentity = string(dto.tls_client_identity);
+    value.tlsCredentialRef = string(dto.tls_credential_ref);
+    value.proxyOptions = string(dto.proxy_options);
+    value.proxyCredentialRef = string(dto.proxy_credential_ref);
+    value.sshJumpCredentialRefs = string(dto.ssh_jump_credential_refs);
+    value.sshPrivateKeyRef = string(dto.ssh_private_key_ref);
+    value.sshJumpPrivateKeyRefs = string(dto.ssh_jump_private_key_refs);
+    value.sshOptions = string(dto.ssh_options);
+    value.authentication = string(dto.authentication);
     value.credentialRef = string(dto.credential_ref);
     value.sshCredentialRef = string(dto.ssh_credential_ref);
     value.sshEnabled = dto.ssh_enabled;
@@ -56,6 +44,8 @@ SavedProfile savedProfile(const ProfileDto& dto) {
     value.sshUser = string(dto.ssh_user);
     value.sshAuthentication = dto.ssh_authentication.empty() ? QStringLiteral("public_key")
                                                              : string(dto.ssh_authentication);
+    value.sshIdentitySource =
+        dto.ssh_identity_source.empty() ? QStringLiteral("file") : string(dto.ssh_identity_source);
     value.sshIdentityFile = string(dto.ssh_identity_file);
     return value;
 }
@@ -311,6 +301,13 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                                    (event.vendor_code.empty()
                                         ? QString{}
                                         : tr(" [Code: %1]").arg(string(event.vendor_code))));
+        else if (kind == "ssh_host_keys_inspected")
+            emit sshHostKeysInspected(event.request_token, engine_adapter_detail::hostKeyCandidates(
+                                                               event.host_key_candidates));
+        else if (kind == "ssh_host_key_approved")
+            emit sshHostKeyApproved(event.request_token, string(event.host_key_approval));
+        else if (kind == "ssh_host_key_failed")
+            emit sshHostKeyOperationFailed(event.request_token, string(event.error));
     });
     connect(this, &EngineAdapter::recoveryFailed, this,
             [this](quint64 token, const QString& error) {
@@ -476,23 +473,29 @@ void EngineAdapter::saveProfileWithPassword(const SavedProfile& profile, const Q
                                             const QString& action, quint64 token) {
     saveProfileWithSecrets(profile, password, action, {}, "keep", token);
 }
-void EngineAdapter::saveProfileWithSecrets(const SavedProfile& profile,
-                                           const QString& databaseSecret,
-                                           const QString& databaseAction, const QString& sshSecret,
-                                           const QString& sshAction, quint64 token) {
+void EngineAdapter::saveProfileWithSecrets(
+    const SavedProfile& profile, const QString& databaseSecret, const QString& databaseAction,
+    const QString& sshSecret, const QString& sshAction, quint64 token, const QString& tlsSecret,
+    const QString& tlsAction, const QString& proxySecret, const QString& proxyAction,
+    const QList<SshHopCredential>& sshHops, const SshPrivateKeyCredential& sshPrivateKey) {
     if (d_->closing || d_->stopping) {
         emit profileFailed(token, tr("Workspace is closing."));
         return;
     }
-    auto databaseBytes = databaseSecret.toUtf8();
-    auto sshBytes = sshSecret.toUtf8();
-    const auto databaseActionBytes = databaseAction.toUtf8();
-    const auto sshActionBytes = sshAction.toUtf8();
-    auto result = profile_save_secrets(*d_->engine, profileDto(profile),
-                                       utf8View(databaseActionBytes), utf8View(databaseBytes),
-                                       utf8View(sshActionBytes), utf8View(sshBytes), token);
-    databaseBytes.fill(0);
-    sshBytes.fill(0);
+    ProfileCredentialsDto credentials;
+    addHopCredentials(credentials, sshHops);
+    credentials.database = rustString(databaseSecret);
+    credentials.ssh = rustString(sshSecret);
+    credentials.ssh_private_key = rustString(sshPrivateKey.secret);
+    credentials.tls = rustString(tlsSecret);
+    credentials.proxy = rustString(proxySecret);
+    credentials.database_action = rustString(databaseAction);
+    credentials.ssh_action = rustString(sshAction);
+    credentials.ssh_private_key_action = rustString(sshPrivateKey.action);
+    credentials.tls_action = rustString(tlsAction);
+    credentials.proxy_action = rustString(proxyAction);
+    auto result =
+        profile_save_credentials(*d_->engine, profileDto(profile), std::move(credentials), token);
     if (!result.accepted)
         emit profileFailed(token, string(result.error));
 }
@@ -525,16 +528,25 @@ void EngineAdapter::testProfileWithPassword(const SavedProfile& profile, const Q
                                             bool hasPassword, quint64 token) {
     testProfileWithSecrets(profile, password, hasPassword, {}, false, token);
 }
-void EngineAdapter::testProfileWithSecrets(const SavedProfile& profile,
-                                           const QString& databaseSecret, bool hasDatabaseSecret,
-                                           const QString& sshSecret, bool hasSshSecret,
-                                           quint64 token) {
-    auto databaseBytes = databaseSecret.toUtf8();
-    auto sshBytes = sshSecret.toUtf8();
-    auto result = profile_test_secrets(*d_->engine, profileDto(profile), utf8View(databaseBytes),
-                                       hasDatabaseSecret, utf8View(sshBytes), hasSshSecret, token);
-    databaseBytes.fill(0);
-    sshBytes.fill(0);
+void EngineAdapter::testProfileWithSecrets(
+    const SavedProfile& profile, const QString& databaseSecret, bool hasDatabaseSecret,
+    const QString& sshSecret, bool hasSshSecret, quint64 token, const QString& tlsSecret,
+    bool hasTlsSecret, const QString& proxySecret, bool hasProxySecret,
+    const QList<SshHopCredential>& sshHops, const SshPrivateKeyCredential& sshPrivateKey) {
+    ProfileCredentialsDto credentials;
+    addHopCredentials(credentials, sshHops);
+    credentials.database = rustString(databaseSecret);
+    credentials.ssh = rustString(sshSecret);
+    credentials.ssh_private_key = rustString(sshPrivateKey.secret);
+    credentials.tls = rustString(tlsSecret);
+    credentials.proxy = rustString(proxySecret);
+    credentials.has_database = hasDatabaseSecret;
+    credentials.has_ssh = hasSshSecret;
+    credentials.has_ssh_private_key = sshPrivateKey.hasSecret;
+    credentials.has_tls = hasTlsSecret;
+    credentials.has_proxy = hasProxySecret;
+    auto result =
+        profile_test_credentials(*d_->engine, profileDto(profile), std::move(credentials), token);
     if (!result.accepted)
         emit profileFailed(token, string(result.error));
 }
@@ -546,27 +558,39 @@ std::optional<quint64> EngineAdapter::connectProfileWithPassword(const SavedProf
                                                                  bool hasPassword) {
     return connectProfileWithSecrets(profile, password, hasPassword, {}, false);
 }
-std::optional<quint64> EngineAdapter::connectProfileWithSecrets(const SavedProfile& profile,
-                                                                const QString& databaseSecret,
-                                                                bool hasDatabaseSecret,
-                                                                const QString& sshSecret,
-                                                                bool hasSshSecret) {
+std::optional<quint64> EngineAdapter::connectProfileWithSecrets(
+    const SavedProfile& profile, const QString& databaseSecret, bool hasDatabaseSecret,
+    const QString& sshSecret, bool hasSshSecret, const QString& tlsSecret, bool hasTlsSecret,
+    const QString& proxySecret, bool hasProxySecret, const QList<SshHopCredential>& sshHops,
+    const SshPrivateKeyCredential& sshPrivateKey) {
     if (d_->closing || d_->stopping) {
         emit profileConnectFailed(tr("Workspace is closing."));
         return std::nullopt;
     }
-    auto databaseBytes = databaseSecret.toUtf8();
-    auto sshBytes = sshSecret.toUtf8();
-    auto result = profile_connect_secrets(*d_->engine, profileDto(profile), utf8View(databaseBytes),
-                                          hasDatabaseSecret, utf8View(sshBytes), hasSshSecret);
-    databaseBytes.fill(0);
-    sshBytes.fill(0);
+    ProfileCredentialsDto credentials;
+    addHopCredentials(credentials, sshHops);
+    credentials.database = rustString(databaseSecret);
+    credentials.ssh = rustString(sshSecret);
+    credentials.ssh_private_key = rustString(sshPrivateKey.secret);
+    credentials.tls = rustString(tlsSecret);
+    credentials.proxy = rustString(proxySecret);
+    credentials.has_database = hasDatabaseSecret;
+    credentials.has_ssh = hasSshSecret;
+    credentials.has_ssh_private_key = sshPrivateKey.hasSecret;
+    credentials.has_tls = hasTlsSecret;
+    credentials.has_proxy = hasProxySecret;
+    auto result =
+        profile_connect_credentials(*d_->engine, profileDto(profile), std::move(credentials));
     if (!result.accepted) {
         emit profileConnectFailed(string(result.error));
         return std::nullopt;
     }
     d_->connections.insert(result.id);
     return result.id;
+}
+bool EngineAdapter::validateConnectionProperties(const SavedProfile& profile, QString& error) {
+    error = string(validate_connection_profile(profileDto(profile)));
+    return error.isEmpty();
 }
 quint32 EngineAdapter::pageSizeForQuery(quint64 query) const {
     const auto found = d_->queryPaging.constFind(query);

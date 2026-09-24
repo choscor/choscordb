@@ -565,7 +565,10 @@ bool QueryWorkspace::applyStagedEdits() {
     return editApplied_;
 }
 bool QueryWorkspace::connectionAvailable(quint64 connection) const {
-    return !stopping_ && !disconnecting_.contains(connection) &&
+    return connectionCanDisconnect(connection);
+}
+bool QueryWorkspace::connectionCanDisconnect(quint64 connection) const {
+    return !disconnecting_.contains(connection) &&
            widgets_.connections->findData(QVariant::fromValue<qulonglong>(connection)) >= 0;
 }
 bool QueryWorkspace::queryAvailable() const {
@@ -583,7 +586,7 @@ void QueryWorkspace::setExternalWork(bool busy) {
     updateActions();
 }
 void QueryWorkspace::disconnectConnection(quint64 connection) {
-    if (!connectionAvailable(connection) || confirmingDisconnects_.contains(connection))
+    if (!connectionCanDisconnect(connection) || confirmingDisconnects_.contains(connection))
         return;
     const auto index = widgets_.connections->findData(QVariant::fromValue<qulonglong>(connection));
     const auto label = widgets_.connections->itemText(index);
@@ -604,7 +607,7 @@ void QueryWorkspace::disconnectConnection(quint64 connection) {
     confirmingDisconnects_.insert(connection);
     box.exec();
     confirmingDisconnects_.remove(connection);
-    if (box.clickedButton() != accept || !connectionAvailable(connection))
+    if (box.clickedButton() != accept || !connectionCanDisconnect(connection))
         return;
     disconnecting_.insert(connection);
     updateActions();

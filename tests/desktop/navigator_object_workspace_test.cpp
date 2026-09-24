@@ -503,9 +503,7 @@ void NavigatorSqlWorkspaceTest::activeExecutionKeepsDocumentAndCancelReachable()
     QVERIFY(cancel);
     QVERIFY(cancel->isEnabled());
     auto* queryOverflow = window.findChild<QToolButton*>("queryToolbarOverflow");
-    QVERIFY(queryOverflow);
-    QVERIFY(queryOverflow->isVisible());
-    QVERIFY(!queryOverflow->menu()->actions().contains(cancel));
+    QVERIFY(!queryOverflow);
     cancel->trigger();
     QCOMPARE(cancel->text(), QString("Cancelling…"));
     QCOMPARE(window.findChild<QLabel*>("executionSummary")->property("state").toString(),

@@ -51,7 +51,6 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto open = ui.open;
     const auto save = ui.save;
     const auto saveAs = ui.saveAs;
-    const auto queryMenu = ui.queryMenu;
     const auto newConnection = ui.newConnection;
     const auto viewMenu = ui.viewMenu;
     const auto addConnection = ui.addConnection;
@@ -69,7 +68,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto mode = ui.mode;
     const auto commitAction = ui.commitAction;
     const auto rollbackAction = ui.rollbackAction;
-    const auto queryOverflowMenu = ui.queryOverflowMenu;
+    const auto querySettings = ui.querySettings;
     const auto results = ui.results;
     const auto empty = ui.empty;
     const auto grid = ui.grid;
@@ -685,11 +684,6 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
 #endif
     connect(refreshSaved, &QAction::triggered, this, refreshProfiles);
     refreshProfiles();
-    auto* querySettings = queryMenu->addAction(tr("Query settings…"));
-    querySettings->setObjectName("querySettings");
-    queryOverflowMenu->addSeparator();
-    queryOverflowMenu->addAction(querySettings);
-    queryOverflowMenu->addAction(open);
     connect(querySettings, &QAction::triggered, workspace_, &QueryWorkspace::showQuerySettings);
     preferences_->initialize(workspace_->adapter());
 }

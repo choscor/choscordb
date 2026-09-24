@@ -369,7 +369,6 @@ class ObjectDataWorkspaceTest : public QObject {
         column->setCurrentIndex(column->findText("id"));
         operation->setCurrentIndex(operation->findData("greater_than"));
         filterBar->findChild<QLineEdit*>("resultFilterValue")->setText("0");
-        filterBar->findChild<QPushButton*>("resultFilterAdd")->click();
         filterBar->findChild<QPushButton*>("resultFilterApply")->click();
         auto* filterConditions = filterBar->findChild<QListWidget*>("resultFilterConditions");
         QTRY_VERIFY(filterConditions->item(0)->text().startsWith("Active:"));

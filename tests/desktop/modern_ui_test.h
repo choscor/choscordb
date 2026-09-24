@@ -33,8 +33,9 @@ class ModernUiTest final : public QObject {
     void developmentMenuOpensIndependentPreview();
     void workspaceProvidesDiscoverableModernControls();
     void navigatorContextActionsSupportKeyboardFocusAndMenus();
-    void transactionControlsStayInMoreMenuAtBothWidths();
+    void transactionControlsStayInToolbarAtBothWidths();
     void inactiveEditorCloseButtonAppearsOnHover();
+    void addSqlTabButtonCreatesAndSelectsEditor();
     void paletteUpdatePreservesCompleteEditorState();
     void appearancePreviewsPersistAndRestoreAcrossRestart();
     void preferencesUseSectionNavigationAndCancelableLivePreview();

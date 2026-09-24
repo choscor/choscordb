@@ -376,10 +376,9 @@ void ModernUiTest::activeWorkKeepsSqlVisibleAndRejectsPreferences() {
     QVERIFY(cancel);
     QVERIFY(cancel->isHidden());
     auto* overflow = window.findChild<QToolButton*>("queryToolbarOverflow");
-    QVERIFY(overflow);
+    QVERIFY(!overflow);
     auto* cancelAction = window.findChild<QAction*>("command_cancel_query");
     QVERIFY(cancelAction);
-    QVERIFY(!overflow->menu()->actions().contains(cancelAction));
     QCOMPARE(cancelAction->text(), QString("Cancel"));
     QVERIFY(cancelAction->isEnabled());
     cancelAction->trigger();
@@ -527,11 +526,11 @@ void ModernUiTest::minimumWorkspaceKeepsQueryControlsInsideTheWindow() {
     QVERIFY(select->isVisible());
     QVERIFY(!select->visibleRegion().isEmpty());
     QVERIFY(window.rect().contains(QRect(select->mapTo(&window, QPoint()), select->size())));
-    auto* more = window.findChild<QToolButton*>("queryToolbarOverflow");
-    QVERIFY(more);
-    QVERIFY(more->isVisible());
-    QVERIFY(!more->visibleRegion().isEmpty());
-    QVERIFY(window.rect().contains(QRect(more->mapTo(&window, QPoint()), more->size())));
+    auto* settings = window.findChild<QPushButton*>("toolbarQuerySettings");
+    QVERIFY(settings);
+    QVERIFY(settings->isVisible());
+    QVERIFY(!settings->visibleRegion().isEmpty());
+    QVERIFY(window.rect().contains(QRect(settings->mapTo(&window, QPoint()), settings->size())));
 }
 
 void ModernUiTest::workspaceUsesApprovedButtonGeometryAndIcons() {
@@ -650,38 +649,40 @@ void ModernUiTest::navigatorContextActionsSupportKeyboardFocusAndMenus() {
     QTRY_VERIFY(disconnect->isVisible());
 }
 
-void ModernUiTest::transactionControlsStayInMoreMenuAtBothWidths() {
+void ModernUiTest::transactionControlsStayInToolbarAtBothWidths() {
     choscordb::MainWindow window;
     window.findChild<QAction*>("showSql")->trigger();
     window.show();
-    auto* overflow = window.findChild<QToolButton*>("queryToolbarOverflow");
-    QVERIFY(overflow);
-    QCOMPARE(overflow->text(), QString("More"));
-    QCOMPARE(overflow->toolButtonStyle(), Qt::ToolButtonTextOnly);
-    QVERIFY(overflow->icon().isNull());
-    QStringList actionLabels;
-    for (auto* action : overflow->menu()->actions())
-        if (!action->isSeparator() && !qobject_cast<QWidgetAction*>(action))
-            actionLabels.append(action->text());
-    QCOMPARE(actionLabels,
-             QStringList({"Commit", "Rollback", "Query settings…", "Open SQL file…"}));
-    auto* mode = overflow->menu()->findChild<QComboBox*>("transactionMode");
+    auto* toolbar = window.findChild<QToolBar*>("queryToolbar");
+    QVERIFY(toolbar);
+    auto* mode = toolbar->findChild<QComboBox*>("transactionMode");
     QVERIFY(mode);
+    QVERIFY(!window.findChild<QWidget*>("sidebarQueryActions"));
     auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
     workspace->connectSqlite(":memory:");
     QTRY_VERIFY(window.findChild<QAction*>("runStatement")->isEnabled());
     for (const int width : {960, 1280}) {
         window.resize(width, 640);
-        QTRY_VERIFY(overflow->isVisible());
-        QVERIFY(!mode->isVisible());
-        overflow->menu()->popup(overflow->mapToGlobal(overflow->rect().topLeft()));
         QTRY_VERIFY(mode->isVisible());
-        mode->setFocus();
-        QTest::keyClick(mode, Qt::Key_End);
-        QCOMPARE(mode->currentIndex(), 1);
-        QVERIFY(window.findChild<QAction*>("command_commit")->isEnabled());
-        overflow->menu()->hide();
+        for (const auto* name : {"toolbarCommit", "toolbarRollback", "toolbarQuerySettings"}) {
+            auto* button = toolbar->findChild<QPushButton*>(name);
+            QVERIFY(button);
+            QVERIFY(button->isVisible());
+            QVERIFY(button->text().isEmpty());
+            QVERIFY(!button->icon().isNull());
+            QVERIFY(!button->accessibleName().isEmpty());
+            QVERIFY(
+                window.rect().contains(QRect(button->mapTo(&window, QPoint()), button->size())));
+        }
+        mode->setCurrentIndex(1);
+        QVERIFY(toolbar->findChild<QPushButton*>("toolbarCommit")->isEnabled());
+        toolbar->findChild<QPushButton*>("toolbarCommit")->click();
+        QTRY_VERIFY(window.findChild<QAction*>("command_commit")->isEnabled());
+        mode->setCurrentIndex(0);
+        QTRY_VERIFY(!toolbar->findChild<QPushButton*>("toolbarCommit")->isEnabled());
     }
+    toolbar->findChild<QPushButton*>("toolbarQuerySettings")->click();
+    QTRY_VERIFY(window.findChild<QDialog*>("querySettingsDialog"));
 }
 
 void ModernUiTest::inactiveEditorCloseButtonAppearsOnHover() {
@@ -708,6 +709,21 @@ void ModernUiTest::inactiveEditorCloseButtonAppearsOnHover() {
     QEvent leave(QEvent::Leave);
     QCoreApplication::sendEvent(tabs, &leave);
     QTRY_VERIFY(!close->isVisible());
+}
+
+void ModernUiTest::addSqlTabButtonCreatesAndSelectsEditor() {
+    choscordb::MainWindow window;
+    window.show();
+    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+    auto* add = window.findChild<QPushButton*>("addSqlTabButton");
+    QVERIFY(tabs);
+    QVERIFY(add);
+    const int before = tabs->count();
+    add->click();
+    QCOMPARE(tabs->count(), before + 1);
+    QCOMPARE(tabs->currentIndex(), before);
+    QVERIFY(qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget()));
+    QVERIFY(tabs->tabText(before).startsWith("Untitled query"));
 }
 
 void ModernUiTest::paletteUpdatePreservesCompleteEditorState() {

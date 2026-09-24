@@ -62,7 +62,7 @@ struct MainWindow::Ui {
     QComboBox* mode{};
     QAction* commitAction{};
     QAction* rollbackAction{};
-    QMenu* queryOverflowMenu{};
+    QAction* querySettings{};
     QSplitter* splitter{};
     main_window_detail::WorkspaceTabs* workspaceTabs{};
     QWidget* toolbarHost{};

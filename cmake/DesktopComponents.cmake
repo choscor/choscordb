@@ -79,6 +79,7 @@ choscordb_add_library(choscordb-desktop-services
   desktop/bridge/completion_service.cpp
   desktop/bridge/result_column_adapter.cpp
   desktop/bridge/engine_adapter.cpp
+  desktop/bridge/engine_adapter_ssh_trust.cpp
   desktop/bridge/engine_adapter_storage.cpp
   desktop/models/shortcut_catalog.cpp
   desktop/models/history_model.cpp
@@ -102,6 +103,15 @@ choscordb_add_library(choscordb-widgets
   desktop/widgets/value_detail_dialog/value_detail_dialog.cpp
   desktop/widgets/export_dialog/export_dialog.cpp
   desktop/widgets/profile_dialog/profile_dialog.cpp
+  desktop/widgets/profile_dialog/profile_dialog_actions.cpp
+  desktop/widgets/profile_dialog/profile_dialog_security.cpp
+  desktop/widgets/profile_dialog/profile_dialog_authentication.cpp
+  desktop/widgets/profile_dialog/profile_dialog_proxy.cpp
+  desktop/widgets/profile_dialog/profile_dialog_ssh_trust.cpp
+  desktop/widgets/profile_dialog/ssh_host_key_dialog.cpp
+  desktop/widgets/profile_dialog/ssh_private_key_editor.cpp
+  desktop/widgets/profile_dialog/profile_dialog_private_key.cpp
+  desktop/widgets/profile_dialog/ssh_hop_editor.cpp
 )
 target_include_directories(choscordb-widgets PUBLIC desktop)
 target_include_directories(choscordb-widgets SYSTEM PUBLIC ${QSCINTILLA_INCLUDE_DIR})
