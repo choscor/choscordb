@@ -214,6 +214,9 @@ void PreviewTest::sidebarTabSpecimenUsesProductionContextInBothThemes() {
         QVERIFY(host);
         auto* tab = host->findChild<Button*>("previewSidebarTab");
         QVERIFY(tab);
+        auto* navigator = host->findChild<QWidget*>("navigatorBody");
+        QVERIFY(navigator);
+        QVERIFY(navigator->findChild<QListWidget*>("savedConnections"));
         QCOMPARE(tab->buttonContext(), ButtonContext::SidebarTab);
         QVERIFY(tab->isChecked());
     }

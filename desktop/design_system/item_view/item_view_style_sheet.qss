@@ -6,6 +6,25 @@ QWidget[designSurface="sidebar"] {
   background: @sidebar;
 }
 
+/* A softly layered navigator surface, shared by all three sidebar panes. */
+QWidget#navigatorBody {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                              stop:0 @sidebarGlassTop, stop:0.56 @sidebarGlassTop,
+                              stop:1 @sidebarGlassBottom);
+  border-right: 1px solid @border;
+}
+
+QWidget#navigatorBody QStackedWidget,
+QWidget#navigatorBody QWidget#connectionsPanel,
+QWidget#navigatorBody QWidget#savedPanel,
+QWidget#navigatorBody QWidget#historyPanel,
+QTreeView#databaseNavigator,
+QTreeWidget#sidebarSavedFiles,
+QListWidget#savedConnections,
+QListWidget#sidebarHistoryItems {
+  background: transparent;
+}
+
 QWidget[designSurface="panel"] {
   background: @field;
 }

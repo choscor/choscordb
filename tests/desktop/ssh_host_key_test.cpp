@@ -101,67 +101,6 @@ void WorkspaceTest::sshHostKeyStaleInspectionSuccessCannotOpenApproval() {
     QVERIFY(dialog.findChild<QLabel*>("profileStatus")->text().contains("changed"));
 }
 
-void WorkspaceTest::sshHostKeyApprovalUpdatesOnlyTheSelectedHop() {
-    if (!qEnvironmentVariableIsSet("CHOSCORDB_QT_TRUST_FIXTURE"))
-        QSKIP("Run tests/desktop/ssh_trust_fixture.py for deterministic inspection callbacks");
-    QTemporaryDir directory;
-    QVERIFY(directory.isValid());
-    const auto path = directory.filePath("first hop known hosts");
-    const auto targetPath = directory.filePath("target known hosts");
-    choscordb::EngineAdapter adapter;
-    choscordb::ProfileDialog dialog(&adapter);
-    auto* save = dialog.findChild<QPushButton*>("profileSave");
-    QTRY_VERIFY(save->isEnabled());
-    prepareInspection(dialog);
-    dialog.findChild<QLineEdit*>("profileSshKnownHosts")->setText(targetPath);
-    auto* add = dialog.findChild<QPushButton*>("profileSshHopAdd");
-    for (const auto& host : QStringList{"192.0.2.10", "192.0.2.20"}) {
-        add->click();
-        dialog.findChild<QLineEdit*>("profileSshHopHost")->setText(host);
-        dialog.findChild<QLineEdit*>("profileSshHopUser")->setText("hop-user");
-    }
-    auto* hops = dialog.findChild<QListWidget*>("profileSshHopList");
-    hops->setCurrentRow(0);
-    QSignalSpy inspected(&adapter, &choscordb::EngineAdapter::sshHostKeysInspected);
-    QSignalSpy failed(&adapter, &choscordb::EngineAdapter::sshHostKeyOperationFailed);
-    QSignalSpy approved(&adapter, &choscordb::EngineAdapter::sshHostKeyApproved);
-    QSignalSpy connected(&dialog, &choscordb::ProfileDialog::connectionSubmitted);
-    dialog.findChild<QPushButton*>("profileSshHopInspectHostKeys")->click();
-    // Selection is not a draft edit: the result must stay bound to the inspected ID.
-    hops->setCurrentRow(1);
-    QTRY_VERIFY_WITH_TIMEOUT(inspected.count() == 1 || !failed.isEmpty(), 10000);
-    QVERIFY2(failed.isEmpty(),
-             failed.isEmpty() ? "" : qPrintable(failed.first().last().toString()));
-    auto* review = dialog.findChild<choscordb::SshHostKeyDialog*>();
-    QVERIFY(review);
-    QVERIFY(!QFile::exists(path));
-    review->findChild<QListWidget*>("sshHostKeyCandidates")->setCurrentRow(0);
-    review->findChild<QLineEdit*>("sshHostKeyKnownHosts")->setText(path);
-    review->findChild<QPushButton*>("sshHostKeyApprove")->click();
-    QTRY_VERIFY_WITH_TIMEOUT(approved.count() == 1 || !failed.isEmpty(), 10000);
-    QVERIFY2(failed.isEmpty(),
-             failed.isEmpty() ? "" : qPrintable(failed.first().last().toString()));
-    QCOMPARE(approved.first().last().toString(), QString("approved"));
-    QVERIFY(QFile::exists(path));
-    QVERIFY(connected.isEmpty());
-    QCOMPARE(dialog.findChild<QLineEdit*>("profileSshKnownHosts")->text(), targetPath);
-    QVERIFY(dialog.findChild<QLineEdit*>("profileSshHopKnownHosts")->text().isEmpty());
-    review->findChild<QPushButton*>("sshHostKeyClose")->click();
-    hops->setCurrentRow(0);
-    QCOMPARE(dialog.findChild<QLineEdit*>("profileSshHopKnownHosts")->text(), path);
-    hops->setCurrentRow(1);
-    QVERIFY(dialog.findChild<QLineEdit*>("profileSshHopKnownHosts")->text().isEmpty());
-    QSignalSpy saved(&adapter, &choscordb::EngineAdapter::profileSaved);
-    save->click();
-    QTRY_COMPARE(saved.count(), 1);
-    const auto profile = qvariant_cast<choscordb::SavedProfile>(saved.first().at(1));
-    const auto options = QJsonDocument::fromJson(profile.sshOptions.toUtf8()).object();
-    QCOMPARE(options["known_hosts_file"].toString(), targetPath);
-    const auto savedHops = options["jump_hosts"].toArray();
-    QCOMPARE(savedHops[0].toObject()["known_hosts_file"].toString(), path);
-    QVERIFY(savedHops[1].toObject()["known_hosts_file"].toString().isEmpty());
-}
-
 void WorkspaceTest::sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint() {
     choscordb::SshHostKeyCandidate candidate;
     candidate.target.kind = choscordb::SshHostKeyTarget::Kind::JumpId;

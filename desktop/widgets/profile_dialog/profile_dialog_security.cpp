@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QSpinBox>
 namespace choscordb {
@@ -108,45 +109,19 @@ void ProfileDialog::createConnectionControls(QFormLayout* security, QFormLayout*
     connect(sshHopEditor_, &SshHopEditor::changed, this, changed);
     ssh->addRow(tr("SSH jump hosts"), sshHopEditor_);
     createTrustControls(ssh);
+    // Retain the internal widgets for older saved drafts and asynchronous state,
+    // but keep the connection form limited to the four basic SSH settings.
+    for (QWidget* control : QList<QWidget*>{sshRemoteHost_, sshRemotePort_,
+                             sshLocalBinding_, sshLocalHost_, sshLocalPort_,
+                             sshLocalBindingWarning_, sshShareTunnels_, sshTimeout_,
+                             sshKeepalive_, sshKeepaliveCount_, sshAgentSocket_,
+                             sshKnownHosts_, sshHopEditor_, inspectSshKeys_})
+        ssh->setRowVisible(control, false);
 }
 QString ProfileDialog::sshOptionsDraft() const {
-    const auto jumps = sshHopEditor_->draft();
-    const auto optional = [](const QString& value) {
-        return value.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(value);
-    };
-    return QString::fromUtf8(
-        QJsonDocument(
-            QJsonObject{
-                {"connect_timeout_seconds", sshTimeout_->value()},
-                {"server_alive_interval_seconds", sshKeepalive_->value()},
-                {"server_alive_count_max", sshKeepaliveCount_->value()},
-                {"agent_socket", optional(sshAgentSocket_->text())},
-                {"remote_host", optional(sshRemoteHost_->text())},
-                {"local_host", sshLocalBinding_->isChecked() ? optional(sshLocalHost_->text())
-                                                             : QJsonValue(QJsonValue::Null)},
-                {"local_port", sshLocalBinding_->isChecked() ? QJsonValue(sshLocalPort_->value())
-                                                             : QJsonValue(QJsonValue::Null)},
-                {"share_tunnels", sshShareTunnels_->isChecked()},
-                {"remote_port", sshRemotePort_->value() == 0 ? QJsonValue(QJsonValue::Null)
-                                                             : QJsonValue(sshRemotePort_->value())},
-                {"known_hosts_file", optional(sshKnownHosts_->text())},
-                {"jump_hosts", jumps}})
-            .toJson(QJsonDocument::Compact));
+    return QStringLiteral("{}");
 }
 bool ProfileDialog::validateSecurityDraft(const SavedProfile&) {
-    for (auto* field : {sshAgentSocket_, sshKnownHosts_}) {
-        const auto value = field->text();
-        bool invalid = !value.isEmpty() && value.trimmed().isEmpty();
-        for (const auto character : value)
-            invalid = invalid || character.category() == QChar::Other_Control ||
-                      character == '\"' || character == '\\';
-        if (invalid || value.toUtf8().size() > 16384) {
-            setBusy(false,
-                    tr("SSH paths cannot contain control characters, quotes or backslashes."));
-            field->setFocus();
-            return false;
-        }
-    }
     return true;
 }
 void ProfileDialog::writeSecurityDraft(SavedProfile& value) const {
@@ -162,12 +137,8 @@ void ProfileDialog::writeSecurityDraft(SavedProfile& value) const {
         value.sshIdentitySource != "inline")
         value.sshPrivateKeyRef.clear();
     value.sshOptions = sshOptionsDraft();
-    value.sshJumpPrivateKeyRefs = QString::fromUtf8(
-        QJsonDocument(value.sshEnabled ? sshHopEditor_->privateKeyReferences() : QJsonObject{})
-            .toJson(QJsonDocument::Compact));
-    value.sshJumpCredentialRefs = QString::fromUtf8(
-        QJsonDocument(value.sshEnabled ? sshHopEditor_->references() : QJsonObject{})
-            .toJson(QJsonDocument::Compact));
+    value.sshJumpPrivateKeyRefs = QStringLiteral("{}");
+    value.sshJumpCredentialRefs = QStringLiteral("{}");
 }
 void ProfileDialog::setSecurityDraft(const SavedProfile& value) {
     tlsClientIdentity_->setText(value.tlsClientIdentity);

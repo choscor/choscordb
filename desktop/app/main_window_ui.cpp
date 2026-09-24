@@ -5,6 +5,7 @@
 #include "app/main_window_widgets.h"
 #include "app/object_explorer.h"
 #include "app/query_workspace.h"
+#include "app/result_column_header.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/icons.h"
@@ -189,6 +190,7 @@ MainWindow::Ui MainWindow::buildUi() {
     navigator->toggleViewAction()->setText(tr("Connections"));
     navigator->setTitleBarWidget(new QWidget(navigator));
     auto* navBody = new QWidget(navigator);
+    navBody->setObjectName("navigatorBody");
     navBody->setProperty("designSurface", "sidebar");
     navBody->setAttribute(Qt::WA_StyledBackground);
     auto* navLayout = new QVBoxLayout(navBody);
@@ -253,6 +255,7 @@ MainWindow::Ui MainWindow::buildUi() {
     }
     navLayout->addLayout(sidebarTabs);
     auto* connectionsPanel = new QWidget(sidebarPanels);
+    connectionsPanel->setObjectName("connectionsPanel");
     auto* connectionsLayout = new QVBoxLayout(connectionsPanel);
     connectionsLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     connectionsLayout->setSpacing(design::spacing(design::Spacing::Three));
@@ -322,6 +325,7 @@ MainWindow::Ui MainWindow::buildUi() {
     objectSection->contentLayout()->addWidget(navigatorStatus);
     sidebarPanels->addWidget(connectionsPanel);
     auto* savedPanel = new QWidget(sidebarPanels);
+    savedPanel->setObjectName("savedPanel");
     auto* savedLayout = new QVBoxLayout(savedPanel);
     savedLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     auto* savedSection = new SidebarSection(tr("Saved queries"), savedPanel);
@@ -348,6 +352,7 @@ MainWindow::Ui MainWindow::buildUi() {
     savedSection->contentLayout()->addWidget(savedFiles, 1);
     sidebarPanels->addWidget(savedPanel);
     auto* historyPanel = new QWidget(sidebarPanels);
+    historyPanel->setObjectName("historyPanel");
     auto* historyLayout = new QVBoxLayout(historyPanel);
     historyLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     auto* historySection = new SidebarSection(tr("Recent history"), historyPanel);
@@ -390,6 +395,7 @@ MainWindow::Ui MainWindow::buildUi() {
     resetLayout->setObjectName("resetLayout");
     auto* central = new QWidget;
     central->setObjectName("sqlScreen");
+    central->setProperty("designSurface", "panel");
     auto* layout = new QVBoxLayout(central);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -559,7 +565,7 @@ MainWindow::Ui MainWindow::buildUi() {
     addSqlTab->setDesignIcon(design::Icon::Add);
     addSqlTab->setButtonSize(design::ButtonSize::Icon);
     addSqlTab->setVariant(design::ButtonVariant::Ghost);
-    editors_->setCornerWidget(addSqlTab, Qt::TopRightCorner);
+    workspaceTabs->setAddButton(addSqlTab);
     connect(addSqlTab, &QPushButton::clicked, newQuery, &QAction::trigger);
     editors_->tabBar()->setUsesScrollButtons(true);
     editors_->tabBar()->setExpanding(false);
@@ -665,6 +671,7 @@ MainWindow::Ui MainWindow::buildUi() {
     empty->setAccessibleName(tr("Execution status: disconnected"));
     auto* grid = new QTableView;
     grid->setObjectName("queryResults");
+    grid->setHorizontalHeader(new ResultColumnHeader(grid));
     grid->setAccessibleName(tr("Query results"));
     grid->setAlternatingRowColors(true);
     grid->setFrameShape(QFrame::NoFrame);
@@ -673,7 +680,7 @@ MainWindow::Ui MainWindow::buildUi() {
     grid->horizontalHeader()->setStretchLastSection(false);
     grid->horizontalHeader()->setResizeContentsPrecision(50);
     grid->verticalHeader()->setDefaultSectionSize(initialMetrics.sqlResultRowHeight);
-    grid->horizontalHeader()->setFixedHeight(initialMetrics.sqlResultHeaderHeight);
+    grid->horizontalHeader()->setFixedHeight(34);
     resultLayout->addWidget(grid, 1);
     auto* resultFooter = new QWidget;
     resultFooter->setObjectName("sqlResultFooter");

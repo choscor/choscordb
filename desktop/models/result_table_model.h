@@ -24,6 +24,9 @@ struct ResultColumn {
 class ResultTableModel final : public QAbstractTableModel {
     Q_OBJECT
   public:
+    static constexpr int HeaderTypeRole = Qt::UserRole + 1;
+    static constexpr int HeaderKeyRole = Qt::UserRole + 2;
+    static constexpr int HeaderNameRole = Qt::UserRole + 3;
     using Row = std::vector<Cell>;
     static constexpr std::size_t DefaultBytes = 64 * 1024 * 1024;
     // Budget includes owned page allocations, excluding this fixed QObject and
@@ -47,6 +50,7 @@ class ResultTableModel final : public QAbstractTableModel {
     bool setPage(std::vector<ResultColumn> columns, std::vector<Row> rows, quint64 firstRow);
     void setEditableColumns(std::vector<bool> editable, bool canInsert, bool canDelete,
                             std::vector<bool> insertEditable = {});
+    void setKeyColumns(std::vector<bool> keys);
     Qt::ItemFlags flags(const QModelIndex& index) const override;
     bool setData(const QModelIndex& index, const QVariant& value, int role = Qt::EditRole) override;
     bool setNull(const QModelIndex& index);
@@ -81,6 +85,7 @@ class ResultTableModel final : public QAbstractTableModel {
     std::vector<std::vector<std::size_t>> editBytes_;
     std::vector<bool> inserted_, deleted_, editable_;
     std::vector<bool> insertEditable_;
+    std::vector<bool> keyColumns_;
     bool canInsert_ = false, canDelete_ = false;
     quint64 firstRow_ = 0;
     std::size_t byteBudget_;

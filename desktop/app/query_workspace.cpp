@@ -356,6 +356,8 @@ bool QueryWorkspace::resolvePendingEdits() {
     return false;
 }
 void QueryWorkspace::configureEditability() {
+    if (widgets_.objectReadOnly && model_->columnCount() == static_cast<int>(editKey_.size()))
+        model_->setKeyColumns(editKey_);
     if (editQualifiedName_.isEmpty() ||
         (!editReason_.isEmpty() &&
          !(widgets_.objectReadOnly && editReason_.contains("inserts only", Qt::CaseInsensitive))) ||

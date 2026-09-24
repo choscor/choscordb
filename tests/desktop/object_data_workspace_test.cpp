@@ -55,6 +55,20 @@ class ObjectDataWorkspaceTest : public QObject {
     }
 
   private slots:
+    void resultGridUsesCompactHeaderAndAlternatingRows() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        QVERIFY(grid);
+        QCOMPARE(grid->horizontalHeader()->height(), 34);
+        QVERIFY(grid->alternatingRowColors());
+        QCOMPARE(data.property("designSurface").toString(), QString("panel"));
+        auto* queryGrid = window.findChild<QTableView*>("queryResults");
+        QVERIFY(queryGrid);
+        QCOMPARE(queryGrid->horizontalHeader()->height(), 34);
+        QVERIFY(queryGrid->alternatingRowColors());
+    }
     void hoveringCellPreservesTheRowBackgroundAndText() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
@@ -748,7 +762,7 @@ class ObjectDataWorkspaceTest : public QObject {
         auto* table = data.findChild<QTableView*>("objectDataResults");
         QTRY_COMPARE(table->model()->rowCount(), 1);
         QCOMPARE(table->verticalHeader()->sectionSize(0), 35);
-        QCOMPARE(table->horizontalHeader()->height(), 43);
+        QCOMPARE(table->horizontalHeader()->height(), 34);
         QVERIFY(!table->showGrid());
         QVERIFY(!table->wordWrap());
         table->setCurrentIndex(table->model()->index(0, 0));

@@ -173,6 +173,22 @@ class ResultModelTest : public QObject {
                  QString("Name: expression\nDatabase type: integer\nPrecision: Unknown\nScale: "
                          "Unknown\nTimezone: Unknown\nNullability: Unknown"));
     }
+    void resultHeaderSeparatesTypeAndKeyMetadata() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("id", "bigint"), column("name", "text")}, {}, 0));
+        QCOMPARE(model.headerData(0, Qt::Horizontal, ResultTableModel::HeaderTypeRole).toString(),
+                 QString("bigint"));
+        QCOMPARE(model.headerData(0, Qt::Horizontal, ResultTableModel::HeaderNameRole).toString(),
+                 QString("id"));
+        model.setKeyColumns({true, false});
+        QCOMPARE(model.headerData(0, Qt::Horizontal, ResultTableModel::HeaderKeyRole).toBool(),
+                 true);
+        QCOMPARE(model.headerData(1, Qt::Horizontal, ResultTableModel::HeaderKeyRole).toBool(),
+                 false);
+        QVERIFY(model.setPage({column("other", "uuid")}, {}, 0));
+        QCOMPARE(model.headerData(0, Qt::Horizontal, ResultTableModel::HeaderKeyRole).toBool(),
+                 false);
+    }
     void bridgeColumnPreservesEverySchemaField() {
         choscordb::ColumnDto dto;
         dto.name = "stamp";

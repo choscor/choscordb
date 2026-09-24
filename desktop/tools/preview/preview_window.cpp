@@ -26,6 +26,7 @@
 #include <QFrame>
 #include <QHelpEvent>
 #include <QKeySequenceEdit>
+#include <QListWidget>
 #include <QMainWindow>
 #include <QPlainTextEdit>
 #include <QProgressBar>
@@ -462,7 +463,12 @@ void populateFields(QWidget* host, QVBoxLayout* layout) {
     layout->addStretch();
 }
 void populateButtons(QWidget* host, QVBoxLayout* layout) {
-    auto* sidebarTab = new Button("Connections", host);
+    auto* navigator = new QWidget(host);
+    navigator->setObjectName("navigatorBody");
+    navigator->setProperty("designSurface", "sidebar");
+    navigator->setAttribute(Qt::WA_StyledBackground);
+    auto* navigatorLayout = new QVBoxLayout(navigator);
+    auto* sidebarTab = new Button("Connections", navigator);
     sidebarTab->setObjectName("previewSidebarTab");
     sidebarTab->setVariant(ButtonVariant::Ghost);
     sidebarTab->setButtonContext(ButtonContext::SidebarTab);
@@ -470,7 +476,17 @@ void populateButtons(QWidget* host, QVBoxLayout* layout) {
     sidebarTab->setCheckable(true);
     sidebarTab->setChecked(true);
     sidebarTab->setToolTip("Tab to show keyboard focus; switching windows preserves focus style.");
-    layout->addWidget(sidebarTab);
+    navigatorLayout->addWidget(sidebarTab);
+    auto* profiles = new QListWidget(navigator);
+    profiles->setObjectName("savedConnections");
+    profiles->setProperty("designSurface", "sidebar");
+    profiles->setItemDelegate(new NavigationProfileDelegate(profiles));
+    auto* profile = new QListWidgetItem("Example Postgres\nPostgreSQL · Selected", profiles);
+    profile->setData(NavigationProfileDelegate::DriverRole, "postgres");
+    profiles->setCurrentItem(profile);
+    profiles->setFixedHeight(52);
+    navigatorLayout->addWidget(profiles);
+    layout->addWidget(navigator);
 
     const QList<QPair<QString, ButtonVariant>> variants = {
         {"default", ButtonVariant::Default},         {"secondary", ButtonVariant::Secondary},

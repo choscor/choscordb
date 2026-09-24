@@ -17,11 +17,13 @@
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QStandardItemModel>
 #include <QStyle>
 #include <QStyledItemDelegate>
+#include <QSyntaxHighlighter>
 #include <QTabBar>
 #include <QTableView>
 #include <QVBoxLayout>
@@ -29,6 +31,101 @@
 namespace choscordb {
 namespace {
 constexpr int objectIconRole = Qt::UserRole + 1;
+class DdlHighlighter final : public QSyntaxHighlighter {
+  public:
+    explicit DdlHighlighter(QPlainTextEdit* editor)
+        : QSyntaxHighlighter(editor->document()), editor_(editor) {}
+
+  protected:
+    void highlightBlock(const QString& text) override {
+        const auto colors = design::resolvedThemeForWidget(*editor_).colors;
+        QTextCharFormat keyword;
+        keyword.setForeground(colors.accent);
+        keyword.setFontWeight(QFont::DemiBold);
+        static const QRegularExpression words(
+            R"(\b(?:CREATE|ALTER|DROP|TABLE|VIEW|INDEX|PRIMARY|FOREIGN|KEY|REFERENCES|CONSTRAINT|NOT|NULL|DEFAULT|UNIQUE|CHECK|ON|AS|SELECT|FROM|WHERE|INSERT|INTO|UPDATE|DELETE|BOOLEAN|INTEGER|BIGINT|TEXT|TIMESTAMP|TRUE|FALSE)\b)",
+            QRegularExpression::CaseInsensitiveOption);
+        QVector<bool> protectedText(text.size(), false);
+        QTextCharFormat literal;
+        literal.setForeground(colors.action);
+        QTextCharFormat identifier;
+        identifier.setForeground(colors.text);
+        QTextCharFormat comment;
+        comment.setForeground(colors.mutedText);
+        enum { Normal, String, Identifier, Backtick, BlockComment };
+        int state = previousBlockState();
+        if (state < Normal || state > BlockComment)
+            state = Normal;
+        for (int pos = 0; pos < text.size();) {
+            if (state == Normal && text.mid(pos, 2) == "--") {
+                setFormat(pos, text.size() - pos, comment);
+                break;
+            }
+            if (state == Normal && text.mid(pos, 2) == "/*")
+                state = BlockComment;
+            const QChar quote = text.at(pos);
+            bool openedHere = false;
+            if (state == Normal) {
+                if (quote == QLatin1Char('\'')) {
+                    state = String;
+                    openedHere = true;
+                } else if (quote == QLatin1Char('"')) {
+                    state = Identifier;
+                    openedHere = true;
+                } else if (quote == QLatin1Char('`')) {
+                    state = Backtick;
+                    openedHere = true;
+                }
+            }
+            if (state == Normal) {
+                ++pos;
+                continue;
+            }
+            const int start = pos;
+            const int segmentState = state;
+            const QChar terminator = state == String       ? QLatin1Char('\'')
+                                     : state == Identifier ? QLatin1Char('"')
+                                                           : QLatin1Char('`');
+            if (openedHere)
+                ++pos;
+            while (pos < text.size()) {
+                if (state == BlockComment && text.mid(pos, 2) == "*/") {
+                    pos += 2;
+                    state = Normal;
+                    break;
+                }
+                if (state == BlockComment) {
+                    ++pos;
+                    continue;
+                }
+                if (text.at(pos++) != terminator)
+                    continue;
+                if (pos < text.size() && text.at(pos) == terminator) {
+                    ++pos;
+                    continue;
+                }
+                state = Normal;
+                break;
+            }
+            for (int index = start; index < pos; ++index)
+                protectedText[index] = true;
+            setFormat(start, pos - start,
+                      segmentState == BlockComment ? comment
+                      : segmentState == String     ? literal
+                                                   : identifier);
+        }
+        setCurrentBlockState(state);
+        auto matches = words.globalMatch(text);
+        while (matches.hasNext()) {
+            const auto match = matches.next();
+            if (!protectedText[match.capturedStart()])
+                setFormat(match.capturedStart(), match.capturedLength(), keyword);
+        }
+    }
+
+  private:
+    QPlainTextEdit* editor_;
+};
 class ObjectColumnDelegate final : public QStyledItemDelegate {
   public:
     using QStyledItemDelegate::QStyledItemDelegate;
@@ -80,6 +177,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     ddl_->setObjectName("objectDdl");
     ddl_->setAccessibleName(tr("Object DDL"));
     ddl_->setReadOnly(true);
+    new DdlHighlighter(ddl_);
     pages_->addWidget(ddl_);
     pages_->addWidget(new QWidget(pages_));
     layout->addWidget(pages_, 1);

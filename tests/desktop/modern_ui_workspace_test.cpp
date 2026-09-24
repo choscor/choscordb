@@ -409,7 +409,7 @@ void ModernUiTest::sqlCompositionKeepsTabsFirstAndPinsResultActions() {
     QVERIFY(tabs->tabBar()->height() > tabs->tabBar()->tabRect(0).height());
     QVERIFY(!tabs->tabIcon(0).isNull());
     QCOMPARE(grid->verticalHeader()->defaultSectionSize(), 35);
-    QCOMPARE(grid->horizontalHeader()->height(), 43);
+    QCOMPARE(grid->horizontalHeader()->height(), 34);
     QVERIFY(grid->showGrid());
     QVERIFY(!grid->wordWrap());
     QVERIFY(!grid->horizontalHeader()->stretchLastSection());

@@ -58,6 +58,8 @@ void ProfileDialog::createProxyControls(QFormLayout* form) {
     help->setWordWrap(true);
     fields->addRow(help);
     form->addRow(proxyFields_);
+    form->setRowVisible(proxyEnabled_, false);
+    form->setRowVisible(proxyFields_, false);
     connect(proxyEnabled_, &QCheckBox::toggled, this, changed);
     connect(proxyProtocol_, &QComboBox::currentIndexChanged, this, changed);
     connect(proxyPort_, &QSpinBox::valueChanged, this, changed);
@@ -67,7 +69,7 @@ void ProfileDialog::updateProxyControls() {
     if (!proxySecret_ || !rememberProxySecret_)
         return;
     const bool enabled = driver_->currentData() != "sqlite" && proxyEnabled_->isChecked();
-    proxyFields_->setVisible(enabled);
+    proxyFields_->setVisible(false);
     const bool password =
         enabled && proxyProtocol_->currentData() == "socks5" && !proxyUser_->text().isEmpty();
     proxySecret_->setEnabled(password);
@@ -79,36 +81,17 @@ bool ProfileDialog::proxyNeedsPassword(const SavedProfile& profile) {
            !options["username"].toString().isEmpty();
 }
 void ProfileDialog::writeProxyDraft(SavedProfile& profile) const {
-    if (profile.driver == "sqlite" || !proxyEnabled_->isChecked()) {
-        profile.proxyOptions.clear();
-        profile.proxyCredentialRef.clear();
-        return;
-    }
-    const auto username = proxyUser_->text();
-    const QJsonObject options{
-        {"protocol", proxyProtocol_->currentData().toString()},
-        {"host", proxyHost_->text()},
-        {"port", proxyPort_->value()},
-        {"username", username.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(username)}};
-    const auto previous = QJsonDocument::fromJson(current_.proxyOptions.toUtf8()).object();
-    profile.proxyOptions = QString::fromUtf8(QJsonDocument(options).toJson(QJsonDocument::Compact));
-    if (!proxyNeedsPassword(profile) || previous["username"] != options["username"] ||
-        previous["protocol"] != options["protocol"])
-        profile.proxyCredentialRef.clear();
+    profile.proxyOptions.clear();
+    profile.proxyCredentialRef.clear();
 }
 void ProfileDialog::setProxyDraft(const SavedProfile& profile) {
-    const auto options = QJsonDocument::fromJson(profile.proxyOptions.toUtf8()).object();
-    proxyEnabled_->setChecked(!options.isEmpty());
-    proxyProtocol_->setCurrentIndex(options["protocol"] == "socks4" ? 1 : 0);
-    proxyHost_->setText(options["host"].toString());
-    proxyPort_->setValue(options["port"].toInt(1080));
-    proxyUser_->setText(options["username"].toString());
+    Q_UNUSED(profile);
+    proxyEnabled_->setChecked(false);
+    proxyHost_->clear();
+    proxyUser_->clear();
     proxySecret_->clear();
     proxySecret_->setModified(false);
-    proxySecret_->setPlaceholderText(profile.proxyCredentialRef.isEmpty()
-                                         ? tr("SOCKS5 password")
-                                         : tr("Saved proxy password — leave unchanged to keep"));
-    rememberProxySecret_->setChecked(!profile.proxyCredentialRef.isEmpty());
+    rememberProxySecret_->setChecked(false);
     updateProxyControls();
 }
 } // namespace choscordb

@@ -1,5 +1,6 @@
 #include "app/object_data_workspace.h"
 #include "app/query_workspace.h"
+#include "app/result_column_header.h"
 #include "bridge/engine_adapter.h"
 #include "design_system/button/button.h"
 #include "design_system/table/table_style.h"
@@ -17,6 +18,7 @@ namespace choscordb {
 ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* parent)
     : QWidget(parent), sql_(sqlWorkspace) {
     setObjectName("objectDataWorkspace");
+    setProperty("designSurface", "panel");
     const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -29,6 +31,7 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     summary->setMinimumWidth(0);
     auto* table = new QTableView(this);
     table->setObjectName("objectDataResults");
+    table->setHorizontalHeader(new ResultColumnHeader(table));
     table->setAccessibleName(tr("Object data"));
     table->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
     table->setAlternatingRowColors(true);
@@ -36,7 +39,7 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     table->setWordWrap(false);
     table->setFrameShape(QFrame::NoFrame);
     table->verticalHeader()->setDefaultSectionSize(metrics.objectDataRowHeight);
-    table->horizontalHeader()->setFixedHeight(metrics.sqlResultHeaderHeight);
+    table->horizontalHeader()->setFixedHeight(34);
     table->horizontalHeader()->setResizeContentsPrecision(64);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     table->horizontalHeader()->setStretchLastSection(true);

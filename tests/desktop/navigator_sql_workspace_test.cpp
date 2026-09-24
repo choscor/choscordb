@@ -358,6 +358,21 @@ void NavigatorSqlWorkspaceTest::workspaceTabsUseContentWidth() {
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
     QVERIFY(!tabs->tabBar()->expanding());
     QVERIFY(tabs->tabBar()->tabRect(0).width() < tabs->tabBar()->width() / 2);
+    auto* addButton = window.findChild<QPushButton*>("addSqlTabButton");
+    QVERIFY(addButton);
+    QCoreApplication::processEvents();
+    const auto lastRight = tabs->tabBar()->mapTo(tabs, tabs->tabBar()->tabRect(0).topRight()).x();
+    QVERIFY(addButton->x() >= lastRight);
+    QVERIFY(addButton->x() < lastRight + addButton->width());
+    for (int index = 0; index < 20; ++index)
+        add->trigger();
+    QCoreApplication::processEvents();
+    const auto barRight = tabs->tabBar()->mapTo(tabs, QPoint(tabs->tabBar()->width(), 0)).x();
+    QVERIFY(addButton->x() >= barRight);
+    QVERIFY(addButton->geometry().right() < tabs->width());
+    const int previousCount = tabs->count();
+    QTest::mouseClick(addButton, Qt::LeftButton);
+    QCOMPARE(tabs->count(), previousCount + 1);
 }
 
 void NavigatorSqlWorkspaceTest::sidebarPanelsSwitchWithoutChangingTheSqlTarget() {

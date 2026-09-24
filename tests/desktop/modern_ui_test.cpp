@@ -16,6 +16,7 @@
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
+#include <QApplication>
 #include <QComboBox>
 #include <QContextMenuEvent>
 #include <QDialog>
@@ -181,6 +182,10 @@ void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections(
     QVERIFY(!window.findChild<QStatusBar*>());
     auto* navBody = sidebar->widget();
     QVERIFY(navBody);
+    QCOMPARE(navBody->objectName(), QString("navigatorBody"));
+    QVERIFY(qApp->styleSheet().contains("QWidget#navigatorBody"));
+    QVERIFY(qApp->styleSheet().contains("qlineargradient"));
+    QVERIFY(!qApp->styleSheet().contains("@sidebarGlassTop"));
     QCOMPARE(navBody->layout()->contentsMargins().top(),
              choscordb::design::spacing(choscordb::design::Spacing::One));
     QCOMPARE(title->text(), QString("CONNECTIONS"));
@@ -189,7 +194,11 @@ void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections(
     QVERIFY(qAbs(title->font().letterSpacing() - 1.3) < 1.0 / 64);
     auto* tree = window.findChild<QTreeView*>("databaseNavigator");
     const auto pixels = tree->viewport()->grab().toImage();
-    QCOMPARE(pixels.pixelColor(QPoint(4, 4) * pixels.devicePixelRatio()), QColor("#fafbfb"));
+    const auto navigatorPixel = pixels.pixelColor(QPoint(4, 4) * pixels.devicePixelRatio());
+    QCOMPARE(navigatorPixel.alpha(), 0);
+    const auto composedSidebar = navBody->grab().toImage();
+    const auto treePoint = tree->mapTo(navBody, QPoint(4, 4)) * composedSidebar.devicePixelRatio();
+    QVERIFY(composedSidebar.pixelColor(treePoint).lightness() > 220);
     auto* start = window.findChild<QWidget*>("startScreen");
     auto* footer = window.findChild<QWidget*>("startFooter");
     QVERIFY(footer);

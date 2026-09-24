@@ -45,6 +45,10 @@ QString controlStyleSheet(const ResolvedTheme& theme) {
         scrollbarStyleSheet() + fieldBaseStyleSheet() + textAreaStyleSheet() +
         fieldStateStyleSheet() + selectStyleSheet() + spinBoxStyleSheet();
     auto field = theme.colors.surface;
+    auto sidebarGlassTop = theme.colors.sidebar;
+    sidebarGlassTop.setAlpha(232);
+    auto sidebarGlassBottom = theme.colors.muted;
+    sidebarGlassBottom.setAlpha(208);
     auto destructiveTint = theme.colors.destructive;
     destructiveTint.setAlphaF(theme.appearance == ResolvedAppearance::Dark ? 0.2 : 0.1);
     auto destructiveHover = theme.colors.destructive;
@@ -75,6 +79,8 @@ QString controlStyleSheet(const ResolvedTheme& theme) {
     sheet.replace("@input", cssColor(theme.colors.input));
     sheet.replace("@foreground", cssColor(theme.colors.foreground));
     sheet.replace("@field", cssColor(field));
+    sheet.replace("@sidebarGlassTop", cssColor(sidebarGlassTop));
+    sheet.replace("@sidebarGlassBottom", cssColor(sidebarGlassBottom));
     sheet.replace("@sidebar", cssColor(theme.colors.sidebar));
     sheet.replace("@focus", cssColor(theme.colors.focus));
     sheet.replace("@dangerText", cssColor(theme.colors.danger));

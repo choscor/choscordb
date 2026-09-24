@@ -88,6 +88,20 @@ QVariant ResultTableModel::headerData(int section, Qt::Orientation orientation, 
     if (section >= columnCount())
         return {};
     const auto& column = columns_[section];
+    if (role == HeaderNameRole)
+        return column.name;
+    if (role == HeaderKeyRole)
+        return section < static_cast<int>(keyColumns_.size()) && keyColumns_[section];
+    if (role == HeaderTypeRole) {
+        QString type = column.databaseType;
+        if (column.precision && !type.contains('(')) {
+            type += '(' + QString::number(*column.precision);
+            if (column.scale)
+                type += ',' + QString::number(*column.scale);
+            type += ')';
+        }
+        return type;
+    }
     if (role == Qt::DisplayRole) {
         QString type = column.databaseType;
         if (column.precision && !type.contains('(')) {
@@ -178,7 +192,7 @@ bool ResultTableModel::setPage(std::vector<ResultColumn> columns, std::vector<Ro
     // Qt strings and byte arrays remain shared, but the cell vectors are copied.
     if (!count.add(rows.size(), sizeof(Row)) ||
         !count.add(rows.size(), sizeof(std::vector<bool>) + sizeof(std::vector<std::size_t>)) ||
-        !count.add(rows.size() * 2 + columns.size() * 2) ||
+        !count.add(rows.size() * 2 + columns.size() * 2) || !count.add((columns.size() + 7) / 8) ||
         !count.add(rows.size(), (columns.size() + 7) / 8) ||
         !count.add(rows.size(), columns.size() * sizeof(std::size_t)))
         return false;
@@ -198,6 +212,7 @@ bool ResultTableModel::setPage(std::vector<ResultColumn> columns, std::vector<Ro
     deleted_.assign(rows_.size(), false);
     editable_.assign(columns_.size(), false);
     insertEditable_.assign(columns_.size(), false);
+    keyColumns_.assign(columns_.size(), false);
     canInsert_ = canDelete_ = false;
     firstRow_ = firstRow;
     residentBytes_ = count.bytes;
@@ -205,6 +220,13 @@ bool ResultTableModel::setPage(std::vector<ResultColumn> columns, std::vector<Ro
     endResetModel();
     emit pendingEditsChanged(false);
     return true;
+}
+void ResultTableModel::setKeyColumns(std::vector<bool> keys) {
+    if (keys.size() != columns_.size())
+        return;
+    keyColumns_ = std::move(keys);
+    if (!keyColumns_.empty())
+        emit headerDataChanged(Qt::Horizontal, 0, static_cast<int>(keyColumns_.size()) - 1);
 }
 void ResultTableModel::setEditableColumns(std::vector<bool> editable, bool canInsert,
                                           bool canDelete, std::vector<bool> insertEditable) {

@@ -177,8 +177,49 @@ class WorkspaceTabBar final : public QTabBar {
 
 class WorkspaceTabs final : public QTabWidget {
   public:
-    WorkspaceTabs() { setTabBar(new WorkspaceTabBar(this)); }
+    WorkspaceTabs() {
+        setTabBar(new WorkspaceTabBar(this));
+        tabBar()->installEventFilter(this);
+        connect(tabBar(), &QTabBar::tabMoved, this, [this] { scheduleAddButton(); });
+        connect(tabBar(), &QTabBar::currentChanged, this, [this] { scheduleAddButton(); });
+    }
     WorkspaceTabBar* workspaceBar() const { return static_cast<WorkspaceTabBar*>(tabBar()); }
+    void setAddButton(QWidget* button) {
+        addButton_ = button;
+        setCornerWidget(button, Qt::TopRightCorner);
+        scheduleAddButton();
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == tabBar() &&
+            (event->type() == QEvent::Resize || event->type() == QEvent::LayoutRequest))
+            scheduleAddButton();
+        return QTabWidget::eventFilter(watched, event);
+    }
+    void resizeEvent(QResizeEvent* event) override {
+        QTabWidget::resizeEvent(event);
+        scheduleAddButton();
+    }
+
+  private:
+    void scheduleAddButton() {
+        QTimer::singleShot(0, this, [this] { layoutAddButton(); });
+    }
+    void layoutAddButton() {
+        if (!addButton_ || !tabBar()->isVisible())
+            return;
+        const int right = tabBar()->mapTo(this, QPoint(tabBar()->width(), 0)).x();
+        const auto last = tabBar()->count() ? tabBar()->tabRect(tabBar()->count() - 1) : QRect{};
+        const bool overflow = tabBar()->count() && (tabBar()->tabRect(0).left() < 0 ||
+                                                    last.right() >= tabBar()->width());
+        const int end = tabBar()->mapTo(this, tabBar()->count() ? last.topRight() : QPoint()).x();
+        const int width = addButton_->width();
+        const int corner = qMin(right + 2, this->width() - width);
+        const int x = !overflow && end + 4 + width <= right ? end + 4 : corner;
+        addButton_->move(x, addButton_->y());
+    }
+    QPointer<QWidget> addButton_;
 };
 
 } // namespace choscordb::main_window_detail

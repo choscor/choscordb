@@ -31,7 +31,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     setObjectName("profileDialog");
     setWindowTitle(tr("New connection"));
     setAppModal();
-    resize(design::dialogInitialSize(design::DialogSize::Profiles));
+    resize(560, 440);
     const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* outer = new QVBoxLayout(this);
     auto* sections = new design::DialogSections(this);
@@ -245,12 +245,6 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     sshLayout->addRow(tr("SSH private key file"), sshIdentityFile_);
     sshLayout->addRow(tr("SSH passphrase"), sshSecret_);
     sshLayout->addRow(rememberSshSecret_);
-    sshLayout->addRow(createDescription(
-        tr("Uses system OpenSSH. Passwords and private-key passphrases can remain session-only or "
-           "be saved in the OS credential store. The server must already be trusted in SSH known "
-           "hosts. "
-           "The database host and port are reached from the SSH server."),
-        sshFields));
     pg->addRow(sshFields);
     connect(sshEnabled_, &QCheckBox::toggled, sshFields, &QWidget::setVisible);
     connect(sshEnabled_, &QCheckBox::toggled, this, [this] {
