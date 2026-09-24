@@ -39,7 +39,7 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     table->setWordWrap(false);
     table->setFrameShape(QFrame::NoFrame);
     table->verticalHeader()->setDefaultSectionSize(metrics.objectDataRowHeight);
-    table->horizontalHeader()->setFixedHeight(34);
+    table->horizontalHeader()->setFixedHeight(metrics.objectDataHeaderHeight);
     table->horizontalHeader()->setResizeContentsPrecision(64);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     table->horizontalHeader()->setStretchLastSection(true);

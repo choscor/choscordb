@@ -143,6 +143,21 @@ void PreviewTest::editorResultsSplitUsesEqualPanesInBothThemes() {
     }
 }
 
+void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("lists-navigation"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        auto* tree = host->findChild<QTreeView*>("previewNavigationTree");
+        QVERIFY(tree);
+        QVERIFY(tree->isVisible());
+        QVERIFY(tree->currentIndex().isValid());
+    }
+}
+
 void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen("tabs"));

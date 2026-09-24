@@ -146,6 +146,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         list->setCurrentRow(1);
         layout->addWidget(list, 1);
         auto* tree = new QTreeView(host);
+        tree->setObjectName("previewNavigationTree");
         auto* model = new QStandardItemModel(tree);
         auto* parent = new QStandardItem("Navigation group");
         auto* child = new QStandardItem("Nested item");
@@ -173,6 +174,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
                              popupContextMenu(*menu, tree->viewport()->mapToGlobal(point));
                          });
         tree->expandAll();
+        tree->setCurrentIndex(model->index(0, 0));
         layout->addWidget(tree, 1);
     } else if (id == "navigation-profile-row") {
         auto* list = new QListWidget(host);

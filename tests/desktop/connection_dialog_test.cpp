@@ -18,7 +18,6 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
-
 void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     choscordb::EngineAdapter adapter;
     choscordb::ProfileDialog dialog(&adapter);
@@ -27,9 +26,8 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     dialog.findChild<QCheckBox*>("profileSshEnabled")->setChecked(true);
     for (const char* name : {"profileSshHost", "profileSshUser"})
         QVERIFY(dialog.findChild<QLineEdit*>(name)->isVisibleTo(&dialog));
-    for (const char* name : {"profileSshRemoteHost", "profileSshLocalHost",
-                             "profileSshAgentSocket", "profileSshKnownHosts",
-                             "profileProxyHost"})
+    for (const char* name : {"profileSshRemoteHost", "profileSshLocalHost", "profileSshAgentSocket",
+                             "profileSshKnownHosts", "profileProxyHost"})
         QVERIFY(!dialog.findChild<QLineEdit*>(name)->isVisibleTo(&dialog));
     QVERIFY(!dialog.findChild<QSpinBox*>("profileSshLocalPort")->isVisibleTo(&dialog));
     QVERIFY(!dialog.findChild<QCheckBox*>("profileProxyEnabled")->isVisibleTo(&dialog));

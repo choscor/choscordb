@@ -43,7 +43,7 @@ def main() -> None:
         )
         for name, delay in [
             ("sshHostKeyStaleInspectionSuccessCannotOpenApproval", "1"),
-            ("sshHostKeyApprovalUpdatesOnlyTheSelectedHop", "0"),
+            ("sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint", "0"),
         ]:
             environment["CHOSCORDB_QT_TRUST_DELAY"] = delay
             subprocess.run([str(executable), name], env=environment, check=True)

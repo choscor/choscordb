@@ -111,11 +111,10 @@ void ProfileDialog::createConnectionControls(QFormLayout* security, QFormLayout*
     createTrustControls(ssh);
     // Retain the internal widgets for older saved drafts and asynchronous state,
     // but keep the connection form limited to the four basic SSH settings.
-    for (QWidget* control : QList<QWidget*>{sshRemoteHost_, sshRemotePort_,
-                             sshLocalBinding_, sshLocalHost_, sshLocalPort_,
-                             sshLocalBindingWarning_, sshShareTunnels_, sshTimeout_,
-                             sshKeepalive_, sshKeepaliveCount_, sshAgentSocket_,
-                             sshKnownHosts_, sshHopEditor_, inspectSshKeys_})
+    for (QWidget* control : QList<QWidget*>{
+             sshRemoteHost_, sshRemotePort_, sshLocalBinding_, sshLocalHost_, sshLocalPort_,
+             sshLocalBindingWarning_, sshShareTunnels_, sshTimeout_, sshKeepalive_,
+             sshKeepaliveCount_, sshAgentSocket_, sshKnownHosts_, sshHopEditor_, inspectSshKeys_})
         ssh->setRowVisible(control, false);
 }
 QString ProfileDialog::sshOptionsDraft() const {

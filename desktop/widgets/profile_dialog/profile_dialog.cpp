@@ -31,7 +31,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     setObjectName("profileDialog");
     setWindowTitle(tr("New connection"));
     setAppModal();
-    resize(560, 440);
+    resize(design::dialogInitialSize(design::DialogSize::Profiles));
     const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* outer = new QVBoxLayout(this);
     auto* sections = new design::DialogSections(this);

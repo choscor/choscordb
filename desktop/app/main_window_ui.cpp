@@ -680,7 +680,7 @@ MainWindow::Ui MainWindow::buildUi() {
     grid->horizontalHeader()->setStretchLastSection(false);
     grid->horizontalHeader()->setResizeContentsPrecision(50);
     grid->verticalHeader()->setDefaultSectionSize(initialMetrics.sqlResultRowHeight);
-    grid->horizontalHeader()->setFixedHeight(34);
+    grid->horizontalHeader()->setFixedHeight(initialMetrics.sqlResultHeaderHeight);
     resultLayout->addWidget(grid, 1);
     auto* resultFooter = new QWidget;
     resultFooter->setObjectName("sqlResultFooter");

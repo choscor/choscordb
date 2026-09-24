@@ -385,6 +385,7 @@ class ObjectDataWorkspaceTest : public QObject {
         filterBar->findChild<QLineEdit*>("resultFilterValue")->setText("0");
         filterBar->findChild<QPushButton*>("resultFilterApply")->click();
         auto* filterConditions = filterBar->findChild<QListWidget*>("resultFilterConditions");
+        QTRY_VERIFY(filterConditions->item(0));
         QTRY_VERIFY(filterConditions->item(0)->text().startsWith("Active:"));
         QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
                      QString("completed"));

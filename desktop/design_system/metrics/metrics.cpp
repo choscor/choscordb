@@ -31,7 +31,7 @@ QSize dialogInitialSize(DialogSize size) {
     case DialogSize::Preferences:
         return {700, 412};
     case DialogSize::Profiles:
-        return {600, 500};
+        return {560, 440};
     case DialogSize::Detail:
         return {760, 480};
     case DialogSize::Ddl:

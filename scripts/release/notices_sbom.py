@@ -14,7 +14,7 @@ from prepare_qt_notices import SHA256 as QTBASE_SHA256, SVG_SHA256 as QTSVG_SHA2
 
 QT_SOURCE_HASHES = {"qtbase": QTBASE_SHA256, "qtsvg": QTSVG_SHA256}
 LUCIDE_SOURCE_SHA256 = (
-    "bb49ca3887278f64979fdb164081fb0dd72c375374cb15060dff8f0e14151e00"
+    "8459c125ca48aaf969be7f824a929e7550a3683832374511990651dcb03ca5d5"
 )
 
 GEIST_SOURCE_SHA256 = "1190ba834ead1873d41bbe2210659a927e1eef2ae252ed8d995fe05e17e476a6"
@@ -284,6 +284,10 @@ def generate(
         name: record["sha256"]
         for name, record in lucide_record["referenceAdditions"]["icons"].items()
     }
+    local_icons.update(
+        (name, record["sha256"])
+        for name, record in lucide_record["localAdditions"]["icons"].items()
+    )
     source_hashes = {entry["path"]: entry["sha256"] for entry in source["files"]}
     for path, expected in [
         ("desktop/resources/icons/SOURCE-LUCIDE.json", LUCIDE_SOURCE_SHA256),

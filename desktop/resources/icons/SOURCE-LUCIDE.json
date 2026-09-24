@@ -111,5 +111,19 @@
         "changes": "Scaled the upstream paw-print, made its stroke white, and placed it over the existing rounded orange-to-gold gradient."
       }
     }
+  },
+  "localAdditions": {
+    "source": "ChoscorDB project artwork",
+    "icons": {
+      "commit.svg": {
+        "sha256": "d15724103b33aef040f3e217c8916acbf99fcddffb10f650641797c44bd95955"
+      },
+      "rollback.svg": {
+        "sha256": "3db1cac1d6d806e4d78f33b4bb03efc77ae7916100897e488302ec48ed5ee847"
+      },
+      "settings.svg": {
+        "sha256": "f58c7adde125f5cfdcc5cead6e8847869720b1baf014dab3be540cd53808cc78"
+      }
+    }
   }
 }

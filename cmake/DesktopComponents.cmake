@@ -150,6 +150,7 @@ endif()
 if(BUILD_TESTING)
   choscordb_add_library(choscordb-preview
     desktop/tools/preview/preview_window.cpp
+    desktop/tools/preview/preview_capture.cpp
     desktop/tools/preview/preview_standard.cpp
   )
   target_link_libraries(choscordb-preview PUBLIC choscordb-design-system)

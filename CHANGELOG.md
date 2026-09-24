@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.4]
+
+- Expanded connection profiles with TLS settings, SOCKS proxies, SSH jump hosts,
+  inline private keys, and host-key trust prompts.
+- Improved database authentication and connection timeout handling for MySQL and
+  PostgreSQL, including SSH credential storage options.
+- Added transaction controls and idle transaction handling across database
+  workspaces.
+- Added typed SQL result filters and refined result-table editing, headers, and
+  workspace navigation.
+
 ## [0.1.3]
 
 - Refined dialogs, menus, selects, and tooltips so they stay contained within

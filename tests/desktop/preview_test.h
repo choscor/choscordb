@@ -6,6 +6,7 @@ class PreviewTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void navigationTreeSpecimenUsesRealTreeInBothThemes();
     void editorResultsSplitUsesEqualPanesInBothThemes();
     void documentTabSpecimenShowsFixedWidthTabsInBothThemes();
     void richTextParagraphsHaveCompactSpacing();
