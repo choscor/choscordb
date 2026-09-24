@@ -17,6 +17,11 @@ fn settings() -> ConnectionOptions {
         host.clone()
     };
     ConnectionOptions::Postgres {
+        ssh_jump_secrets: Default::default(),
+        ssh_private_key: None,
+        ssh_jump_private_keys: Default::default(),
+        proxy: None,
+        proxy_secret: None,
         host,
         port: config.get_ports().first().copied().unwrap_or(5432),
         database: config.get_dbname().unwrap_or("postgres").into(),
@@ -33,6 +38,7 @@ fn settings() -> ConnectionOptions {
         ssh: std::env::var("CHOSCORDB_TEST_POSTGRES_SSH_HOST")
             .ok()
             .map(|host| SshTunnel {
+                options: Default::default(),
                 host,
                 port: std::env::var("CHOSCORDB_TEST_POSTGRES_SSH_PORT")
                     .expect("SSH fixture port")
@@ -40,8 +46,10 @@ fn settings() -> ConnectionOptions {
                     .unwrap(),
                 user: std::env::var("CHOSCORDB_TEST_POSTGRES_SSH_USER").expect("SSH fixture user"),
                 authentication: SshAuthentication::PublicKey,
+                identity_source: Default::default(),
                 identity_file: std::env::var("CHOSCORDB_TEST_POSTGRES_SSH_IDENTITY").ok(),
             }),
+        tls_identity: None,
         root_certificate: std::env::var_os("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE")
             .map(Into::into),
     }
@@ -646,6 +654,11 @@ async fn oversized_tls_root_is_rejected_before_connection() {
     let file = tempfile::NamedTempFile::new().unwrap();
     file.as_file().set_len(1024 * 1024 + 1).unwrap();
     let options = ConnectionOptions::Postgres {
+        ssh_jump_secrets: Default::default(),
+        ssh_private_key: None,
+        ssh_jump_private_keys: Default::default(),
+        proxy: None,
+        proxy_secret: None,
         host: "localhost".into(),
         port: 1,
         database: "postgres".into(),
@@ -654,6 +667,7 @@ async fn oversized_tls_root_is_rejected_before_connection() {
         ssh_secret: None,
         tls: TlsMode::VerifyFull,
         ssh: None,
+        tls_identity: None,
         root_certificate: Some(file.path().into()),
     };
     let result = PostgresDriver.connect(options).await;

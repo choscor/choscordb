@@ -91,7 +91,7 @@ fn requires_implicit_transaction(sql: &str) -> bool {
         _ => false,
     }
 }
-async fn begin_generation(cancel: &Cancellation) -> Result<u32> {
+pub(super) async fn begin_generation(cancel: &Cancellation) -> Result<u32> {
     let mut state = cancel.state.lock().await;
     state.current = state.current.checked_add(1).ok_or_else(resource)?;
     cancel
@@ -103,7 +103,7 @@ async fn begin_generation(cancel: &Cancellation) -> Result<u32> {
     }
     u32::try_from(state.current).map_err(|_| resource())
 }
-async fn running(cancel: &Cancellation, value: bool) -> Result<()> {
+pub(super) async fn running(cancel: &Cancellation, value: bool) -> Result<()> {
     let mut state = cancel.state.lock().await;
     state.running = value;
     if value && state.cancelled == Some(state.current) {
@@ -147,12 +147,11 @@ async fn start(
         let timeout = options
             .timeout
             .map_or(0, |n| n.as_millis().clamp(1, i32::MAX as u128));
-        tx.execute(
-            "SELECT set_config('statement_timeout', $1, true)",
-            &[&timeout.to_string()],
-        )
-        .await
-        .map_err(normalize)?;
+        // SET does not acquire a transaction snapshot. A SELECT here would
+        // make a following SET TRANSACTION ISOLATION LEVEL incorrectly fail.
+        tx.batch_execute(&format!("SET LOCAL statement_timeout = {timeout}"))
+            .await
+            .map_err(normalize)?;
         // PostgreSQL Parse rejects multiple statements before Bind/Execute can write.
         let statement = tx.prepare(&sql).await.map_err(normalize)?;
         if !statement.params().is_empty() {
@@ -616,92 +615,136 @@ pub(super) async fn run(
             };
             command
         };
-        let Command::Execute(sql, options, max, reply) = command else {
-            match command {
-                Command::ObjectOpen(object, max, reply) => {
-                    let result = cancel
-                        .closing
-                        .auxiliary(&pump, object_data::prepare(&client, &object, max, false))
-                        .await;
-                    let _ = reply.send(result);
-                }
-                Command::ObjectRead(request, reply) => {
-                    let result = cancel
-                        .closing
-                        .auxiliary(&pump, object_data::read(&client, request, false))
-                        .await;
-                    let _ = reply.send(result);
-                }
-                Command::Metadata(parent, reply) => {
-                    clear_notices(&notices);
-                    let result = cancel
-                        .closing
-                        .auxiliary(&pump, metadata::load_metadata(&client, parent))
-                        .await;
-                    clear_notices(&notices);
-                    let _ = reply.send(result);
-                }
-                Command::Ddl(object, reply) => {
-                    clear_notices(&notices);
-                    let result = cancel
-                        .closing
-                        .auxiliary(&pump, metadata::object_ddl(&client, &object))
-                        .await;
-                    clear_notices(&notices);
-                    let _ = reply.send(result);
-                }
-                Command::Edit(batch, reply) => {
-                    let result = cancel
-                        .closing
-                        .auxiliary(&pump, apply_edit_batch(&mut client, batch))
-                        .await;
-                    let _ = reply.send(result);
-                }
-                Command::EditTarget(object, reply) => {
-                    let result = cancel
-                        .closing
-                        .auxiliary(&pump, metadata::edit_target(&client, &object))
-                        .await;
-                    let _ = reply.send(result);
-                }
-                Command::EditQuery(sql, columns, reply) => {
-                    let result = cancel
-                        .closing
-                        .auxiliary(&pump, metadata::edit_query(&client, &sql, columns))
-                        .await;
-                    let _ = reply.send(result);
-                }
-                Command::Transaction(_, reply) | Command::Finish(_, reply) => {
-                    let _ = reply.send(Ok(()));
-                }
-                Command::Fetch(id, _, max, reply) => {
-                    let result = match completed.as_mut().filter(|(query, _, _)| *query == id) {
-                        Some((_, index, summary)) if max >= std::mem::size_of::<ResultPage>() => {
-                            let page = ResultPage {
-                                index: *index,
-                                rows: Vec::new(),
-                                has_more: false,
-                            };
-                            *index += 1;
-                            Ok(Fetched {
-                                page,
-                                summary: summary.clone(),
+        let (sql, options, max, mut reply, mut begin_reply, characteristics) = match command {
+            Command::Execute(sql, options, max, reply) => (
+                sql,
+                options,
+                max,
+                Some(reply),
+                None,
+                TransactionCharacteristics::default(),
+            ),
+            Command::BeginTransaction(characteristics, reply) => (
+                String::new(),
+                QueryOptions {
+                    auto_commit: false,
+                    ..Default::default()
+                },
+                0,
+                None,
+                Some(reply),
+                characteristics,
+            ),
+            command => {
+                match command {
+                    Command::ObjectOpen(object, max, reply) => {
+                        let result = cancel
+                            .closing
+                            .auxiliary(&pump, object_data::prepare(&client, &object, max, false))
+                            .await;
+                        let _ = reply.send(result);
+                    }
+                    Command::ObjectRead(request, reply) => {
+                        let result = cancel
+                            .closing
+                            .auxiliary(&pump, object_data::read(&client, request, false))
+                            .await;
+                        let _ = reply.send(result);
+                    }
+                    Command::Metadata(parent, reply) => {
+                        clear_notices(&notices);
+                        let result = cancel
+                            .closing
+                            .auxiliary(&pump, metadata::load_metadata(&client, parent))
+                            .await;
+                        clear_notices(&notices);
+                        let _ = reply.send(result);
+                    }
+                    Command::Ddl(object, reply) => {
+                        clear_notices(&notices);
+                        let result = cancel
+                            .closing
+                            .auxiliary(&pump, metadata::object_ddl(&client, &object))
+                            .await;
+                        clear_notices(&notices);
+                        let _ = reply.send(result);
+                    }
+                    Command::Edit(batch, reply) => {
+                        let result = cancel
+                            .closing
+                            .auxiliary(&pump, apply_edit_batch(&mut client, batch))
+                            .await;
+                        let _ = reply.send(result);
+                    }
+                    Command::EditTarget(object, reply) => {
+                        let result = cancel
+                            .closing
+                            .auxiliary(&pump, metadata::edit_target(&client, &object))
+                            .await;
+                        let _ = reply.send(result);
+                    }
+                    Command::EditQuery(sql, columns, reply) => {
+                        let result = cancel
+                            .closing
+                            .auxiliary(&pump, metadata::edit_query(&client, &sql, columns))
+                            .await;
+                        let _ = reply.send(result);
+                    }
+                    Command::TransactionState(reply) => {
+                        let _ = reply.send(Ok(Some(false)));
+                    }
+                    Command::IdleTransactionState(reply) => {
+                        let _ = reply.send(Ok(Some(IdleTransactionState::default())));
+                    }
+                    Command::Transaction(_, reply) | Command::Finish(_, reply) => {
+                        let _ = reply.send(Ok(()));
+                    }
+                    Command::Fetch(id, _, max, reply) => {
+                        let result = match completed.as_mut().filter(|(query, _, _)| *query == id) {
+                            Some((_, index, summary))
+                                if max >= std::mem::size_of::<ResultPage>() =>
+                            {
+                                let page = ResultPage {
+                                    index: *index,
+                                    rows: Vec::new(),
+                                    has_more: false,
+                                };
+                                *index += 1;
+                                Ok(Fetched {
+                                    page,
+                                    summary: summary.clone(),
+                                })
+                            }
+                            _ => Err(stale()),
+                        };
+                        let _ = reply.send(result);
+                    }
+                    Command::Close(reply) => {
+                        let _ = reply.send(Ok(()));
+                        break;
+                    }
+                    Command::ChainTransaction(commit, reply) => {
+                        let sql = if commit {
+                            "COMMIT AND CHAIN"
+                        } else {
+                            "ROLLBACK AND CHAIN"
+                        };
+                        let result = cancel
+                            .closing
+                            .auxiliary(&pump, async {
+                                client.batch_execute(sql).await.map_err(normalize)
                             })
-                        }
-                        _ => Err(stale()),
-                    };
-                    let _ = reply.send(result);
+                            .await;
+                        let _ = reply.send(result);
+                    }
+                    Command::Execute(..) | Command::BeginTransaction(..) => unreachable!(),
                 }
-                Command::Close(reply) => {
-                    let _ = reply.send(Ok(()));
-                    break;
-                }
-                Command::Execute(..) => unreachable!(),
+                continue;
             }
-            continue;
         };
         completed = None;
         if options.auto_commit && requires_implicit_transaction(&sql) {
+            let reply = reply.take().expect("query reply");
             match cancel
                 .closing
                 .auxiliary(
@@ -720,43 +763,113 @@ pub(super) async fn run(
             }
             continue;
         }
-        let transaction = match client.transaction().await {
+        let transaction = match cancel
+            .closing
+            .auxiliary(&pump, async {
+                let mut builder = client.build_transaction();
+                if let Some(isolation) = characteristics.isolation {
+                    builder = builder.isolation_level(match isolation {
+                        TransactionIsolation::ReadUncommitted => {
+                            tokio_postgres::IsolationLevel::ReadUncommitted
+                        }
+                        TransactionIsolation::ReadCommitted => {
+                            tokio_postgres::IsolationLevel::ReadCommitted
+                        }
+                        TransactionIsolation::RepeatableRead => {
+                            tokio_postgres::IsolationLevel::RepeatableRead
+                        }
+                        TransactionIsolation::Serializable => {
+                            tokio_postgres::IsolationLevel::Serializable
+                        }
+                    });
+                }
+                if let Some(read_only) = characteristics.read_only {
+                    builder = builder.read_only(read_only);
+                }
+                if let Some(deferrable) = characteristics.deferrable {
+                    builder = builder.deferrable(deferrable);
+                }
+                builder.start().await.map_err(normalize)
+            })
+            .await
+        {
             Ok(tx) => tx,
             Err(error) => {
-                let _ = reply.send(Err(normalize(error)));
+                if let Some(reply) = begin_reply.take() {
+                    let _ = reply.send(Err(error));
+                } else if let Some(reply) = reply.take() {
+                    let _ = reply.send(Err(error));
+                }
                 continue;
             }
         };
-        let auto = options.auto_commit;
-        let mut active = match start(&transaction, sql, &options, max, &cancel, &notices).await {
-            Ok((active, started)) => {
-                if auto && active.completed && active.lookahead.is_none() {
-                    let finished = (active.id, 0, active.summary.clone());
-                    dispose(Some(active));
-                    match transaction.commit().await {
-                        Ok(()) => {
-                            completed = Some(finished);
-                            let _ = reply.send(Ok(started));
+        let mut auto = options.auto_commit;
+        let mut idle = IdleTransactionState {
+            active: true,
+            manual: !auto,
+            write_pending: false,
+            started_at: Some(std::time::Instant::now()),
+        };
+        let initial_write = idle_transaction::is_write(&sql);
+        let mut active = if let Some(reply) = begin_reply.take() {
+            let _ = reply.send(Ok(()));
+            None
+        } else {
+            let reply = reply.take().expect("query reply");
+            match cancel
+                .closing
+                .auxiliary(
+                    &pump,
+                    start(&transaction, sql, &options, max, &cancel, &notices),
+                )
+                .await
+            {
+                Ok((active, started)) => {
+                    idle.write_pending |= initial_write;
+                    if auto && active.completed && active.lookahead.is_none() {
+                        let finished = (active.id, 0, active.summary.clone());
+                        dispose(Some(active));
+                        match cancel
+                            .closing
+                            .auxiliary(&pump, async {
+                                transaction.commit().await.map_err(normalize)
+                            })
+                            .await
+                        {
+                            Ok(()) => {
+                                completed = Some(finished);
+                                let _ = reply.send(Ok(started));
+                            }
+                            Err(error) => {
+                                let _ = reply.send(Err(error));
+                            }
                         }
-                        Err(error) => {
-                            let _ = reply.send(Err(normalize(error)));
-                        }
+                        continue;
                     }
+                    let _ = reply.send(Ok(started));
+                    Some(active)
+                }
+                Err(error) => {
+                    let _ = reply.send(Err(error));
+                    let _ = cancel
+                        .closing
+                        .auxiliary(&pump, async {
+                            transaction.rollback().await.map_err(normalize)
+                        })
+                        .await;
                     continue;
                 }
-                let _ = reply.send(Ok(started));
-                Some(active)
-            }
-            Err(error) => {
-                let _ = reply.send(Err(error));
-                let _ = transaction.rollback().await;
-                continue;
             }
         };
         loop {
             let Some(command) = rx.recv().await else {
                 dispose(active.take());
-                let _ = transaction.rollback().await;
+                let _ = cancel
+                    .closing
+                    .auxiliary(&pump, async {
+                        transaction.rollback().await.map_err(normalize)
+                    })
+                    .await;
                 break 'connection;
             };
             match command {
@@ -769,11 +882,20 @@ pub(super) async fn run(
                     dispose(active.take());
                     if auto {
                         let result = if cancelled {
-                            transaction.rollback().await
+                            cancel
+                                .closing
+                                .auxiliary(&pump, async {
+                                    transaction.rollback().await.map_err(normalize)
+                                })
+                                .await
                         } else {
-                            transaction.commit().await
-                        }
-                        .map_err(normalize);
+                            cancel
+                                .closing
+                                .auxiliary(&pump, async {
+                                    transaction.commit().await.map_err(normalize)
+                                })
+                                .await
+                        };
                         if let Err(error) = result {
                             let _ = reply.send(Err(error));
                         } else {
@@ -781,8 +903,17 @@ pub(super) async fn run(
                         }
                         break;
                     }
-                    match start(&transaction, sql, &options, max, &cancel, &notices).await {
+                    let write = idle_transaction::is_write(&sql);
+                    match cancel
+                        .closing
+                        .auxiliary(
+                            &pump,
+                            start(&transaction, sql, &options, max, &cancel, &notices),
+                        )
+                        .await
+                    {
                         Ok((next, started)) => {
+                            idle.write_pending |= write;
                             active = Some(next);
                             let _ = reply.send(Ok(started));
                         }
@@ -799,7 +930,13 @@ pub(super) async fn run(
                     }
                     let result = match active.as_mut().filter(|a| a.id == id) {
                         Some(active) => {
-                            fetch(&transaction, active, size, max, &cancel, &notices).await
+                            cancel
+                                .closing
+                                .auxiliary(
+                                    &pump,
+                                    fetch(&transaction, active, size, max, &cancel, &notices),
+                                )
+                                .await
                         }
                         None => Err(stale()),
                     };
@@ -808,13 +945,23 @@ pub(super) async fn run(
                     if end || failed {
                         dispose(active.take());
                         let finish = if failed {
-                            transaction.rollback().await
+                            cancel
+                                .closing
+                                .auxiliary(&pump, async {
+                                    transaction.rollback().await.map_err(normalize)
+                                })
+                                .await
                         } else {
-                            transaction.commit().await
+                            cancel
+                                .closing
+                                .auxiliary(&pump, async {
+                                    transaction.commit().await.map_err(normalize)
+                                })
+                                .await
                         };
                         let _ = reply.send(match finish {
                             Ok(()) => result,
-                            Err(error) => Err(normalize(error)),
+                            Err(error) => Err(error),
                         });
                         break;
                     }
@@ -826,11 +973,21 @@ pub(super) async fn run(
                         dispose(active.take());
                         if auto {
                             let result = if cancelled {
-                                transaction.rollback().await
+                                cancel
+                                    .closing
+                                    .auxiliary(&pump, async {
+                                        transaction.rollback().await.map_err(normalize)
+                                    })
+                                    .await
                             } else {
-                                transaction.commit().await
+                                cancel
+                                    .closing
+                                    .auxiliary(&pump, async {
+                                        transaction.commit().await.map_err(normalize)
+                                    })
+                                    .await
                             };
-                            let _ = reply.send(result.map_err(normalize));
+                            let _ = reply.send(result);
                             break;
                         }
                     }
@@ -891,29 +1048,78 @@ pub(super) async fn run(
                         .await;
                     let _ = reply.send(result);
                 }
+                Command::TransactionState(reply) => {
+                    let _ = reply.send(Ok(Some(true)));
+                }
+                Command::IdleTransactionState(reply) => {
+                    let _ = reply.send(Ok(Some(idle)));
+                }
+                Command::BeginTransaction(_, reply) => {
+                    // PostgreSQL ignores new characteristics within an existing
+                    // transaction and reports a warning; do not execute a query.
+                    dispose(active.take());
+                    let result = cancel
+                        .closing
+                        .auxiliary(&pump, async {
+                            transaction.batch_execute("BEGIN").await.map_err(normalize)
+                        })
+                        .await;
+                    if result.is_ok() {
+                        auto = false;
+                        idle.manual = true;
+                    }
+                    let _ = reply.send(result);
+                }
+                Command::ChainTransaction(commit, reply) => {
+                    dispose(active.take());
+                    let sql = if commit {
+                        "COMMIT AND CHAIN"
+                    } else {
+                        "ROLLBACK AND CHAIN"
+                    };
+                    let result = cancel
+                        .closing
+                        .auxiliary(&pump, async {
+                            transaction.batch_execute(sql).await.map_err(normalize)
+                        })
+                        .await;
+                    if result.is_ok() {
+                        auto = false;
+                        idle = IdleTransactionState {
+                            active: true,
+                            manual: true,
+                            write_pending: false,
+                            started_at: Some(std::time::Instant::now()),
+                        };
+                    }
+                    let _ = reply.send(result);
+                }
                 Command::Transaction(commit, reply) => {
                     dispose(active.take());
                     let result = if commit {
-                        transaction.commit().await
+                        cancel
+                            .closing
+                            .auxiliary(&pump, async {
+                                transaction.commit().await.map_err(normalize)
+                            })
+                            .await
                     } else {
-                        transaction.rollback().await
+                        cancel
+                            .closing
+                            .auxiliary(&pump, async {
+                                transaction.rollback().await.map_err(normalize)
+                            })
+                            .await
                     };
-                    let _ = reply.send(result.map_err(normalize));
+                    let _ = reply.send(result);
                     break;
                 }
                 Command::Close(reply) => {
                     dispose(active.take());
-                    let result = if cancel
-                        .closing
-                        .transport_aborted
-                        .load(std::sync::atomic::Ordering::Acquire)
-                    {
-                        drop(transaction);
-                        Ok(())
-                    } else {
-                        transaction.rollback().await.map_err(normalize)
-                    };
-                    let _ = reply.send(result);
+                    // Closing discards the session; the server rolls back its transaction
+                    // when the pump/socket is dropped. Never wait on another server reply.
+                    drop(transaction);
+                    let _ = reply.send(Ok(()));
                     break 'connection;
                 }
             }

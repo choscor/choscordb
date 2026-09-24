@@ -23,6 +23,11 @@ async fn ssh_connection_never_falls_back_to_direct_database() {
     drop(unavailable);
     let result = PostgresDriver
         .connect(ConnectionOptions::Postgres {
+            ssh_jump_secrets: Default::default(),
+            ssh_private_key: None,
+            ssh_jump_private_keys: Default::default(),
+            proxy: None,
+            proxy_secret: None,
             host: "127.0.0.1".into(),
             port,
             database: "postgres".into(),
@@ -30,12 +35,15 @@ async fn ssh_connection_never_falls_back_to_direct_database() {
             password: None,
             ssh_secret: None,
             tls: TlsMode::Disable,
+            tls_identity: None,
             root_certificate: None,
             ssh: Some(SshTunnel {
+                options: Default::default(),
                 host: "127.0.0.1".into(),
                 port: ssh_port,
                 user: "test".into(),
                 authentication: SshAuthentication::Agent,
+                identity_source: Default::default(),
                 identity_file: None,
             }),
         })
@@ -55,6 +63,11 @@ async fn ssh_connection_never_falls_back_to_direct_database() {
 async fn ssh_password_authentication_requires_a_secret() {
     let result = PostgresDriver
         .connect(ConnectionOptions::Postgres {
+            ssh_jump_secrets: Default::default(),
+            ssh_private_key: None,
+            ssh_jump_private_keys: Default::default(),
+            proxy: None,
+            proxy_secret: None,
             host: "db.internal".into(),
             port: 5432,
             database: "postgres".into(),
@@ -62,12 +75,15 @@ async fn ssh_password_authentication_requires_a_secret() {
             password: None,
             ssh_secret: None,
             tls: TlsMode::Disable,
+            tls_identity: None,
             root_certificate: None,
             ssh: Some(SshTunnel {
+                options: Default::default(),
                 host: "bastion.example".into(),
                 port: 22,
                 user: "operator".into(),
                 authentication: SshAuthentication::Password,
+                identity_source: Default::default(),
                 identity_file: None,
             }),
         })

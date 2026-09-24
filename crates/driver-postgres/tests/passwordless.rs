@@ -21,6 +21,11 @@ async fn direct_connection_accepts_server_trust_authentication_without_a_passwor
     });
     let mut connection = PostgresDriver
         .connect(ConnectionOptions::Postgres {
+            ssh_jump_secrets: Default::default(),
+            ssh_private_key: None,
+            ssh_jump_private_keys: Default::default(),
+            proxy: None,
+            proxy_secret: None,
             host: "127.0.0.1".into(),
             port,
             database: "postgres".into(),
@@ -28,6 +33,7 @@ async fn direct_connection_accepts_server_trust_authentication_without_a_passwor
             password: None,
             ssh_secret: None,
             tls: TlsMode::Disable,
+            tls_identity: None,
             root_certificate: None,
             ssh: None,
         })

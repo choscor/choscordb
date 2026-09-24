@@ -1,17 +1,44 @@
 use super::*;
 use rusqlite::{Connection as Db, OpenFlags, types::ValueRef};
 use std::time::Instant;
+fn sync_idle(db: &Db, state: &mut IdleTransactionState, write: bool) {
+    if db.is_autocommit() {
+        *state = IdleTransactionState::default();
+    } else {
+        if !state.active {
+            state.started_at = Some(Instant::now());
+        }
+        state.active = true;
+        state.manual = true;
+        state.write_pending |= write;
+    }
+}
 pub(super) fn run(
     path: std::path::PathBuf,
     read_only: bool,
     mut rx: mpsc::Receiver<Command>,
     ready: oneshot::Sender<Result<Arc<Cancellation>>>,
 ) {
-    let flags = if read_only {
+    let uri = path.to_str().filter(|path| path.starts_with("file:"));
+    let read_only = if let Some(uri) = uri {
+        match validate_sqlite_uri(uri, read_only) {
+            Ok(read_only) => read_only,
+            Err(error) => {
+                let _ = ready.send(Err(error));
+                return;
+            }
+        }
+    } else {
+        read_only
+    };
+    let mut flags = if read_only {
         OpenFlags::SQLITE_OPEN_READ_ONLY
     } else {
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE
     };
+    if uri.is_some() {
+        flags |= OpenFlags::SQLITE_OPEN_URI;
+    }
     let db = match Db::open_with_flags(path, flags) {
         Ok(db) => db,
         Err(e) => {
@@ -36,13 +63,18 @@ pub(super) fn run(
     if ready.send(Ok(cancel.clone())).is_err() {
         return;
     }
+    let mut idle = IdleTransactionState::default();
     let mut pending = None;
     let mut generation = 0u32;
     loop {
         let Some(command) = pending.take().or_else(|| rx.blocking_recv()) else {
             break;
         };
+        sync_idle(&db, &mut idle, false);
         match command {
+            Command::IdleState(reply) => {
+                let _ = reply.send(Ok(Some(idle)));
+            }
             Command::Execute(sql, options, max_schema_bytes, reply) => {
                 let Some(next) = generation.checked_add(1) else {
                     let _ = reply.send(Err(DriverError::new(
@@ -81,6 +113,7 @@ pub(super) fn run(
                     &requested,
                     deadline,
                     max_schema_bytes,
+                    &mut idle,
                 );
                 let _ = db.progress_handler(0, None::<fn() -> bool>);
             }
@@ -198,6 +231,7 @@ fn execute(
     cancel: &Arc<AtomicBool>,
     deadline: Option<Instant>,
     max_schema_bytes: usize,
+    idle: &mut IdleTransactionState,
 ) -> Option<Command> {
     let prep = (|| -> Result<_> {
         if cancel.load(Ordering::Acquire) {
@@ -209,7 +243,29 @@ fn execute(
         if !options.auto_commit && db.is_autocommit() {
             db.execute_batch("BEGIN").map_err(normalize)?;
         }
-        let mut statement = db.prepare(sql).map_err(normalize)?;
+        sync_idle(db, idle, false);
+        // SQLite itself classifies mutation authorization; BEGIN IMMEDIATE merely
+        // acquires a write lock and must not count as a pending modification.
+        let writes = Arc::new(AtomicBool::new(false));
+        let observed = writes.clone();
+        db.authorizer(Some(move |context: rusqlite::hooks::AuthContext<'_>| {
+            use rusqlite::hooks::{AuthAction, Authorization};
+            if matches!(
+                context.action,
+                AuthAction::Insert { .. } | AuthAction::Update { .. } | AuthAction::Delete { .. }
+            ) {
+                observed.store(true, Ordering::Relaxed);
+            }
+            Authorization::Allow
+        }))
+        .map_err(normalize)?;
+        let prepared = db.prepare(sql);
+        db.authorizer(
+            None::<fn(rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization>,
+        )
+        .map_err(normalize)?;
+        let mut statement = prepared.map_err(normalize)?;
+        let write = writes.load(Ordering::Relaxed) && statement.is_explain() == 0;
         let schema_limit = || {
             DriverError::new(
                 ErrorKind::ResourceLimit,
@@ -251,9 +307,9 @@ fn execute(
         } else {
             None
         };
-        Ok((statement, columns, affected, spool))
+        Ok((statement, columns, affected, spool, write))
     })();
-    let (mut statement, columns, affected, mut spool) = match prep {
+    let (mut statement, columns, affected, mut spool, write) = match prep {
         Ok(s) => s,
         Err(e) => {
             let mut e = e;
@@ -264,6 +320,7 @@ fn execute(
             return None;
         }
     };
+    sync_idle(db, idle, affected.is_some() && write);
     let width = columns.len();
     let _ = reply.send(Ok(Started {
         reader: spool.reader(),
@@ -286,7 +343,11 @@ fn execute(
     let mut stepped = false;
     let mut buffered = None;
     while let Some(command) = rx.blocking_recv() {
+        sync_idle(db, idle, false);
         match command {
+            Command::IdleState(reply) => {
+                let _ = reply.send(Ok(Some(*idle)));
+            }
             Command::Fetch(cursor, size, max_bytes, r) if cursor == id => {
                 let page = (|| -> Result<ResultPage> {
                     if cancel.load(Ordering::Acquire) {
@@ -360,6 +421,7 @@ fn execute(
                     }
                     e
                 });
+                sync_idle(db, idle, write && page.is_ok());
                 let _ = r.send(page);
             }
             Command::Object(operation) => {

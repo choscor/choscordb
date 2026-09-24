@@ -46,6 +46,7 @@ struct Shared {
     state: Mutex<State>,
     changed: tokio::sync::Notify,
     spool: spool::Spool,
+    idle: idle::Tracker,
     native: Mutex<Option<Arc<tokio::sync::SemaphorePermit<'static>>>>,
 }
 impl Shared {
@@ -68,6 +69,7 @@ pub(super) struct StreamCursor {
 }
 
 pub(super) struct Start {
+    pub idle: idle::Tracker,
     pub sql: String,
     pub options: QueryOptions,
     pub max: usize,
@@ -77,6 +79,7 @@ pub(super) struct Start {
     pub spool: spool::Spool,
     pub transport: Arc<tokio::sync::OwnedSemaphorePermit>,
     pub tunnel: Option<Arc<ssh::Tunnel>>,
+    pub proxy: Option<Arc<crate::proxy::Tunnel>>,
 }
 pub(super) async fn start(
     conn: Conn,
@@ -84,6 +87,7 @@ pub(super) async fn start(
     request: Start,
 ) -> Result<(Result<StreamCursor>, tokio::task::JoinHandle<Option<Conn>>)> {
     let Start {
+        idle,
         sql,
         options,
         max,
@@ -93,6 +97,7 @@ pub(super) async fn start(
         spool,
         transport,
         tunnel,
+        proxy,
     } = request;
     let shared = Arc::new(Shared {
         state: Mutex::new(State {
@@ -102,15 +107,18 @@ pub(super) async fn start(
         }),
         changed: tokio::sync::Notify::new(),
         spool,
+        idle,
         native: Mutex::new(None),
     });
     let worker_shared = shared.clone();
     let worker_cancel = cancel.clone();
+    let conn = connection::PendingConnection::new(conn);
     let task = tokio::spawn(async move {
         let _transport = transport;
         let _tunnel = tunnel;
+        let _proxy = proxy;
         let mut conn = conn;
-        let id = conn.id();
+        let id = conn.connection().id();
         let timeout = options.timeout;
         let result = {
             let notified = worker_cancel.changed.notified();
@@ -123,8 +131,8 @@ pub(super) async fn start(
                     .lock()
                     .map_err(|_| error(ErrorKind::Internal, "MySQL admission lock failed"))? =
                     Some(permit);
-                produce(
-                    &mut conn,
+                let result = produce(
+                    conn.connection(),
                     &sql,
                     options,
                     max,
@@ -132,7 +140,29 @@ pub(super) async fn start(
                     &worker_shared,
                     &worker_cancel,
                 )
-                .await
+                .await;
+                if result
+                    .as_ref()
+                    .err()
+                    .is_some_and(|error| error.vendor_code.is_some())
+                {
+                    // An ERR packet clears mysql_async's last OK status even when
+                    // the transaction remains active. Refresh server state before
+                    // reusing the session; guessing inactive could commit prior work
+                    // when the next manual query issues START TRANSACTION.
+                    if !matches!(
+                        tokio::time::timeout(Duration::from_secs(5), conn.connection().ping())
+                            .await,
+                        Ok(Ok(()))
+                    ) {
+                        return Err(error(
+                            ErrorKind::Disconnected,
+                            "MySQL transaction state recovery failed; connection closed",
+                        ));
+                    }
+                }
+                worker_shared.idle.reconcile(conn.connection());
+                result
             };
             tokio::pin!(operation);
             let deadline = async {
@@ -153,7 +183,18 @@ pub(super) async fn start(
             match interrupted {
                 Ok(result) => result,
                 Err(kind) => {
+                    // Draining may yield successful rows (notably interrupted
+                    // SLEEP). Publish the interruption before polling that drain,
+                    // so readers cannot mistake those rows for query success.
+                    if let Ok(mut state) = worker_shared.lock() {
+                        let set = state.sets.len().saturating_sub(1);
+                        state.failure = Some((
+                            set,
+                            error(kind, "MySQL query interrupted").with_code("1317"),
+                        ));
+                    }
                     worker_cancel.cancelled.store(true, Ordering::Release);
+                    worker_shared.changed.notify_waiters();
                     // Keep the original future alive: dropping an in-flight read can
                     // desynchronize packet framing. Kill from a second transport,
                     // then drain the original response before returning the session.
@@ -163,12 +204,13 @@ pub(super) async fn start(
                         })?;
                         let opts =
                             OptsBuilder::from_opts(opts).max_allowed_packet(Some(1024 * 1024));
-                        let mut control = Conn::new(opts).await.map_err(normalize)?;
+                        let mut control = connection::connect(opts.into()).await?;
                         control
+                            .connection()
                             .query_drop(format!("KILL QUERY {id}"))
                             .await
                             .map_err(normalize)?;
-                        control.disconnect().await.map_err(normalize)?;
+                        drop(control);
                         let drained = operation.await;
                         match drained {
                             Ok(()) => Ok(()),
@@ -220,11 +262,11 @@ pub(super) async fn start(
             }
         }
         worker_shared.changed.notify_waiters();
-        if independent {
-            let _ = conn.disconnect().await;
+        if independent || !reusable {
+            drop(conn);
             None
         } else {
-            reusable.then_some(conn)
+            Some(conn.ready())
         }
     });
     let mut waiting = Waiting(Some(cancel.clone()));
@@ -281,6 +323,9 @@ async fn produce(
     }
     // Preparing the complete input first preserves compound routine bodies. It
     // also rejects multiple statements before any side effects occur.
+    // Preparing metadata can replace status flags without changing the session's
+    // transaction. Capture the last completed SQL state before preparing.
+    let transaction_started = transaction_active(conn).unwrap_or(false);
     let whole = conn.prep(sql).await;
     match whole {
         Ok(stmt) => {
@@ -290,7 +335,7 @@ async fn produce(
                 Some(stmt),
                 &options,
                 max,
-                (expected, false, cancel),
+                (expected, false, cancel, transaction_started),
                 shared,
             )
             .await?;
@@ -316,6 +361,7 @@ async fn produce(
                     break;
                 };
                 let statement = &remaining[range.clone()];
+                let transaction_started = transaction_active(conn).unwrap_or(false);
                 let stmt = match conn.prep(statement).await {
                     Ok(stmt) => Some(stmt),
                     Err(mysql_async::Error::Server(e)) if e.code == 1295 => None,
@@ -333,7 +379,7 @@ async fn produce(
                     stmt,
                     &options,
                     max,
-                    (None, more, cancel),
+                    (None, more, cancel, transaction_started),
                     shared,
                 )
                 .await?;
@@ -361,13 +407,14 @@ async fn produce(
                     "Compound routine definitions and ambiguous administrative scripts require an external MySQL client; CALL results are supported",
                 ));
             }
+            let transaction_started = transaction_active(conn).unwrap_or(false);
             produce_statement(
                 conn,
                 sql,
                 None,
                 &options,
                 max,
-                (expected, false, cancel),
+                (expected, false, cancel, transaction_started),
                 shared,
             )
             .await?;
@@ -382,10 +429,10 @@ async fn produce_statement(
     stmt: Option<mysql_async::Statement>,
     options: &QueryOptions,
     max: usize,
-    shape: (Option<Vec<Column>>, bool, &Arc<Cancellation>),
+    shape: (Option<Vec<Column>>, bool, &Arc<Cancellation>, bool),
     shared: &Arc<Shared>,
 ) -> Result<()> {
-    let (expected, more_statements, cancel) = shape;
+    let (expected, more_statements, cancel, transaction_started) = shape;
     if let Some(stmt) = &stmt {
         let schema = columns(stmt.columns(), max)?;
         if expected
@@ -398,10 +445,12 @@ async fn produce_statement(
             ));
         }
     }
-    if !options.auto_commit && !transaction_active(conn).unwrap_or(false) {
+    let started = std::time::Instant::now();
+    if !options.auto_commit && !transaction_started {
         conn.query_drop("START TRANSACTION")
             .await
             .map_err(normalize)?;
+        shared.idle.observe(conn, "START TRANSACTION", started);
     }
     if cancel.cancelled.load(Ordering::Acquire) {
         return Err(error(ErrorKind::Cancelled, "MySQL query interrupted").with_code("1317"));
@@ -417,6 +466,7 @@ async fn produce_statement(
         let result = conn.query_iter(sql).await.map_err(normalize)?;
         collect(result, max, shared).await?;
     }
+    shared.idle.observe(conn, sql, started);
     let transaction_active = transaction_active(conn);
     let sql_mode: Option<String> = conn
         .query_first("SELECT @@SESSION.sql_mode")
@@ -556,6 +606,19 @@ async fn collect<P: mysql_async::prelude::Protocol>(
     result.drop_result().await.map_err(normalize)?;
     Ok(())
 }
+impl StreamCursor {
+    fn check_interruption(&self, state: &State, set: usize) -> Result<()> {
+        if let Some((index, failure)) = &state.failure
+            && (set >= *index || matches!(failure.kind, ErrorKind::Cancelled | ErrorKind::Timeout))
+        {
+            return Err(failure.clone());
+        }
+        if !state.done && self.cancel.cancelled.load(Ordering::Acquire) {
+            return Err(error(ErrorKind::Cancelled, "MySQL query cancelled").with_code("1317"));
+        }
+        Ok(())
+    }
+}
 #[async_trait]
 impl ResultCursor for StreamCursor {
     fn independent_cancellation_handle(&self) -> Option<Arc<dyn CancelHandle>> {
@@ -580,11 +643,7 @@ impl ResultCursor for StreamCursor {
             changed.as_mut().enable();
             let available = {
                 let state = self.shared.lock()?;
-                if let Some((index, failure)) = &state.failure
-                    && self.set >= *index
-                {
-                    return Err(failure.clone());
-                }
+                self.check_interruption(&state, self.set)?;
                 let set = &state.sets[self.set];
                 if set.count > self.position.saturating_add(u64::from(size.get()))
                     || set.done && (set.finalized || state.done || self.set + 1 < state.sets.len())
@@ -607,6 +666,12 @@ impl ResultCursor for StreamCursor {
                 })
                 .await
                 .map_err(|_| error(ErrorKind::Internal, "MySQL result worker failed"))??;
+                // Disk work yields to cancellation and producer failures. Do not
+                // expose the page or advance its position after either occurred.
+                {
+                    let state = self.shared.lock()?;
+                    self.check_interruption(&state, self.set)?;
+                }
                 page.has_more |= !done;
                 self.position = position;
                 self.offset = offset;
@@ -623,11 +688,7 @@ impl ResultCursor for StreamCursor {
             changed.as_mut().enable();
             {
                 let state = self.shared.lock()?;
-                if let Some((index, failure)) = &state.failure
-                    && self.set + 1 >= *index
-                {
-                    return Err(failure.clone());
-                }
+                self.check_interruption(&state, self.set + 1)?;
                 if let Some(next) = state.sets.get(self.set + 1) {
                     self.set += 1;
                     self.columns = next.columns.clone();

@@ -14,6 +14,8 @@ fn options() -> ConnectionOptions {
     let get =
         |name| std::env::var(name).expect("repository PostgreSQL fixture environment required");
     ConnectionOptions::Postgres {
+        proxy: None,
+        proxy_secret: None,
         ssh: None,
         host: get("CHOSCORDB_TEST_POSTGRES_HOST"),
         port: get("CHOSCORDB_TEST_POSTGRES_PORT").parse().unwrap(),
@@ -21,7 +23,11 @@ fn options() -> ConnectionOptions {
         user: get("CHOSCORDB_TEST_POSTGRES_USER"),
         password: Some(Secret::new(get("CHOSCORDB_TEST_POSTGRES_PASSWORD"))),
         ssh_secret: None,
+        ssh_private_key: None,
+        ssh_jump_secrets: Default::default(),
+        ssh_jump_private_keys: Default::default(),
         tls: TlsMode::VerifyFull,
+        tls_identity: None,
         root_certificate: Some(get("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE").into()),
     }
 }

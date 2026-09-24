@@ -17,6 +17,11 @@ fn settings() -> ConnectionOptions {
         host.clone()
     };
     ConnectionOptions::Postgres {
+        ssh_jump_secrets: Default::default(),
+        ssh_private_key: None,
+        ssh_jump_private_keys: Default::default(),
+        proxy: None,
+        proxy_secret: None,
         host,
         port: config.get_ports().first().copied().unwrap_or(5432),
         database: config.get_dbname().unwrap_or("postgres").into(),
@@ -31,6 +36,7 @@ fn settings() -> ConnectionOptions {
             TlsMode::Disable
         },
         ssh: None,
+        tls_identity: None,
         root_certificate: std::env::var_os("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE")
             .map(Into::into),
     }

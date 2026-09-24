@@ -4,6 +4,11 @@ use choscordb_driver_mysql::MysqlDriver;
 async fn connect() -> Box<dyn Connection> {
     MysqlDriver
         .connect(ConnectionOptions::Mysql {
+            ssh_jump_secrets: Default::default(),
+            ssh_private_key: None,
+            ssh_jump_private_keys: Default::default(),
+            proxy: None,
+            proxy_secret: None,
             host: "127.0.0.1".into(),
             port: std::env::var("CHOSCORDB_MYSQL_PORT")
                 .unwrap_or_else(|_| "33306".into())
@@ -14,6 +19,7 @@ async fn connect() -> Box<dyn Connection> {
             password: Some(Secret::new("choscordb-test-password")),
             ssh_secret: None,
             tls: TlsMode::Disable,
+            tls_identity: None,
             root_certificate: None,
             ssh: None,
         })

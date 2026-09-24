@@ -5,7 +5,9 @@ use choscordb_credentials::{CredentialStore, MAX_SECRET_BYTES};
 use choscordb_driver_api::{
     Connection, ConnectionId, ConnectionOptions, DatabaseDriver, DriverCapabilities,
 };
-use choscordb_driver_api::{DriverError, ErrorKind, Secret};
+use choscordb_driver_api::{
+    DatabaseAuthentication, DriverError, ErrorKind, Secret, resolve_database_authentication,
+};
 use choscordb_storage::{Storage, StorageError};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::oneshot;
@@ -17,12 +19,22 @@ pub enum CredentialUpdate {
 pub struct CredentialUpdates {
     pub database: CredentialUpdate,
     pub ssh: CredentialUpdate,
+    pub ssh_private_key: CredentialUpdate,
+    pub tls: CredentialUpdate,
+    pub proxy: CredentialUpdate,
+    pub ssh_jumps: std::collections::BTreeMap<String, CredentialUpdate>,
+    pub ssh_jump_private_keys: std::collections::BTreeMap<String, CredentialUpdate>,
 }
 impl CredentialUpdates {
     fn database(update: CredentialUpdate) -> Self {
         Self {
             database: update,
             ssh: CredentialUpdate::Keep,
+            ssh_private_key: CredentialUpdate::Keep,
+            tls: CredentialUpdate::Keep,
+            proxy: CredentialUpdate::Keep,
+            ssh_jumps: Default::default(),
+            ssh_jump_private_keys: Default::default(),
         }
     }
 }
@@ -30,6 +42,11 @@ impl CredentialUpdates {
 pub struct ProfileSecrets {
     pub database: Option<Secret>,
     pub ssh: Option<Secret>,
+    pub ssh_private_key: Option<Secret>,
+    pub tls: Option<Secret>,
+    pub proxy: Option<Secret>,
+    pub ssh_jumps: std::collections::BTreeMap<String, Secret>,
+    pub ssh_jump_private_keys: std::collections::BTreeMap<String, Secret>,
 }
 use tokio::{
     runtime::Handle,
@@ -192,7 +209,18 @@ fn cleanup(storage: &mut Storage, credentials: &dyn CredentialStore) -> Result<(
         .profiles()
         .map_err(storage_error)?
         .into_iter()
-        .flat_map(|p| [p.credential_ref, p.ssh_credential_ref])
+        .flat_map(|p| {
+            [
+                p.credential_ref,
+                p.ssh_credential_ref,
+                p.ssh_private_key_ref,
+                p.tls_credential_ref,
+                p.proxy_credential_ref,
+            ]
+            .into_iter()
+            .chain(p.ssh_jump_credential_refs.into_values().map(Some))
+            .chain(p.ssh_jump_private_key_refs.into_values().map(Some))
+        })
         .flatten()
         .collect();
     for reference in storage
@@ -232,7 +260,7 @@ fn execute(
                 profiles: storage.profiles().map_err(storage_error)?,
             })
         }
-        Command::Save(mut profile, updates, request_token) => {
+        Command::Save(mut profile, mut updates, request_token) => {
             let previous = storage.profile(&profile.id).map_err(storage_error)?;
             let mut created = Vec::new();
             let database = prepare_credential_update(
@@ -251,7 +279,7 @@ fn execute(
             let ssh = prepare_credential_update(
                 storage,
                 credentials,
-                previous.and_then(|p| p.ssh_credential_ref),
+                previous.as_ref().and_then(|p| p.ssh_credential_ref.clone()),
                 updates.ssh,
             );
             let ssh = match ssh {
@@ -264,8 +292,114 @@ fn execute(
                     return Err(error);
                 }
             };
+            let ssh_private_key = if inline_target(&profile) {
+                match prepare_credential_update(
+                    storage,
+                    credentials,
+                    previous
+                        .as_ref()
+                        .and_then(|p| p.ssh_private_key_ref.clone()),
+                    updates.ssh_private_key,
+                ) {
+                    Ok((reference, new_reference)) => {
+                        created.extend(new_reference);
+                        reference
+                    }
+                    Err(error) => {
+                        discard_created_credentials(storage, credentials, &created);
+                        return Err(error);
+                    }
+                }
+            } else {
+                None
+            };
+            let tls = prepare_credential_update(
+                storage,
+                credentials,
+                previous.as_ref().and_then(|p| p.tls_credential_ref.clone()),
+                updates.tls,
+            );
+            let tls = match tls {
+                Ok((reference, new_reference)) => {
+                    created.extend(new_reference);
+                    reference
+                }
+                Err(error) => {
+                    discard_created_credentials(storage, credentials, &created);
+                    return Err(error);
+                }
+            };
+            let proxy = prepare_credential_update(
+                storage,
+                credentials,
+                previous
+                    .as_ref()
+                    .and_then(|p| p.proxy_credential_ref.clone()),
+                updates.proxy,
+            );
+            let proxy = match proxy {
+                Ok((reference, new_reference)) => {
+                    created.extend(new_reference);
+                    reference
+                }
+                Err(error) => {
+                    discard_created_credentials(storage, credentials, &created);
+                    return Err(error);
+                }
+            };
+            let mut hop_references = std::collections::BTreeMap::new();
+            for id in credential_hop_ids(&profile) {
+                let old = previous
+                    .as_ref()
+                    .and_then(|p| p.ssh_jump_credential_refs.get(id))
+                    .cloned();
+                let update = updates
+                    .ssh_jumps
+                    .remove(id)
+                    .unwrap_or(CredentialUpdate::Keep);
+                match prepare_credential_update(storage, credentials, old, update) {
+                    Ok((reference, new_reference)) => {
+                        created.extend(new_reference);
+                        if let Some(reference) = reference {
+                            hop_references.insert(id.to_owned(), reference);
+                        }
+                    }
+                    Err(error) => {
+                        discard_created_credentials(storage, credentials, &created);
+                        return Err(error);
+                    }
+                }
+            }
+            profile.ssh_jump_credential_refs = hop_references;
+            let mut key_references = std::collections::BTreeMap::new();
+            for id in inline_hop_ids(&profile) {
+                let old = previous
+                    .as_ref()
+                    .and_then(|p| p.ssh_jump_private_key_refs.get(id))
+                    .cloned();
+                let update = updates
+                    .ssh_jump_private_keys
+                    .remove(id)
+                    .unwrap_or(CredentialUpdate::Keep);
+                match prepare_credential_update(storage, credentials, old, update) {
+                    Ok((reference, new_reference)) => {
+                        created.extend(new_reference);
+                        if let Some(reference) = reference {
+                            key_references.insert(id.to_owned(), reference);
+                        }
+                    }
+                    Err(error) => {
+                        discard_created_credentials(storage, credentials, &created);
+                        return Err(error);
+                    }
+                }
+            }
+            profile.ssh_jump_private_key_refs = key_references;
+            profile.ssh_private_key_ref = ssh_private_key;
+            profile.proxy_credential_ref = proxy;
             profile.credential_ref = database;
             profile.ssh_credential_ref = ssh;
+            profile.tls_credential_ref = tls;
             if let Err(error) = storage.save_profile(&profile) {
                 discard_created_credentials(storage, credentials, &created);
                 return Err(storage_error(error));
@@ -278,15 +412,17 @@ fn execute(
                 .map(|_| "Profile saved; credential cleanup will be retried".into());
             Ok(Event::ProfileSaved {
                 request_token,
-                profile: *profile,
+                profile,
                 warning,
             })
         }
         Command::Duplicate(source, id, name, request_token) => Ok(Event::ProfileSaved {
             request_token,
-            profile: storage
-                .duplicate_profile(&source, &id, &name)
-                .map_err(storage_error)?,
+            profile: Box::new(
+                storage
+                    .duplicate_profile(&source, &id, &name)
+                    .map_err(storage_error)?,
+            ),
             warning: None,
         }),
         Command::Delete(id, request_token) => {
@@ -358,14 +494,86 @@ impl Engine {
     }
     pub fn profile_save_with_secrets(
         &self,
-        profile: ConnectionProfile,
+        mut profile: ConnectionProfile,
         updates: CredentialUpdates,
         token: u64,
     ) -> Result<(), SubmitError> {
-        for update in [&updates.database, &updates.ssh] {
+        // Submitted references are draft metadata. Keep only references owned by
+        // the previously saved profile inside the metadata worker.
+        profile.ssh_jump_credential_refs.clear();
+        profile.ssh_private_key_ref = None;
+        profile.ssh_jump_private_key_refs.clear();
+        if !inline_target(&profile)
+            && matches!(updates.ssh_private_key, CredentialUpdate::Replace(_))
+        {
+            return Err(SubmitError::InvalidInput);
+        }
+        if let CredentialUpdate::Replace(secret) = &updates.ssh_private_key {
+            validate_private_key(secret)?;
+        }
+        let inline_ids = inline_hop_ids(&profile);
+        let all_hop_ids: Vec<&str> = match &profile.configuration {
+            ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
+            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+                .options
+                .jump_hosts
+                .iter()
+                .filter_map(|hop| hop.id.as_deref())
+                .collect(),
+            _ => Vec::new(),
+        };
+        if updates.ssh_jump_private_keys.len() > 5
+            || updates.ssh_jump_private_keys.iter().any(|(id, update)| {
+                !all_hop_ids.contains(&id.as_str())
+                    || (matches!(update, CredentialUpdate::Replace(_))
+                        && !inline_ids.contains(&id.as_str()))
+            })
+        {
+            return Err(SubmitError::InvalidInput);
+        }
+        for update in updates.ssh_jump_private_keys.values() {
+            if let CredentialUpdate::Replace(secret) = update {
+                validate_private_key(secret)?;
+            }
+        }
+        let hop_ids = credential_hop_ids(&profile);
+        if updates.ssh_jumps.len() > 5
+            || updates
+                .ssh_jumps
+                .keys()
+                .any(|id| !hop_ids.contains(&id.as_str()))
+        {
+            return Err(SubmitError::InvalidInput);
+        }
+        for update in updates.ssh_jumps.values() {
+            if let CredentialUpdate::Replace(secret) = update {
+                validate_secret(secret)?;
+                if secret.expose().contains(['\0', '\r', '\n']) {
+                    return Err(SubmitError::InvalidInput);
+                }
+            }
+        }
+        for update in [
+            &updates.database,
+            &updates.ssh,
+            &updates.tls,
+            &updates.proxy,
+        ] {
             if let CredentialUpdate::Replace(secret) = update {
                 validate_secret(secret)?;
             }
+        }
+        if let CredentialUpdate::Replace(secret) = &updates.proxy
+            && let ProfileConfiguration::Postgres {
+                proxy: Some(proxy), ..
+            }
+            | ProfileConfiguration::Mysql {
+                proxy: Some(proxy), ..
+            } = &profile.configuration
+            && proxy.needs_password()
+        {
+            choscordb_driver_api::validate_socks_secret(proxy, Some(secret))
+                .map_err(|_| SubmitError::InvalidInput)?;
         }
         self.submit_profile(Command::Save(Box::new(profile), updates, token))
     }
@@ -407,21 +615,37 @@ impl Engine {
         self.test_profile_with_secrets(
             profile,
             ProfileSecrets {
+                ssh_private_key: None,
+                ssh_jump_private_keys: Default::default(),
+                ssh_jumps: Default::default(),
                 database: password,
                 ssh: None,
+                tls: None,
+                proxy: None,
             },
             request_token,
         )
     }
     pub fn test_profile_with_secrets(
         &self,
-        profile: ConnectionProfile,
+        mut profile: ConnectionProfile,
         secrets: ProfileSecrets,
         request_token: u64,
     ) -> Result<(), SubmitError> {
         self.ensure_running()?;
+        prune_draft_hop_references(&mut profile);
         validate(&profile)?;
-        for secret in [&secrets.database, &secrets.ssh].into_iter().flatten() {
+        validate_hop_secrets(&profile, &secrets.ssh_jumps)?;
+        validate_inline_secrets(&profile, &secrets)?;
+        for secret in [
+            &secrets.database,
+            &secrets.ssh,
+            &secrets.tls,
+            &secrets.proxy,
+        ]
+        .into_iter()
+        .flatten()
+        {
             validate_secret(secret)?;
         }
         let driver_id = match profile.configuration {
@@ -442,16 +666,24 @@ impl Engine {
         let events = self.events_tx.clone();
         let mut shutdown = self.shutdown.subscribe();
         let commands = self.profiles.clone();
-        let database_reference = profile.credential_ref.clone();
-        let ssh_reference = profile.ssh_credential_ref.clone();
+        let test_timeout = authentication_budget(
+            &profile.configuration.connection_options(None, None),
+            &profile.authentication,
+        );
+        let authentication = profile.authentication.clone();
+        let references = CredentialReferences::from_profile(&profile);
         self.runtime.as_ref().ok_or(SubmitError::ShuttingDown)?.spawn(async move {
             let _permit = permit;
             let result = tokio::select! { biased;
                 _ = shutdown.wait_for(|s| *s) => return,
-                result = tokio::time::timeout(Duration::from_secs(10), async {
-                    let password = resolve(&commands, database_reference, secrets.database).await?;
-                    let ssh_secret = resolve(&commands, ssh_reference, secrets.ssh).await?;
-                    let mut connection = driver.connect(profile.configuration.connection_options(password, ssh_secret)).await?;
+                result = tokio::time::timeout(test_timeout, async {
+                    let mut options = profile_options(&profile, secrets);
+                    if let ConnectionOptions::Postgres { ssh: Some(ssh), .. }
+                    | ConnectionOptions::Mysql { ssh: Some(ssh), .. } = &mut options {
+                        ssh.options.share_tunnels = false;
+                    }
+                    resolve_options(&commands, references, &authentication, &mut options).await?;
+                    let mut connection = driver.connect(options).await?;
                     connection.close().await
                 }) => result.unwrap_or_else(|_| Err(DriverError::new(ErrorKind::Timeout, "Connection test timed out"))),
             };
@@ -463,6 +695,138 @@ impl Engine {
         });
         Ok(())
     }
+}
+
+fn credential_hop_ids(profile: &ConnectionProfile) -> Vec<&str> {
+    match &profile.configuration {
+        ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+            .options
+            .jump_hosts
+            .iter()
+            .filter(|hop| hop.authentication.uses_secret())
+            .filter_map(|hop| hop.id.as_deref())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+fn inline_target(profile: &ConnectionProfile) -> bool {
+    match &profile.configuration {
+        ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => {
+            ssh.authentication == choscordb_driver_api::SshAuthentication::PublicKey
+                && ssh.identity_source == choscordb_driver_api::SshIdentitySource::Inline
+        }
+        _ => false,
+    }
+}
+fn inline_hop_ids(profile: &ConnectionProfile) -> Vec<&str> {
+    match &profile.configuration {
+        ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+            .options
+            .jump_hosts
+            .iter()
+            .filter(|hop| {
+                hop.authentication == choscordb_driver_api::SshJumpAuthentication::PublicKey
+                    && hop.identity_source == choscordb_driver_api::SshIdentitySource::Inline
+            })
+            .filter_map(|hop| hop.id.as_deref())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+fn validate_private_key(key: &Secret) -> Result<(), SubmitError> {
+    let value = key.expose();
+    if value.trim().is_empty() || value.len() > MAX_SECRET_BYTES || value.contains('\0') {
+        Err(SubmitError::InvalidInput)
+    } else {
+        Ok(())
+    }
+}
+fn prune_draft_hop_references(profile: &mut ConnectionProfile) {
+    let active = credential_hop_ids(profile)
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<std::collections::BTreeSet<_>>();
+    profile
+        .ssh_jump_credential_refs
+        .retain(|id, _| active.contains(id));
+    let inline = inline_hop_ids(profile)
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<std::collections::BTreeSet<_>>();
+    profile
+        .ssh_jump_private_key_refs
+        .retain(|id, _| inline.contains(id));
+    if !inline_target(profile) {
+        profile.ssh_private_key_ref = None;
+    }
+}
+
+fn validate_hop_secrets(
+    profile: &ConnectionProfile,
+    secrets: &std::collections::BTreeMap<String, Secret>,
+) -> Result<(), SubmitError> {
+    if secrets.len() > 5 {
+        return Err(SubmitError::InvalidInput);
+    }
+    let ssh = match &profile.configuration {
+        ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh,
+        _ => return Ok(()),
+    };
+    for (id, secret) in secrets {
+        let hop = ssh
+            .options
+            .jump_hosts
+            .iter()
+            .find(|hop| hop.id.as_deref() == Some(id));
+        let Some(hop) = hop else {
+            return Err(SubmitError::InvalidInput);
+        };
+        if hop.authentication.uses_secret() {
+            validate_secret(secret)?;
+            if secret.expose().contains(['\0', '\r', '\n']) {
+                return Err(SubmitError::InvalidInput);
+            }
+        }
+    }
+    Ok(())
+}
+fn validate_inline_secrets(
+    profile: &ConnectionProfile,
+    secrets: &ProfileSecrets,
+) -> Result<(), SubmitError> {
+    if secrets.ssh_jump_private_keys.len() > 5 {
+        return Err(SubmitError::InvalidInput);
+    }
+    if inline_target(profile)
+        && let Some(key) = &secrets.ssh_private_key
+    {
+        validate_private_key(key)?;
+    }
+    let ssh = match &profile.configuration {
+        ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh,
+        _ => return Ok(()),
+    };
+    for (id, key) in &secrets.ssh_jump_private_keys {
+        let Some(hop) = ssh
+            .options
+            .jump_hosts
+            .iter()
+            .find(|hop| hop.id.as_deref() == Some(id))
+        else {
+            return Err(SubmitError::InvalidInput);
+        };
+        if hop.authentication == choscordb_driver_api::SshJumpAuthentication::PublicKey
+            && hop.identity_source == choscordb_driver_api::SshIdentitySource::Inline
+        {
+            validate_private_key(key)?;
+        }
+    }
+    Ok(())
 }
 
 fn validate(profile: &ConnectionProfile) -> Result<(), SubmitError> {
@@ -482,13 +846,13 @@ fn bounded(value: &str) -> Result<(), SubmitError> {
 }
 
 fn validate_secret(secret: &Secret) -> Result<(), SubmitError> {
-    if secret.expose().len() > MAX_SECRET_BYTES {
+    if secret.expose().len() > 16 * 1024 {
         Err(SubmitError::ResourceLimit)
     } else {
         Ok(())
     }
 }
-async fn resolve(
+pub(super) async fn resolve(
     commands: &mpsc::Sender<Command>,
     reference: Option<String>,
     password: Option<Secret>,
@@ -510,11 +874,215 @@ async fn resolve(
         .map_err(|_| DriverError::new(ErrorKind::Io, "Credential worker stopped"))?
         .map(Some)
 }
+fn profile_options(profile: &ConnectionProfile, secrets: ProfileSecrets) -> ConnectionOptions {
+    let mut options = profile
+        .configuration
+        .connection_options(secrets.database, secrets.ssh);
+    if let ConnectionOptions::Postgres {
+        tls_identity: Some(identity),
+        ..
+    }
+    | ConnectionOptions::Mysql {
+        tls_identity: Some(identity),
+        ..
+    } = &mut options
+    {
+        identity.password = secrets.tls;
+    }
+    if let ConnectionOptions::Postgres { proxy_secret, .. }
+    | ConnectionOptions::Mysql { proxy_secret, .. } = &mut options
+    {
+        *proxy_secret = secrets.proxy;
+    }
+    if let ConnectionOptions::Postgres {
+        ssh_jump_secrets, ..
+    }
+    | ConnectionOptions::Mysql {
+        ssh_jump_secrets, ..
+    } = &mut options
+    {
+        *ssh_jump_secrets = secrets.ssh_jumps;
+    }
+    if let ConnectionOptions::Postgres {
+        ssh_private_key,
+        ssh_jump_private_keys,
+        ..
+    }
+    | ConnectionOptions::Mysql {
+        ssh_private_key,
+        ssh_jump_private_keys,
+        ..
+    } = &mut options
+    {
+        *ssh_private_key = secrets.ssh_private_key;
+        *ssh_jump_private_keys = secrets.ssh_jump_private_keys;
+    }
+    options
+}
+
+#[derive(Clone)]
+struct CredentialReferences {
+    database: Option<String>,
+    ssh: Option<String>,
+    ssh_private_key: Option<String>,
+    tls: Option<String>,
+    proxy: Option<String>,
+    ssh_jumps: std::collections::BTreeMap<String, String>,
+    ssh_jump_private_keys: std::collections::BTreeMap<String, String>,
+}
+impl CredentialReferences {
+    fn from_profile(profile: &ConnectionProfile) -> Self {
+        Self {
+            database: profile.credential_ref.clone(),
+            ssh: profile.ssh_credential_ref.clone(),
+            ssh_private_key: profile.ssh_private_key_ref.clone(),
+            tls: profile.tls_credential_ref.clone(),
+            proxy: profile.proxy_credential_ref.clone(),
+            ssh_jumps: profile.ssh_jump_credential_refs.clone(),
+            ssh_jump_private_keys: profile.ssh_jump_private_key_refs.clone(),
+        }
+    }
+}
+// Resolve only credentials consumed by the selected transport. A stale saved
+// reference from a previous transport must not prompt or block the connection.
+async fn resolve_options(
+    commands: &mpsc::Sender<Command>,
+    references: CredentialReferences,
+    authentication: &DatabaseAuthentication,
+    options: &mut ConnectionOptions,
+) -> Result<(), DriverError> {
+    resolve_database_authentication(authentication, options).await?;
+    if let ConnectionOptions::Postgres {
+        password,
+        ssh_secret,
+        ssh_private_key,
+        ssh_jump_secrets,
+        ssh_jump_private_keys,
+        ssh,
+        tls,
+        tls_identity,
+        proxy,
+        proxy_secret,
+        ..
+    }
+    | ConnectionOptions::Mysql {
+        password,
+        ssh_secret,
+        ssh_private_key,
+        ssh_jump_secrets,
+        ssh_jump_private_keys,
+        ssh,
+        tls,
+        tls_identity,
+        proxy,
+        proxy_secret,
+        ..
+    } = options
+    {
+        if authentication.is_password() {
+            *password = resolve(commands, references.database, password.take()).await?;
+        }
+        *ssh_secret = if ssh.as_ref().is_some_and(|settings| {
+            settings.authentication != choscordb_driver_api::SshAuthentication::Agent
+        }) {
+            resolve(commands, references.ssh, ssh_secret.take()).await?
+        } else {
+            None
+        };
+        *ssh_private_key = if ssh.as_ref().is_some_and(|settings| {
+            settings.authentication == choscordb_driver_api::SshAuthentication::PublicKey
+                && settings.identity_source == choscordb_driver_api::SshIdentitySource::Inline
+        }) {
+            resolve(commands, references.ssh_private_key, ssh_private_key.take()).await?
+        } else {
+            None
+        };
+        if let Some(settings) = ssh {
+            let active: std::collections::BTreeSet<_> = settings
+                .options
+                .jump_hosts
+                .iter()
+                .filter(|hop| hop.authentication.uses_secret())
+                .filter_map(|hop| hop.id.as_ref())
+                .cloned()
+                .collect();
+            ssh_jump_secrets.retain(|id, _| active.contains(id));
+            for id in active {
+                let transient = ssh_jump_secrets.remove(&id);
+                if let Some(secret) =
+                    resolve(commands, references.ssh_jumps.get(&id).cloned(), transient).await?
+                {
+                    ssh_jump_secrets.insert(id, secret);
+                }
+            }
+            let inline: std::collections::BTreeSet<_> = settings
+                .options
+                .jump_hosts
+                .iter()
+                .filter(|hop| {
+                    hop.authentication == choscordb_driver_api::SshJumpAuthentication::PublicKey
+                        && hop.identity_source == choscordb_driver_api::SshIdentitySource::Inline
+                })
+                .filter_map(|hop| hop.id.as_ref())
+                .cloned()
+                .collect();
+            ssh_jump_private_keys.retain(|id, _| inline.contains(id));
+            for id in inline {
+                let transient = ssh_jump_private_keys.remove(&id);
+                if let Some(key) = resolve(
+                    commands,
+                    references.ssh_jump_private_keys.get(&id).cloned(),
+                    transient,
+                )
+                .await?
+                {
+                    ssh_jump_private_keys.insert(id, key);
+                }
+            }
+        } else {
+            ssh_jump_secrets.clear();
+            ssh_jump_private_keys.clear();
+        }
+        *proxy_secret = if proxy
+            .as_ref()
+            .is_some_and(|settings| settings.needs_password())
+        {
+            resolve(commands, references.proxy, proxy_secret.take()).await?
+        } else {
+            None
+        };
+        if *tls != choscordb_driver_api::TlsMode::Disable {
+            if let Some(identity) = tls_identity {
+                identity.password =
+                    resolve(commands, references.tls, identity.password.take()).await?;
+            }
+        } else {
+            *tls_identity = None;
+        }
+    }
+    Ok(())
+}
+
+fn authentication_budget(
+    options: &ConnectionOptions,
+    authentication: &DatabaseAuthentication,
+) -> Duration {
+    let connection = match options {
+        ConnectionOptions::Postgres { ssh, .. } | ConnectionOptions::Mysql { ssh, .. } => {
+            ssh.as_ref().map_or(Duration::from_secs(15), |settings| {
+                Duration::from_secs(u64::from(settings.options.connect_timeout_seconds))
+            })
+        }
+        _ => Duration::from_secs(15),
+    };
+    connection + Duration::from_secs(5) + authentication.command_timeout()
+}
+
 struct ProfileDriver {
+    authentication: DatabaseAuthentication,
     inner: Arc<dyn DatabaseDriver>,
     commands: mpsc::Sender<Command>,
-    reference: Option<String>,
-    ssh_reference: Option<String>,
+    references: CredentialReferences,
 }
 #[async_trait::async_trait]
 impl DatabaseDriver for ProfileDriver {
@@ -526,28 +1094,34 @@ impl DatabaseDriver for ProfileDriver {
     }
     async fn connect(
         &self,
+        options: ConnectionOptions,
+    ) -> choscordb_driver_api::Result<Box<dyn Connection>> {
+        self.connect_options(options).await
+    }
+}
+impl ProfileDriver {
+    async fn connect_options(
+        &self,
         mut options: ConnectionOptions,
     ) -> choscordb_driver_api::Result<Box<dyn Connection>> {
-        if let ConnectionOptions::Postgres {
-            password,
-            ssh_secret,
-            ..
-        }
-        | ConnectionOptions::Mysql {
-            password,
-            ssh_secret,
-            ..
-        } = &mut options
-        {
-            *password = resolve(&self.commands, self.reference.clone(), password.take()).await?;
-            *ssh_secret = resolve(
+        let budget = authentication_budget(&options, &self.authentication);
+        tokio::time::timeout(budget, async {
+            resolve_options(
                 &self.commands,
-                self.ssh_reference.clone(),
-                ssh_secret.take(),
+                self.references.clone(),
+                &self.authentication,
+                &mut options,
             )
             .await?;
-        }
-        self.inner.connect(options).await
+            self.inner.connect(options).await
+        })
+        .await
+        .map_err(|_| {
+            DriverError::new(
+                ErrorKind::Timeout,
+                "Connection timed out while preparing credentials or transport",
+            )
+        })?
     }
 }
 impl Engine {
@@ -559,19 +1133,35 @@ impl Engine {
         self.connect_profile_with_secrets(
             profile,
             ProfileSecrets {
+                ssh_private_key: None,
+                ssh_jump_private_keys: Default::default(),
+                ssh_jumps: Default::default(),
                 database: password,
                 ssh: None,
+                tls: None,
+                proxy: None,
             },
         )
     }
     pub fn connect_profile_with_secrets(
         &mut self,
-        profile: ConnectionProfile,
+        mut profile: ConnectionProfile,
         secrets: ProfileSecrets,
     ) -> Result<ConnectionId, SubmitError> {
         self.ensure_running()?;
+        prune_draft_hop_references(&mut profile);
         validate(&profile)?;
-        for secret in [&secrets.database, &secrets.ssh].into_iter().flatten() {
+        validate_hop_secrets(&profile, &secrets.ssh_jumps)?;
+        validate_inline_secrets(&profile, &secrets)?;
+        for secret in [
+            &secrets.database,
+            &secrets.ssh,
+            &secrets.tls,
+            &secrets.proxy,
+        ]
+        .into_iter()
+        .flatten()
+        {
             validate_secret(secret)?;
         }
         let id = match profile.configuration {
@@ -585,16 +1175,18 @@ impl Engine {
             .cloned()
             .ok_or(SubmitError::UnknownDriver)?;
         let driver = Arc::new(ProfileDriver {
+            authentication: profile.authentication.clone(),
             inner,
             commands: self.profiles.clone(),
-            reference: profile.credential_ref.clone(),
-            ssh_reference: profile.ssh_credential_ref.clone(),
+            references: CredentialReferences::from_profile(&profile),
         });
-        self.connect_driver(
+        self.connect_driver_with_timeout(
             driver,
-            profile
-                .configuration
-                .connection_options(secrets.database, secrets.ssh),
+            profile_options(&profile, secrets),
+            Some(authentication_budget(
+                &profile.configuration.connection_options(None, None),
+                &profile.authentication,
+            )),
         )
     }
 }

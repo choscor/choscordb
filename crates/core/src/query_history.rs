@@ -27,6 +27,7 @@ pub(crate) struct Ticket {
     started: std::time::Instant,
     sender: mpsc::Sender<crate::profiles::Command>,
     events: mpsc::Sender<Event>,
+    actor_events: Option<crate::actor::EventSink>,
     reservation: Option<Arc<Reservation>>,
     finished: bool,
 }
@@ -83,19 +84,25 @@ impl Ticket {
             started: std::time::Instant::now(),
             sender,
             events,
+            actor_events: None,
             reservation,
             finished: false,
         })
     }
+    pub(crate) fn bind_events(&mut self, events: crate::actor::EventSink) {
+        self.actor_events = Some(events);
+    }
     pub async fn finish(&mut self, status: HistoryStatus, rows: Option<u64>) {
         if let Some(error) = self.prepare_write(status, rows) {
-            let _ = self
-                .events
-                .send(Event::HistoryWriteFailed {
-                    query: self.query,
-                    error,
-                })
-                .await;
+            let event = Event::HistoryWriteFailed {
+                query: self.query,
+                error,
+            };
+            if let Some(events) = &self.actor_events {
+                events.send(event).await;
+            } else {
+                let _ = self.events.send(event).await;
+            }
         }
     }
     fn prepare_write(&mut self, status: HistoryStatus, rows: Option<u64>) -> Option<DriverError> {
@@ -209,6 +216,40 @@ mod tests {
                 received.recv().await,
                 Some(Event::HistoryFlushed { request_token: 100 })
             ));
+        });
+    }
+    #[test]
+    fn actor_history_failure_backpressure_obeys_shutdown() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let (sender, _commands) = mpsc::channel(1);
+            let (events, _received) = mpsc::channel(1);
+            events
+                .send(Event::HistoryFlushed { request_token: 99 })
+                .await
+                .unwrap();
+            let (shutdown, stopped) = tokio::sync::watch::channel(false);
+            let query = choscordb_driver_api::Arena::<()>::default().insert(());
+            let mut ticket = Ticket::new(
+                query,
+                Arc::new("SELECT 1".into()),
+                None,
+                Arc::new(AtomicUsize::new(LIMIT)),
+                sender,
+                events.clone(),
+            )
+            .unwrap();
+            ticket.bind_events(crate::actor::EventSink::new(events, stopped));
+            let failure = ticket.fail(ErrorKind::Disconnected);
+            tokio::pin!(failure);
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(20), &mut failure)
+                    .await
+                    .is_err()
+            );
+            shutdown.send(true).unwrap();
+            tokio::time::timeout(std::time::Duration::from_millis(200), failure)
+                .await
+                .expect("history error retained actor behind a full event queue");
         });
     }
     #[test]

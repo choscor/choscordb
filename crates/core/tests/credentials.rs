@@ -39,6 +39,11 @@ fn database_and_ssh_secrets_have_independent_secure_references() {
         .profile_save_with_secrets(
             profile(),
             CredentialUpdates {
+                ssh_private_key: CredentialUpdate::Keep,
+                ssh_jump_private_keys: Default::default(),
+                ssh_jumps: Default::default(),
+                proxy: CredentialUpdate::Keep,
+                tls: CredentialUpdate::Keep,
                 database: CredentialUpdate::Replace(Secret::new("database-secret")),
                 ssh: CredentialUpdate::Replace(Secret::new("ssh-secret")),
             },
@@ -67,8 +72,13 @@ fn database_and_ssh_secrets_have_independent_secure_references() {
 
     engine
         .profile_save_with_secrets(
-            profile,
+            *profile,
             CredentialUpdates {
+                ssh_private_key: CredentialUpdate::Keep,
+                ssh_jump_private_keys: Default::default(),
+                ssh_jumps: Default::default(),
+                proxy: CredentialUpdate::Keep,
+                tls: CredentialUpdate::Keep,
                 database: CredentialUpdate::Keep,
                 ssh: CredentialUpdate::Clear,
             },
@@ -112,10 +122,12 @@ impl CredentialStore for Vault {
 }
 fn profile() -> ConnectionProfile {
     ConnectionProfile {
+        authentication: Default::default(),
         id: "p".into(),
         name: "Remote".into(),
         group_id: None,
         configuration: ProfileConfiguration::Postgres {
+            proxy: None,
             ssh: None,
             host: "localhost".into(),
             port: 5432,
@@ -124,7 +136,12 @@ fn profile() -> ConnectionProfile {
             tls: PostgresTls::default(),
         },
         credential_ref: None,
+        proxy_credential_ref: None,
+        ssh_jump_credential_refs: Default::default(),
+        ssh_jump_private_key_refs: Default::default(),
+        tls_credential_ref: None,
         ssh_credential_ref: None,
+        ssh_private_key_ref: None,
     }
 }
 fn event(engine: &mut Engine) -> Event {
@@ -142,7 +159,7 @@ fn save(engine: &mut Engine, p: ConnectionProfile, s: &str) -> ConnectionProfile
         .profile_save_with_secret(p, CredentialUpdate::Replace(Secret::new(s)), 1)
         .unwrap();
     match event(engine) {
-        Event::ProfileSaved { profile, .. } => profile,
+        Event::ProfileSaved { profile, .. } => *profile,
         e => panic!("{e:?}"),
     }
 }
@@ -361,16 +378,23 @@ fn connect_resolves_saved_ssh_secret_and_session_overrides() {
         panic!()
     };
     *ssh = Some(SshTunnel {
+        options: Default::default(),
         host: "bastion.example".into(),
         port: 22,
         user: "operator".into(),
         authentication: SshAuthentication::Password,
+        identity_source: choscordb_driver_api::SshIdentitySource::File,
         identity_file: None,
     });
     engine
         .profile_save_with_secrets(
             value,
             CredentialUpdates {
+                ssh_private_key: CredentialUpdate::Keep,
+                ssh_jump_private_keys: Default::default(),
+                ssh_jumps: Default::default(),
+                proxy: CredentialUpdate::Keep,
+                tls: CredentialUpdate::Keep,
                 database: CredentialUpdate::Replace(Secret::new("saved-db")),
                 ssh: CredentialUpdate::Replace(Secret::new("saved-ssh")),
             },
@@ -381,13 +405,18 @@ fn connect_resolves_saved_ssh_secret_and_session_overrides() {
         panic!()
     };
     engine
-        .test_profile_with_secrets(profile.clone(), ProfileSecrets::default(), 21)
+        .test_profile_with_secrets(*profile.clone(), ProfileSecrets::default(), 21)
         .unwrap();
     assert!(matches!(event(&mut engine), Event::ProfileTested { .. }));
     engine
         .connect_profile_with_secrets(
-            profile,
+            *profile,
             ProfileSecrets {
+                ssh_private_key: None,
+                ssh_jump_private_keys: Default::default(),
+                ssh_jumps: Default::default(),
+                proxy: None,
+                tls: None,
                 database: Some(Secret::new("once-db")),
                 ssh: Some(Secret::new("once-ssh")),
             },
@@ -602,6 +631,7 @@ fn mysql_profiles_resolve_saved_credentials_and_allow_transient_override() {
     .unwrap();
     let mut p = profile();
     p.configuration = ProfileConfiguration::Mysql {
+        proxy: None,
         ssh: None,
         host: "db.example".into(),
         port: 3306,
@@ -622,4 +652,177 @@ fn mysql_profiles_resolve_saved_credentials_and_allow_transient_override() {
         *received.lock().unwrap(),
         vec!["saved-mysql", "saved-mysql", "once-mysql"]
     );
+}
+
+#[test]
+fn tls_identity_password_has_an_independent_secure_reference_and_cleanup() {
+    let directory = tempfile::tempdir().unwrap();
+    let metadata = directory.path().join("metadata.sqlite");
+    let vault = Arc::new(Vault::default());
+    let mut engine = Engine::new_with_credentials(
+        EngineConfig {
+            storage_path: Some(metadata.clone()),
+            ..Default::default()
+        },
+        vec![],
+        vault.clone(),
+    )
+    .unwrap();
+    engine
+        .profile_save_with_secrets(
+            profile(),
+            CredentialUpdates {
+                ssh_private_key: CredentialUpdate::Keep,
+                ssh_jump_private_keys: Default::default(),
+                ssh_jumps: Default::default(),
+                proxy: CredentialUpdate::Keep,
+                database: CredentialUpdate::Replace(Secret::new("database-marker")),
+                ssh: CredentialUpdate::Replace(Secret::new("ssh-marker")),
+                tls: CredentialUpdate::Replace(Secret::new("tls-password-marker")),
+            },
+            800,
+        )
+        .unwrap();
+    let Event::ProfileSaved { profile: saved, .. } = event(&mut engine) else {
+        panic!("save failed")
+    };
+    let reference = saved
+        .tls_credential_ref
+        .clone()
+        .expect("TLS reference must be saved");
+    assert_eq!(
+        vault.get(&reference).unwrap().expose(),
+        "tls-password-marker"
+    );
+    assert_ne!(Some(&reference), saved.credential_ref.as_ref());
+    assert_ne!(Some(&reference), saved.ssh_credential_ref.as_ref());
+    assert!(
+        !std::fs::read(&metadata)
+            .unwrap()
+            .windows(19)
+            .any(|b| b == b"tls-password-marker")
+    );
+    engine
+        .profile_save_with_secrets(
+            *saved,
+            CredentialUpdates {
+                ssh_private_key: CredentialUpdate::Keep,
+                ssh_jump_private_keys: Default::default(),
+                ssh_jumps: Default::default(),
+                proxy: CredentialUpdate::Keep,
+                database: CredentialUpdate::Keep,
+                ssh: CredentialUpdate::Keep,
+                tls: CredentialUpdate::Clear,
+            },
+            801,
+        )
+        .unwrap();
+    let Event::ProfileSaved { profile: saved, .. } = event(&mut engine) else {
+        panic!("save failed")
+    };
+    assert!(saved.tls_credential_ref.is_none());
+    assert!(matches!(
+        vault.get(&reference),
+        Err(CredentialError::Missing)
+    ));
+    assert_eq!(vault.items.lock().unwrap().len(), 2);
+}
+
+struct TlsDriver {
+    id: &'static str,
+    seen: Arc<Mutex<Vec<Option<String>>>>,
+}
+#[async_trait::async_trait]
+impl DatabaseDriver for TlsDriver {
+    fn id(&self) -> &'static str {
+        self.id
+    }
+    fn capabilities(&self) -> DriverCapabilities {
+        DriverCapabilities::default()
+    }
+    async fn connect(
+        &self,
+        options: ConnectionOptions,
+    ) -> choscordb_driver_api::Result<Box<dyn Connection>> {
+        let identity = match options {
+            ConnectionOptions::Postgres { tls_identity, .. }
+            | ConnectionOptions::Mysql { tls_identity, .. } => tls_identity,
+            _ => panic!("network options expected"),
+        };
+        self.seen
+            .lock()
+            .unwrap()
+            .push(identity.and_then(|i| i.password.map(|p| p.expose().to_owned())));
+        choscordb_driver_sqlite::SqliteDriver
+            .connect(ConnectionOptions::Sqlite {
+                path: ":memory:".into(),
+                read_only: false,
+            })
+            .await
+    }
+}
+
+#[test]
+fn tls_password_resolution_and_transient_override_match_for_test_and_connect() {
+    for driver in ["postgres", "mysql"] {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let vault = Arc::new(Vault::default());
+        vault
+            .put("tls-reference", &Secret::new("stored-tls"))
+            .unwrap();
+        let mut engine = Engine::new_with_credentials(
+            EngineConfig::default(),
+            vec![Arc::new(TlsDriver {
+                id: driver,
+                seen: seen.clone(),
+            })],
+            vault,
+        )
+        .unwrap();
+        let profile: ConnectionProfile = serde_json::from_value(serde_json::json!({
+            "id":"tls", "name":"TLS", "group_id":null,"credential_ref":null,"tls_credential_ref":"tls-reference",
+            "configuration":{"driver":driver,"host":"localhost","port":5432,"database":"db","user":"u",
+                "tls":{"mode":"VerifyFull","root_certificate_path":null,"client_identity_path":"identity.p12"}}
+        })).unwrap();
+        engine.test_profile(profile.clone(), None, 900).unwrap();
+        assert!(matches!(event(&mut engine), Event::ProfileTested { .. }));
+        engine.connect_profile(profile.clone(), None).unwrap();
+        assert!(matches!(event(&mut engine), Event::Connected { .. }));
+        engine
+            .test_profile_with_secrets(
+                profile.clone(),
+                ProfileSecrets {
+                    ssh_private_key: None,
+                    ssh_jump_private_keys: Default::default(),
+                    ssh_jumps: Default::default(),
+                    tls: Some(Secret::new("override")),
+                    ..Default::default()
+                },
+                901,
+            )
+            .unwrap();
+        assert!(matches!(event(&mut engine), Event::ProfileTested { .. }));
+        engine
+            .connect_profile_with_secrets(
+                profile,
+                ProfileSecrets {
+                    ssh_private_key: None,
+                    ssh_jump_private_keys: Default::default(),
+                    ssh_jumps: Default::default(),
+                    tls: Some(Secret::new("")),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(matches!(event(&mut engine), Event::Connected { .. }));
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![
+                Some("stored-tls".into()),
+                Some("stored-tls".into()),
+                Some("override".into()),
+                Some("".into())
+            ]
+        );
+    }
 }

@@ -12,7 +12,9 @@ mod query_history;
 mod recovery;
 pub use profiles::{CredentialUpdate, CredentialUpdates, ProfileSecrets};
 mod protocol;
+mod result_predicate;
 mod result_view;
+mod ssh_trust;
 pub use choscordb_storage::{
     APPEARANCE_LAYOUT_VERSION, Accent, AccentPreset, AppearanceLayout, ConnectionProfile,
     DEFAULT_EDITOR_FONT_SIZE, Density, EDITOR_PREFERENCES_VERSION, EditorDocument,
@@ -35,7 +37,7 @@ use tokio::{
 };
 
 struct ConnectionSlot {
-    commands: mpsc::Sender<actor::Command>,
+    commands: mpsc::Sender<actor::Request>,
     disconnect: watch::Sender<bool>,
 }
 struct ExportSlot {
@@ -167,6 +169,14 @@ impl Engine {
         driver: Arc<dyn DatabaseDriver>,
         options: ConnectionOptions,
     ) -> std::result::Result<ConnectionId, SubmitError> {
+        self.connect_driver_with_timeout(driver, options, None)
+    }
+    fn connect_driver_with_timeout(
+        &mut self,
+        driver: Arc<dyn DatabaseDriver>,
+        options: ConnectionOptions,
+        attempt_timeout: Option<std::time::Duration>,
+    ) -> std::result::Result<ConnectionId, SubmitError> {
         self.ensure_running()?;
         if self.connection_count >= self.config.max_connections {
             return Err(SubmitError::ResourceLimit);
@@ -196,6 +206,7 @@ impl Engine {
                 id,
                 driver,
                 options,
+                attempt_timeout,
                 rx,
                 self.events_tx.clone(),
                 disconnected,
@@ -253,12 +264,11 @@ impl Engine {
         if self.query_count >= self.config.max_queries {
             return Err(SubmitError::ResourceLimit);
         }
-        let tx = self
+        let slot = self
             .connections
             .get(connection)
-            .ok_or(SubmitError::StaleHandle)?
-            .commands
-            .clone();
+            .ok_or(SubmitError::StaleHandle)?;
+        let tx = slot.commands.clone();
         let command_permit = tx.try_reserve().map_err(map_send)?;
         let event_sender = self.events_tx.clone();
         let event_permit = event_sender.try_reserve().map_err(map_send)?;
@@ -293,13 +303,15 @@ impl Engine {
                 self.events_tx.clone(),
             )
         };
-        command_permit.send(actor::Command::Execute {
-            query: id,
-            sql,
-            object,
-            history,
-            options,
-            cancellation: cancel_rx,
+        command_permit.send(actor::Request {
+            command: actor::Command::Execute {
+                query: id,
+                sql,
+                object,
+                history,
+                options,
+                cancellation: cancel_rx,
+            },
         });
         self.query_count += 1;
         self.query_owners.insert(id, connection);
@@ -319,12 +331,11 @@ impl Engine {
             return Err(SubmitError::ResourceLimit);
         }
         let released = slot.released.subscribe();
-        let tx = self
+        let slot = self
             .connections
             .get(connection)
-            .ok_or(SubmitError::StaleHandle)?
-            .commands
-            .clone();
+            .ok_or(SubmitError::StaleHandle)?;
+        let tx = slot.commands.clone();
         let permit = tx.try_reserve().map_err(map_send)?;
         let cancellation = choscordb_export::Cancellation::default();
         let id = self.exports.insert(ExportSlot {
@@ -332,13 +343,15 @@ impl Engine {
             cancellation: cancellation.clone(),
         });
         self.export_owners.insert(connection, id);
-        permit.send(actor::Command::Export {
-            export: id,
-            query,
-            destination,
-            format,
-            cancellation,
-            released,
+        permit.send(actor::Request {
+            command: actor::Command::Export {
+                export: id,
+                query,
+                destination,
+                format,
+                cancellation,
+                released,
+            },
         });
         Ok(id)
     }
@@ -742,11 +755,12 @@ impl Engine {
         command: actor::Command,
     ) -> std::result::Result<(), SubmitError> {
         self.ensure_running()?;
-        self.connections
+        let slot = self
+            .connections
             .get(connection)
-            .ok_or(SubmitError::StaleHandle)?
-            .commands
-            .try_send(command)
+            .ok_or(SubmitError::StaleHandle)?;
+        slot.commands
+            .try_send(actor::Request { command })
             .map_err(map_send)
     }
 }

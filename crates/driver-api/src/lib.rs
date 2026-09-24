@@ -1,15 +1,42 @@
 //! Database-independent contracts shared by adapters and application services.
+mod bootstrap_transaction;
+mod database_auth;
 mod driver;
 mod edit_query;
 mod error;
 mod ids;
 mod options;
+mod socks;
+mod sqlite_uri;
 mod ssh_askpass;
+mod ssh_command;
+mod ssh_context;
+mod ssh_forward;
+mod ssh_identity;
+mod ssh_local;
+mod ssh_options;
+mod ssh_process;
+mod ssh_proxy;
+mod ssh_shared;
+mod ssh_trust;
+mod ssh_trust_store;
+mod transaction_options;
 mod value;
+pub use bootstrap_transaction::{
+    Control as PostgresTransactionControl, classify as postgres_transaction_control,
+};
+pub use database_auth::*;
 pub use driver::*;
 pub use edit_query::*;
 pub use error::*;
 pub use ids::*;
 pub use options::*;
+pub use socks::*;
+pub use sqlite_uri::*;
 pub use ssh_askpass::*;
+pub use ssh_forward::*;
+pub use ssh_local::*;
+pub use ssh_options::*;
+pub use ssh_trust::*;
+pub use transaction_options::*;
 pub use value::*;

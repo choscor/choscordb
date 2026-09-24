@@ -1,4 +1,4 @@
-use crate::{DriverError, ErrorKind, Result};
+use crate::{DriverError, ErrorKind, Result, SshTunnel};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -56,6 +56,9 @@ impl Default for QueryOptions {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TlsMode {
     Disable,
+    Prefer,
+    Require,
+    VerifyCa,
     #[default]
     VerifyFull,
 }
@@ -74,80 +77,53 @@ impl std::fmt::Debug for Secret {
         f.write_str("[REDACTED]")
     }
 }
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum SshAuthentication {
-    Agent,
-    #[default]
-    PublicKey,
-    Password,
-}
-/// SSH authentication uses OpenSSH with an explicit authentication method.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct SshTunnel {
-    pub host: String,
-    pub port: u16,
-    pub user: String,
-    pub authentication: SshAuthentication,
-    pub identity_file: Option<String>,
-}
-impl SshTunnel {
-    pub fn validate(&self) -> Result<()> {
-        if self.port == 0
-            || [&self.host, &self.user].iter().any(|value| {
-                value.is_empty()
-                    || value.len() > 16 * 1024
-                    || value.starts_with('-')
-                    || value.chars().any(|c| c.is_whitespace() || c.is_control())
+/// Validate a TCP hostname or IP literal, accepting brackets around IPv6 input.
+/// Host and port are separate fields; URLs, userinfo and socket paths are invalid.
+pub fn tcp_host(host: &str) -> Result<&str> {
+    let invalid = || {
+        DriverError::new(
+            ErrorKind::InvalidInput,
+            "Enter a hostname or IP address without a URL, username, or port",
+        )
+    };
+    if host.is_empty()
+        || host.len() > 16 * 1024
+        || host.starts_with('-')
+        || host.chars().any(|c| c.is_whitespace() || c.is_control())
+        || host.contains(['/', '\\', '@', '?', '#'])
+    {
+        return Err(invalid());
+    }
+    let address = if host.starts_with('[') && host.ends_with(']') {
+        &host[1..host.len() - 1]
+    } else {
+        host
+    };
+    if host.contains(['[', ']']) || address.contains(':') {
+        // A scope identifier is meaningful for link-local IPv6 endpoints.
+        let (ip, scope) = address
+            .split_once('%')
+            .map_or((address, None), |(ip, scope)| (ip, Some(scope)));
+        if ip.parse::<std::net::Ipv6Addr>().is_err()
+            || scope.is_some_and(|scope| {
+                scope.is_empty()
+                    || !scope
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "_.-".contains(c))
             })
-            || self.identity_file.as_ref().is_some_and(|path| {
-                path.trim().is_empty() || path.len() > 16 * 1024 || path.contains('\0')
-            })
-            || match self.authentication {
-                SshAuthentication::Agent | SshAuthentication::Password => {
-                    self.identity_file.is_some()
-                }
-                SshAuthentication::PublicKey => self.identity_file.is_none(),
-            }
         {
-            return Err(DriverError::new(
-                ErrorKind::InvalidInput,
-                "Invalid SSH tunnel settings",
-            ));
+            return Err(invalid());
         }
-        Ok(())
     }
+    Ok(address)
 }
-impl<'de> Deserialize<'de> for SshTunnel {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> std::result::Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Stored {
-            host: String,
-            port: u16,
-            user: String,
-            authentication: Option<SshAuthentication>,
-            identity_file: Option<String>,
-        }
-        let stored = Stored::deserialize(deserializer)?;
-        let authentication = stored.authentication.unwrap_or_else(|| {
-            if stored.identity_file.is_some() {
-                SshAuthentication::PublicKey
-            } else {
-                SshAuthentication::Agent
-            }
-        });
-        Ok(Self {
-            host: stored.host,
-            port: stored.port,
-            user: stored.user,
-            authentication,
-            identity_file: stored.identity_file,
-        })
-    }
+
+#[derive(Debug)]
+pub struct TlsIdentity {
+    pub path: std::path::PathBuf,
+    pub password: Option<Secret>,
 }
+
 #[derive(Debug)]
 pub enum ConnectionOptions {
     Sqlite {
@@ -155,25 +131,37 @@ pub enum ConnectionOptions {
         read_only: bool,
     },
     Mysql {
+        proxy: Option<crate::SocksProxy>,
+        proxy_secret: Option<Secret>,
         host: String,
         port: u16,
         database: String,
         user: String,
         password: Option<Secret>,
         ssh_secret: Option<Secret>,
+        ssh_jump_secrets: std::collections::BTreeMap<String, Secret>,
+        ssh_private_key: Option<Secret>,
+        ssh_jump_private_keys: std::collections::BTreeMap<String, Secret>,
         tls: TlsMode,
         root_certificate: Option<std::path::PathBuf>,
+        tls_identity: Option<TlsIdentity>,
         ssh: Option<SshTunnel>,
     },
     Postgres {
+        proxy: Option<crate::SocksProxy>,
+        proxy_secret: Option<Secret>,
         host: String,
         port: u16,
         database: String,
         user: String,
         password: Option<Secret>,
         ssh_secret: Option<Secret>,
+        ssh_jump_secrets: std::collections::BTreeMap<String, Secret>,
+        ssh_private_key: Option<Secret>,
+        ssh_jump_private_keys: std::collections::BTreeMap<String, Secret>,
         tls: TlsMode,
         root_certificate: Option<std::path::PathBuf>,
+        tls_identity: Option<TlsIdentity>,
         ssh: Option<SshTunnel>,
     },
 }

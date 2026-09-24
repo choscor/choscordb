@@ -11,6 +11,11 @@ fn value(name: &str) -> String {
 async fn verify(authentication: SshAuthentication, identity: Option<String>, secret: String) {
     let mut connection = MysqlDriver
         .connect(ConnectionOptions::Mysql {
+            ssh_jump_secrets: Default::default(),
+            ssh_private_key: None,
+            ssh_jump_private_keys: Default::default(),
+            proxy: None,
+            proxy_secret: None,
             host: "mysql-ssh-target".into(),
             port: 3306,
             database: "choscordb_test".into(),
@@ -18,12 +23,15 @@ async fn verify(authentication: SshAuthentication, identity: Option<String>, sec
             password: Some(Secret::new("choscordb-test-password")),
             ssh_secret: Some(Secret::new(secret)),
             tls: TlsMode::Disable,
+            tls_identity: None,
             root_certificate: None,
             ssh: Some(SshTunnel {
+                options: Default::default(),
                 host: "127.0.0.1".into(),
                 port: value("CHOSCORDB_SSH_PORT").parse().unwrap(),
                 user: "root".into(),
                 authentication,
+                identity_source: Default::default(),
                 identity_file: identity,
             }),
         })

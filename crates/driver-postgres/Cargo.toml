@@ -8,12 +8,13 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+choscordb-sql-language = { path = "../sql-language" }
 choscordb-driver-api = { path = "../driver-api" }
 choscordb-postgres-values = { path = "../postgres-values" }
 async-trait = "0.1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "process", "io-util", "net"] }
 tokio-postgres = "0.7"
 postgres-native-tls = "0.5"
-native-tls = "0.2"
+native-tls = { version = "0.2", features = ["alpn"] }
 futures-util = "0.3"
 tempfile = "3"

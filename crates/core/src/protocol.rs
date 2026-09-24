@@ -57,6 +57,18 @@ pub type ExportId = Handle;
 pub use choscordb_export::{ExportFormat, SqlDialect};
 
 pub enum Event {
+    SshHostKeysInspected {
+        request_token: u64,
+        candidates: Vec<choscordb_driver_api::SshHostKeyCandidate>,
+    },
+    SshHostKeyApproved {
+        request_token: u64,
+        outcome: choscordb_driver_api::SshHostKeyApproval,
+    },
+    SshHostKeyFailed {
+        request_token: u64,
+        error: DriverError,
+    },
     SessionSqlMode {
         connection: ConnectionId,
         mode: String,
@@ -148,7 +160,7 @@ pub enum Event {
     ProfileSaved {
         warning: Option<String>,
         request_token: u64,
-        profile: crate::ConnectionProfile,
+        profile: Box<crate::ConnectionProfile>,
     },
     ProfileDeleted {
         warning: Option<String>,
@@ -211,6 +223,7 @@ pub enum Event {
     Connected {
         connection: ConnectionId,
         capabilities: DriverCapabilities,
+        transaction_active: Option<bool>,
     },
     Disconnected {
         connection: ConnectionId,

@@ -1017,3 +1017,128 @@ fn temporal_filters_and_sorts_use_normalized_database_values() {
         drop(lease);
     }
 }
+
+#[test]
+fn empty_results_still_validate_sql_filters() {
+    let mut engine =
+        choscordb_core::Engine::new(Default::default(), vec![Arc::new(SqliteDriver)]).unwrap();
+    let connection = engine
+        .connect(
+            "sqlite",
+            ConnectionOptions::Sqlite {
+                path: ":memory:".into(),
+                read_only: false,
+            },
+        )
+        .unwrap();
+    event(&mut engine, |event| {
+        matches!(event, Event::Connected { .. })
+    });
+    let query = engine
+        .execute(
+            connection,
+            "SELECT 1 AS id WHERE 0".into(),
+            QueryOptions::default(),
+        )
+        .unwrap();
+    event(&mut engine, |event| matches!(event, Event::Schema { .. }));
+    for (operator, text) in [
+        (FilterOperator::Sql, "missing = 1"),
+        (FilterOperator::Sql, "\"missing\" = 1"),
+        (FilterOperator::Sql, "id = ?1"),
+        (FilterOperator::Sql, "id = 1; SELECT 1"),
+        (FilterOperator::Sql, "id ="),
+        (FilterOperator::In, "1,"),
+        (FilterOperator::In, "'unclosed"),
+        (FilterOperator::In, "SELECT 1"),
+    ] {
+        engine
+            .apply_result_view(
+                query,
+                vec![FilterCondition {
+                    column: 0,
+                    operator,
+                    value: Some(Value::Text(text.into())),
+                }],
+                None,
+                PageSize::new(100).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            failed_view(&mut engine).kind,
+            choscordb_driver_api::ErrorKind::InvalidInput,
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn literal_list_filters_preserve_decimal_precision_and_quoted_commas() {
+    assert!(
+        choscordb_core::value_matches(
+            &Value::Decimal("9007199254740993.01".into()),
+            FilterOperator::In,
+            Some(&Value::Text("9007199254740993.01, 0".into()))
+        )
+        .unwrap()
+    );
+    assert!(
+        !choscordb_core::value_matches(
+            &Value::Decimal("9007199254740993.02".into()),
+            FilterOperator::In,
+            Some(&Value::Text("9007199254740993.01, 0".into()))
+        )
+        .unwrap()
+    );
+    assert!(
+        choscordb_core::value_matches(
+            &Value::Text("O'Brien, Jr.".into()),
+            FilterOperator::In,
+            Some(&Value::Text("'Other', 'O''Brien, Jr.'".into()))
+        )
+        .unwrap()
+    );
+    assert!(
+        !choscordb_core::value_matches(
+            &Value::Null,
+            FilterOperator::NotLike,
+            Some(&Value::Text("A%".into()))
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn sql_predicate_rejects_oversized_intermediate_values() {
+    let mut engine =
+        choscordb_core::Engine::new(Default::default(), vec![Arc::new(SqliteDriver)]).unwrap();
+    let connection = engine
+        .connect(
+            "sqlite",
+            ConnectionOptions::Sqlite {
+                path: ":memory:".into(),
+                read_only: false,
+            },
+        )
+        .unwrap();
+    event(&mut engine, |event| {
+        matches!(event, Event::Connected { .. })
+    });
+    let query = engine
+        .execute(connection, "SELECT 1 AS id".into(), QueryOptions::default())
+        .unwrap();
+    event(&mut engine, |event| matches!(event, Event::Schema { .. }));
+    engine
+        .apply_result_view(
+            query,
+            vec![FilterCondition {
+                column: 0,
+                operator: FilterOperator::Sql,
+                value: Some(Value::Text("length(zeroblob(1000000000)) > 0".into())),
+            }],
+            None,
+            PageSize::new(100).unwrap(),
+        )
+        .unwrap();
+    assert!(failed_view(&mut engine).message.contains("too big"));
+}

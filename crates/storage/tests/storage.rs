@@ -2,6 +2,7 @@ use choscordb_storage::*;
 
 fn profile() -> ConnectionProfile {
     ConnectionProfile {
+        authentication: Default::default(),
         id: "p1".into(),
         name: "Local".into(),
         group_id: None,
@@ -10,7 +11,12 @@ fn profile() -> ConnectionProfile {
             read_only: true,
         },
         credential_ref: None,
+        proxy_credential_ref: None,
+        ssh_jump_credential_refs: Default::default(),
+        ssh_jump_private_key_refs: Default::default(),
+        tls_credential_ref: None,
         ssh_credential_ref: None,
+        ssh_private_key_ref: None,
     }
 }
 
@@ -177,10 +183,12 @@ fn postgres_profile_persists_only_credential_references() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("profiles.sqlite");
     let p = ConnectionProfile {
+        authentication: Default::default(),
         id: "pg".into(),
         name: "Postgres".into(),
         group_id: None,
         configuration: ProfileConfiguration::Postgres {
+            proxy: None,
             ssh: None,
             host: "localhost".into(),
             port: 5432,
@@ -189,7 +197,12 @@ fn postgres_profile_persists_only_credential_references() {
             tls: PostgresTls::default(),
         },
         credential_ref: Some("choscordb/pg/password".into()),
+        proxy_credential_ref: None,
+        ssh_jump_credential_refs: Default::default(),
+        ssh_jump_private_key_refs: Default::default(),
+        tls_credential_ref: None,
         ssh_credential_ref: None,
+        ssh_private_key_ref: None,
     };
     let mut store = Storage::open(&path).unwrap();
     store.save_profile(&p).unwrap();
@@ -301,6 +314,7 @@ fn every_supported_profile_option_reaches_driver_unchanged() {
     use choscordb_driver_api::{ConnectionOptions, Secret};
     for mode in [TlsMode::VerifyFull, TlsMode::Disable] {
         let config = ProfileConfiguration::Postgres {
+            proxy: None,
             ssh: None,
             host: "db.example".into(),
             port: 6543,
@@ -308,6 +322,7 @@ fn every_supported_profile_option_reaches_driver_unchanged() {
             user: "alice".into(),
             tls: PostgresTls {
                 mode: mode.clone(),
+                client_identity_path: None,
                 root_certificate_path: Some("/tmp/root.pem".into()),
             },
         };
@@ -323,7 +338,7 @@ fn every_supported_profile_option_reaches_driver_unchanged() {
                 password,
                 tls,
                 root_certificate,
-                ssh_secret: _,
+                ..
             } => {
                 assert_eq!(
                     (host.as_str(), port, database.as_str(), user.as_str()),
@@ -341,7 +356,9 @@ fn every_supported_profile_option_reaches_driver_unchanged() {
         assert!(!encoded.contains("private-password"));
     }
     match profile().configuration.connection_options(None, None) {
-        ConnectionOptions::Sqlite { path, read_only } => {
+        ConnectionOptions::Sqlite {
+            path, read_only, ..
+        } => {
             assert_eq!(path, std::path::PathBuf::from("/tmp/data.sqlite"));
             assert!(read_only);
         }
@@ -353,8 +370,10 @@ fn every_supported_profile_option_reaches_driver_unchanged() {
 #[test]
 fn unsupported_tls_configuration_is_rejected_instead_of_dropped() {
     assert!(
-        serde_json::from_str::<PostgresTls>(r#"{"mode":"Require","root_certificate_path":null}"#)
-            .is_err()
+        serde_json::from_str::<PostgresTls>(
+            r#"{"mode":"UnknownPolicy","root_certificate_path":null}"#
+        )
+        .is_err()
     );
     assert!(
         serde_json::from_str::<PostgresTls>(
@@ -445,18 +464,20 @@ fn postgres_required_fields_and_certificate_path_are_validated() {
     for (host, port, database, user, root) in [
         ("", 5432, "app", "user", None),
         ("localhost", 0, "app", "user", None),
-        ("localhost", 5432, "", "user", None),
+        ("localhost", 5432, "bad\0database", "user", None),
         ("localhost", 5432, "app", "", None),
         ("localhost", 5432, "app", "user", Some("cert\0path")),
     ] {
         let mut p = profile();
         p.configuration = ProfileConfiguration::Postgres {
+            proxy: None,
             ssh: None,
             host: host.into(),
             port,
             database: database.into(),
             user: user.into(),
             tls: PostgresTls {
+                client_identity_path: None,
                 root_certificate_path: root.map(Into::into),
                 ..Default::default()
             },

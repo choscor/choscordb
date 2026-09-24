@@ -41,9 +41,15 @@ fn mysql_options_preserve_endpoint_tls_and_transient_secret() {
         user,
         password,
         tls,
+        tls_identity: _,
         root_certificate,
         ssh: _,
         ssh_secret: _,
+        ssh_private_key: _,
+        ssh_jump_private_keys: _,
+        proxy: _,
+        proxy_secret: _,
+        ssh_jump_secrets: _,
     } = profile
         .configuration
         .connection_options(Some(Secret::new("transient")), None)
@@ -72,7 +78,7 @@ fn invalid_mysql_settings_cannot_replace_saved_profile() {
     for (field, value) in [
         ("host", serde_json::json!("")),
         ("port", serde_json::json!(0)),
-        ("database", serde_json::json!("")),
+        ("database", serde_json::json!("\u{0000}")),
         ("user", serde_json::json!("\u{0000}")),
     ] {
         let mut invalid = profile_json();
@@ -98,4 +104,39 @@ fn mysql_ssh_profile_round_trips_and_validates() {
     json["configuration"]["ssh"]["host"] = serde_json::json!("-unsafe");
     let invalid: ConnectionProfile = serde_json::from_value(json).unwrap();
     assert!(storage.save_profile(&invalid).is_err());
+}
+
+#[test]
+fn mysql_server_profile_without_default_database_round_trips() {
+    let mut json = profile_json();
+    json["configuration"]["database"] = serde_json::json!("");
+    let profile: ConnectionProfile = serde_json::from_value(json).unwrap();
+    let mut storage = Storage::in_memory().unwrap();
+    storage.save_profile(&profile).unwrap();
+    assert_eq!(storage.profile("mysql").unwrap(), Some(profile));
+}
+
+#[test]
+fn malformed_tcp_hosts_cannot_be_saved_for_either_server_driver() {
+    for driver in ["mysql", "postgres"] {
+        for host in [
+            "https://db.example",
+            "other@db.example",
+            "db.example:3306",
+            "/tmp/socket",
+            "bad host",
+        ] {
+            let mut json = profile_json();
+            json["configuration"]["driver"] = serde_json::json!(driver);
+            json["configuration"]["host"] = serde_json::json!(host);
+            let profile: ConnectionProfile = serde_json::from_value(json).unwrap();
+            assert!(
+                Storage::in_memory()
+                    .unwrap()
+                    .save_profile(&profile)
+                    .is_err(),
+                "accepted {driver} {host}"
+            );
+        }
+    }
 }

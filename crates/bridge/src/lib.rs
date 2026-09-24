@@ -120,6 +120,15 @@ pub mod ffi {
         user: String,
         tls: String,
         root_certificate: String,
+        tls_client_identity: String,
+        tls_credential_ref: String,
+        proxy_options: String,
+        proxy_credential_ref: String,
+        ssh_jump_credential_refs: String,
+        ssh_private_key_ref: String,
+        ssh_jump_private_key_refs: String,
+        ssh_options: String,
+        authentication: String,
         credential_ref: String,
         ssh_credential_ref: String,
         ssh_enabled: bool,
@@ -127,7 +136,37 @@ pub mod ffi {
         ssh_port: u16,
         ssh_user: String,
         ssh_authentication: String,
+        ssh_identity_source: String,
         ssh_identity_file: String,
+    }
+    #[derive(Default)]
+    struct SshHopCredentialDto {
+        id: String,
+        secret: String,
+        action: String,
+        has_secret: bool,
+        private_key: String,
+        private_key_action: String,
+        has_private_key: bool,
+    }
+    #[derive(Default)]
+    struct ProfileCredentialsDto {
+        ssh_hops: Vec<SshHopCredentialDto>,
+        ssh_private_key: String,
+        ssh_private_key_action: String,
+        has_ssh_private_key: bool,
+        database: String,
+        ssh: String,
+        tls: String,
+        proxy: String,
+        database_action: String,
+        ssh_action: String,
+        tls_action: String,
+        proxy_action: String,
+        has_database: bool,
+        has_ssh: bool,
+        has_tls: bool,
+        has_proxy: bool,
     }
     #[derive(Default)]
     struct SqlTemplateResultDto {
@@ -273,7 +312,23 @@ pub mod ffi {
         max_records: u32,
     }
     #[derive(Default)]
+    struct SshHostKeyCandidateDto {
+        target_kind: String,
+        target_id: String,
+        target_index: u32,
+        original_host: String,
+        hostname: String,
+        port: u16,
+        host_key_alias: String,
+        key_type: String,
+        public_key: String,
+        sha256: String,
+        opaque_json: String,
+    }
+    #[derive(Default)]
     struct BridgeEvent {
+        host_key_candidates: Vec<SshHostKeyCandidateDto>,
+        host_key_approval: String,
         sql_mode: String,
         has_sql_mode: bool,
         has_more_results: bool,
@@ -438,6 +493,40 @@ pub mod ffi {
             token: u64,
         ) -> Submit;
         fn profile_list(engine: &mut BridgeEngine, token: u64) -> Submit;
+        fn validate_connection_profile(profile: ProfileDto) -> String;
+        fn profile_save_credentials(
+            engine: &mut BridgeEngine,
+            profile: ProfileDto,
+            credentials: ProfileCredentialsDto,
+            token: u64,
+        ) -> Submit;
+        fn profile_test_credentials(
+            engine: &mut BridgeEngine,
+            profile: ProfileDto,
+            credentials: ProfileCredentialsDto,
+            token: u64,
+        ) -> Submit;
+        fn profile_connect_credentials(
+            engine: &mut BridgeEngine,
+            profile: ProfileDto,
+            credentials: ProfileCredentialsDto,
+        ) -> Submit;
+        fn profile_inspect_ssh_host_keys(
+            engine: &mut BridgeEngine,
+            profile: ProfileDto,
+            credentials: ProfileCredentialsDto,
+            target_kind: &str,
+            target_id: &str,
+            target_index: u32,
+            token: u64,
+        ) -> Submit;
+        fn approve_ssh_host_key(
+            engine: &mut BridgeEngine,
+            candidate_json: &str,
+            expected_sha256: &str,
+            known_hosts_path: &str,
+            token: u64,
+        ) -> Submit;
         fn profile_save(engine: &mut BridgeEngine, profile: ProfileDto, token: u64) -> Submit;
         fn profile_duplicate(
             engine: &mut BridgeEngine,
@@ -762,12 +851,17 @@ pub fn connect_postgres(
         e.connect(
             "postgres",
             ConnectionOptions::Postgres {
+                proxy: None,
+                proxy_secret: None,
                 host: host.into(),
                 port,
                 database: database.into(),
                 user: user.into(),
                 password: Some(Secret::new(password)),
                 ssh_secret: None,
+                ssh_private_key: None,
+                ssh_jump_secrets: Default::default(),
+                ssh_jump_private_keys: Default::default(),
                 ssh: None,
                 tls: if verify_tls {
                     TlsMode::VerifyFull
@@ -775,6 +869,7 @@ pub fn connect_postgres(
                     TlsMode::Disable
                 },
                 root_certificate: None,
+                tls_identity: None,
             },
         )
         .map(pack)
@@ -907,6 +1002,10 @@ pub fn apply_result_view(
             .map(|filter| {
                 let operator = match filter.operation.as_str() {
                     "contains" => choscordb_core::FilterOperator::Contains,
+                    "like" => choscordb_core::FilterOperator::Like,
+                    "not_like" => choscordb_core::FilterOperator::NotLike,
+                    "in" => choscordb_core::FilterOperator::In,
+                    "sql" => choscordb_core::FilterOperator::Sql,
                     "equals" => choscordb_core::FilterOperator::Equals,
                     "not_equals" => choscordb_core::FilterOperator::NotEquals,
                     "less_than" => choscordb_core::FilterOperator::LessThan,
@@ -920,7 +1019,14 @@ pub fn apply_result_view(
                 Ok(choscordb_core::FilterCondition {
                     column: filter.column as usize,
                     operator,
-                    value: filter_value(&filter.value_kind, filter.value)?,
+                    value: if matches!(
+                        operator,
+                        choscordb_core::FilterOperator::In | choscordb_core::FilterOperator::Sql
+                    ) {
+                        Some(Value::Text(filter.value))
+                    } else {
+                        filter_value(&filter.value_kind, filter.value)?
+                    },
                 })
             })
             .collect::<std::result::Result<Vec<_>, String>>()?;
@@ -1262,38 +1368,100 @@ pub fn cancel_export(engine: &mut BridgeEngine, export: u64) -> ffi::Submit {
     })
 }
 
+fn proxy_options(
+    value: &str,
+) -> std::result::Result<Option<choscordb_driver_api::SocksProxy>, String> {
+    if value.is_empty() {
+        return Ok(None);
+    }
+    Err("SOCKS proxy connections are no longer supported".into())
+}
+
+fn database_authentication(
+    value: &str,
+) -> std::result::Result<choscordb_driver_api::DatabaseAuthentication, String> {
+    if value.is_empty() {
+        return Ok(Default::default());
+    }
+    if value.len() > 64 * 1024 {
+        return Err("Authentication settings exceed limit".into());
+    }
+    serde_json::from_str(value).map_err(|_| "Invalid database authentication settings".into())
+}
+pub fn validate_connection_profile(dto: ffi::ProfileDto) -> String {
+    profile(dto).err().unwrap_or_default()
+}
+
+fn ssh_options(value: &str) -> std::result::Result<choscordb_driver_api::SshOptions, String> {
+    if value.is_empty() {
+        return Ok(Default::default());
+    }
+    if value.len() > 16 * 1024 {
+        return Err("SSH options exceed limit".into());
+    }
+    let options: choscordb_driver_api::SshOptions =
+        serde_json::from_str(value).map_err(|_| "Invalid SSH options".to_string())?;
+    if options != choscordb_driver_api::SshOptions::default() {
+        return Err("Advanced SSH tunnel settings are no longer supported".into());
+    }
+    Ok(options)
+}
+fn ssh_tunnel(
+    dto: &ffi::ProfileDto,
+) -> std::result::Result<Option<choscordb_driver_api::SshTunnel>, String> {
+    use choscordb_driver_api::{SshAuthentication, SshTunnel};
+    if !dto.ssh_enabled {
+        return Ok(None);
+    }
+    Ok(Some(SshTunnel {
+        options: Box::new(ssh_options(&dto.ssh_options)?),
+        host: dto.ssh_host.clone(),
+        port: dto.ssh_port,
+        user: dto.ssh_user.clone(),
+        authentication: match dto.ssh_authentication.as_str() {
+            "agent" => SshAuthentication::Agent,
+            "public_key" => SshAuthentication::PublicKey,
+            "password" => SshAuthentication::Password,
+            "" if dto.ssh_identity_file.is_empty() => SshAuthentication::Agent,
+            "" => SshAuthentication::PublicKey,
+            _ => return Err("Invalid SSH authentication method".into()),
+        },
+        identity_source: match dto.ssh_identity_source.as_str() {
+            "" | "file" => choscordb_driver_api::SshIdentitySource::File,
+            "inline" => choscordb_driver_api::SshIdentitySource::Inline,
+            _ => return Err("Invalid SSH identity source".into()),
+        },
+        identity_file: (!dto.ssh_identity_file.is_empty()).then(|| dto.ssh_identity_file.clone()),
+    }))
+}
 fn profile(dto: ffi::ProfileDto) -> std::result::Result<choscordb_core::ConnectionProfile, String> {
     use choscordb_core::{ConnectionProfile, PostgresTls, ProfileConfiguration};
+    let ssh = if dto.driver == "sqlite" {
+        None
+    } else {
+        ssh_tunnel(&dto)?
+    };
     let configuration = match dto.driver.as_str() {
         "sqlite" => ProfileConfiguration::Sqlite {
             path: dto.path,
             read_only: dto.read_only,
         },
         "mysql" => ProfileConfiguration::Mysql {
-            ssh: dto.ssh_enabled.then_some(choscordb_driver_api::SshTunnel {
-                host: dto.ssh_host,
-                port: dto.ssh_port,
-                user: dto.ssh_user,
-                authentication: match dto.ssh_authentication.as_str() {
-                    "agent" => choscordb_driver_api::SshAuthentication::Agent,
-                    "public_key" => choscordb_driver_api::SshAuthentication::PublicKey,
-                    "" if dto.ssh_identity_file.is_empty() => {
-                        choscordb_driver_api::SshAuthentication::Agent
-                    }
-                    "" => choscordb_driver_api::SshAuthentication::PublicKey,
-                    "password" => choscordb_driver_api::SshAuthentication::Password,
-                    _ => return Err("Invalid SSH authentication method".into()),
-                },
-                identity_file: (!dto.ssh_identity_file.is_empty()).then_some(dto.ssh_identity_file),
-            }),
+            proxy: proxy_options(&dto.proxy_options)?,
+            ssh,
             host: dto.host,
             port: dto.port,
             database: dto.database,
             user: dto.user,
             tls: PostgresTls {
+                client_identity_path: (!dto.tls_client_identity.is_empty())
+                    .then_some(dto.tls_client_identity),
                 mode: match dto.tls.as_str() {
                     "disable" => TlsMode::Disable,
                     "verify_full" => TlsMode::VerifyFull,
+                    "verify_ca" => TlsMode::VerifyCa,
+                    "require" => TlsMode::Require,
+                    "prefer" => TlsMode::Prefer,
                     _ => return Err("Invalid TLS mode".into()),
                 },
                 root_certificate_path: (!dto.root_certificate.is_empty())
@@ -1301,30 +1469,21 @@ fn profile(dto: ffi::ProfileDto) -> std::result::Result<choscordb_core::Connecti
             },
         },
         "postgres" => ProfileConfiguration::Postgres {
+            proxy: proxy_options(&dto.proxy_options)?,
             host: dto.host,
             port: dto.port,
             database: dto.database,
             user: dto.user,
-            ssh: dto.ssh_enabled.then_some(choscordb_driver_api::SshTunnel {
-                host: dto.ssh_host,
-                port: dto.ssh_port,
-                user: dto.ssh_user,
-                authentication: match dto.ssh_authentication.as_str() {
-                    "agent" => choscordb_driver_api::SshAuthentication::Agent,
-                    "public_key" => choscordb_driver_api::SshAuthentication::PublicKey,
-                    "" if dto.ssh_identity_file.is_empty() => {
-                        choscordb_driver_api::SshAuthentication::Agent
-                    }
-                    "" => choscordb_driver_api::SshAuthentication::PublicKey,
-                    "password" => choscordb_driver_api::SshAuthentication::Password,
-                    _ => return Err("Invalid SSH authentication method".into()),
-                },
-                identity_file: (!dto.ssh_identity_file.is_empty()).then_some(dto.ssh_identity_file),
-            }),
+            ssh,
             tls: PostgresTls {
+                client_identity_path: (!dto.tls_client_identity.is_empty())
+                    .then_some(dto.tls_client_identity),
                 mode: match dto.tls.as_str() {
                     "disable" => TlsMode::Disable,
                     "verify_full" => TlsMode::VerifyFull,
+                    "verify_ca" => TlsMode::VerifyCa,
+                    "require" => TlsMode::Require,
+                    "prefer" => TlsMode::Prefer,
                     _ => return Err("Invalid TLS mode".into()),
                 },
                 root_certificate_path: (!dto.root_certificate.is_empty())
@@ -1333,14 +1492,80 @@ fn profile(dto: ffi::ProfileDto) -> std::result::Result<choscordb_core::Connecti
         },
         _ => return Err("Unknown profile driver".into()),
     };
-    let profile = ConnectionProfile {
+    let mut profile = ConnectionProfile {
+        authentication: database_authentication(&dto.authentication)?,
         id: dto.id,
         name: dto.name,
         group_id: (!dto.group_id.is_empty()).then_some(dto.group_id),
         configuration,
         credential_ref: (!dto.credential_ref.is_empty()).then_some(dto.credential_ref),
         ssh_credential_ref: (!dto.ssh_credential_ref.is_empty()).then_some(dto.ssh_credential_ref),
+        ssh_private_key_ref: (!dto.ssh_private_key_ref.is_empty())
+            .then_some(dto.ssh_private_key_ref),
+        tls_credential_ref: (!dto.tls_credential_ref.is_empty()).then_some(dto.tls_credential_ref),
+        proxy_credential_ref: (!dto.proxy_credential_ref.is_empty())
+            .then_some(dto.proxy_credential_ref),
+        ssh_jump_credential_refs: if dto.ssh_jump_credential_refs.is_empty() {
+            Default::default()
+        } else {
+            if dto.ssh_jump_credential_refs.len() > 16 * 1024 {
+                return Err("Invalid SSH hop credential references".into());
+            }
+            serde_json::from_str(&dto.ssh_jump_credential_refs)
+                .map_err(|_| "Invalid SSH hop credential references".to_string())?
+        },
+        ssh_jump_private_key_refs: if dto.ssh_jump_private_key_refs.is_empty() {
+            Default::default()
+        } else {
+            if dto.ssh_jump_private_key_refs.len() > 16 * 1024 {
+                return Err("Invalid SSH inline key references".into());
+            }
+            serde_json::from_str(&dto.ssh_jump_private_key_refs)
+                .map_err(|_| "Invalid SSH inline key references".to_string())?
+        },
     };
+    let active_hops = match &profile.configuration {
+        ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+            .options
+            .jump_hosts
+            .iter()
+            .filter(|hop| hop.authentication.uses_secret())
+            .filter_map(|hop| hop.id.as_deref())
+            .collect::<std::collections::BTreeSet<_>>(),
+        _ => std::collections::BTreeSet::new(),
+    };
+    profile
+        .ssh_jump_credential_refs
+        .retain(|id, _| active_hops.contains(id.as_str()));
+    let inline_hops = match &profile.configuration {
+        ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+            .options
+            .jump_hosts
+            .iter()
+            .filter(|hop| {
+                hop.authentication == choscordb_driver_api::SshJumpAuthentication::PublicKey
+                    && hop.identity_source == choscordb_driver_api::SshIdentitySource::Inline
+            })
+            .filter_map(|hop| hop.id.as_deref())
+            .collect::<std::collections::BTreeSet<_>>(),
+        _ => std::collections::BTreeSet::new(),
+    };
+    profile
+        .ssh_jump_private_key_refs
+        .retain(|id, _| inline_hops.contains(id.as_str()));
+    let target_inline = match &profile.configuration {
+        ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => {
+            ssh.authentication == choscordb_driver_api::SshAuthentication::PublicKey
+                && ssh.identity_source == choscordb_driver_api::SshIdentitySource::Inline
+        }
+        _ => false,
+    };
+    if !target_inline {
+        profile.ssh_private_key_ref = None;
+    }
     profile
         .validate()
         .map_err(|_| "Invalid profile".to_string())?;
@@ -1355,10 +1580,20 @@ pub fn profile_list(engine: &mut BridgeEngine, token: u64) -> ffi::Submit {
 }
 pub fn profile_save(engine: &mut BridgeEngine, dto: ffi::ProfileDto, token: u64) -> ffi::Submit {
     submit(engine, |e| {
-        e.profile_save(profile(dto)?, token)
+        e.profile_save(profile_for_save(dto)?, token)
             .map(|()| token)
             .map_err(|e| e.to_string())
     })
+}
+fn profile_for_save(
+    mut dto: ffi::ProfileDto,
+) -> std::result::Result<choscordb_core::ConnectionProfile, String> {
+    // The metadata worker recovers only references owned by the existing profile.
+    // Draft references can be stale after deleting or changing a hop.
+    dto.ssh_jump_credential_refs.clear();
+    dto.ssh_private_key_ref.clear();
+    dto.ssh_jump_private_key_refs.clear();
+    profile(dto)
 }
 pub fn profile_duplicate(
     engine: &mut BridgeEngine,
@@ -1391,7 +1626,7 @@ fn secret(password: &str, present: bool) -> std::result::Result<Option<Secret>, 
     if !present {
         return Ok(None);
     }
-    if password.len() > choscordb_credentials::MAX_SECRET_BYTES {
+    if password.len() > 16 * 1024 {
         return Err("Credential exceeds the supported size".into());
     }
     Ok(Some(Secret::new(password)))
@@ -1429,10 +1664,15 @@ pub fn profile_save_secrets(
 ) -> ffi::Submit {
     submit(engine, |e| {
         let updates = choscordb_core::CredentialUpdates {
+            ssh_private_key: choscordb_core::CredentialUpdate::Keep,
+            ssh_jump_private_keys: Default::default(),
+            ssh_jumps: Default::default(),
             database: credential_update(database_action, database_secret)?,
             ssh: credential_update(ssh_action, ssh_secret)?,
+            tls: choscordb_core::CredentialUpdate::Keep,
+            proxy: choscordb_core::CredentialUpdate::Keep,
         };
-        e.profile_save_with_secrets(profile(dto)?, updates, token)
+        e.profile_save_with_secrets(profile_for_save(dto)?, updates, token)
             .map(|()| token)
             .map_err(|e| e.to_string())
     })
@@ -1459,8 +1699,13 @@ pub fn profile_test_secrets(
         e.test_profile_with_secrets(
             profile(dto)?,
             choscordb_core::ProfileSecrets {
+                ssh_private_key: None,
+                ssh_jump_private_keys: Default::default(),
+                ssh_jumps: Default::default(),
                 database: secret(database_secret, has_database_secret)?,
                 ssh: secret(ssh_secret, has_ssh_secret)?,
+                tls: None,
+                proxy: None,
             },
             token,
         )
@@ -1488,8 +1733,13 @@ pub fn profile_connect_secrets(
         e.connect_profile_with_secrets(
             profile(dto)?,
             choscordb_core::ProfileSecrets {
+                ssh_private_key: None,
+                ssh_jump_private_keys: Default::default(),
+                ssh_jumps: Default::default(),
                 database: secret(database_secret, has_database_secret)?,
                 ssh: secret(ssh_secret, has_ssh_secret)?,
+                tls: None,
+                proxy: None,
             },
         )
         .map(pack)
@@ -1719,5 +1969,318 @@ pub fn refresh_sql_mode(
         e.refresh_sql_mode(unpack(connection), request_token)
             .map(|_| connection)
             .map_err(|e| e.to_string())
+    })
+}
+
+// Own each incoming secret immediately, including paths where engine/profile
+// validation fails before a credential is consumed by the core.
+struct ProtectedCredentials {
+    ssh_hops: Vec<ProtectedSshHop>,
+    ssh_private_key: zeroize::Zeroizing<String>,
+    ssh_private_key_action: String,
+    has_ssh_private_key: bool,
+    database: zeroize::Zeroizing<String>,
+    ssh: zeroize::Zeroizing<String>,
+    tls: zeroize::Zeroizing<String>,
+    proxy: zeroize::Zeroizing<String>,
+    database_action: String,
+    ssh_action: String,
+    tls_action: String,
+    proxy_action: String,
+    has_database: bool,
+    has_ssh: bool,
+    has_tls: bool,
+    has_proxy: bool,
+}
+struct ProtectedSshHop {
+    id: String,
+    secret: zeroize::Zeroizing<String>,
+    action: String,
+    has_secret: bool,
+    private_key: zeroize::Zeroizing<String>,
+    private_key_action: String,
+    has_private_key: bool,
+}
+impl From<ffi::ProfileCredentialsDto> for ProtectedCredentials {
+    fn from(value: ffi::ProfileCredentialsDto) -> Self {
+        Self {
+            ssh_hops: value
+                .ssh_hops
+                .into_iter()
+                .map(|hop| ProtectedSshHop {
+                    id: hop.id,
+                    secret: zeroize::Zeroizing::new(hop.secret),
+                    action: hop.action,
+                    has_secret: hop.has_secret,
+                    private_key: zeroize::Zeroizing::new(hop.private_key),
+                    private_key_action: hop.private_key_action,
+                    has_private_key: hop.has_private_key,
+                })
+                .collect(),
+            database: zeroize::Zeroizing::new(value.database),
+            ssh: zeroize::Zeroizing::new(value.ssh),
+            ssh_private_key: zeroize::Zeroizing::new(value.ssh_private_key),
+            ssh_private_key_action: value.ssh_private_key_action,
+            has_ssh_private_key: value.has_ssh_private_key,
+            tls: zeroize::Zeroizing::new(value.tls),
+            proxy: zeroize::Zeroizing::new(value.proxy),
+            database_action: value.database_action,
+            ssh_action: value.ssh_action,
+            tls_action: value.tls_action,
+            proxy_action: value.proxy_action,
+            has_database: value.has_database,
+            has_ssh: value.has_ssh,
+            has_tls: value.has_tls,
+            has_proxy: value.has_proxy,
+        }
+    }
+}
+fn owned_secret(
+    value: zeroize::Zeroizing<String>,
+    present: bool,
+) -> std::result::Result<Option<Secret>, String> {
+    owned_secret_with_limit(value, present, 16 * 1024)
+}
+fn owned_private_key_secret(
+    value: zeroize::Zeroizing<String>,
+    present: bool,
+) -> std::result::Result<Option<Secret>, String> {
+    owned_secret_with_limit(value, present, choscordb_credentials::MAX_SECRET_BYTES)
+}
+fn owned_secret_with_limit(
+    mut value: zeroize::Zeroizing<String>,
+    present: bool,
+    limit: usize,
+) -> std::result::Result<Option<Secret>, String> {
+    if !present {
+        return Ok(None);
+    }
+    if value.len() > limit {
+        return Err("Credential exceeds the supported size".into());
+    }
+    Ok(Some(Secret::new(std::mem::take(&mut *value))))
+}
+fn owned_update(
+    action: &str,
+    value: zeroize::Zeroizing<String>,
+) -> std::result::Result<choscordb_core::CredentialUpdate, String> {
+    use choscordb_core::CredentialUpdate;
+    match action {
+        "" | "keep" => Ok(CredentialUpdate::Keep),
+        "clear" => Ok(CredentialUpdate::Clear),
+        "replace" => Ok(CredentialUpdate::Replace(
+            owned_secret(value, true)?.expect("present secret"),
+        )),
+        _ => Err("Invalid credential update".into()),
+    }
+}
+fn owned_private_key_update(
+    action: &str,
+    value: zeroize::Zeroizing<String>,
+) -> std::result::Result<choscordb_core::CredentialUpdate, String> {
+    use choscordb_core::CredentialUpdate;
+    match action {
+        "" | "keep" => Ok(CredentialUpdate::Keep),
+        "clear" => Ok(CredentialUpdate::Clear),
+        "replace" => Ok(CredentialUpdate::Replace(
+            owned_private_key_secret(value, true)?.expect("present private key"),
+        )),
+        _ => Err("Invalid credential update".into()),
+    }
+}
+fn hop_updates(hops: Vec<ProtectedSshHop>) -> std::result::Result<HopUpdates, String> {
+    if hops.len() > 5 {
+        return Err("Too many SSH hop credentials".into());
+    }
+    let mut updates = std::collections::BTreeMap::new();
+    let mut key_updates = std::collections::BTreeMap::new();
+    for hop in hops {
+        let update = owned_update(&hop.action, hop.secret)?;
+        let key_update = owned_private_key_update(&hop.private_key_action, hop.private_key)?;
+        if updates.insert(hop.id.clone(), update).is_some() {
+            return Err("Duplicate SSH hop credential".into());
+        }
+        key_updates.insert(hop.id, key_update);
+    }
+    Ok((updates, key_updates))
+}
+type HopUpdates = (
+    std::collections::BTreeMap<String, choscordb_core::CredentialUpdate>,
+    std::collections::BTreeMap<String, choscordb_core::CredentialUpdate>,
+);
+fn hop_secrets(hops: Vec<ProtectedSshHop>) -> std::result::Result<HopSecrets, String> {
+    if hops.len() > 5 {
+        return Err("Too many SSH hop credentials".into());
+    }
+    let mut secrets = std::collections::BTreeMap::new();
+    let mut keys = std::collections::BTreeMap::new();
+    let mut ids = std::collections::BTreeSet::new();
+    for hop in hops {
+        if !ids.insert(hop.id.clone()) {
+            return Err("Duplicate SSH hop credential".into());
+        }
+        if let Some(secret) = owned_secret(hop.secret, hop.has_secret)? {
+            secrets.insert(hop.id.clone(), secret);
+        }
+        if let Some(key) = owned_private_key_secret(hop.private_key, hop.has_private_key)? {
+            keys.insert(hop.id, key);
+        }
+    }
+    Ok((secrets, keys))
+}
+type HopSecrets = (
+    std::collections::BTreeMap<String, Secret>,
+    std::collections::BTreeMap<String, Secret>,
+);
+pub fn profile_save_credentials(
+    engine: &mut BridgeEngine,
+    dto: ffi::ProfileDto,
+    credentials: ffi::ProfileCredentialsDto,
+    token: u64,
+) -> ffi::Submit {
+    let credentials = ProtectedCredentials::from(credentials);
+    submit(engine, |e| {
+        let (ssh_jumps, ssh_jump_private_keys) = hop_updates(credentials.ssh_hops)?;
+        let updates = choscordb_core::CredentialUpdates {
+            ssh_private_key: owned_private_key_update(
+                &credentials.ssh_private_key_action,
+                credentials.ssh_private_key,
+            )?,
+            ssh_jump_private_keys,
+            ssh_jumps,
+            database: owned_update(&credentials.database_action, credentials.database)?,
+            ssh: owned_update(&credentials.ssh_action, credentials.ssh)?,
+            tls: owned_update(&credentials.tls_action, credentials.tls)?,
+            proxy: owned_update(&credentials.proxy_action, credentials.proxy)?,
+        };
+        e.profile_save_with_secrets(profile(dto)?, updates, token)
+            .map(|()| token)
+            .map_err(|e| e.to_string())
+    })
+}
+pub fn profile_test_credentials(
+    engine: &mut BridgeEngine,
+    dto: ffi::ProfileDto,
+    credentials: ffi::ProfileCredentialsDto,
+    token: u64,
+) -> ffi::Submit {
+    let credentials = ProtectedCredentials::from(credentials);
+    submit(engine, |e| {
+        let (ssh_jumps, ssh_jump_private_keys) = hop_secrets(credentials.ssh_hops)?;
+        let secrets = choscordb_core::ProfileSecrets {
+            ssh_private_key: owned_private_key_secret(
+                credentials.ssh_private_key,
+                credentials.has_ssh_private_key,
+            )?,
+            ssh_jump_private_keys,
+            ssh_jumps,
+            database: owned_secret(credentials.database, credentials.has_database)?,
+            ssh: owned_secret(credentials.ssh, credentials.has_ssh)?,
+            tls: owned_secret(credentials.tls, credentials.has_tls)?,
+            proxy: owned_secret(credentials.proxy, credentials.has_proxy)?,
+        };
+        e.test_profile_with_secrets(profile(dto)?, secrets, token)
+            .map(|()| token)
+            .map_err(|e| e.to_string())
+    })
+}
+pub fn profile_connect_credentials(
+    engine: &mut BridgeEngine,
+    dto: ffi::ProfileDto,
+    credentials: ffi::ProfileCredentialsDto,
+) -> ffi::Submit {
+    let credentials = ProtectedCredentials::from(credentials);
+    submit(engine, |e| {
+        let (ssh_jumps, ssh_jump_private_keys) = hop_secrets(credentials.ssh_hops)?;
+        let secrets = choscordb_core::ProfileSecrets {
+            ssh_private_key: owned_private_key_secret(
+                credentials.ssh_private_key,
+                credentials.has_ssh_private_key,
+            )?,
+            ssh_jump_private_keys,
+            ssh_jumps,
+            database: owned_secret(credentials.database, credentials.has_database)?,
+            ssh: owned_secret(credentials.ssh, credentials.has_ssh)?,
+            tls: owned_secret(credentials.tls, credentials.has_tls)?,
+            proxy: owned_secret(credentials.proxy, credentials.has_proxy)?,
+        };
+        e.connect_profile_with_secrets(profile(dto)?, secrets)
+            .map(pack)
+            .map_err(|e| e.to_string())
+    })
+}
+
+pub fn profile_inspect_ssh_host_keys(
+    engine: &mut BridgeEngine,
+    dto: ffi::ProfileDto,
+    credentials: ffi::ProfileCredentialsDto,
+    target_kind: &str,
+    target_id: &str,
+    target_index: u32,
+    token: u64,
+) -> ffi::Submit {
+    let credentials = ProtectedCredentials::from(credentials);
+    submit(engine, |e| {
+        let target = match target_kind {
+            "target" => choscordb_driver_api::SshHostKeyTarget::Target,
+            "jump" => choscordb_driver_api::SshHostKeyTarget::Jump(target_id.into()),
+            "jump_index" => choscordb_driver_api::SshHostKeyTarget::JumpIndex(
+                usize::try_from(target_index).map_err(|_| "Invalid SSH hop index")?,
+            ),
+            _ => return Err("Invalid SSH host key target".into()),
+        };
+        if credentials.has_database
+            || credentials.has_ssh
+            || credentials.has_ssh_private_key
+            || credentials.has_tls
+            || credentials.has_proxy
+            || !credentials.database.is_empty()
+            || !credentials.ssh.is_empty()
+            || !credentials.ssh_private_key.is_empty()
+            || !credentials.tls.is_empty()
+            || !credentials.proxy.is_empty()
+        {
+            return Err("SSH host inspection accepts only preceding-hop credentials".into());
+        }
+        let (ssh_jumps, ssh_jump_private_keys) = hop_secrets(credentials.ssh_hops)?;
+        let secrets = choscordb_core::ProfileSecrets {
+            ssh_jumps,
+            ssh_jump_private_keys,
+            ..Default::default()
+        };
+        e.inspect_profile_ssh_host_keys(profile(dto)?, secrets, target, token)
+            .map(|()| token)
+            .map_err(|error| error.to_string())
+    })
+}
+
+pub fn approve_ssh_host_key(
+    engine: &mut BridgeEngine,
+    candidate_json: &str,
+    expected_sha256: &str,
+    known_hosts_path: &str,
+    token: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        if candidate_json.len() > 32 * 1024
+            || expected_sha256.len() > 128
+            || known_hosts_path.is_empty()
+            || known_hosts_path.len() > 16 * 1024
+            || !std::path::Path::new(known_hosts_path).is_absolute()
+            || known_hosts_path.starts_with('~')
+            || known_hosts_path.contains(['\0', '%', '$', '"', '\'', '\\', '\n', '\r'])
+        {
+            return Err("Invalid SSH host key approval".into());
+        }
+        let candidate: choscordb_driver_api::SshHostKeyCandidate =
+            serde_json::from_str(candidate_json).map_err(|_| "Invalid SSH host key candidate")?;
+        e.approve_ssh_host_key(
+            candidate,
+            expected_sha256.into(),
+            std::path::PathBuf::from(known_hosts_path),
+            token,
+        )
+        .map(|()| token)
+        .map_err(|error| error.to_string())
     })
 }

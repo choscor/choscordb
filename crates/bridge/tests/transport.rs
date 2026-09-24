@@ -716,7 +716,7 @@ fn mysql_profile_roundtrips_and_dispatches_to_registered_driver() {
 
 #[test]
 fn mysql_bridge_rejects_invalid_ssh_and_invalid_tls() {
-    for (tls, ssh_enabled) in [("prefer", false), ("verify_full", true)] {
+    for (tls, ssh_enabled) in [("unsupported", false), ("verify_full", true)] {
         let mut engine = new_engine();
         let result = profile_save(
             &mut engine,
@@ -813,4 +813,56 @@ fn mysql_bridge_preserves_ssh_profile() {
     assert_eq!(saved.profiles[0].ssh_host, "bastion.example");
     assert_eq!(saved.profiles[0].host, "database.internal");
     assert_eq!(saved.profiles[0].tls, "verify_full");
+}
+
+#[test]
+fn result_filters_accept_sql_patterns_and_literal_lists() {
+    let mut engine = new_engine();
+    let connection = connect_sqlite(&mut engine, ":memory:", false);
+    await_event(&mut engine, "connected");
+    let query = execute(
+        &mut engine,
+        connection.id,
+        "SELECT 1 AS id, 'Alice' AS name UNION ALL SELECT 2, 'Bob' UNION ALL SELECT 3, 'Al_bert' UNION ALL SELECT 4, NULL",
+        100,
+        0,
+        true,
+    );
+    await_event(&mut engine, "schema");
+    for (operation, column, kind, value, expected) in [
+        ("like", 1, "text", "Al%", 2),
+        ("not_like", 1, "text", "Al%", 1),
+        ("like", 1, "text", "B_b", 1),
+        ("in", 0, "integer", "1, 3", 2),
+        ("in", 1, "text", "'Bob', 'Nobody'", 1),
+        (
+            "sql",
+            99,
+            "text",
+            "id >= 2 AND (name LIKE 'Al%' OR name IS NULL)",
+            2,
+        ),
+        ("sql", 99, "text", "name = 'Alice' OR id IN (2, 4)", 3),
+    ] {
+        let applied = apply_result_view(
+            &mut engine,
+            query.id,
+            vec![ffi::ResultFilterDto {
+                column,
+                operation: operation.into(),
+                value_kind: kind.into(),
+                value: value.into(),
+            }],
+            0,
+            "",
+            100,
+        );
+        assert!(applied.accepted, "{operation}: {}", applied.error);
+        assert_eq!(
+            await_event(&mut engine, "result_view_applied").result_view_rows,
+            expected,
+            "{operation}: {value}"
+        );
+    }
+    assert!(shutdown(&mut engine).accepted);
 }

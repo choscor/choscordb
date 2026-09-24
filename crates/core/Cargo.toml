@@ -17,9 +17,9 @@ choscordb-export = { path = "../export" }
 choscordb-result-cache = { path = "../result-cache" }
 choscordb-result-store = { path = "../result-store" }
 choscordb-driver-api = { path = "../driver-api" }
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "process"] }
 thiserror = "2"
-rusqlite = { version = "0.40", features = ["bundled", "collation", "hooks"] }
+rusqlite = { version = "0.40", features = ["bundled", "collation", "hooks", "limits"] }
 serde_json = "1"
 tempfile = "3"
 
@@ -27,3 +27,6 @@ tempfile = "3"
 choscordb-driver-mysql = { path = "../driver-mysql" }
 choscordb-driver-postgres = { path = "../driver-postgres" }
 choscordb-driver-sqlite = { path = "../driver-sqlite" }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29", default-features = false, features = ["process", "signal"] }

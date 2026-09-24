@@ -36,12 +36,19 @@ fn mysql_profile_connects_streams_typed_rows_and_disconnects_through_engine() {
     let connection = engine
         .connect_profile(
             ConnectionProfile {
+                authentication: Default::default(),
                 id: "mysql-fixture".into(),
                 name: "MySQL fixture".into(),
                 group_id: None,
                 credential_ref: None,
+                proxy_credential_ref: None,
+                ssh_jump_credential_refs: Default::default(),
+                ssh_jump_private_key_refs: Default::default(),
+                tls_credential_ref: None,
                 ssh_credential_ref: None,
+                ssh_private_key_ref: None,
                 configuration: ProfileConfiguration::Mysql {
+                    proxy: None,
                     ssh: None,
                     host: "127.0.0.1".into(),
                     port: std::env::var("CHOSCORDB_MYSQL_PORT")
@@ -52,6 +59,7 @@ fn mysql_profile_connects_streams_typed_rows_and_disconnects_through_engine() {
                     user: "root".into(),
                     tls: PostgresTls {
                         mode: TlsMode::Disable,
+                        client_identity_path: None,
                         root_certificate_path: None,
                     },
                 },
@@ -120,6 +128,8 @@ fn cancelling_slow_mysql_object_is_prompt_and_preserves_main_session() {
     use choscordb_driver_api::{ConnectionOptions, DatabaseDriver, ErrorKind, ObjectId};
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let options = || ConnectionOptions::Mysql {
+        proxy: None,
+        proxy_secret: None,
         ssh: None,
         host: "127.0.0.1".into(),
         port: std::env::var("CHOSCORDB_MYSQL_PORT")
@@ -130,7 +140,11 @@ fn cancelling_slow_mysql_object_is_prompt_and_preserves_main_session() {
         user: "root".into(),
         password: Some(Secret::new("choscordb-test-password")),
         ssh_secret: None,
+        ssh_private_key: None,
+        ssh_jump_secrets: Default::default(),
+        ssh_jump_private_keys: Default::default(),
         tls: TlsMode::Disable,
+        tls_identity: None,
         root_certificate: None,
     };
     let view = format!("choscordb_slow_{}", uuid::Uuid::new_v4().simple());
@@ -217,13 +231,22 @@ fn direct_engine() -> (Engine, choscordb_driver_api::ConnectionId) {
         .connect(
             "mysql",
             choscordb_driver_api::ConnectionOptions::Mysql {
+                proxy: None,
+                proxy_secret: None,
                 host: "127.0.0.1".into(),
-                port: 33306,
+                port: std::env::var("CHOSCORDB_MYSQL_PORT")
+                    .unwrap_or_else(|_| "33306".into())
+                    .parse()
+                    .unwrap(),
                 database: "choscordb_test".into(),
                 user: "root".into(),
                 password: Some(Secret::new("choscordb-test-password")),
                 ssh_secret: None,
+                ssh_private_key: None,
+                ssh_jump_secrets: Default::default(),
+                ssh_jump_private_keys: Default::default(),
                 tls: TlsMode::Disable,
+                tls_identity: None,
                 root_certificate: None,
                 ssh: None,
             },

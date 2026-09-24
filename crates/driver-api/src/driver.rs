@@ -131,6 +131,10 @@ pub trait DatabaseDriver: Send + Sync {
     fn id(&self) -> &'static str;
     fn capabilities(&self) -> DriverCapabilities;
     async fn connect(&self, options: ConnectionOptions) -> Result<Box<dyn Connection>>;
+    /// Open a fresh session after recovery invalidates a failed connection.
+    async fn reconnect(&self, options: ConnectionOptions) -> Result<Box<dyn Connection>> {
+        self.connect(options).await
+    }
 }
 /// Acquire a fresh handle immediately before each execute. It targets that next
 /// execution only; a retained token must never cancel a later execution.
@@ -140,8 +144,84 @@ pub trait DatabaseDriver: Send + Sync {
 pub trait CancelHandle: Send + Sync {
     async fn cancel(&self) -> Result<()>;
 }
+/// Local, monotonic information used only for opt-in idle write rollback.
+/// Unknown state must never be treated as permission to roll back.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IdleTransactionState {
+    pub active: bool,
+    pub manual: bool,
+    pub write_pending: bool,
+    pub started_at: Option<std::time::Instant>,
+}
 #[async_trait]
 pub trait Connection: Send {
+    /// Does not issue SQL or change transaction state.
+    async fn idle_transaction_state(&mut self) -> Result<Option<IdleTransactionState>> {
+        Ok(None)
+    }
+
+    /// Local session transaction state; does not issue a database query.
+    async fn transaction_state(&mut self) -> Result<Option<bool>> {
+        Ok(None)
+    }
+    /// Begin an explicitly tracked transaction with native characteristics.
+    async fn begin_transaction(
+        &mut self,
+        _characteristics: crate::TransactionCharacteristics,
+    ) -> Result<()> {
+        Err(DriverError::new(
+            ErrorKind::Unsupported,
+            "Explicit transaction characteristics are unavailable",
+        ))
+    }
+    /// Finish and immediately replace the transaction, retaining its characteristics.
+    async fn chain_transaction(&mut self, _commit: bool) -> Result<()> {
+        Err(DriverError::new(
+            ErrorKind::Unsupported,
+            "Chained transactions are unavailable",
+        ))
+    }
+    /// SQL-level keepalive on a session with no pending transaction.
+    async fn ping(&mut self) -> Result<()> {
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            if self.transaction_state().await? != Some(false) {
+                return Err(DriverError::new(
+                    ErrorKind::Unsupported,
+                    "SQL keepalive requires a session without a pending transaction",
+                ));
+            }
+            let mut cursor = self
+                .execute_bounded(
+                    "SELECT 1",
+                    QueryOptions {
+                        auto_commit: true,
+                        ..Default::default()
+                    },
+                    64 * 1024,
+                )
+                .await?;
+            loop {
+                while cursor
+                    .fetch_page_bounded(PageSize::new(100).expect("valid page size"), 64 * 1024)
+                    .await?
+                    .has_more
+                {}
+                if !cursor.next_result_set().await? {
+                    break;
+                }
+            }
+            cursor.close().await?;
+            if self.transaction_state().await? != Some(false) {
+                return Err(DriverError::new(
+                    ErrorKind::Internal,
+                    "SQL keepalive left an unexpected transaction",
+                ));
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|_| DriverError::new(ErrorKind::Timeout, "SQL keepalive timed out"))?
+    }
     fn cancellation_handle(&self) -> Arc<dyn CancelHandle>;
     async fn inspect_edit_target(&mut self, _object: &ObjectId) -> Result<EditTarget> {
         Err(DriverError::new(

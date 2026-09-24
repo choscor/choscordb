@@ -19,6 +19,7 @@ struct Started {
     summary: QuerySummary,
 }
 enum Command {
+    IdleState(Reply<Option<IdleTransactionState>>),
     Object(Box<dyn FnOnce(&rusqlite::Connection) + Send>),
     Execute(String, QueryOptions, usize, Reply<Started>),
     Fetch(u32, PageSize, usize, Reply<ResultPage>),
@@ -132,21 +133,39 @@ impl DatabaseDriver for SqliteDriver {
                 "SQLite connection options required",
             ));
         };
-        let (tx, rx) = mpsc::channel(32);
-        let (ready_tx, ready_rx) = oneshot::channel();
-        std::thread::Builder::new()
-            .name("choscordb-sqlite".into())
-            .spawn(move || worker::run(path, read_only, rx, ready_tx))
-            .map_err(|_| DriverError::new(ErrorKind::Io, "Cannot start SQLite worker"))?;
-        let cancel = ready_rx.await.map_err(|_| disconnected())??;
-        Ok(Box::new(SqliteConnection {
-            client: Client(tx),
-            cancel,
-        }))
+        tokio::time::timeout(std::time::Duration::from_secs(15), async move {
+            let (tx, rx) = mpsc::channel(32);
+            let (ready_tx, ready_rx) = oneshot::channel();
+            std::thread::Builder::new()
+                .name("choscordb-sqlite".into())
+                .spawn(move || worker::run(path, read_only, rx, ready_tx))
+                .map_err(|_| DriverError::new(ErrorKind::Io, "Cannot start SQLite worker"))?;
+            let cancel = ready_rx.await.map_err(|_| disconnected())??;
+            let connection = SqliteConnection {
+                client: Client(tx),
+                cancel,
+            };
+            Ok(Box::new(connection) as Box<dyn Connection>)
+        })
+        .await
+        .map_err(|_| DriverError::new(ErrorKind::Timeout, "SQLite connection timed out"))?
     }
 }
 #[async_trait]
 impl Connection for SqliteConnection {
+    async fn idle_transaction_state(&mut self) -> Result<Option<IdleTransactionState>> {
+        self.client.request(Command::IdleState).await
+    }
+    async fn transaction_state(&mut self) -> Result<Option<bool>> {
+        self.client
+            .request(|reply| {
+                Command::Object(Box::new(move |db| {
+                    let _ = reply.send(Ok(Some(!db.is_autocommit())));
+                }))
+            })
+            .await
+    }
+
     async fn inspect_edit_query(
         &mut self,
         sql: &str,

@@ -4,6 +4,10 @@ use std::cmp::Ordering;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FilterOperator {
     Contains,
+    Like,
+    NotLike,
+    In,
+    Sql,
     Equals,
     NotEquals,
     LessThan,
@@ -447,6 +451,29 @@ pub fn value_matches(
     operator: FilterOperator,
     operand: Option<&Value>,
 ) -> Result<bool, DriverError> {
+    if operator == FilterOperator::Sql {
+        return Err(invalid("SQL predicates require a result row"));
+    }
+    if matches!(
+        operator,
+        FilterOperator::Like | FilterOperator::NotLike | FilterOperator::In
+    ) {
+        let filters = [FilterCondition {
+            column: 0,
+            operator,
+            value: operand.cloned(),
+        }];
+        let columns = [choscordb_driver_api::Column {
+            name: "value".into(),
+            database_type: String::new(),
+            precision: None,
+            scale: None,
+            timezone: None,
+            nullable: None,
+        }];
+        return crate::result_predicate::Predicates::new(&columns, &filters, 8 * 1024 * 1024)?
+            .row_matches(std::slice::from_ref(value), &filters);
+    }
     if operator == FilterOperator::IsNull {
         return Ok(matches!(value, Value::Null));
     }
@@ -508,16 +535,6 @@ pub fn value_matches(
         FilterOperator::GreaterThan => ordering == Ordering::Greater,
         FilterOperator::GreaterThanOrEqual => ordering != Ordering::Less,
         _ => unreachable!(),
-    })
-}
-
-pub(crate) fn row_matches(row: &[Value], filters: &[FilterCondition]) -> Result<bool, DriverError> {
-    filters.iter().try_fold(true, |matches, condition| {
-        let value = row
-            .get(condition.column)
-            .ok_or_else(|| invalid("Filter column is out of range"))?;
-        let current = value_matches(value, condition.operator, condition.value.as_ref())?;
-        Ok(matches && current)
     })
 }
 

@@ -11,6 +11,11 @@ fn value(name: &str) -> String {
 
 fn settings() -> ConnectionOptions {
     ConnectionOptions::Postgres {
+        ssh_jump_secrets: Default::default(),
+        ssh_private_key: None,
+        ssh_jump_private_keys: Default::default(),
+        proxy: None,
+        proxy_secret: None,
         host: value("CHOSCORDB_TEST_POSTGRES_HOST"),
         port: value("CHOSCORDB_TEST_POSTGRES_PORT").parse().unwrap(),
         database: value("CHOSCORDB_TEST_POSTGRES_DATABASE"),
@@ -19,6 +24,7 @@ fn settings() -> ConnectionOptions {
         ssh_secret: None,
         tls: TlsMode::VerifyFull,
         ssh: None,
+        tls_identity: None,
         root_certificate: Some(value("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE").into()),
     }
 }

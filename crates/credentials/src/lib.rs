@@ -2,7 +2,9 @@
 //! never the UI thread. No plaintext persistence or fallback credential backend.
 pub use choscordb_driver_api::Secret;
 
-pub const MAX_SECRET_BYTES: usize = 16 * 1024;
+/// The credential store also holds inline SSH identities; ordinary passwords
+/// remain bounded to 16 KiB by the connection layer.
+pub const MAX_SECRET_BYTES: usize = 64 * 1024;
 const SERVICE: &str = match option_env!("CHOSCORDB_CREDENTIAL_SERVICE") {
     Some(service) => service,
     None => "com.choscor.ChoscorDB",

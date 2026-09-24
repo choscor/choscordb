@@ -1,10 +1,7 @@
 use crate::{Event, QueryState};
 use choscordb_driver_api::*;
 use std::{future::Future, sync::Arc, time::Duration};
-use tokio::{
-    sync::{mpsc, watch},
-    time::Instant,
-};
+use tokio::{sync::watch, time::Instant};
 
 pub(crate) struct Control<'a> {
     pub query: QueryId,
@@ -12,7 +9,7 @@ pub(crate) struct Control<'a> {
     pub shutdown: &'a mut watch::Receiver<bool>,
     pub deadline: Option<Instant>,
     pub grace: Duration,
-    pub events: &'a mpsc::Sender<Event>,
+    pub events: &'a crate::actor::EventSink,
 }
 pub(crate) struct Outcome<T> {
     pub result: Result<T>,

@@ -10,6 +10,10 @@ use tokio::{
     time::Instant,
 };
 
+pub(crate) struct Request {
+    pub command: Command,
+}
+
 pub(crate) enum Command {
     SqlMode {
         request_token: u64,
@@ -99,18 +103,43 @@ struct Active {
     started: Instant,
     deadline: Option<Instant>,
 }
-async fn finish_queued_history(commands: &mut mpsc::Receiver<Command>) {
+async fn finish_queued_history(commands: &mut mpsc::Receiver<Request>, events: &EventSink) {
     commands.close();
     while let Ok(command) = commands.try_recv() {
-        if let Command::Execute { mut history, .. } = command
+        if let Command::Execute { mut history, .. } = command.command
             && let Some(history) = &mut history
         {
+            history.bind_events(events.clone());
             history.fail(ErrorKind::Disconnected).await;
         }
     }
 }
-async fn send(events: &mpsc::Sender<Event>, event: Event) {
-    let _ = events.send(event).await;
+#[derive(Clone)]
+pub(crate) struct EventSink {
+    sender: mpsc::Sender<Event>,
+    shutdown: watch::Receiver<bool>,
+}
+impl EventSink {
+    pub(crate) fn new(sender: mpsc::Sender<Event>, shutdown: watch::Receiver<bool>) -> Self {
+        Self { sender, shutdown }
+    }
+    pub(crate) async fn send(&self, event: Event) {
+        send(self, event).await;
+    }
+}
+async fn send(events: &EventSink, event: Event) {
+    let mut shutdown = events.shutdown.clone();
+    tokio::select! {
+        biased;
+        _ = crate::operation::signalled(&mut shutdown) => {
+            // Shutdown must never retain transport ownership behind UI backpressure.
+            // Preserve terminal notifications when the receiver still has capacity.
+            let _ = events.sender.try_send(event);
+        }
+        permit = events.sender.reserve() => {
+            if let Ok(permit) = permit { permit.send(event); }
+        }
+    }
 }
 async fn metadata_operation<T>(
     operation: impl std::future::Future<Output = Result<T>>,
@@ -128,7 +157,7 @@ async fn metadata_operation<T>(
         result = operation => result,
     }
 }
-async fn failure(events: &mpsc::Sender<Event>, query: QueryId, error: DriverError) {
+async fn failure(events: &EventSink, query: QueryId, error: DriverError) {
     let state = if error.kind == ErrorKind::Disconnected {
         QueryState::Disconnected
     } else {
@@ -137,7 +166,7 @@ async fn failure(events: &mpsc::Sender<Event>, query: QueryId, error: DriverErro
     send(events, Event::QueryState { query, state }).await;
     send(events, Event::QueryFailed { query, error }).await;
 }
-async fn close_active(active: &mut Option<Active>, events: &mpsc::Sender<Event>) {
+async fn close_active(active: &mut Option<Active>, events: &EventSink) {
     if let Some(mut old) = active.take() {
         match old.cursor.close().await {
             Ok(()) if !old.completed => {
@@ -190,7 +219,7 @@ async fn fetch_stored<T: Send + 'static>(
     cancellation: Option<&mut watch::Receiver<bool>>,
     shutdown: &mut watch::Receiver<bool>,
     grace: Duration,
-    events: &mpsc::Sender<Event>,
+    events: &EventSink,
 ) -> crate::operation::Outcome<(choscordb_result_store::StoredPage, T)> {
     let outcome = perform(
         current.cursor.fetch_page_bounded(size, raw_limit),
@@ -217,7 +246,7 @@ async fn fetch_stored<T: Send + 'static>(
         poisoned: outcome.poisoned,
     }
 }
-async fn complete_result(current: &mut Active, events: &mpsc::Sender<Event>) {
+async fn complete_result(current: &mut Active, events: &EventSink) {
     if current.completed {
         return;
     }
@@ -257,12 +286,24 @@ async fn complete_result(current: &mut Active, events: &mpsc::Sender<Event>) {
     )
     .await;
 }
+fn session_probe_timeout(options: &ConnectionOptions) -> Duration {
+    match options {
+        ConnectionOptions::Postgres { ssh, .. } | ConnectionOptions::Mysql { ssh, .. } => {
+            ssh.as_ref().map_or(Duration::from_secs(15), |settings| {
+                Duration::from_secs(u64::from(settings.options.connect_timeout_seconds))
+            })
+        }
+        ConnectionOptions::Sqlite { .. } => Duration::from_secs(15),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run(
     id: ConnectionId,
     driver: Arc<dyn DatabaseDriver>,
     options: ConnectionOptions,
-    mut commands: mpsc::Receiver<Command>,
+    attempt_timeout: Option<Duration>,
+    mut commands: mpsc::Receiver<Request>,
     events: mpsc::Sender<Event>,
     mut shutdown: watch::Receiver<bool>,
     grace: Duration,
@@ -271,6 +312,10 @@ pub(crate) async fn run(
     memory: Arc<crate::memory::Memory>,
     cache: Arc<crate::hot_cache::HotCache>,
 ) {
+    let events = EventSink::new(events, shutdown.clone());
+    let probe_timeout = session_probe_timeout(&options);
+    let attempt_timeout = attempt_timeout.unwrap_or(probe_timeout);
+    let attempt_deadline = Instant::now() + attempt_timeout;
     let raw_limit = memory.raw_limit();
     store_config.max_page_decoded_bytes = store_config.max_page_decoded_bytes.min(raw_limit);
     store_config.max_schema_bytes = store_config.max_schema_bytes.min(raw_limit as u64);
@@ -280,14 +325,16 @@ pub(crate) async fn run(
         }
     };
     let connected = tokio::select! { biased; _ = stopped => {
-        finish_queued_history(&mut commands).await;
+        finish_queued_history(&mut commands, &events).await;
         send(&events, Event::Disconnected { connection: id }).await;
         return;
-    }, value = driver.connect(options) => value };
+    }, value = tokio::time::timeout_at(attempt_deadline, async {
+        driver.connect(options).await
+    }) => value.unwrap_or_else(|_| Err(DriverError::new(ErrorKind::Timeout, "Connection attempt timed out"))) };
     let mut connection = match connected {
         Ok(connection) => connection,
         Err(error) => {
-            finish_queued_history(&mut commands).await;
+            finish_queued_history(&mut commands, &events).await;
             send(
                 &events,
                 Event::ConnectionFailed {
@@ -299,15 +346,57 @@ pub(crate) async fn run(
             return;
         }
     };
+    // A successful login is not usable until initial session state is known.
+    // Interrupting a native query can leave unread protocol bytes, so discard
+    // the connection on timeout/shutdown instead of returning it to the actor.
+    let mode = tokio::select! {
+        biased;
+        _ = shutdown.wait_for(|stopped| *stopped) => None,
+        result = tokio::time::timeout_at(attempt_deadline.min(Instant::now() + probe_timeout), async {
+            let mode = connection.sql_mode().await?;
+            let transaction_active = connection.transaction_state().await?;
+            Ok::<_, DriverError>((mode, transaction_active))
+        }) => Some(
+            result.unwrap_or_else(|_| Err(DriverError::new(
+                ErrorKind::Timeout, "Initial session state query timed out",
+            )))
+        ),
+    };
+    let (mode, transaction_active) = match mode {
+        Some(Ok(state)) => state,
+        failure => {
+            commands.close();
+            let _ = tokio::time::timeout(probe_timeout, async {
+                let _ = tokio::time::timeout(grace, connection.close()).await;
+            })
+            .await;
+            drop(connection);
+            finish_queued_history(&mut commands, &events).await;
+            send(
+                &events,
+                match failure {
+                    Some(Err(error)) => Event::ConnectionFailed {
+                        connection: id,
+                        error,
+                    },
+                    None => Event::Disconnected { connection: id },
+                    Some(Ok(_)) => unreachable!("successful session initialization"),
+                },
+            )
+            .await;
+            return;
+        }
+    };
     send(
         &events,
         Event::Connected {
             connection: id,
             capabilities: driver.capabilities(),
+            transaction_active,
         },
     )
     .await;
-    if let Ok(Some(mode)) = connection.sql_mode().await {
+    if let Some(mode) = mode {
         send(
             &events,
             Event::SessionSqlMode {
@@ -377,7 +466,7 @@ pub(crate) async fn run(
                 std::future::pending::<()>().await;
             }
         };
-        let command = tokio::select! {
+        let mut command = tokio::select! {
             biased;
             _ = shutdown.changed() => break,
             _ = idle_cancel => {
@@ -417,8 +506,18 @@ pub(crate) async fn run(
                 }
                 continue;
             }
-            command = commands.recv() => match command { Some(command) => command, None => break },
+            command = commands.recv() => match command {
+                Some(request) => request.command,
+                None => break,
+            },
         };
+        if let Command::Execute {
+            history: Some(history),
+            ..
+        } = &mut command
+        {
+            history.bind_events(events.clone());
+        }
         let object_command = match &command {
             Command::Execute {
                 object: Some(_), ..
@@ -1130,6 +1229,8 @@ pub(crate) async fn run(
                     }
                     let count = store.count()?;
                     let columns = store.schema_reserved(()).await?.0;
+                    let predicates =
+                        crate::result_predicate::Predicates::new(&columns, &filters, raw_limit)?;
                     if let Some(sort) = sort {
                         let column = columns.get(sort.column).ok_or_else(|| {
                             DriverError::new(ErrorKind::InvalidInput, "Sort column is out of range")
@@ -1230,7 +1331,7 @@ pub(crate) async fn run(
                             } else {
                                 None
                             };
-                            if crate::result_view::row_matches(&row, &filters)? {
+                            if predicates.row_matches(&row, &filters)? {
                                 row_count = row_count.checked_add(1).ok_or_else(|| {
                                     DriverError::new(
                                         ErrorKind::ResourceLimit,
@@ -1610,7 +1711,8 @@ pub(crate) async fn run(
     // Cursor close may commit an automatic transaction (e.g. a suspended
     // PostgreSQL RETURNING portal). Disconnect must roll back the connection
     // before any cursor finalizer can run, even if native cancellation failed.
-    let _ = connection.close().await;
+    let _ = tokio::time::timeout(grace, connection.close()).await;
+    drop(connection);
     if let Some(mut old) = sql_active.take() {
         // The connection is closed; a cursor finalizer cannot make progress if
         // its worker has already stopped. Dropping it releases local resources.
@@ -1636,9 +1738,10 @@ pub(crate) async fn run(
     while let Ok(command) = commands.try_recv() {
         if let Command::Execute {
             query, mut history, ..
-        } = command
+        } = command.command
         {
             if let Some(history) = &mut history {
+                history.bind_events(events.clone());
                 history.fail(ErrorKind::Disconnected).await;
             }
             failure(

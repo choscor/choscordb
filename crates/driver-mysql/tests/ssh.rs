@@ -5,6 +5,11 @@ use std::time::Duration;
 
 fn options(trusted: bool) -> ConnectionOptions {
     ConnectionOptions::Mysql {
+        ssh_jump_secrets: Default::default(),
+        ssh_private_key: None,
+        ssh_jump_private_keys: Default::default(),
+        proxy: None,
+        proxy_secret: None,
         // This name resolves only inside the SSH fixture's Docker container.
         host: "mysql-ssh-target".into(),
         port: 3306,
@@ -13,8 +18,10 @@ fn options(trusted: bool) -> ConnectionOptions {
         password: Some(Secret::new("choscordb-test-password")),
         ssh_secret: None,
         tls: TlsMode::Disable,
+        tls_identity: None,
         root_certificate: None,
         ssh: Some(SshTunnel {
+            options: Default::default(),
             host: if trusted { "127.0.0.1" } else { "localhost" }.into(),
             port: std::env::var("CHOSCORDB_SSH_PORT")
                 .expect("run mysql_ssh_fixture.py")
@@ -22,6 +29,7 @@ fn options(trusted: bool) -> ConnectionOptions {
                 .unwrap(),
             user: "root".into(),
             authentication: SshAuthentication::PublicKey,
+            identity_source: Default::default(),
             identity_file: Some(std::env::var("CHOSCORDB_SSH_IDENTITY").expect("fixture identity")),
         }),
     }

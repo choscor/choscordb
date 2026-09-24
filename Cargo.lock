@@ -319,7 +319,9 @@ dependencies = [
  "cxx",
  "cxx-build",
  "rusqlite",
+ "serde_json",
  "tempfile",
+ "zeroize",
 ]
 
 [[package]]
@@ -337,6 +339,7 @@ dependencies = [
  "choscordb-result-store",
  "choscordb-storage",
  "fs2",
+ "nix",
  "rusqlite",
  "serde_json",
  "tempfile",
@@ -359,10 +362,18 @@ name = "choscordb-driver-api"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "fs2",
+ "hmac 0.12.1",
+ "nix",
+ "percent-encoding",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "shlex",
+ "tempfile",
  "tokio",
  "uuid",
+ "whoami",
  "zeroize",
 ]
 
@@ -386,6 +397,7 @@ dependencies = [
  "async-trait",
  "choscordb-driver-api",
  "choscordb-postgres-values",
+ "choscordb-sql-language",
  "futures-util",
  "native-tls",
  "postgres-native-tls",

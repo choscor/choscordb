@@ -11,6 +11,11 @@ async fn direct_connection_accepts_a_user_without_a_password() {
         .unwrap();
     let mut connection = MysqlDriver
         .connect(ConnectionOptions::Mysql {
+            ssh_jump_secrets: Default::default(),
+            ssh_private_key: None,
+            ssh_jump_private_keys: Default::default(),
+            proxy: None,
+            proxy_secret: None,
             host: "127.0.0.1".into(),
             port,
             database: "choscordb_test".into(),
@@ -18,6 +23,7 @@ async fn direct_connection_accepts_a_user_without_a_password() {
             password: None,
             ssh_secret: None,
             tls: TlsMode::Disable,
+            tls_identity: None,
             root_certificate: None,
             ssh: None,
         })

@@ -120,6 +120,61 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
     let mut transfer = None;
     let mut e = ffi::BridgeEvent::default();
     e.kind = match event {
+        Event::SshHostKeysInspected {
+            request_token,
+            candidates,
+        } => {
+            e.request_token = request_token;
+            e.host_key_candidates = candidates
+                .into_iter()
+                .map(|candidate| {
+                    let (target_kind, target_id, target_index) = match &candidate.target {
+                        choscordb_driver_api::SshHostKeyTarget::Target => {
+                            ("target", String::new(), 0)
+                        }
+                        choscordb_driver_api::SshHostKeyTarget::Jump(id) => ("jump", id.clone(), 0),
+                        choscordb_driver_api::SshHostKeyTarget::JumpIndex(index) => {
+                            ("jump_index", String::new(), *index as u32)
+                        }
+                    };
+                    ffi::SshHostKeyCandidateDto {
+                        target_kind: target_kind.into(),
+                        target_id,
+                        target_index,
+                        original_host: candidate.original_host.clone(),
+                        hostname: candidate.hostname.clone(),
+                        port: candidate.port,
+                        host_key_alias: candidate.host_key_alias.clone().unwrap_or_default(),
+                        key_type: candidate.key_type.clone(),
+                        public_key: candidate.public_key.clone(),
+                        sha256: candidate.sha256.clone(),
+                        opaque_json: serde_json::to_string(&candidate)
+                            .expect("validated SSH host key candidate serializes"),
+                    }
+                })
+                .collect();
+            "ssh_host_keys_inspected"
+        }
+        Event::SshHostKeyApproved {
+            request_token,
+            outcome,
+        } => {
+            e.request_token = request_token;
+            e.host_key_approval = match outcome {
+                choscordb_driver_api::SshHostKeyApproval::Approved => "approved",
+                choscordb_driver_api::SshHostKeyApproval::OutcomeUnknown => "outcome_unknown",
+            }
+            .into();
+            "ssh_host_key_approved"
+        }
+        Event::SshHostKeyFailed {
+            request_token,
+            error: err,
+        } => {
+            e.request_token = request_token;
+            error(&mut e, err);
+            "ssh_host_key_failed"
+        }
         Event::EditQuery {
             connection,
             request_token,
@@ -302,7 +357,7 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             warning,
         } => {
             e.request_token = request_token;
-            e.profiles = vec![profile(value)];
+            e.profiles = vec![profile(*value)];
             e.warnings = warning.into_iter().collect();
             "profile_saved"
         }
@@ -439,11 +494,14 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             "session_sql_mode"
         }
         Event::Connected {
+            transaction_active,
             connection,
             capabilities: c,
         } => {
             e.id = pack(connection);
             e.capabilities = capabilities(c);
+            e.has_transaction_state = transaction_active.is_some();
+            e.transaction_active = transaction_active.unwrap_or(false);
             "connected"
         }
         Event::Disconnected { connection } => {
@@ -619,11 +677,20 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
 
 pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileDto {
     let mut dto = ffi::ProfileDto {
+        authentication: serde_json::to_string(&value.authentication)
+            .expect("authentication settings serialize"),
         id: value.id,
         name: value.name,
         group_id: value.group_id.unwrap_or_default(),
         credential_ref: value.credential_ref.unwrap_or_default(),
         ssh_credential_ref: value.ssh_credential_ref.unwrap_or_default(),
+        ssh_private_key_ref: value.ssh_private_key_ref.unwrap_or_default(),
+        tls_credential_ref: value.tls_credential_ref.unwrap_or_default(),
+        proxy_credential_ref: value.proxy_credential_ref.unwrap_or_default(),
+        ssh_jump_credential_refs: serde_json::to_string(&value.ssh_jump_credential_refs)
+            .unwrap_or_default(),
+        ssh_jump_private_key_refs: serde_json::to_string(&value.ssh_jump_private_key_refs)
+            .unwrap_or_default(),
         ..Default::default()
     };
     match value.configuration {
@@ -633,6 +700,7 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
             dto.read_only = read_only;
         }
         choscordb_core::ProfileConfiguration::Mysql {
+            proxy,
             host,
             port,
             database,
@@ -641,6 +709,9 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
             ssh,
         } => {
             dto.driver = "mysql".into();
+            dto.proxy_options = proxy
+                .map(|proxy| serde_json::to_string(&proxy).expect("proxy settings serialize"))
+                .unwrap_or_default();
             dto.host = host;
             dto.port = port;
             dto.database = database;
@@ -648,11 +719,17 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
             dto.tls = match tls.mode {
                 TlsMode::Disable => "disable",
                 TlsMode::VerifyFull => "verify_full",
+                TlsMode::VerifyCa => "verify_ca",
+                TlsMode::Require => "require",
+                TlsMode::Prefer => "prefer",
             }
             .into();
             dto.root_certificate = tls.root_certificate_path.unwrap_or_default();
+            dto.tls_client_identity = tls.client_identity_path.unwrap_or_default();
             if let Some(ssh) = ssh {
                 dto.ssh_enabled = true;
+                dto.ssh_options =
+                    serde_json::to_string(&ssh.options).expect("SSH options serialize");
                 dto.ssh_host = ssh.host;
                 dto.ssh_port = ssh.port;
                 dto.ssh_user = ssh.user;
@@ -662,10 +739,16 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
                     SshAuthentication::Password => "password",
                 }
                 .into();
+                dto.ssh_identity_source = match ssh.identity_source {
+                    choscordb_driver_api::SshIdentitySource::File => "file",
+                    choscordb_driver_api::SshIdentitySource::Inline => "inline",
+                }
+                .into();
                 dto.ssh_identity_file = ssh.identity_file.unwrap_or_default();
             }
         }
         choscordb_core::ProfileConfiguration::Postgres {
+            proxy,
             host,
             port,
             database,
@@ -674,6 +757,9 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
             ssh,
         } => {
             dto.driver = "postgres".into();
+            dto.proxy_options = proxy
+                .map(|proxy| serde_json::to_string(&proxy).expect("proxy settings serialize"))
+                .unwrap_or_default();
             dto.host = host;
             dto.port = port;
             dto.database = database;
@@ -681,11 +767,17 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
             dto.tls = match tls.mode {
                 TlsMode::Disable => "disable",
                 TlsMode::VerifyFull => "verify_full",
+                TlsMode::VerifyCa => "verify_ca",
+                TlsMode::Require => "require",
+                TlsMode::Prefer => "prefer",
             }
             .into();
             dto.root_certificate = tls.root_certificate_path.unwrap_or_default();
+            dto.tls_client_identity = tls.client_identity_path.unwrap_or_default();
             if let Some(ssh) = ssh {
                 dto.ssh_enabled = true;
+                dto.ssh_options =
+                    serde_json::to_string(&ssh.options).expect("SSH options serialize");
                 dto.ssh_host = ssh.host;
                 dto.ssh_port = ssh.port;
                 dto.ssh_user = ssh.user;
@@ -693,6 +785,11 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
                     SshAuthentication::Agent => "agent",
                     SshAuthentication::PublicKey => "public_key",
                     SshAuthentication::Password => "password",
+                }
+                .into();
+                dto.ssh_identity_source = match ssh.identity_source {
+                    choscordb_driver_api::SshIdentitySource::File => "file",
+                    choscordb_driver_api::SshIdentitySource::Inline => "inline",
                 }
                 .into();
                 dto.ssh_identity_file = ssh.identity_file.unwrap_or_default();

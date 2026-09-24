@@ -56,6 +56,8 @@ def main():
                     "CHOSCORDB_TEST_POSTGRES": f"host=localhost port={config['port']} user={config['user']} "
                     f"dbname={config['database']} password={config['password']} sslmode=disable",
                     "CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE": str(root / "ca.crt"),
+                    "CHOSCORDB_TEST_POSTGRES_CLIENT_IDENTITY": str(root / "client.p12"),
+                    "CHOSCORDB_TEST_POSTGRES_CLIENT_PASSWORD": "fixture-identity-password",
                     "CHOSCORDB_TEST_POSTGRES_HOST": "localhost",
                     "CHOSCORDB_TEST_POSTGRES_PORT": str(config["port"]),
                     "CHOSCORDB_TEST_POSTGRES_USER": config["user"],
@@ -195,6 +197,91 @@ def main():
             stream.write(f"ssl_key_file = '{literal(root / 'server.key')}'\n")
         config["tls_version"] = 2
         marker.write_text(json.dumps(config, indent=2) + "\n")
+    if config.get("client_tls_version") != 1:
+        openssl = shutil.which("openssl")
+        if not openssl:
+            raise SystemExit("OpenSSL is required for the isolated TLS fixture")
+        quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.PIPE}
+        run(
+            [
+                openssl,
+                "req",
+                "-new",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-subj",
+                "/CN=tls_client",
+                "-keyout",
+                root / "client.key",
+                "-out",
+                root / "client.csr",
+            ],
+            **quiet,
+        )
+        extensions = root / "client-extensions.cnf"
+        extensions.write_text(
+            "basicConstraints=critical,CA:FALSE\n"
+            "keyUsage=critical,digitalSignature\n"
+            "extendedKeyUsage=clientAuth\n"
+        )
+        run(
+            [
+                openssl,
+                "x509",
+                "-req",
+                "-in",
+                root / "client.csr",
+                "-CA",
+                root / "ca.crt",
+                "-CAkey",
+                root / "ca.key",
+                "-CAcreateserial",
+                "-days",
+                "30",
+                "-sha256",
+                "-extfile",
+                extensions,
+                "-out",
+                root / "client.crt",
+            ],
+            **quiet,
+        )
+        run(
+            [
+                openssl,
+                "pkcs12",
+                "-export",
+                "-in",
+                root / "client.crt",
+                "-inkey",
+                root / "client.key",
+                "-certfile",
+                root / "ca.crt",
+                "-keypbe",
+                "PBE-SHA1-3DES",
+                "-certpbe",
+                "PBE-SHA1-3DES",
+                "-macalg",
+                "sha1",
+                "-passout",
+                "pass:fixture-identity-password",
+                "-out",
+                root / "client.p12",
+            ],
+            **quiet,
+        )
+        for name in ["client.key", "client.p12"]:
+            (root / name).chmod(0o600)
+        with (data / "postgresql.conf").open("a") as stream:
+            stream.write(f"ssl_ca_file = '{literal(root / 'ca.crt')}'\n")
+        hba = data / "pg_hba.conf"
+        hba.write_text(
+            "hostssl all tls_client 127.0.0.1/32 cert\n"
+            "hostnossl all tls_client 127.0.0.1/32 reject\n" + hba.read_text()
+        )
+        config["client_tls_version"] = 1
+        marker.write_text(json.dumps(config, indent=2) + "\n")
     if config.get("socket_config_version") != 1:
         with (data / "postgresql.conf").open("a") as stream:
             stream.write(f"unix_socket_directories = '{literal(root)}'\n")
@@ -212,6 +299,25 @@ def main():
         print("Fixture is already running")
     else:
         run([binaries / "pg_ctl", "-D", data, "-l", root / "server.log", "-w", "start"])
+    run(
+        [
+            binaries / "psql",
+            "-h",
+            root,
+            "-p",
+            str(config["port"]),
+            "-U",
+            config["user"],
+            "-d",
+            config["database"],
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-c",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='tls_client') "
+            "THEN CREATE ROLE tls_client LOGIN; END IF; END $$;",
+        ],
+        stdout=subprocess.DEVNULL,
+    )
     print(f"Fixture ready on localhost:{config['port']}")
 
 

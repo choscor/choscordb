@@ -4,6 +4,11 @@ use choscordb_driver_mysql::MysqlDriver;
 async fn connect() -> Box<dyn Connection> {
     MysqlDriver
         .connect(ConnectionOptions::Mysql {
+            ssh_jump_secrets: Default::default(),
+            ssh_private_key: None,
+            ssh_jump_private_keys: Default::default(),
+            proxy: None,
+            proxy_secret: None,
             host: "127.0.0.1".into(),
             port: std::env::var("CHOSCORDB_MYSQL_PORT")
                 .unwrap_or_else(|_| "33306".into())
@@ -14,6 +19,7 @@ async fn connect() -> Box<dyn Connection> {
             password: Some(Secret::new("choscordb-test-password")),
             ssh_secret: None,
             tls: TlsMode::Disable,
+            tls_identity: None,
             root_certificate: None,
             ssh: None,
         })
@@ -240,6 +246,11 @@ async fn metadata_ddl_and_independent_object_cursor() {
 async fn verified_tls_rejects_untrusted_server_as_tls_error() {
     let result = MysqlDriver
         .connect(ConnectionOptions::Mysql {
+            ssh_jump_secrets: Default::default(),
+            ssh_private_key: None,
+            ssh_jump_private_keys: Default::default(),
+            proxy: None,
+            proxy_secret: None,
             host: "127.0.0.1".into(),
             port: std::env::var("CHOSCORDB_MYSQL_PORT")
                 .unwrap_or_else(|_| "33306".into())
@@ -250,6 +261,7 @@ async fn verified_tls_rejects_untrusted_server_as_tls_error() {
             password: Some(Secret::new("choscordb-test-password")),
             ssh_secret: None,
             tls: TlsMode::VerifyFull,
+            tls_identity: None,
             root_certificate: None,
             ssh: None,
         })
@@ -764,6 +776,11 @@ async fn native_transport_admission_releases_on_close_and_drop() {
         connections.push(connect().await);
     }
     let options = || ConnectionOptions::Mysql {
+        ssh_jump_secrets: Default::default(),
+        ssh_private_key: None,
+        ssh_jump_private_keys: Default::default(),
+        proxy: None,
+        proxy_secret: None,
         host: "127.0.0.1".into(),
         port: std::env::var("CHOSCORDB_MYSQL_PORT")
             .unwrap_or_else(|_| "33306".into())
@@ -774,6 +791,7 @@ async fn native_transport_admission_releases_on_close_and_drop() {
         password: Some(Secret::new("choscordb-test-password")),
         ssh_secret: None,
         tls: TlsMode::Disable,
+        tls_identity: None,
         root_certificate: None,
         ssh: None,
     };

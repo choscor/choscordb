@@ -2,6 +2,7 @@ use choscordb_core::{ConnectionProfile, Engine, EngineConfig, Event, ProfileConf
 use std::time::{Duration, Instant};
 fn profile(id: &str) -> ConnectionProfile {
     ConnectionProfile {
+        authentication: Default::default(),
         id: id.into(),
         name: "Local".into(),
         group_id: None,
@@ -10,7 +11,12 @@ fn profile(id: &str) -> ConnectionProfile {
             read_only: false,
         },
         credential_ref: None,
+        proxy_credential_ref: None,
+        ssh_jump_credential_refs: Default::default(),
+        ssh_jump_private_key_refs: Default::default(),
+        tls_credential_ref: None,
         ssh_credential_ref: None,
+        ssh_private_key_ref: None,
     }
 }
 fn event(engine: &mut Engine) -> Event {
@@ -43,7 +49,7 @@ fn profiles_round_trip_and_survive_engine_reopen() {
     updated.name = "Updated".into();
     engine.profile_save(updated.clone(), 2).unwrap();
     assert!(
-        matches!(event(&mut engine), Event::ProfileSaved { profile, .. } if profile == updated)
+        matches!(event(&mut engine), Event::ProfileSaved { profile, .. } if *profile == updated)
     );
     engine
         .profile_duplicate("one".into(), "two".into(), "Copy".into(), 3)

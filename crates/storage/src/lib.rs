@@ -59,6 +59,11 @@ pub type Result<T> = std::result::Result<T, StorageError>;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConnectionProfile {
+    #[serde(
+        default,
+        skip_serializing_if = "choscordb_driver_api::DatabaseAuthentication::is_password"
+    )]
+    pub authentication: choscordb_driver_api::DatabaseAuthentication,
     pub id: String,
     pub name: String,
     pub group_id: Option<String>,
@@ -68,6 +73,17 @@ pub struct ConnectionProfile {
     /// Opaque identifier for an OS credential item containing an SSH password or key passphrase.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh_credential_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh_private_key_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls_credential_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_credential_ref: Option<String>,
+    /// Per-hop opaque credential references, keyed by stable SSH hop identifier.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub ssh_jump_credential_refs: std::collections::BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub ssh_jump_private_key_refs: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,6 +94,8 @@ pub enum ProfileConfiguration {
         read_only: bool,
     },
     Mysql {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        proxy: Option<choscordb_driver_api::SocksProxy>,
         host: String,
         port: u16,
         database: String,
@@ -87,6 +105,8 @@ pub enum ProfileConfiguration {
         ssh: Option<SshTunnel>,
     },
     Postgres {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        proxy: Option<choscordb_driver_api::SocksProxy>,
         host: String,
         port: u16,
         database: String,
@@ -102,6 +122,8 @@ pub enum ProfileConfiguration {
 pub struct PostgresTls {
     pub mode: TlsMode,
     pub root_certificate_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_identity_path: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -265,6 +287,17 @@ impl Storage {
         for reference in previous.into_iter().flatten().filter(|reference| {
             Some(reference) != profile.credential_ref.as_ref()
                 && Some(reference) != profile.ssh_credential_ref.as_ref()
+                && Some(reference) != profile.ssh_private_key_ref.as_ref()
+                && Some(reference) != profile.tls_credential_ref.as_ref()
+                && Some(reference) != profile.proxy_credential_ref.as_ref()
+                && !profile
+                    .ssh_jump_credential_refs
+                    .values()
+                    .any(|value| value == reference)
+                && !profile
+                    .ssh_jump_private_key_refs
+                    .values()
+                    .any(|value| value == reference)
         }) {
             enqueue_cleanup(&tx, &reference)?;
         }
@@ -307,6 +340,11 @@ impl Storage {
         profile.name = name.into();
         profile.credential_ref = None;
         profile.ssh_credential_ref = None;
+        profile.ssh_private_key_ref = None;
+        profile.tls_credential_ref = None;
+        profile.proxy_credential_ref = None;
+        profile.ssh_jump_credential_refs.clear();
+        profile.ssh_jump_private_key_refs.clear();
         let data = encode_profile(&profile)?;
         let tx = self
             .db
@@ -366,6 +404,15 @@ impl Storage {
         Ok(self.profiles()?.iter().any(|p| {
             p.credential_ref.as_deref() == Some(reference)
                 || p.ssh_credential_ref.as_deref() == Some(reference)
+                || p.ssh_private_key_ref.as_deref() == Some(reference)
+                || p.tls_credential_ref.as_deref() == Some(reference)
+                || p.proxy_credential_ref.as_deref() == Some(reference)
+                || p.ssh_jump_credential_refs
+                    .values()
+                    .any(|value| value == reference)
+                || p.ssh_jump_private_key_refs
+                    .values()
+                    .any(|value| value == reference)
         }))
     }
     /// Application-owned preferences only. Never pass credentials or connection strings.
@@ -609,6 +656,7 @@ impl ProfileConfiguration {
                 read_only: *read_only,
             },
             Self::Mysql {
+                proxy,
                 host,
                 port,
                 database,
@@ -616,17 +664,29 @@ impl ProfileConfiguration {
                 tls,
                 ssh,
             } => ConnectionOptions::Mysql {
+                proxy: proxy.clone(),
+                proxy_secret: None,
                 host: host.clone(),
                 port: *port,
                 database: database.clone(),
                 user: user.clone(),
                 password,
                 ssh_secret,
+                ssh_private_key: None,
+                ssh_jump_secrets: Default::default(),
+                ssh_jump_private_keys: Default::default(),
                 ssh: ssh.clone(),
                 tls: tls.mode.clone(),
                 root_certificate: tls.root_certificate_path.as_ref().map(Into::into),
+                tls_identity: tls.client_identity_path.as_ref().map(|path| {
+                    choscordb_driver_api::TlsIdentity {
+                        path: path.into(),
+                        password: None,
+                    }
+                }),
             },
             Self::Postgres {
+                proxy,
                 host,
                 port,
                 database,
@@ -634,14 +694,25 @@ impl ProfileConfiguration {
                 tls,
                 ssh,
             } => ConnectionOptions::Postgres {
+                proxy: proxy.clone(),
+                proxy_secret: None,
                 host: host.clone(),
                 port: *port,
                 database: database.clone(),
                 user: user.clone(),
                 password,
                 ssh_secret,
+                ssh_private_key: None,
+                ssh_jump_secrets: Default::default(),
+                ssh_jump_private_keys: Default::default(),
                 tls: tls.mode.clone(),
                 root_certificate: tls.root_certificate_path.as_ref().map(Into::into),
+                tls_identity: tls.client_identity_path.as_ref().map(|path| {
+                    choscordb_driver_api::TlsIdentity {
+                        path: path.into(),
+                        password: None,
+                    }
+                }),
                 ssh: ssh.clone(),
             },
         }
@@ -661,14 +732,124 @@ fn validate_field(value: &str, limit: usize) -> Result<()> {
     }
     Ok(())
 }
+fn validate_server_endpoint(host: &str, tls: &TlsMode, ssh: Option<&SshTunnel>) -> Result<()> {
+    if host.starts_with('/') {
+        validate_field(host, 16 * 1024)?;
+        if *tls != TlsMode::Disable || ssh.is_some() {
+            return Err(StorageError::InvalidProfile);
+        }
+        Ok(())
+    } else {
+        choscordb_driver_api::tcp_host(host)
+            .map(|_| ())
+            .map_err(|_| StorageError::InvalidProfile)
+    }
+}
+
 impl ConnectionProfile {
     pub fn validate(&self) -> Result<()> {
+        self.authentication
+            .validate()
+            .map_err(|_| StorageError::InvalidProfile)?;
+        if !self.authentication.is_password()
+            && matches!(self.configuration, ProfileConfiguration::Sqlite { .. })
+        {
+            return Err(StorageError::InvalidProfile);
+        }
+        if matches!(
+            self.authentication,
+            choscordb_driver_api::DatabaseAuthentication::PgPass { .. }
+        ) && !matches!(self.configuration, ProfileConfiguration::Postgres { .. })
+        {
+            return Err(StorageError::InvalidProfile);
+        }
         validate_field(&self.id, 256)?;
         validate_field(&self.name, 1024)?;
+        if self.ssh_jump_credential_refs.len() > 5 {
+            return Err(StorageError::InvalidProfile);
+        }
+        if self.ssh_jump_private_key_refs.len() > 5 {
+            return Err(StorageError::InvalidProfile);
+        }
+        for (id, reference) in &self.ssh_jump_credential_refs {
+            if id.is_empty()
+                || id.len() > 64
+                || !id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+            {
+                return Err(StorageError::InvalidProfile);
+            }
+            validate_field(reference, 256)?;
+        }
+        for (id, reference) in &self.ssh_jump_private_key_refs {
+            if id.is_empty()
+                || id.len() > 64
+                || !id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+            {
+                return Err(StorageError::InvalidProfile);
+            }
+            validate_field(reference, 256)?;
+        }
+        let credential_hops = match &self.configuration {
+            ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
+            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+                .options
+                .jump_hosts
+                .iter()
+                .filter(|hop| hop.authentication.uses_secret())
+                .filter_map(|hop| hop.id.as_deref())
+                .collect::<std::collections::BTreeSet<_>>(),
+            _ => std::collections::BTreeSet::new(),
+        };
+        if self
+            .ssh_jump_credential_refs
+            .keys()
+            .any(|id| !credential_hops.contains(id.as_str()))
+        {
+            return Err(StorageError::InvalidProfile);
+        }
+        let inline_target = match &self.configuration {
+            ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
+            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => {
+                ssh.authentication == choscordb_driver_api::SshAuthentication::PublicKey
+                    && ssh.identity_source == choscordb_driver_api::SshIdentitySource::Inline
+            }
+            _ => false,
+        };
+        if self.ssh_private_key_ref.is_some() && !inline_target {
+            return Err(StorageError::InvalidProfile);
+        }
+        let inline_hops = match &self.configuration {
+            ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
+            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+                .options
+                .jump_hosts
+                .iter()
+                .filter(|hop| {
+                    hop.authentication == choscordb_driver_api::SshJumpAuthentication::PublicKey
+                        && hop.identity_source == choscordb_driver_api::SshIdentitySource::Inline
+                })
+                .filter_map(|hop| hop.id.as_deref())
+                .collect::<std::collections::BTreeSet<_>>(),
+            _ => std::collections::BTreeSet::new(),
+        };
+        if self
+            .ssh_jump_private_key_refs
+            .keys()
+            .any(|id| !inline_hops.contains(id.as_str()))
+        {
+            return Err(StorageError::InvalidProfile);
+        }
         for field in [
             &self.group_id,
             &self.credential_ref,
             &self.ssh_credential_ref,
+            &self.ssh_private_key_ref,
+            &self.tls_credential_ref,
+            &self.proxy_credential_ref,
         ]
         .into_iter()
         .flatten()
@@ -676,8 +857,15 @@ impl ConnectionProfile {
             validate_field(field, 16 * 1024)?;
         }
         match &self.configuration {
-            ProfileConfiguration::Sqlite { path, .. } => validate_field(path, 16 * 1024)?,
+            ProfileConfiguration::Sqlite { path, read_only } => {
+                validate_field(path, 16 * 1024)?;
+                if path.starts_with("file:") {
+                    choscordb_driver_api::validate_sqlite_uri(path, *read_only)
+                        .map_err(|_| StorageError::InvalidProfile)?;
+                }
+            }
             ProfileConfiguration::Mysql {
+                proxy,
                 host,
                 port,
                 database,
@@ -688,17 +876,32 @@ impl ConnectionProfile {
                 if let Some(ssh) = ssh {
                     ssh.validate().map_err(|_| StorageError::InvalidProfile)?;
                 }
+                validate_server_endpoint(host, &tls.mode, ssh.as_ref())?;
+                if let Some(proxy) = proxy {
+                    proxy
+                        .validate_transport(host, *port, ssh.is_some())
+                        .map_err(|_| StorageError::InvalidProfile)?;
+                }
                 if *port == 0 {
                     return Err(StorageError::InvalidProfile);
                 }
-                for field in [host, database, user] {
-                    validate_field(field, 16 * 1024)?;
+                validate_field(host, 16 * 1024)?;
+                if !user.is_empty() {
+                    validate_field(user, 16 * 1024)?;
+                }
+                // MySQL permits anonymous login and no selected default database.
+                if !database.is_empty() {
+                    validate_field(database, 16 * 1024)?;
+                }
+                if let Some(path) = &tls.client_identity_path {
+                    validate_field(path, 16 * 1024)?;
                 }
                 if let Some(path) = &tls.root_certificate_path {
                     validate_field(path, 16 * 1024)?;
                 }
             }
             ProfileConfiguration::Postgres {
+                proxy,
                 host,
                 port,
                 database,
@@ -709,11 +912,29 @@ impl ConnectionProfile {
                 if let Some(ssh) = ssh {
                     ssh.validate().map_err(|_| StorageError::InvalidProfile)?;
                 }
+                validate_server_endpoint(host, &tls.mode, ssh.as_ref())?;
+                if let Some(proxy) = proxy {
+                    proxy
+                        .validate_transport(host, *port, ssh.is_some())
+                        .map_err(|_| StorageError::InvalidProfile)?;
+                }
                 if *port == 0 {
                     return Err(StorageError::InvalidProfile);
                 }
-                for field in [host, database, user] {
-                    validate_field(field, 16 * 1024)?;
+                validate_field(host, 16 * 1024)?;
+                if !user.is_empty()
+                    || !matches!(
+                        self.authentication,
+                        choscordb_driver_api::DatabaseAuthentication::PgPass { .. }
+                    )
+                {
+                    validate_field(user, 16 * 1024)?;
+                }
+                if !database.is_empty() {
+                    validate_field(database, 16 * 1024)?;
+                }
+                if let Some(path) = &tls.client_identity_path {
+                    validate_field(path, 16 * 1024)?;
                 }
                 if let Some(path) = &tls.root_certificate_path {
                     validate_field(path, 16 * 1024)?;
@@ -793,12 +1014,21 @@ fn enqueue_cleanup(db: &Connection, reference: &str) -> Result<()> {
     Ok(())
 }
 
-fn credential_references(db: &Connection, id: &str) -> Result<[Option<String>; 2]> {
+fn credential_references(db: &Connection, id: &str) -> Result<Vec<Option<String>>> {
     let mut statement = db.prepare("SELECT id,data FROM connection_profiles WHERE id=?1")?;
     let mut rows = statement.query([id])?;
     rows.next()?.map(decode_profile).transpose().map(|profile| {
-        profile.map_or([None, None], |profile| {
-            [profile.credential_ref, profile.ssh_credential_ref]
+        profile.map_or_else(Vec::new, |profile| {
+            let mut references = vec![
+                profile.credential_ref,
+                profile.ssh_credential_ref,
+                profile.ssh_private_key_ref,
+                profile.tls_credential_ref,
+                profile.proxy_credential_ref,
+            ];
+            references.extend(profile.ssh_jump_credential_refs.into_values().map(Some));
+            references.extend(profile.ssh_jump_private_key_refs.into_values().map(Some));
+            references
         })
     })
 }

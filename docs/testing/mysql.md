@@ -1,7 +1,8 @@
 # MySQL support
 
-Choose **MySQL** when creating a connection profile. Enter the server, database,
-user, and password; the default port is **3306**. Passwords can remain scoped to
+Choose **MySQL** when creating a connection profile. Enter the server, user, and password; the default port is **3306**.
+The database is optional: leave it empty to connect without selecting a default
+schema, or enter a database to select it at login. Passwords can remain scoped to
 the session or be saved in the existing operating-system credential store.
 TLS verifies the server certificate and hostname by default. Use the root
 certificate field for a private certificate authority. Disable TLS only when
@@ -91,7 +92,7 @@ Wait until `docker exec choscordb-mysql-test mysqladmin ping --silent` succeeds,
 then run:
 
 ```sh
-cargo test -p choscordb-driver-mysql --lib --test live --test editing --locked -- --include-ignored --test-threads=1
+cargo test -p choscordb-driver-mysql --lib --test live --test editing --test server_connection --locked -- --include-ignored --test-threads=1
 cargo test -p choscordb-core --test mysql --locked -- --include-ignored --test-threads=1
 ```
 
@@ -123,3 +124,24 @@ Run the native MySQL workspace regressions against the same database:
 ```sh
 CHOSCORDB_TEST_MYSQL=1 QT_QPA_PLATFORM=offscreen build/dev/choscordb-workspace-tests
 ```
+
+## Native TLS policy and client identity tests
+
+`Disable` uses plaintext TCP. `Require` requires encryption without checking the
+server certificate. `VerifyCa` additionally validates its CA chain; `VerifyFull`
+(the default) also validates the database hostname. MySQL's native client does
+not expose a safe `Prefer` downgrade policy, so that mode is rejected explicitly.
+A PKCS#12 (`.p12`/`.pfx`) client identity can supply a certificate and private key;
+its archive password is a separate credential, never part of the saved profile.
+Custom trust files accept PEM certificate bundles or DER certificates.
+
+Run the isolated TLS fixture (Docker and OpenSSL required):
+
+```sh
+python3 scripts/integration/mysql_tls_fixture.py
+```
+
+It creates disposable CA/server/client certificates, starts its own loopback-only
+MySQL container, runs encryption, CA/hostname validation, and client-certificate
+authentication tests, then removes the container and keys. It does not modify the
+system trust store or connect to an existing database.

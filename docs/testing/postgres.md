@@ -60,3 +60,22 @@ identities. The existing live cases exercise queries, transactions, cancellation
 disconnect, and PostgreSQL certificate/hostname verification over the tunnel.
 The deterministic `ssh` test separately verifies that an unavailable SSH server
 never falls back to a direct database connection.
+
+## TLS modes and client certificates
+
+The fixture also issues an encrypted PKCS#12 client identity for `tls_client`, a
+role whose TCP login requires a client certificate. The fixture `env` command
+exports its identity path and disposable archive password. Run all policy tests
+with that environment:
+
+```sh
+cargo test -p choscordb-driver-postgres --test tls_modes --locked -- --include-ignored
+```
+
+The tests cover required encryption with an untrusted server, CA verification
+without hostname verification, full hostname verification, multiple certificates
+in a PEM trust bundle, and absent/incorrect/valid client identities. A protocol
+fixture also verifies that `Prefer` falls back when a server declines TLS while
+`Require` refuses. `Prefer` and `Require` do not authenticate the server;
+`VerifyFull` remains the default. PKCS#12 archive passwords are kept separately
+from profile configuration.

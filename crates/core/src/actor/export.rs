@@ -24,7 +24,7 @@ struct Source {
     raw_limit: usize,
     cancellation: watch::Receiver<bool>,
     shutdown: watch::Receiver<bool>,
-    events: mpsc::Sender<Event>,
+    events: EventSink,
     grace: Duration,
 }
 impl Source {
@@ -163,7 +163,7 @@ pub(super) async fn run(
     readers: &HashMap<QueryId, crate::deferred::Reader>,
     active: &mut Option<Active>,
     memory: &Arc<crate::memory::Memory>,
-    events: &mpsc::Sender<Event>,
+    events: &EventSink,
     shutdown: &watch::Receiver<bool>,
     grace: Duration,
 ) -> bool {
@@ -237,7 +237,7 @@ pub(super) async fn run(
         let notify = events.clone();
         let progress_task = tokio::spawn(async move {
             while let Some(progress) = progress_rx.recv().await {
-                let _ = notify.try_send(Event::ExportProgress {
+                let _ = notify.sender.try_send(Event::ExportProgress {
                     export,
                     query,
                     rows: progress.rows,

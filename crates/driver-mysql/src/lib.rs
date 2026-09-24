@@ -1,8 +1,12 @@
 //! MySQL adapter with disk-backed results and bounded pages.
+mod connection;
 mod editing;
+mod idle;
+mod proxy;
 mod runtime;
 mod spool;
 mod ssh;
+mod tls;
 use async_trait::async_trait;
 static TRANSPORTS: std::sync::LazyLock<Arc<tokio::sync::Semaphore>> =
     std::sync::LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(8)));
@@ -10,7 +14,7 @@ fn reserve_transport() -> Result<Arc<tokio::sync::OwnedSemaphorePermit>> {
     TRANSPORTS.clone().try_acquire_owned().map(Arc::new).map_err(|_| error(ErrorKind::ResourceLimit, "MySQL native transport budget is full; close an unused MySQL connection or object tab"))
 }
 use choscordb_driver_api::*;
-use mysql_async::{Conn, Opts, OptsBuilder, SslOpts, prelude::Queryable};
+use mysql_async::{Conn, Opts, OptsBuilder, prelude::Queryable};
 use std::{
     io::{Read, Seek, SeekFrom, Write},
     sync::{
@@ -48,12 +52,15 @@ impl CancelHandle for Cancellation {
     }
 }
 struct MysqlConnection {
+    idle: idle::Tracker,
+    connect_timeout: Duration,
     conn: Option<Conn>,
     opts: Opts,
     next: Arc<Cancellation>,
     pending: Option<tokio::task::JoinHandle<Option<Conn>>>,
     active: Option<Arc<Cancellation>>,
     _tunnel: Option<Arc<ssh::Tunnel>>,
+    _proxy: Option<Arc<proxy::Tunnel>>,
     transport: Option<Arc<tokio::sync::OwnedSemaphorePermit>>,
 }
 fn error(kind: ErrorKind, message: &str) -> DriverError {
@@ -110,102 +117,164 @@ impl DatabaseDriver for MysqlDriver {
         }
     }
     async fn connect(&self, options: ConnectionOptions) -> Result<Box<dyn Connection>> {
+        self.connect_native(options, false).await
+    }
+    async fn reconnect(&self, options: ConnectionOptions) -> Result<Box<dyn Connection>> {
+        self.connect_native(options, true).await
+    }
+}
+impl MysqlDriver {
+    async fn connect_native(
+        &self,
+        options: ConnectionOptions,
+        fresh: bool,
+    ) -> Result<Box<dyn Connection>> {
         let ConnectionOptions::Mysql {
+            proxy,
+            proxy_secret,
             host,
             port,
             database,
             user,
             password,
             ssh_secret,
+            ssh_jump_secrets,
+            ssh_private_key,
+            ssh_jump_private_keys,
             tls,
             root_certificate,
+            tls_identity,
             ssh,
         } = options
         else {
             return Err(error(ErrorKind::InvalidInput, "MySQL options required"));
         };
+        let unix_socket = host.starts_with('/');
+        if unix_socket && (!cfg!(unix) || tls != TlsMode::Disable || ssh.is_some()) {
+            return Err(DriverError::new(
+                ErrorKind::InvalidInput,
+                "Unix sockets require a local connection with TLS disabled",
+            ));
+        }
+        let host = if unix_socket {
+            host
+        } else {
+            choscordb_driver_api::tcp_host(&host)?.to_owned()
+        };
         if host.is_empty()
             || host.contains('\0')
-            || host.starts_with('/')
             || port == 0
-            || database.is_empty()
-            || user.is_empty()
+            || user.contains('\0')
+            || database.contains('\0')
         {
             return Err(error(
                 ErrorKind::InvalidInput,
                 "Invalid MySQL connection settings",
             ));
         }
-        let ssl = if tls == TlsMode::VerifyFull {
-            let mut ssl = SslOpts::default();
-            if let Some(path) = root_certificate {
-                let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>> {
-                    let file = std::fs::File::open(path)
-                        .map_err(|_| error(ErrorKind::Tls, "Cannot read root certificate"))?;
-                    if !file.metadata().map_err(io_error)?.is_file() {
-                        return Err(error(
-                            ErrorKind::Tls,
-                            "Root certificate must be a regular file",
-                        ));
-                    }
-                    let mut bytes = vec![0; 1024 * 1024 + 1];
-                    let mut reader = file.take(bytes.len() as u64);
-                    let mut count = 0;
-                    while count < bytes.len() {
-                        let n = reader.read(&mut bytes[count..]).map_err(io_error)?;
-                        if n == 0 {
-                            break;
-                        }
-                        count += n;
-                    }
-                    if count > 1024 * 1024 {
-                        return Err(limit());
-                    }
-                    bytes.truncate(count);
-                    Ok(bytes)
-                })
-                .await
-                .map_err(|_| error(ErrorKind::Internal, "MySQL TLS worker failed"))??;
-                ssl = ssl.with_root_certs(vec![bytes.into()]);
+        if let Some(proxy) = &proxy {
+            proxy.validate_transport(&host, port, ssh.is_some())?;
+            validate_socks_secret(proxy, proxy_secret.as_ref())?;
+        }
+        if let Some(settings) = &ssh {
+            settings.validate()?;
+        }
+        let connect_timeout = ssh.as_ref().map_or(Duration::from_secs(15), |settings| {
+            Duration::from_secs(u64::from(settings.options.connect_timeout_seconds))
+        });
+        // The budget includes queued TLS preparation, DNS, tunnel establishment, and authentication.
+        tokio::time::timeout(connect_timeout, async move {
+            let ssl = tls::options(tls, root_certificate, tls_identity).await?;
+            if fresh && let Some(settings) = &ssh {
+                SshForward::invalidate_shared_context(
+                    settings,
+                    ssh_secret.as_ref(),
+                    &ssh_jump_secrets,
+                    ssh_private_key.as_ref(),
+                    &ssh_jump_private_keys,
+                    &host,
+                    port,
+                )
+                .await?;
             }
-            Some(ssl)
-        } else {
-            None
-        };
-        let tunnel = match ssh {
-            Some(ssh) => Some(ssh::Tunnel::open(&ssh, ssh_secret, &host, port).await?),
-            None => None,
-        };
-        let opts: Opts = OptsBuilder::default()
-            .ip_or_hostname(host)
-            .tcp_port(tunnel.as_ref().map_or(port, |t| t.port()))
-            .resolved_ips(
-                tunnel
-                    .as_ref()
-                    .map(|_| vec![std::net::Ipv4Addr::LOCALHOST.into()]),
-            )
-            .db_name(Some(database))
-            .user(Some(user))
-            .pass(password.as_ref().map(Secret::expose))
-            .ssl_opts(ssl)
-            .client_found_rows(true)
-            .prefer_socket(false)
-            .max_allowed_packet(Some(64 * 1024 * 1024))
-            .into();
-        let transport = reserve_transport()?;
-        let conn = tokio::time::timeout(Duration::from_secs(15), Conn::new(opts.clone()))
-            .await
-            .map_err(|_| error(ErrorKind::Connection, "MySQL connection timed out"))?
-            .map_err(normalize)?;
-        Ok(Box::new(MysqlConnection {
-            conn: Some(conn),
-            opts,
-            next: Cancellation::new(),
-            pending: None,
-            active: None,
-            _tunnel: tunnel,
-            transport: Some(transport),
-        }))
+            let tunnel = match ssh {
+                Some(ssh) => Some(
+                    ssh::Tunnel::open(
+                        &ssh,
+                        ssh_secret.as_ref(),
+                        &ssh_jump_secrets,
+                        ssh_private_key.as_ref(),
+                        &ssh_jump_private_keys,
+                        &host,
+                        port,
+                    )
+                    .await?,
+                ),
+                None => None,
+            };
+            let proxy = match proxy {
+                Some(settings) => Some(
+                    proxy::Tunnel::open(
+                        settings,
+                        proxy_secret,
+                        host.clone(),
+                        port,
+                        connect_timeout,
+                    )
+                    .await?,
+                ),
+                None => None,
+            };
+            let forwarding_port = tunnel
+                .as_ref()
+                .map(|t| t.port())
+                .or_else(|| proxy.as_ref().map(|p| p.port()));
+            let builder = OptsBuilder::default()
+                .ip_or_hostname(if unix_socket {
+                    "localhost".to_owned()
+                } else {
+                    host.clone()
+                })
+                .socket(unix_socket.then_some(host))
+                .tcp_port(forwarding_port.unwrap_or(port))
+                .resolved_ips(
+                    tunnel
+                        .as_ref()
+                        .map(|t| vec![t.connect_address().ip()])
+                        .or_else(|| {
+                            proxy
+                                .as_ref()
+                                .map(|_| vec![std::net::Ipv4Addr::LOCALHOST.into()])
+                        }),
+                )
+                .db_name((!database.is_empty()).then_some(database))
+                .user(Some(user))
+                .pass(password.as_ref().map(Secret::expose))
+                .ssl_opts(ssl)
+                .client_found_rows(true)
+                .prefer_socket(false)
+                .max_allowed_packet(Some(64 * 1024 * 1024));
+            let opts: Opts = builder.into();
+            let transport = reserve_transport()?;
+            let pending = connection::connect(opts.clone()).await?;
+            let idle = pending.1.clone();
+
+            let conn = pending.ready();
+            Ok(Box::new(MysqlConnection {
+                idle,
+                connect_timeout,
+                conn: Some(conn),
+                opts,
+                next: Cancellation::new(),
+                pending: None,
+                active: None,
+                _tunnel: tunnel,
+                _proxy: proxy,
+                transport: Some(transport),
+            }) as Box<dyn Connection>)
+        })
+        .await
+        .map_err(|_| DriverError::new(ErrorKind::Timeout, "MySQL connection timed out"))?
     }
 }
 fn columns(input: &[mysql_async::Column], max: usize) -> Result<Vec<Column>> {
@@ -306,6 +375,16 @@ impl MysqlConnection {
 }
 #[async_trait]
 impl Connection for MysqlConnection {
+    async fn idle_transaction_state(&mut self) -> Result<Option<IdleTransactionState>> {
+        let idle = self.idle.clone();
+        idle.reconcile(self.connection().await?);
+        Ok(idle.snapshot())
+    }
+
+    async fn transaction_state(&mut self) -> Result<Option<bool>> {
+        Ok(transaction_active(self.connection().await?))
+    }
+
     fn cancellation_handle(&self) -> Arc<dyn CancelHandle> {
         self.next.clone()
     }
@@ -334,9 +413,11 @@ impl Connection for MysqlConnection {
                 expected: None,
                 cancel: cancel.clone(),
                 independent: false,
+                idle: self.idle.clone(),
                 spool: spool::Spool::new()?,
                 transport: self.transport.as_ref().ok_or_else(closed)?.clone(),
                 tunnel: self._tunnel.clone(),
+                proxy: self._proxy.clone(),
             },
         )
         .await?;
@@ -374,19 +455,31 @@ impl Connection for MysqlConnection {
         }
         let (db, table) = parse_table(object)?;
         let transport = reserve_transport()?;
-        let mut conn = tokio::time::timeout(Duration::from_secs(15), Conn::new(self.opts.clone()))
-            .await
-            .map_err(|_| error(ErrorKind::Connection, "MySQL connection timed out"))?
-            .map_err(normalize)?;
+        let mut conn = tokio::time::timeout(self.connect_timeout, async {
+            let pending = connection::connect(self.opts.clone()).await?;
+
+            Ok::<_, DriverError>(pending)
+        })
+        .await
+        .map_err(|_| {
+            error(
+                ErrorKind::Timeout,
+                "MySQL object connection initialization timed out",
+            )
+        })??;
+        // COM_STMT_PREPARE metadata may replace the last OK status flags.
+        // It cannot change the live transaction, so retain its pre-prepare state.
+        let transaction_started = transaction_active(conn.connection()).unwrap_or(false);
         let sql = format!("SELECT * FROM {}.{}", quote(&db), quote(&table));
-        let stmt = tokio::time::timeout(Duration::from_secs(15), conn.prep(&sql))
+        let stmt = tokio::time::timeout(Duration::from_secs(15), conn.connection().prep(&sql))
             .await
             .map_err(|_| error(ErrorKind::Timeout, "MySQL object metadata timed out"))?
             .map_err(normalize)?;
         let schema = columns(stmt.columns(), max)?;
-        conn.close(stmt).await.map_err(normalize)?;
+        conn.connection().close(stmt).await.map_err(normalize)?;
         Ok(Box::new(ObjectCursor {
-            conn: Some(conn),
+            transaction_started,
+            conn: Some(conn.ready()),
             sql,
             columns: schema,
             max,
@@ -395,6 +488,7 @@ impl Connection for MysqlConnection {
             opts: self.opts.clone(),
             task: None,
             _tunnel: self._tunnel.clone(),
+            _proxy: self._proxy.clone(),
             transport: Some(transport),
             spool: spool::Spool::new()?,
         }))
@@ -458,34 +552,35 @@ impl Connection for MysqlConnection {
             .ok_or_else(|| error(ErrorKind::Query, "MySQL object DDL is unavailable"))
     }
     async fn commit(&mut self) -> Result<()> {
-        self.connection()
-            .await?
-            .query_drop("COMMIT")
-            .await
-            .map_err(normalize)
+        let idle = self.idle.clone();
+        let connection = self.connection().await?;
+        let result = connection.query_drop("COMMIT").await.map_err(normalize);
+        idle.reconcile(connection);
+        result
     }
     async fn rollback(&mut self) -> Result<()> {
-        self.connection()
-            .await?
-            .query_drop("ROLLBACK")
-            .await
-            .map_err(normalize)
+        let idle = self.idle.clone();
+        let connection = self.connection().await?;
+        let result = connection.query_drop("ROLLBACK").await.map_err(normalize);
+        idle.reconcile(connection);
+        result
     }
     async fn close(&mut self) -> Result<()> {
         if let Some(cancel) = &self.active {
             cancel.cancel().await?;
         }
         let _ = self.connection().await;
-        let result = if let Some(conn) = self.conn.take() {
-            conn.disconnect().await.map_err(normalize)
-        } else {
-            Ok(())
-        };
+        if let Some(conn) = self.conn.take() {
+            drop(connection::PendingConnection::new(conn));
+        }
         self.transport.take();
-        result
+        self._tunnel.take();
+        self._proxy.take();
+        Ok(())
     }
 }
 struct ObjectCursor {
+    transaction_started: bool,
     conn: Option<Conn>,
     sql: String,
     columns: Vec<Column>,
@@ -496,6 +591,7 @@ struct ObjectCursor {
     task: Option<tokio::task::JoinHandle<Option<Conn>>>,
     spool: spool::Spool,
     _tunnel: Option<Arc<ssh::Tunnel>>,
+    _proxy: Option<Arc<proxy::Tunnel>>,
     transport: Option<Arc<tokio::sync::OwnedSemaphorePermit>>,
 }
 #[async_trait]
@@ -517,12 +613,16 @@ impl ResultCursor for ObjectCursor {
             return Err(error(ErrorKind::Cancelled, "MySQL object read cancelled"));
         }
         if self.inner.is_none() {
-            let mut conn = self.conn.take().ok_or_else(closed)?;
-            conn.query_drop("START TRANSACTION READ ONLY")
-                .await
-                .map_err(normalize)?;
+            let mut conn = connection::PendingConnection::new(self.conn.take().ok_or_else(closed)?);
+            // Starting another transaction would implicitly commit manual startup writes.
+            if !self.transaction_started {
+                conn.connection()
+                    .query_drop("START TRANSACTION READ ONLY")
+                    .await
+                    .map_err(normalize)?;
+            }
             let (cursor, task) = runtime::start(
-                conn,
+                conn.ready(),
                 self.opts.clone(),
                 runtime::Start {
                     sql: self.sql.clone(),
@@ -531,9 +631,11 @@ impl ResultCursor for ObjectCursor {
                     expected: Some(self.columns.clone()),
                     cancel: self.cancel.clone(),
                     independent: true,
+                    idle: Default::default(),
                     spool: self.spool.clone(),
                     transport: self.transport.take().ok_or_else(closed)?,
                     tunnel: self._tunnel.clone(),
+                    proxy: self._proxy.clone(),
                 },
             )
             .await?;
@@ -559,13 +661,25 @@ impl ResultCursor for ObjectCursor {
         if let Some(task) = self.task.take() {
             let _ = task.await;
         }
-        self.conn.take();
+        if let Some(connection) = self.conn.take() {
+            drop(connection::PendingConnection::new(connection));
+        }
         self.transport.take();
         Ok(())
     }
 }
+impl Drop for ObjectCursor {
+    fn drop(&mut self) {
+        if let Some(connection) = self.conn.take() {
+            drop(connection::PendingConnection::new(connection));
+        }
+    }
+}
 impl Drop for MysqlConnection {
     fn drop(&mut self) {
+        if let Some(connection) = self.conn.take() {
+            drop(connection::PendingConnection::new(connection));
+        }
         if let Some(cancel) = &self.active {
             cancel.cancelled.store(true, Ordering::Release);
             cancel.changed.notify_waiters();
