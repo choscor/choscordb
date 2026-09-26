@@ -378,15 +378,9 @@ class ObjectDataWorkspaceTest : public QObject {
         QTRY_COMPARE(model->rowCount(), 1);
         QTRY_VERIFY(data.findChild<QPushButton*>("objectDataAddRow")->isEnabled());
         auto* filterBar = data.findChild<QWidget*>("resultFilterBar");
-        auto* column = filterBar->findChild<QComboBox*>("resultFilterColumn");
-        auto* operation = filterBar->findChild<QComboBox*>("resultFilterOperator");
-        column->setCurrentIndex(column->findText("id"));
-        operation->setCurrentIndex(operation->findData("greater_than"));
-        filterBar->findChild<QLineEdit*>("resultFilterValue")->setText("0");
+        filterBar->findChild<QLineEdit*>("resultFilterSql")->setText("id > 0");
         filterBar->findChild<QPushButton*>("resultFilterApply")->click();
-        auto* filterConditions = filterBar->findChild<QListWidget*>("resultFilterConditions");
-        QTRY_VERIFY(filterConditions->item(0));
-        QTRY_VERIFY(filterConditions->item(0)->text().startsWith("Active:"));
+        QVERIFY(!filterBar->findChild<QListWidget*>("resultFilterConditions"));
         QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
                      QString("completed"));
         QCoreApplication::processEvents();
@@ -463,7 +457,6 @@ class ObjectDataWorkspaceTest : public QObject {
                      QString("completed"));
         QTRY_COMPARE(model->index(0, 0).data().toString(), QString("2"));
         QCOMPARE(model->index(0, 1).data().toString(), QString("copy"));
-        QVERIFY(filterConditions->item(0)->text().startsWith("Active:"));
     }
     void manualTransactionDisablesGridApply() {
         choscordb::MainWindow window;
