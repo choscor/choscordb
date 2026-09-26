@@ -10,11 +10,14 @@
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
 #include <QAction>
+#include <QEvent>
 #include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QMenu>
+#include <QPaintEvent>
+#include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -26,32 +29,119 @@
 #include <QSyntaxHighlighter>
 #include <QTabBar>
 #include <QTableView>
+#include <QTextBlock>
 #include <QVBoxLayout>
 #include <atomic>
 namespace choscordb {
 namespace {
 constexpr int objectIconRole = Qt::UserRole + 1;
+class DdlEditor final : public QPlainTextEdit {
+  public:
+    explicit DdlEditor(QWidget* parent) : QPlainTextEdit(parent), gutter_(new QWidget(this)) {
+        gutter_->setObjectName("objectDdlLineNumbers");
+        gutter_->setAccessibleName(tr("DDL line numbers"));
+        gutter_->installEventFilter(this);
+        setLineWrapMode(QPlainTextEdit::NoWrap);
+        connect(this, &QPlainTextEdit::blockCountChanged, this, [this] { updateGutterWidth(); });
+        connect(this, &QPlainTextEdit::updateRequest, this, [this](const QRect& rect, int dy) {
+            if (dy)
+                gutter_->scroll(0, dy);
+            else
+                gutter_->update(0, rect.y(), gutter_->width(), rect.height());
+        });
+        updateGutterWidth();
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == gutter_ && event->type() == QEvent::Paint) {
+            paintGutter(static_cast<QPaintEvent*>(event));
+            return true;
+        }
+        return QPlainTextEdit::eventFilter(watched, event);
+    }
+    void resizeEvent(QResizeEvent* event) override {
+        QPlainTextEdit::resizeEvent(event);
+        const auto area = contentsRect();
+        gutter_->setGeometry(area.left(), area.top(), gutterWidth(), area.height());
+    }
+    void changeEvent(QEvent* event) override {
+        QPlainTextEdit::changeEvent(event);
+        if (event->type() == QEvent::FontChange)
+            updateGutterWidth();
+        if (event->type() == QEvent::PaletteChange)
+            gutter_->update();
+    }
+
+  private:
+    int gutterWidth() const {
+        const int digits = qMax(3, QString::number(blockCount()).size());
+        return fontMetrics().horizontalAdvance(QString(digits, QLatin1Char('0'))) + 12;
+    }
+    void updateGutterWidth() {
+        gutter_->setFont(font());
+        setViewportMargins(gutterWidth(), 0, 0, 0);
+        const auto area = contentsRect();
+        gutter_->setGeometry(area.left(), area.top(), gutterWidth(), area.height());
+        gutter_->update();
+    }
+    void paintGutter(QPaintEvent* event) {
+        QPainter painter(gutter_);
+        painter.fillRect(event->rect(),
+                         design::resolvedThemeForWidget(*this).colors.elevatedSurface);
+        painter.setPen(palette().color(QPalette::Text));
+        painter.setFont(font());
+        auto block = firstVisibleBlock();
+        auto top = blockBoundingGeometry(block).translated(contentOffset()).top();
+        while (block.isValid() && top <= event->rect().bottom()) {
+            const auto height = blockBoundingRect(block).height();
+            if (block.isVisible() && top + height >= event->rect().top())
+                painter.drawText(QRect(0, qRound(top), gutter_->width() - 6, qRound(height)),
+                                 Qt::AlignRight | Qt::AlignVCenter,
+                                 QString::number(block.blockNumber() + 1));
+            top += height;
+            block = block.next();
+        }
+    }
+    QWidget* gutter_;
+};
 class DdlHighlighter final : public QSyntaxHighlighter {
   public:
     explicit DdlHighlighter(QPlainTextEdit* editor)
-        : QSyntaxHighlighter(editor->document()), editor_(editor) {}
+        : QSyntaxHighlighter(editor->document()), editor_(editor) {
+        editor_->installEventFilter(this);
+    }
 
   protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == editor_ && event->type() == QEvent::PaletteChange)
+            rehighlight();
+        return QSyntaxHighlighter::eventFilter(watched, event);
+    }
+
     void highlightBlock(const QString& text) override {
         const auto colors = design::resolvedThemeForWidget(*editor_).colors;
+        const auto base = editor_->palette().color(QPalette::Base);
+        const auto foreground = editor_->palette().color(QPalette::Text);
+        const auto readable = [&](const QColor& color) {
+            return design::contrastRatio(color, base) >= 4.5 ? color : foreground;
+        };
         QTextCharFormat keyword;
-        keyword.setForeground(colors.accent);
+        keyword.setForeground(readable(colors.sqlKeyword));
         keyword.setFontWeight(QFont::DemiBold);
         static const QRegularExpression words(
             R"(\b(?:CREATE|ALTER|DROP|TABLE|VIEW|INDEX|PRIMARY|FOREIGN|KEY|REFERENCES|CONSTRAINT|NOT|NULL|DEFAULT|UNIQUE|CHECK|ON|AS|SELECT|FROM|WHERE|INSERT|INTO|UPDATE|DELETE|BOOLEAN|INTEGER|BIGINT|TEXT|TIMESTAMP|TRUE|FALSE)\b)",
             QRegularExpression::CaseInsensitiveOption);
         QVector<bool> protectedText(text.size(), false);
         QTextCharFormat literal;
-        literal.setForeground(colors.action);
+        literal.setForeground(readable(colors.sqlString));
         QTextCharFormat identifier;
-        identifier.setForeground(colors.text);
+        identifier.setForeground(foreground);
         QTextCharFormat comment;
-        comment.setForeground(colors.mutedText);
+        comment.setForeground(readable(colors.sqlComment));
+        QTextCharFormat number;
+        number.setForeground(readable(colors.sqlNumber));
+        static const QRegularExpression numbers(R"(\b\d+(?:\.\d+)?\b)");
         enum { Normal, String, Identifier, Backtick, BlockComment };
         int state = previousBlockState();
         if (state < Normal || state > BlockComment)
@@ -59,6 +149,8 @@ class DdlHighlighter final : public QSyntaxHighlighter {
         for (int pos = 0; pos < text.size();) {
             if (state == Normal && text.mid(pos, 2) == "--") {
                 setFormat(pos, text.size() - pos, comment);
+                for (int index = pos; index < text.size(); ++index)
+                    protectedText[index] = true;
                 break;
             }
             if (state == Normal && text.mid(pos, 2) == "/*")
@@ -121,6 +213,12 @@ class DdlHighlighter final : public QSyntaxHighlighter {
             if (!protectedText[match.capturedStart()])
                 setFormat(match.capturedStart(), match.capturedLength(), keyword);
         }
+        auto numericMatches = numbers.globalMatch(text);
+        while (numericMatches.hasNext()) {
+            const auto match = numericMatches.next();
+            if (!protectedText[match.capturedStart()])
+                setFormat(match.capturedStart(), match.capturedLength(), number);
+        }
     }
 
   private:
@@ -173,10 +271,13 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     table_->horizontalHeader()->setStretchLastSection(true);
     pages_->addWidget(table_);
-    ddl_ = new QPlainTextEdit(pages_);
+    ddl_ = new DdlEditor(pages_);
     ddl_->setObjectName("objectDdl");
     ddl_->setAccessibleName(tr("Object DDL"));
     ddl_->setReadOnly(true);
+    ddl_->setProperty("designRole", "codePreview");
+    ddl_->setFont(design::resolveTypography(design::TypographyRole::Monospace));
+    ddl_->setFrameShape(QFrame::NoFrame);
     new DdlHighlighter(ddl_);
     pages_->addWidget(ddl_);
     pages_->addWidget(new QWidget(pages_));

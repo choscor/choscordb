@@ -47,16 +47,14 @@ class HistoryRowDelegate final : public QStyledItemDelegate {
                                                                         : colors.card);
         painter->setPen(colors.border);
         painter->drawLine(bounds.bottomLeft(), bounds.bottomRight());
-        auto sqlFont = design::resolveTypography(design::TypographyRole::Monospace);
-        sqlFont.setPixelSize(12);
+        const auto sqlFont = design::resolveTypography(design::TypographyRole::Metadata);
         painter->setFont(sqlFont);
         painter->setPen(colors.text);
         const int width = qMax(0, bounds.width() - 28);
         painter->drawText(
             bounds.adjusted(14, 8, -14, -33), Qt::AlignLeft | Qt::AlignVCenter,
             QFontMetrics(sqlFont).elidedText(index.data().toString(), Qt::ElideRight, width));
-        auto small = design::resolveTypography(design::TypographyRole::Small);
-        small.setPixelSize(10);
+        const auto small = design::resolveTypography(design::TypographyRole::Small);
         painter->setFont(small);
         const auto status = index.siblingAtColumn(4).data().toString();
         const int badgeWidth = QFontMetrics(small).horizontalAdvance(status) + 14;

@@ -73,6 +73,9 @@ struct SemanticColors final {
     QColor success;
     QColor warning;
     QColor danger;
+    QColor successSurface;
+    QColor warningSurface;
+    QColor dangerSurface;
     QColor neutral;
     QColor backdrop;
     QColor switchTrack;

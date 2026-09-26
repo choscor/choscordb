@@ -6,3 +6,9 @@ QTableView::item:selected, QTreeView::item:selected, QListView::item:selected {
 QListView::item:hover {
   background: @accent;
 }
+
+QListView[designSurface="sidebar"]::item:selected {
+  background: @muted;
+  color: @foreground;
+  border-radius: 5px;
+}

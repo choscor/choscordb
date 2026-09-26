@@ -39,7 +39,7 @@ struct SshHostKeyCandidate {
 };
 struct SavedProfile {
     QString id, name, groupId, driver = "sqlite", path, host, database, user;
-    QString tls = "verify_full", rootCertificate, credentialRef, sshCredentialRef;
+    QString tls = "disable", rootCertificate, credentialRef, sshCredentialRef;
     QString tlsClientIdentity, tlsCredentialRef, sshOptions, authentication;
     QString proxyOptions, proxyCredentialRef;
     QString sshJumpCredentialRefs;

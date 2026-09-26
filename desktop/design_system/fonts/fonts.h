@@ -9,6 +9,7 @@ enum class TypographyRole {
     Ui,
     Monospace,
     Small,
+    NavigationDetail,
     Heading,
     Base,
     DialogTitle,

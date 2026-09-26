@@ -533,7 +533,8 @@ class ObjectDataWorkspaceTest : public QObject {
         QTimer confirmEdits;
         bool reviewed = false;
         connect(&confirmEdits, &QTimer::timeout, &window, [&] {
-            if (auto* pending = qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+            if (auto* pending = qobject_cast<QMessageBox*>(
+                    choscordb::design::DialogPresentation::activeDialog())) {
                 for (auto* button : pending->buttons())
                     if (pending->buttonRole(button) == QMessageBox::AcceptRole) {
                         button->click();

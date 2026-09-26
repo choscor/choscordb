@@ -72,7 +72,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     formScroll->setWidget(form_);
     sections->bodyLayout()->addWidget(formScroll);
     auto* formLayout = new QFormLayout(form_);
-    formLayout->setContentsMargins(0, 0, 0, metrics.spacingMedium);
+    formLayout->setContentsMargins(0, 0, design::spacing(design::Spacing::Three),
+                                   metrics.spacingMedium);
     formLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
     formLayout->addRow(
         createDescription(tr("Connect to a server or open a local database file."), form_));
@@ -197,19 +198,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     securityLayout->addRow(tr("&TLS"), tls_);
     rootCertificate_ = line("profileRootCertificate");
     securityLayout->addRow(tr("Root &certificate"), rootCertificate_);
-    auto* securityToggle = new design::Button(tr("TLS && security"), postgresFields_);
-    securityToggle->setObjectName("profileSecurity");
-    securityToggle->setVariant(design::ButtonVariant::Ghost);
-    securityToggle->setCheckable(true);
-    securityToggle->setDesignIcon(design::Icon::ChevronRight);
-    connect(securityToggle, &QPushButton::toggled, security, &QWidget::setVisible);
-    connect(securityToggle, &QPushButton::toggled, this, [securityToggle](bool expanded) {
-        securityToggle->setDesignIcon(expanded ? design::Icon::ChevronDown
-                                               : design::Icon::ChevronRight);
-    });
-    pg->addRow(securityToggle);
     pg->addRow(security);
-    security->hide();
     sshEnabled_ = new QCheckBox(tr("Connect through SSH tunnel"), postgresFields_);
     sshEnabled_->setObjectName("profileSshEnabled");
     sshEnabled_->setProperty("designRole", "switch");
@@ -307,6 +296,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     status_->hide();
     formLayout->addRow(status_);
     auto* buttons = sections->footerLayout();
+    buttons->parentWidget()->setProperty("designSurface", "muted");
     auto* footer = sections;
     auto button = [this](const QString& title, const char* object) {
         auto* result = new design::Button(title, this);
@@ -619,7 +609,11 @@ void ProfileDialog::showEvent(QShowEvent* event) {
     DialogShell::showEvent(event);
     layout()->setContentsMargins(0, 0, 0, 0);
     layout()->setSpacing(0);
-    findChild<design::DialogSections*>("profileSections")->applyCompactSpacing();
+    auto* sections = findChild<design::DialogSections*>("profileSections");
+    sections->applyCompactSpacing();
+    auto margins = sections->bodyLayout()->contentsMargins();
+    margins.setRight(0);
+    sections->bodyLayout()->setContentsMargins(margins);
 }
 
 void ProfileDialog::setBusy(bool busy, const QString& message) {

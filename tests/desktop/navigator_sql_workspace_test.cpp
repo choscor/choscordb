@@ -353,22 +353,24 @@ void NavigatorSqlWorkspaceTest::workspaceTabsUseContentWidth() {
     choscordb::MainWindow window;
     window.resize(1280, 800);
     window.show();
+    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+    auto* addButton = window.findChild<QPushButton*>("addSqlTabButton");
+    QVERIFY(tabs && addButton);
+    QCOMPARE(addButton->parentWidget(), tabs);
     auto* add = window.findChild<QAction*>("newQuery");
     add->trigger();
-    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+    QTRY_VERIFY(addButton->isVisible());
     QVERIFY(!tabs->tabBar()->expanding());
     QVERIFY(tabs->tabBar()->tabRect(0).width() < tabs->tabBar()->width() / 2);
-    auto* addButton = window.findChild<QPushButton*>("addSqlTabButton");
-    QVERIFY(addButton);
-    QCoreApplication::processEvents();
-    const auto lastRight = tabs->tabBar()->mapTo(tabs, tabs->tabBar()->tabRect(0).topRight()).x();
-    QVERIFY(addButton->x() >= lastRight);
-    QVERIFY(addButton->x() < lastRight + addButton->width());
-    for (int index = 0; index < 20; ++index)
-        add->trigger();
     QCoreApplication::processEvents();
     const auto barRight = tabs->tabBar()->mapTo(tabs, QPoint(tabs->tabBar()->width(), 0)).x();
     QVERIFY(addButton->x() >= barRight);
+    QVERIFY(addButton->geometry().right() < tabs->width());
+    for (int index = 0; index < 20; ++index)
+        add->trigger();
+    QCoreApplication::processEvents();
+    QVERIFY(addButton->isVisible());
+    QVERIFY(addButton->x() >= tabs->tabBar()->mapTo(tabs, QPoint(tabs->tabBar()->width(), 0)).x());
     QVERIFY(addButton->geometry().right() < tabs->width());
     const int previousCount = tabs->count();
     QTest::mouseClick(addButton, Qt::LeftButton);

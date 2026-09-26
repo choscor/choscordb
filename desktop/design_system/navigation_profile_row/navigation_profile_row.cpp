@@ -18,14 +18,14 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(selected ? colors.sidebarBorder : Qt::transparent);
-    painter->setBrush(selected ? colors.subtleAccent : hovered ? colors.muted : colors.sidebar);
+    painter->setBrush(selected ? colors.muted : hovered ? colors.muted : colors.sidebar);
     painter->drawRoundedRect(bounds, 6, 6);
     const QRect badge(bounds.left() + 7, bounds.center().y() - 13, 26, 27);
     const bool sqlite = index.data(DriverRole).toString() == "sqlite";
     painter->setPen(sqlite ? colors.sqliteBadgeBorder : colors.postgresBadgeBorder);
     painter->setBrush(sqlite ? colors.sqliteBadgeBackground : colors.postgresBadgeBackground);
     painter->drawRoundedRect(badge, 6, 6);
-    const auto ink = selected ? colors.action : colors.mutedText;
+    const auto ink = selected ? colors.sidebarForeground : colors.mutedText;
     themedIcon(sqlite                                            ? Icon::SQLite
                : index.data(DriverRole).toString() == "postgres" ? Icon::PostgreSQL
                : index.data(DriverRole).toString() == "mysql"    ? Icon::MySQL
@@ -37,12 +37,11 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     const int textWidth = qMax(0, bounds.right() - textLeft - 25);
     auto titleFont = resolveTypography(TypographyRole::Field);
     painter->setFont(titleFont);
-    painter->setPen(selected ? colors.action : colors.text);
+    painter->setPen(colors.text);
     painter->drawText(
         QRect(textLeft, bounds.top() + 4, textWidth, 17), Qt::AlignLeft | Qt::AlignVCenter,
         QFontMetrics(titleFont).elidedText(lines.value(0), Qt::ElideRight, textWidth));
-    auto detailFont = resolveTypography(TypographyRole::Small);
-    detailFont.setPixelSize(10);
+    const auto detailFont = resolveTypography(TypographyRole::NavigationDetail);
     painter->setFont(detailFont);
     painter->setPen(ink);
     const auto detail = lines.value(1) + (selected ? tr(" · Selected") : QString{});
@@ -50,7 +49,7 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
                       Qt::AlignLeft | Qt::AlignVCenter,
                       QFontMetrics(detailFont).elidedText(detail, Qt::ElideRight, textWidth));
     if (selected)
-        themedIcon(Icon::Check, colors.action, 14)
+        themedIcon(Icon::Check, colors.sidebarForeground, 14)
             .paint(painter, QRect(bounds.right() - 21, bounds.center().y() - 7, 14, 14));
     if (option.state & QStyle::State_HasFocus) {
         painter->setPen(QPen(colors.focus, 1));

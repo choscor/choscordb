@@ -1,6 +1,7 @@
 #include "app/object_explorer.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/theme_manager.h"
 #include <QAction>
 #include <QHeaderView>
 #include <QIcon>
@@ -8,7 +9,9 @@
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSignalSpy>
+#include <QStackedWidget>
 #include <QTabBar>
 #include <QTableView>
 #include <QTest>
@@ -18,6 +21,102 @@ using namespace choscordb;
 class ObjectExplorerTest final : public QObject {
     Q_OBJECT
   private slots:
+    void ddlHasEditorAlignedLineNumberGutter() {
+        EngineAdapter adapter;
+        ObjectExplorer explorer(&adapter);
+        design::ThemeManager theme;
+        theme.setMode(design::ThemeMode::Light);
+        theme.applyTo(explorer);
+        auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
+        QVERIFY(ddl);
+        auto* gutter = ddl->findChild<QWidget*>("objectDdlLineNumbers");
+        QVERIFY(gutter);
+        explorer.findChild<QStackedWidget*>()->setCurrentWidget(ddl);
+        explorer.resize(700, 450);
+        explorer.show();
+        ddl->setPlainText("CREATE TABLE sample (\n  id BIGINT\n);");
+        QCoreApplication::processEvents();
+        QVERIFY(gutter->isVisible());
+        QCOMPARE(gutter->font().family(), ddl->font().family());
+        QCOMPARE(gutter->geometry().height(), ddl->contentsRect().height());
+        QVERIFY(ddl->viewport()->geometry().left() >= gutter->width());
+        const auto initialWidth = gutter->width();
+        QVERIFY(initialWidth >= ddl->fontMetrics().horizontalAdvance("000"));
+        const auto background = design::resolvedThemeForWidget(*ddl).colors.elevatedSurface;
+        const auto lightImage = gutter->grab().toImage();
+        QCOMPARE(lightImage.pixelColor(1, lightImage.height() / 2), background);
+        bool numberPainted = false;
+        for (int y = 0; y < lightImage.height() && !numberPainted; ++y)
+            for (int x = 0; x < lightImage.width(); ++x)
+                if (lightImage.pixelColor(x, y) != background) {
+                    numberPainted = true;
+                    break;
+                }
+        QVERIFY(numberPainted);
+        ddl->setPlainText(QString("x\n").repeated(999) + "x");
+        QCoreApplication::processEvents();
+        QVERIFY(gutter->width() > initialWidth);
+        const auto beforeScroll = gutter->grab().toImage();
+        auto* scroll = ddl->verticalScrollBar();
+        QVERIFY(scroll->maximum() > 0);
+        scroll->setValue(scroll->maximum());
+        QCoreApplication::processEvents();
+        QVERIFY(gutter->grab().toImage() != beforeScroll);
+        theme.setMode(design::ThemeMode::Dark);
+        theme.applyTo(explorer);
+        const auto darkBackground = design::resolvedThemeForWidget(*ddl).colors.elevatedSurface;
+        QVERIFY(darkBackground != background);
+        const auto darkImage = gutter->grab().toImage();
+        QCOMPARE(darkImage.pixelColor(1, darkImage.height() / 2), darkBackground);
+    }
+    void ddlMatchesSqlEditorTypographyAndSyntaxPalette() {
+        EngineAdapter adapter;
+        ObjectExplorer explorer(&adapter);
+        design::ThemeManager theme;
+        theme.setMode(design::ThemeMode::Light);
+        theme.applyTo(explorer);
+        auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
+        QVERIFY(ddl);
+        QCOMPARE(ddl->font().family(),
+                 design::resolveTypography(design::TypographyRole::Monospace).family());
+        QCOMPARE(ddl->font().pixelSize(), 13);
+        QCOMPARE(ddl->frameShape(), QFrame::NoFrame);
+        ddl->setPlainText("SELECT 'x', 42; -- note");
+        QCoreApplication::processEvents();
+        const auto formats = ddl->document()->firstBlock().layout()->formats();
+        const auto colorAt = [&](int offset) {
+            for (const auto& range : formats)
+                if (offset >= range.start && offset < range.start + range.length)
+                    return range.format.foreground().color();
+            return QColor{};
+        };
+        QCOMPARE(colorAt(0), QColor("#885da7"));
+        QCOMPARE(colorAt(7), QColor("#287f66"));
+        QCOMPARE(colorAt(12), QColor("#936b3f"));
+        QCOMPARE(colorAt(16), QColor("#6f7879"));
+    }
+    void ddlRecolorsWithThemeAndKeepsCommentNumbersMuted() {
+        EngineAdapter adapter;
+        ObjectExplorer explorer(&adapter);
+        design::ThemeManager theme;
+        theme.setMode(design::ThemeMode::Light);
+        theme.applyTo(explorer);
+        auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
+        QVERIFY(ddl);
+        ddl->setPlainText("SELECT 42; -- 99");
+        const auto colorAt = [&](int offset) {
+            QCoreApplication::processEvents();
+            for (const auto& range : ddl->document()->firstBlock().layout()->formats())
+                if (offset >= range.start && offset < range.start + range.length)
+                    return range.format.foreground().color();
+            return QColor{};
+        };
+        QCOMPARE(colorAt(14), QColor("#6f7879"));
+        theme.setMode(design::ThemeMode::Dark);
+        theme.applyTo(explorer);
+        QCOMPARE(colorAt(0), QColor("#a984c8"));
+        QCOMPARE(colorAt(14), QColor("#9ca6a7"));
+    }
     void ddlUsesSqlSyntaxColors() {
         EngineAdapter adapter;
         ObjectExplorer explorer(&adapter);

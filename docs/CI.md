@@ -81,13 +81,21 @@ cargo install cargo-deny --version 0.20.2 --locked
 cargo deny --locked check
 ```
 
-The focused deterministic stages are `cpp-format`, `cpp-size`, `python-lint`,
+The focused deterministic stages are `cpp-format`, `cpp-size`, `ui-policy`,
+`ui-consistency`, `qss-lint`, `python-lint`,
 `python-format`, `actionlint`, `python-tests`, `rust-format`, `rust-check`,
 `rust-clippy`, `rust-tests`, and `cargo-deny`. Native stages are
 `native-dependencies`, `native-build`, and `native-tests`. Every command prints
 the subprocess it invokes and returns
 nonzero with installation guidance when a required tool or dependency is
 missing.
+
+`ui-consistency` reports source-level visual control construction coverage per
+desktop screen. Centrally styled stock Qt controls count alongside explicit
+design-system controls. It rejects screen-owned presentation and unclassified
+leaf controls; the percentage is a lexical source estimate, not runtime or
+pixel coverage. Run `python3 scripts/ci/ui_consistency.py --json` for a
+machine-readable census.
 
 Native analysis can be reproduced with the named CMake presets and targets:
 

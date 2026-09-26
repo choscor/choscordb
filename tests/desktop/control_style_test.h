@@ -33,6 +33,7 @@ class ControlStyleTest final : public QObject {
     void scopedSelectAndSpinRenderArrows_data();
     void scopedSelectAndSpinRenderArrows();
     void spinBoxesIgnoreWheelButKeepButtonStepping();
+    void selectsIgnoreWheelButKeepExplicitSelection();
     void scopedCheckboxUsesSemanticFill_data();
     void scopedCheckboxUsesSemanticFill();
     void scopedDarkButtonsAndTextSelectionUseSemanticColors();

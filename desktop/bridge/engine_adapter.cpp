@@ -25,7 +25,7 @@ SavedProfile savedProfile(const ProfileDto& dto) {
     value.port = dto.port;
     value.database = string(dto.database);
     value.user = string(dto.user);
-    value.tls = dto.tls.empty() ? QStringLiteral("verify_full") : string(dto.tls);
+    value.tls = dto.tls.empty() ? QStringLiteral("disable") : string(dto.tls);
     value.rootCertificate = string(dto.root_certificate);
     value.tlsClientIdentity = string(dto.tls_client_identity);
     value.tlsCredentialRef = string(dto.tls_credential_ref);

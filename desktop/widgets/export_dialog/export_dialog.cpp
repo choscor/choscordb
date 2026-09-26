@@ -3,6 +3,7 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
@@ -12,7 +13,6 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
-#include <QFrame>
 #include <QFutureWatcher>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -84,9 +84,11 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     sqlForm->addRow(tr("&Table:"), tableValidation_);
     const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* layout = new QVBoxLayout(this);
-    auto* header = new QWidget(this);
+    auto* sections = new design::DialogSections(this);
+    layout->addWidget(sections);
+    auto* headerLayout = sections->headerLayout();
+    auto* header = headerLayout->parentWidget();
     header->setFixedHeight(metrics.modalHeaderHeight);
-    auto* headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(metrics.modalContentInset, 0, metrics.modalContentInset, 0);
     auto* heading = new design::Text(tr("Export results"), header);
     heading->setTypographyRole(design::TypographyRole::DialogTitle);
@@ -100,14 +102,10 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     dismiss->setDesignIcon(design::Icon::Close);
     headerLayout->addWidget(dismiss);
     connect(dismiss, &QPushButton::clicked, this, &ExportDialog::reject);
-    layout->addWidget(header);
-    auto* separator = new QFrame(this);
-    separator->setFrameShape(QFrame::HLine);
-    layout->addWidget(separator);
-    auto* body = new QWidget(this);
+    auto* bodyLayout = sections->bodyLayout();
+    auto* body = bodyLayout->parentWidget();
     body->setProperty("designSurface", "panel");
     body->setAttribute(Qt::WA_StyledBackground);
-    auto* bodyLayout = new QVBoxLayout(body);
     bodyLayout->setContentsMargins(metrics.modalContentInset, metrics.modalFooterInset,
                                    metrics.modalContentInset, metrics.modalFooterInset);
     bodyLayout->addWidget(scope_);
@@ -116,11 +114,10 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     bodyLayout->addWidget(sqlFields_);
     bodyLayout->addWidget(status_);
     bodyLayout->addStretch();
-    layout->addWidget(body, 1);
-    auto* footer = new QWidget(this);
+    auto* buttons = sections->footerLayout();
+    auto* footer = buttons->parentWidget();
     footer->setProperty("designSurface", "muted");
     footer->setAttribute(Qt::WA_StyledBackground);
-    auto* buttons = new QHBoxLayout(footer);
     buttons->setContentsMargins(metrics.modalFooterInset, metrics.modalFooterVerticalInset,
                                 metrics.modalFooterInset, metrics.modalFooterVerticalInset);
     buttons->addStretch();
@@ -133,7 +130,6 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     buttons->addWidget(close);
     buttons->addWidget(cancel_);
     buttons->addWidget(start_);
-    layout->addWidget(footer);
     connect(format_, &QComboBox::currentIndexChanged, this, &ExportDialog::updateActions);
     connect(format_, &QComboBox::currentIndexChanged, this,
             [this] { formatValidation_->setError({}); });

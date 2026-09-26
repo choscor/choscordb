@@ -7,3 +7,18 @@ QTreeView::item:selected {
   color: @navigationText;
   font-weight: 600;
 }
+
+QTreeView[designSurface="sidebar"]::item:selected {
+  background: @muted;
+  color: @foreground;
+}
+
+/* NavigationTreeView paints its own rounded row fill. */
+QTreeView[designNavigationTree="true"]::item:selected {
+  background: transparent;
+  color: @foreground;
+}
+
+QTreeView[designNavigationTree="true"]::item:hover {
+  background: transparent;
+}

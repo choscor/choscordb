@@ -2,6 +2,7 @@
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
 #include "design_system/control_style.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/theme_manager.h"
 #include "models/history_model.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -410,13 +411,24 @@ class SecondaryDesignTest final : public QObject {
                 qRound(4 * capture.devicePixelRatio()),
                 qRound(dialog.height() / 2.0 * capture.devicePixelRatio()));
         };
+        auto* footer = dialog.findChild<design::DialogSections*>("profileSections")
+                           ->footerLayout()
+                           ->parentWidget();
+        const auto footerColor = [&] {
+            const auto image = footer->grab().toImage();
+            return image.pixelColor(qRound(4 * image.devicePixelRatio()),
+                                    qRound(4 * image.devicePixelRatio()));
+        };
         QCOMPARE(surface(), QColor("#ffffff"));
+        QCOMPARE(footerColor(), theme.resolvedTheme().colors.muted);
         theme.setMode(design::ThemeMode::Dark);
         theme.applyTo(dialog);
         QTRY_COMPARE(surface(), QColor("#20272b"));
+        QTRY_COMPARE(footerColor(), theme.resolvedTheme().colors.muted);
         theme.setMode(design::ThemeMode::Light);
         theme.applyTo(dialog);
         QCOMPARE(surface(), QColor("#ffffff"));
+        QCOMPARE(footerColor(), theme.resolvedTheme().colors.muted);
     }
 
     void connectionDriverChoicesPreserveEachDraft() {
@@ -450,12 +462,9 @@ class SecondaryDesignTest final : public QObject {
         QVERIFY(host->isVisible());
         QVERIFY(!path->isVisible());
         host->setText("database.example");
-        auto* security = dialog.findChild<QPushButton*>("profileSecurity");
         auto* tls = dialog.findChild<QComboBox*>("profileTls");
-        QVERIFY(!tls->isVisible());
-        security->setFocus();
-        QTest::keyClick(security, Qt::Key_Space);
         QVERIFY(tls->isVisible());
+        QCOMPARE(tls->currentData().toString(), QString("disable"));
         sqlite->setFocus();
         QTest::keyClick(sqlite, Qt::Key_Space);
         QVERIFY(sqlite->isChecked());

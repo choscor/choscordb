@@ -5,3 +5,9 @@ QPlainTextEdit, QTextEdit {
   background: @field;
   color: @foreground;
 }
+
+QPlainTextEdit[designRole="codePreview"] {
+  border: none;
+  border-radius: 0;
+  padding: 12px;
+}

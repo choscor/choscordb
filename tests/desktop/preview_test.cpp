@@ -39,6 +39,7 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QPainter>
+#include <QPlainTextEdit>
 #include <QProcess>
 #include <QProgressBar>
 #include <QPushButton>
@@ -126,6 +127,24 @@ bool containsExactPatch(const QImage& capture, const QImage& witness) {
     return false;
 }
 } // namespace
+
+void PreviewTest::codePreviewTextAreaUsesSharedVariantInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("textareas"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        auto* code = host->findChild<QPlainTextEdit*>("previewCodePreview");
+        QVERIFY(code);
+        QVERIFY(code->isVisible());
+        QVERIFY(code->isReadOnly());
+        QCOMPARE(code->property("designRole").toString(), QString("codePreview"));
+        QCOMPARE(code->frameShape(), QFrame::NoFrame);
+        QVERIFY(code->toPlainText().contains("CREATE TABLE example"));
+    }
+}
 
 void PreviewTest::editorResultsSplitUsesEqualPanesInBothThemes() {
     choscordb::design::PreviewWindow window;
@@ -226,6 +245,15 @@ void PreviewTest::toastPortalIsPresentInBothThemes() {
     for (const auto* name : {"previewLight", "previewDark"}) {
         auto* host = window.findChild<QWidget*>(name);
         QVERIFY(host);
+        const auto expectedSurface = QString::fromLatin1(name) == QStringLiteral("previewLight")
+                                         ? QStringLiteral("#eaf4ef")
+                                         : QStringLiteral("#283e34");
+        const auto successRule =
+            host->styleSheet()
+                .section(QStringLiteral("QLabel#toastRegion[variant=\"success\"]"), 1)
+                .section('}', 0, 0);
+        QVERIFY2(successRule.contains(QStringLiteral("background-color: %1").arg(expectedSurface)),
+                 qPrintable(successRule));
         auto* scroll = host->findChild<QScrollArea*>("previewContentScroll");
         auto* toast = host->findChild<choscordb::ToastRegion*>("toastRegion");
         QVERIFY(scroll && toast);

@@ -62,6 +62,7 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/tooltip/tooltip_style.cpp
   desktop/design_system/tree/tree_indicator.cpp
   desktop/design_system/tree/tree_style.cpp
+  desktop/design_system/tree/navigation_tree_view.cpp
 )
 target_include_directories(choscordb-design-system PUBLIC desktop)
 target_link_libraries(choscordb-design-system PUBLIC Qt6::Widgets Qt6::Svg)

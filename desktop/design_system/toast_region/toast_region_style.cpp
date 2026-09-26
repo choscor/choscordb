@@ -5,15 +5,11 @@
 namespace choscordb::design {
 
 QString toastRegionApplicationStyleSheet(const ResolvedTheme& theme) {
-    const bool dark = theme.appearance == ResolvedAppearance::Dark;
     QString sheet =
         loadStyleSheet(QStringLiteral("toast_region/toast_region_application_style_sheet.qss"));
-    sheet.replace(QStringLiteral("@successSurface"),
-                  dark ? QStringLiteral("#283e34") : QStringLiteral("#eaf4ef"));
-    sheet.replace(QStringLiteral("@warningSurface"),
-                  dark ? QStringLiteral("#473b22") : QStringLiteral("#fff3d6"));
-    sheet.replace(QStringLiteral("@dangerSurface"),
-                  dark ? QStringLiteral("#492d2b") : QStringLiteral("#fdecea"));
+    sheet.replace(QStringLiteral("@successSurface"), theme.colors.successSurface.name());
+    sheet.replace(QStringLiteral("@warningSurface"), theme.colors.warningSurface.name());
+    sheet.replace(QStringLiteral("@dangerSurface"), theme.colors.dangerSurface.name());
     return sheet;
 }
 } // namespace choscordb::design

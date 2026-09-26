@@ -1,6 +1,7 @@
 #include "preferences_dialog.h"
 #include "app/appearance_controller.h"
 #include "design_system/button/button.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
@@ -13,7 +14,6 @@
 #include <QFontComboBox>
 #include <QFontDatabase>
 #include <QFormLayout>
-#include <QFrame>
 #include <QHBoxLayout>
 #include <QKeySequenceEdit>
 #include <QLabel>
@@ -43,9 +43,11 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     resize(design::dialogInitialSize(design::DialogSize::Preferences));
     const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* layout = new QVBoxLayout(this);
-    auto* header = new QWidget(this);
+    auto* sections = new design::DialogSections(this);
+    layout->addWidget(sections);
+    auto* headerLayout = sections->headerLayout();
+    auto* header = headerLayout->parentWidget();
     header->setFixedHeight(metrics.modalHeaderHeight);
-    auto* headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(metrics.modalContentInset, 0, metrics.modalContentInset, 0);
     auto* heading = new design::Text(tr("Preferences"), header);
     heading->setTypographyRole(design::TypographyRole::DialogTitle);
@@ -59,17 +61,16 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     dismiss->setDesignIcon(design::Icon::Close);
     headerLayout->addWidget(dismiss);
     connect(dismiss, &QPushButton::clicked, this, &PreferencesDialog::reject);
-    layout->addWidget(header);
-    auto* separator = new QFrame(this);
-    separator->setFrameShape(QFrame::HLine);
-    layout->addWidget(separator);
     auto* pages = new QTabWidget(this);
     pages->setObjectName("preferencesSections");
     pages->setAccessibleName(tr("Preference sections"));
     pages->setDocumentMode(true);
     pages->setUsesScrollButtons(true);
     pages_ = pages;
-    layout->addWidget(pages, 1);
+    auto* body = sections->bodyLayout();
+    body->setContentsMargins(0, 0, 0, 0);
+    body->setSpacing(0);
+    body->addWidget(pages, 1);
     auto addPage = [pages, metrics](QWidget* page, const QString& title) {
         auto* scroll = new QScrollArea(pages);
         scroll->setWidgetResizable(true);
@@ -195,11 +196,11 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     status_->setObjectName("preferencesStatus");
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
-    layout->addWidget(status_);
-    auto* footer = new QWidget(this);
+    body->addWidget(status_);
+    auto* buttons = sections->footerLayout();
+    auto* footer = buttons->parentWidget();
     footer->setProperty("designSurface", "muted");
     footer->setAttribute(Qt::WA_StyledBackground);
-    auto* buttons = new QHBoxLayout(footer);
     buttons->setContentsMargins(metrics.modalFooterInset, metrics.modalFooterVerticalInset,
                                 metrics.modalFooterInset, metrics.modalFooterVerticalInset);
     auto* reset = new design::Button(tr("Restore defaults"), footer);
@@ -219,7 +220,6 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     apply->setObjectName("preferencesApply");
     apply->setButtonSize(design::ButtonSize::Small);
     buttons->addWidget(apply);
-    layout->addWidget(footer);
     connect(close, &QPushButton::clicked, this, &PreferencesDialog::reject);
     connect(this, &QDialog::rejected, this, [this] {
         if (appearance_)

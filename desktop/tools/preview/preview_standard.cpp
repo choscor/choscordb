@@ -11,6 +11,7 @@
 #include "design_system/text_area/text_area_style.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
+#include "design_system/tree/navigation_tree_view.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -67,7 +68,9 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         select->setAccessibleName("Synthetic selection");
         layout->addWidget(select);
         auto* status = new QLabel(
-            "The dropdown stays inside this window. Selection is local to this specimen.", host);
+            "The dropdown stays inside this window. Scroll over the field to keep its selection; "
+            "open the list to choose another option.",
+            host);
         status->setWordWrap(true);
         layout->addWidget(status);
         QObject::connect(select, &QComboBox::currentTextChanged, status,
@@ -116,6 +119,14 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
             "Longer content can be scrolled and selected.");
         text->setReadOnly(true);
         layout->addWidget(text, 1);
+        auto* code = new QPlainTextEdit(host);
+        code->setObjectName("previewCodePreview");
+        code->setProperty("designRole", "codePreview");
+        code->setPlainText("CREATE TABLE example (id INTEGER PRIMARY KEY);");
+        code->setReadOnly(true);
+        code->setFrameShape(QFrame::NoFrame);
+        code->setFont(resolveTypography(TypographyRole::Monospace));
+        layout->addWidget(code, 1);
         auto* richText = new QTextEdit(host);
         configureRichTextArea(*richText);
         richText->setHtml("<p><b>Rich text</b> and editable content</p>");
@@ -145,7 +156,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         list->item(4)->setFlags(list->item(4)->flags() & ~Qt::ItemIsEnabled);
         list->setCurrentRow(1);
         layout->addWidget(list, 1);
-        auto* tree = new QTreeView(host);
+        auto* tree = new NavigationTreeView(host);
         tree->setObjectName("previewNavigationTree");
         auto* model = new QStandardItemModel(tree);
         auto* parent = new QStandardItem("Navigation group");
@@ -192,7 +203,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
                                              list);
             item->setData(NavigationProfileDelegate::DriverRole, driver);
             if (driver == "mysql")
-                item->setToolTip("MySQL · Official database logo");
+                item->setToolTip("MySQL · Dolphin icon");
         }
         list->setCurrentRow(1);
         list->setFixedHeight(138);

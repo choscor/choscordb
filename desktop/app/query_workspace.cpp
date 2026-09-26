@@ -6,6 +6,7 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/menu/menu.h"
+#include "design_system/modal_panel/modal_panel.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -338,9 +339,9 @@ void QueryWorkspace::clearResult() {
 bool QueryWorkspace::resolvePendingEdits() {
     if (!model_->hasPendingEdits())
         return true;
-    QMessageBox box(QMessageBox::Warning, tr("Pending grid changes"),
-                    tr("Apply or discard the staged grid changes before continuing."),
-                    QMessageBox::NoButton, widgets_.dialogParent);
+    ConfirmationDialog box(QMessageBox::Warning, tr("Pending grid changes"),
+                           tr("Apply or discard the staged grid changes before continuing."),
+                           QMessageBox::NoButton, widgets_.dialogParent);
     auto* apply = box.addButton(tr("Apply…"), QMessageBox::AcceptRole);
     auto* discard = box.addButton(tr("Discard"), QMessageBox::DestructiveRole);
     auto* cancel = box.addButton(QMessageBox::Cancel);
@@ -529,7 +530,7 @@ bool QueryWorkspace::applyStagedEdits() {
     }
     if (batch.empty())
         return false;
-    QDialog box(widgets_.dialogParent);
+    design::ModalPanel box(widgets_.dialogParent);
     box.setWindowTitle(tr("Review grid changes"));
     auto* layout = new QVBoxLayout(&box);
     layout->addWidget(new QLabel(tr("Statements and bound parameter values"), &box));

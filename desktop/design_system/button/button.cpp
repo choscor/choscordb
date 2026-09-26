@@ -15,12 +15,12 @@ int buttonPadding(ButtonSize size, ButtonContext context) {
     return context == ButtonContext::EditorAction ? 12 : index == 0 ? 6 : index == 1 ? 9 : 12;
 }
 QFont buttonFont(ButtonSize size, ButtonContext context) {
-    auto font = resolveTypography(TypographyRole::Ui);
     const int index = static_cast<int>(size) % 4;
-    font.setPixelSize(context == ButtonContext::EditorAction ? 12
-                      : index == 0                           ? 10
-                      : index == 1                           ? 11
-                                                             : 13);
+    const auto role = context == ButtonContext::EditorAction ? TypographyRole::Field
+                      : index == 0                           ? TypographyRole::SectionCaption
+                      : index == 1                           ? TypographyRole::Small
+                                                             : TypographyRole::Ui;
+    auto font = resolveTypography(role);
     font.setLetterSpacing(QFont::AbsoluteSpacing, 0);
     font.setWeight(QFont::Normal);
     return font;
@@ -173,8 +173,8 @@ void Button::paintEvent(QPaintEvent*) {
         break;
     }
     if (context_ == ButtonContext::SidebarTab && isChecked()) {
-        background = colors.subtleAccent;
-        foreground = colors.sidebarAccentForeground;
+        background = colors.muted;
+        foreground = colors.sidebarForeground;
     }
     if (context_ == ButtonContext::Choice && isChecked()) {
         background = colors.subtleAccent;

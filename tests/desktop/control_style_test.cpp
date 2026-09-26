@@ -652,6 +652,31 @@ void ControlStyleTest::spinBoxesIgnoreWheelButKeepButtonStepping() {
     QCOMPARE(decimal.value(), 6.0);
 }
 
+void ControlStyleTest::selectsIgnoreWheelButKeepExplicitSelection() {
+    using namespace choscordb::design;
+    QWidget root;
+    ThemeManager theme;
+    theme.setMode(ThemeMode::Light);
+    theme.applyTo(root);
+    QComboBox combo(&root);
+    combo.addItems({"Password / passwordless", "Password command"});
+    combo.setGeometry(10, 10, 280, 36);
+    root.resize(300, 110);
+    root.show();
+    QApplication::processEvents();
+
+    combo.setFocus();
+    QWheelEvent wheel(combo.rect().center(), combo.mapToGlobal(combo.rect().center()), {},
+                      QPoint(0, -120), Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false);
+    QApplication::sendEvent(&combo, &wheel);
+    QCOMPARE(combo.currentIndex(), 0);
+
+    combo.showPopup();
+    QTest::keyClick(combo.view(), Qt::Key_Down);
+    QTest::keyClick(combo.view(), Qt::Key_Return);
+    QCOMPARE(combo.currentIndex(), 1);
+}
+
 void ControlStyleTest::scopedCheckboxUsesSemanticFill_data() {
     QTest::addColumn<bool>("dark");
     QTest::addColumn<bool>("mixed");

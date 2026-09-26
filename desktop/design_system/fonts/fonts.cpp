@@ -32,6 +32,8 @@ TypographySpec typographySpec(TypographyRole role) {
                 QFont::Normal};
     case TypographyRole::Small:
         return {family, 11, 16, QFont::Normal};
+    case TypographyRole::NavigationDetail:
+        return {family, 10, 16, QFont::Normal};
     case TypographyRole::Heading:
         return {family, 14, 20, QFont::DemiBold};
     case TypographyRole::Base:

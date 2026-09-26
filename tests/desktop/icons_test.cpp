@@ -182,6 +182,18 @@ class IconsTest final : public QObject {
         const auto dark = themedIcon(found->role, Qt::white, 32).pixmap(QSize(32, 32), 2.0);
         QVERIFY(!light.isNull());
         QCOMPARE(light.toImage(), dark.toImage());
+        // The compact engine icon uses the dolphin mark without the wordmark.
+        int opaquePixels = 0;
+        for (int y = 0; y < light.height(); ++y)
+            for (int x = 0; x < light.width(); ++x) {
+                const auto pixel = light.toImage().pixelColor(x, y);
+                if (pixel.alpha() <= 128)
+                    continue;
+                ++opaquePixels;
+                QVERIFY2(!(pixel.red() > pixel.blue() + 50 && pixel.red() > pixel.green() + 25),
+                         "MySQL wordmark orange must not appear in the icon");
+            }
+        QVERIFY(opaquePixels > 20);
         QFile artwork(iconResourcePath(found->role));
         QVERIFY(artwork.open(QIODevice::ReadOnly));
         // Pin the unmodified artwork downloaded from mysql.com's logo download page.

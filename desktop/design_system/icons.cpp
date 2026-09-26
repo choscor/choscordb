@@ -238,8 +238,15 @@ bool iconResourceDecodes(Icon icon) {
 
 QIcon themedIcon(Icon icon, const QColor& color, int size) {
     ::qInitResources_resources();
-    if (icon == Icon::MySQL)
-        return QIcon(iconResourcePath(icon));
+    if (icon == Icon::MySQL) {
+        // The upstream raster includes a wordmark beneath the dolphin. Compact
+        // engine badges need the dolphin alone; keep the original asset intact.
+        auto mark = QImage(iconResourcePath(icon)).copy(QRect(101, 0, 74, 72));
+        for (int y = 68; y < mark.height(); ++y)
+            for (int x = 0; x < 49; ++x)
+                mark.setPixelColor(x, y, Qt::transparent);
+        return QIcon(QPixmap::fromImage(mark));
+    }
     auto svg = themedSvg(icon, color);
     if (!renderSvg(svg, QSize(size, size), 1.0).isNull()) {
         return QIcon(new SvgIconEngine(std::move(svg)));

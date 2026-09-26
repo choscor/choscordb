@@ -9,6 +9,7 @@
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/text/text.h"
 #include "design_system/toast_region/toast_region.h"
+#include "design_system/tree/navigation_tree_view.h"
 #include "models/navigator_model.h"
 #include "models/result_table_model.h"
 #include "preview_test.h"
@@ -60,6 +61,7 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QTreeView>
+#include <QWheelEvent>
 #include <QtTest>
 #include <cstring>
 
@@ -271,6 +273,9 @@ void PreviewTest::buttonsUseProductionVariantsAndStates() {
     auto* smallest = light->findChild<Button*>("button-size-xs");
     QVERIFY(smallest);
     QCOMPARE(smallest->buttonSize(), ButtonSize::ExtraSmall);
+    QCOMPARE(smallest->font().pixelSize(),
+             typographySpec(TypographyRole::SectionCaption).pixelSize);
+    QCOMPARE(pressed->font().pixelSize(), typographySpec(TypographyRole::Ui).pixelSize);
     auto* largest = light->findChild<Button*>("button-size-icon-lg");
     QVERIFY(largest);
     QCOMPARE(largest->buttonSize(), ButtonSize::IconLarge);
@@ -408,6 +413,9 @@ void PreviewTest::componentFamiliesAreRendered() {
     for (const auto* name : {"previewLight", "previewDark"}) {
         auto* tree = window.findChild<QWidget*>(name)->findChild<QTreeView*>();
         QVERIFY(tree);
+        QVERIFY(dynamic_cast<choscordb::design::NavigationTreeView*>(tree));
+        QCOMPARE(tree->property("designSurface").toString(), QString("sidebar"));
+        QVERIFY(tree->currentIndex().isValid());
         QCOMPARE(tree->indentation(), 9);
         QVERIFY(tree->model()->index(0, 0).data(Qt::DecorationRole).isNull());
         QVERIFY(!tree->model()
@@ -430,6 +438,14 @@ void PreviewTest::componentFamiliesAreRendered() {
     for (auto* frame : light->findChildren<QFrame*>())
         hasVerticalSeparator |= frame->frameShape() == QFrame::VLine;
     QVERIFY(hasVerticalSeparator);
+    QVERIFY(window.selectSpecimen("tabs"));
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        auto* tabs = host->findChild<QTabBar*>("previewObjectTabs");
+        QVERIFY(tabs);
+        QCOMPARE(tabs->count(), 5);
+        QCOMPARE(tabs->currentIndex(), 0);
+    }
 }
 
 void PreviewTest::dialogSectionsPreviewUsesRealComponentInBothThemes() {
@@ -476,7 +492,7 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
         QVERIFY(list);
         QCOMPARE(list->count(), 3);
         QCOMPARE(list->item(2)->text(), QString("test mysql\nMySQL"));
-        QCOMPARE(list->item(2)->toolTip(), QString("MySQL · Official database logo"));
+        QCOMPARE(list->item(2)->toolTip(), QString("MySQL · Dolphin icon"));
         const auto mysqlRow = list->visualItemRect(list->item(2));
         const auto branded = list->viewport()->grab(mysqlRow).toImage();
         list->item(2)->setData(choscordb::design::NavigationProfileDelegate::DriverRole, "unknown");
@@ -496,6 +512,10 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
                      .toString(),
                  QString("postgres"));
         QVERIFY(dynamic_cast<choscordb::design::NavigationProfileDelegate*>(list->itemDelegate()));
+        QCOMPARE(choscordb::design::resolveTypography(
+                     choscordb::design::TypographyRole::NavigationDetail)
+                     .pixelSize(),
+                 10);
         const auto height = list->visualItemRect(list->item(0)).height();
         QVERIFY(height >= 40 && height <= 44);
     }
@@ -602,6 +622,12 @@ void PreviewTest::popupSpecimensStayInsideWindowInBothThemes() {
             } else {
                 select = host->findChild<QComboBox*>();
                 QVERIFY(select);
+                select->setFocus();
+                QWheelEvent wheel(select->rect().center(),
+                                  select->mapToGlobal(select->rect().center()), {}, QPoint(0, -120),
+                                  Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false);
+                QApplication::sendEvent(select, &wheel);
+                QCOMPARE(select->currentIndex(), 0);
                 select->showPopup();
                 popup = select->view()->parentWidget();
             }

@@ -115,7 +115,7 @@ void ProfileDialog::setDraft(const SavedProfile& value) {
     database_->setText(value.database);
     user_->setText(value.user);
     const auto tlsIndex = tls_->findData(value.tls);
-    tls_->setCurrentIndex(tlsIndex < 0 ? 0 : tlsIndex);
+    tls_->setCurrentIndex(tlsIndex < 0 ? tls_->findData("disable") : tlsIndex);
     rootCertificate_->setText(value.rootCertificate);
     sshEnabled_->setChecked(value.sshEnabled);
     sshHost_->setText(value.sshHost);

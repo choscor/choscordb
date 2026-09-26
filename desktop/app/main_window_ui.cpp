@@ -15,6 +15,7 @@
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
+#include "design_system/tree/navigation_tree_view.h"
 #include "widgets/editor_completion/editor_completion.h"
 #include "widgets/search_panel/search_panel.h"
 #include "widgets/sidebar_section/sidebar_section.h"
@@ -296,9 +297,8 @@ MainWindow::Ui MainWindow::buildUi() {
     filter->setPlaceholderText(tr("Filter objects…"));
     filter->setAccessibleName(tr("Filter database objects"));
     objectSection->contentLayout()->addWidget(filter);
-    auto* tree = new QTreeView;
+    auto* tree = new design::NavigationTreeView;
     tree->setObjectName("databaseNavigator");
-    tree->setProperty("designSurface", "sidebar");
     auto* navigatorIcons = new NavigatorIconDelegate(tree);
     navigatorIcons->connectionIcon = [this](quint64 connection) {
         const auto driver = workspace_ ? workspace_->driverForConnection(connection) : QString{};
@@ -563,8 +563,8 @@ MainWindow::Ui MainWindow::buildUi() {
     addSqlTab->setAccessibleName(tr("New SQL query tab"));
     addSqlTab->setToolTip(tr("New SQL query tab"));
     addSqlTab->setDesignIcon(design::Icon::Add);
-    addSqlTab->setButtonSize(design::ButtonSize::Icon);
-    addSqlTab->setVariant(design::ButtonVariant::Ghost);
+    addSqlTab->setButtonSize(design::ButtonSize::IconSmall);
+    addSqlTab->setVariant(design::ButtonVariant::Outline);
     workspaceTabs->setAddButton(addSqlTab);
     connect(addSqlTab, &QPushButton::clicked, newQuery, &QAction::trigger);
     editors_->tabBar()->setUsesScrollButtons(true);

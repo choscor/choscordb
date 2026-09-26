@@ -117,6 +117,14 @@ def qss_lint():
     run_command([PYTHON, "scripts/ci/qss_policy.py"])
 
 
+def ui_policy():
+    run_command([PYTHON, "scripts/ci/ui_policy.py"])
+
+
+def ui_consistency():
+    run_command([PYTHON, "scripts/ci/ui_consistency.py"])
+
+
 def python_lint():
     ruff = require_tool(
         "ruff", install=f"{PYTHON} -m pip install -r scripts/ci/requirements.txt"
@@ -289,6 +297,8 @@ STAGES = {
     "cpp-format": cpp_format,
     "cpp-size": cpp_size,
     "qss-lint": qss_lint,
+    "ui-policy": ui_policy,
+    "ui-consistency": ui_consistency,
     "python-lint": python_lint,
     "python-format": python_format,
     "actionlint": actionlint,
@@ -307,6 +317,8 @@ FAST_STAGES = (
     "cpp-format",
     "cpp-size",
     "qss-lint",
+    "ui-policy",
+    "ui-consistency",
     "python-lint",
     "python-format",
     "actionlint",

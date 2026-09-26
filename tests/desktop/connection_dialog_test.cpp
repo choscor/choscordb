@@ -1,4 +1,5 @@
 #include "bridge/engine_adapter.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "workspace_test.h"
 #include "workspace_test_fixture.h"
@@ -7,6 +8,7 @@
 #include <QComboBox>
 #include <QDir>
 #include <QFile>
+#include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
@@ -14,8 +16,10 @@
 #include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QTemporaryDir>
+#include <QVBoxLayout>
 #include <QtTest>
 
 void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
@@ -23,6 +27,19 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     choscordb::ProfileDialog dialog(&adapter);
     QCOMPARE(dialog.size(), QSize(560, 440));
     dialog.findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
+    auto* tls = dialog.findChild<QComboBox*>("profileTls");
+    QCOMPARE(tls->currentData().toString(), QString("disable"));
+    QVERIFY(tls->isVisibleTo(&dialog));
+    QVERIFY(dialog.findChild<QLineEdit*>("profileRootCertificate")->isVisibleTo(&dialog));
+    QVERIFY(!dialog.findChild<QPushButton*>("profileSecurity"));
+    auto* sections = dialog.findChild<choscordb::design::DialogSections*>("profileSections");
+    QVERIFY(sections);
+    auto* footer = sections->footerLayout()->parentWidget();
+    QCOMPARE(footer->property("designSurface").toString(), QString("muted"));
+    auto* scroll = dialog.findChild<QScrollArea*>("profileFormScroll");
+    dialog.show();
+    QCoreApplication::processEvents();
+    QCOMPARE(scroll->geometry().right(), sections->bodyLayout()->parentWidget()->rect().right());
     dialog.findChild<QCheckBox*>("profileSshEnabled")->setChecked(true);
     for (const char* name : {"profileSshHost", "profileSshUser"})
         QVERIFY(dialog.findChild<QLineEdit*>(name)->isVisibleTo(&dialog));
@@ -42,6 +59,8 @@ void WorkspaceTest::connectionIdentityCredentialErrorsPreserveDraft() {
     QTRY_VERIFY(save->isEnabled());
     dialog->findChild<QLineEdit*>("profileName")->setText("Identity draft");
     dialog->findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
+    auto* tls = dialog->findChild<QComboBox*>("profileTls");
+    tls->setCurrentIndex(tls->findData("verify_full"));
     dialog->findChild<QLineEdit*>("profileUser")->setText("operator");
     auto* identity = dialog->findChild<QLineEdit*>("profileTlsClientIdentity");
     identity->setText("/missing/client.p12");
@@ -93,6 +112,7 @@ void WorkspaceTest::connectionTransportValidationRejectsIncompatibleSettings() {
     auto* status = dialog->findChild<QLabel*>("profileStatus");
     QSignalSpy saved(f.workspace.adapter(), &choscordb::EngineAdapter::profileSaved);
     QSignalSpy failed(f.workspace.adapter(), &choscordb::EngineAdapter::profileFailed);
+    tls->setCurrentIndex(tls->findData("verify_full"));
     save->click();
     QVERIFY(status->text().contains("Unix"));
     QVERIFY(status->text().contains("TLS"));
@@ -206,6 +226,7 @@ void WorkspaceTest::mysqlConnectionFormExplainsOptionalDatabaseAndPreservesLiter
     QTRY_VERIFY(save->isEnabled());
     auto profile = qvariant_cast<choscordb::SavedProfile>(saved.at(0).at(1));
     QCOMPARE(profile.driver, QString("mysql"));
+    QCOMPARE(profile.tls, QString("disable"));
     QVERIFY(profile.database.isEmpty());
     QCOMPARE(profile.host, QString("[::1]"));
     QCOMPARE(profile.user, QString(" operator "));

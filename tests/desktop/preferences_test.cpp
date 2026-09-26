@@ -1,6 +1,8 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
+#include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/shortcut_catalog.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -10,6 +12,7 @@
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QFile>
+#include <QHBoxLayout>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
@@ -24,6 +27,43 @@
 class PreferencesTest : public QObject {
     Q_OBJECT
   private slots:
+    void appToolsUseSharedDialogSections_data() {
+        QTest::addColumn<bool>("exportTool");
+        QTest::newRow("preferences") << false;
+        QTest::newRow("export") << true;
+    }
+    void appToolsUseSharedDialogSections() {
+        QFETCH(bool, exportTool);
+        choscordb::EngineAdapter adapter;
+        std::unique_ptr<QDialog> dialog;
+        if (exportTool)
+            dialog = std::make_unique<choscordb::ExportDialog>(&adapter, nullptr);
+        else
+            dialog = std::make_unique<choscordb::PreferencesDialog>(
+                &adapter, QList<choscordb::ShortcutDescriptor>{});
+        dialog->show();
+        auto* sections = dialog->findChild<choscordb::design::DialogSections*>();
+        QVERIFY(sections);
+        auto* header = sections->headerLayout()->parentWidget();
+        auto* body = sections->bodyLayout()->parentWidget();
+        auto* footer = sections->footerLayout()->parentWidget();
+        const auto metrics =
+            choscordb::design::resolveMetrics(choscordb::design::Density::Compact, true);
+        QCOMPARE(header->height(), metrics.modalHeaderHeight);
+        QCOMPARE(sections->headerLayout()->contentsMargins().left(), metrics.modalContentInset);
+        QCOMPARE(sections->footerLayout()->contentsMargins().left(), metrics.modalFooterInset);
+        QCOMPARE(footer->property("designSurface").toString(), QString("muted"));
+        auto* dismiss =
+            dialog->findChild<QPushButton*>(exportTool ? "exportDismiss" : "preferencesDismiss");
+        auto* close =
+            dialog->findChild<QPushButton*>(exportTool ? "exportClose" : "preferencesClose");
+        QVERIFY(dismiss && header->isAncestorOf(dismiss));
+        QVERIFY(close && footer->isAncestorOf(close));
+        auto* content =
+            dialog->findChild<QWidget*>(exportTool ? "exportFormat" : "preferencesSections");
+        QVERIFY(content && body->isAncestorOf(content));
+        dialog->reject();
+    }
     void appToolsContainFocusAndRestoreInvoker_data() {
         QTest::addColumn<bool>("exportTool");
         QTest::newRow("preferences") << false;

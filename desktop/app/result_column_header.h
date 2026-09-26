@@ -1,5 +1,6 @@
 #pragma once
 
+#include "design_system/fonts/fonts.h"
 #include "design_system/icons.h"
 #include "models/result_table_model.h"
 #include <QHeaderView>
@@ -28,8 +29,7 @@ class ResultColumnHeader final : public QHeaderView {
             model()
                 ->headerData(logicalIndex, Qt::Horizontal, ResultTableModel::HeaderTypeRole)
                 .toString();
-        QFont small = font();
-        small.setPointSizeF(std::max(8.0, small.pointSizeF() - 1.0));
+        const QFont small = design::resolveTypography(design::TypographyRole::Small);
         const int icon =
             model()->headerData(logicalIndex, Qt::Horizontal, ResultTableModel::HeaderKeyRole)
                     .toBool()
@@ -85,8 +85,7 @@ class ResultColumnHeader final : public QHeaderView {
                           Qt::AlignLeft | Qt::AlignVCenter, shownName);
         x += fontMetrics().horizontalAdvance(shownName) + 7;
         if (!type.isEmpty()) {
-            QFont small = font();
-            small.setPointSizeF(std::max(8.0, small.pointSizeF() - 1.0));
+            const QFont small = design::resolveTypography(design::TypographyRole::Small);
             painter->setFont(small);
             QColor secondary = text;
             secondary.setAlphaF(0.65);
