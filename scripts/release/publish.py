@@ -260,7 +260,7 @@ class GitHubStore:
                 "--verify-tag",
                 "--draft",
                 "--title",
-                "ChoscorDB " + tag[1:],
+                tag,
                 "--notes-file",
                 str(notes),
             ]

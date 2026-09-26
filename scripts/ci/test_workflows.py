@@ -63,7 +63,7 @@ def validate_ci(ci):
             "github.com/rhysd/actionlint/cmd/actionlint@v1.7.7",
             'echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"',
             "cargo install cargo-deny --version 0.20.2 --locked",
-            "clang-format-23",
+            "brew install clang-format",
         ),
     )
 
@@ -71,11 +71,7 @@ def validate_ci(ci):
     require_values(
         platform,
         (
-            "fail-fast: false",
-            "ubuntu-24.04",
-            "windows-2022",
             "macos-15",
-            "macos-15-intel",
             "RUSTFLAGS: -D warnings",
             "quality.py rust-check",
             "quality.py rust-clippy",
@@ -90,7 +86,7 @@ def validate_ci(ci):
     require_values(
         static,
         (
-            "clang-tidy-23",
+            "brew install llvm include-what-you-use",
             "choscordb-clang-tidy",
             "choscordb-header-check",
             "choscordb-iwyu",
@@ -102,11 +98,20 @@ def validate_ci(ci):
     require_values(
         postgres,
         (
-            "postgresql-17",
+            "brew install postgresql@17",
             "max-parallel: 1",
             "postgres_fixture.py start",
             "--include-ignored --test-threads=1",
             "quality.py native-tests",
+        ),
+    )
+    mysql = yaml_block(ci, "mysql-integration", 2)
+    require_values(
+        mysql,
+        (
+            "brew install mysql@8.4",
+            "mysql_ci_fixture.py start",
+            "mysql_ci_fixture.py stop",
         ),
     )
     if "cargo audit" in ci or re.search(r"retry|rerun-failed", ci, re.IGNORECASE):
@@ -145,8 +150,8 @@ def validate_coverage(coverage):
         )
     if re.search(r"fail-under|threshold", coverage, re.IGNORECASE):
         raise AssertionError("coverage is artifact-only during baseline collection")
-    rust = yaml_block(coverage, "rust", 2)
-    require_values(rust, ("pkg-config", "libdbus-1-dev", "libssl-dev"))
+    cpp = yaml_block(coverage, "cpp", 2)
+    require_values(cpp, ("brew install llvm", "6.8.3/macos:"))
 
 
 class WorkflowPolicyTests(unittest.TestCase):
@@ -171,6 +176,15 @@ class WorkflowPolicyTests(unittest.TestCase):
                     nearby = text[checkout.start() : checkout.start() + 240]
                     self.assertIn("persist-credentials: false", nearby)
 
+    def test_every_job_uses_apple_silicon_macos(self):
+        for name, content in self.files.items():
+            with self.subTest(workflow=name):
+                runners = re.findall(r"(?m)^\s+runs-on:\s*(.+)$", content)
+                self.assertTrue(runners)
+                self.assertEqual(set(runners), {"macos-15"})
+                self.assertNotIn("apt-get", content)
+                self.assertNotIn("services:", content)
+
     def test_ci_has_required_blocking_and_advisory_jobs(self):
         validate_ci(self.files["ci.yml"])
 
@@ -191,7 +205,7 @@ class WorkflowPolicyTests(unittest.TestCase):
         require_values(stress, ("--repeat until-fail:20", "stop on the first failure"))
         self.assertNotRegex(dynamic.lower(), r"retry|rerun-failed")
 
-    def test_linux_cmake_prefix_paths_use_platform_separator(self):
+    def test_macos_cmake_prefix_paths_use_platform_separator(self):
         for name in ("ci.yml", "coverage.yml", "dynamic-analysis.yml"):
             with self.subTest(workflow=name):
                 values = re.findall(
@@ -199,8 +213,8 @@ class WorkflowPolicyTests(unittest.TestCase):
                 )
                 self.assertTrue(values)
                 for value in values:
-                    self.assertIn("gcc_64:${{ github.workspace }}", value)
-                    self.assertNotIn("gcc_64;${{ github.workspace }}", value)
+                    self.assertIn("macos:${{ github.workspace }}", value)
+                    self.assertNotIn("macos;${{ github.workspace }}", value)
 
     def test_dependabot_and_cargo_policy_cover_all_dependency_classes(self):
         dependabot = (ROOT / ".github" / "dependabot.yml").read_text()

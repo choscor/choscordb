@@ -149,14 +149,7 @@ def actionlint_tool():
 
 
 def actionlint():
-    run_command(
-        [
-            actionlint_tool(),
-            "-color",
-            "-ignore",
-            'label "macos-15-intel" is unknown',
-        ]
-    )
+    run_command([actionlint_tool(), "-color"])
 
 
 def python_tests():

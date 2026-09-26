@@ -41,7 +41,7 @@
       "binaryDir": "${sourceDir}/build/sanitizers",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang-23",
-        "CMAKE_CXX_COMPILER": "clang++-23",
+        "CMAKE_CXX_COMPILER": "clang++",
         "CHOSCORDB_ENABLE_SANITIZERS": "ON"
       }
     },
@@ -51,7 +51,7 @@
       "binaryDir": "${sourceDir}/build/coverage",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang-23",
-        "CMAKE_CXX_COMPILER": "clang++-23",
+        "CMAKE_CXX_COMPILER": "clang++",
         "CHOSCORDB_ENABLE_COVERAGE": "ON"
       }
     },

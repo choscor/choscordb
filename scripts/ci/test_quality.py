@@ -44,12 +44,7 @@ class QualityCommandTest(unittest.TestCase):
                 [quality.PYTHON, "scripts/ci/ui_consistency.py"],
                 ["ruff", "check", "scripts", "examples"],
                 ["ruff", "format", "--check", "scripts", "examples"],
-                [
-                    "actionlint",
-                    "-color",
-                    "-ignore",
-                    'label "macos-15-intel" is unknown',
-                ],
+                ["actionlint", "-color"],
                 [
                     quality.PYTHON,
                     "-m",

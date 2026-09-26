@@ -367,6 +367,22 @@ if args[0]=='api':
             self.assertIn(
                 [
                     "release",
+                    "create",
+                    "v1.0.0",
+                    "--repo",
+                    "choscor/choscordb",
+                    "--verify-tag",
+                    "--draft",
+                    "--title",
+                    "v1.0.0",
+                    "--notes-file",
+                    str(self.root / "notes.md"),
+                ],
+                commands,
+            )
+            self.assertIn(
+                [
+                    "release",
                     "edit",
                     "v1.0.0",
                     "--repo",

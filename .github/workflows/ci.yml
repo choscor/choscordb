@@ -12,7 +12,7 @@ concurrency:
 jobs:
   quality:
     name: Deterministic quality
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 30
     env:
       RUSTFLAGS: -D warnings
@@ -29,19 +29,12 @@ jobs:
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           cargo install cargo-deny --version 0.20.2 --locked
-          curl --fail --show-error --silent https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor --yes --output /usr/share/keyrings/apt.llvm.org.gpg
-          echo 'deb [signed-by=/usr/share/keyrings/apt.llvm.org.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' | sudo tee /etc/apt/sources.list.d/llvm23.list
-          sudo apt-get update
-          sudo apt-get install --yes clang-format-23 pkg-config libdbus-1-dev
+          brew install clang-format
       - name: Run fast repository quality gates
         run: python scripts/ci/quality.py fast
   platform:
-    name: Rust and native (${{ matrix.runner }})
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-24.04, windows-2022, macos-15, macos-15-intel]
-    runs-on: ${{ matrix.runner }}
+    name: Rust and native (macos-15)
+    runs-on: macos-15
     timeout-minutes: 75
     env:
       CARGO_TERM_COLOR: always
@@ -55,15 +48,6 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        if: runner.os == 'Windows'
-        with:
-          arch: x64
-      - name: Install Linux native dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes build-essential pkg-config libdbus-1-dev libssl-dev fonts-dejavu-core libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
       - name: Install pinned Python build tools
         run: python -m pip install --requirement scripts/ci/requirements.txt
       - name: Check all Rust targets and features
@@ -80,11 +64,11 @@ jobs:
         run: python scripts/ci/quality.py native-tests
   native-static-analysis:
     name: Native static analysis (LLVM 23)
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 60
     env:
       QT_QPA_PLATFORM: offscreen
-      CMAKE_PREFIX_PATH: ${{ github.workspace }}/build/ci/qt/6.8.3/gcc_64:${{ github.workspace }}/build/ci/qscintilla
+      CMAKE_PREFIX_PATH: ${{ github.workspace }}/build/ci/qt/6.8.3/macos:${{ github.workspace }}/build/ci/qscintilla
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -92,15 +76,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
-      - name: Install native and LLVM 23 tools
+      - name: Install LLVM 23 and IWYU tools
         run: |
           python -m pip install --requirement scripts/ci/requirements.txt
-          sudo apt-get update
-          sudo apt-get install --yes build-essential pkg-config libdbus-1-dev libssl-dev libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
-          curl --fail --show-error --silent https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor --yes --output /usr/share/keyrings/apt.llvm.org.gpg
-          echo 'deb [signed-by=/usr/share/keyrings/apt.llvm.org.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' | sudo tee /etc/apt/sources.list.d/llvm23.list
-          sudo apt-get update
-          sudo apt-get install --yes clang-23 clang-tidy-23 iwyu
+          brew install llvm include-what-you-use
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
       - name: Install Qt and verified QScintilla sources
         run: python scripts/ci/quality.py native-dependencies
       - name: Configure LLVM analysis
@@ -118,7 +98,7 @@ jobs:
           cmake --build --preset iwyu --target choscordb-iwyu
   postgres-integration:
     name: PostgreSQL 17 integration (sequential)
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 60
     strategy:
       max-parallel: 1
@@ -134,11 +114,7 @@ jobs:
           python-version: '3.12'
       - name: Install PostgreSQL 17 and native dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-common build-essential pkg-config libdbus-1-dev libssl-dev fonts-dejavu-core libgl1-mesa-dev libegl1-mesa-dev libfontconfig1-dev libfreetype6-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1
-          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-          sudo apt-get install --yes postgresql-17
-          sudo systemctl stop postgresql.service
+          brew install postgresql@17
           python -m pip install --requirement scripts/ci/requirements.txt
       - name: Build native integration tests
         run: |
@@ -146,7 +122,7 @@ jobs:
           python scripts/ci/quality.py native-build
       - name: Start owned PostgreSQL fixture
         run: |
-          python scripts/integration/postgres_fixture.py start --bin-dir /usr/lib/postgresql/17/bin
+          python scripts/integration/postgres_fixture.py start --bin-dir "$(brew --prefix postgresql@17)/bin"
           python scripts/integration/postgres_fixture.py env | jq --raw-output 'to_entries[] | "\(.key)=\(.value)"' >> "$GITHUB_ENV"
       - name: Run ignored driver integration suites sequentially
         run: cargo test -p choscordb-driver-postgres --locked -- --include-ignored --test-threads=1
@@ -167,30 +143,28 @@ jobs:
         run: python scripts/integration/postgres_fixture.py stop
   mysql-integration:
     name: MySQL 8.4 integration
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 30
-    services:
-      mysql:
-        image: mysql:8.4
-        env:
-          MYSQL_ROOT_PASSWORD: choscordb-test-password
-          MYSQL_DATABASE: choscordb_test
-        ports:
-          - 33306:3306
-        options: >-
-          --health-cmd="mysqladmin ping --silent"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Install TLS build dependencies
+      - name: Start local MySQL 8.4 fixture
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes pkg-config libssl-dev libdbus-1-dev
+          brew install mysql@8.4
+          python scripts/integration/mysql_ci_fixture.py start --bin-dir "$(brew --prefix mysql@8.4)/bin"
       - name: Run MySQL driver integration tests
         run: cargo test -p choscordb-driver-mysql --lib --test live --test editing --locked -- --include-ignored --test-threads=1
       - name: Run MySQL core integration tests
         run: cargo test -p choscordb-core --test mysql --locked -- --include-ignored --test-threads=1
+      - name: Preserve MySQL failure logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mysql-8.4-logs
+          path: build/integration/mysql/server.log
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Stop local MySQL fixture
+        if: always()
+        run: python scripts/integration/mysql_ci_fixture.py stop

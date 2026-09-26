@@ -1,13 +1,13 @@
 # Continuous integration
 
 The checked-in workflows run on pull requests, pushes to `main`/`master`, and
-manual dispatch. Superseded runs are cancelled, matrix fail-fast is disabled,
+manual dispatch. Superseded runs are cancelled,
 jobs have explicit timeouts, checkout credentials are not persisted, and
 permissions default to read-only.
 
 The merge-blocking layer is deterministic quality (format, Ruff, actionlint and
-both Python suites), the four-platform Rust/native matrix, PostgreSQL 17
-integration, full cargo-deny policy, and pull-request dependency review.
+both Python suites), Apple Silicon macOS Rust/native checks, PostgreSQL 17 and
+MySQL 8.4 integration, full cargo-deny policy, and pull-request dependency review.
 Clang-tidy and CodeQL are introduced as baseline-first gates: existing findings
 must be reviewed before their analysis policy is made required. The initial
 clang-tidy workflow step is therefore explicitly nonblocking while still
@@ -19,10 +19,7 @@ advisory.
 
 | Runner | Architecture | Qt package | Compiler |
 |---|---|---|---|
-| `ubuntu-24.04` | x64 | Qt 6.8.3 `linux_gcc_64` | GCC |
-| `windows-2022` | x64 | Qt 6.8.3 `win64_msvc2022_64` | MSVC 2022 |
 | `macos-15` | arm64 | Qt 6.8.3 `clang_64` universal package | Apple Clang |
-| `macos-15-intel` | x64 | Qt 6.8.3 `clang_64` universal package | Apple Clang |
 
 These labels avoid architecture changes behind `macos-latest`. Rust 1.97.1 is
 the sole supported Rust toolchain for this phase. CI uses Python 3.12, Qt 6.8.3,
@@ -32,9 +29,9 @@ Ninja 1.11.1.4, actionlint 1.7.7, and cargo-deny 0.20.2. Patch updates to LLVM
 0.6.21 and lcov2xml 1.0.9. Python tool pins live in
 `scripts/ci/requirements.txt`.
 
-Qt installation uses the project's [documented aqt CLI](https://aqtinstall.readthedocs.io/en/v3.3.0/cli.html). Architecture names were checked against live `aqt list-qt ... --arch 6.8.3` metadata for all three hosts. macOS QScintilla is compiled only for the runner's native architecture. `MACOSX_DEPLOYMENT_TARGET=13.0` is shared by Rust's native dependencies, qmake, and CMake in CI. This is a build setting, not evidence of an installation smoke test on macOS 13.
+Qt installation uses the project's [documented aqt CLI](https://aqtinstall.readthedocs.io/en/v3.3.0/cli.html). macOS QScintilla is compiled only for the runner's native architecture. `MACOSX_DEPLOYMENT_TARGET=13.0` is shared by Rust's native dependencies, qmake, and CMake in CI. This is a build setting, not evidence of an installation smoke test on macOS 13.
 
-The unsigned CI matrix remains a development compatibility check. Production
+The unsigned macOS CI build remains a development compatibility check. Production
 macOS releases use a separate isolated toolchain with an arm64, macOS 26.0 target
 for application code, Rust/native dependencies, and QScintilla. The release
 verifier inspects every bundled Mach-O architecture and minimum OS. See
@@ -42,7 +39,7 @@ verifier inspects every bundled Mach-O architecture and minimum OS. See
 Neither CI nor a successful local macOS 26.5 run proves launch on macOS 26.0;
 that manual check is required before the first public release.
 
-Windows enters the [MSVC developer environment](https://github.com/ilammy/msvc-dev-cmd) before invoking Rust, qmake/nmake, or CMake/Ninja. Windows steps use the default PowerShell shell, avoiding the GNU `link.exe` collision associated with a Bash shell. Qt's DLL directory and QScintilla's DLL directory are added to the subprocess PATH during tests. Linux installs Qt's X11/font/OpenGL runtime dependencies and D-Bus development headers for the native Secret Service credential adapter; tests use `QT_QPA_PLATFORM=offscreen` on every OS. This exercises widget/model logic, not a real window-manager accessibility or packaging test.
+Native tests use `QT_QPA_PLATFORM=offscreen`. This exercises widget/model logic, not a real window-manager accessibility or packaging test.
 
 ## QScintilla bootstrap
 
@@ -66,11 +63,11 @@ python3 scripts/ci/bootstrap_qscintilla.py \
   --jobs 2
 ```
 
-Use `--archive /path/to/QScintilla_src-2.14.1.tar.gz` for a previously downloaded source archive; checksum verification still runs. On Windows, invoke the script from an x64 MSVC developer shell and use `qmake.exe`.
+Use `--archive /path/to/QScintilla_src-2.14.1.tar.gz` for a previously downloaded source archive; checksum verification still runs.
 
 ## Reproducing the jobs
 
-Install Python 3.12+, Rustup, the native C++ toolchain, and the Linux packages listed in the workflow when applicable. Use a Python virtual environment for local installs.
+Install Python 3.12+, Rustup, the native C++ toolchain, and the Homebrew packages listed in the workflows. Use a Python virtual environment for local installs.
 
 ```sh
 python -m pip install -r scripts/ci/requirements.txt
@@ -139,7 +136,7 @@ available. See [C++ file size](cpp-file-size.md) for rationale and analyzer opti
 
 ## PostgreSQL integration
 
-The Linux integration job installs PostgreSQL 17, starts the repository-owned
+The macOS integration job installs PostgreSQL 17, starts the repository-owned
 fixture, exports its TLS/SCRAM environment, and runs the ignored driver and core
 suites plus native CTest sequentially. The restart suite has exclusive fixture
 control. It preserves TLS, cancellation, restart, and cleanup evidence and
@@ -147,6 +144,10 @@ always attempts to stop the marked cluster. Reproduce it exactly using
 [`docs/testing/postgres.md`](testing/postgres.md). The native credential-store
 round trip remains manual because unattended OS keychains may prompt or be
 unavailable.
+
+The MySQL 8.4 job starts a local, isolated server on port 33306 because GitHub
+Actions service containers require Linux runners. It runs the ignored driver
+and core suites, preserves the server log, and stops the marked server.
 
 ## Coverage artifacts
 
@@ -174,7 +175,7 @@ weekly grouped Cargo, pip, and GitHub Actions updates; it never auto-merges.
 
 After the first remote runs establish stable names, the owner may configure a
 GitHub ruleset for `main`/`master` requiring the green deterministic-quality
-(including Cargo policy), four platform, PostgreSQL integration, and dependency-review
+(including Cargo policy), macOS native, database integration, and dependency-review
 checks. Do not require an approving review while there is one contributor.
 Repository settings are owner-applied; workflow files do not claim to change
 them.
@@ -187,8 +188,8 @@ This check covers Cargo packages, including build and test dependencies. It does
 
 ## Verification boundaries
 
-Local success does not prove that GitHub's Windows, Linux, Intel macOS, arm64
-macOS, PostgreSQL, CodeQL, coverage, or scheduled jobs passed. Until these files
+Local success does not prove that GitHub's arm64 macOS, database integration,
+CodeQL, coverage, or scheduled jobs passed. Until these files
 are pushed, remote execution awaits a maintainer run. Preserve that distinction
 in release notes and handoffs.
 
