@@ -29,3 +29,16 @@ relevant CTest targets, then the full native suite when dependencies are present
 
 Design-system edits must also follow `desktop/design_system/AGENTS.md`, including
 the Light and Dark gallery specimen and its test.
+
+# Commit messages
+
+Use Conventional Commits. Every commit message must include a type, scope,
+description, body, and footer. Separate each section with a blank line:
+
+```
+<type>(<scope>): <description>
+
+<body>
+
+<footer>
+```
