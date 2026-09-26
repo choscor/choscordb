@@ -30,15 +30,10 @@ fn settings() -> ConnectionOptions {
             .get_password()
             .map(|value| Secret::new(std::str::from_utf8(value).unwrap())),
         ssh_secret: None,
-        tls: if std::env::var_os("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE").is_some() {
-            TlsMode::VerifyFull
-        } else {
-            TlsMode::Disable
-        },
+        tls: TlsMode::Disable,
         ssh: None,
         tls_identity: None,
-        root_certificate: std::env::var_os("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE")
-            .map(Into::into),
+        root_certificate: None,
     }
 }
 

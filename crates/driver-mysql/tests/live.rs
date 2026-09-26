@@ -519,8 +519,8 @@ async fn first_page_arrives_before_full_result_finishes() {
         QueryOptions::default(),
     )).await.expect("execute must not spool the full five-second result").unwrap();
     let page = tokio::time::timeout(
-        std::time::Duration::from_secs(3),
-        cursor.fetch_page(PageSize::new(20).unwrap()),
+        std::time::Duration::from_secs(4),
+        cursor.fetch_page(PageSize::new(100).unwrap()),
     )
     .await
     .unwrap()

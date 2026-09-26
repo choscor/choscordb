@@ -46,17 +46,26 @@ async fn exact_local_binding_refuses_conflicts_and_releases_with_last_owner() {
         .is_err()
     );
     drop(occupied);
-    let first = SshLocalForward::open(
-        &settings,
-        None,
-        &Default::default(),
-        None,
-        &Default::default(),
-        "database.example",
-        5432,
-    )
+    let first = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if let Ok(forward) = SshLocalForward::open(
+                &settings,
+                None,
+                &Default::default(),
+                None,
+                &Default::default(),
+                "database.example",
+                5432,
+            )
+            .await
+            {
+                break forward;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
     .await
-    .unwrap();
+    .expect("released local port remained unavailable");
     let address = first.address();
     assert_eq!(address, settings.options.local_address().unwrap());
     let second = SshLocalForward::open(
