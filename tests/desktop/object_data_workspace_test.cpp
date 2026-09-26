@@ -6,6 +6,7 @@
 #include "bridge/engine_adapter.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/embedded_popup.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/result_table_model.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -55,6 +56,24 @@ class ObjectDataWorkspaceTest : public QObject {
     }
 
   private slots:
+    void valueLoadFailureUsesWindowToast() {
+        choscordb::EngineAdapter adapter;
+        QWidget host;
+        host.resize(900, 600);
+        host.show();
+        choscordb::ValueDetailDialog detail(&adapter, &host);
+        detail.openValue(777, 888);
+        QTRY_VERIFY(
+            host.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly));
+        auto* toast =
+            host.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
+        QTRY_VERIFY2(toast->text().contains("Unable to load value"), qPrintable(toast->text()));
+        QCOMPARE(toast->property("variant").toString(), QString("danger"));
+        QVERIFY(toast->x() >= host.width() / 2);
+        QVERIFY(toast->y() >= host.height() / 2);
+        QVERIFY(detail.findChild<QLabel*>("valueStatus")->text().isEmpty());
+    }
+
     void resultGridUsesCompactHeaderAndAlternatingRows() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
@@ -383,6 +402,7 @@ class ObjectDataWorkspaceTest : public QObject {
         QVERIFY(!filterBar->findChild<QListWidget*>("resultFilterConditions"));
         QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
                      QString("completed"));
+        QTRY_VERIFY(data.findChild<QPushButton*>("objectDataAddRow")->isEnabled());
         QCoreApplication::processEvents();
         triggerTableAction(grid, "Duplicate row");
         QCOMPARE(model->rowCount(), 2);

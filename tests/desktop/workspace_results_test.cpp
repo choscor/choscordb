@@ -8,6 +8,7 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/field/field.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/history_model.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/history_dock/history_dock.h"
@@ -365,11 +366,19 @@ void WorkspaceTest::exportsOriginalResultAfterBrowsing() {
     QVERIFY(dialog);
     const auto destination = directory.filePath("rows.csv");
     dialog->startExportTo(destination, "csv");
-    auto* status = dialog->findChild<QLabel*>("exportStatus");
-    QVERIFY(status);
     QTRY_VERIFY(f.exportResult.isEnabled());
+    auto* toast =
+        f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
+    QVERIFY(toast);
+    QTRY_VERIFY(toast->isVisible());
+    QVERIFY(toast->text().contains("Export complete"));
+    QCOMPARE(toast->property("variant").toString(), QString("success"));
+    QCOMPARE(toast->parentWidget(), &f.parent);
+    QVERIFY(toast->x() >= f.parent.width() / 2);
+    QVERIFY(toast->y() >= f.parent.height() / 2);
+    QVERIFY(!dialog->findChild<QLabel*>("exportStatus"));
     QFile output(destination);
-    QVERIFY2(output.open(QIODevice::ReadOnly), qPrintable(status->text()));
+    QVERIFY(output.open(QIODevice::ReadOnly));
     const auto bytes = output.readAll();
     QCOMPARE(bytes.count('\n'), 1002);
     QVERIFY(bytes.startsWith("\"x\"\r\n\"1\"\r\n"));
@@ -431,11 +440,13 @@ void WorkspaceTest::exportFailureLeavesResultUsable() {
     QVERIFY(dialog);
     dialog->startExportTo(directory.filePath("missing/rows.csv"), "csv");
     QTRY_VERIFY(!dialog->isRunning());
-    auto* status = dialog->findChild<QLabel*>("exportStatus");
-    QVERIFY(status);
-    QVERIFY(!status->text().isEmpty());
-    QVERIFY(status->text().contains("failed", Qt::CaseInsensitive));
-    QCOMPARE(status->textFormat(), Qt::PlainText);
+    auto* toast =
+        f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
+    QVERIFY(toast);
+    QTRY_VERIFY(toast->isVisible());
+    QVERIFY(toast->text().contains("failed", Qt::CaseInsensitive));
+    QCOMPARE(toast->property("variant").toString(), QString("danger"));
+    QVERIFY(!dialog->findChild<QLabel*>("exportStatus"));
     QVERIFY(f.run.isEnabled());
     QCOMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("42"));
     QVERIFY(QDir(directory.path())

@@ -167,8 +167,11 @@ void ValueDetailDialog::fail(const QString& error) {
     loading_ = false;
     clearProgressToast(this);
     alignmentTarget_.reset();
-    status_->setText(tr("Unable to load value: %1").arg(error.left(1024)));
+    status_->clear();
     updateActions();
+    if (auto* toast = windowToast(this))
+        toast->showToast(tr("Error"), tr("Unable to load value: %1").arg(error.left(1024)),
+                         ToastVariant::Danger);
 }
 void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
     if (!loading_ || !query_ || event.id != *query_ || event.value_handle != handle_ ||

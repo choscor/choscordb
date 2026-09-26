@@ -8,6 +8,7 @@
 #include "design_system/menu/menu.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/tabs/tab_add_corner.h"
 #include "design_system/text_area/text_area_style.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
@@ -216,6 +217,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         layout->addWidget(dock);
     } else if (id == "tabs") {
         auto* tabs = new QTabWidget(host);
+        new TabAddCorner(tabs);
         tabs->tabBar()->setProperty("designTabVariant", "document");
         tabs->tabBar()->setElideMode(Qt::ElideRight);
         tabs->tabBar()->setExpanding(false);
@@ -234,9 +236,10 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         layout->addWidget(tabs, 1);
         auto* objectTabs = new QTabBar(host);
         objectTabs->setObjectName("previewObjectTabs");
-        for (const auto* label : {"Overview", "Details", "Settings", "Activity", "More"})
+        for (const auto* label : {"Columns", "Indexes", "Keys", "DDL", "Data"})
             objectTabs->addTab(label);
         objectTabs->setExpanding(false);
+        objectTabs->setCurrentIndex(3);
         layout->addWidget(objectTabs);
     } else if (id == "scrolling") {
         auto* scroll = new QScrollArea(host);
@@ -305,8 +308,9 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         auto* viewport = host->parentWidget();
         auto* toast = new choscordb::ToastRegion;
         toast->attachTo(viewport);
-        layout->addWidget(
-            new QLabel("Dismiss any notification with its top-right X button.", host));
+        layout->addWidget(new QLabel(
+            "Window notifications use a green success surface and a top-right dismiss button.",
+            host));
         auto* duration = new QSpinBox(host);
         duration->setObjectName("previewToastSeconds");
         duration->setRange(1, 30);

@@ -1,6 +1,7 @@
 #include "widgets/profile_dialog/ssh_host_key_dialog.h"
 #include "design_system/button/button.h"
 #include "design_system/theme.h"
+#include "design_system/toast_region/toast_region.h"
 #include <QDir>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -135,20 +136,31 @@ void SshHostKeyDialog::updateActions() {
 void SshHostKeyDialog::finishApproval(const QString& outcome) {
     pending_ = false;
     approved_ = outcome == "approved";
-    status_->setText(
-        approved_ ? tr("Key approved. Retry the connection to use it.")
-                  : tr("Approval outcome is unknown. Check the selected file or retry approval."));
+    status_->clear();
     retry_->setVisible(approved_);
     updateActions();
+    if (auto* toast = windowToast(this))
+        toast->showToast(approved_ ? tr("Success") : tr("Warning"),
+                         approved_ ? tr("Key approved. Retry the connection to use it.")
+                                   : tr("Approval outcome is unknown. Check the selected file or "
+                                        "retry approval."),
+                         approved_ ? ToastVariant::Success : ToastVariant::Warning);
 }
 void SshHostKeyDialog::showFailure(const QString& error) {
     pending_ = false;
-    status_->setText(error);
+    status_->clear();
     updateActions();
+    if (auto* toast = windowToast(this))
+        toast->showToast(tr("Error"), error, ToastVariant::Danger);
 }
 void SshHostKeyDialog::invalidate() {
     valid_ = false;
-    status_->setText(tr("Connection settings changed. Inspect the host keys again."));
+    status_->clear();
     updateActions();
+    if (auto* toast = windowToast(this))
+        toast->showToast(tr("Warning"),
+                         tr("Connection settings changed. Inspect the host keys "
+                            "again."),
+                         ToastVariant::Warning);
 }
 } // namespace choscordb

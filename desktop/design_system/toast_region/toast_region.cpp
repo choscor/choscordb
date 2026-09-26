@@ -1,6 +1,8 @@
 #include "design_system/toast_region/toast_region.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/icons.h"
 #include <QAccessible>
+#include <QDialog>
 #include <QEvent>
 #include <QGraphicsOpacityEffect>
 #include <QProgressBar>
@@ -131,12 +133,8 @@ void ToastRegion::display(const QString& text) {
     setVisible(!text.isEmpty());
     if (!text.isEmpty())
         placeOverlay();
-    if (!text.isEmpty()) {
-        opacity_->setOpacity(0.0);
-        fade_->setStartValue(0.0);
-        fade_->setEndValue(1.0);
-        fade_->start();
-    }
+    if (!text.isEmpty())
+        opacity_->setOpacity(1.0);
     QAccessibleEvent announcement(this, QAccessible::Alert);
     QAccessible::updateAccessibility(&announcement);
 }
@@ -153,6 +151,39 @@ void ToastRegion::clearNotice() {
     fade_->setStartValue(opacity_->opacity());
     fade_->setEndValue(0.0);
     fade_->start();
+}
+ToastRegion* windowToast(QWidget* context) {
+    if (!context)
+        return nullptr;
+    auto* host = context->window();
+    while (auto* dialog = qobject_cast<QDialog*>(host)) {
+        if (!dialog->parentWidget())
+            break;
+        auto* owner = dialog->parentWidget()->window();
+        if (owner == host)
+            break;
+        host = owner;
+    }
+    auto* toast =
+        host->findChild<ToastRegion*>(QStringLiteral("toastRegion"), Qt::FindDirectChildrenOnly);
+    if (!toast) {
+        toast = new ToastRegion(host);
+        toast->attachTo(host);
+    }
+    auto* modal = design::DialogPresentation::activeDialog(host);
+    QObject* popupOwner = modal && (context == modal || modal->isAncestorOf(context))
+                              ? modal
+                              : nullptr;
+    if (toast->property("embeddedPopupOwner").value<QObject*>() != popupOwner) {
+        toast->setProperty("embeddedPopupOwner", QVariant::fromValue(popupOwner));
+        if (popupOwner)
+            QObject::connect(popupOwner, &QObject::destroyed, toast, [toast, popupOwner] {
+                if (toast->property("embeddedPopupOwner").value<QObject*>() == popupOwner)
+                    toast->setProperty("embeddedPopupOwner",
+                                       QVariant::fromValue(static_cast<QObject*>(nullptr)));
+            });
+    }
+    return toast;
 }
 ToastRegion* progressToast(QWidget* host) {
     if (!host)

@@ -31,11 +31,11 @@ void ProfileDialog::createConnectionControls(QFormLayout* security, QFormLayout*
     tlsClientIdentity_ = line("profileTlsClientIdentity");
     tlsClientIdentity_->setPlaceholderText(
         tr("Optional PKCS#12 client certificate (.p12 or .pfx)"));
-    security->addRow(tr("Client identity"), tlsClientIdentity_);
+    security->addRow(tr("Client identity"), validated(tlsClientIdentity_));
     tlsSecret_ = line("profileTlsSecret");
     tlsSecret_->setEchoMode(QLineEdit::Password);
     tlsSecret_->setPlaceholderText(tr("PKCS#12 password; leave blank for an unencrypted identity"));
-    security->addRow(tr("Client identity password"), tlsSecret_);
+    security->addRow(tr("Client identity password"), validated(tlsSecret_));
     rememberTlsSecret_ = new QCheckBox(tr("Save identity password in OS credential store"), form_);
     rememberTlsSecret_->setObjectName("profileRememberTlsSecret");
     connect(rememberTlsSecret_, &QCheckBox::toggled, this, changed);

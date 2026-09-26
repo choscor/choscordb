@@ -9,5 +9,5 @@ QPlainTextEdit, QTextEdit {
 QPlainTextEdit[designRole="codePreview"] {
   border: none;
   border-radius: 0;
-  padding: 12px;
+  padding: 0;
 }

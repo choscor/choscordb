@@ -1,4 +1,5 @@
 #include "design_system/field/field.h"
+#include "design_system/toast_region/toast_region.h"
 #include "widgets/search_panel/search_panel.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QCheckBox>
@@ -13,6 +14,36 @@
 class SearchTest : public QObject {
     Q_OBJECT
   private slots:
+    void completedReplacementsUseSharedWindowToast() {
+        QWidget parent;
+        parent.resize(900, 600);
+        choscordb::SqlEditor editor(&parent);
+        choscordb::SearchPanel panel([&] { return &editor; }, &parent);
+        parent.show();
+        panel.showReplace();
+        editor.setText("cat cat cat");
+        panel.findChild<QLineEdit*>("searchNeedle")->setText("cat");
+        panel.findChild<QLineEdit*>("searchReplacement")->setText("dog");
+        panel.findNext();
+        QTRY_COMPARE(editor.selectedText(), QString("cat"));
+        panel.findChild<QPushButton*>("searchReplace")->click();
+        QCOMPARE(editor.text(), QString("dog cat cat"));
+        auto* toast = parent.findChild<choscordb::ToastRegion*>("toastRegion",
+                                                                 Qt::FindDirectChildrenOnly);
+        QVERIFY(toast);
+        QTRY_VERIFY(toast->isVisible());
+        QCOMPARE(toast->property("variant").toString(), QString("success"));
+        QVERIFY(toast->accessibleDescription().contains("Replaced one match."));
+        QVERIFY(!panel.findChild<QLabel*>("searchStatus")->text().contains("Replaced"));
+        QCOMPARE(toast->geometry().right(), parent.width() - 17);
+        QCOMPARE(toast->geometry().bottom(), parent.height() - 17);
+
+        panel.findChild<QPushButton*>("searchReplaceAll")->click();
+        QTRY_COMPARE(editor.text(), QString("dog dog dog"));
+        QTRY_VERIFY(toast->accessibleDescription().contains("Replaced 2 matches."));
+        QCOMPARE(toast->property("variant").toString(), QString("success"));
+        QVERIFY(!panel.findChild<QLabel*>("searchStatus")->text().contains("Replaced"));
+    }
     void replaceAllShowsEmptySearchErrorBelowFindField() {
         QWidget parent;
         choscordb::SqlEditor editor(&parent);
@@ -26,6 +57,42 @@ class SearchTest : public QObject {
             dynamic_cast<choscordb::design::FieldValidation*>(needle->parentWidget());
         QVERIFY(validation);
         QVERIFY(validation->error().contains("text to find"));
+    }
+    void replaceAllShowsOversizedPatternErrorBelowFindField() {
+        QWidget parent;
+        choscordb::SqlEditor editor(&parent);
+        choscordb::SearchPanel panel([&] { return &editor; }, &parent);
+        parent.show();
+        panel.showReplace();
+        editor.setText("cat");
+        auto* needle = panel.findChild<QLineEdit*>("searchNeedle");
+        needle->setText(QString(16 * 1024 + 1, QLatin1Char('x')));
+        panel.findChild<QPushButton*>("searchReplaceAll")->click();
+        auto* validation =
+            dynamic_cast<choscordb::design::FieldValidation*>(needle->parentWidget());
+        QVERIFY(validation);
+        QTRY_VERIFY(validation->error().contains("resource limits"));
+        QVERIFY(!panel.findChild<QLabel*>("searchStatus")->text().contains("resource limits"));
+    }
+    void replaceAllShowsOversizedReplacementErrorBelowReplacementField() {
+        QWidget parent;
+        choscordb::SqlEditor editor(&parent);
+        choscordb::SearchPanel panel([&] { return &editor; }, &parent);
+        parent.show();
+        panel.showReplace();
+        editor.setText("cat");
+        panel.findChild<QLineEdit*>("searchNeedle")->setText("cat");
+        auto* replacement = panel.findChild<QLineEdit*>("searchReplacement");
+        replacement->setText(QString(6 * 1024 * 1024, QChar(0x0800)));
+        panel.findChild<QPushButton*>("searchReplaceAll")->click();
+        auto* validation =
+            dynamic_cast<choscordb::design::FieldValidation*>(replacement->parentWidget());
+        QVERIFY(validation);
+        QVERIFY(validation->error().contains("16 MiB"));
+        QCOMPARE(editor.text(), QString("cat"));
+        QVERIFY(panel.findChild<QPushButton*>("searchReplaceAll")->isEnabled());
+        QVERIFY(parent.findChild<choscordb::ToastRegion*>("toastRegion",
+                                                          Qt::FindDirectChildrenOnly) == nullptr);
     }
     void replaceOneRejectsMalformedUnicode() {
         QWidget parent;

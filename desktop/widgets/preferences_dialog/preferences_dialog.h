@@ -60,7 +60,6 @@ class PreferencesDialog final : public DialogShell {
     QCheckBox* recordHistory_;
     SqlEditor* preview_;
     QWidget* pages_;
-    QLabel* status_;
     QLabel* appearanceStatus_ = nullptr;
     QString appearanceWarning_;
     bool forcedContrast_ = false;

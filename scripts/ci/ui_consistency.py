@@ -22,6 +22,7 @@ STOCK_CONTROLS = {
     "QListWidget",
     "QMenu",
     "QPlainTextEdit",
+    "QProgressBar",
     "QSpinBox",
     "QTableView",
     "QTextEdit",
@@ -35,6 +36,7 @@ DESIGN_COMPOSITES = {
     "DialogSections",
     "FieldValidation",
     "NavigationProfileDelegate",
+    "TabAddCorner",
 }
 DESIGN_NON_VISUAL = {
     "PlatformAccessibilityMonitor",

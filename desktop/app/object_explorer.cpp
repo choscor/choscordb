@@ -42,6 +42,7 @@ class DdlEditor final : public QPlainTextEdit {
         gutter_->setAccessibleName(tr("DDL line numbers"));
         gutter_->installEventFilter(this);
         setLineWrapMode(QPlainTextEdit::NoWrap);
+        document()->setDocumentMargin(0);
         connect(this, &QPlainTextEdit::blockCountChanged, this, [this] { updateGutterWidth(); });
         connect(this, &QPlainTextEdit::updateRequest, this, [this](const QRect& rect, int dy) {
             if (dy)

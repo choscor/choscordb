@@ -1,4 +1,5 @@
 #include "widgets/profile_dialog/profile_dialog.h"
+#include "design_system/field/field.h"
 #include <QComboBox>
 #include <QFormLayout>
 #include <QLineEdit>
@@ -10,7 +11,7 @@ void ProfileDialog::createPrivateKeyControls(QFormLayout* form) {
     sshIdentitySource_->addItem(tr("Paste private key"), "inline");
     int identityRow = 0;
     QFormLayout::ItemRole identityRole;
-    form->getWidgetPosition(sshIdentityFile_, &identityRow, &identityRole);
+    form->getWidgetPosition(validationFor(sshIdentityFile_), &identityRow, &identityRole);
     form->insertRow(identityRow, tr("Private key source"), sshIdentitySource_);
     sshPrivateKey_ = new SshPrivateKeyEditor("profileSshPrivateKey", form_);
     form->insertRow(identityRow + 2, tr("Private key contents"), sshPrivateKey_);
@@ -41,7 +42,7 @@ void ProfileDialog::updatePrivateKeyControls() {
     if (auto* form = qobject_cast<QFormLayout*>(sshPrivateKey_->parentWidget()->layout())) {
         form->setRowVisible(sshIdentitySource_, key);
         form->setRowVisible(sshPrivateKey_, inlineKey);
-        form->setRowVisible(sshIdentityFile_, key && !inlineKey);
+        form->setRowVisible(validationFor(sshIdentityFile_), key && !inlineKey);
     }
 }
 SshPrivateKeyCredential ProfileDialog::privateKeyCredential(const SavedProfile& profile,

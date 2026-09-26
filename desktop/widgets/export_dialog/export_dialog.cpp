@@ -34,8 +34,7 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
       schema_(new QLineEdit(this)), table_(new QLineEdit(this)), sqlFields_(new QWidget(this)),
       browse_(new design::Button(tr("&Browse…"), this)),
       start_(new design::Button(tr("&Export"), this)),
-      cancel_(new design::Button(tr("Cancel export"), this)), status_(createInlineStatus(this)),
-      scope_(createDescription({}, this)) {
+      cancel_(new design::Button(tr("Cancel export"), this)), scope_(createDescription({}, this)) {
     browse_->setVariant(design::ButtonVariant::Outline);
     start_->setDesignIcon(design::Icon::Export);
     cancel_->setVariant(design::ButtonVariant::Secondary);
@@ -50,7 +49,6 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     dialect_->setObjectName("exportDialect");
     start_->setObjectName("exportStart");
     cancel_->setObjectName("exportCancel");
-    status_->setObjectName("exportStatus");
     format_->addItem(tr("CSV"), "csv");
     format_->addItem(tr("JSON"), "json");
     format_->addItem(tr("JSON Lines"), "jsonl");
@@ -61,9 +59,6 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     schema_->setPlaceholderText(tr("Optional"));
     table_->setToolTip(tr("One literal identifier; dots are not separators."));
     schema_->setToolTip(table_->toolTip());
-    status_->setTextFormat(Qt::PlainText);
-    status_->setWordWrap(true);
-    status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
     auto* destinationRow = new QHBoxLayout;
     destinationValidation_ = new design::FieldValidation(destination_, this);
     destinationRow->addWidget(destinationValidation_, 1);
@@ -112,7 +107,6 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     setResultViewActive(false);
     bodyLayout->addLayout(form);
     bodyLayout->addWidget(sqlFields_);
-    bodyLayout->addWidget(status_);
     bodyLayout->addStretch();
     auto* buttons = sections->footerLayout();
     auto* footer = buttons->parentWidget();
@@ -152,7 +146,7 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     connect(adapter, &EngineAdapter::exportSubmissionFailed, this,
             [this](quint64 query, const QString& error) {
                 if (submitting_ && query_ == query)
-                    status_->setText(error);
+                    submissionError_ = error;
             });
     updateActions();
 }
@@ -168,8 +162,6 @@ void ExportDialog::setQuery(quint64 query) {
         return;
     clearQuery();
     query_ = query;
-    if (!isRunning())
-        status_->setText(tr("Choose a destination and export format."));
     updateActions();
 }
 void ExportDialog::setResultViewActive(bool active) {
@@ -189,7 +181,7 @@ void ExportDialog::clearQuery() {
         return;
     }
     ++submissionToken_;
-    status_->clear();
+    submissionError_.clear();
     hide();
     updateActions();
 }
@@ -242,7 +234,7 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
     table_->setText(table.isEmpty() ? QString{} : table.last());
     dialect_->setCurrentIndex(dialect_->findData(dialect));
     submitting_ = true;
-    status_->clear();
+    submissionError_.clear();
     progressToast(this)->showProgress(tr("Export"), tr("Checking destination…"));
     start_->setText(tr("&Export"));
     updateActions();
@@ -268,11 +260,11 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
                     if (!adapter_ || query_ != query || submissionToken_ != token || !submitting_)
                         return;
                     if (answer != QMessageBox::Yes) {
-                        finish(tr("Export cancelled."), false);
+                        finish(tr("Export cancelled."), Outcome::Cancelled);
                         return;
                     }
                 }
-                status_->setText(tr("Starting export…"));
+                submissionError_.clear();
                 progressToast(this)->showProgress(tr("Export"), tr("Starting export…"));
                 const auto started =
                     adapter_->startExportDialect(query, path, format, table, dialect);
@@ -285,10 +277,9 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
                 exportQuery_ = started ? std::optional<quint64>(query) : std::nullopt;
                 submitting_ = false;
                 if (!export_) {
-                    const auto message = status_->text() == tr("Starting export…")
-                                             ? tr("Export could not be started.")
-                                             : status_->text();
-                    finish(message, true);
+                    finish(submissionError_.isEmpty() ? tr("Export could not be started.")
+                                                      : submissionError_,
+                           Outcome::Failed);
                     return;
                 }
                 updateActions();
@@ -299,13 +290,13 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
 void ExportDialog::cancel() {
     if (submitting_) {
         ++submissionToken_;
-        finish(tr("Export cancelled."), false);
+        finish(tr("Export cancelled."), Outcome::Cancelled);
         return;
     }
     if (!export_ || cancelling_ || !adapter_)
         return;
     cancelling_ = true;
-    status_->clear();
+    submissionError_.clear();
     progressToast(this)->showProgress(tr("Export"), tr("Cancelling…"));
     updateActions();
     adapter_->cancelExport(*export_);
@@ -323,23 +314,32 @@ void ExportDialog::handleEvent(const BridgeEvent& value) {
         finish(tr("Export complete: %1 rows · %2 bytes")
                    .arg(value.exported_rows)
                    .arg(value.exported_bytes),
-               false);
+               Outcome::Success);
     } else if (kind == "export_failed") {
-        finish(text(value.error), true);
+        finish(text(value.error), Outcome::Failed);
     }
 }
-void ExportDialog::finish(const QString& message, bool failed) {
+void ExportDialog::finish(const QString& message, Outcome outcome) {
     export_.reset();
     exportQuery_.reset();
     submitting_ = false;
     cancelling_ = false;
     clearProgressToast(this);
-    status_->setText(message);
-    start_->setText(failed ? tr("&Retry") : tr("&Export"));
+    submissionError_.clear();
+    start_->setText(outcome == Outcome::Failed ? tr("&Retry") : tr("&Export"));
     updateActions();
     if (closeAfter_) {
         closeAfter_ = false;
         hide();
+    }
+    if (auto* toast = windowToast(this)) {
+        const auto variant = outcome == Outcome::Success  ? ToastVariant::Success
+                             : outcome == Outcome::Failed ? ToastVariant::Danger
+                                                          : ToastVariant::Warning;
+        toast->showToast(outcome == Outcome::Success  ? tr("Success")
+                         : outcome == Outcome::Failed ? tr("Error")
+                                                      : tr("Export"),
+                         message, variant);
     }
     emit exportRunningChanged(false);
 }

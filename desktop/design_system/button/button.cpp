@@ -181,6 +181,10 @@ void Button::paintEvent(QPaintEvent*) {
         foreground = colors.sidebarAccentForeground;
         border = colors.primary;
     }
+    if (context_ == ButtonContext::TabAction && hover) {
+        background = Qt::transparent;
+        foreground = colors.primary;
+    }
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     if (!state.testFlag(QStyle::State_Enabled))

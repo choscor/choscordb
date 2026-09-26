@@ -444,7 +444,8 @@ void PreviewTest::componentFamiliesAreRendered() {
         auto* tabs = host->findChild<QTabBar*>("previewObjectTabs");
         QVERIFY(tabs);
         QCOMPARE(tabs->count(), 5);
-        QCOMPARE(tabs->currentIndex(), 0);
+        QCOMPARE(tabs->currentIndex(), 3);
+        QCOMPARE(tabs->tabText(3), QString("DDL"));
     }
 }
 

@@ -290,11 +290,16 @@ class PreferencesTest : public QObject {
         choscordb::EngineAdapter adapter;
         adapter.shutdown();
         choscordb::PreferencesDialog dialog(&adapter, {{"find", "Find", "Ctrl+F"}});
+        dialog.show();
         auto* reset = dialog.findChild<QPushButton*>("preferencesReset");
         auto* apply = dialog.findChild<QPushButton*>("preferencesApply");
         QTRY_VERIFY(reset->isEnabled());
         QVERIFY(!apply->isEnabled());
-        QVERIFY(!dialog.findChild<QLabel*>("preferencesStatus")->text().isEmpty());
+        auto* toast = dialog.findChild<choscordb::ToastRegion*>("toastRegion");
+        QVERIFY(toast);
+        QTRY_VERIFY(toast->isVisible());
+        QCOMPARE(toast->property("variant").toString(), QString("danger"));
+        QVERIFY(dialog.findChild<QLabel*>("preferencesStatus") == nullptr);
         reset->click();
         QVERIFY(apply->isEnabled());
     }
@@ -379,7 +384,9 @@ class PreferencesTest : public QObject {
         emit adapter.editorPreferencesReady(confirmed.first().at(0).toULongLong(),
                                             choscordb::EditorPreferences{});
         QCOMPARE(size->value(), 24);
-        const auto error = dialog.findChild<QLabel*>("preferencesStatus")->text();
+        auto* toast = dialog.findChild<choscordb::ToastRegion*>("toastRegion");
+        QVERIFY(toast);
+        const auto error = toast->accessibleDescription();
         QVERIFY(error.contains("SQL editor / Keyboard shortcuts"));
         QVERIFY(error.contains("Results & execution"));
         QVERIFY(error.contains("History & recovery"));

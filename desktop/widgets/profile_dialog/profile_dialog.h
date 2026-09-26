@@ -4,10 +4,13 @@
 #include "widgets/profile_dialog/ssh_hop_editor.h"
 #include "widgets/profile_dialog/ssh_private_key_editor.h"
 #include <QPointer>
+#include <QHash>
 class QComboBox;
 class QFormLayout;
 class QPlainTextEdit;
 class QLabel;
+class QDialog;
+class QHideEvent;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
@@ -15,6 +18,7 @@ class QCheckBox;
 class QSpinBox;
 namespace choscordb {
 class SshHostKeyDialog;
+class ToastRegion;
 namespace design {
 class FieldValidation;
 }
@@ -33,12 +37,16 @@ class ProfileDialog final : public DialogShell {
 
   protected:
     void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 
   private:
     void createTrustControls(QFormLayout* form);
     void inspectHostKeys(const SshHostKeyTarget& target);
     void updateTrustControls();
     void showTrustStatus(const QString& message);
+    QWidget* validated(QWidget* field);
+    design::FieldValidation* validationFor(QWidget* field) const;
+    void showFieldError(QWidget* field, const QString& message);
     void createPrivateKeyControls(QFormLayout* form);
     void updatePrivateKeyControls();
     SshPrivateKeyCredential privateKeyCredential(const SavedProfile& profile, bool saving) const;
@@ -61,7 +69,7 @@ class ProfileDialog final : public DialogShell {
     SavedProfile draft() const;
     void setDraft(const SavedProfile& profile);
     void refresh();
-    void setBusy(bool busy, const QString& message = {});
+    void setBusy(bool busy, const QString& message = {}, bool success = false);
     void updateDriver();
     bool discardChanges();
     bool validateConnectionDraft(const SavedProfile& profile);
@@ -129,6 +137,10 @@ class ProfileDialog final : public DialogShell {
     QLineEdit *proxyHost_ = nullptr, *proxyUser_ = nullptr, *proxySecret_ = nullptr;
     QSpinBox* proxyPort_ = nullptr;
     QLabel* status_;
+    QPointer<QDialog> progressDialog_;
+    QLabel* progressMessage_ = nullptr;
+    QPointer<ToastRegion> feedbackToast_;
+    QHash<QWidget*, design::FieldValidation*> validations_;
     design::FieldValidation* nameValidation_;
     QList<QPushButton*> actions_;
     QPushButton *sqliteChoice_, *postgresChoice_, *mysqlChoice_;

@@ -17,10 +17,7 @@ QTabBar::tab {
   max-height: @paneTabHeight;
   border: 0;
   border-bottom: 2px solid transparent;
-  border-top-left-radius: 5px;
-  border-top-right-radius: 5px;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+  border-radius: 0;
   padding: 0 9px;
   margin: 0 0 1px 0;
   font-size: 11px;
@@ -43,6 +40,8 @@ QTabBar::tab:selected {
 }
 
 QTabBar[designTabVariant="document"]::tab {
+  border-top-left-radius: 5px;
+  border-top-right-radius: 5px;
   min-width: 112px;
   max-width: 112px;
   min-height: @documentTabHeight;

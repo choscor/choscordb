@@ -40,7 +40,6 @@ struct MainWindow::Ui {
     QDockWidget* navigator{};
     design::Button* addConnection{};
     design::Button* refreshNavigator{};
-    design::Button* disconnectNavigator{};
     QStackedWidget* sidebarPanels{};
     QListWidget* savedConnections{};
     QLineEdit* filter{};

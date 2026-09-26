@@ -1,15 +1,18 @@
 #include "navigator_sql_workspace_test.h"
 #include "app/appearance_controller.h"
 #include "app/main_window.h"
+#include "app/main_window_widgets.h"
 #include "app/navigator_controller.h"
 #include "app/object_explorer.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/button/button.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/menu/menu.h"
+#include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "models/result_table_model.h"
@@ -205,7 +208,7 @@ void NavigatorSqlWorkspaceTest::tabContextMenuDisablesEmptyGroupsAndIgnoresEmpty
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
     QCoreApplication::processEvents();
     auto* bar = tabs->tabBar();
-    const auto empty = QPoint(bar->width() - 1, bar->tabRect(0).center().y());
+    const auto empty = QPoint(bar->width() + 1, bar->tabRect(0).center().y());
     QCOMPARE(bar->tabAt(empty), -1);
     QContextMenuEvent emptyEvent(QContextMenuEvent::Mouse, empty, bar->mapToGlobal(empty));
     QApplication::sendEvent(bar, &emptyEvent);
@@ -350,31 +353,74 @@ void NavigatorSqlWorkspaceTest::sqlHeaderSitsBetweenWorkspaceTabsAndEditor() {
 }
 
 void NavigatorSqlWorkspaceTest::workspaceTabsUseContentWidth() {
+    choscordb::main_window_detail::WorkspaceTabs standalone;
+    auto* sharedAdd = standalone.findChild<choscordb::design::Button*>("addSqlTabButton");
+    QVERIFY(sharedAdd);
+    QCOMPARE(sharedAdd->parentWidget()->parentWidget(), &standalone);
+    QCOMPARE(sharedAdd->variant(), choscordb::design::ButtonVariant::Ghost);
+    QCOMPARE(sharedAdd->text(), QString());
     choscordb::MainWindow window;
     window.resize(1280, 800);
     window.show();
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
     auto* addButton = window.findChild<QPushButton*>("addSqlTabButton");
     QVERIFY(tabs && addButton);
-    QCOMPARE(addButton->parentWidget(), tabs);
+    QCOMPARE(addButton->parentWidget()->parentWidget(), tabs);
     auto* add = window.findChild<QAction*>("newQuery");
     add->trigger();
     QTRY_VERIFY(addButton->isVisible());
     QVERIFY(!tabs->tabBar()->expanding());
     QVERIFY(tabs->tabBar()->tabRect(0).width() < tabs->tabBar()->width() / 2);
     QCoreApplication::processEvents();
+    const auto addPosition = [tabs, addButton] { return addButton->mapTo(tabs, QPoint(0, 0)); };
     const auto barRight = tabs->tabBar()->mapTo(tabs, QPoint(tabs->tabBar()->width(), 0)).x();
-    QVERIFY(addButton->x() >= barRight);
-    QVERIFY(addButton->geometry().right() < tabs->width());
+    QVERIFY(addPosition().x() < barRight);
+    QVERIFY(addPosition().x() - tabs->tabBar()->tabRect(0).right() >=
+            choscordb::design::spacing(choscordb::design::Spacing::Two));
+    QVERIFY(addPosition().x() - tabs->tabBar()->tabRect(0).right() <= 14);
+    QVERIFY(addPosition().x() + addButton->width() <= tabs->width());
+    window.resize(960, 640);
+    QCoreApplication::processEvents();
+    QVERIFY(addPosition().x() - tabs->tabBar()->tabRect(0).right() <= 14);
+    window.resize(1280, 800);
+    QCoreApplication::processEvents();
+    const auto stripColor = choscordb::design::resolvedThemeForWidget(*tabs).colors.muted;
+    const auto cornerColor = [tabs, addButton] {
+        const auto image = tabs->grab().toImage();
+        const auto point = addButton->mapTo(tabs, QPoint(1, addButton->height() / 2));
+        return image.pixelColor(point);
+    };
+    QCOMPARE(cornerColor(), stripColor);
+    const auto stripImage = tabs->grab().toImage();
+    const auto stripTop = tabs->tabBar()->mapTo(tabs, QPoint(0, 0)).y();
+    QVERIFY(tabs->cornerWidget()->height() >= tabs->tabBar()->tabRect(0).height());
+    QVERIFY(tabs->cornerWidget()->mapTo(tabs, QPoint()).y() <= stripTop + 1);
+    QCOMPARE(stripImage.pixelColor(tabs->width() - 2, stripTop + 2), stripColor);
+    QCOMPARE(stripImage.pixelColor(tabs->width() - 2,
+                                   stripTop + tabs->tabBar()->tabRect(0).height() - 3),
+             stripColor);
+    const int headerY = stripTop + tabs->tabBar()->height() - 10;
+    QCOMPARE(stripImage.pixelColor(tabs->width() - 2, headerY),
+             stripImage.pixelColor(barRight - 2, headerY));
     for (int index = 0; index < 20; ++index)
         add->trigger();
     QCoreApplication::processEvents();
     QVERIFY(addButton->isVisible());
-    QVERIFY(addButton->x() >= tabs->tabBar()->mapTo(tabs, QPoint(tabs->tabBar()->width(), 0)).x());
-    QVERIFY(addButton->geometry().right() < tabs->width());
+    QVERIFY(addPosition().x() >=
+            tabs->tabBar()->mapTo(tabs, QPoint(tabs->tabBar()->width(), 0)).x());
+    QVERIFY(addPosition().x() -
+                tabs->tabBar()->mapTo(tabs, QPoint(tabs->tabBar()->width(), 0)).x() >=
+            choscordb::design::spacing(choscordb::design::Spacing::Two));
+    QVERIFY(tabs->width() - (addPosition().x() + addButton->width()) <= 2);
+    QVERIFY(addPosition().x() + addButton->width() <= tabs->width());
+    QCOMPARE(cornerColor(), stripColor);
     const int previousCount = tabs->count();
     QTest::mouseClick(addButton, Qt::LeftButton);
     QCOMPARE(tabs->count(), previousCount + 1);
+    while (tabs->count() > 1)
+        tabs->removeTab(tabs->count() - 1);
+    QCoreApplication::processEvents();
+    QVERIFY(addPosition().x() - tabs->tabBar()->tabRect(0).right() <= 14);
 }
 
 void NavigatorSqlWorkspaceTest::sidebarPanelsSwitchWithoutChangingTheSqlTarget() {

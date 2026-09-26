@@ -36,6 +36,8 @@ class ToastRegion final : public QLabel {
     QPropertyAnimation* fade_;
     bool dismissing_ = false;
 };
+// Shared window-level notification surface, including while an embedded modal is open.
+ToastRegion* windowToast(QWidget* context);
 // Feature widgets use one progress overlay per host and dismiss it when work ends.
 ToastRegion* progressToast(QWidget* host);
 void clearProgressToast(QWidget* host);

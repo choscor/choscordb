@@ -1,5 +1,7 @@
 #include "bridge/engine_adapter.h"
 #include "design_system/dialog_sections/dialog_sections.h"
+#include "design_system/field/field.h"
+#include "design_system/toast_region/toast_region.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "workspace_test.h"
 #include "workspace_test_fixture.h"
@@ -7,6 +9,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
+#include <QDialog>
 #include <QFile>
 #include <QHBoxLayout>
 #include <QJsonDocument>
@@ -19,8 +22,67 @@
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QTemporaryDir>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QtTest>
+
+void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
+    WorkspaceFixture f;
+    f.newConnection.trigger();
+    auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
+    QVERIFY(dialog);
+    auto* progress = f.parent.findChild<QDialog*>("profileProgressDialog");
+    QVERIFY2(progress, "Loading profiles should use a dedicated progress modal");
+    QTRY_VERIFY(dialog->findChild<QPushButton*>("profileTest")->isEnabled());
+    auto* name = dialog->findChild<QLineEdit*>("profileName");
+    name->setText("Test profile");
+    auto* path = dialog->findChild<QLineEdit*>("profilePath");
+    dialog->findChild<QPushButton*>("profileTest")->click();
+    auto* pathValidation = dynamic_cast<choscordb::design::FieldValidation*>(path->parentWidget());
+    QVERIFY(pathValidation);
+    QVERIFY(pathValidation->error().contains("database file path"));
+    QVERIFY(!progress->isVisible());
+    path->setText("file:example.db?mode=banana");
+    dialog->findChild<QPushButton*>("profileTest")->click();
+    QVERIFY(pathValidation->error().contains("SQLite file URI"));
+    QVERIFY(!progress->isVisible());
+    path->setText("file:example.db?mode=ro");
+    name->setText(QString(1025, QChar('n')));
+    dialog->findChild<QPushButton*>("profileTest")->click();
+    auto* nameValidation = dynamic_cast<choscordb::design::FieldValidation*>(name->parentWidget());
+    QVERIFY(nameValidation && nameValidation->error().contains("too long"));
+    QVERIFY(pathValidation->error().isEmpty());
+    name->setText("Test profile");
+    path->setText(":memory:");
+    QVERIFY(pathValidation->error().isEmpty());
+    dialog->findChild<QPushButton*>("profileTest")->click();
+    QVERIFY(progress->isVisible());
+    QVERIFY(progress->isModal() || progress->property("embeddedModal").toBool());
+    QCOMPARE(progress->findChild<QLabel*>("profileProgressMessage")->text(),
+             QString("Testing connection…"));
+    QTRY_VERIFY(!progress->isVisible());
+    QCOMPARE(dialog->findChild<QLabel*>("profileStatus")->text(),
+             QString("Connection test succeeded."));
+    QVERIFY(!dialog->findChild<QLabel*>("profileStatus")->isVisible());
+    auto* feedback = f.parent.findChild<choscordb::ToastRegion*>(
+        "toastRegion", Qt::FindDirectChildrenOnly);
+    QVERIFY(feedback && feedback->isVisible());
+    QCOMPARE(feedback->parentWidget(), &f.parent);
+    QCOMPARE(feedback->property("variant").toString(), QString("success"));
+    QCOMPARE(feedback->geometry().right(), f.parent.width() - 17);
+    QCOMPARE(feedback->geometry().bottom(), f.parent.height() - 17);
+    QVERIFY(feedback->text().contains("Connection test succeeded."));
+    auto* save = dialog->findChild<QPushButton*>("profileSave");
+    save->click();
+    QVERIFY(progress->isVisible());
+    QCOMPARE(progress->findChild<QLabel*>("profileProgressMessage")->text(),
+             QString("Saving profile…"));
+    QTRY_VERIFY(save->isEnabled());
+    QTRY_VERIFY(!progress->isVisible());
+    QVERIFY(feedback->text().contains("Profile saved."));
+    QTest::mouseClick(feedback->findChild<QToolButton*>("toastDismiss"), Qt::LeftButton);
+    QTRY_VERIFY(!feedback->isVisible());
+}
 
 void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     choscordb::EngineAdapter adapter;
@@ -69,13 +131,14 @@ void WorkspaceTest::connectionIdentityCredentialErrorsPreserveDraft() {
     secret->setText(oversized);
     secret->setModified(true);
     dialog->findChild<QCheckBox*>("profileRememberTlsSecret")->setChecked(true);
-    auto* status = dialog->findChild<QLabel*>("profileStatus");
+    auto* validation = dynamic_cast<choscordb::design::FieldValidation*>(secret->parentWidget());
     QSignalSpy saved(f.workspace.adapter(), &choscordb::EngineAdapter::profileSaved);
     QSignalSpy submitted(dialog, &choscordb::ProfileDialog::connectionSubmitted);
     for (const auto* action : {"profileSave", "profileTest", "profileConnect"}) {
         dialog->findChild<QPushButton*>(action)->click();
         QTRY_VERIFY(save->isEnabled());
-        QVERIFY2(status->text().contains("Credential exceeds"), qPrintable(status->text()));
+        QVERIFY2(validation->error().contains("Credential exceeds"),
+                 qPrintable(validation->error()));
         QCOMPARE(secret->text(), oversized);
         QVERIFY(secret->isModified());
         QCOMPARE(identity->text(), QString("/missing/client.p12"));
@@ -109,25 +172,28 @@ void WorkspaceTest::connectionTransportValidationRejectsIncompatibleSettings() {
     host->setText("/tmp/postgres socket");
     dialog->findChild<QLineEdit*>("profileUser")->setText("operator");
     auto* tls = dialog->findChild<QComboBox*>("profileTls");
-    auto* status = dialog->findChild<QLabel*>("profileStatus");
+    const auto errorFor = [](QWidget* field) {
+        return dynamic_cast<choscordb::design::FieldValidation*>(field->parentWidget())->error();
+    };
     QSignalSpy saved(f.workspace.adapter(), &choscordb::EngineAdapter::profileSaved);
     QSignalSpy failed(f.workspace.adapter(), &choscordb::EngineAdapter::profileFailed);
     tls->setCurrentIndex(tls->findData("verify_full"));
     save->click();
-    QVERIFY(status->text().contains("Unix"));
-    QVERIFY(status->text().contains("TLS"));
+    QVERIFY(errorFor(tls).contains("Unix"));
+    QVERIFY(errorFor(tls).contains("TLS"));
     tls->setCurrentIndex(tls->findData("disable"));
-    dialog->findChild<QCheckBox*>("profileSshEnabled")->setChecked(true);
+    auto* sshEnabled = dialog->findChild<QCheckBox*>("profileSshEnabled");
+    sshEnabled->setChecked(true);
     save->click();
-    QVERIFY(status->text().contains("Unix"));
-    QVERIFY(status->text().contains("SSH"));
-    dialog->findChild<QCheckBox*>("profileSshEnabled")->setChecked(false);
+    QVERIFY(errorFor(sshEnabled).contains("Unix"));
+    QVERIFY(errorFor(sshEnabled).contains("SSH"));
+    sshEnabled->setChecked(false);
     host->setText("localhost");
     driver->setCurrentIndex(2);
     tls->setCurrentIndex(tls->findData("prefer"));
     save->click();
-    QVERIFY(status->text().contains("MySQL"));
-    QVERIFY(status->text().contains("Prefer"));
+    QVERIFY(errorFor(tls).contains("MySQL"));
+    QVERIFY(errorFor(tls).contains("Prefer"));
     driver->setCurrentIndex(1);
     tls->setCurrentIndex(tls->findData("verify_full"));
     dialog->findChild<QCheckBox*>("profileSshEnabled")->setChecked(true);
@@ -144,7 +210,9 @@ void WorkspaceTest::connectionFormRejectsMalformedHostsBeforeSubmission() {
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
     QVERIFY(dialog);
     auto* save = dialog->findChild<QPushButton*>("profileSave");
-    auto* status = dialog->findChild<QLabel*>("profileStatus");
+    const auto errorFor = [](QWidget* field) {
+        return dynamic_cast<choscordb::design::FieldValidation*>(field->parentWidget())->error();
+    };
     QTRY_VERIFY(save->isEnabled());
     dialog->findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
     dialog->findChild<QLineEdit*>("profileName")->setText("Invalid host draft");
@@ -161,9 +229,9 @@ void WorkspaceTest::connectionFormRejectsMalformedHostsBeforeSubmission() {
              {"profileSave", "profileTest", "profileConnect", "profileSaveConnect"}) {
             dialog->findChild<QPushButton*>(action)->click();
             QVERIFY2(save->isEnabled(), action);
-            QVERIFY2(status->text().contains("Host"), qPrintable(status->text()));
-            QVERIFY(status->text().contains("port"));
-            QVERIFY(status->isVisible());
+            QVERIFY2(errorFor(host).contains("Host"), qPrintable(errorFor(host)));
+            QVERIFY(errorFor(host).contains("port"));
+            QVERIFY(host->property("invalid").toBool());
         }
     }
     QCOMPARE(saved.count(), 0);
@@ -173,7 +241,7 @@ void WorkspaceTest::connectionFormRejectsMalformedHostsBeforeSubmission() {
     auto* user = dialog->findChild<QLineEdit*>("profileUser");
     user->clear();
     save->click();
-    QVERIFY(status->text().contains("database username"));
+    QVERIFY(errorFor(user).contains("database username"));
     user->setText("operator");
     auto* database = dialog->findChild<QLineEdit*>("profileDatabase");
     database->clear();
@@ -184,10 +252,10 @@ void WorkspaceTest::connectionFormRejectsMalformedHostsBeforeSubmission() {
     auto* sshHost = dialog->findChild<QLineEdit*>("profileSshHost");
     sshHost->setText("operator@bastion");
     save->click();
-    QVERIFY(status->text().contains("SSH host"));
+    QVERIFY(errorFor(sshHost).contains("SSH host"));
     sshHost->setText("bastion");
     save->click();
-    QVERIFY(status->text().contains("SSH username"));
+    QVERIFY(errorFor(dialog->findChild<QLineEdit*>("profileSshUser")).contains("SSH username"));
     QCOMPARE(saved.count(), 0);
     QCOMPARE(failed.count(), 0);
     sshEnabled->setChecked(false);

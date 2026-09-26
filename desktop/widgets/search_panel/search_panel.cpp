@@ -276,7 +276,9 @@ void SearchPanel::replaceOne() {
     editor->SendScintilla(QsciScintilla::SCI_SETSEL, static_cast<unsigned long>(start),
                           static_cast<long>(start + bytes.size()));
     invalidate();
-    status_->setText(tr("Replaced one match."));
+    status_->clear();
+    windowToast(this)->showToast(tr("Success"), tr("Replaced one match."),
+                                 ToastVariant::Success);
 }
 void SearchPanel::replaceAll() {
     auto* editor = editable();
@@ -303,13 +305,18 @@ void SearchPanel::replaceAll() {
         replacementValidation_->setError(tr("Replacement input is not valid Unicode."));
         return;
     }
+    if (replacement.toUtf8().size() > 16 * 1024 * 1024) {
+        replacementValidation_->setError(tr("Replacement output exceeds 16 MiB."));
+        return;
+    }
     const bool caseSensitive = case_->isChecked(), wholeWord = word_->isChecked();
     hasMatch_ = false;
     setPending(true);
     auto* watcher = new QFutureWatcher<TextReplacement>(this);
     connect(
         watcher, &QFutureWatcher<TextReplacement>::finished, this,
-        [this, watcher, target, revision, request] {
+        [this, watcher, target, revision, request,
+         oversizedNeedle = needle.toUtf8().size() > 16 * 1024] {
             const auto result = watcher->result();
             watcher->deleteLater();
             setPending(false);
@@ -319,7 +326,11 @@ void SearchPanel::replaceAll() {
                 return;
             }
             if (!result.valid) {
-                status_->setText(result.error);
+                if (oversizedNeedle)
+                    needleValidation_->setError(result.error);
+                else
+                    windowToast(this)->showToast(tr("Error"), result.error,
+                                                 ToastVariant::Danger);
                 return;
             }
             if (result.count != 0) {
@@ -338,7 +349,14 @@ void SearchPanel::replaceAll() {
                 target->SendScintilla(QsciScintilla::SCI_ENDUNDOACTION);
             }
             invalidate();
-            status_->setText(tr("Replaced %1 matches.").arg(result.count));
+            if (result.count == 0) {
+                status_->setText(tr("No match found."));
+            } else {
+                status_->clear();
+                windowToast(this)->showToast(tr("Success"),
+                                             tr("Replaced %1 matches.").arg(result.count),
+                                             ToastVariant::Success);
+            }
         });
     watcher->setFuture(QtConcurrent::run([source, needle, replacement, caseSensitive, wholeWord] {
         return EngineAdapter::replaceAllText(source, needle, replacement, caseSensitive, wholeWord);

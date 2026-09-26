@@ -103,6 +103,9 @@ SavedProfile ProfileDialog::draft() const {
 }
 
 void ProfileDialog::setDraft(const SavedProfile& value) {
+    nameValidation_->setError({});
+    for (auto* validation : validations_)
+        validation->setError({});
     filling_ = true;
     ++revision_;
     current_ = value;
@@ -286,27 +289,66 @@ void ProfileDialog::testDraft(const SavedProfile& profile) {
 }
 
 bool ProfileDialog::validateConnectionDraft(const SavedProfile& profile) {
+    if (profile.name.toUtf8().size() > 1024 || profile.name.contains(QChar::Null)) {
+        setBusy(false);
+        showFieldError(name_, tr("Connection name is invalid or too long."));
+        return false;
+    }
+    if (profile.driver == "sqlite" && profile.path.trimmed().isEmpty()) {
+        setBusy(false);
+        showFieldError(path_, tr("Enter a database file path or :memory:."));
+        return false;
+    }
+    if (profile.driver == "sqlite" &&
+        (profile.path.toUtf8().size() > 16 * 1024 || profile.path.contains(QChar::Null))) {
+        setBusy(false);
+        showFieldError(path_, tr("Database path is invalid or too long."));
+        return false;
+    }
     const auto validate = [this, &profile] {
+        const auto oversized = [this](QLineEdit* field) {
+            if (field->text().toUtf8().size() <= 16 * 1024)
+                return false;
+            setBusy(false);
+            showFieldError(field, tr("Credential exceeds the supported size."));
+            return true;
+        };
+        if (((profile.driver == "postgres" || profile.driver == "mysql") &&
+             authenticationMethod(profile) == "password" && oversized(password_)) ||
+            (profile.sshEnabled && profile.sshAuthentication != "agent" && oversized(sshSecret_)) ||
+            (profile.driver != "sqlite" && profile.tls != "disable" &&
+             !profile.tlsClientIdentity.isEmpty() && oversized(tlsSecret_)) ||
+            (proxyNeedsPassword(profile) && oversized(proxySecret_)))
+            return false;
         QString error;
         if (adapter_->validateConnectionProperties(profile, error))
             return true;
+        if (profile.driver == "sqlite" && profile.path.startsWith("file:") &&
+            authenticationMethod(profile) == "password" &&
+            error == "Invalid profile") {
+            setBusy(false);
+            showFieldError(path_, tr("Enter a valid SQLite file URI."));
+            return false;
+        }
         setBusy(false, tr("Invalid connection options. %1").arg(error));
         return false;
     };
     if (profile.driver == "sqlite") {
         return validate();
     }
-    const auto invalid = [this](QLineEdit* field, const QString& message) {
-        setBusy(false, message);
-        field->setFocus();
+    const auto invalid = [this](QWidget* field, const QString& message) {
+        setBusy(false);
+        showFieldError(field, message);
         return false;
     };
     const bool socket = profile.host.startsWith('/');
-    if (socket && (profile.tls != "disable" || profile.sshEnabled))
-        return invalid(host_, tr("Unix sockets require TLS disabled and no SSH tunnel."));
+    if (socket && profile.tls != "disable")
+        return invalid(tls_, tr("Unix sockets require TLS disabled."));
+    if (socket && profile.sshEnabled)
+        return invalid(sshEnabled_, tr("Unix sockets cannot use an SSH tunnel."));
     if (profile.driver == "mysql" && profile.tls == "prefer")
         return invalid(
-            host_, tr("MySQL does not support Prefer TLS. Choose Require or a verification mode."));
+            tls_, tr("MySQL does not support Prefer TLS. Choose Require or a verification mode."));
     if (!socket && !validServerHost(profile.host))
         return invalid(host_, tr("Host must be a hostname or IPv4/IPv6 address. "
                                  "Enter the port separately; omit URLs and usernames."));
@@ -324,15 +366,11 @@ bool ProfileDialog::validateConnectionDraft(const SavedProfile& profile) {
         return false;
     if (profile.sshAuthentication == "public_key" && profile.sshIdentitySource == "file" &&
         profile.sshIdentityFile.trimmed().isEmpty()) {
-        setBusy(false, tr("Choose an SSH private key file."));
-        sshIdentityFile_->setFocus();
-        return false;
+        return invalid(sshIdentityFile_, tr("Choose an SSH private key file."));
     }
     if (profile.sshAuthentication == "password" && sshSecret_->text().isEmpty() &&
         profile.sshCredentialRef.isEmpty()) {
-        setBusy(false, tr("Enter the SSH password."));
-        sshSecret_->setFocus();
-        return false;
+        return invalid(sshSecret_, tr("Enter the SSH password."));
     }
     return validate();
 }

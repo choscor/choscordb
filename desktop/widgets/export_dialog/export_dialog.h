@@ -36,11 +36,12 @@ class ExportDialog final : public DialogShell {
     void reject() override;
 
   private:
+    enum class Outcome { Success, Cancelled, Failed };
     void updateActions();
     void start();
     void cancel();
     void handleEvent(const BridgeEvent& event);
-    void finish(const QString& message, bool failed);
+    void finish(const QString& message, Outcome outcome);
     QPointer<EngineAdapter> adapter_;
     std::optional<quint64> query_;
     std::optional<quint64> export_;
@@ -49,6 +50,7 @@ class ExportDialog final : public DialogShell {
     bool submitting_ = false;
     bool cancelling_ = false;
     bool closeAfter_ = false;
+    QString submissionError_;
     QComboBox* format_;
     QComboBox* dialect_;
     QLineEdit* destination_;
@@ -58,7 +60,6 @@ class ExportDialog final : public DialogShell {
     design::Button* browse_;
     design::Button* start_;
     design::Button* cancel_;
-    QLabel* status_;
     QLabel* scope_;
     design::FieldValidation *formatValidation_, *destinationValidation_, *tableValidation_;
 };

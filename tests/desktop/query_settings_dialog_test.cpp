@@ -1,4 +1,5 @@
 #include "widgets/query_settings_dialog/query_settings_dialog.h"
+#include "design_system/toast_region/toast_region.h"
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
@@ -63,7 +64,12 @@ class QuerySettingsDialogTest : public QObject {
         QCOMPARE(submitted.count(), 2);
         QCOMPARE(confirmed.count(), 2);
         QCOMPARE(size->value(), 432);
-        QVERIFY(!dialog.findChild<QLabel*>("querySettingsStatus")->text().isEmpty());
+        auto* toast = dialog.findChild<choscordb::ToastRegion*>("toastRegion");
+        QVERIFY(toast);
+        QTRY_VERIFY(toast->isVisible());
+        QCOMPARE(toast->property("variant").toString(), QString("danger"));
+        QVERIFY(!toast->accessibleDescription().isEmpty());
+        QVERIFY(dialog.findChild<QLabel*>("querySettingsStatus") == nullptr);
         emit adapter.queryPreferencesReady(submitted.first().at(0).toULongLong(),
                                            choscordb::QueryPreferences{});
         QCOMPARE(size->value(), 432);

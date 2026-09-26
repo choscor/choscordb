@@ -1,3 +1,4 @@
+#include "design_system/toast_region/toast_region.h"
 #include "widgets/profile_dialog/ssh_host_key_dialog.h"
 #include "workspace_test.h"
 #include "workspace_test_fixture.h"
@@ -113,7 +114,10 @@ void WorkspaceTest::sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint() 
     candidate.sha256 = "SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDE01";
     candidate.publicKey = "public-key-payload";
     candidate.opaqueJson = "opaque-candidate-payload";
-    choscordb::SshHostKeyDialog review({candidate}, {});
+    QWidget host;
+    host.resize(900, 600);
+    host.show();
+    choscordb::SshHostKeyDialog review({candidate}, {}, &host);
     QSignalSpy approved(&review, &choscordb::SshHostKeyDialog::approvalRequested);
     QSignalSpy retried(&review, &choscordb::SshHostKeyDialog::retryRequested);
     review.show();
@@ -153,18 +157,37 @@ void WorkspaceTest::sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint() 
     QCOMPARE(selected.target.id, QString("second-hop"));
     QVERIFY(!approve->isEnabled());
     review.finishApproval("outcome_unknown");
-    QVERIFY(review.findChild<QLabel*>("sshHostKeyStatus")->text().contains("unknown"));
+    auto* status = review.findChild<QLabel*>("sshHostKeyStatus");
+    auto* toast =
+        host.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
+    QVERIFY(status && toast);
+    QVERIFY(!review.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly));
+    QVERIFY(toast->x() >= host.width() / 2);
+    QVERIFY(toast->y() >= host.height() / 2);
+    QVERIFY(status->text().isEmpty());
+    QVERIFY(toast->text().contains("unknown"));
+    QCOMPARE(toast->property("variant").toString(), QString("warning"));
+    review.showFailure("Approval failed for the selected key.");
+    QVERIFY(status->text().isEmpty());
+    QVERIFY(toast->text().contains("Approval failed"));
+    QCOMPARE(toast->property("variant").toString(), QString("danger"));
     QVERIFY(!retry->isEnabled());
     QVERIFY(approve->isEnabled());
     QCOMPARE(approved.count(), 1);
     approve->click();
     QCOMPARE(approved.count(), 2);
     review.finishApproval("approved");
+    QVERIFY(status->text().isEmpty());
+    QVERIFY(toast->text().contains("Key approved"));
+    QCOMPARE(toast->property("variant").toString(), QString("success"));
     QVERIFY(retried.isEmpty());
     QVERIFY(retry->isEnabled());
     retry->click();
     QCOMPARE(retried.count(), 1);
     review.invalidate();
+    QVERIFY(status->text().isEmpty());
+    QVERIFY(toast->text().contains("Connection settings changed"));
+    QCOMPARE(toast->property("variant").toString(), QString("warning"));
     QVERIFY(!retry->isEnabled());
     QVERIFY(!approve->isEnabled());
     choscordb::SshHostKeyDialog cancelled({candidate}, "/tmp/unused known hosts");

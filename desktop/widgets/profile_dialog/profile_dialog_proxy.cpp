@@ -46,7 +46,7 @@ void ProfileDialog::createProxyControls(QFormLayout* form) {
     fields->addRow(tr("Proxy username / SOCKS4 user ID"), proxyUser_);
     proxySecret_ = line("profileProxySecret", 256);
     proxySecret_->setEchoMode(QLineEdit::Password);
-    fields->addRow(tr("Proxy password"), proxySecret_);
+    fields->addRow(tr("Proxy password"), validated(proxySecret_));
     rememberProxySecret_ =
         new QCheckBox(tr("Save proxy password in OS credential store"), proxyFields_);
     rememberProxySecret_->setObjectName("profileRememberProxySecret");

@@ -1,5 +1,6 @@
 #pragma once
 #include "design_system/icons.h"
+#include "design_system/tabs/tab_add_corner.h"
 #include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
 #include <QApplication>
@@ -177,9 +178,18 @@ class WorkspaceTabBar final : public QTabBar {
 
 class WorkspaceTabs final : public QTabWidget {
   public:
-    WorkspaceTabs() { setTabBar(new WorkspaceTabBar(this)); }
+    WorkspaceTabs() {
+        setTabBar(new WorkspaceTabBar(this));
+        addCorner_ = new design::TabAddCorner(this);
+        addCorner_->addButton()->setObjectName("addSqlTabButton");
+        addCorner_->addButton()->setAccessibleName(tr("New SQL query tab"));
+        addCorner_->addButton()->setToolTip(tr("New SQL query tab"));
+    }
     WorkspaceTabBar* workspaceBar() const { return static_cast<WorkspaceTabBar*>(tabBar()); }
-    void setAddButton(QWidget* button) { setCornerWidget(button, Qt::TopRightCorner); }
+    design::Button* addButton() const { return addCorner_->addButton(); }
+
+  private:
+    design::TabAddCorner* addCorner_;
 };
 
 } // namespace choscordb::main_window_detail

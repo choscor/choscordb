@@ -8,7 +8,9 @@
 #include "design_system/field/field.h"
 #include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/tabs/tab_add_corner.h"
 #include "design_system/text/text.h"
+#include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "models/result_table_model.h"
@@ -143,6 +145,8 @@ void PreviewTest::codePreviewTextAreaUsesSharedVariantInBothThemes() {
         QCOMPARE(code->property("designRole").toString(), QString("codePreview"));
         QCOMPARE(code->frameShape(), QFrame::NoFrame);
         QVERIFY(code->toPlainText().contains("CREATE TABLE example"));
+        QCOMPARE(code->viewport()->geometry().top(), 0);
+        QCOMPARE(code->viewport()->geometry().left(), 0);
     }
 }
 
@@ -174,6 +178,14 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
         QVERIFY(tree);
         QVERIFY(tree->isVisible());
         QVERIFY(tree->currentIndex().isValid());
+        const auto child = tree->model()->index(0, 0, tree->model()->index(0, 0));
+        const auto row = tree->visualRect(child);
+        QVERIFY(row.isValid());
+        QTest::mouseMove(tree->viewport(), QPoint(1, 1));
+        QTest::mouseMove(tree->viewport(), row.center());
+        QCoreApplication::processEvents();
+        QCOMPARE(tree->viewport()->grab().toImage().pixelColor(row.right() - 8, row.center().y()),
+                 choscordb::design::resolvedThemeForWidget(*tree).colors.muted);
     }
 }
 
@@ -187,12 +199,46 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         QVERIFY(host);
         auto* tabs = host->findChild<QTabWidget*>();
         QVERIFY(tabs);
+        auto* corner = dynamic_cast<choscordb::design::TabAddCorner*>(
+            tabs->findChild<QWidget*>("tabAddCorner"));
+        QVERIFY(corner);
+        QVERIFY(corner->addButton()->isVisible());
+        QCOMPARE(corner->addButton()->variant(), choscordb::design::ButtonVariant::Ghost);
+        QCOMPARE(corner->grab().toImage().pixelColor(1, corner->height() / 2),
+                 choscordb::design::resolvedThemeForWidget(*corner).colors.muted);
         QCOMPARE(tabs->tabText(0), QString("abc.sql"));
         QCOMPARE(qobject_cast<QLabel*>(tabs->widget(0))->text(),
                  QString("Neutral document chrome"));
         QVERIFY(!tabs->tabIcon(0).isNull());
         QCOMPARE(tabs->tabBar()->tabRect(0).width(), tabs->tabBar()->tabRect(1).width());
         QVERIFY(tabs->tabBar()->tabRect(0).width() <= 118);
+        auto* paneTabs = host->findChild<QTabBar*>("previewObjectTabs");
+        QVERIFY(paneTabs);
+        const auto paneRect = paneTabs->tabRect(paneTabs->currentIndex());
+        const auto paneImage = paneTabs->grab().toImage();
+        const auto colors = choscordb::design::resolvedThemeForWidget(*paneTabs).colors;
+        QCOMPARE(paneImage.pixelColor(paneRect.left() + 1, paneRect.top() + 1), colors.surface);
+        while (tabs->count() > 1)
+            tabs->removeTab(tabs->count() - 1);
+        QCoreApplication::processEvents();
+        const auto addPoint = corner->addButton()->mapTo(tabs, QPoint(1, 2));
+        QVERIFY(addPoint.x() - tabs->tabBar()->tabRect(0).right() <= 14);
+        QCOMPARE(tabs->grab().toImage().pixelColor(addPoint),
+                 choscordb::design::resolvedThemeForWidget(*tabs).colors.muted);
+        const QPoint hoverLocal(5, corner->addButton()->height() / 2);
+        const auto hoverPoint = corner->addButton()->mapTo(tabs, hoverLocal);
+        const auto normalImage = tabs->grab().toImage();
+        QTest::mouseMove(corner->addButton(), hoverLocal);
+        QCoreApplication::processEvents();
+        const auto hoverImage = tabs->grab().toImage();
+        QCOMPARE(hoverImage.pixelColor(hoverPoint), normalImage.pixelColor(hoverPoint));
+        const auto buttonTopLeft = corner->addButton()->mapTo(tabs, QPoint());
+        const QRect iconArea(buttonTopLeft.x() + 7, buttonTopLeft.y() + 7, 16, 16);
+        int changedIconPixels = 0;
+        for (int y = iconArea.top(); y <= iconArea.bottom(); ++y)
+            for (int x = iconArea.left(); x <= iconArea.right(); ++x)
+                changedIconPixels += hoverImage.pixelColor(x, y) != normalImage.pixelColor(x, y);
+        QVERIFY(changedIconPixels > 0);
     }
 }
 
@@ -246,8 +292,8 @@ void PreviewTest::toastPortalIsPresentInBothThemes() {
         auto* host = window.findChild<QWidget*>(name);
         QVERIFY(host);
         const auto expectedSurface = QString::fromLatin1(name) == QStringLiteral("previewLight")
-                                         ? QStringLiteral("#eaf4ef")
-                                         : QStringLiteral("#283e34");
+                                         ? QStringLiteral("#287f66")
+                                         : QStringLiteral("#65b493");
         const auto successRule =
             host->styleSheet()
                 .section(QStringLiteral("QLabel#toastRegion[variant=\"success\"]"), 1)
@@ -258,6 +304,14 @@ void PreviewTest::toastPortalIsPresentInBothThemes() {
         auto* toast = host->findChild<choscordb::ToastRegion*>("toastRegion");
         QVERIFY(scroll && toast);
         toast->showToast("Saved", "Portal specimen", choscordb::ToastVariant::Success, 0);
+        QTest::qWait(200);
+        const auto sample = toast->mapTo(&window, QPoint(toast->width() - 20,
+                                                       toast->height() - 20));
+        const auto capture = window.grab();
+        const auto scale = capture.devicePixelRatioF();
+        QCOMPARE(capture.toImage().pixelColor(qRound(sample.x() * scale),
+                                              qRound(sample.y() * scale)),
+                 QColor(expectedSurface));
         QCOMPARE(toast->parentWidget(), scroll->viewport());
         QCOMPARE(toast->geometry().right(), scroll->viewport()->width() - 17);
         QCOMPARE(toast->geometry().bottom(), scroll->viewport()->height() - 17);
@@ -321,6 +375,31 @@ void PreviewTest::toastCanAttachAcrossWidgetTrees() {
     QCoreApplication::processEvents();
     QCOMPARE(toast.geometry().right(), host.width() - 17);
     QCOMPARE(toast.geometry().bottom(), host.height() - 17);
+}
+
+void PreviewTest::windowToastClearsDestroyedModalOwner() {
+    QWidget host;
+    host.resize(800, 600);
+    host.show();
+    auto* first = new choscordb::DialogShell(&host);
+    first->setAttribute(Qt::WA_DeleteOnClose);
+    first->setAppModal();
+    first->open();
+    auto* toast = choscordb::windowToast(first);
+    toast->showToast("Saved", "First modal", choscordb::ToastVariant::Success, 0);
+    QCOMPARE(toast->parentWidget(), &host);
+    QCOMPARE(toast->property("embeddedPopupOwner").value<QObject*>(), first);
+    QPointer<choscordb::DialogShell> destroyed(first);
+    first->close();
+    QTRY_VERIFY(!destroyed);
+    QVERIFY(!toast->property("embeddedPopupOwner").value<QObject*>());
+    auto* second = new choscordb::DialogShell(&host);
+    second->setAppModal();
+    second->open();
+    QCOMPARE(choscordb::windowToast(second), toast);
+    QCOMPARE(toast->property("embeddedPopupOwner").value<QObject*>(), second);
+    QTest::mouseClick(toast->findChild<QToolButton*>("toastDismiss"), Qt::LeftButton);
+    QTRY_VERIFY(toast->isHidden());
 }
 
 void PreviewTest::toastVariantsShowTitleBodyAndUseConfiguredTimeout() {

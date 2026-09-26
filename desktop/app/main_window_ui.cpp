@@ -206,12 +206,7 @@ MainWindow::Ui MainWindow::buildUi() {
     refreshNavigator->setAccessibleName(tr("Refresh selected database object"));
     refreshNavigator->setToolTip(tr("Refresh selected database object"));
     refreshNavigator->setEnabled(false);
-    auto* disconnectNavigator = new design::Button(tr("×"), navBody);
-    disconnectNavigator->setObjectName("navigatorDisconnect");
-    disconnectNavigator->setAccessibleName(tr("Disconnect selected session"));
-    disconnectNavigator->setToolTip(tr("Disconnect selected session"));
-    disconnectNavigator->setEnabled(false);
-    for (auto* button : {addConnection, refreshNavigator, disconnectNavigator}) {
+    for (auto* button : {addConnection, refreshNavigator}) {
         button->setText({});
         button->setVariant(design::ButtonVariant::Ghost);
         button->setButtonSize(design::ButtonSize::IconSmall);
@@ -261,7 +256,6 @@ MainWindow::Ui MainWindow::buildUi() {
     connectionsLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     connectionsLayout->setSpacing(design::spacing(design::Spacing::Three));
     connectionSection->addAction(refreshNavigator);
-    connectionSection->addAction(disconnectNavigator);
     connectionSection->addAction(addConnection);
     connectionsLayout->addWidget(connectionSection);
     auto* savedConnections = new QListWidget(navBody);
@@ -385,7 +379,7 @@ MainWindow::Ui MainWindow::buildUi() {
     sidebarPanels->addWidget(historyPanel);
     navLayout->addWidget(sidebarPanels, 1);
     navBody->findChild<QPushButton*>("sidebarConnections")->setChecked(true);
-    new ContextualActionVisibility(navBody, {refreshNavigator, disconnectNavigator});
+    new ContextualActionVisibility(navBody, {refreshNavigator});
     navigator->setWidget(navBody);
     addDockWidget(Qt::LeftDockWidgetArea, navigator);
     resizeDocks({navigator}, {initialMetrics.initialNavigatorWidth}, Qt::Horizontal);
@@ -496,8 +490,7 @@ MainWindow::Ui MainWindow::buildUi() {
     preferences_->addAction("cancel_query", cancel);
     preferences_->addAction("commit", commitAction);
     preferences_->addAction("rollback", rollbackAction);
-    const auto refreshIcons = [this, run, cancel, addConnection, refreshNavigator,
-                               disconnectNavigator, toolbar] {
+    const auto refreshIcons = [this, run, cancel, addConnection, refreshNavigator, toolbar] {
         const auto resolved = theme_->resolvedTheme();
         const auto metrics = theme_->metrics();
         toolbar->setIconSize(QSize(metrics.iconSmall, metrics.iconSmall));
@@ -508,7 +501,6 @@ MainWindow::Ui MainWindow::buildUi() {
         cancel->setIcon(
             design::themedIcon(design::Icon::Cancel, resolved.colors.text, metrics.iconSmall));
         refreshNavigator->setDesignIcon(design::Icon::Refresh);
-        disconnectNavigator->setDesignIcon(design::Icon::Close);
         addConnection->setDesignIcon(design::Icon::Add);
     };
     connect(theme_, &design::ThemeManager::themeChanged, this, refreshIcons);
@@ -558,15 +550,7 @@ MainWindow::Ui MainWindow::buildUi() {
     editors_->setTabsClosable(true);
     editors_->setMovable(true);
     editors_->setDocumentMode(true);
-    auto* addSqlTab = new design::Button({}, editors_);
-    addSqlTab->setObjectName("addSqlTabButton");
-    addSqlTab->setAccessibleName(tr("New SQL query tab"));
-    addSqlTab->setToolTip(tr("New SQL query tab"));
-    addSqlTab->setDesignIcon(design::Icon::Add);
-    addSqlTab->setButtonSize(design::ButtonSize::IconSmall);
-    addSqlTab->setVariant(design::ButtonVariant::Outline);
-    workspaceTabs->setAddButton(addSqlTab);
-    connect(addSqlTab, &QPushButton::clicked, newQuery, &QAction::trigger);
+    connect(workspaceTabs->addButton(), &QPushButton::clicked, newQuery, &QAction::trigger);
     editors_->tabBar()->setUsesScrollButtons(true);
     editors_->tabBar()->setExpanding(false);
     editors_->tabBar()->setElideMode(Qt::ElideRight);
@@ -881,7 +865,7 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* toast = toast_;
     centralHostLayout->addWidget(screens_, 1);
     setCentralWidget(centralHost);
-    toast_->attachTo(centralHost);
+    toast_->attachTo(this);
     return {
         .fileMenu = fileMenu,
         .newQuery = newQuery,
@@ -896,7 +880,6 @@ MainWindow::Ui MainWindow::buildUi() {
         .navigator = navigator,
         .addConnection = addConnection,
         .refreshNavigator = refreshNavigator,
-        .disconnectNavigator = disconnectNavigator,
         .sidebarPanels = sidebarPanels,
         .savedConnections = savedConnections,
         .filter = filter,

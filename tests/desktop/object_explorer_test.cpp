@@ -37,6 +37,10 @@ class ObjectExplorerTest final : public QObject {
         ddl->setPlainText("CREATE TABLE sample (\n  id BIGINT\n);");
         QCoreApplication::processEvents();
         QVERIFY(gutter->isVisible());
+        QCOMPARE(gutter->geometry().left(), 0);
+        QCOMPARE(gutter->geometry().top(), 0);
+        QCOMPARE(ddl->viewport()->geometry().top(), 0);
+        QCOMPARE(ddl->document()->documentMargin(), 0.0);
         QCOMPARE(gutter->font().family(), ddl->font().family());
         QCOMPARE(gutter->geometry().height(), ddl->contentsRect().height());
         QVERIFY(ddl->viewport()->geometry().left() >= gutter->width());
@@ -244,6 +248,13 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(explorer.findChild<QLabel*>("objectStatus")->parentWidget(), footer);
         explorer.show();
         QCoreApplication::processEvents();
+        auto* tabs = explorer.findChild<QTabBar*>("objectTabs");
+        auto* refresh = explorer.findChild<QPushButton*>("objectRefresh");
+        QVERIFY(tabs && refresh);
+        QCOMPARE(header->geometry().top(), 0);
+        QVERIFY(refresh->mapTo(&explorer, QPoint(0, 0)).x() > header->geometry().left());
+        QVERIFY(refresh->mapTo(&explorer, QPoint(0, 0)).y() > header->geometry().top());
+        QCOMPARE(header->geometry().bottom() + 1, tabs->geometry().top());
         for (const char* name : {"objectRetry", "objectReconnect"}) {
             QVERIFY(!explorer.findChild<QPushButton*>(name));
             auto* action = explorer.findChild<QAction*>(name);
@@ -251,7 +262,6 @@ class ObjectExplorerTest final : public QObject {
             QVERIFY(explorer.actions().contains(action));
             QVERIFY(!action->isEnabled());
         }
-        auto* refresh = explorer.findChild<QPushButton*>("objectRefresh");
         QVERIFY(refresh->geometry().left() < header->width() / 2);
     }
     void reopeningSameObjectKeepsSelectedPaneWithoutReadingAgain() {

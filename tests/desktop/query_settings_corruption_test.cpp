@@ -2,6 +2,7 @@
 #include "app/query_settings.h"
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
+#include "design_system/toast_region/toast_region.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
@@ -74,15 +75,20 @@ class QuerySettingsCorruptionTest : public QObject {
         QVERIFY(dialog);
         auto* apply = dialog->findChild<QPushButton*>("querySettingsApply");
         auto* reset = dialog->findChild<QPushButton*>("querySettingsReset");
-        auto* status = dialog->findChild<QLabel*>("querySettingsStatus");
+        choscordb::ToastRegion* toast = nullptr;
+        QTRY_VERIFY((toast = window.findChild<choscordb::ToastRegion*>(
+                         "toastRegion", Qt::FindDirectChildrenOnly)));
         auto* size = dialog->findChild<QSpinBox*>("queryPageSize");
         QVERIFY(apply);
         QVERIFY(reset);
-        QVERIFY(status);
         QVERIFY(size);
         QTRY_VERIFY(reset->isEnabled());
         QVERIFY(!apply->isEnabled());
-        QVERIFY(!status->text().isEmpty());
+        QTRY_VERIFY(toast->isVisible());
+        QCOMPARE(toast->parentWidget(), static_cast<QWidget*>(&window));
+        QCOMPARE(toast->geometry().right(), window.width() - 17);
+        QCOMPARE(toast->geometry().bottom(), window.height() - 17);
+        QCOMPARE(toast->property("variant").toString(), QString("danger"));
         reset->click();
         QVERIFY(apply->isEnabled());
         size->setValue(222);

@@ -1,4 +1,5 @@
 #include "design_system/button/button.h"
+#include "design_system/toast_region/toast_region.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/profile_dialog/ssh_host_key_dialog.h"
 #include <QCheckBox>
@@ -52,6 +53,8 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                 if (token != trustToken_)
                     return;
                 trustToken_ = 0;
+                if (feedbackToast_)
+                    feedbackToast_->clearNotice();
                 updateTrustControls();
                 if (revision_ != trustRevision_) {
                     showTrustStatus(
@@ -131,10 +134,14 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                 }
                 if (trustDialog_)
                     trustDialog_->finishApproval(outcome);
-                else
-                    showTrustStatus(outcome == "approved"
-                                        ? tr("SSH host key approved.")
-                                        : tr("SSH host key approval outcome is unknown."));
+                else if (outcome == "approved") {
+                    feedbackToast_ = windowToast(this);
+                    if (feedbackToast_)
+                        feedbackToast_->showToast(tr("Success"), tr("SSH host key approved."),
+                                                  ToastVariant::Success);
+                } else {
+                    showTrustStatus(tr("SSH host key approval outcome is unknown."));
+                }
             });
     connect(adapter_, &EngineAdapter::sshHostKeyOperationFailed, this,
             [this](quint64 token, const QString& error) {
@@ -151,7 +158,11 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
 }
 void ProfileDialog::showTrustStatus(const QString& message) {
     status_->setText(message);
-    status_->setVisible(!busy_);
+    status_->hide();
+    if (isVisible()) {
+        feedbackToast_ = windowToast(this);
+        feedbackToast_->showToast(tr("Error"), message, ToastVariant::Danger);
+    }
 }
 void ProfileDialog::updateTrustControls() {
     if (!inspectSshKeys_)
@@ -189,8 +200,9 @@ void ProfileDialog::inspectHostKeys(const SshHostKeyTarget& target) {
     trustRevision_ = revision_;
     trustToken_ = ++token_;
     updateTrustControls();
-    status_->setText(tr("Inspecting SSH host keys…"));
-    status_->show();
+    feedbackToast_ = windowToast(this);
+    if (feedbackToast_)
+        feedbackToast_->showProgress(tr("Profiles"), tr("Inspecting SSH host keys…"));
     adapter_->inspectSshHostKeys(profile, target, credentials, trustToken_);
 }
 } // namespace choscordb

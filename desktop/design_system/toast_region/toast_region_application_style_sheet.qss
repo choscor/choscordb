@@ -1,4 +1,4 @@
-QLabel#toastRegion {
+QLabel#toastRegion, QLabel#progressToast {
   background-color: @warningSurface;
   color: %17;
   border: %2px solid %3;
@@ -8,7 +8,8 @@ QLabel#toastRegion {
 }
 
 QLabel#toastRegion[variant="success"] {
-  background-color: @successSurface;
+  background-color: @success;
+  color: @successForeground;
   border-left: 4px solid %19;
 }
 
@@ -22,7 +23,7 @@ QLabel#toastRegion[variant="danger"] {
   border-left: 4px solid %21;
 }
 
-QLabel#toastRegion[variant="progress"] {
+QLabel#toastRegion[variant="progress"], QLabel#progressToast[variant="progress"] {
   background-color: @warningSurface;
   border-left: 4px solid %20;
 }

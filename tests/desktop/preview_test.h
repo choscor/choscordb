@@ -15,6 +15,7 @@ class PreviewTest final : public QObject {
     void toastPortalIsPresentInBothThemes();
     void progressToastHasPersistentIndicatorInBothThemes();
     void toastCanAttachAcrossWidgetTrees();
+    void windowToastClearsDestroyedModalOwner();
     void toastVariantsShowTitleBodyAndUseConfiguredTimeout();
     void nonmodalDialogSurfaceHasNoOutline();
     void nonmodalDialogGrowsWhenDescriptionWraps();

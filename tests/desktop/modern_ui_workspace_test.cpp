@@ -23,6 +23,7 @@
 #include <QDockWidget>
 #include <QFile>
 #include <QFontInfo>
+#include <QGraphicsOpacityEffect>
 #include <QHeaderView>
 #include <QIcon>
 #include <QJsonArray>
@@ -461,6 +462,7 @@ void ModernUiTest::liveAppearanceReachesAlreadyOpenConnectionPanelAndMenu() {
     window.findChild<QPushButton*>("navigatorAddConnection")->click();
     auto* profile = window.findChild<choscordb::ProfileDialog*>();
     QVERIFY(profile);
+    QTRY_VERIFY(profile->findChild<QPushButton*>("profileSave")->isEnabled());
     QVERIFY(profile->isVisible());
     QVERIFY(!profile->isWindow());
     QCOMPARE(profile->window(), &window);
@@ -536,8 +538,7 @@ void ModernUiTest::minimumWorkspaceKeepsQueryControlsInsideTheWindow() {
 void ModernUiTest::workspaceUsesApprovedButtonGeometryAndIcons() {
     choscordb::MainWindow window;
     window.show();
-    const QStringList iconNames{"navigatorAddConnection", "navigatorRefresh",
-                                "navigatorDisconnect"};
+    const QStringList iconNames{"navigatorAddConnection", "navigatorRefresh"};
     for (const auto& name : iconNames) {
         auto* button = window.findChild<QPushButton*>(name);
         QVERIFY(button);
@@ -546,6 +547,7 @@ void ModernUiTest::workspaceUsesApprovedButtonGeometryAndIcons() {
         QVERIFY(!button->icon().isNull());
         QCOMPARE(button->sizeHint(), QSize(30, 30));
     }
+    QVERIFY(!window.findChild<QPushButton*>("navigatorDisconnect"));
     const QList<QPair<QString, int>> actions{
         {"previousPage", 30}, {"nextPage", 30}, {"exportResult", 30}};
     for (const auto& [name, height] : actions) {
@@ -598,7 +600,7 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     QVERIFY(toast);
     QVERIFY(!toast->accessibleName().isEmpty());
     QVERIFY(toast->isHidden());
-    auto* host = window.centralWidget();
+    auto* host = &window;
     const auto contentBefore = window.findChild<QStackedWidget*>()->geometry();
     toast->showToast("Warning", "First notice", choscordb::ToastVariant::Warning, 10000);
     toast->showToast("Warning", "Replacement notice", choscordb::ToastVariant::Warning, 10000);
@@ -618,6 +620,18 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     window.showToast("Could not save", choscordb::ToastVariant::Danger);
     QCOMPARE(toast->property("variant").toString(), QString("danger"));
     QVERIFY(toast->text().contains("Could not save"));
+    QCOMPARE(window.findChildren<choscordb::ToastRegion*>("toastRegion").size(), 1);
+    QCOMPARE(choscordb::windowToast(&window), toast);
+    window.showToast("Connected", choscordb::ToastVariant::Success);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        qobject_cast<QGraphicsOpacityEffect*>(toast->graphicsEffect())->opacity() > 0.99, 2000);
+    const auto sample = toast->mapTo(&window, QPoint(toast->width() - 20,
+                                                   toast->height() - 20));
+    const auto capture = window.grab();
+    const auto scale = capture.devicePixelRatioF();
+    QCOMPARE(capture.toImage().pixelColor(qRound(sample.x() * scale),
+                                          qRound(sample.y() * scale)),
+             window.findChild<choscordb::design::ThemeManager*>()->resolvedTheme().colors.success);
     QVERIFY(resetLayout);
     auto* run = window.findChild<QAction*>("runStatement");
     QVERIFY(run);
@@ -629,24 +643,21 @@ void ModernUiTest::navigatorContextActionsSupportKeyboardFocusAndMenus() {
     choscordb::MainWindow window;
     auto* tree = window.findChild<QTreeView*>("databaseNavigator");
     auto* refresh = window.findChild<QPushButton*>("navigatorRefresh");
-    auto* disconnect = window.findChild<QPushButton*>("navigatorDisconnect");
     auto* refreshAction = window.findChild<QAction*>("navigatorRefreshAction");
     auto* disconnectAction = window.findChild<QAction*>("navigatorDisconnectAction");
     QVERIFY(tree);
     QVERIFY(refresh);
-    QVERIFY(disconnect);
+    QVERIFY(!window.findChild<QPushButton*>("navigatorDisconnect"));
     QVERIFY(refreshAction);
     QVERIFY(disconnectAction);
     QCOMPARE(tree->contextMenuPolicy(), Qt::CustomContextMenu);
     QVERIFY(refresh->isHidden());
-    QVERIFY(disconnect->isHidden());
     QVERIFY(tree->actions().contains(refreshAction));
     QVERIFY(tree->actions().contains(disconnectAction));
 
     window.show();
     tree->setFocus();
     QTRY_VERIFY(refresh->isVisible());
-    QTRY_VERIFY(disconnect->isVisible());
 }
 
 void ModernUiTest::transactionControlsStayInToolbarAtBothWidths() {

@@ -154,7 +154,9 @@ void WorkspaceTest::profileFailuresKeepDraftAndShowConnectionCodes() {
     save->click();
     QTRY_VERIFY(save->isEnabled());
     QCOMPARE(name->text(), QString("Unsaved draft"));
-    QVERIFY(status->text().contains("Invalid", Qt::CaseInsensitive));
+    auto* path = dialog->findChild<QLineEdit*>("profilePath");
+    auto* pathValidation = dynamic_cast<choscordb::design::FieldValidation*>(path->parentWidget());
+    QVERIFY(pathValidation && pathValidation->error().contains("database file path"));
     profile.path = directory.filePath("missing/data.sqlite");
     dialog->testDraft(profile);
     QTRY_VERIFY(status->text().contains("[Code: 14]"));

@@ -30,7 +30,6 @@ namespace choscordb {
 void MainWindow::connectNavigator(const Ui& ui) {
     const auto newConnection = ui.newConnection;
     const auto refreshNavigator = ui.refreshNavigator;
-    const auto disconnectNavigator = ui.disconnectNavigator;
     const auto filter = ui.filter;
     const auto tree = ui.tree;
     const auto objectsEmpty = ui.objectsEmpty;
@@ -82,8 +81,6 @@ void MainWindow::connectNavigator(const Ui& ui) {
     connect(disconnectNavigatorAction, &QAction::triggered, navigatorController,
             &NavigatorController::disconnectCurrent);
     connect(refreshNavigator, &QPushButton::clicked, refreshNavigatorAction, &QAction::trigger);
-    connect(disconnectNavigator, &QPushButton::clicked, disconnectNavigatorAction,
-            &QAction::trigger);
     connect(tree->selectionModel(), &QItemSelectionModel::currentChanged, this,
             [this, tree](const QModelIndex& current, const QModelIndex& previous) {
                 if (!current.isValid())
@@ -126,14 +123,13 @@ void MainWindow::connectNavigator(const Ui& ui) {
                 }
             });
     connect(tree->selectionModel(), &QItemSelectionModel::currentChanged, this,
-            [tree, refreshNavigator, disconnectNavigator, refreshNavigatorAction,
+            [tree, refreshNavigator, refreshNavigatorAction,
              disconnectNavigatorAction](const QModelIndex&) {
                 const auto current = tree->currentIndex();
                 const bool canRefresh = current.isValid();
                 const bool canDisconnect =
                     current.data(NavigatorModel::KindRole).toString() == "connection";
                 refreshNavigator->setEnabled(canRefresh);
-                disconnectNavigator->setEnabled(canDisconnect);
                 refreshNavigatorAction->setEnabled(canRefresh);
                 disconnectNavigatorAction->setEnabled(canDisconnect);
                 tree->setAccessibleDescription(

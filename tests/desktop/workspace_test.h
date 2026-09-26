@@ -46,6 +46,7 @@ class WorkspaceTest : public QObject {
     void savedProfilesCreateDuplicateTestDeleteAndConnect();
     void profileAdapterPersistsAcrossRestart();
     void connectionSshFormShowsOnlyBasicSettings();
+    void connectionOperationsShowDedicatedProgressModal();
     void connectionProxyControlsAreHidden();
     void connectionProxyControlsStayHiddenForServerDriver();
     void connectionForwardingControlsAreHidden();

@@ -6,6 +6,7 @@
 #include "design_system/tree/navigation_tree_view.h"
 #include <QHBoxLayout>
 #include <QListWidget>
+#include <QScrollBar>
 #include <QSignalSpy>
 #include <QStandardItemModel>
 #include <QTabBar>
@@ -37,7 +38,7 @@ class ComponentsTest final : public QObject {
             QVERIFY(button.grab().toImage().pixelColor(20, 14) != colors.muted);
         }
     }
-    void selectedTabsHaveRoundedTopCorners() {
+    void paneTabsHaveSquareCornersWhileDocumentTabsRetainTheirShape() {
         using namespace choscordb::design;
         QWidget root;
         ThemeManager theme;
@@ -61,7 +62,7 @@ class ComponentsTest final : public QObject {
             ++topOfFill;
         QVERIFY(topOfFill < rect.top() + 10);
         QCOMPARE(image.pixelColor(rect.left() + 8, topOfFill), colors.surface);
-        QCOMPARE(image.pixelColor(rect.left() + 1, topOfFill), colors.muted);
+        QCOMPARE(image.pixelColor(rect.left() + 1, topOfFill), colors.surface);
         tabs.setProperty("designTabVariant", "document");
         tabs.style()->unpolish(&tabs);
         tabs.style()->polish(&tabs);
@@ -88,6 +89,9 @@ class ComponentsTest final : public QObject {
             tree.setObjectName("databaseNavigator");
             QStandardItemModel model;
             model.appendRow(new QStandardItem("Tables"));
+            model.appendRow(new QStandardItem("Views"));
+            for (int index = 0; index < 20; ++index)
+                model.appendRow(new QStandardItem(QString("Object %1").arg(index)));
             tree.setModel(&model);
             tree.setHeaderHidden(true);
             tree.resize(220, 80);
@@ -104,7 +108,55 @@ class ComponentsTest final : public QObject {
             QCOMPARE(image.pixelColor(6, rect.center().y()), colors.muted);
             QCOMPARE(image.pixelColor(10, rect.top() + 3), colors.muted);
             QVERIFY(image.pixelColor(6, rect.top() + 3) != colors.muted);
+            const auto hoverRect = tree.visualRect(model.index(1, 0));
+            QVERIFY(tree.viewport()->hasMouseTracking());
+            QTest::mouseMove(tree.viewport(), QPoint(1, 1));
+            QTest::mouseMove(tree.viewport(), hoverRect.center());
+            QCoreApplication::processEvents();
+            const auto hovered = tree.viewport()->grab().toImage();
+            QCOMPARE(hovered.pixelColor(hoverRect.right() - 8, hoverRect.center().y()),
+                     colors.muted);
+            tree.verticalScrollBar()->setValue(tree.verticalScrollBar()->value() + 2);
+            QCoreApplication::processEvents();
+            const auto underPointer = tree.indexAt(hoverRect.center());
+            QVERIFY(underPointer.isValid());
+            QVERIFY(underPointer != model.index(1, 0));
+            const auto scrolled = tree.viewport()->grab().toImage();
+            QCOMPARE(scrolled.pixelColor(tree.visualRect(underPointer).right() - 8,
+                                         hoverRect.center().y()),
+                     colors.muted);
         }
+    }
+    void sidebarTreeLeaveFromBlankSpaceDoesNotLeaveStaleHover() {
+        using namespace choscordb::design;
+        QWidget root;
+        ThemeManager theme;
+        theme.setMode(ThemeMode::Light);
+        theme.applyTo(root);
+        NavigationTreeView tree(&root);
+        QStandardItemModel model;
+        model.appendRow(new QStandardItem("First"));
+        tree.setModel(&model);
+        tree.setHeaderHidden(true);
+        tree.resize(220, 80);
+        root.resize(230, 100);
+        root.show();
+        QCoreApplication::processEvents();
+        const QPoint blank(15, tree.viewport()->height() - 5);
+        QVERIFY(!tree.indexAt(blank).isValid());
+        QTest::mouseMove(tree.viewport(), blank);
+        QEvent leave(QEvent::Leave);
+        QApplication::sendEvent(tree.viewport(), &leave);
+        for (int index = 0; index < 20; ++index)
+            model.appendRow(new QStandardItem(QString("Later %1").arg(index)));
+        QCoreApplication::processEvents();
+        tree.verticalScrollBar()->setValue(1);
+        QCoreApplication::processEvents();
+        const auto row = tree.indexAt(blank);
+        QVERIFY(row.isValid());
+        const auto image = tree.viewport()->grab().toImage();
+        QVERIFY(image.pixelColor(tree.visualRect(row).right() - 8, blank.y()) !=
+                resolvedThemeForWidget(tree).colors.muted);
     }
     void sidebarSavedFilesSelectionUsesNeutralFill() {
         using namespace choscordb::design;

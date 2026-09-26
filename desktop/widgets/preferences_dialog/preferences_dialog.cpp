@@ -192,11 +192,6 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     }
     addPage(keyboard, tr("Keyboard shortcuts"));
     pages->setCurrentIndex(0);
-    status_ = createInlineStatus(this);
-    status_->setObjectName("preferencesStatus");
-    status_->setTextFormat(Qt::PlainText);
-    status_->setWordWrap(true);
-    body->addWidget(status_);
     auto* buttons = sections->footerLayout();
     auto* footer = buttons->parentWidget();
     footer->setProperty("designSurface", "muted");
@@ -235,7 +230,6 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
             theme_->setCurrentIndex(theme_->findData("system"));
         }
         ready_ = true;
-        status_->clear();
         setBusy(false);
     });
     connect(system_, &QCheckBox::toggled, this, &PreferencesDialog::updatePreview);
@@ -442,8 +436,6 @@ void PreferencesDialog::setBusy(bool busy) {
         progressToast(this)->showProgress(tr("Preferences"), tr("Saving or loading preferences…"));
     else
         clearProgressToast(this);
-    if (busy)
-        status_->clear();
     busy_ = busy;
     pages_->setEnabled(!busy);
     reset_->setEnabled(!busy);
@@ -484,7 +476,7 @@ void PreferencesDialog::apply() {
     const auto error = shortcutValidationError(value, catalog_);
     if (!error.isEmpty()) {
         if (!placeValidationError(error))
-            status_->setText(error);
+            windowToast(this)->showToast(tr("Error"), error, ToastVariant::Danger);
         return;
     }
     QueryPreferences query;
@@ -530,10 +522,13 @@ void PreferencesDialog::finishRequests() {
         ready_ = errors_.isEmpty();
     setBusy(false);
     if (!errors_.isEmpty()) {
-        status_->setText(errors_.join(QLatin1Char('\n')));
+        windowToast(this)->showToast(tr("Error"), errors_.join(QLatin1Char('\n')),
+                                     ToastVariant::Danger);
         return;
     }
-    status_->setText(saved ? tr("Preferences saved.") : tr("Preferences loaded."));
+    windowToast(this)->showToast(tr("Success"),
+                                 saved ? tr("Preferences saved.") : tr("Preferences loaded."),
+                                 ToastVariant::Success);
     if (saved)
         accept();
 }

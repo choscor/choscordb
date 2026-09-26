@@ -3,7 +3,6 @@
 #include "design_system/dialog_shell/dialog_shell.h"
 #include <QPointer>
 class QSpinBox;
-class QLabel;
 namespace choscordb {
 namespace design {
 class Button;
@@ -25,7 +24,6 @@ class QuerySettingsDialog final : public DialogShell {
     QSpinBox *pageSize_, *timeout_;
     design::FieldValidation *pageSizeValidation_, *timeoutValidation_;
     design::Button *apply_, *reset_;
-    QLabel* status_;
     quint64 token_ = 0;
     bool ready_ = false, saving_ = false;
 };

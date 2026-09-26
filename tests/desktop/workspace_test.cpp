@@ -9,6 +9,7 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/field/field.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/history_model.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/history_dock/history_dock.h"
@@ -314,6 +315,7 @@ void WorkspaceTest::connectionPanelRetainsFailedSaveConnectDraftAndRetries() {
     f.newConnection.trigger();
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>();
     QVERIFY(dialog);
+    QTRY_VERIFY(dialog->findChild<QPushButton*>("profileSaveConnect")->isEnabled());
     QCOMPARE(choscordb::design::DialogPresentation::activeDialog(), dialog);
     QVERIFY(!dialog->isWindow());
     QCOMPARE(dialog->window(), &f.parent);
@@ -337,6 +339,10 @@ void WorkspaceTest::connectionPanelRetainsFailedSaveConnectDraftAndRetries() {
     saveConnect->click();
     QTRY_COMPARE(opened.count(), 1);
     QTRY_VERIFY(!dialog->isVisible());
+    auto* completion = f.parent.findChild<choscordb::ToastRegion*>(
+        "toastRegion", Qt::FindDirectChildrenOnly);
+    QVERIFY(completion && completion->isVisible());
+    QVERIFY(completion->text().contains("Connected."));
 }
 
 void WorkspaceTest::saveAndConnectPersistsProfileBeforeOpeningSession() {

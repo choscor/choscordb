@@ -47,11 +47,6 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     auto* explanation = createDescription(
         tr("Applies to new queries. Existing results keep their page size and timeout."), this);
     layout->addWidget(explanation);
-    status_ = createInlineStatus(this);
-    status_->setObjectName("querySettingsStatus");
-    status_->setTextFormat(Qt::PlainText);
-    status_->setWordWrap(true);
-    layout->addWidget(status_);
     auto* buttons = new QDialogButtonBox(this);
     apply_ = new design::Button(tr("Apply"), this);
     apply_->setObjectName("querySettingsApply");
@@ -73,7 +68,7 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
             return;
         fill(QueryPreferences{});
         ready_ = true;
-        status_->clear();
+        windowToast(this)->clearNotice();
         updateControls();
     });
     connect(adapter, &EngineAdapter::queryPreferencesReady, this,
@@ -95,15 +90,19 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
                             ? tr("Stored timeout is outside the supported range.")
                             : QString{});
                     if (value.version != limits.version)
-                        status_->setText(
-                            tr("Stored settings version is unsupported. Restore defaults."));
+                        windowToast(this)->showToast(
+                            tr("Error"),
+                            tr("Stored settings version is unsupported. Restore defaults."),
+                            ToastVariant::Danger, 0);
                     updateControls();
                     return;
                 }
                 fill(value);
                 ready_ = true;
-                status_->setText(saving_ ? tr("Query settings saved.")
-                                         : tr("Query settings loaded."));
+                windowToast(this)->showToast(
+                    tr("Success"), saving_ ? tr("Query settings saved.")
+                                            : tr("Query settings loaded."),
+                    ToastVariant::Success);
                 saving_ = false;
                 updateControls();
                 emit queryPreferencesConfirmed(value);
@@ -115,7 +114,7 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
                 token_ = 0;
                 clearProgressToast(this);
                 saving_ = false;
-                status_->setText(error);
+                windowToast(this)->showToast(tr("Error"), error, ToastVariant::Danger, 0);
                 updateControls();
             });
     fill(QueryPreferences{});
@@ -126,7 +125,8 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
         adapter_->getQueryPreferences(token_);
     } else {
         token_ = 0;
-        status_->setText(tr("Settings service is unavailable."));
+        windowToast(this)->showToast(tr("Error"), tr("Settings service is unavailable."),
+                                     ToastVariant::Danger, 0);
         updateControls();
     }
 }
@@ -161,7 +161,7 @@ void QuerySettingsDialog::apply() {
     saving_ = true;
     const auto token = nextToken();
     token_ = token;
-    status_->clear();
+    windowToast(this)->clearNotice();
     progressToast(this)->showProgress(tr("Query settings"), tr("Saving query settings…"));
     updateControls();
     // The owner registers this token before even a synchronous submission failure.
