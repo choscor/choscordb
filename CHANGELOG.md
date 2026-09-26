@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.5]
+
+- Simplified result filtering to a single SQL condition input.
+- Improved recent query history with clearer SQL previews, connection details,
+  status, and timestamps.
+- Refined connection dialogs, workspace navigation, and feedback across Light
+  and Dark themes.
+- Improved the object DDL viewer with line numbers and updated desktop styling.
+
 ## [0.1.4]
 
 - Expanded connection profiles with TLS settings, SOCKS proxies, SSH jump hosts,
