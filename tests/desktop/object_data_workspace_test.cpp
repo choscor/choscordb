@@ -546,14 +546,6 @@ class ObjectDataWorkspaceTest : public QObject {
         QTimer confirmEdits;
         bool reviewed = false;
         connect(&confirmEdits, &QTimer::timeout, &window, [&] {
-            if (auto* pending = qobject_cast<QMessageBox*>(
-                    choscordb::design::DialogPresentation::activeDialog())) {
-                for (auto* button : pending->buttons())
-                    if (pending->buttonRole(button) == QMessageBox::AcceptRole) {
-                        button->click();
-                        return;
-                    }
-            }
             auto* dialog =
                 qobject_cast<QDialog*>(choscordb::design::DialogPresentation::activeDialog());
             if (!dialog)
@@ -566,7 +558,7 @@ class ObjectDataWorkspaceTest : public QObject {
             dialog->accept();
         });
         confirmEdits.start(10);
-        run->trigger();
+        apply->click();
         QTRY_VERIFY(reviewed);
         confirmEdits.stop();
         QTRY_VERIFY(!apply->isEnabled());

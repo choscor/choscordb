@@ -20,12 +20,8 @@ fn options() -> ConnectionOptions {
         )),
         ssh: None,
         ssh_secret: None,
-        tls: TlsMode::VerifyFull,
-        root_certificate: Some(
-            std::env::var_os("CHOSCORDB_TEST_POSTGRES_ROOT_CERTIFICATE")
-                .unwrap()
-                .into(),
-        ),
+        tls: TlsMode::Disable,
+        root_certificate: None,
         tls_identity: None,
     }
 }

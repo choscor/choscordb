@@ -514,12 +514,12 @@ async fn large_values_are_deferred_and_survive_cursor_close() {
 #[ignore = "requires disposable MySQL server on localhost:33306"]
 async fn first_page_arrives_before_full_result_finishes() {
     let mut conn = connect().await;
-    let mut cursor = tokio::time::timeout(std::time::Duration::from_secs(2), conn.execute(
-        "WITH RECURSIVE n AS (SELECT 1 AS i UNION ALL SELECT i+1 FROM n WHERE i<500) SELECT i, REPEAT('x',4096), SLEEP(0.01) FROM n",
+    let mut cursor = tokio::time::timeout(std::time::Duration::from_secs(8), conn.execute(
+        "WITH RECURSIVE n AS (SELECT 1 AS i UNION ALL SELECT i+1 FROM n WHERE i<900) SELECT i, REPEAT('x',4096), SLEEP(0.02) FROM n",
         QueryOptions::default(),
-    )).await.expect("execute must not spool the full five-second result").unwrap();
+    )).await.expect("execute must not spool the full eighteen-second result").unwrap();
     let page = tokio::time::timeout(
-        std::time::Duration::from_secs(4),
+        std::time::Duration::from_secs(10),
         cursor.fetch_page(PageSize::new(100).unwrap()),
     )
     .await
