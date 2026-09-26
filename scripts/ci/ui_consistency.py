@@ -36,6 +36,7 @@ DESIGN_COMPOSITES = {
     "DialogSections",
     "FieldValidation",
     "NavigationProfileDelegate",
+    "RecentHistoryRowDelegate",
     "TabAddCorner",
 }
 DESIGN_NON_VISUAL = {

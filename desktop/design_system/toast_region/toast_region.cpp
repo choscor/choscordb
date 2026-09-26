@@ -81,9 +81,7 @@ void ToastRegion::placeOverlay() {
         progress_->setGeometry(12, height() - 20, this->width() - 24, 8);
     }
     move(qMax(0, overlayHost_->width() - this->width() - 16),
-         objectName() == QLatin1String("progressToast")
-             ? 16
-             : qMax(0, overlayHost_->height() - this->height() - 16));
+         qMax(0, overlayHost_->height() - this->height() - 16));
     raise();
 }
 void ToastRegion::showToast(const QString& title, const QString& body, ToastVariant variant,

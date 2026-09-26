@@ -8,8 +8,10 @@ class PreviewTest final : public QObject {
   private slots:
     void codePreviewTextAreaUsesSharedVariantInBothThemes();
     void navigationTreeSpecimenUsesRealTreeInBothThemes();
+    void recentHistoryRowsUseSharedDelegateInBothThemes();
     void editorResultsSplitUsesEqualPanesInBothThemes();
     void documentTabSpecimenShowsFixedWidthTabsInBothThemes();
+    void workspaceToolbarSpecimenUsesMutedSurfaceInBothThemes();
     void richTextParagraphsHaveCompactSpacing();
     void showToastOpensTransientToastAtViewportCorner();
     void toastPortalIsPresentInBothThemes();

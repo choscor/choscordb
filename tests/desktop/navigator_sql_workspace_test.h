@@ -22,6 +22,7 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void sidebarPanelsSwitchWithoutChangingTheSqlTarget();
     void savedPanelFiltersFolderTreeAndReusesEditedTab();
     void historySearchAppliesToRefreshedFullSql();
+    void historySidebarFormatsSqlAndShowsEntryDetails();
     void historySidebarReusesRecordIdAndKeepsDistinctIdenticalSql();
     void historyNavigationStaysInSidebar();
     void recoveryActionsRemainInMenuWithoutToolButtons();

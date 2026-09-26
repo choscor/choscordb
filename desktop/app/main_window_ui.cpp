@@ -8,6 +8,7 @@
 #include "app/result_column_header.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/history_row/history_row.h"
 #include "design_system/icons.h"
 #include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
@@ -374,6 +375,9 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* historyItems = new QListWidget(historySection);
     historyItems->setObjectName("sidebarHistoryItems");
     historyItems->setAccessibleName(tr("Recent query history"));
+    historyItems->setItemDelegate(new design::RecentHistoryRowDelegate(historyItems));
+    historyItems->setMouseTracking(true);
+    historyItems->setSpacing(design::spacing(design::Spacing::Half));
     historyItems->setProperty("designSurface", "sidebar");
     historySection->contentLayout()->addWidget(historyItems, 1);
     sidebarPanels->addWidget(historyPanel);
@@ -395,6 +399,7 @@ MainWindow::Ui MainWindow::buildUi() {
     layout->setSpacing(0);
     auto* toolbar = new QToolBar(tr("Query controls"));
     toolbar->setObjectName("queryToolbar");
+    toolbar->setProperty("designToolbarVariant", "workspace");
     toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     auto* connections = new QComboBox;
     connections->setObjectName("connectionSelector");
@@ -626,6 +631,7 @@ MainWindow::Ui MainWindow::buildUi() {
     editorPaneLayout->addWidget(editors_, 1);
     auto* toolbarHost = new QWidget;
     toolbarHost->setObjectName("queryToolbarContainer");
+    toolbarHost->setProperty("designToolbarSurface", "workspace");
     auto* toolbarLayout = new QVBoxLayout(toolbarHost);
     toolbarLayout->setContentsMargins(initialMetrics.spacingSmall, initialMetrics.spacingSmall,
                                       initialMetrics.spacingSmall, initialMetrics.spacingSmall);

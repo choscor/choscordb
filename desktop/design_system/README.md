@@ -20,13 +20,14 @@ preserved by the component extraction.
 | Checkbox | `checkbox/`: checkbox painting and disabled-state handling |
 | Switch | `switch/`: existing `designRole="switch"` track and thumb painting |
 | Tool button | `tool_button/`: QToolButton states and menu-indicator rules |
-| Toolbar | `toolbar/`: toolbar geometry and separators |
+| Toolbar | `toolbar/`: toolbar geometry, separators, and muted workspace variant |
 | Tabs | `tabs/`: pane/document variants and tab-close painting |
 | Table | `table/`: table font and row styles |
 | Tree | `tree/`: navigation rows and branch painting |
 | List | `list/`: list item styles |
 | Item view | `item_view/`: selectors genuinely shared by table/tree/list |
 | Saved connection row | `navigation_profile_row/`: two-line database profile delegate and selection state |
+| Recent history row | `history_row/`: SQL excerpt, database metadata, status badge, and muted hover delegate |
 | Header | `header/`: header and table-corner styles |
 | Scrollbar | `scrollbar/`: scrollbar dimensions and states |
 | Splitter, separator | `splitter/`, `separator/`: handles and horizontal/vertical rules |
@@ -90,7 +91,7 @@ owning modules.
 | Typography | Text, label, keyboard hint |
 | Icons | Shared icons |
 | Buttons, Button groups | Button, button group |
-| Tool buttons and dropdowns | Tool button, toolbar |
+| Tool buttons and dropdowns | Tool button |
 | Text and password fields, Shortcut entry | Field, focus indicator |
 | Numeric fields | Spin box, shared control glyphs |
 | Text areas and diagnostics | Text area |
@@ -98,8 +99,10 @@ owning modules.
 | Checks and toggles | Checkbox, switch, radio button |
 | Lists and navigation | List, tree, shared item view styles |
 | Saved connection rows | Navigation profile row |
+| Recent query history rows | Recent history row |
 | Dock panel | Dock |
 | Tabs with close and overflow | Tabs |
+| Workspace toolbar | Toolbar |
 | Scroll areas and scrollbars | Scrollbar |
 | Separators and splitters | Separator, splitter |
 | Table headers, cells and selection | Table, header, shared item view styles |

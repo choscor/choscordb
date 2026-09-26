@@ -25,6 +25,7 @@ void MainWindow::updateNativeTitleBar() {
     const auto color = theme_->resolvedTheme().colors.background;
     window.titleVisibility = NSWindowTitleHidden;
     window.titlebarAppearsTransparent = YES;
+    window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
     window.backgroundColor = [NSColor colorWithSRGBRed:color.redF()
                                                  green:color.greenF()
                                                   blue:color.blueF()

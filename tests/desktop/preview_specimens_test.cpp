@@ -65,6 +65,26 @@
 #include <QtTest>
 #include <cstring>
 
+void PreviewTest::workspaceToolbarSpecimenUsesMutedSurfaceInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("toolbar"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        auto* toolbar = host->findChild<QToolBar*>("previewWorkspaceToolbar");
+        QVERIFY(toolbar && toolbar->isVisible());
+        QCOMPARE(toolbar->property("designToolbarVariant").toString(), QString("workspace"));
+        auto* surface = toolbar->parentWidget();
+        QCOMPARE(surface->property("designToolbarSurface").toString(), QString("workspace"));
+        const auto sample = toolbar->mapTo(surface, QPoint(toolbar->width() - 20,
+                                                            toolbar->height() / 2));
+        QCOMPARE(surface->grab().toImage().pixelColor(sample),
+                 choscordb::design::resolvedThemeForWidget(*toolbar).colors.muted);
+    }
+}
+
 void PreviewTest::displayedIconsRasterizeAtTargetScale_data() {
     QTest::addColumn<int>("size");
     QTest::addColumn<qreal>("scale");

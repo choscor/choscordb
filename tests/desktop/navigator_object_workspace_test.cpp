@@ -480,6 +480,8 @@ void NavigatorSqlWorkspaceTest::activeExecutionKeepsDocumentAndCancelReachable()
     QVERIFY(progress);
     QVERIFY(progress->isVisible());
     QVERIFY(progress->findChild<QProgressBar*>()->isVisible());
+    QCOMPARE(progress->geometry().right(), progress->parentWidget()->width() - 17);
+    QCOMPARE(progress->geometry().bottom(), progress->parentWidget()->height() - 17);
     QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier,
                       tabs->tabBar()->tabRect(1).center());
     QCOMPARE(tabs->currentWidget(), first);

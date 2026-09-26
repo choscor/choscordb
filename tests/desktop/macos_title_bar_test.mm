@@ -20,8 +20,9 @@ int main(int argc, char** argv) {
          {choscordb::design::ThemeMode::Dark, choscordb::design::ThemeMode::Light}) {
         theme->setMode(mode);
         app.processEvents();
-        if (native.titleVisibility != NSWindowTitleHidden || !native.titlebarAppearsTransparent) {
-            qCritical("Native title must be hidden and title bar transparent");
+        if (native.titleVisibility != NSWindowTitleHidden || !native.titlebarAppearsTransparent ||
+            native.titlebarSeparatorStyle != NSTitlebarSeparatorStyleNone) {
+            qCritical("Native title must be hidden, transparent, and have no content separator");
             return 1;
         }
         NSColor* color = [native.backgroundColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];

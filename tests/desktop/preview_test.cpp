@@ -6,6 +6,7 @@
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/field/field.h"
+#include "design_system/history_row/history_row.h"
 #include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/tabs/tab_add_corner.h"
@@ -189,6 +190,66 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
     }
 }
 
+void PreviewTest::recentHistoryRowsUseSharedDelegateInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("recent-history-row"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        auto* list = host->findChild<QListWidget*>("previewRecentHistoryRows");
+        QVERIFY(list);
+        QVERIFY(list->isVisible());
+        list->setFixedWidth(260);
+        QCoreApplication::processEvents();
+        QCOMPARE(list->count(), 3);
+        QVERIFY(list->itemDelegate());
+        QVERIFY(dynamic_cast<choscordb::design::RecentHistoryRowDelegate*>(list->itemDelegate()));
+        QCOMPARE(list->item(0)->data(Qt::UserRole + 72).toString(),
+                 QString("SELECT *\nFROM customers\nWHERE id = 6;"));
+        QCOMPARE(list->item(0)->data(Qt::UserRole + 73).toString(), QString("Example Postgres"));
+        QCOMPARE(list->item(0)->data(Qt::UserRole + 74).toString(), QString("Sep 26, 14:24"));
+        QCOMPARE(list->item(0)->data(Qt::UserRole + 75).toString(), QString("completed"));
+        QCOMPARE(list->item(1)->data(Qt::UserRole + 75).toString(), QString("failed"));
+        const auto row = list->visualItemRect(list->item(0));
+        QVERIFY2(row.height() <= 70, qPrintable(QString::number(row.height())));
+        QVERIFY(list->visualItemRect(list->item(2)).bottom() < list->viewport()->height());
+        const auto beforeSqlChange = list->viewport()->grab(row).toImage();
+        list->item(0)->setData(choscordb::design::RecentHistoryRowDelegate::SqlRole,
+                               QString("DELETE *\nFROM customers\nWHERE id = 7;"));
+        QCoreApplication::processEvents();
+        QVERIFY(beforeSqlChange != list->viewport()->grab(row).toImage());
+        const auto beforeDriverChange = list->viewport()->grab(row).toImage();
+        list->item(0)->setData(choscordb::design::RecentHistoryRowDelegate::DriverRole,
+                               QString("sqlite"));
+        QCoreApplication::processEvents();
+        QVERIFY(beforeDriverChange != list->viewport()->grab(row).toImage());
+        const auto beforeDateChange = list->viewport()->grab(row).toImage();
+        list->item(0)->setData(choscordb::design::RecentHistoryRowDelegate::WhenRole,
+                               QString("Oct 17, 08:41"));
+        QCoreApplication::processEvents();
+        QVERIFY(beforeDateChange != list->viewport()->grab(row).toImage());
+        QTest::mouseMove(list->viewport(), QPoint(1, 1));
+        QTest::mouseMove(list->viewport(), row.center());
+        QCoreApplication::processEvents();
+        QCOMPARE(list->viewport()->grab().toImage().pixelColor(row.right() - 5, row.center().y()),
+                 choscordb::design::resolvedThemeForWidget(*list).colors.muted);
+        const auto colors = choscordb::design::resolvedThemeForWidget(*list).colors;
+        const auto image = list->viewport()->grab().toImage();
+        int successPixels = 0;
+        int dangerPixels = 0;
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                successPixels += image.pixelColor(x, y) == colors.successSurface;
+                dangerPixels += image.pixelColor(x, y) == colors.dangerSurface;
+            }
+        }
+        QVERIFY(successPixels > 20);
+        QVERIFY(dangerPixels > 20);
+    }
+}
+
 void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen("tabs"));
@@ -350,6 +411,8 @@ void PreviewTest::progressToastHasPersistentIndicatorInBothThemes() {
         QVERIFY(progress->isVisible());
         QVERIFY(progress->findChild<QProgressBar*>()->isVisible());
         QVERIFY(!progress->findChild<QTimer*>()->isActive());
+        QCOMPARE(progress->geometry().right(), progress->parentWidget()->width() - 17);
+        QCOMPARE(progress->geometry().bottom(), progress->parentWidget()->height() - 17);
         QVERIFY(progress->isVisible());
         progress->clearNotice();
         progress->showProgress("Exporting", "Another batch…");

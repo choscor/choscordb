@@ -8,6 +8,7 @@
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/dock/dock_style.h"
 #include "design_system/field/field.h"
+#include "design_system/history_row/history_row.h"
 #include "design_system/icons.h"
 #include "design_system/menu/menu.h"
 #include "design_system/metrics/metrics.h"
@@ -109,9 +110,13 @@ QList<Specimen> specimens() {
          "desktop/design_system/tree/tree_style.cpp"},
         {"Components", "navigation-profile-row", "Saved connection rows",
          "desktop/design_system/navigation_profile_row/navigation_profile_row.cpp"},
+        {"Components", "recent-history-row", "Recent query history rows",
+         "desktop/design_system/history_row/history_row.cpp"},
         {"Components", "dock", "Dock panel", "desktop/design_system/dock/dock_style.cpp"},
         {"Components", "tabs", "Tabs with close and overflow",
          "desktop/design_system/tabs/tabs_style.cpp"},
+        {"Components", "toolbar", "Workspace toolbar",
+         "desktop/design_system/toolbar/toolbar_style.cpp"},
         {"Components", "scrolling", "Scroll areas and scrollbars",
          "desktop/design_system/scrollbar/scrollbar_style.cpp"},
         {"Components", "separators-splitters", "Separators and splitters",
@@ -781,6 +786,38 @@ void PreviewWindow::rebuildSpecimens() {
             populateFields(content, contentLayout);
         } else if (id == "buttons") {
             populateButtons(content, contentLayout);
+        } else if (id == "recent-history-row") {
+            auto* list = new QListWidget(content);
+            list->setObjectName("previewRecentHistoryRows");
+            list->setAccessibleName(tr("Recent query history"));
+            list->setItemDelegate(new RecentHistoryRowDelegate(list));
+            list->setMouseTracking(true);
+            struct Example {
+                const char* sql;
+                const char* connection;
+                const char* when;
+                const char* status;
+                const char* driver;
+            };
+            const Example examples[] = {
+                {"SELECT *\nFROM customers\nWHERE id = 6;", "Example Postgres", "Sep 26, 14:24",
+                 "completed", "postgres"},
+                {"SELECT id, email\nFROM customers WHERE id = 6;", "Example Postgres",
+                 "Sep 23, 22:32", "failed", "postgres"},
+                {"PRAGMA table_info(customers);", "Local SQLite", "Sep 22, 14:53", "cancelled",
+                 "sqlite"},
+            };
+            for (const auto& example : examples) {
+                auto* item = new QListWidgetItem(example.sql, list);
+                item->setData(RecentHistoryRowDelegate::SqlRole, example.sql);
+                item->setData(RecentHistoryRowDelegate::ConnectionRole, example.connection);
+                item->setData(RecentHistoryRowDelegate::WhenRole, example.when);
+                item->setData(RecentHistoryRowDelegate::StatusRole, example.status);
+                item->setData(RecentHistoryRowDelegate::DriverRole, example.driver);
+            }
+            list->setFixedHeight(220);
+            contentLayout->addWidget(list);
+            contentLayout->addStretch();
         } else {
             preview_detail::populateStandard(id, content, contentLayout);
         }

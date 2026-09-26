@@ -10,6 +10,7 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
+#include "design_system/history_row/history_row.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/menu/menu.h"
 #include "design_system/theme.h"
@@ -131,6 +132,12 @@ void NavigatorSqlWorkspaceTest::sqlToolbarInsetsControls() {
     QVERIFY(topLeft.x() >= 4);
     QVERIFY(topLeft.y() >= 4);
     QVERIFY(toolbar->height() - topLeft.y() - selector->height() >= 4);
+    auto* controls = window.findChild<QToolBar*>("queryToolbar");
+    QVERIFY(controls);
+    const auto colors = choscordb::design::resolvedThemeForWidget(*controls).colors;
+    const auto sample = controls->mapTo(&window, QPoint(controls->width() - 70,
+                                                       controls->height() / 2));
+    QCOMPARE(window.grab().toImage().pixelColor(sample), colors.muted);
 }
 
 void NavigatorSqlWorkspaceTest::tabContextMenuFollowsCursor() {
@@ -552,6 +559,73 @@ void NavigatorSqlWorkspaceTest::historySearchAppliesToRefreshedFullSql() {
     QVERIFY(list->item(0)->isHidden());
     search->clear();
     QVERIFY(!list->item(0)->isHidden());
+}
+
+void NavigatorSqlWorkspaceTest::historySidebarFormatsSqlAndShowsEntryDetails() {
+    QTemporaryDir storage;
+    choscordb::MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+    window.show();
+    QTRY_VERIFY(window.findChild<choscordb::WorkspaceRecoveryController*>()->isReady());
+    QTRY_VERIFY(window.findChild<choscordb::AppearanceController*>()->isReady());
+    auto* adapter = window.findChild<choscordb::QueryWorkspace*>()->adapter();
+    QSignalSpy listed(adapter, &choscordb::EngineAdapter::historyListed);
+    window.findChild<QPushButton*>("sidebarHistory")->click();
+    QTRY_VERIFY(!listed.isEmpty());
+    QTRY_VERIFY(window.findChild<QLabel*>("sidebarHistoryStatus")->text() !=
+                QString::fromUtf8("Loading recent history…"));
+    const auto token = listed.last().at(0).toULongLong();
+    auto* list = window.findChild<QListWidget*>("sidebarHistoryItems");
+    QVERIFY(list);
+    choscordb::SavedHistoryEntry entry;
+    entry.id = "formatted-history";
+    entry.sql = "select name, 'from here' from customers where id=6;";
+    entry.timestamp = 1'700'000'000;
+    entry.status = "failed";
+    emit adapter->historyListed(token, {entry});
+    QCOMPARE(list->count(), 1);
+    QVERIFY(dynamic_cast<choscordb::design::RecentHistoryRowDelegate*>(list->itemDelegate()));
+    QCOMPARE(list->item(0)->data(choscordb::design::RecentHistoryRowDelegate::SqlRole).toString(),
+             QString("SELECT name, 'from here'\nFROM customers\nWHERE id=6;"));
+    QCOMPARE(
+        list->item(0)->data(choscordb::design::RecentHistoryRowDelegate::ConnectionRole).toString(),
+        QString("Unsaved connection"));
+    QCOMPARE(
+        list->item(0)->data(choscordb::design::RecentHistoryRowDelegate::StatusRole).toString(),
+        QString("failed"));
+    QVERIFY(!list->item(0)
+                 ->data(choscordb::design::RecentHistoryRowDelegate::WhenRole)
+                 .toString()
+                 .isEmpty());
+    const auto displayed = list->item(0)->text();
+    QVERIFY2(displayed.contains("SELECT name, 'from here'\nFROM customers\nWHERE id=6;"),
+             qPrintable(displayed));
+    QVERIFY(displayed.contains("Unsaved connection"));
+    QVERIFY(displayed.contains("failed"));
+    QVERIFY(list->item(0)->toolTip().contains("WHERE id=6;"));
+    QCOMPARE(list->item(0)->data(Qt::UserRole).value<choscordb::SavedHistoryEntry>().sql,
+             entry.sql);
+    entry.sql = "select '-- from' as note /* where */ from logs;";
+    emit adapter->historyListed(token, {entry});
+    QCOMPARE(list->count(), 1);
+    const auto withComments = list->item(0)->text();
+    QVERIFY2(withComments.contains("SELECT '-- from' AS note /* where */\nFROM logs;"),
+             qPrintable(withComments));
+    entry.sql = "select $tag$from -- where$tag$ as note from logs;";
+    emit adapter->historyListed(token, {entry});
+    QCOMPARE(list->count(), 1);
+    const auto withDollarString = list->item(0)->text();
+    QVERIFY2(withDollarString.contains("SELECT $tag$from -- where$tag$ AS note\nFROM logs;"),
+             qPrintable(withDollarString));
+    entry.sql = "select $$where from$$ as note from logs;";
+    emit adapter->historyListed(token, {entry});
+    QCOMPARE(list->count(), 1);
+    QVERIFY(list->item(0)->text().contains("SELECT $$where from$$ AS note\nFROM logs;"));
+    entry.sql = "select $tag$from " + QString(120, 'x') + "$tag$ from logs;";
+    emit adapter->historyListed(token, {entry});
+    QCOMPARE(list->count(), 1);
+    const auto clippedDollarString =
+        list->item(0)->data(choscordb::design::RecentHistoryRowDelegate::SqlRole).toString();
+    QVERIFY2(clippedDollarString.startsWith("SELECT $tag$from "), qPrintable(clippedDollarString));
 }
 
 void NavigatorSqlWorkspaceTest::historySidebarReusesRecordIdAndKeepsDistinctIdenticalSql() {

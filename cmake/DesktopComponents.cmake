@@ -24,6 +24,7 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/field/focus_indicator.cpp
   desktop/design_system/fonts/fonts.cpp
   desktop/design_system/header/header_style.cpp
+  desktop/design_system/history_row/history_row.cpp
   desktop/design_system/icons.cpp
   desktop/design_system/item_view/item_view_style.cpp
   desktop/design_system/navigation_profile_row/navigation_profile_row.cpp

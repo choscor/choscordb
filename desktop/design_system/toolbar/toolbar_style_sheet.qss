@@ -4,6 +4,14 @@ QToolBar {
   background: @background;
 }
 
+QToolBar[designToolbarVariant="workspace"] {
+  background: transparent;
+}
+
+QWidget[designToolbarSurface="workspace"] {
+  background: @muted;
+}
+
 QToolBar::separator {
   background: @border;
   width: 1px;

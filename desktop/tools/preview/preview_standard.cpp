@@ -241,6 +241,19 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         objectTabs->setExpanding(false);
         objectTabs->setCurrentIndex(3);
         layout->addWidget(objectTabs);
+    } else if (id == "toolbar") {
+        auto* toolbarBar = new QWidget(host);
+        toolbarBar->setProperty("designToolbarSurface", "workspace");
+        auto* toolbarLayout = new QVBoxLayout(toolbarBar);
+        const auto inset = spacing(Spacing::One);
+        toolbarLayout->setContentsMargins(inset, inset, inset, inset);
+        auto* workspaceToolbar = new QToolBar("Workspace controls", toolbarBar);
+        workspaceToolbar->setObjectName("previewWorkspaceToolbar");
+        workspaceToolbar->setProperty("designToolbarVariant", "workspace");
+        workspaceToolbar->addWidget(new QLabel("Query controls", workspaceToolbar));
+        toolbarLayout->addWidget(workspaceToolbar);
+        layout->addWidget(toolbarBar);
+        layout->addStretch();
     } else if (id == "scrolling") {
         auto* scroll = new QScrollArea(host);
         auto* content = new QWidget(scroll);
