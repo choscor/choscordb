@@ -1,5 +1,5 @@
-#include "widgets/profile_dialog/profile_dialog.h"
 #include "design_system/field/field.h"
+#include "widgets/profile_dialog/profile_dialog.h"
 #include <QComboBox>
 #include <QFormLayout>
 #include <QLineEdit>

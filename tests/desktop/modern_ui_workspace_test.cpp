@@ -625,12 +625,10 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     window.showToast("Connected", choscordb::ToastVariant::Success);
     QTRY_VERIFY_WITH_TIMEOUT(
         qobject_cast<QGraphicsOpacityEffect*>(toast->graphicsEffect())->opacity() > 0.99, 2000);
-    const auto sample = toast->mapTo(&window, QPoint(toast->width() - 20,
-                                                   toast->height() - 20));
+    const auto sample = toast->mapTo(&window, QPoint(toast->width() - 20, toast->height() - 20));
     const auto capture = window.grab();
     const auto scale = capture.devicePixelRatioF();
-    QCOMPARE(capture.toImage().pixelColor(qRound(sample.x() * scale),
-                                          qRound(sample.y() * scale)),
+    QCOMPARE(capture.toImage().pixelColor(qRound(sample.x() * scale), qRound(sample.y() * scale)),
              window.findChild<choscordb::design::ThemeManager*>()->resolvedTheme().colors.success);
     QVERIFY(resetLayout);
     auto* run = window.findChild<QAction*>("runStatement");

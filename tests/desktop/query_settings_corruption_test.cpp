@@ -2,8 +2,8 @@
 #include "app/query_settings.h"
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
-#include "design_system/toast_region/toast_region.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/toast_region/toast_region.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QDialog>

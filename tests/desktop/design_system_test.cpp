@@ -35,10 +35,11 @@ class DesignSystemTest final : public QObject {
         for (const auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
             manager.setMode(mode);
             const auto sheet = applicationStyleSheet(manager.resolvedTheme(), manager.metrics());
-            const auto expected =
-                mode == ThemeMode::Light
-                    ? QStringList{manager.resolvedTheme().colors.success.name(), "#fff3d6", "#fdecea"}
-                    : QStringList{manager.resolvedTheme().colors.success.name(), "#473b22", "#492d2b"};
+            const auto expected = mode == ThemeMode::Light
+                                      ? QStringList{manager.resolvedTheme().colors.success.name(),
+                                                    "#fff3d6", "#fdecea"}
+                                      : QStringList{manager.resolvedTheme().colors.success.name(),
+                                                    "#473b22", "#492d2b"};
             const auto borders = QStringList{manager.resolvedTheme().colors.success.name(),
                                              manager.resolvedTheme().colors.warning.name(),
                                              manager.resolvedTheme().colors.danger.name()};

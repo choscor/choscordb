@@ -324,8 +324,7 @@ bool ProfileDialog::validateConnectionDraft(const SavedProfile& profile) {
         if (adapter_->validateConnectionProperties(profile, error))
             return true;
         if (profile.driver == "sqlite" && profile.path.startsWith("file:") &&
-            authenticationMethod(profile) == "password" &&
-            error == "Invalid profile") {
+            authenticationMethod(profile) == "password" && error == "Invalid profile") {
             setBusy(false);
             showFieldError(path_, tr("Enter a valid SQLite file URI."));
             return false;

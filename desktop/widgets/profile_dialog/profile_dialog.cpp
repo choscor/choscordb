@@ -11,16 +11,16 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFileDialog>
-#include <QHideEvent>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QHideEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
-#include <QPushButton>
 #include <QProgressBar>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -292,7 +292,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         sshLayout->setRowVisible(validationFor(sshIdentityFile_), publicKey);
         sshLayout->setRowVisible(validationFor(sshSecret_), !agent);
         sshLayout->setRowVisible(rememberSshSecret_, !agent);
-        if (auto* label = qobject_cast<QLabel*>(sshLayout->labelForField(validationFor(sshSecret_))))
+        if (auto* label =
+                qobject_cast<QLabel*>(sshLayout->labelForField(validationFor(sshSecret_))))
             label->setText(publicKey ? tr("SSH passphrase") : tr("SSH password"));
         updatePrivateKeyControls();
         sshIdentityFile_->setPlaceholderText(tr("Private key file"));
@@ -676,8 +677,7 @@ QWidget* ProfileDialog::validated(QWidget* field) {
         connect(select, &QComboBox::currentIndexChanged, validation,
                 [validation] { validation->setError({}); });
     if (auto* check = qobject_cast<QCheckBox*>(field))
-        connect(check, &QCheckBox::toggled, validation,
-                [validation] { validation->setError({}); });
+        connect(check, &QCheckBox::toggled, validation, [validation] { validation->setError({}); });
     return validation;
 }
 

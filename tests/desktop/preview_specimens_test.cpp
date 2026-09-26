@@ -78,8 +78,8 @@ void PreviewTest::workspaceToolbarSpecimenUsesMutedSurfaceInBothThemes() {
         QCOMPARE(toolbar->property("designToolbarVariant").toString(), QString("workspace"));
         auto* surface = toolbar->parentWidget();
         QCOMPARE(surface->property("designToolbarSurface").toString(), QString("workspace"));
-        const auto sample = toolbar->mapTo(surface, QPoint(toolbar->width() - 20,
-                                                            toolbar->height() / 2));
+        const auto sample =
+            toolbar->mapTo(surface, QPoint(toolbar->width() - 20, toolbar->height() / 2));
         QCOMPARE(surface->grab().toImage().pixelColor(sample),
                  choscordb::design::resolvedThemeForWidget(*toolbar).colors.muted);
     }

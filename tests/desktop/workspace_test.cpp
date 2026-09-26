@@ -339,8 +339,8 @@ void WorkspaceTest::connectionPanelRetainsFailedSaveConnectDraftAndRetries() {
     saveConnect->click();
     QTRY_COMPARE(opened.count(), 1);
     QTRY_VERIFY(!dialog->isVisible());
-    auto* completion = f.parent.findChild<choscordb::ToastRegion*>(
-        "toastRegion", Qt::FindDirectChildrenOnly);
+    auto* completion =
+        f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
     QVERIFY(completion && completion->isVisible());
     QVERIFY(completion->text().contains("Connected."));
 }

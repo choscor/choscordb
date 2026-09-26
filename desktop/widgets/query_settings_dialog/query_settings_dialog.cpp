@@ -99,10 +99,10 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
                 }
                 fill(value);
                 ready_ = true;
-                windowToast(this)->showToast(
-                    tr("Success"), saving_ ? tr("Query settings saved.")
-                                            : tr("Query settings loaded."),
-                    ToastVariant::Success);
+                windowToast(this)->showToast(tr("Success"),
+                                             saving_ ? tr("Query settings saved.")
+                                                     : tr("Query settings loaded."),
+                                             ToastVariant::Success);
                 saving_ = false;
                 updateControls();
                 emit queryPreferencesConfirmed(value);

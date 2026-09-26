@@ -135,8 +135,8 @@ void NavigatorSqlWorkspaceTest::sqlToolbarInsetsControls() {
     auto* controls = window.findChild<QToolBar*>("queryToolbar");
     QVERIFY(controls);
     const auto colors = choscordb::design::resolvedThemeForWidget(*controls).colors;
-    const auto sample = controls->mapTo(&window, QPoint(controls->width() - 70,
-                                                       controls->height() / 2));
+    const auto sample =
+        controls->mapTo(&window, QPoint(controls->width() - 70, controls->height() / 2));
     QCOMPARE(window.grab().toImage().pixelColor(sample), colors.muted);
 }
 

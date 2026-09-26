@@ -366,13 +366,13 @@ void PreviewTest::toastPortalIsPresentInBothThemes() {
         QVERIFY(scroll && toast);
         toast->showToast("Saved", "Portal specimen", choscordb::ToastVariant::Success, 0);
         QTest::qWait(200);
-        const auto sample = toast->mapTo(&window, QPoint(toast->width() - 20,
-                                                       toast->height() - 20));
+        const auto sample =
+            toast->mapTo(&window, QPoint(toast->width() - 20, toast->height() - 20));
         const auto capture = window.grab();
         const auto scale = capture.devicePixelRatioF();
-        QCOMPARE(capture.toImage().pixelColor(qRound(sample.x() * scale),
-                                              qRound(sample.y() * scale)),
-                 QColor(expectedSurface));
+        QCOMPARE(
+            capture.toImage().pixelColor(qRound(sample.x() * scale), qRound(sample.y() * scale)),
+            QColor(expectedSurface));
         QCOMPARE(toast->parentWidget(), scroll->viewport());
         QCOMPARE(toast->geometry().right(), scroll->viewport()->width() - 17);
         QCOMPARE(toast->geometry().bottom(), scroll->viewport()->height() - 17);

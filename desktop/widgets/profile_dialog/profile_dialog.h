@@ -3,8 +3,8 @@
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "widgets/profile_dialog/ssh_hop_editor.h"
 #include "widgets/profile_dialog/ssh_private_key_editor.h"
-#include <QPointer>
 #include <QHash>
+#include <QPointer>
 class QComboBox;
 class QFormLayout;
 class QPlainTextEdit;

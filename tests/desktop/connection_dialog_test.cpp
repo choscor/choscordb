@@ -8,8 +8,8 @@
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
-#include <QDir>
 #include <QDialog>
+#include <QDir>
 #include <QFile>
 #include <QHBoxLayout>
 #include <QJsonDocument>
@@ -64,8 +64,8 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
     QCOMPARE(dialog->findChild<QLabel*>("profileStatus")->text(),
              QString("Connection test succeeded."));
     QVERIFY(!dialog->findChild<QLabel*>("profileStatus")->isVisible());
-    auto* feedback = f.parent.findChild<choscordb::ToastRegion*>(
-        "toastRegion", Qt::FindDirectChildrenOnly);
+    auto* feedback =
+        f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
     QVERIFY(feedback && feedback->isVisible());
     QCOMPARE(feedback->parentWidget(), &f.parent);
     QCOMPARE(feedback->property("variant").toString(), QString("success"));

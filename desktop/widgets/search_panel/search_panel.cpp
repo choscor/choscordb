@@ -277,8 +277,7 @@ void SearchPanel::replaceOne() {
                           static_cast<long>(start + bytes.size()));
     invalidate();
     status_->clear();
-    windowToast(this)->showToast(tr("Success"), tr("Replaced one match."),
-                                 ToastVariant::Success);
+    windowToast(this)->showToast(tr("Success"), tr("Replaced one match."), ToastVariant::Success);
 }
 void SearchPanel::replaceAll() {
     auto* editor = editable();
@@ -329,8 +328,7 @@ void SearchPanel::replaceAll() {
                 if (oversizedNeedle)
                     needleValidation_->setError(result.error);
                 else
-                    windowToast(this)->showToast(tr("Error"), result.error,
-                                                 ToastVariant::Danger);
+                    windowToast(this)->showToast(tr("Error"), result.error, ToastVariant::Danger);
                 return;
             }
             if (result.count != 0) {

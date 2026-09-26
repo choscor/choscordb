@@ -28,8 +28,8 @@ class SearchTest : public QObject {
         QTRY_COMPARE(editor.selectedText(), QString("cat"));
         panel.findChild<QPushButton*>("searchReplace")->click();
         QCOMPARE(editor.text(), QString("dog cat cat"));
-        auto* toast = parent.findChild<choscordb::ToastRegion*>("toastRegion",
-                                                                 Qt::FindDirectChildrenOnly);
+        auto* toast =
+            parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
         QVERIFY(toast);
         QTRY_VERIFY(toast->isVisible());
         QCOMPARE(toast->property("variant").toString(), QString("success"));

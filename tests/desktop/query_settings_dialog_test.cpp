@@ -1,5 +1,5 @@
-#include "widgets/query_settings_dialog/query_settings_dialog.h"
 #include "design_system/toast_region/toast_region.h"
+#include "widgets/query_settings_dialog/query_settings_dialog.h"
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>

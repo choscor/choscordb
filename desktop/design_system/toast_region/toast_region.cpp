@@ -169,9 +169,8 @@ ToastRegion* windowToast(QWidget* context) {
         toast->attachTo(host);
     }
     auto* modal = design::DialogPresentation::activeDialog(host);
-    QObject* popupOwner = modal && (context == modal || modal->isAncestorOf(context))
-                              ? modal
-                              : nullptr;
+    QObject* popupOwner =
+        modal && (context == modal || modal->isAncestorOf(context)) ? modal : nullptr;
     if (toast->property("embeddedPopupOwner").value<QObject*>() != popupOwner) {
         toast->setProperty("embeddedPopupOwner", QVariant::fromValue(popupOwner));
         if (popupOwner)
