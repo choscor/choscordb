@@ -117,7 +117,8 @@ jobs:
           python-version: '3.12'
       - name: Install PostgreSQL 17 and native dependencies
         run: |
-          brew install postgresql@17
+          brew install postgresql@17 openssl@3
+          echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
           python -m pip install --requirement scripts/ci/requirements.txt
       - name: Build native integration tests
         run: |

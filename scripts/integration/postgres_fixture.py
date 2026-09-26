@@ -136,6 +136,10 @@ def main():
                 "basicConstraints=critical,CA:TRUE",
                 "-addext",
                 "keyUsage=critical,keyCertSign,cRLSign",
+                "-addext",
+                "subjectKeyIdentifier=hash",
+                "-addext",
+                "authorityKeyIdentifier=keyid:always",
                 "-keyout",
                 root / "ca.key",
                 "-out",
@@ -164,6 +168,7 @@ def main():
         extensions.write_text(
             "subjectAltName=DNS:localhost\nbasicConstraints=critical,CA:FALSE\n"
             "keyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n"
+            "subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid:always\n"
         )
         run(
             [
@@ -224,6 +229,7 @@ def main():
             "basicConstraints=critical,CA:FALSE\n"
             "keyUsage=critical,digitalSignature\n"
             "extendedKeyUsage=clientAuth\n"
+            "subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid:always\n"
         )
         run(
             [
