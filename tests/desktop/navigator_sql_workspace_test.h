@@ -7,6 +7,10 @@ class NavigatorSqlWorkspaceTest : public QObject {
 
   private slots:
     void sqlRowActionsLiveInResultContextMenu();
+    void sqlRowJsonUsesClickedRowAndCopiesDisplayedDocument();
+    void sqlRowJsonLoadsFullDeferredBinaryAndRejectsOversizedValue();
+    void sqlRowJsonLoadsUtf8TextAndIgnoresReplacedResult();
+    void sqlRowJsonDoesNotChangeDatabaseContents();
     void sqlOpensWithEqualEditorAndResults();
     void sqlToolbarInsetsControls();
     void tabContextMenuFollowsCursor();

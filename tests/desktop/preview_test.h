@@ -31,6 +31,7 @@ class PreviewTest final : public QObject {
     void standaloneCapturesRequestedThemeAndViewport_data();
     void standaloneCapturesRequestedThemeAndViewport();
     void confirmationSpecimenUsesProductionCancellationBoundary();
+    void rightSheetSpecimenUsesModalBoundaryInBothThemes();
     void tableHoverPreservesBackgroundInBothThemes();
     void initTestCase();
     void exportedPopupContainsItsVisibleContent_data();

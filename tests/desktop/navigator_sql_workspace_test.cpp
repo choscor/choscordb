@@ -21,12 +21,15 @@
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
+#include <QClipboard>
 #include <QComboBox>
 #include <QContextMenuEvent>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -38,6 +41,7 @@
 #include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QStandardItemModel>
 #include <QStandardPaths>
 #include <QTabBar>
 #include <QTabWidget>
@@ -100,6 +104,209 @@ void NavigatorSqlWorkspaceTest::sqlRowActionsLiveInResultContextMenu() {
     QVERIFY(model->deleted()[1]);
     invoke(names[2], true);
     QVERIFY(!model->deleted()[1]);
+}
+
+void NavigatorSqlWorkspaceTest::sqlRowJsonUsesClickedRowAndCopiesDisplayedDocument() {
+    QTemporaryDir storage;
+    choscordb::MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+    window.show();
+    QTRY_VERIFY(window.findChild<choscordb::WorkspaceRecoveryController*>()->isReady());
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* grid = window.findChild<QTableView*>("queryResults");
+    auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+    QVERIFY(model);
+    choscordb::ResultColumn id{}, name{};
+    id.name = "id";
+    name.name = "name";
+    QVERIFY(model->setPage({id, name},
+                           {{qint64(1), QString("first")}, {qint64(2), QString("second")}}, 0));
+    model->setEditableColumns({false, true}, false, false);
+    QVERIFY(model->setData(model->index(1, 1), QString("staged")));
+    QVERIFY(model->hasPendingEdits());
+    grid->setCurrentIndex(model->index(0, 0));
+    const auto selected = grid->currentIndex();
+    const auto clicked = grid->visualRect(model->index(1, 0)).center();
+    QVERIFY(grid->indexAt(clicked).isValid());
+    QTimer::singleShot(0, grid, [&] {
+        auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+        if (!menu) {
+            if (auto* popup = QApplication::activePopupWidget())
+                popup->close();
+            QFAIL("Row context menu did not open");
+        }
+        auto* action = menu->findChild<QAction*>("viewRowJson");
+        if (!action) {
+            menu->close();
+            QFAIL("View row as JSON action is missing");
+        }
+        const auto label = action->text();
+        const bool enabled = action->isEnabled();
+        menu->close();
+        QCOMPARE(label, QString("View row as JSON"));
+        QVERIFY(enabled);
+        action->trigger();
+    });
+    grid->customContextMenuRequested(clicked);
+    auto* sheet = window.findChild<QDialog*>("rowJsonSheet");
+    QVERIFY(sheet);
+    QTRY_VERIFY(sheet->isVisible());
+    auto* document = sheet->findChild<QPlainTextEdit*>("rowJsonText");
+    auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
+    QVERIFY(document);
+    QVERIFY(copy);
+    QVERIFY(document->isReadOnly());
+    const auto json = document->toPlainText();
+    const auto parsed = QJsonDocument::fromJson(json.toUtf8());
+    QVERIFY(parsed.isObject());
+    QCOMPARE(parsed.object().value("id").toInt(), 2);
+    QCOMPARE(parsed.object().value("name").toString(), QString("staged"));
+    QCOMPARE(grid->currentIndex(), selected);
+    QVERIFY(model->hasPendingEdits());
+    copy->click();
+    QCOMPARE(QApplication::clipboard()->text(), json);
+    QVERIFY(sheet->isVisible());
+    sheet->reject();
+    QTimer::singleShot(0, grid, [&] {
+        auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+        if (!menu) {
+            if (auto* popup = QApplication::activePopupWidget())
+                popup->close();
+            QFAIL("Row context menu did not open");
+        }
+        auto* action = menu->findChild<QAction*>("viewRowJson");
+        const bool disabled = action && !action->isEnabled();
+        menu->close();
+        QVERIFY(disabled);
+    });
+    grid->customContextMenuRequested(
+        QPoint(grid->viewport()->width() - 2, grid->viewport()->height() - 2));
+    auto* stale = new QStandardItemModel(1, 1, &window);
+    grid->setModel(stale);
+    QTimer::singleShot(0, grid, [&] {
+        auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+        if (!menu) {
+            if (auto* popup = QApplication::activePopupWidget())
+                popup->close();
+            QFAIL("Row context menu did not open");
+        }
+        auto* action = menu->findChild<QAction*>("viewRowJson");
+        const bool disabled = action && !action->isEnabled();
+        menu->close();
+        QVERIFY(disabled);
+    });
+    grid->customContextMenuRequested(grid->visualRect(stale->index(0, 0)).center());
+}
+
+void NavigatorSqlWorkspaceTest::sqlRowJsonLoadsFullDeferredBinaryAndRejectsOversizedValue() {
+    QTemporaryDir storage;
+    choscordb::MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+    window.show();
+    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+    workspace->connectSqlite(":memory:");
+    QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* editor = qobject_cast<choscordb::SqlEditor*>(
+        window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+    auto* run = window.findChild<QAction*>("runStatement");
+    auto* grid = window.findChild<QTableView*>("queryResults");
+    auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+    const auto openJson = [&](bool closeImmediately = false) {
+        const auto point = grid->visualRect(model->index(0, 0)).center();
+        QTimer::singleShot(0, grid, [&, closeImmediately] {
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+            if (!menu) {
+                if (auto* popup = QApplication::activePopupWidget())
+                    popup->close();
+                QFAIL("Row context menu did not open");
+            }
+            auto* action = menu->findChild<QAction*>("viewRowJson");
+            const bool enabled = action && action->isEnabled();
+            menu->close();
+            QVERIFY(enabled);
+            action->trigger();
+            if (closeImmediately) {
+                auto* sheet = window.findChild<QDialog*>("rowJsonSheet");
+                QVERIFY(sheet);
+                auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
+                QVERIFY(copy && !copy->isEnabled());
+                QVERIFY(sheet->findChild<QLabel*>("rowJsonStatus")->text().contains("Loading"));
+                sheet->reject();
+            }
+        });
+        grid->customContextMenuRequested(point);
+    };
+    QTRY_VERIFY(run->isEnabled());
+    editor->setText("SELECT zeroblob(70000) AS payload, 'done' AS label;");
+    run->trigger();
+    QTRY_COMPARE(model->rowCount(), 1);
+    QVERIFY(model->deferredValue(model->index(0, 0)).has_value());
+    QCOMPARE(model->deferredValue(model->index(0, 0))->bytes, quint64(70000));
+    openJson();
+    auto* sheet = window.findChild<QDialog*>("rowJsonSheet");
+    QVERIFY(sheet);
+    auto* text = sheet->findChild<QPlainTextEdit*>("rowJsonText");
+    auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
+    QVERIFY(text && copy);
+    QTRY_VERIFY(copy->isEnabled());
+    const auto parsed = QJsonDocument::fromJson(text->toPlainText().toUtf8());
+    QVERIFY(parsed.isObject());
+    QCOMPARE(parsed.object().value("payload").toObject().value("$binary").toString(),
+             QString::fromLatin1(QByteArray(70000, '\0').toBase64()));
+    QCOMPARE(parsed.object().value("label").toString(), QString("done"));
+    sheet->reject();
+    QTRY_VERIFY(run->isEnabled());
+    editor->setText("SELECT zeroblob(8388609) AS payload;");
+    run->trigger();
+    QTRY_VERIFY(model->rowCount() == 1 && model->deferredValue(model->index(0, 0)).has_value() &&
+                model->deferredValue(model->index(0, 0))->bytes == 8388609);
+    openJson();
+    QVERIFY(!copy->isEnabled());
+    QVERIFY(text->toPlainText().isEmpty());
+    QVERIFY(sheet->findChild<QLabel*>("rowJsonStatus")->text().contains("8 MiB"));
+    sheet->reject();
+    QTRY_VERIFY(run->isEnabled());
+    editor->setText("SELECT zeroblob(4194304) AS payload;");
+    run->trigger();
+    QTRY_VERIFY(model->rowCount() == 1 && model->deferredValue(model->index(0, 0)).has_value() &&
+                model->deferredValue(model->index(0, 0))->bytes == 4194304);
+    openJson(true);
+    QVERIFY(!sheet->isVisible());
+    QTest::qWait(100);
+    QVERIFY(text->toPlainText().isEmpty());
+    QVERIFY(!copy->isEnabled());
+    choscordb::ResultColumn payload{};
+    payload.name = "payload";
+    QVERIFY(model->setPage(
+        {payload}, {{choscordb::DeferredValue{UINT64_MAX, 70000, QStringLiteral("binary")}}}, 0));
+    openJson();
+    QTRY_VERIFY(sheet->findChild<QLabel*>("rowJsonStatus")
+                    ->text()
+                    .contains("Unable to show complete JSON"));
+    QVERIFY(text->toPlainText().isEmpty());
+    QVERIFY(!copy->isEnabled());
+    sheet->reject();
+    choscordb::ResultColumn invalidText{};
+    invalidText.name = "invalid";
+    QString unpairedSurrogate;
+    unpairedSurrogate.append(QChar(0xd800));
+    QVERIFY(
+        model->setPage({invalidText, payload},
+                       {{unpairedSurrogate,
+                         choscordb::DeferredValue{UINT64_MAX, 70000, QStringLiteral("binary")}}},
+                       0));
+    QTimer::singleShot(0, grid, [&] {
+        auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+        if (!menu) {
+            if (auto* popup = QApplication::activePopupWidget())
+                popup->close();
+            QFAIL("Row context menu did not open");
+        }
+        auto* action = menu->findChild<QAction*>("viewRowJson");
+        const bool enabled = action && action->isEnabled();
+        menu->close();
+        QVERIFY(!enabled);
+    });
+    grid->customContextMenuRequested(grid->visualRect(model->index(0, 0)).center());
 }
 
 void NavigatorSqlWorkspaceTest::sqlOpensWithEqualEditorAndResults() {

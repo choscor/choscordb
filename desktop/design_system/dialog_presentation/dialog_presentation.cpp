@@ -174,7 +174,8 @@ class Backdrop final : public QWidget {
     qreal shadowScale_ = 0;
 };
 } // namespace
-DialogPresentation::DialogPresentation(QDialog& dialog) : QObject(&dialog), dialog_(dialog) {}
+DialogPresentation::DialogPresentation(QDialog& dialog, Placement placement)
+    : QObject(&dialog), dialog_(dialog), placement_(placement) {}
 DialogPresentation::~DialogPresentation() {
     activeDialogs.removeAll(&dialog_);
     delete backdrop_.data();
@@ -215,14 +216,19 @@ void DialogPresentation::center() {
     if (backdrop_) {
         backdrop_->setGeometry(owner_->rect());
     }
-    if (!dialog_.isWindow()) {
+    if (placement_ == Placement::RightEdge && !dialog_.isWindow()) {
+        const int width = qMin(dimension(Dimension::SheetWidth), owner_->width());
+        dialog_.setMaximumSize(width, owner_->height());
+        dialog_.setGeometry(owner_->width() - width, 0, width, owner_->height());
+    } else if (!dialog_.isWindow()) {
         const auto available = (owner_->size() - QSize(32, 32)).expandedTo(QSize(1, 1));
         dialog_.setMaximumSize(available);
         dialog_.resize(dialog_.size().boundedTo(available));
     }
-    dialog_.move((dialog_.isWindow() ? owner_->mapToGlobal(owner_->rect().center())
-                                     : owner_->rect().center()) -
-                 dialog_.rect().center());
+    if (placement_ != Placement::RightEdge || dialog_.isWindow())
+        dialog_.move((dialog_.isWindow() ? owner_->mapToGlobal(owner_->rect().center())
+                                         : owner_->rect().center()) -
+                     dialog_.rect().center());
     if (backdrop_)
         backdrop_->update();
 }

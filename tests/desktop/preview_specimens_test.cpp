@@ -7,6 +7,7 @@
 #include "design_system/field/field.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/right_sheet/right_sheet.h"
 #include "design_system/text/text.h"
 #include "design_system/toast_region/toast_region.h"
 #include "design_system/tree/navigation_tree_view.h"
@@ -40,6 +41,7 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QPainter>
+#include <QPlainTextEdit>
 #include <QProcess>
 #include <QProgressBar>
 #include <QPushButton>
@@ -662,4 +664,80 @@ void PreviewTest::popupSpecimensStayInsideWindowInBothThemes() {
                 popup->hide();
         }
     }
+}
+
+void PreviewTest::rightSheetSpecimenUsesModalBoundaryInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("right-sheet"));
+    window.resize(1100, 740);
+    window.show();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        auto* open = host->findChild<QPushButton*>("previewOpenRightSheet");
+        QVERIFY(open);
+        open->setFocus();
+        open->click();
+        auto* sheet = qobject_cast<choscordb::design::RightSheet*>(
+            open->property("previewSurface").value<QObject*>());
+        QVERIFY(sheet);
+        QTRY_VERIFY(sheet->isVisible());
+        QCOMPARE(sheet->parentWidget(), &window);
+        QCOMPARE(sheet->geometry().right(), window.rect().right());
+        QCOMPARE(sheet->height(), window.height());
+        QVERIFY(window.findChild<QWidget*>("modalBackdrop"));
+        QTRY_VERIFY(sheet->isAncestorOf(QApplication::focusWidget()));
+        auto* close = sheet->findChild<QPushButton*>("rightSheetClose");
+        QVERIFY(close);
+        QCOMPARE(close->accessibleName(), QString("Close sheet"));
+        QCOMPARE(sheet->accessibleName(), QString("Example details"));
+        QVERIFY(sheet->findChild<QWidget*>("rightSheetBody"));
+        auto* footer = sheet->findChild<QWidget*>("rightSheetFooter");
+        QVERIFY(footer);
+        QCOMPARE(footer->accessibleName(), QString("Sheet actions"));
+        QCOMPARE(footer->geometry().bottom(), sheet->rect().bottom());
+        const auto footerColor = footer->grab(QRect(1, 1, 1, 1)).toImage().pixelColor(0, 0);
+        QCOMPARE(footerColor, choscordb::design::resolvedThemeForWidget(*sheet).colors.muted);
+        QSignalSpy backgroundClicks(open, &QPushButton::clicked);
+        QTest::mouseClick(open, Qt::LeftButton);
+        QCOMPARE(backgroundClicks.count(), 0);
+        QVERIFY(sheet->isVisible());
+        window.resize(1000, 650);
+        QTRY_COMPARE(sheet->geometry().right(), window.rect().right());
+        QTRY_COMPARE(sheet->height(), window.height());
+        close->click();
+        QTRY_VERIFY(!sheet->isVisible());
+        QTRY_VERIFY(open->hasFocus());
+        open->click();
+        QTRY_VERIFY(sheet->isVisible());
+        QTest::keyClick(sheet, Qt::Key_Escape);
+        QTRY_VERIFY(!sheet->isVisible());
+        QTRY_VERIFY(open->hasFocus());
+        open->click();
+        QTRY_VERIFY(sheet->isVisible());
+        QWidget* backdrop = nullptr;
+        for (auto* candidate : window.findChildren<QWidget*>("modalBackdrop")) {
+            if (candidate->isVisible())
+                backdrop = candidate;
+        }
+        QVERIFY(backdrop);
+        QVERIFY(backdrop->isVisible());
+        QCOMPARE(choscordb::design::DialogPresentation::activeDialog(&window), sheet);
+        QTest::mouseClick(backdrop, Qt::LeftButton, Qt::NoModifier, QPoint(10, 10));
+        QTRY_VERIFY(!sheet->isVisible());
+        QTRY_VERIFY(open->hasFocus());
+    }
+    QWidget narrowOwner;
+    narrowOwner.resize(300, 420);
+    narrowOwner.show();
+    choscordb::design::RightSheet narrowSheet(&narrowOwner);
+    narrowSheet.setTitle("Details");
+    narrowSheet.setBody(new QPlainTextEdit(&narrowSheet));
+    auto* narrowAction = new choscordb::design::Button("Done", &narrowSheet);
+    narrowSheet.footerLayout()->addWidget(narrowAction);
+    narrowSheet.open();
+    QTRY_COMPARE(narrowSheet.geometry(), QRect(0, 0, 300, 420));
+    QVERIFY(narrowSheet.rect().contains(
+        QRect(narrowAction->mapTo(&narrowSheet, QPoint()), narrowAction->size())));
+    narrowSheet.reject();
 }
