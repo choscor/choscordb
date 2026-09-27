@@ -2,8 +2,19 @@
 #include "design_system/theme_manager.h"
 #import <AppKit/AppKit.h>
 #include <QApplication>
+#include <QDockWidget>
 #include <QTemporaryDir>
 #include <QtTest>
+
+static bool contentClearsTitleBar(choscordb::MainWindow& window, NSWindow* native) {
+    if (native.styleMask & NSWindowStyleMaskFullSizeContentView)
+        return false;
+    const int contentTop = window.centralWidget()->mapTo(&window, QPoint(0, 0)).y();
+    const auto* navigator = window.findChild<QDockWidget*>("navigator");
+    const int navigatorTop = navigator ? navigator->mapTo(&window, QPoint(0, 0)).y() : -1;
+    // AppKit reserves the native title bar outside Qt's content rectangle.
+    return window.contentsMargins().top() == 0 && contentTop == 0 && navigatorTop == 0;
+}
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
@@ -20,9 +31,14 @@ int main(int argc, char** argv) {
          {choscordb::design::ThemeMode::Dark, choscordb::design::ThemeMode::Light}) {
         theme->setMode(mode);
         app.processEvents();
-        if (native.titleVisibility != NSWindowTitleHidden || !native.titlebarAppearsTransparent ||
+        if (native.titleVisibility != NSWindowTitleVisible ||
+            ![native.title isEqualToString:@"ChoscorDB"] || !native.titlebarAppearsTransparent ||
             native.titlebarSeparatorStyle != NSTitlebarSeparatorStyleNone) {
-            qCritical("Native title must be hidden, transparent, and have no content separator");
+            qCritical("Native title must be visible, transparent, and have no content separator");
+            return 1;
+        }
+        if (!contentClearsTitleBar(window, native)) {
+            qCritical("Qt content must begin directly below the native title bar");
             return 1;
         }
         NSColor* color = [native.backgroundColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
@@ -35,6 +51,40 @@ int main(int argc, char** argv) {
             qCritical("Native title bar must follow theme and retain native window controls");
             return 1;
         }
+    }
+    window.resize(980, 640);
+    app.processEvents();
+    if (!contentClearsTitleBar(window, native)) {
+        qCritical("Resized content must begin directly below the native title bar");
+        return 1;
+    }
+    window.showFullScreen();
+    const bool enteredSafe = QTest::qWaitFor(
+        [&] {
+            return (native.styleMask & NSWindowStyleMaskFullScreen) &&
+                   contentClearsTitleBar(window, native);
+        },
+        4000);
+    // Qt applies the full-screen mask before AppKit finishes its transition.
+    QTest::qWait(1200);
+    const bool fullScreenSafe = enteredSafe && (native.styleMask & NSWindowStyleMaskFullScreen) &&
+                                contentClearsTitleBar(window, native);
+    window.showNormal();
+    const bool exitedSafe = QTest::qWaitFor(
+        [&] {
+            return !(native.styleMask & NSWindowStyleMaskFullScreen) &&
+                   contentClearsTitleBar(window, native);
+        },
+        4000);
+    QTest::qWait(1200);
+    const bool windowedSafe = exitedSafe && !(native.styleMask & NSWindowStyleMaskFullScreen) &&
+                              contentClearsTitleBar(window, native);
+    if (!fullScreenSafe || !windowedSafe) {
+        qCritical("Qt content must remain below the native title bar through full-screen "
+                  "transitions (fullSafe=%d, normalSafe=%d, mask=%lu, margin=%d)",
+                  fullScreenSafe, windowedSafe, static_cast<unsigned long>(native.styleMask),
+                  window.contentsMargins().top());
+        return 1;
     }
     return 0;
 }

@@ -23,7 +23,10 @@ void MainWindow::updateNativeTitleBar() {
         return;
     }
     const auto color = theme_->resolvedTheme().colors.background;
-    window.titleVisibility = NSWindowTitleHidden;
+    // Keep Qt's content below AppKit's title bar. A full-size content view plus
+    // a Qt top margin leaves a blank strip above the tabs and navigator.
+    window.styleMask &= ~NSWindowStyleMaskFullSizeContentView;
+    window.titleVisibility = NSWindowTitleVisible;
     window.titlebarAppearsTransparent = YES;
     window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
     window.backgroundColor = [NSColor colorWithSRGBRed:color.redF()
