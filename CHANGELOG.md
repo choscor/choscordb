@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.6]
+
+- Added a JSON row inspector for query results and one-hop relationship diagrams
+  for database objects.
+- Added typed result cells and foreign-key navigation for supported databases.
+- Refined desktop components, object tab titles, and macOS title bar spacing.
+- Improved the update action when an update is ready to install.
+
 ## [0.1.5]
 
 - Simplified result filtering to a single SQL condition input.
