@@ -1,0 +1,3 @@
+[build]
+rustc-wrapper = "scripts/dev/compiler-cache"
+incremental = false

@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.28)
 include(cmake/Version.cmake)
 project(ChoscorDB VERSION ${CHOSCORDB_VERSION} LANGUAGES CXX)
+if(NOT DEFINED CMAKE_CXX_COMPILER_LAUNCHER)
+  set(CMAKE_CXX_COMPILER_LAUNCHER
+    "${PROJECT_SOURCE_DIR}/scripts/dev/compiler-cache" CACHE STRING
+    "Optional shared compiler cache for C++ builds")
+endif()
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)

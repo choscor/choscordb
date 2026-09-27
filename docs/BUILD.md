@@ -58,6 +58,41 @@ CMake owns native compilation, moc, and test registration. Corrosion imports the
 
 Avoid running multiple Ninja builds against the same build directory concurrently. Cargo serializes access to each target directory independently.
 
+## Building in Git worktrees
+
+Each worktree has its own ignored `build/` and `target/` directories. Keep those
+directories local to the worktree: CMake records absolute source paths, and the
+Rust bridge stages generated CXX headers in that worktree's CMake build tree.
+Share a compiler cache instead of copying or symlinking build directories.
+
+Install `sccache` once (for example, `brew install sccache` on macOS). The
+checked-in Cargo configuration and CMake default launcher then use it
+automatically in every new worktree; without it they invoke the compilers
+directly. No per-worktree cache setup is needed. Build with the normal commands:
+
+```sh
+cmake --preset dev -DCMAKE_PREFIX_PATH=/opt/homebrew
+cmake --build --preset dev
+cargo test --workspace --locked
+ctest --preset dev
+sccache --show-stats
+```
+
+Use the Qt/QScintilla prefix for your machine in place of `/opt/homebrew`.
+The CMake launcher setting is saved in that worktree's `build/dev/CMakeCache.txt`;
+reconfigure an existing build directory once to pick up the new default.
+Cargo disables incremental compilation so its Rust invocations can use the
+shared cache. The first build still configures CMake and links native targets;
+later worktrees can reuse cached compiler results when inputs and toolchains
+match. Rust dependencies are the main cross-worktree benefit. C++ Debug
+objects can miss when their absolute source or debug paths differ; forcing
+reuse of those objects can point a debugger at the wrong worktree. Each
+worktree still stores its own build outputs, so the compiler cache saves time
+rather than worktree disk space. A shared compiler cache does not share
+application data. Set
+`CMAKE_CXX_COMPILER_LAUNCHER` to an empty value and `RUSTC_WRAPPER` to an empty
+value to bypass the cache for a particular build.
+
 Linux builds also require `pkg-config` and `libdbus-1-dev` for the Secret Service credential adapter, and `libssl-dev` for PostgreSQL TLS. A running, unlocked Secret Service is needed only for native credential operations; ordinary tests use injected or explicitly unavailable stores.
 
 For a disposable PostgreSQL server and verified-TLS integration checks, see [PostgreSQL testing](testing/postgres.md).

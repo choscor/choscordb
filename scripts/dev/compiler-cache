@@ -1,0 +1,6 @@
+#!/bin/sh
+# Keep build outputs in each worktree; share only the optional compiler cache.
+if command -v sccache >/dev/null 2>&1; then
+    exec sccache "$@"
+fi
+exec "$@"
