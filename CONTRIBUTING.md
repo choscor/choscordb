@@ -5,6 +5,21 @@ explain and verify independently, include behavior-focused tests, and avoid
 unrelated cleanup. One approving review is not required while the project has a
 single maintainer; the automated quality gates are the required review surface.
 
+## Pull request title and description
+
+Use a specific, action-oriented title. The preferred format is
+`<type>(<scope>): <imperative summary>`, matching the project's Conventional
+Commit subjects, for example `fix(desktop): preserve SQL editor focus after reconnect`.
+The title should make sense when skimmed in a PR list or release history.
+
+The [PR template](.github/pull_request_template.md) prompts for the reason,
+meaningful changes, verification, and any context a reviewer cannot see in the
+diff. State exact checks run and their outcomes; explain relevant checks that
+were blocked or not run. Add screenshots for visible UI changes when useful, and
+call out compatibility or migration effects. Link an issue if one exists; use
+`Closes #N` only when the PR fully resolves it. Delete unused template sections
+for small changes. Revisit the description if the change evolves during review.
+
 ## Before submitting a change
 
 Install Python 3.12+, the Rust toolchain pinned by `rust-toolchain.toml`, LLVM 23,
