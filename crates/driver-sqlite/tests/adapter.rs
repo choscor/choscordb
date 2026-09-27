@@ -904,6 +904,389 @@ async fn object_inspection_reports_real_defaults_indexes_and_foreign_key_targets
 }
 
 #[tokio::test]
+async fn object_graph_reports_direct_composite_self_and_parallel_foreign_keys() {
+    let mut c = connect().await;
+    run(&mut c, "PRAGMA foreign_keys=ON", false).await;
+    run(
+        &mut c,
+        "CREATE TABLE parent(a INTEGER, b TEXT, PRIMARY KEY(a,b))",
+        false,
+    )
+    .await;
+    run(&mut c, "CREATE TABLE focus(id INTEGER PRIMARY KEY, a INTEGER, b TEXT, other INTEGER, FOREIGN KEY(a,b) REFERENCES parent(a,b), FOREIGN KEY(other) REFERENCES focus(id), FOREIGN KEY(a) REFERENCES parent(a))", false).await;
+    run(
+        &mut c,
+        "CREATE TABLE child(id INTEGER, focus_id INTEGER REFERENCES focus(id))",
+        false,
+    )
+    .await;
+    run(
+        &mut c,
+        "CREATE TABLE second_hop(id INTEGER REFERENCES child(id))",
+        false,
+    )
+    .await;
+    let graph = c
+        .load_object_graph(&ObjectId(r#"["main","focus"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Available);
+    assert!(graph.warnings.is_empty());
+    assert_eq!(graph.tables.len(), 3);
+    assert_eq!(graph.edges.len(), 4);
+    assert!(
+        !graph
+            .tables
+            .iter()
+            .any(|t| t.qualified_name.contains("second_hop"))
+    );
+    let parent = graph
+        .tables
+        .iter()
+        .find(|t| t.qualified_name == "\"main\".\"parent\"")
+        .unwrap();
+    assert_eq!(
+        parent
+            .columns
+            .iter()
+            .map(|c| (&*c.name, &*c.database_type, c.primary_key))
+            .collect::<Vec<_>>(),
+        vec![("a", "INTEGER", true), ("b", "TEXT", true)]
+    );
+    let composite = graph
+        .edges
+        .iter()
+        .find(|e| e.source_columns == ["a", "b"])
+        .unwrap();
+    assert_eq!(composite.target_columns, ["a", "b"]);
+    assert_eq!(composite.target_id, parent.id);
+    assert!(graph.edges.iter().any(|e| e.source_id == e.target_id
+        && e.source_columns == ["other"]
+        && e.target_columns == ["id"]));
+    assert!(
+        graph
+            .edges
+            .iter()
+            .any(|e| e.source_columns == ["focus_id"] && e.target_columns == ["id"])
+    );
+    let focus = graph
+        .tables
+        .iter()
+        .find(|t| t.qualified_name == "\"main\".\"focus\"")
+        .unwrap();
+    assert!(
+        focus
+            .columns
+            .iter()
+            .find(|c| c.name == "a")
+            .unwrap()
+            .foreign_key
+    );
+    assert!(
+        focus
+            .columns
+            .iter()
+            .find(|c| c.name == "id")
+            .unwrap()
+            .primary_key
+    );
+}
+
+#[tokio::test]
+async fn object_graph_keeps_known_edge_when_target_table_is_missing() {
+    let mut c = connect().await;
+    run(
+        &mut c,
+        "CREATE TABLE orphan(id INTEGER, missing_id INTEGER REFERENCES absent(id))",
+        false,
+    )
+    .await;
+    let graph = c
+        .load_object_graph(&ObjectId(r#"["main","orphan"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Unavailable);
+    assert_eq!(graph.edges.len(), 1);
+    assert_eq!(graph.edges[0].source_columns, ["missing_id"]);
+    assert_eq!(graph.edges[0].target_columns, ["id"]);
+    assert_eq!(graph.tables.len(), 2);
+    assert!(
+        graph
+            .tables
+            .iter()
+            .any(|t| t.qualified_name == "\"main\".\"absent\"" && t.columns.is_empty())
+    );
+    assert!(graph.warnings.iter().any(|w| w.contains("absent")));
+}
+
+#[tokio::test]
+async fn object_graph_with_no_foreign_keys_contains_only_selected_table() {
+    let mut c = connect().await;
+    run(
+        &mut c,
+        "CREATE TABLE standalone(id INTEGER PRIMARY KEY, title TEXT)",
+        false,
+    )
+    .await;
+    let graph = c
+        .load_object_graph(&ObjectId(r#"["main","standalone"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Available);
+    assert_eq!(graph.tables.len(), 1);
+    assert_eq!(graph.tables[0].columns.len(), 2);
+    assert!(graph.edges.is_empty());
+}
+
+#[tokio::test]
+async fn object_graph_does_not_draw_a_declared_but_missing_target_column() {
+    let mut c = connect().await;
+    run(&mut c, "CREATE TABLE parent(id INTEGER PRIMARY KEY)", false).await;
+    run(
+        &mut c,
+        "CREATE TABLE child(x INTEGER REFERENCES parent(absent))",
+        false,
+    )
+    .await;
+    let graph = c
+        .load_object_graph(&ObjectId(r#"["main","child"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.edges.len(), 1);
+    assert_eq!(graph.availability, MetadataAvailability::Unavailable);
+    assert!(graph.edges[0].target_columns.is_empty());
+    assert!(graph.warnings.iter().any(|w| w.contains("absent")));
+}
+
+#[tokio::test]
+async fn object_graph_keeps_a_box_for_each_known_edge_past_detailed_table_limit() {
+    let mut c = connect().await;
+    run(&mut c, "CREATE TABLE focus(id INTEGER PRIMARY KEY)", false).await;
+    for index in 0..65 {
+        run(
+            &mut c,
+            &format!("CREATE TABLE child_{index}(focus_id INTEGER REFERENCES focus(id))"),
+            false,
+        )
+        .await;
+    }
+    let graph = c
+        .load_object_graph(&ObjectId(r#"["main","focus"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Unavailable);
+    assert_eq!(graph.edges.len(), 65);
+    assert_eq!(graph.tables.len(), 66);
+    for edge in &graph.edges {
+        assert!(graph.tables.iter().any(|table| table.id == edge.source_id));
+        assert!(graph.tables.iter().any(|table| table.id == edge.target_id));
+    }
+    assert!(graph.tables.iter().any(|table| table.columns.is_empty()));
+}
+
+#[tokio::test]
+async fn object_graph_scan_limit_names_the_first_unscanned_table() {
+    let mut c = connect().await;
+    run(&mut c, "CREATE TABLE focus(id INTEGER PRIMARY KEY)", false).await;
+    for index in 0..512 {
+        run(
+            &mut c,
+            &format!("CREATE TABLE t_{index:03}(id INTEGER)"),
+            false,
+        )
+        .await;
+    }
+    let graph = c
+        .load_object_graph(&ObjectId(r#"["main","focus"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Unavailable);
+    assert_eq!(graph.tables.len(), 1);
+    assert!(
+        graph
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("t_511"))
+    );
+}
+
+#[tokio::test]
+async fn object_graph_resolves_case_insensitive_sqlite_fk_targets_in_both_directions() {
+    let mut c = connect().await;
+    run(&mut c, "CREATE TABLE parent(id INTEGER PRIMARY KEY)", false).await;
+    run(
+        &mut c,
+        "CREATE TABLE child(parent_id INTEGER REFERENCES Parent(id))",
+        false,
+    )
+    .await;
+    let parent_id = ObjectId(r#"["main","parent"]"#.into());
+    let child_id = ObjectId(r#"["main","child"]"#.into());
+    for selected in [&parent_id, &child_id] {
+        let graph = c.load_object_graph(selected).await.unwrap();
+        assert_eq!(graph.availability, MetadataAvailability::Available);
+        assert_eq!(graph.tables.len(), 2);
+        assert_eq!(graph.edges.len(), 1);
+        assert_eq!(graph.edges[0].source_id, child_id);
+        assert_eq!(graph.edges[0].target_id, parent_id);
+        assert_eq!(graph.edges[0].source_columns, ["parent_id"]);
+        assert_eq!(graph.edges[0].target_columns, ["id"]);
+    }
+}
+
+#[tokio::test]
+async fn object_graph_marks_each_related_tables_other_foreign_keys() {
+    let mut c = connect().await;
+    run(&mut c, "CREATE TABLE focus(id INTEGER PRIMARY KEY)", false).await;
+    run(
+        &mut c,
+        "CREATE TABLE outside(id INTEGER PRIMARY KEY)",
+        false,
+    )
+    .await;
+    run(&mut c, "CREATE TABLE related(focus_id INTEGER REFERENCES focus(id), outside_id INTEGER REFERENCES outside(id))", false).await;
+    let graph = c
+        .load_object_graph(&ObjectId(r#"["main","focus"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.tables.len(), 2);
+    assert_eq!(graph.edges.len(), 1);
+    let related = graph
+        .tables
+        .iter()
+        .find(|table| table.qualified_name == "\"main\".\"related\"")
+        .unwrap();
+    assert!(
+        related
+            .columns
+            .iter()
+            .find(|column| column.name == "focus_id")
+            .unwrap()
+            .foreign_key
+    );
+    assert!(
+        related
+            .columns
+            .iter()
+            .find(|column| column.name == "outside_id")
+            .unwrap()
+            .foreign_key
+    );
+}
+
+#[tokio::test]
+async fn object_graph_canonicalizes_foreign_key_column_names() {
+    let mut c = connect().await;
+    run(&mut c, "CREATE TABLE Parent(Id INTEGER PRIMARY KEY)", false).await;
+    run(
+        &mut c,
+        "CREATE TABLE Child(Parent_ID INTEGER, FOREIGN KEY(pArEnT_iD) REFERENCES parent(iD))",
+        false,
+    )
+    .await;
+    let graph = c
+        .load_object_graph(&ObjectId(r#"["main","Child"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Available);
+    assert_eq!(graph.edges.len(), 1);
+    assert_eq!(graph.edges[0].source_columns, ["Parent_ID"]);
+    assert_eq!(graph.edges[0].target_columns, ["Id"]);
+    let child = graph
+        .tables
+        .iter()
+        .find(|table| table.qualified_name == "\"main\".\"Child\"")
+        .unwrap();
+    assert!(child.columns[0].foreign_key);
+}
+
+#[tokio::test]
+async fn object_graph_bounds_aggregate_column_type_text() {
+    let mut c = connect().await;
+    let long_type = "T".repeat(8192);
+    let columns = (0..160)
+        .map(|index| format!("c{index} {long_type}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    run(&mut c, &format!("CREATE TABLE huge({columns})"), false).await;
+    let graph = c
+        .load_object_graph(&ObjectId(r#"["main","huge"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Unavailable);
+    assert!(
+        graph
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("huge"))
+    );
+    assert!(graph.tables[0].columns.len() < 160);
+    assert!(serde_json::to_vec(&graph).unwrap().len() <= 1024 * 1024);
+}
+
+#[tokio::test]
+async fn object_graph_reports_single_oversized_declared_type_as_incomplete() {
+    let mut c = connect().await;
+    let declared_type = "T".repeat(950 * 1024);
+    run(
+        &mut c,
+        &format!("CREATE TABLE giant_type(value {declared_type})"),
+        false,
+    )
+    .await;
+    let graph = c
+        .load_object_graph(&ObjectId(r#"["main","giant_type"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Unavailable);
+    assert_eq!(graph.tables.len(), 1);
+    assert!(graph.tables[0].columns.is_empty());
+    assert!(
+        graph
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("giant_type"))
+    );
+    assert!(serde_json::to_vec(&graph).unwrap().len() <= 1024 * 1024);
+}
+
+#[tokio::test]
+async fn object_graph_does_not_expose_partial_composite_fk_at_row_limit() {
+    let mut c = connect().await;
+    let names = (0..1025)
+        .map(|index| format!("c{index}"))
+        .collect::<Vec<_>>();
+    let parent_columns = names
+        .iter()
+        .map(|name| format!("{name} INTEGER"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let child_columns = parent_columns.clone();
+    let columns = names.join(",");
+    run(
+        &mut c,
+        &format!("CREATE TABLE parent({parent_columns}, PRIMARY KEY({columns}))"),
+        false,
+    )
+    .await;
+    run(&mut c, &format!("CREATE TABLE child({child_columns}, FOREIGN KEY({columns}) REFERENCES parent({columns}))"), false).await;
+    let graph = c
+        .load_object_graph(&ObjectId(r#"["main","child"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Unavailable);
+    assert_eq!(graph.edges.len(), 1);
+    assert!(graph.edges[0].source_columns.is_empty());
+    assert!(graph.edges[0].target_columns.is_empty());
+    assert!(
+        graph
+            .warnings
+            .iter()
+            .any(|warning| warning.contains(&graph.edges[0].id))
+    );
+}
+
+#[tokio::test]
 async fn object_ddl_rejects_oversized_display_without_returning_a_partial_definition() {
     let mut c = connect().await;
     run(

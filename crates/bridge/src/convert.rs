@@ -637,6 +637,30 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
                 .collect();
             "metadata"
         }
+        Event::ObjectGraph {
+            connection,
+            object,
+            request_token,
+            graph,
+        } => {
+            e.id = pack(connection);
+            e.object = object.0;
+            e.request_token = request_token;
+            e.graph_json = serde_json::to_string(&graph).expect("graph serialization");
+            "object_graph"
+        }
+        Event::ObjectGraphFailed {
+            connection,
+            object,
+            request_token,
+            error: err,
+        } => {
+            e.id = pack(connection);
+            e.object = object.0;
+            e.request_token = request_token;
+            error(&mut e, err);
+            "object_graph_failed"
+        }
         Event::TransactionFinished {
             connection,
             committed,

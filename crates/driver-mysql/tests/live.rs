@@ -28,6 +28,419 @@ async fn connect() -> Box<dyn Connection> {
 }
 #[tokio::test]
 #[ignore = "requires disposable MySQL server on localhost:33306"]
+async fn object_graph_preserves_direct_composite_parallel_self_and_cross_schema_keys() {
+    let mut conn = connect().await;
+    for sql in [
+        "DROP DATABASE IF EXISTS erd_graph_aux",
+        "DROP VIEW IF EXISTS erd_graph_view",
+        "DROP TABLE IF EXISTS erd_graph_solo",
+        "DROP TABLE IF EXISTS erd_graph_far",
+        "DROP TABLE IF EXISTS erd_graph_child",
+        "DROP TABLE IF EXISTS erd_graph_center",
+        "DROP TABLE IF EXISTS erd_graph_leaf",
+        "DROP TABLE IF EXISTS erd_graph_peer",
+        "CREATE TABLE erd_graph_peer (id INT, code INT, PRIMARY KEY (id, code))",
+        "CREATE TABLE erd_graph_leaf (id INT PRIMARY KEY)",
+        "CREATE TABLE erd_graph_center (id INT PRIMARY KEY, parent_id INT, peer_id INT, peer_code INT, CONSTRAINT erd_graph_self FOREIGN KEY (parent_id) REFERENCES erd_graph_center(id), CONSTRAINT erd_graph_composite FOREIGN KEY (peer_id, peer_code) REFERENCES erd_graph_peer(id, code))",
+        "CREATE TABLE erd_graph_child (id INT PRIMARY KEY, center_id INT, other_center_id INT, leaf_id INT, CONSTRAINT erd_graph_inbound_one FOREIGN KEY (center_id) REFERENCES erd_graph_center(id), CONSTRAINT erd_graph_inbound_two FOREIGN KEY (other_center_id) REFERENCES erd_graph_center(id), CONSTRAINT erd_graph_second_hop FOREIGN KEY (leaf_id) REFERENCES erd_graph_leaf(id))",
+        "CREATE TABLE erd_graph_far (id INT PRIMARY KEY, child_id INT, FOREIGN KEY (child_id) REFERENCES erd_graph_child(id))",
+        "CREATE TABLE erd_graph_solo (id BIGINT PRIMARY KEY, note VARCHAR(24))",
+        "CREATE VIEW erd_graph_view AS SELECT id FROM erd_graph_solo",
+        "CREATE DATABASE erd_graph_aux",
+        "CREATE TABLE erd_graph_aux.outside_table (id INT PRIMARY KEY, center_id INT, CONSTRAINT erd_graph_cross FOREIGN KEY (center_id) REFERENCES choscordb_test.erd_graph_center(id))",
+    ] {
+        conn.execute(sql, QueryOptions::default()).await.unwrap();
+    }
+    let graph = conn
+        .load_object_graph(&ObjectId(r#"["choscordb_test","erd_graph_center"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Available);
+    assert_eq!(graph.tables.len(), 4);
+    assert_eq!(graph.edges.len(), 5);
+    assert!(
+        !graph
+            .tables
+            .iter()
+            .any(|table| table.qualified_name.contains("erd_graph_leaf"))
+    );
+    assert!(
+        !graph
+            .tables
+            .iter()
+            .any(|table| table.qualified_name.contains("erd_graph_far"))
+    );
+    let center = graph
+        .tables
+        .iter()
+        .find(|table| table.qualified_name == "`choscordb_test`.`erd_graph_center`")
+        .unwrap();
+    assert_eq!(
+        center
+            .columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["id", "parent_id", "peer_id", "peer_code"]
+    );
+    assert_eq!(center.columns[0].database_type, "int");
+    assert!(center.columns[0].primary_key);
+    assert!(center.columns[1].foreign_key);
+    assert!(center.columns[2].foreign_key);
+    assert!(center.columns[3].foreign_key);
+    let composite = graph
+        .edges
+        .iter()
+        .find(|edge| edge.id.contains("erd_graph_composite"))
+        .unwrap();
+    assert_eq!(composite.source_columns, ["peer_id", "peer_code"]);
+    assert_eq!(composite.target_columns, ["id", "code"]);
+    assert_eq!(
+        composite.target_id,
+        ObjectId(r#"["choscordb_test","erd_graph_peer"]"#.into())
+    );
+    let self_edge = graph
+        .edges
+        .iter()
+        .find(|edge| edge.id.contains("erd_graph_self"))
+        .unwrap();
+    assert_eq!(self_edge.source_id, self_edge.target_id);
+    let inbound = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.id.contains("erd_graph_inbound_"))
+        .collect::<Vec<_>>();
+    assert_eq!(inbound.len(), 2);
+    assert!(inbound.iter().all(|edge| edge.target_id == center.id));
+    let child = graph
+        .tables
+        .iter()
+        .find(|table| table.qualified_name == "`choscordb_test`.`erd_graph_child`")
+        .unwrap();
+    assert!(
+        child
+            .columns
+            .iter()
+            .find(|column| column.name == "leaf_id")
+            .unwrap()
+            .foreign_key
+    );
+    let cross = graph
+        .edges
+        .iter()
+        .find(|edge| edge.id.contains("erd_graph_cross"))
+        .unwrap();
+    assert_eq!(
+        cross.source_id,
+        ObjectId(r#"["erd_graph_aux","outside_table"]"#.into())
+    );
+    let solo = conn
+        .load_object_graph(&ObjectId(r#"["choscordb_test","erd_graph_solo"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(solo.availability, MetadataAvailability::Available);
+    assert_eq!(solo.tables.len(), 1);
+    assert!(solo.edges.is_empty());
+    assert_eq!(solo.tables[0].columns[0].database_type, "bigint");
+    let view = conn
+        .load_object_graph(&ObjectId(r#"["choscordb_test","erd_graph_view"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(view.availability, MetadataAvailability::Unsupported);
+    for sql in [
+        "DROP DATABASE erd_graph_aux",
+        "DROP VIEW erd_graph_view",
+        "DROP TABLE erd_graph_solo",
+        "DROP TABLE erd_graph_far",
+        "DROP TABLE erd_graph_child",
+        "DROP TABLE erd_graph_center",
+        "DROP TABLE erd_graph_leaf",
+        "DROP TABLE erd_graph_peer",
+    ] {
+        conn.execute(sql, QueryOptions::default()).await.unwrap();
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable MySQL server on localhost:33306"]
+async fn object_graph_identifies_related_tables_beyond_its_limit() {
+    let mut conn = connect().await;
+    conn.execute(
+        "DROP DATABASE IF EXISTS erd_graph_limit",
+        QueryOptions::default(),
+    )
+    .await
+    .unwrap();
+    conn.execute("CREATE DATABASE erd_graph_limit", QueryOptions::default())
+        .await
+        .unwrap();
+    conn.execute(
+        "CREATE TABLE erd_graph_limit.center_table (id INT PRIMARY KEY)",
+        QueryOptions::default(),
+    )
+    .await
+    .unwrap();
+    for index in 0..65 {
+        conn.execute(
+            &format!("CREATE TABLE erd_graph_limit.child_{index:03} (id INT PRIMARY KEY, center_id INT, CONSTRAINT fk_child_{index:03} FOREIGN KEY (center_id) REFERENCES center_table(id))"),
+            QueryOptions::default(),
+        ).await.unwrap();
+    }
+    let graph = conn
+        .load_object_graph(&ObjectId(r#"["erd_graph_limit","center_table"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Unavailable);
+    assert!(graph.reason.contains("related-table limit"));
+    assert_eq!(graph.tables.len(), 64);
+    assert_eq!(graph.edges.len(), 65);
+    assert!(
+        graph
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("child_064") && warning.contains("fk_child_064"))
+    );
+    conn.execute("DROP DATABASE erd_graph_limit", QueryOptions::default())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires disposable MySQL server on localhost:33306"]
+async fn object_graph_keeps_complete_constraints_at_fk_column_limit() {
+    let mut conn = connect().await;
+    conn.execute(
+        "DROP DATABASE IF EXISTS erd_graph_fk_limit",
+        QueryOptions::default(),
+    )
+    .await
+    .unwrap();
+    conn.execute(
+        "CREATE DATABASE erd_graph_fk_limit",
+        QueryOptions::default(),
+    )
+    .await
+    .unwrap();
+    conn.execute("CREATE TABLE erd_graph_fk_limit.center_table (a INT, b INT, c INT, d INT, e INT, PRIMARY KEY (a,b,c,d,e))", QueryOptions::default()).await.unwrap();
+    let mut parts = vec!["id INT PRIMARY KEY".to_owned()];
+    for index in 0..52 {
+        let names = (0..5)
+            .map(|part| format!("c{index:03}_{part}"))
+            .collect::<Vec<_>>();
+        parts.extend(names.iter().map(|name| format!("`{name}` INT")));
+        parts.push(format!(
+            "CONSTRAINT fk_{index:03} FOREIGN KEY ({}) REFERENCES center_table(a,b,c,d,e)",
+            names
+                .iter()
+                .map(|name| format!("`{name}`"))
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+    }
+    conn.execute(
+        &format!(
+            "CREATE TABLE erd_graph_fk_limit.child_table ({})",
+            parts.join(",")
+        ),
+        QueryOptions::default(),
+    )
+    .await
+    .unwrap();
+    let graph = conn
+        .load_object_graph(&ObjectId(r#"["erd_graph_fk_limit","center_table"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Unavailable);
+    assert!(graph.reason.contains("relationship limit"));
+    assert_eq!(graph.tables.len(), 2);
+    assert_eq!(graph.edges.len(), 51);
+    assert!(
+        graph
+            .edges
+            .iter()
+            .all(|edge| edge.source_columns.len() == 5 && edge.target_columns.len() == 5)
+    );
+    assert!(
+        graph
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("fk_051"))
+    );
+    conn.execute("DROP DATABASE erd_graph_fk_limit", QueryOptions::default())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires disposable MySQL server on localhost:33306"]
+async fn object_graph_reports_aggregate_column_limit_without_losing_edges() {
+    let mut conn = connect().await;
+    conn.execute(
+        "DROP DATABASE IF EXISTS erd_graph_columns",
+        QueryOptions::default(),
+    )
+    .await
+    .unwrap();
+    conn.execute("CREATE DATABASE erd_graph_columns", QueryOptions::default())
+        .await
+        .unwrap();
+    conn.execute(
+        "CREATE TABLE erd_graph_columns.center_table (id INT PRIMARY KEY)",
+        QueryOptions::default(),
+    )
+    .await
+    .unwrap();
+    for index in 0..6 {
+        let mut columns = vec!["id INT PRIMARY KEY".to_owned(), "center_id INT".to_owned()];
+        columns.extend((0..230).map(|column| format!("payload_{column:03} INT")));
+        columns.push(format!(
+            "CONSTRAINT fk_wide_{index:02} FOREIGN KEY (center_id) REFERENCES center_table(id)"
+        ));
+        conn.execute(
+            &format!(
+                "CREATE TABLE erd_graph_columns.wide_{index:02} ({})",
+                columns.join(",")
+            ),
+            QueryOptions::default(),
+        )
+        .await
+        .unwrap();
+    }
+    let graph = conn
+        .load_object_graph(&ObjectId(r#"["erd_graph_columns","center_table"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Unavailable);
+    assert_eq!(graph.edges.len(), 6);
+    assert!(
+        graph
+            .tables
+            .iter()
+            .map(|table| table.columns.len())
+            .sum::<usize>()
+            <= 1024
+    );
+    assert!(
+        graph
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("wide_"))
+    );
+    conn.execute("DROP DATABASE erd_graph_columns", QueryOptions::default())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires disposable MySQL server on localhost:33306"]
+async fn object_graph_reports_aggregate_text_limit_without_losing_edges() {
+    let mut conn = connect().await;
+    conn.execute(
+        "DROP DATABASE IF EXISTS erd_graph_text",
+        QueryOptions::default(),
+    )
+    .await
+    .unwrap();
+    conn.execute("CREATE DATABASE erd_graph_text", QueryOptions::default())
+        .await
+        .unwrap();
+    conn.execute(
+        "CREATE TABLE erd_graph_text.center_table (id INT PRIMARY KEY)",
+        QueryOptions::default(),
+    )
+    .await
+    .unwrap();
+    for index in 0..3 {
+        let mut columns = vec!["id INT PRIMARY KEY".to_owned(), "center_id INT".to_owned()];
+        columns.extend((0..250).map(|column| format!("`p{column:03}_{}` INT", "x".repeat(54))));
+        columns.push(format!(
+            "CONSTRAINT fk_text_{index:02} FOREIGN KEY (center_id) REFERENCES center_table(id)"
+        ));
+        conn.execute(
+            &format!(
+                "CREATE TABLE erd_graph_text.wide_{index:02} ({})",
+                columns.join(",")
+            ),
+            QueryOptions::default(),
+        )
+        .await
+        .unwrap();
+    }
+    let graph = conn
+        .load_object_graph(&ObjectId(r#"["erd_graph_text","center_table"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Unavailable);
+    assert_eq!(graph.edges.len(), 3);
+    let text_bytes: usize = graph
+        .tables
+        .iter()
+        .flat_map(|table| &table.columns)
+        .map(|column| column.name.len() + column.database_type.len())
+        .sum();
+    assert!(text_bytes <= 32 * 1024);
+    assert!(
+        graph
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("wide_"))
+    );
+    conn.execute("DROP DATABASE erd_graph_text", QueryOptions::default())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires disposable MySQL server on localhost:33306"]
+async fn object_graph_reports_oversized_type_without_truncating_it() {
+    let mut conn = connect().await;
+    conn.execute(
+        "DROP DATABASE IF EXISTS erd_graph_type",
+        QueryOptions::default(),
+    )
+    .await
+    .unwrap();
+    conn.execute("CREATE DATABASE erd_graph_type", QueryOptions::default())
+        .await
+        .unwrap();
+    let variants = (0..300)
+        .map(|index| format!("'v{index:03}_{}'", "x".repeat(110)))
+        .collect::<Vec<_>>()
+        .join(",");
+    conn.execute(&format!("CREATE TABLE erd_graph_type.center_table (id INT PRIMARY KEY, large_kind ENUM({variants}))"), QueryOptions::default()).await.unwrap();
+    let admitted_variants = (0..100)
+        .map(|index| format!("'v{index:03}_{}'", "x".repeat(110)))
+        .collect::<Vec<_>>()
+        .join(",");
+    conn.execute(&format!("CREATE TABLE erd_graph_type.admitted_table (id INT PRIMARY KEY, kind ENUM({admitted_variants}))"), QueryOptions::default()).await.unwrap();
+    let graph = conn
+        .load_object_graph(&ObjectId(r#"["erd_graph_type","center_table"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Unavailable);
+    assert!(
+        graph
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("center_table"))
+    );
+    assert_eq!(graph.tables.len(), 1);
+    assert!(graph.tables[0].columns.is_empty());
+    let admitted = conn
+        .load_object_graph(&ObjectId(r#"["erd_graph_type","admitted_table"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(admitted.availability, MetadataAvailability::Available);
+    assert_eq!(
+        admitted.tables[0].columns[1].database_type,
+        format!("enum({admitted_variants})")
+    );
+    conn.execute("DROP DATABASE erd_graph_type", QueryOptions::default())
+        .await
+        .unwrap();
+}
+#[tokio::test]
+#[ignore = "requires disposable MySQL server on localhost:33306"]
 async fn transaction_status_and_rollback() {
     let mut conn = connect().await;
     conn.execute(

@@ -1,4 +1,5 @@
 //! PostgreSQL adapter with transaction-scoped server portals and bounded pages.
+mod graph;
 mod idle_transaction;
 mod metadata;
 mod object_data;
@@ -53,6 +54,7 @@ enum Command {
     Fetch(u32, PageSize, usize, Reply<Fetched>),
     Finish(u32, Reply<()>),
     Metadata(Option<ObjectId>, Reply<Vec<SchemaObject>>),
+    Graph(ObjectId, Reply<ObjectGraph>),
     Ddl(ObjectId, Reply<String>),
     Edit(EditBatch, Reply<EditBatchSummary>),
     EditTarget(ObjectId, Reply<EditTarget>),
@@ -541,6 +543,11 @@ impl Connection for PostgresConnection {
     }
     async fn load_metadata(&mut self, parent: Option<ObjectId>) -> Result<Vec<SchemaObject>> {
         self.client.request(|r| Command::Metadata(parent, r)).await
+    }
+    async fn load_object_graph(&mut self, object: &ObjectId) -> Result<ObjectGraph> {
+        self.client
+            .request(|r| Command::Graph(object.clone(), r))
+            .await
     }
     async fn object_ddl(&mut self, object: &ObjectId) -> Result<String> {
         self.client

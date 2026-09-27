@@ -286,7 +286,7 @@ class ObjectDataWorkspaceTest : public QObject {
         auto* data = new choscordb::ObjectDataWorkspace(sql);
         explorer.installDataWidget(data);
         explorer.restoreObject(1, R"(["main","records"])", "records");
-        explorer.selectPane(4);
+        explorer.selectPane(5);
         explorer.show();
         QCoreApplication::processEvents();
         auto* header = explorer.findChild<QWidget*>("objectHeader");
@@ -651,7 +651,7 @@ class ObjectDataWorkspaceTest : public QObject {
         connect(&data, &choscordb::ObjectDataWorkspace::busyChanged, &explorer,
                 &choscordb::ObjectExplorer::setOperationBusy);
         explorer.restoreObject(connection, R"(["main","editable_rows"])", "editable_rows", "table");
-        explorer.selectPane(4);
+        explorer.selectPane(5);
         explorer.show();
         explorer.activateRestoredObject();
         auto* grid = data.findChild<QTableView*>("objectDataResults");

@@ -113,8 +113,8 @@ void MainWindow::connectNavigator(const Ui& ui) {
                                       : selectedKind == "index"      ? 1
                                       : selectedKind.contains("key") ? 2
                                       : selectedKind == "ddl"        ? 3
-                                      : selectedKind == "data"       ? 4
-                                      : selectedKind == "table"      ? 4
+                                      : selectedKind == "data"       ? 5
+                                      : selectedKind == "table"      ? 5
                                                                      : -1;
                     openObjectTab(*browsingConnection_,
                                   object.data(NavigatorModel::ObjectIdRole).toString(),

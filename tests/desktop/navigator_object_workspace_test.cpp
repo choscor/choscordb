@@ -14,6 +14,7 @@
 #include "models/result_table_model.h"
 #include "navigator_sql_workspace_test.h"
 #include "widgets/history_dock/history_dock.h"
+#include "widgets/object_erd_widget.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
@@ -25,6 +26,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QGraphicsView>
 #include <QHeaderView>
 #include <QJsonDocument>
 #include <QLabel>
@@ -193,7 +195,7 @@ void NavigatorSqlWorkspaceTest::objectTabsUseConnectionAndQualifiedIdentity() {
     QCOMPARE(tabs->count(), initial + 1);
     auto* first = qobject_cast<choscordb::ObjectExplorer*>(tabs->currentWidget());
     QVERIFY(first);
-    QCOMPARE(first->paneIndex(), 4);
+    QCOMPARE(first->paneIndex(), 5);
     first->selectPane(3);
     emit window.objectContextSelected(11, R"(["other","account"])", "other.account", "table");
     QCOMPARE(tabs->count(), initial + 2);
@@ -202,13 +204,67 @@ void NavigatorSqlWorkspaceTest::objectTabsUseConnectionAndQualifiedIdentity() {
     emit window.objectContextSelected(11, R"(["main","account"])", "main.account", "table");
     QCOMPARE(tabs->count(), initial + 3);
     QCOMPARE(tabs->currentWidget(), first);
-    QCOMPARE(first->paneIndex(), 4);
+    QCOMPARE(first->paneIndex(), 5);
     window.findChild<QAction*>("closeWorkspaceTab")->trigger();
     QCOMPARE(tabs->count(), initial + 2);
     while (tabs->count())
         tabs->tabCloseRequested(tabs->currentIndex());
     QCOMPARE(window.findChild<QStackedWidget*>("centralScreens")->currentWidget()->objectName(),
              QString("startScreen"));
+}
+
+void NavigatorSqlWorkspaceTest::erdKeyboardActivationOpensAndRefocusesRelatedTable() {
+    using namespace choscordb;
+    MainWindow window;
+    window.show();
+    auto* workspace = window.findChild<QueryWorkspace*>();
+    QVERIFY(workspace);
+    QSignalSpy connected(workspace, &QueryWorkspace::connectionReady);
+    int finished = 0;
+    connect(
+        workspace->adapter(), &EngineAdapter::eventReady, &window,
+        [&](const BridgeEvent& event) {
+            if (event.kind == "query_finished")
+                ++finished;
+        },
+        Qt::DirectConnection);
+    workspace->connectSqlite(":memory:");
+    QTRY_COMPARE(connected.count(), 1);
+    const auto connection = connected.first().first().toULongLong();
+    auto create =
+        workspace->adapter()->execute(connection, "CREATE TABLE parent(id INTEGER PRIMARY KEY)");
+    QVERIFY(create);
+    workspace->adapter()->fetchPage(*create);
+    QTRY_COMPARE(finished, 1);
+    create = workspace->adapter()->execute(
+        connection,
+        "CREATE TABLE child(id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent(id))");
+    QVERIFY(create);
+    workspace->adapter()->fetchPage(*create);
+    QTRY_COMPARE(finished, 2);
+    emit window.objectContextSelected(connection, R"(["main","child"])", "main.child", "table");
+    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+    QVERIFY(tabs);
+    auto* child = qobject_cast<ObjectExplorer*>(tabs->currentWidget());
+    QVERIFY(child);
+    QTRY_VERIFY(workspace->navigationAllowed());
+    child->selectPane(4);
+    auto* diagram = child->findChild<ObjectErdWidget*>("objectErd");
+    QVERIFY(diagram);
+    QTRY_COMPARE(diagram->graph().tables.size(), 2);
+    auto* view = diagram->findChild<QGraphicsView*>("objectErdView");
+    QVERIFY(view);
+    QTest::keyClick(view, Qt::Key_Right);
+    QTest::keyClick(view, Qt::Key_Return);
+    QCOMPARE(tabs->count(), 2);
+    QVERIFY(tabs->currentWidget() != child);
+    QCOMPARE(tabs->currentWidget()->property("objectId").toString(),
+             QString(R"(["main","parent"])"));
+    tabs->setCurrentWidget(child);
+    QTest::keyClick(view, Qt::Key_Return);
+    QCOMPARE(tabs->count(), 2);
+    QCOMPARE(tabs->currentWidget()->property("objectId").toString(),
+             QString(R"(["main","parent"])"));
 }
 
 void NavigatorSqlWorkspaceTest::sidebarViewsKeepTheirDefaultPane() {
@@ -396,7 +452,7 @@ void NavigatorSqlWorkspaceTest::selectingObjectLoadsMetadataAndSeparateDataThenR
     QVERIFY(window.findChild<QWidget*>("objectHeader")->isVisible());
     QVERIFY(!window.findChild<QWidget*>("sqlResultViews")->isVisible());
     auto* panes = window.findChild<QTabBar*>("objectTabs");
-    QCOMPARE(panes->currentIndex(), 4);
+    QCOMPARE(panes->currentIndex(), 5);
     auto* data = window.findChild<QTableView*>("objectDataResults");
     QVERIFY(data);
     QTRY_COMPARE(data->model()->rowCount(), 1);
@@ -410,7 +466,7 @@ void NavigatorSqlWorkspaceTest::selectingObjectLoadsMetadataAndSeparateDataThenR
     emit workspace->connectionReady(connection);
     QCOMPARE(metadata->model()->rowCount(), 1);
     QCOMPARE(extraReads.count(), 0);
-    QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(4).center());
+    QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(5).center());
     QTRY_COMPARE(data->model()->rowCount(), 1);
     QCOMPARE(data->model()->index(0, 0).data().toString(), QString("7"));
     auto* dataExport = window.findChild<QPushButton*>("objectDataExport");
@@ -424,7 +480,7 @@ void NavigatorSqlWorkspaceTest::selectingObjectLoadsMetadataAndSeparateDataThenR
     QTRY_VERIFY(window.findChild<QPushButton*>("objectRefresh")->isVisible());
     QVERIFY(dataExport->isVisible());
     QVERIFY(!dataExport->isEnabled());
-    QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(4).center());
+    QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(5).center());
     QTRY_VERIFY(dataExport->isVisible());
     QTRY_VERIFY(dataExport->isEnabled());
     QTRY_VERIFY(workspace->navigationAllowed());
@@ -468,14 +524,14 @@ void NavigatorSqlWorkspaceTest::objectDataKeepsCancelPaneVisibleUntilAcknowledge
         window.findChild<QTabWidget*>("editorTabs")->currentWidget());
     QVERIFY(explorer);
     auto* panes = explorer->findChild<QTabBar*>("objectTabs");
-    QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(4).center());
+    QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(5).center());
     auto* cancel = window.findChild<QPushButton*>("objectDataCancel");
     QTRY_VERIFY(cancel->isEnabled());
     auto* workspaceTabs = window.findChild<QTabWidget*>("editorTabs");
     workspaceTabs->setCurrentIndex(0);
     QCOMPARE(workspaceTabs->currentWidget(), explorer);
     QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(0).center());
-    QCOMPARE(panes->currentIndex(), 4);
+    QCOMPARE(panes->currentIndex(), 5);
     QVERIFY(explorer->findChild<QLabel*>("objectStatus")
                 ->text()
                 .contains("cancel", Qt::CaseInsensitive));

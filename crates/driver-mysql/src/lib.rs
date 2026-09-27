@@ -1,6 +1,7 @@
 //! MySQL adapter with disk-backed results and bounded pages.
 mod connection;
 mod editing;
+mod graph;
 mod idle;
 mod proxy;
 mod runtime;
@@ -508,6 +509,14 @@ impl Connection for MysqlConnection {
             }
         }
         Ok(objects)
+    }
+    async fn load_object_graph(&mut self, object: &ObjectId) -> Result<ObjectGraph> {
+        tokio::time::timeout(
+            Duration::from_secs(15),
+            graph::object_graph(self.connection().await?, object),
+        )
+        .await
+        .map_err(|_| error(ErrorKind::Timeout, "MySQL ER diagram metadata timed out"))?
     }
     async fn load_metadata_page(
         &mut self,

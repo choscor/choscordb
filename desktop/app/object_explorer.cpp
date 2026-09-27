@@ -9,6 +9,7 @@
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
+#include "widgets/object_erd_widget.h"
 #include <QAction>
 #include <QEvent>
 #include <QHeaderView>
@@ -251,7 +252,8 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     tabs_->setObjectName("objectTabs");
     tabs_->setAccessibleName(tr("Object inspection panes"));
     tabs_->setExpanding(false);
-    for (const auto& title : {tr("Columns"), tr("Indexes"), tr("Keys"), tr("DDL"), tr("Data")})
+    for (const auto& title :
+         {tr("Columns"), tr("Indexes"), tr("Keys"), tr("DDL"), tr("ERD"), tr("Data")})
         tabs_->addTab(title);
     layout->addWidget(tabs_);
     pages_ = new QStackedWidget(this);
@@ -281,7 +283,14 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     ddl_->setFrameShape(QFrame::NoFrame);
     new DdlHighlighter(ddl_);
     pages_->addWidget(ddl_);
+    erd_ = new ObjectErdWidget(pages_);
+    pages_->addWidget(erd_);
     pages_->addWidget(new QWidget(pages_));
+    connect(erd_, &ObjectErdWidget::tableActivated, this,
+            [this](const QString& id, const QString& qualifiedName) {
+                if (connection_ && !operationBusy_)
+                    emit relatedTableActivated(*connection_, id, qualifiedName);
+            });
     layout->addWidget(pages_, 1);
     auto* headerBody = new QWidget(this);
     headerBody->setObjectName("objectHeader");
@@ -359,7 +368,11 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                                                         : design::Icon::Refresh);
     }
     updateActions();
-    connect(refresh_, &QPushButton::clicked, this, &ObjectExplorer::requestPane);
+    connect(refresh_, &QPushButton::clicked, this, [this] {
+        if (tabs_->currentIndex() == 4)
+            graphLoaded_ = false;
+        requestPane();
+    });
     layout->addWidget(footerBody);
     connect(tabs_, &QTabBar::currentChanged, this, [this](int index) {
         if (operationBusy_ && index != activePane_) {
@@ -375,7 +388,11 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         if (!restoredInert_)
             requestPane();
     });
-    connect(retry_, &QAction::triggered, this, &ObjectExplorer::requestPane);
+    connect(retry_, &QAction::triggered, this, [this] {
+        if (tabs_->currentIndex() == 4)
+            graphLoaded_ = false;
+        requestPane();
+    });
     connect(
         adapter_, &EngineAdapter::eventReady, this,
         [this](const BridgeEvent& event) {
@@ -402,6 +419,28 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                 requestToken_ = 0;
                 model_->clear();
                 setStatus("failed", tr("Metadata failed: %1").arg(error));
+                refresh_->setEnabled(!operationBusy_);
+                retry_->setEnabled(true);
+            });
+    connect(
+        adapter_, &EngineAdapter::objectGraphReady, this,
+        [this](quint64 connection, const QString& object, quint64 token, const ObjectGraph& graph) {
+            if (connection_ != connection || object_ != object || !requestToken_ ||
+                requestToken_ != token)
+                return;
+            requestToken_ = 0;
+            graphLoaded_ = true;
+            refresh_->setEnabled(!operationBusy_);
+            renderGraph(graph);
+        });
+    connect(adapter_, &EngineAdapter::objectGraphFailed, this,
+            [this](quint64 connection, const QString& object, quint64 token, const QString& error) {
+                if (connection_ != connection || object_ != object || !requestToken_ ||
+                    requestToken_ != token)
+                    return;
+                requestToken_ = 0;
+                erd_->clearGraph();
+                setStatus("failed", tr("ERD failed: %1").arg(error));
                 refresh_->setEnabled(!operationBusy_);
                 retry_->setEnabled(true);
             });
@@ -433,6 +472,8 @@ void ObjectExplorer::openObject(quint64 connection, const QString& object, const
     reconnect_->setEnabled(false);
     columns_.clear();
     columnsLoaded_ = false;
+    graphLoaded_ = false;
+    erd_->clearGraph();
     tabs_->setEnabled(true);
     object_ = object;
     label_ = label;
@@ -441,8 +482,8 @@ void ObjectExplorer::openObject(quint64 connection, const QString& object, const
     updateActions();
     const bool basic = kind == "index" || kind == "sequence" || kind == "function";
     tabs_->setTabText(0, basic ? tr("Details") : tr("Columns"));
-    for (int i = 1; i < 5; ++i)
-        tabs_->setTabVisible(i, !basic || i == 3);
+    for (int i = 1; i < 6; ++i)
+        tabs_->setTabVisible(i, (!basic || i == 3) && (i != 4 || kind == "table"));
     requestToken_ = 0;
     const QSignalBlocker blocker(tabs_);
     tabs_->setCurrentIndex(0);
@@ -462,14 +503,16 @@ void ObjectExplorer::restoreObject(std::optional<quint64> connection, const QStr
     properties_ = properties;
     columns_.clear();
     columnsLoaded_ = false;
+    graphLoaded_ = false;
+    erd_->clearGraph();
     requestToken_ = 0;
     restoredInert_ = true;
     model_->clear();
     ddl_->clear();
     const bool basic = kind == "index" || kind == "sequence" || kind == "function";
     tabs_->setTabText(0, basic ? tr("Details") : tr("Columns"));
-    for (int i = 1; i < 5; ++i)
-        tabs_->setTabVisible(i, !basic || i == 3);
+    for (int i = 1; i < 6; ++i)
+        tabs_->setTabVisible(i, (!basic || i == 3) && (i != 4 || kind == "table"));
     reconnect_->setEnabled(!connection_);
     updateActions();
     updateFooter();
@@ -495,6 +538,8 @@ void ObjectExplorer::setDisconnected() {
     restoredInert_ = true;
     columns_.clear();
     columnsLoaded_ = false;
+    graphLoaded_ = false;
+    erd_->clearGraph();
     requestToken_ = 0;
     model_->clear();
     ddl_->clear();
@@ -579,11 +624,25 @@ void ObjectExplorer::requestPane() {
         setStatus("loaded", tr("%1 · Details loaded").arg(label_));
         return;
     }
-    if (tabs_->currentIndex() == 4) {
-        pages_->setCurrentIndex(2);
+    if (tabs_->currentIndex() == 5) {
+        pages_->setCurrentIndex(3);
         setStatus("ready", tr("%1 · Data").arg(label_));
         emit dataRequested(*connection_, object_, label_, kind_);
         updateFooter();
+        return;
+    }
+    if (tabs_->currentIndex() == 4) {
+        pages_->setCurrentWidget(erd_);
+        if (graphLoaded_) {
+            setStatus(graphState_, graphMessage_);
+            refresh_->setEnabled(!operationBusy_);
+            return;
+        }
+        erd_->clearGraph();
+        static std::atomic<quint64> nextGraph{quint64(1) << 54};
+        requestToken_ = nextGraph.fetch_add(1);
+        setStatus("loading", tr("%1 · Loading ERD…").arg(label_));
+        adapter_->loadObjectGraph(*connection_, object_, requestToken_);
         return;
     }
     pages_->setCurrentIndex(tabs_->currentIndex() == 3 ? 1 : 0);
@@ -605,7 +664,7 @@ void ObjectExplorer::setStatus(const QString& state, const QString& text) {
     status_->setAccessibleName(tr("Object status: %1").arg(text));
     status_->style()->unpolish(status_);
     status_->style()->polish(status_);
-    if (dataFooter_ && tabs_->currentIndex() == 4 && state == "busy") {
+    if (dataFooter_ && tabs_->currentIndex() == 5 && state == "busy") {
         // The Data footer already carries its result origin. Keep the guard's
         // explanation visible without adding a second footer or hiding Cancel.
         if (auto* main = qobject_cast<MainWindow*>(window()))
@@ -707,8 +766,45 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
             ? tr("No %1 for this object.").arg(tabs_->tabText(tabs_->currentIndex()).toLower())
             : tr("%1 · %2 rows").arg(label_).arg(inspection.rows.size()));
 }
+void ObjectExplorer::renderGraph(const ObjectGraph& graph) {
+    if (graph.availability == MetadataAvailability::Unsupported) {
+        erd_->clearGraph();
+        graphState_ = "unsupported";
+        graphMessage_ = tr("Unsupported: %1").arg(graph.reason);
+        setStatus(graphState_, graphMessage_);
+        return;
+    }
+    if (std::none_of(graph.tables.begin(), graph.tables.end(),
+                     [this](const ObjectGraphTable& table) { return table.id == object_; })) {
+        erd_->clearGraph();
+        graphState_ = "incomplete";
+        graphMessage_ =
+            tr("%1 · ERD incomplete: selected table metadata is unavailable").arg(label_);
+        setStatus(graphState_, graphMessage_);
+        return;
+    }
+    erd_->setGraph(graph, object_);
+    if (graph.availability == MetadataAvailability::Unavailable || !graph.warnings.isEmpty()) {
+        graphState_ = "incomplete";
+        QStringList details;
+        if (!graph.reason.isEmpty())
+            details.append(graph.reason);
+        details.append(graph.warnings);
+        graphMessage_ = tr("%1 · ERD incomplete: %2").arg(label_, details.join("; "));
+    } else if (graph.edges.isEmpty()) {
+        graphState_ = "empty";
+        graphMessage_ = tr("%1 · No foreign-key relationships").arg(label_);
+    } else {
+        graphState_ = "loaded";
+        graphMessage_ = tr("%1 · %2 related tables, %3 foreign keys")
+                            .arg(label_)
+                            .arg(qMax(0, graph.tables.size() - 1))
+                            .arg(graph.edges.size());
+    }
+    setStatus(graphState_, graphMessage_);
+}
 void ObjectExplorer::installDataWidget(QWidget* widget) {
-    auto* previous = pages_->widget(2);
+    auto* previous = pages_->widget(3);
     for (auto& action : dataHeaderActions_)
         if (action)
             action->deleteLater();
@@ -719,7 +815,7 @@ void ObjectExplorer::installDataWidget(QWidget* widget) {
         dataFooter_ = nullptr;
     }
     pages_->removeWidget(previous);
-    pages_->insertWidget(2, widget);
+    pages_->insertWidget(3, widget);
     if (auto* objectData = qobject_cast<ObjectDataWorkspace*>(widget)) {
         auto* header = findChild<QWidget*>("objectHeader");
         auto* headerLayout = qobject_cast<QHBoxLayout*>(header->layout());
@@ -743,7 +839,7 @@ void ObjectExplorer::installDataWidget(QWidget* widget) {
     previous->deleteLater();
 }
 void ObjectExplorer::updateFooter() {
-    const bool dataVisible = dataFooter_ && tabs_->currentIndex() == 4 && connection_.has_value();
+    const bool dataVisible = dataFooter_ && tabs_->currentIndex() == 5 && connection_.has_value();
     for (const auto& action : dataHeaderActions_)
         if (action)
             action->setEnabled(dataVisible);

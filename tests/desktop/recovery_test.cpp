@@ -181,6 +181,66 @@ class RecoveryTest : public QObject {
                  int(object.pane));
     }
 
+    void savedDataAndErdPanesRestoreInertWithStableValues() {
+        for (const auto persistedPane : {quint32(4), quint32(5)}) {
+            QTemporaryDir directory;
+            const auto path = directory.filePath("pane.sqlite");
+            SavedWorkspaceTab object;
+            object.isObject = true;
+            object.profileId = "profile:missing";
+            object.objectType = "table";
+            object.objectId = "main.orders";
+            object.label = "orders";
+            object.pane = persistedPane;
+            {
+                EngineAdapter adapter(nullptr, path);
+                QSignalSpy saved(&adapter, &EngineAdapter::workspaceSaved);
+                QVERIFY(adapter.saveWorkspaceTabs({object}, 0, 1));
+                QTRY_COMPARE(saved.count(), 1);
+            }
+            MainWindow window(nullptr, path);
+            auto* controller = window.findChild<WorkspaceRecoveryController*>();
+            auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+            auto* workspace = window.findChild<QueryWorkspace*>();
+            QVERIFY(controller);
+            QVERIFY(tabs);
+            QVERIFY(workspace);
+            QSignalSpy reads(workspace->adapter(), &EngineAdapter::objectInspectionReady);
+            QSignalSpy failures(workspace->adapter(), &EngineAdapter::objectInspectionFailed);
+            controller->start();
+            QTRY_VERIFY(controller->isReady());
+            QCOMPARE(tabs->count(), 1);
+            auto* explorer = qobject_cast<ObjectExplorer*>(tabs->widget(0));
+            QVERIFY(explorer);
+            QCOMPARE(explorer->paneIndex(), persistedPane == 4 ? 5 : 4);
+            QVERIFY(explorer->needsConnection());
+            QCOMPARE(controller->snapshotTabs().at(0).pane, persistedPane);
+            QCOMPARE(reads.count(), 0);
+            QCOMPARE(failures.count(), 0);
+        }
+    }
+    void erdRecoveryRejectsNonTableWithoutReplacingTabs() {
+        QTabWidget tabs;
+        auto* original = new SqlEditor;
+        tabs.addTab(original, "Untitled");
+        WorkspaceRecoveryController recovery(&tabs, [] { return new SqlEditor; });
+        recovery.setObjectFactory([](const SavedWorkspaceTab&) -> QWidget* { return new QWidget; });
+        QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreTabsRequested);
+        QSignalSpy errors(&recovery, &WorkspaceRecoveryController::errorOccurred);
+        recovery.start();
+        SavedWorkspaceTab view;
+        view.isObject = true;
+        view.profileId = "profile:missing";
+        view.objectType = "view";
+        view.objectId = "main.summary";
+        view.label = "summary";
+        view.pane = 5;
+        recovery.restoredTabs(restores.at(0).at(0).toULongLong(), {view}, 0);
+        QCOMPARE(errors.count(), 1);
+        QCOMPARE(tabs.count(), 1);
+        QCOMPARE(tabs.widget(0), original);
+    }
+
     void pendingFileReadDefersCloseUntilLatestBufferCanBeSaved() {
         QTemporaryDir dir;
         QFile file(dir.filePath("pending.sql"));

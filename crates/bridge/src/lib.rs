@@ -353,6 +353,7 @@ pub mod ffi {
         history_recorded: bool,
         object: String,
         ddl: String,
+        graph_json: String,
         value_handle: u64,
         query_id: u64,
         exported_rows: u64,
@@ -643,6 +644,12 @@ pub mod ffi {
             engine: &mut BridgeEngine,
             connection: u64,
             parent: &str,
+            request_token: u64,
+        ) -> Submit;
+        fn object_graph_request(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            object: &str,
             request_token: u64,
         ) -> Submit;
         fn refresh_sql_mode(
@@ -1223,6 +1230,18 @@ pub fn metadata_request(
         )
         .map(|()| connection)
         .map_err(|e| e.to_string())
+    })
+}
+pub fn object_graph_request(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    object: &str,
+    request_token: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        e.load_object_graph_request(unpack(connection), ObjectId(object.into()), request_token)
+            .map(|()| connection)
+            .map_err(|e| e.to_string())
     })
 }
 

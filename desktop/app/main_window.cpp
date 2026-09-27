@@ -234,6 +234,10 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
     auto* objectData = new ObjectDataWorkspace(workspace_, explorer);
     explorer->installDataWidget(objectData);
     connect(explorer, &ObjectExplorer::dataRequested, objectData, &ObjectDataWorkspace::openObject);
+    connect(explorer, &ObjectExplorer::relatedTableActivated, this,
+            [this](quint64 connection, const QString& objectId, const QString& label) {
+                openObjectTab(connection, objectId, label, QStringLiteral("table"), {});
+            });
     connect(explorer, &ObjectExplorer::objectChanged, objectData, &ObjectDataWorkspace::invalidate);
     connect(explorer, &ObjectExplorer::paneChanged, this, [this](int) {
         if (recovery_)

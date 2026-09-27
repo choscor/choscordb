@@ -82,6 +82,7 @@ choscordb_add_library(choscordb-desktop-services
   desktop/bridge/completion_service.cpp
   desktop/bridge/result_column_adapter.cpp
   desktop/bridge/engine_adapter.cpp
+  desktop/bridge/engine_adapter_graph.cpp
   desktop/bridge/engine_adapter_ssh_trust.cpp
   desktop/bridge/engine_adapter_storage.cpp
   desktop/models/shortcut_catalog.cpp
@@ -96,6 +97,7 @@ target_link_libraries(choscordb-desktop-services PUBLIC
 add_dependencies(choscordb-desktop-services cargo-build_choscordb_bridge)
 
 choscordb_add_library(choscordb-widgets
+  desktop/widgets/object_erd_widget.cpp
   desktop/widgets/query_settings_dialog/query_settings_dialog.cpp
   desktop/widgets/editor_completion/editor_completion.cpp
   desktop/widgets/preferences_dialog/preferences_dialog.cpp

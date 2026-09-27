@@ -16,6 +16,8 @@ class QPlainTextEdit;
 class QHBoxLayout;
 namespace choscordb {
 class EngineAdapter;
+class ObjectErdWidget;
+struct ObjectGraph;
 struct ObjectInspection;
 class ObjectExplorer final : public QWidget {
     Q_OBJECT
@@ -40,6 +42,7 @@ class ObjectExplorer final : public QWidget {
     void sqlGenerated(quint64 connection, const QString& sql);
     void reconnectRequested();
     void paneChanged(int index);
+    void relatedTableActivated(quint64 connection, const QString& objectId, const QString& label);
 
   private:
     void requestPane();
@@ -47,6 +50,7 @@ class ObjectExplorer final : public QWidget {
     void updateActions();
     void updateFooter();
     void render(const ObjectInspection& inspection);
+    void renderGraph(const ObjectGraph& graph);
     void setStatus(const QString& state, const QString& text);
     EngineAdapter* adapter_;
     QTabBar* tabs_;
@@ -54,6 +58,7 @@ class ObjectExplorer final : public QWidget {
     QStandardItemModel* model_;
     QStackedWidget* pages_;
     QPlainTextEdit* ddl_;
+    ObjectErdWidget* erd_;
     QLabel* status_;
     QAction* retry_;
     QAction* reconnect_;
@@ -66,6 +71,8 @@ class ObjectExplorer final : public QWidget {
     QHash<QString, QAction*> generationActions_;
     QStringList columns_;
     bool columnsLoaded_ = false;
+    bool graphLoaded_ = false;
+    QString graphState_, graphMessage_;
     std::optional<quint64> connection_;
     QString object_, label_, kind_;
     QVariantList properties_;
