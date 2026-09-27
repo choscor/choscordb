@@ -1,12 +1,14 @@
 #include "app/query_workspace.h"
 #include "app/query_settings.h"
 #include "app/query_workspace_p.h"
+#include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
 #include "bridge/result_column_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/menu/menu.h"
 #include "design_system/modal_panel/modal_panel.h"
+#include "design_system/table/table_style.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -42,6 +44,9 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                                       : new EngineAdapter(this, widgets_.storagePath)),
       model_(new ResultTableModel(this)) {
     widgets_.grid->setModel(model_);
+    if (auto* delegate = qobject_cast<design::ResultTableDelegate*>(widgets_.grid->itemDelegate()))
+        connect(delegate, &design::ResultTableDelegate::linkActivated, this,
+                &QueryWorkspace::activateForeignKey);
     widgets_.grid->horizontalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
     widgets_.grid->verticalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
     connect(widgets_.grid->selectionModel(), &QItemSelectionModel::selectionChanged, this,
@@ -402,11 +407,11 @@ void QueryWorkspace::configureEditability() {
     };
     if (editParameterStyle_ == "$")
         for (size_t i = 0; i < columns_.size(); ++i)
-            if (!editColumnNames_[i].isEmpty() && !comparableType(columns_[i].databaseType)) {
+            if (!editColumnNames_[i].isEmpty() && !comparableType(columns_[i].databaseType) &&
+                !(i < cellMetadata_.size() && !cellMetadata_[i].enumChoices.isEmpty() &&
+                  cellMetadata_[i].sourceColumn == editColumnNames_[i])) {
                 keyed = false;
                 std::fill(editable.begin(), editable.end(), false);
-                editReason_ = tr("A column type cannot be compared safely for conflicts; inserts "
-                                 "remain available.");
                 break;
             }
     for (const auto& row : model_->rows())
@@ -529,6 +534,8 @@ bool QueryWorkspace::applyStagedEdits() {
                                               return QStringLiteral("text \"") + escaped + '"';
                                           } else if constexpr (std::is_same_v<T, bool>)
                                               return v ? "true" : "false";
+                                          else if constexpr (std::is_same_v<T, DecimalValue>)
+                                              return v.text;
                                           else if constexpr (std::is_arithmetic_v<T>)
                                               return QString::number(v);
                                           else
@@ -689,7 +696,7 @@ QueryPreferences QueryWorkspace::queryPreferences() const {
 }
 void QueryWorkspace::openObjectData(quint64 connection, const QString& object, const QString& label,
                                     const QueryPreferences& preferences, const QString& kind,
-                                    bool preserveView) {
+                                    bool preserveView, const QString& initialFilter) {
     if (!widgets_.objectReadOnly || !adapter_ || workInFlight() || stopping_)
         return;
     if (!resolvePendingEdits())
@@ -701,6 +708,12 @@ void QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
     if (query_)
         adapter_->releaseQuery(*query_);
     clearResult();
+    initialFilter_ = initialFilter;
+    initialFilterPending_ = !initialFilter.isEmpty();
+    referenceFilterPending_ = initialFilterPending_;
+    referenceFilterFailed_ = false;
+    if (filterBar_ && initialFilterPending_)
+        filterBar_->setExpression(initialFilter_);
     currentPage_.reset();
     hasMore_ = false;
     hasMoreResults_ = false;

@@ -1,14 +1,83 @@
 #include "models/result_table_model.h"
+#include "design_system/table/table_style.h"
 #include <QArrayData>
 #include <QBrush>
 #include <QColor>
 #include <QFont>
 #include <QSet>
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <limits>
 #include <numeric>
 namespace choscordb {
+namespace {
+std::optional<std::pair<QString, int>> normalizedDecimal(const QString& text) {
+    int position = 0;
+    const bool negative = text.startsWith('-');
+    if (negative || text.startsWith('+'))
+        ++position;
+    QString digits;
+    digits.reserve(text.size());
+    int fractional = 0;
+    bool dot = false;
+    while (position < text.size()) {
+        const auto character = text.at(position);
+        if (character == '.' && !dot) {
+            dot = true;
+            ++position;
+            continue;
+        }
+        if (character < '0' || character > '9')
+            break;
+        digits += character;
+        fractional += dot;
+        ++position;
+    }
+    if (digits.isEmpty())
+        return std::nullopt;
+    int exponent = -fractional;
+    if (position < text.size() && (text.at(position) == 'e' || text.at(position) == 'E')) {
+        bool valid = false;
+        const auto parsed = text.mid(position + 1).toInt(&valid);
+        if (!valid || parsed < -10000 || parsed > 10000)
+            return std::nullopt;
+        exponent += parsed;
+        position = text.size();
+    }
+    if (position != text.size())
+        return std::nullopt;
+    qsizetype first = 0;
+    while (first + 1 < digits.size() && digits.at(first) == '0')
+        ++first;
+    digits = digits.mid(first);
+    if (digits == "0")
+        return std::pair{QStringLiteral("0"), 0};
+    while (digits.size() > 1 && digits.back() == '0') {
+        digits.chop(1);
+        ++exponent;
+    }
+    return std::pair{negative ? '-' + digits : digits, exponent};
+}
+
+bool filterableDecimal(const DecimalValue& value) {
+    bool integerOk = false;
+    const auto integer = value.text.toLongLong(&integerOk);
+    const auto normalized = normalizedDecimal(value.text);
+    if (!normalized)
+        return false;
+    if (integerOk && normalized == normalizedDecimal(QString::number(integer)))
+        return true;
+    bool realOk = false;
+    const auto real = value.text.toDouble(&realOk);
+    if (!realOk || !std::isfinite(real))
+        return false;
+    char encoded[64];
+    const auto result = std::to_chars(encoded, encoded + sizeof(encoded), real);
+    return result.ec == std::errc{} &&
+           normalized == normalizedDecimal(QString::fromLatin1(encoded, result.ptr - encoded));
+}
+} // namespace
 std::optional<DeferredValue> ResultTableModel::deferredValue(const QModelIndex& index) const {
     if (!index.isValid() || index.model() != this || index.row() < 0 || index.column() < 0 ||
         static_cast<size_t>(index.row()) >= rows_.size() ||
@@ -17,6 +86,31 @@ std::optional<DeferredValue> ResultTableModel::deferredValue(const QModelIndex& 
     if (const auto* value = std::get_if<DeferredValue>(&rows_[index.row()][index.column()]))
         return *value;
     return std::nullopt;
+}
+std::optional<Cell> ResultTableModel::cellValue(const QModelIndex& index) const {
+    if (!index.isValid() || index.model() != this || index.row() < 0 || index.column() < 0 ||
+        index.row() >= rowCount() || index.column() >= columnCount())
+        return std::nullopt;
+    return rows_[index.row()][index.column()];
+}
+
+std::optional<ResultCellMetadata> ResultTableModel::linkedColumn(const QModelIndex& index) const {
+    if (!cellValue(index) || index.column() >= static_cast<int>(cellMetadata_.size()))
+        return std::nullopt;
+    const auto& metadata = cellMetadata_[index.column()];
+    const auto& value = rows_[index.row()][index.column()];
+    if (metadata.sourceColumn.isEmpty() || metadata.sourceObject.isEmpty() ||
+        metadata.targetObject.isEmpty() || metadata.targetQualifiedName.isEmpty() ||
+        metadata.targetColumn.isEmpty() || std::holds_alternative<std::monostate>(value) ||
+        std::holds_alternative<DeferredValue>(value) || std::holds_alternative<QByteArray>(value) ||
+        (inserted_[index.row()] && !touched_[index.row()][index.column()]))
+        return std::nullopt;
+    if (const auto* decimal = std::get_if<DecimalValue>(&value);
+        decimal && !filterableDecimal(*decimal))
+        return std::nullopt;
+    if (const auto* real = std::get_if<double>(&value); real && !std::isfinite(*real))
+        return std::nullopt;
+    return metadata;
 }
 
 int ResultTableModel::rowCount(const QModelIndex& parent) const {
@@ -47,11 +141,30 @@ QVariant ResultTableModel::data(const QModelIndex& index, int role) const {
         return font;
     }
     if (role == Qt::TextAlignmentRole &&
-        (std::holds_alternative<qint64>(cell) || std::holds_alternative<double>(cell)))
+        (std::holds_alternative<qint64>(cell) || std::holds_alternative<double>(cell) ||
+         std::holds_alternative<DecimalValue>(cell)))
         return int(Qt::AlignRight | Qt::AlignVCenter);
     if (role == Qt::UserRole)
         return touched_[index.row()][index.column()] &&
                std::holds_alternative<std::monostate>(cell);
+    if (role == design::CellNullRole)
+        return std::holds_alternative<std::monostate>(cell);
+    if (role == design::ChoiceLabelsRole && flags(index) & Qt::ItemIsEditable &&
+        index.column() < static_cast<int>(cellMetadata_.size())) {
+        const auto& metadata = cellMetadata_[index.column()];
+        if (metadata.boolean)
+            return QStringList{QStringLiteral("true"), QStringLiteral("false")};
+        return metadata.enumChoices;
+    }
+    if (role == design::ChoiceNullableRole &&
+        index.column() < static_cast<int>(cellMetadata_.size()))
+        return cellMetadata_[index.column()].nullable == true;
+    if (role == design::ForeignKeyLinkLabelRole) {
+        if (const auto linked = linkedColumn(index))
+            return tr("Open referenced row in %1 (%2)")
+                .arg(linked->targetQualifiedName, linked->targetColumn);
+        return {};
+    }
     if (role != Qt::DisplayRole && role != Qt::EditRole)
         return {};
     if (inserted_[index.row()] && !touched_[index.row()][index.column()])
@@ -67,6 +180,8 @@ QVariant ResultTableModel::data(const QModelIndex& index, int role) const {
                 return QString::number(value);
             else if constexpr (std::is_same_v<T, double>)
                 return QString::number(value, 'g', 17);
+            else if constexpr (std::is_same_v<T, DecimalValue>)
+                return value.text;
             else if constexpr (std::is_same_v<T, QString>)
                 return value;
             else if constexpr (std::is_same_v<T, QByteArray>)
@@ -178,6 +293,8 @@ bool ResultTableModel::setPage(std::vector<ResultColumn> columns, std::vector<Ro
                     using T = std::decay_t<decltype(value)>;
                     if constexpr (std::is_same_v<T, QString>)
                         return count.string(value);
+                    else if constexpr (std::is_same_v<T, DecimalValue>)
+                        return count.string(value.text);
                     else if constexpr (std::is_same_v<T, QByteArray>)
                         return count.binary(value);
                     else if constexpr (std::is_same_v<T, DeferredValue>)
@@ -204,6 +321,7 @@ bool ResultTableModel::setPage(std::vector<ResultColumn> columns, std::vector<Ro
     beginResetModel();
     // Destroy the previous page before adopting the validated transfer.
     std::vector<ResultColumn>().swap(columns_);
+    std::vector<ResultCellMetadata>().swap(cellMetadata_);
     std::vector<Row>().swap(rows_);
     columns_ = std::move(columns);
     rows_ = std::move(rows);
@@ -221,6 +339,27 @@ bool ResultTableModel::setPage(std::vector<ResultColumn> columns, std::vector<Ro
     stagedBytes_ = 0;
     endResetModel();
     emit pendingEditsChanged(false);
+    return true;
+}
+bool ResultTableModel::setCellMetadata(std::vector<ResultCellMetadata> metadata) {
+    if (metadata.size() != columns_.size())
+        return false;
+    // Catalog labels are bounded independently of a page transfer's allocation.
+    std::size_t bytes = metadata.capacity() * sizeof(ResultCellMetadata);
+    for (const auto& item : metadata) {
+        for (const auto& string : {item.sourceColumn, item.sourceObject, item.sourceQualifiedName,
+                                   item.targetObject, item.targetQualifiedName, item.targetColumn})
+            bytes += static_cast<std::size_t>(string.size()) * sizeof(QChar);
+        for (const auto& choice : item.enumChoices)
+            bytes += static_cast<std::size_t>(choice.size()) * sizeof(QChar);
+    }
+    if (bytes > 1024 * 1024)
+        return false;
+    cellMetadata_ = std::move(metadata);
+    if (rowCount() && columnCount())
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1),
+                         {design::ChoiceLabelsRole, design::ChoiceNullableRole,
+                          design::ForeignKeyLinkLabelRole});
     return true;
 }
 void ResultTableModel::setKeyColumns(std::vector<bool> keys) {
@@ -254,6 +393,12 @@ Qt::ItemFlags ResultTableModel::flags(const QModelIndex& index) const {
     return result;
 }
 bool ResultTableModel::setData(const QModelIndex& index, const QVariant& value, int role) {
+    if (role == design::TypedNullEditRole) {
+        if (index.isValid() && index.column() < static_cast<int>(cellMetadata_.size()) &&
+            cellMetadata_[index.column()].nullable == true)
+            return setNull(index);
+        return false;
+    }
     if (role != Qt::EditRole || !(flags(index) & Qt::ItemIsEditable))
         return false;
     const QString text = value.toString();
@@ -279,6 +424,8 @@ bool ResultTableModel::setData(const QModelIndex& index, const QVariant& value, 
             converted = false;
         else
             return false;
+    } else if (type.startsWith("numeric") || type.startsWith("decimal")) {
+        converted = DecimalValue{text};
     } else if (type == "real" || type == "double precision" || type == "float4" ||
                type == "float8") {
         bool valid = false;

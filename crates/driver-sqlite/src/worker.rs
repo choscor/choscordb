@@ -136,6 +136,9 @@ pub(super) fn run(
             Command::EditQuery(sql, columns, r) => {
                 let _ = r.send(metadata::edit_query(&db, &sql, columns));
             }
+            Command::ResultCells(object, sql, columns, r) => {
+                let _ = r.send(metadata::result_cells(&db, object.as_ref(), &sql, columns));
+            }
             Command::Transaction(commit, r) => {
                 let result = if db.is_autocommit() {
                     Ok(())
@@ -492,6 +495,18 @@ fn execute(
             Command::EditQuery(sql, columns, reply) => {
                 let _ = db.progress_handler(0, None::<fn() -> bool>);
                 let _ = reply.send(metadata::edit_query(db, &sql, columns));
+                let stop = cancel.clone();
+                let _ = db.progress_handler(
+                    1000,
+                    Some(move || {
+                        stop.load(Ordering::Acquire)
+                            || deadline.is_some_and(|d| Instant::now() >= d)
+                    }),
+                );
+            }
+            Command::ResultCells(object, sql, columns, reply) => {
+                let _ = db.progress_handler(0, None::<fn() -> bool>);
+                let _ = reply.send(metadata::result_cells(db, object.as_ref(), &sql, columns));
                 let stop = cancel.clone();
                 let _ = db.progress_handler(
                     1000,

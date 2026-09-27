@@ -5,6 +5,7 @@
     <file alias="folder.svg">icons/folder.svg</file>
     <file alias="file.svg">icons/file.svg</file>
     <file alias="key.svg">icons/key.svg</file>
+    <file alias="link.svg">icons/link.svg</file>
     <file alias="eye.svg">icons/eye.svg</file>
     <file alias="eye-off.svg">icons/eye-off.svg</file>
     <file alias="refresh-cw.svg">icons/refresh-cw.svg</file>

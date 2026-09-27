@@ -68,6 +68,8 @@ class MainWindow final : public QMainWindow {
     ObjectExplorer* makeObjectExplorer();
     void openObjectTab(quint64 connection, const QString& objectId, const QString& label,
                        const QString& kind, const QVariantList& properties, int pane = -1);
+    void openReferencedRow(quint64 connection, const QString& objectId, const QString& label,
+                           const QString& filter);
     bool allowDocumentChange();
     QPointer<QWidget> activeDocument_;
     QPointer<SqlEditor> lastSqlDocument_;

@@ -1,7 +1,7 @@
 # View row as JSON in a shared right sheet
 
-Status: Confirmed for implementation  
-Date: 2026-09-27  
+Status: Confirmed for implementation
+Date: 2026-09-27
 Source: User request and brainstorm decisions in this session
 
 ## Outcome and current state

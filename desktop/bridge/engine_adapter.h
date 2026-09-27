@@ -273,6 +273,8 @@ class EngineAdapter final : public QObject {
     bool inspectEditTarget(quint64 connection, const QString& object, quint64 token);
     bool inspectQueryEdit(quint64 connection, const QString& sql, const QStringList& resultColumns,
                           quint64 token);
+    bool inspectResultCells(quint64 connection, const QString& object, const QString& sql,
+                            const QStringList& resultColumns, quint64 token);
     bool applyEditBatch(quint64 connection, const std::vector<ReviewedEditStatement>& statements,
                         quint64 token);
     void loadObjectInspection(quint64 connection, const QString& object, ObjectInspectionPane pane,

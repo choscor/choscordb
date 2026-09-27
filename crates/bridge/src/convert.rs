@@ -197,6 +197,39 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             error(&mut e, err);
             "edit_query_failed"
         }
+        Event::ResultCells {
+            connection,
+            request_token,
+            columns,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            e.result_cell_metadata = columns
+                .into_iter()
+                .map(|column| ffi::ResultCellMetadataDto {
+                    source_column: column.source_column,
+                    source_object: column.source_object,
+                    source_qualified_name: column.source_qualified_name,
+                    nullability: column.nullable.map(i8::from).unwrap_or(-1),
+                    boolean: column.boolean,
+                    enum_choices: column.enum_choices,
+                    fk_target_object: column.fk_target_object,
+                    fk_target_qualified_name: column.fk_target_qualified_name,
+                    fk_target_column: column.fk_target_column,
+                })
+                .collect();
+            "result_cells"
+        }
+        Event::ResultCellsFailed {
+            connection,
+            request_token,
+            error: err,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            error(&mut e, err);
+            "result_cells_failed"
+        }
         Event::EditTarget {
             connection,
             request_token,

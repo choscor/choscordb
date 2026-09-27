@@ -82,6 +82,44 @@ async fn run(connection: &mut dyn Connection, sql: &str, auto: bool) -> Vec<Row>
 }
 #[tokio::test]
 #[ignore = "requires disposable live PostgreSQL fixture"]
+async fn result_cell_catalog_reports_native_choices_and_read_only_fk_provenance() {
+    let mut c = PostgresDriver.connect(settings()).await.unwrap();
+    run(&mut *c, "DROP TABLE IF EXISTS choscordb_cell_child", true).await;
+    run(&mut *c, "DROP TABLE IF EXISTS choscordb_cell_parent", true).await;
+    run(&mut *c, "DROP TYPE IF EXISTS choscordb_cell_mood", true).await;
+    run(
+        &mut *c,
+        "CREATE TYPE choscordb_cell_mood AS ENUM ('sleepy','ready','away')",
+        true,
+    )
+    .await;
+    run(
+        &mut *c,
+        "CREATE TABLE choscordb_cell_parent(id integer PRIMARY KEY)",
+        true,
+    )
+    .await;
+    run(&mut *c, "CREATE TABLE choscordb_cell_child(parent_id integer REFERENCES choscordb_cell_parent(id), enabled boolean NOT NULL, mood choscordb_cell_mood)", true).await;
+    let columns = c
+        .inspect_result_cells(
+            None,
+            "SELECT parent_id, enabled, mood FROM choscordb_cell_child",
+            vec!["parent_id".into(), "enabled".into(), "mood".into()],
+        )
+        .await
+        .unwrap();
+    assert_eq!(columns[0].fk_target_column, "id");
+    assert!(columns[0].fk_target_object.starts_with("pg:relation:"));
+    assert!(columns[1].boolean);
+    assert_eq!(columns[1].nullable, Some(false));
+    assert_eq!(columns[2].enum_choices, ["sleepy", "ready", "away"]);
+    assert_eq!(columns[2].nullable, Some(true));
+    run(&mut *c, "DROP TABLE choscordb_cell_child", true).await;
+    run(&mut *c, "DROP TABLE choscordb_cell_parent", true).await;
+    run(&mut *c, "DROP TYPE choscordb_cell_mood", true).await;
+}
+#[tokio::test]
+#[ignore = "requires disposable live PostgreSQL fixture"]
 async fn graph_loads_through_public_driver_connection() {
     let url = std::env::var("CHOSCORDB_TEST_POSTGRES").unwrap();
     let (admin, session) = tokio_postgres::connect(&url, tokio_postgres::NoTls)

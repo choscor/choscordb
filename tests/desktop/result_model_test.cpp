@@ -1,5 +1,6 @@
 #include "bridge/result_column_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/table/table_style.h"
 #include "models/result_table_model.h"
 #include <QAbstractItemModelTester>
 #include <QJsonDocument>
@@ -18,6 +19,46 @@ ResultColumn column(const QString& name, const QString& databaseType) {
 class ResultModelTest : public QObject {
     Q_OBJECT
   private slots:
+    void typedNullChoiceStagesNullRatherThanText() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("state", "text")}, {{QString("ready")}}, 0));
+        model.setEditableColumns({true}, false, false);
+        ResultCellMetadata metadata;
+        metadata.nullable = true;
+        metadata.enumChoices = {"ready", "queued"};
+        QVERIFY(model.setCellMetadata({metadata}));
+        const auto cell = model.index(0, 0);
+        QCOMPARE(cell.data(design::ChoiceLabelsRole).toStringList(),
+                 (QStringList{"ready", "queued"}));
+        QVERIFY(cell.data(design::ChoiceNullableRole).toBool());
+        QVERIFY(model.setData(cell, QVariant(), design::TypedNullEditRole));
+        QVERIFY(model.hasPendingEdits());
+        QVERIFY(std::holds_alternative<std::monostate>(model.rows()[0][0]));
+        model.discardEdits();
+        QCOMPARE(cell.data().toString(), QString("ready"));
+    }
+    void verifiedLinksFollowCurrentTypedValueAndHideUnavailableCells() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("parent_id", "integer")},
+                              {{qint64(4)}, {std::monostate{}}, {DeferredValue{1, 100, "integer"}}},
+                              0));
+        ResultCellMetadata metadata;
+        metadata.sourceColumn = "parent_id";
+        metadata.sourceObject = R"(["main","child"])";
+        metadata.targetObject = "[\"main\",\"parent\"]";
+        metadata.targetQualifiedName = "parent";
+        metadata.targetColumn = "id";
+        QVERIFY(model.setCellMetadata({metadata}));
+        QCOMPARE(model.index(0, 0).data(design::ForeignKeyLinkLabelRole).toString(),
+                 QString("Open referenced row in parent (id)"));
+        QVERIFY(!model.index(1, 0).data(design::ForeignKeyLinkLabelRole).isValid());
+        QVERIFY(!model.index(2, 0).data(design::ForeignKeyLinkLabelRole).isValid());
+        model.setEditableColumns({true}, false, false);
+        QVERIFY(model.setData(model.index(0, 0), QString("9")));
+        QCOMPARE(std::get<qint64>(*model.cellValue(model.index(0, 0))), qint64(9));
+        QVERIFY(model.setNull(model.index(0, 0)));
+        QVERIFY(!model.index(0, 0).data(design::ForeignKeyLinkLabelRole).isValid());
+    }
     void rowJsonReadinessFindsInvalidCellsAfterDeferredValues() {
         ResultTableModel model;
         QString invalid;

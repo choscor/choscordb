@@ -376,6 +376,14 @@ impl MysqlConnection {
 }
 #[async_trait]
 impl Connection for MysqlConnection {
+    async fn inspect_result_cells(
+        &mut self,
+        object: Option<&ObjectId>,
+        sql: &str,
+        result_columns: Vec<String>,
+    ) -> Result<Vec<ResultCellMetadata>> {
+        editing::result_cells(self.connection().await?, object, sql, result_columns).await
+    }
     async fn idle_transaction_state(&mut self) -> Result<Option<IdleTransactionState>> {
         let idle = self.idle.clone();
         idle.reconcile(self.connection().await?);

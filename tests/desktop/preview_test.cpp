@@ -9,6 +9,7 @@
 #include "design_system/history_row/history_row.h"
 #include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/table/table_style.h"
 #include "design_system/tabs/tab_add_corner.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
@@ -52,6 +53,7 @@
 #include <QScrollBar>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QStandardItemModel>
 #include <QSvgRenderer>
 #include <QTabBar>
 #include <QTabWidget>
@@ -962,28 +964,5 @@ void PreviewTest::contextMenuSpecimenUsesCursorInBothThemes() {
                  cursor);
         QTest::mouseClick(&window, Qt::LeftButton, {}, QPoint(5, 5));
         QVERIFY(!menu->isVisible());
-    }
-}
-
-void PreviewTest::tableHoverPreservesBackgroundInBothThemes() {
-    choscordb::design::PreviewWindow window;
-    QVERIFY(window.selectSpecimen("tables"));
-    window.show();
-    QCoreApplication::processEvents();
-    for (const auto* name : {"previewLight", "previewDark"}) {
-        auto* host = window.findChild<QWidget*>(name);
-        QVERIFY(host);
-        auto* table = host->findChild<QTableWidget*>();
-        QVERIFY(table);
-        table->setMouseTracking(true);
-        for (int row = 0; row < 2; ++row) {
-            const auto cell = table->visualItemRect(table->item(row, 0));
-            const auto before = table->viewport()->grab().toImage();
-            QTest::mouseMove(table->viewport(), cell.center());
-            QCoreApplication::processEvents();
-            const auto after = table->viewport()->grab().toImage();
-            const auto sample = cell.topLeft() + QPoint(3, 3);
-            QCOMPARE(after.pixelColor(sample), before.pixelColor(sample));
-        }
     }
 }

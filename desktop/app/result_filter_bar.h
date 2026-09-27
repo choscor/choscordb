@@ -18,6 +18,7 @@ class ResultFilterBar final : public QWidget {
     QList<ResultFilterCondition> conditions() const;
     bool draftMatches(const QList<ResultFilterCondition>& conditions) const;
     void setBusy(bool busy);
+    void setExpression(const QString& expression);
     void reset();
     void markApplied(const QList<ResultFilterCondition>& conditions);
     void restoreApplied();

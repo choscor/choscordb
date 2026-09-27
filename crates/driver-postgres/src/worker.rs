@@ -699,6 +699,16 @@ pub(super) async fn run(
                             .await;
                         let _ = reply.send(result);
                     }
+                    Command::ResultCells(object, sql, columns, reply) => {
+                        let result = cancel
+                            .closing
+                            .auxiliary(
+                                &pump,
+                                metadata::result_cells(&client, object.as_ref(), &sql, columns),
+                            )
+                            .await;
+                        let _ = reply.send(result);
+                    }
                     Command::TransactionState(reply) => {
                         let _ = reply.send(Ok(Some(false)));
                     }
@@ -1063,6 +1073,16 @@ pub(super) async fn run(
                     let result = cancel
                         .closing
                         .auxiliary(&pump, metadata::edit_query(&transaction, &sql, columns))
+                        .await;
+                    let _ = reply.send(result);
+                }
+                Command::ResultCells(object, sql, columns, reply) => {
+                    let result = cancel
+                        .closing
+                        .auxiliary(
+                            &pump,
+                            metadata::result_cells(&transaction, object.as_ref(), &sql, columns),
+                        )
                         .await;
                     let _ = reply.send(result);
                 }

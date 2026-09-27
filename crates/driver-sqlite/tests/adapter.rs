@@ -10,6 +10,87 @@ async fn connect() -> Box<dyn Connection> {
         .unwrap()
 }
 #[tokio::test]
+async fn result_cell_catalog_links_only_verified_single_column_keys_without_edit_permission() {
+    let mut c = connect().await;
+    run(
+        &mut c,
+        "CREATE TABLE parent(id INTEGER PRIMARY KEY, code TEXT UNIQUE)",
+        false,
+    )
+    .await;
+    run(&mut c, "CREATE TABLE child(parent_id INTEGER REFERENCES parent(id), a TEXT, b TEXT, FOREIGN KEY(a,b) REFERENCES parent(id,code))", false).await;
+    let metadata = c
+        .inspect_result_cells(
+            None,
+            "SELECT parent_id, a, b FROM child",
+            vec!["parent_id".into(), "a".into(), "b".into()],
+        )
+        .await
+        .unwrap();
+    assert_eq!(metadata[0].source_column, "parent_id");
+    assert_eq!(metadata[0].fk_target_column, "id");
+    assert_eq!(metadata[0].fk_target_object, "[\"main\",\"parent\"]");
+    assert!(metadata[1].fk_target_object.is_empty());
+    assert!(metadata[2].fk_target_object.is_empty());
+    let expression = c
+        .inspect_result_cells(
+            None,
+            "SELECT parent_id + 1 AS parent_id FROM child",
+            vec!["parent_id".into()],
+        )
+        .await
+        .unwrap();
+    assert!(expression[0].fk_target_object.is_empty());
+    let duplicate = c
+        .inspect_result_cells(
+            None,
+            "SELECT parent_id AS x, parent_id AS y FROM child",
+            vec!["x".into(), "y".into()],
+        )
+        .await
+        .unwrap();
+    assert!(
+        duplicate
+            .iter()
+            .all(|column| column.fk_target_object.is_empty())
+    );
+    run(&mut c, "CREATE TABLE ambiguous(a INTEGER REFERENCES parent(id), b TEXT, FOREIGN KEY(a,b) REFERENCES parent(id,code))", false).await;
+    let ambiguous = c
+        .inspect_result_cells(None, "SELECT a FROM ambiguous", vec!["a".into()])
+        .await
+        .unwrap();
+    assert!(ambiguous[0].fk_target_object.is_empty());
+    let object = c
+        .inspect_result_cells(
+            Some(&ObjectId("[\"main\",\"child\"]".into())),
+            "",
+            vec!["parent_id".into()],
+        )
+        .await
+        .unwrap();
+    assert_eq!(object[0].fk_target_column, "id");
+}
+#[tokio::test]
+async fn result_cell_catalog_resolves_implicit_single_primary_key_target() {
+    let mut c = connect().await;
+    run(&mut c, "CREATE TABLE parent(id INTEGER PRIMARY KEY)", false).await;
+    run(
+        &mut c,
+        "CREATE TABLE child(parent_id INTEGER REFERENCES parent)",
+        false,
+    )
+    .await;
+    let metadata = c
+        .inspect_result_cells(
+            None,
+            "SELECT parent_id FROM child",
+            vec!["parent_id".into()],
+        )
+        .await
+        .unwrap();
+    assert_eq!(metadata[0].fk_target_column, "id");
+}
+#[tokio::test]
 async fn reviewed_batch_binds_values_and_rolls_back_on_conflict() {
     let mut c = connect().await;
     run(
@@ -197,6 +278,15 @@ async fn query_eligibility_inspection_preserves_active_paging_cursor() {
         .await
         .unwrap();
     assert!(query.reason.is_empty());
+    let presentation = c
+        .inspect_result_cells(
+            None,
+            "SELECT id,name FROM people ORDER BY id",
+            vec!["id".into(), "name".into()],
+        )
+        .await
+        .unwrap();
+    assert_eq!(presentation[0].source_column, "id");
     let second = result
         .fetch_page(PageSize::new(100).unwrap())
         .await

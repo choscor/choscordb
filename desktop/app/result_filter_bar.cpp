@@ -105,6 +105,11 @@ void ResultFilterBar::setBusy(bool busy) {
     refreshActions();
 }
 
+void ResultFilterBar::setExpression(const QString& expression) {
+    sql_->setText(expression);
+    showValidationError({});
+}
+
 bool ResultFilterBar::draftMatches(const QList<ResultFilterCondition>& filters) const {
     return sameConditions(conditions(), filters);
 }

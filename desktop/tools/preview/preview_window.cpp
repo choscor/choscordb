@@ -794,15 +794,26 @@ void PreviewWindow::rebuildSpecimens() {
             populateTypography(content, contentLayout);
         } else if (id == "tables") {
             auto* table = new QTableWidget(content);
+            table->setObjectName("previewResultTable");
             configureResultTable(*table, false);
             table->setAlternatingRowColors(true);
             table->setColumnCount(2);
             table->setHorizontalHeaderLabels({"Name", "Value"});
-            table->setRowCount(2);
-            table->setItem(0, 0, new QTableWidgetItem("First item"));
-            table->setItem(0, 1, new QTableWidgetItem("Ready"));
-            table->setItem(1, 0, new QTableWidgetItem("Second item"));
-            table->setItem(1, 1, new QTableWidgetItem("Pending"));
+            table->setRowCount(3);
+            table->setItem(0, 0, new QTableWidgetItem("Active"));
+            auto* boolean = new QTableWidgetItem("true");
+            boolean->setData(ChoiceLabelsRole, QStringList{"true", "false"});
+            boolean->setData(ChoiceNullableRole, true);
+            table->setItem(0, 1, boolean);
+            table->setItem(1, 0, new QTableWidgetItem("Customer ID"));
+            auto* reference = new QTableWidgetItem("42");
+            reference->setData(ForeignKeyLinkLabelRole, "Open customers.id");
+            reference->setFlags(reference->flags() & ~Qt::ItemIsEditable);
+            table->setItem(1, 1, reference);
+            table->setItem(2, 0, new QTableWidgetItem("Status"));
+            auto* enumeration = new QTableWidgetItem("ready");
+            enumeration->setData(ChoiceLabelsRole, QStringList{"ready", "pending", "done"});
+            table->setItem(2, 1, enumeration);
             table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
             contentLayout->addWidget(table, 1);
         } else if (id == "right-sheet") {

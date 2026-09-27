@@ -31,6 +31,12 @@ pub(crate) enum Command {
         result_columns: Vec<String>,
         request_token: u64,
     },
+    ResultCells {
+        object: Option<ObjectId>,
+        sql: String,
+        result_columns: Vec<String>,
+        request_token: u64,
+    },
     Export {
         export: crate::ExportId,
         query: QueryId,
@@ -624,6 +630,42 @@ pub(crate) async fn run(
                         send(
                             &events,
                             Event::EditQueryFailed {
+                                connection: id,
+                                request_token,
+                                error,
+                            },
+                        )
+                        .await
+                    }
+                }
+            }
+            Command::ResultCells {
+                object,
+                sql,
+                result_columns,
+                request_token,
+            } => {
+                match metadata_operation(
+                    connection.inspect_result_cells(object.as_ref(), &sql, result_columns),
+                    &mut shutdown,
+                )
+                .await
+                {
+                    Ok(columns) => {
+                        send(
+                            &events,
+                            Event::ResultCells {
+                                connection: id,
+                                request_token,
+                                columns,
+                            },
+                        )
+                        .await
+                    }
+                    Err(error) => {
+                        send(
+                            &events,
+                            Event::ResultCellsFailed {
                                 connection: id,
                                 request_token,
                                 error,

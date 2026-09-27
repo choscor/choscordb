@@ -2,6 +2,7 @@
 #include <QAbstractTableModel>
 #include <QByteArray>
 #include <QString>
+#include <QStringList>
 #include <cstddef>
 #include <map>
 #include <optional>
@@ -13,7 +14,11 @@ struct DeferredValue {
     quint64 bytes;
     QString type;
 };
-using Cell = std::variant<std::monostate, bool, qint64, double, QString, QByteArray, DeferredValue>;
+struct DecimalValue {
+    QString text;
+};
+using Cell = std::variant<std::monostate, bool, qint64, double, DecimalValue, QString, QByteArray,
+                          DeferredValue>;
 struct ResultColumn {
     QString name;
     QString databaseType;
@@ -21,6 +26,17 @@ struct ResultColumn {
     std::optional<qint32> scale;
     QString timezone;
     std::optional<bool> nullable;
+};
+struct ResultCellMetadata {
+    QString sourceColumn;
+    QString sourceObject;
+    QString sourceQualifiedName;
+    std::optional<bool> nullable;
+    bool boolean = false;
+    QStringList enumChoices;
+    QString targetObject;
+    QString targetQualifiedName;
+    QString targetColumn;
 };
 class ResultTableModel final : public QAbstractTableModel {
     Q_OBJECT
@@ -50,6 +66,9 @@ class ResultTableModel final : public QAbstractTableModel {
     QVariant headerData(int section, Qt::Orientation orientation,
                         int role = Qt::DisplayRole) const override;
     bool setPage(std::vector<ResultColumn> columns, std::vector<Row> rows, quint64 firstRow);
+    bool setCellMetadata(std::vector<ResultCellMetadata> metadata);
+    std::optional<ResultCellMetadata> linkedColumn(const QModelIndex& index) const;
+    std::optional<Cell> cellValue(const QModelIndex& index) const;
     void setEditableColumns(std::vector<bool> editable, bool canInsert, bool canDelete,
                             std::vector<bool> insertEditable = {});
     void setKeyColumns(std::vector<bool> keys);
@@ -88,6 +107,7 @@ class ResultTableModel final : public QAbstractTableModel {
                      bool allowDeferred, bool* unresolved) const;
     QString copyScope(QModelIndexList selection, int scope, QString* error) const;
     std::vector<ResultColumn> columns_;
+    std::vector<ResultCellMetadata> cellMetadata_;
     std::vector<Row> rows_;
     std::vector<Row> originalRows_;
     std::vector<std::vector<bool>> touched_;

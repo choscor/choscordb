@@ -26,6 +26,9 @@ void QueryWorkspace::clearResult() {
     if (detail_)
         detail_->clearValue();
     model_->setPage({}, {}, 0);
+    cellMetadata_.clear();
+    cellMetadataToken_ = 0;
+    cellMetadataQuery_.reset();
     if (visibleLease_) {
         const auto lease = *visibleLease_;
         visibleLease_.reset();
