@@ -54,6 +54,10 @@ pub(crate) enum Command {
         object: ObjectId,
         request_token: u64,
     },
+    ObjectGraph {
+        object: ObjectId,
+        request_token: u64,
+    },
     Execute {
         query: QueryId,
         sql: Arc<String>,
@@ -1625,6 +1629,38 @@ pub(crate) async fn run(
                     .await
                 }
             },
+            Command::ObjectGraph {
+                object,
+                request_token,
+            } => {
+                match metadata_operation(connection.load_object_graph(&object), &mut shutdown).await
+                {
+                    Ok(graph) => {
+                        send(
+                            &events,
+                            Event::ObjectGraph {
+                                connection: id,
+                                object,
+                                request_token,
+                                graph,
+                            },
+                        )
+                        .await
+                    }
+                    Err(error) => {
+                        send(
+                            &events,
+                            Event::ObjectGraphFailed {
+                                connection: id,
+                                object,
+                                request_token,
+                                error,
+                            },
+                        )
+                        .await
+                    }
+                }
+            }
             Command::Metadata {
                 parent,
                 request_token,

@@ -214,7 +214,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
             explorer->setProperty("objectType", tab.objectType);
             explorer->setProperty("objectLabel", tab.label);
             explorer->restoreObject(std::nullopt, tab.objectId, tab.label, tab.objectType);
-            explorer->selectPane(static_cast<int>(tab.pane));
+            explorer->selectPane(restoredObjectPane(tab.pane));
             return explorer;
         });
         auto* recoveryStatus = new QWidget(toolbar);

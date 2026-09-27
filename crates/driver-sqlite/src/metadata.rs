@@ -1,12 +1,494 @@
 use super::normalize;
 use choscordb_driver_api::*;
 use rusqlite::{Connection, OptionalExtension, params};
+use std::collections::{BTreeMap, BTreeSet};
 fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('"', "\"\""))
 }
 fn parts(id: &ObjectId) -> Result<Vec<String>> {
     serde_json::from_str(&id.0)
         .map_err(|_| DriverError::new(ErrorKind::InvalidInput, "Invalid SQLite object identifier"))
+}
+const MAX_GRAPH_TABLES: usize = 64;
+const MAX_GRAPH_COLUMNS: usize = 256;
+const MAX_GRAPH_TOTAL_COLUMNS: usize = 2048;
+const MAX_GRAPH_EDGES: usize = 256;
+const MAX_GRAPH_SCAN_TABLES: usize = 512;
+const MAX_GRAPH_FK_ROWS: usize = 1024;
+const MAX_GRAPH_PAYLOAD_BYTES: usize = 1024 * 1024;
+const MAX_GRAPH_TEXT_BYTES: usize = 896 * 1024;
+
+fn graph_payload_bytes(graph: &ObjectGraph) -> usize {
+    serde_json::to_vec(graph)
+        .expect("graph serialization")
+        .len()
+}
+
+fn bound_graph_payload(graph: &mut ObjectGraph) -> Result<()> {
+    let mut warned_tables = BTreeSet::new();
+    let mut warned_edges = BTreeSet::new();
+    let mut bytes = graph_payload_bytes(graph);
+    while bytes > MAX_GRAPH_PAYLOAD_BYTES {
+        if let Some(table) = graph
+            .tables
+            .iter_mut()
+            .rev()
+            .find(|table| !table.columns.is_empty())
+        {
+            let target_reduction = bytes - MAX_GRAPH_PAYLOAD_BYTES + 256;
+            let mut removed = 0usize;
+            while removed < target_reduction {
+                let Some(column) = table.columns.pop() else {
+                    break;
+                };
+                removed += serde_json::to_vec(&column)
+                    .expect("column serialization")
+                    .len()
+                    + 1;
+            }
+            let name = table.qualified_name.clone();
+            if warned_tables.insert(name.clone()) {
+                graph.availability = MetadataAvailability::Unavailable;
+                graph.reason =
+                    "ER diagram is incomplete: metadata exceeds the display limit".into();
+                graph.warnings.push(format!(
+                    "Additional columns of {} exceed the ER diagram metadata limit",
+                    name
+                ));
+            }
+        } else if let Some(edge) = graph
+            .edges
+            .iter_mut()
+            .rev()
+            .find(|edge| !edge.source_columns.is_empty() || !edge.target_columns.is_empty())
+        {
+            edge.source_columns.clear();
+            edge.target_columns.clear();
+            let id = edge.id.clone();
+            if warned_edges.insert(id.clone()) {
+                graph.availability = MetadataAvailability::Unavailable;
+                graph.reason =
+                    "ER diagram is incomplete: metadata exceeds the display limit".into();
+                graph.warnings.push(format!("Relationship {} has unavailable column endpoints at the ER diagram metadata limit", id));
+            }
+        } else {
+            return Err(limit());
+        }
+        // Recompute once after trimming a table or edge, including its new warning.
+        bytes = graph_payload_bytes(graph);
+    }
+    Ok(())
+}
+
+fn graph_id(schema: &str, table: &str) -> ObjectId {
+    ObjectId(serde_json::to_string(&[schema, table]).expect("object name serialization"))
+}
+
+fn canonical_graph_target(
+    db: &Connection,
+    schema: &str,
+    selected: &str,
+    table_names: &[String],
+    target: String,
+) -> Result<String> {
+    if target.eq_ignore_ascii_case(selected) {
+        return Ok(selected.to_owned());
+    }
+    if let Some(name) = table_names
+        .iter()
+        .find(|name| name.eq_ignore_ascii_case(&target))
+    {
+        return Ok(name.clone());
+    }
+    Ok(db
+        .query_row(
+            &format!(
+                "SELECT name FROM {}.sqlite_schema WHERE type='table' AND name=?1 COLLATE NOCASE",
+                quote(schema)
+            ),
+            [&target],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(normalize)?
+        .unwrap_or(target))
+}
+
+fn graph_table(
+    db: &Connection,
+    schema: &str,
+    table: &str,
+    retained_text: &mut usize,
+) -> Result<(ObjectGraphTable, bool)> {
+    let mut columns = Vec::new();
+    let mut truncated = false;
+    let mut foreign_columns = BTreeSet::new();
+    let mut fk = db
+        .prepare("SELECT DISTINCT \"from\" FROM pragma_foreign_key_list(?1,?2) LIMIT 257")
+        .map_err(normalize)?;
+    let fk_rows = fk
+        .query_map(params![table, schema], |r| r.get::<_, String>(0))
+        .map_err(normalize)?;
+    for row in fk_rows {
+        foreign_columns.insert(row.map_err(normalize)?);
+    }
+    let mut q = db.prepare("SELECT name,type,pk FROM pragma_table_xinfo(?1,?2) WHERE hidden != 1 ORDER BY cid LIMIT 257").map_err(normalize)?;
+    let mut rows = q.query(params![table, schema]).map_err(normalize)?;
+    while let Some(row) = rows.next().map_err(normalize)? {
+        let name_ref = row.get_ref(0).map_err(normalize)?;
+        let name = name_ref.as_str().map_err(|_| limit())?;
+        let type_ref = row.get_ref(1).map_err(normalize)?;
+        let database_type = type_ref.as_str().map_err(|_| limit())?;
+        if columns.len() >= MAX_GRAPH_COLUMNS {
+            truncated = true;
+            break;
+        }
+        let bytes = name
+            .len()
+            .saturating_add(database_type.len())
+            .saturating_add(128);
+        if retained_text.saturating_add(bytes) > MAX_GRAPH_TEXT_BYTES {
+            truncated = true;
+            break;
+        }
+        *retained_text += bytes;
+        let foreign_key = foreign_columns
+            .iter()
+            .any(|foreign| foreign.eq_ignore_ascii_case(name));
+        columns.push(ObjectGraphColumn {
+            name: name.to_owned(),
+            database_type: database_type.to_owned(),
+            primary_key: row.get::<_, i64>(2).map_err(normalize)? > 0,
+            foreign_key,
+        });
+    }
+    Ok((
+        ObjectGraphTable {
+            id: graph_id(schema, table),
+            qualified_name: format!("{}.{}", quote(schema), quote(table)),
+            columns,
+        },
+        truncated,
+    ))
+}
+
+pub(crate) fn object_graph(db: &Connection, object: &ObjectId) -> Result<ObjectGraph> {
+    let p = parts(object)?;
+    let [schema, selected] = p.as_slice() else {
+        return Err(DriverError::new(
+            ErrorKind::InvalidInput,
+            "A table identifier is required",
+        ));
+    };
+    let kind: Option<String> = db
+        .query_row(
+            &format!(
+                "SELECT type FROM {}.sqlite_schema WHERE name=?1",
+                quote(schema)
+            ),
+            [selected],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(normalize)?;
+    if kind.as_deref() != Some("table") {
+        return Err(DriverError::new(
+            ErrorKind::InvalidInput,
+            "ER diagram requires a table",
+        ));
+    }
+    let mut graph = ObjectGraph::default();
+    let mut table_names = Vec::new();
+    let mut q = db.prepare(&format!("SELECT name FROM {}.sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*' ORDER BY name LIMIT 513", quote(schema))).map_err(normalize)?;
+    let rows = q
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(normalize)?;
+    for row in rows {
+        if table_names.len() >= MAX_GRAPH_SCAN_TABLES {
+            let omitted = row.map_err(normalize)?;
+            graph.availability = MetadataAvailability::Unavailable;
+            graph.reason =
+                "ER diagram is incomplete: too many tables to scan for incoming foreign keys"
+                    .into();
+            graph.warnings.push(format!(
+                "Incoming relationships from {}.{} and later tables may be omitted after the table scan limit",
+                quote(schema), quote(&omitted)
+            ));
+            break;
+        }
+        table_names.push(row.map_err(normalize)?);
+    }
+    if !table_names.contains(selected) {
+        table_names.push(selected.clone());
+    }
+    let mut edges = BTreeMap::<(String, i64), ObjectGraphEdge>::new();
+    let mut neighbors = BTreeSet::new();
+    let mut cut_edges = BTreeSet::new();
+    let mut retained_text = 0usize;
+    for table in &table_names {
+        let mut q = db.prepare("SELECT id,seq,\"table\",\"from\",\"to\" FROM pragma_foreign_key_list(?1,?2) ORDER BY id,seq LIMIT 1025").map_err(normalize)?;
+        let rows = q
+            .query_map(params![table, schema], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                ))
+            })
+            .map_err(normalize)?;
+        for (index, row) in rows.enumerate() {
+            if index >= MAX_GRAPH_FK_ROWS {
+                let (id, _, target, _, _) = row.map_err(normalize)?;
+                let edge_id = format!("{}:{}:{}", schema, table, id);
+                let key = (table.clone(), id);
+                if let Some(edge) = edges.get_mut(&key) {
+                    edge.source_columns.clear();
+                    edge.target_columns.clear();
+                    cut_edges.insert(edge_id.clone());
+                } else if (table == selected || target.eq_ignore_ascii_case(selected))
+                    && edges.len() < MAX_GRAPH_EDGES
+                {
+                    let target =
+                        canonical_graph_target(db, schema, selected, &table_names, target)?;
+                    neighbors.insert(if table == selected {
+                        target.clone()
+                    } else {
+                        table.clone()
+                    });
+                    edges.insert(
+                        key,
+                        ObjectGraphEdge {
+                            id: edge_id.clone(),
+                            source_id: graph_id(schema, table),
+                            target_id: graph_id(schema, &target),
+                            source_columns: Vec::new(),
+                            target_columns: Vec::new(),
+                        },
+                    );
+                    cut_edges.insert(edge_id.clone());
+                }
+                graph.availability = MetadataAvailability::Unavailable;
+                graph.reason = "ER diagram is incomplete: foreign-key row limit reached".into();
+                graph.warnings.push(format!(
+                    "Relationship {} from {} is incomplete at the foreign-key row limit",
+                    edge_id,
+                    quote(table)
+                ));
+                break;
+            }
+            let (id, _seq, target, source_column, target_column) = row.map_err(normalize)?;
+            if table != selected && !target.eq_ignore_ascii_case(selected) {
+                continue;
+            }
+            let target = canonical_graph_target(db, schema, selected, &table_names, target)?;
+            if edges.len() >= MAX_GRAPH_EDGES && !edges.contains_key(&(table.clone(), id)) {
+                graph.availability = MetadataAvailability::Unavailable;
+                graph.reason = "ER diagram is incomplete: foreign-key limit reached".into();
+                graph.warnings.push(format!(
+                    "Additional relationship from {} is unavailable",
+                    quote(table)
+                ));
+                continue;
+            }
+            neighbors.insert(if table == selected {
+                target.clone()
+            } else {
+                table.clone()
+            });
+            let edge = edges
+                .entry((table.clone(), id))
+                .or_insert_with(|| ObjectGraphEdge {
+                    id: format!("{}:{}:{}", schema, table, id),
+                    source_id: graph_id(schema, table),
+                    target_id: graph_id(schema, &target),
+                    source_columns: Vec::new(),
+                    target_columns: Vec::new(),
+                });
+            if cut_edges.contains(&edge.id) {
+                continue;
+            }
+            let row_bytes = source_column
+                .len()
+                .saturating_add(target_column.as_ref().map_or(0, String::len))
+                .saturating_add(64);
+            if retained_text.saturating_add(row_bytes) > MAX_GRAPH_TEXT_BYTES {
+                edge.source_columns.clear();
+                edge.target_columns.clear();
+                cut_edges.insert(edge.id.clone());
+                graph.availability = MetadataAvailability::Unavailable;
+                graph.reason =
+                    "ER diagram is incomplete: metadata exceeds the display limit".into();
+                graph.warnings.push(format!("Relationship {} from {} has unavailable column endpoints at the ER diagram metadata limit", edge.id, quote(table)));
+                continue;
+            }
+            retained_text += row_bytes;
+            edge.source_columns.push(source_column);
+            edge.target_columns.push(target_column.unwrap_or_default());
+        }
+    }
+    neighbors.remove(selected);
+    let (selected_table, truncated) = graph_table(db, schema, selected, &mut retained_text)?;
+    if truncated {
+        graph.availability = MetadataAvailability::Unavailable;
+        graph.reason = "ER diagram is incomplete: table metadata limit reached".into();
+        graph.warnings.push(format!(
+            "Additional columns of {}.{} are unavailable",
+            quote(schema),
+            quote(selected)
+        ));
+    }
+    graph.tables.push(selected_table);
+    for name in neighbors {
+        if graph.tables.len() >= MAX_GRAPH_TABLES {
+            graph.availability = MetadataAvailability::Unavailable;
+            graph.reason = "ER diagram is incomplete: related-table limit reached".into();
+            graph.warnings.push(format!(
+                "Columns of related table {}.{} are beyond the diagram limit",
+                quote(schema),
+                quote(&name)
+            ));
+            graph.tables.push(ObjectGraphTable {
+                id: graph_id(schema, &name),
+                qualified_name: format!("{}.{}", quote(schema), quote(&name)),
+                columns: Vec::new(),
+            });
+            continue;
+        }
+        let exists: bool = db
+            .query_row(
+                &format!(
+                    "SELECT EXISTS(SELECT 1 FROM {}.sqlite_schema WHERE type='table' AND name=?1)",
+                    quote(schema)
+                ),
+                [&name],
+                |r| r.get(0),
+            )
+            .map_err(normalize)?;
+        if !exists {
+            graph.availability = MetadataAvailability::Unavailable;
+            graph.reason = "ER diagram is incomplete: a related table is unavailable".into();
+            graph.warnings.push(format!(
+                "Related table {}.{} is unavailable",
+                quote(schema),
+                quote(&name)
+            ));
+            graph.tables.push(ObjectGraphTable {
+                id: graph_id(schema, &name),
+                qualified_name: format!("{}.{}", quote(schema), quote(&name)),
+                columns: Vec::new(),
+            });
+        } else {
+            let (table, truncated) = graph_table(db, schema, &name, &mut retained_text)?;
+            if truncated {
+                graph.availability = MetadataAvailability::Unavailable;
+                graph.reason = "ER diagram is incomplete: table metadata limit reached".into();
+                graph.warnings.push(format!(
+                    "Additional columns of {}.{} are unavailable",
+                    quote(schema),
+                    quote(&name)
+                ));
+            }
+            graph.tables.push(table);
+        }
+    }
+    let mut remaining_columns = MAX_GRAPH_TOTAL_COLUMNS;
+    for table in &mut graph.tables {
+        if table.columns.len() > remaining_columns {
+            table.columns.truncate(remaining_columns);
+            graph.availability = MetadataAvailability::Unavailable;
+            graph.reason = "ER diagram is incomplete: total column limit reached".into();
+            graph.warnings.push(format!(
+                "Additional columns of {} are unavailable",
+                table.qualified_name
+            ));
+        }
+        remaining_columns -= table.columns.len();
+    }
+    for mut edge in edges.into_values() {
+        if cut_edges.contains(&edge.id) {
+            graph.edges.push(edge);
+            continue;
+        }
+        if let Some(source) = graph.tables.iter().find(|t| t.id == edge.source_id) {
+            for name in &mut edge.source_columns {
+                if let Some(column) = source
+                    .columns
+                    .iter()
+                    .find(|column| column.name.eq_ignore_ascii_case(name))
+                {
+                    *name = column.name.clone();
+                }
+            }
+        }
+        if edge.target_columns.iter().any(String::is_empty) {
+            if let Some(table) = graph.tables.iter().find(|t| t.id == edge.target_id) {
+                let target_parts = parts(&table.id)?;
+                let mut q = db
+                    .prepare("SELECT name FROM pragma_table_xinfo(?1,?2) WHERE pk>0 ORDER BY pk")
+                    .map_err(normalize)?;
+                let target: Vec<String> = q
+                    .query_map(params![target_parts[1], schema], |r| r.get::<_, String>(0))
+                    .map_err(normalize)?
+                    .collect::<std::result::Result<_, _>>()
+                    .map_err(normalize)?;
+                if target.len() == edge.source_columns.len() {
+                    edge.target_columns = target;
+                }
+            }
+            if edge.target_columns.iter().any(String::is_empty) {
+                edge.target_columns.clear();
+                graph.availability = MetadataAvailability::Unavailable;
+                graph.reason =
+                    "ER diagram is incomplete: a foreign-key target column is unknown".into();
+                graph.warnings.push(format!(
+                    "Relationship {} has an unresolved target column",
+                    edge.id
+                ));
+            }
+        }
+        if let Some(target) = graph.tables.iter().find(|t| t.id == edge.target_id)
+            && !target.columns.is_empty()
+        {
+            for name in &mut edge.target_columns {
+                if let Some(column) = target
+                    .columns
+                    .iter()
+                    .find(|column| column.name.eq_ignore_ascii_case(name))
+                {
+                    *name = column.name.clone();
+                }
+            }
+            let missing = edge
+                .target_columns
+                .iter()
+                .find(|name| !target.columns.iter().any(|column| &column.name == *name))
+                .cloned();
+            if let Some(missing) = missing {
+                edge.target_columns.clear();
+                graph.availability = MetadataAvailability::Unavailable;
+                graph.reason =
+                    "ER diagram is incomplete: a foreign-key target column is unavailable".into();
+                graph.warnings.push(format!(
+                    "Relationship {} references missing column {} of {}",
+                    edge.id,
+                    quote(&missing),
+                    target.qualified_name
+                ));
+            }
+        }
+        if let Some(source) = graph.tables.iter_mut().find(|t| t.id == edge.source_id) {
+            for column in &mut source.columns {
+                if edge.source_columns.contains(&column.name) {
+                    column.foreign_key = true;
+                }
+            }
+        }
+        graph.edges.push(edge);
+    }
+    bound_graph_payload(&mut graph)?;
+    Ok(graph)
 }
 pub(crate) fn edit_target(db: &Connection, id: &ObjectId) -> Result<EditTarget> {
     let p = parts(id)?;

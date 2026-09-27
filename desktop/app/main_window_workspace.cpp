@@ -360,7 +360,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                          const QString& kind) {
                 openObjectTab(connection, object, label, kind,
                               tree->currentIndex().data(NavigatorModel::PropertiesRole).toList(),
-                              kind == QStringLiteral("table") ? 4 : -1);
+                              kind == QStringLiteral("table") ? 5 : -1);
             });
     connect(workspace_, &QueryWorkspace::openQueryRequested, this,
             &MainWindow::openConnectionQuery);

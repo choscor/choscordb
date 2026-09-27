@@ -82,6 +82,37 @@ async fn run(connection: &mut dyn Connection, sql: &str, auto: bool) -> Vec<Row>
 }
 #[tokio::test]
 #[ignore = "requires disposable live PostgreSQL fixture"]
+async fn graph_loads_through_public_driver_connection() {
+    let url = std::env::var("CHOSCORDB_TEST_POSTGRES").unwrap();
+    let (admin, session) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
+        .await
+        .unwrap();
+    let task = tokio::spawn(session);
+    admin.batch_execute("CREATE SCHEMA erd_driver_fixture; CREATE TABLE erd_driver_fixture.parent(id int PRIMARY KEY); CREATE TABLE erd_driver_fixture.child(id int PRIMARY KEY, parent_id int REFERENCES erd_driver_fixture.parent(id));").await.unwrap();
+    let oid: u32 = admin
+        .query_one("SELECT 'erd_driver_fixture.parent'::regclass::oid", &[])
+        .await
+        .unwrap()
+        .get(0);
+    let mut connection = PostgresDriver.connect(settings()).await.unwrap();
+    let graph = connection
+        .load_object_graph(&ObjectId(format!("pg:relation:{oid}")))
+        .await
+        .unwrap();
+    assert_eq!(graph.tables.len(), 2);
+    assert_eq!(graph.edges.len(), 1);
+    assert_eq!(graph.edges[0].source_columns, ["parent_id"]);
+    assert_eq!(graph.edges[0].target_columns, ["id"]);
+    drop(connection);
+    admin
+        .batch_execute("DROP SCHEMA erd_driver_fixture CASCADE")
+        .await
+        .unwrap();
+    drop(admin);
+    task.await.unwrap().unwrap();
+}
+#[tokio::test]
+#[ignore = "requires disposable live PostgreSQL fixture"]
 async fn reviewed_batch_is_atomic_and_binds_values() {
     let mut c = PostgresDriver.connect(settings()).await.unwrap();
     run(&mut *c, "DROP TABLE IF EXISTS choscordb_edit_batch", true).await;

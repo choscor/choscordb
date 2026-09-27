@@ -68,6 +68,7 @@ inline void addHopCredentials(ProfileCredentialsDto& credentials,
     }
 }
 QList<SshHostKeyCandidate> hostKeyCandidates(const rust::Vec<SshHostKeyCandidateDto>& values);
+ObjectGraph parseObjectGraph(const rust::String& payload, bool* ok);
 } // namespace engine_adapter_detail
 struct EngineAdapter::Private {
     explicit Private(const QString& path);
@@ -92,6 +93,11 @@ struct EngineAdapter::Private {
         ObjectInspectionPane pane;
     };
     QHash<quint64, InspectionRequest> inspections;
+    struct GraphRequest {
+        quint64 connection, token;
+        QString object;
+    };
+    QHash<quint64, GraphRequest> graphs;
     quint64 nextInspectionToken = quint64(1) << 63;
     bool closing = false, stopping = false;
     std::optional<quint64> shutdownToken;
