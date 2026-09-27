@@ -5,6 +5,7 @@
 #include "app/main_window_ui.h"
 #include "app/object_data_workspace.h"
 #include "app/object_explorer.h"
+#include "app/object_tab_title.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
@@ -370,7 +371,7 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
     explorer->openObject(connection, objectId, label, kind, properties);
     const auto icon =
         design::themedIcon(design::Icon::Table, theme_->resolvedTheme().colors.mutedText, 16);
-    const int index = editors_->addTab(explorer, icon, label);
+    const int index = editors_->addTab(explorer, icon, objectTabTitle(objectId, label));
     editors_->setCurrentIndex(index);
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
     if (pane >= 0)
@@ -396,7 +397,7 @@ void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
     explorer->openObject(connection, objectId, label, QStringLiteral("table"));
     const auto icon =
         design::themedIcon(design::Icon::Table, theme_->resolvedTheme().colors.mutedText, 16);
-    editors_->setCurrentIndex(editors_->addTab(explorer, icon, label));
+    editors_->setCurrentIndex(editors_->addTab(explorer, icon, objectTabTitle(objectId, label)));
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
     explorer->selectPane(5);
     if (recovery_)

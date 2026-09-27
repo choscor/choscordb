@@ -1,5 +1,6 @@
 #include "app/main_window.h"
 #include "app/object_explorer.h"
+#include "app/object_tab_title.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -96,8 +97,8 @@ class RecoveryTest : public QObject {
         object.isObject = true;
         object.profileId = "profile:missing-profile";
         object.objectType = "table";
-        object.objectId = "public.orders";
-        object.label = "orders";
+        object.objectId = "pg:relation:42";
+        object.label = "\"public\".\"orders\"";
         object.pane = 3;
         SavedWorkspaceTab sql;
         sql.document.id = "draft";
@@ -121,6 +122,13 @@ class RecoveryTest : public QObject {
         QTRY_VERIFY(controller->isReady());
         QCOMPARE(tabs->count(), 2);
         QCOMPARE(tabs->currentIndex(), 0);
+        QCOMPARE(tabs->tabText(0), QString("orders"));
+        QVERIFY(!tabs->tabIcon(0).isNull());
+        QCOMPARE(objectTabTitle("pg:relation:43", R"("odd.schema"."order.items")"),
+                 QString("order.items"));
+        QCOMPARE(objectTabTitle("legacy", "`db`.`order.part`"), QString("order.part"));
+        QCOMPARE(objectTabTitle(R"(["db","order.part"])", "`db`.`order.part`"),
+                 QString("order.part"));
         auto* explorer = qobject_cast<ObjectExplorer*>(tabs->widget(0));
         QVERIFY(explorer);
         QCOMPARE(explorer->property("objectProfileId").toString(), object.profileId);
@@ -161,6 +169,8 @@ class RecoveryTest : public QObject {
         QTRY_VERIFY(restored->isReady());
         QCOMPARE(restoredTabs->count(), 2);
         QCOMPARE(restoredTabs->currentIndex(), 1);
+        QCOMPARE(restoredTabs->tabText(0), QString("orders"));
+        QVERIFY(!restoredTabs->tabIcon(0).isNull());
         QCOMPARE(qobject_cast<ObjectExplorer*>(restoredTabs->widget(0))->paneIndex(),
                  int(object.pane));
         QCOMPARE(qobject_cast<SqlEditor*>(restoredTabs->widget(1))->text(), sql.document.sql);
