@@ -17,12 +17,16 @@
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
+#include <QApplication>
+#include <QClipboard>
 #include <QComboBox>
 #include <QContextMenuEvent>
+#include <QDialog>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -31,6 +35,7 @@
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSignalSpy>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -46,6 +51,136 @@
 #include <QTreeWidget>
 #include <QtTest>
 #include <cstdint>
+
+void NavigatorSqlWorkspaceTest::sqlRowJsonLoadsUtf8TextAndIgnoresReplacedResult() {
+    QTemporaryDir storage;
+    choscordb::MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+    window.show();
+    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+    workspace->connectSqlite(":memory:");
+    QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* editor = qobject_cast<choscordb::SqlEditor*>(
+        window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+    auto* run = window.findChild<QAction*>("runStatement");
+    auto* grid = window.findChild<QTableView*>("queryResults");
+    auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+    const auto openJson = [&](bool replaceResult) {
+        const auto point = grid->visualRect(model->index(0, 0)).center();
+        QTimer::singleShot(0, grid, [&, replaceResult] {
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+            if (!menu) {
+                if (auto* popup = QApplication::activePopupWidget())
+                    popup->close();
+                QFAIL("Row context menu did not open");
+            }
+            auto* action = menu->findChild<QAction*>("viewRowJson");
+            const bool enabled = action && action->isEnabled();
+            menu->close();
+            QVERIFY(enabled);
+            action->trigger();
+            if (replaceResult) {
+                auto* sheet = window.findChild<QDialog*>("rowJsonSheet");
+                QVERIFY(sheet);
+                auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
+                QVERIFY(copy && !copy->isEnabled());
+                run->trigger();
+            }
+        });
+        grid->customContextMenuRequested(point);
+    };
+    QTRY_VERIFY(run->isEnabled());
+    editor->setText("SELECT substr(replace(hex(zeroblob(32768)), '0', 'a'),1,65535) "
+                    "|| 'é' || 'end' AS payload;");
+    run->trigger();
+    QTRY_VERIFY(model->rowCount() == 1 && model->deferredValue(model->index(0, 0)).has_value() &&
+                model->deferredValue(model->index(0, 0))->bytes == 65540);
+    openJson(false);
+    auto* sheet = window.findChild<QDialog*>("rowJsonSheet");
+    QVERIFY(sheet);
+    auto* text = sheet->findChild<QPlainTextEdit*>("rowJsonText");
+    auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
+    QVERIFY(text && copy);
+    QTRY_VERIFY(copy->isEnabled());
+    const auto json = QJsonDocument::fromJson(text->toPlainText().toUtf8());
+    QVERIFY(json.isObject());
+    QCOMPARE(json.object().value("payload").toString(),
+             QString(65535, QLatin1Char('a')) + QStringLiteral("éend"));
+    sheet->reject();
+    QTRY_VERIFY(run->isEnabled());
+    editor->setText("SELECT replace(hex(zeroblob(2097152)), '0', 'a') AS payload;");
+    run->trigger();
+    QTRY_VERIFY(model->rowCount() == 1 && model->deferredValue(model->index(0, 0)).has_value() &&
+                model->deferredValue(model->index(0, 0))->bytes == 4194304);
+    QTRY_VERIFY(run->isEnabled());
+    editor->setText("SELECT 'fresh' AS payload;");
+    openJson(true);
+    QVERIFY(!sheet->isVisible());
+    QVERIFY(!copy->isEnabled());
+    QVERIFY(text->toPlainText().isEmpty());
+    QTRY_COMPARE(model->index(0, 0).data().toString(), QString("fresh"));
+    QTRY_VERIFY(workspace->adapter()->memoryUsage().used < 2 * 1024 * 1024);
+}
+
+void NavigatorSqlWorkspaceTest::sqlRowJsonDoesNotChangeDatabaseContents() {
+    QTemporaryDir storage;
+    choscordb::MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+    window.show();
+    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+    workspace->connectSqlite(":memory:");
+    QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* editor = qobject_cast<choscordb::SqlEditor*>(
+        window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+    auto* run = window.findChild<QAction*>("runStatement");
+    auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
+    auto* grid = window.findChild<QTableView*>("queryResults");
+    QTRY_VERIFY(run->isEnabled());
+    editor->setText("CREATE TABLE records (value TEXT);");
+    run->trigger();
+    QTRY_VERIFY(messages->toPlainText().contains("Completed"));
+    QTRY_VERIFY(run->isEnabled());
+    messages->clear();
+    editor->setText("INSERT INTO records VALUES ('stored');");
+    run->trigger();
+    QTRY_VERIFY(messages->toPlainText().contains("Completed"));
+    QTRY_VERIFY(run->isEnabled());
+    editor->setText("SELECT value FROM records;");
+    run->trigger();
+    QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("stored"));
+    const auto point = grid->visualRect(grid->model()->index(0, 0)).center();
+    QTimer::singleShot(0, grid, [&] {
+        auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+        if (!menu) {
+            if (auto* popup = QApplication::activePopupWidget())
+                popup->close();
+            QFAIL("Row context menu did not open");
+        }
+        auto* action = menu->findChild<QAction*>("viewRowJson");
+        const bool enabled = action && action->isEnabled();
+        menu->close();
+        QVERIFY(enabled);
+        action->trigger();
+    });
+    grid->customContextMenuRequested(point);
+    auto* sheet = window.findChild<QDialog*>("rowJsonSheet");
+    QVERIFY(sheet);
+    auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
+    QVERIFY(copy && copy->isEnabled());
+    copy->click();
+    QCOMPARE(QJsonDocument::fromJson(QApplication::clipboard()->text().toUtf8())
+                 .object()
+                 .value("value")
+                 .toString(),
+             QString("stored"));
+    sheet->reject();
+    QTRY_VERIFY(run->isEnabled());
+    editor->setText("SELECT value FROM records;");
+    QSignalSpy reset(grid->model(), &QAbstractItemModel::modelReset);
+    run->trigger();
+    QTRY_VERIFY(reset.count() > 0);
+    QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("stored"));
+}
 
 void NavigatorSqlWorkspaceTest::objectTabsUseConnectionAndQualifiedIdentity() {
     choscordb::MainWindow window;

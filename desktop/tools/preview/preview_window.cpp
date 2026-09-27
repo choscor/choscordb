@@ -14,6 +14,7 @@
 #include "design_system/metrics/metrics.h"
 #include "design_system/modal_panel/modal_panel.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/right_sheet/right_sheet.h"
 #include "design_system/table/table_style.h"
 #include "design_system/text/text.h"
 #include "design_system/text_area/text_area_style.h"
@@ -129,6 +130,8 @@ QList<Specimen> specimens() {
          "desktop/design_system/dialog_sections/dialog_sections.cpp"},
         {"Components", "dialogs", "Modal panel",
          "desktop/design_system/modal_panel/modal_panel.cpp"},
+        {"Components", "right-sheet", "Right sheet",
+         "desktop/design_system/right_sheet/right_sheet.cpp"},
         {"Components", "nonmodal", "Nonmodal content",
          "desktop/design_system/dialog_shell/dialog_shell.cpp"},
         {"Components", "confirmations", "Destructive confirmations",
@@ -238,6 +241,32 @@ void populateTypography(QWidget* host, QVBoxLayout* layout) {
     layout->addWidget(keyboardHint);
     layout->addStretch();
 }
+void populateRightSheet(QWidget* host, QVBoxLayout* layout) {
+    auto* description = new Text("Open a reusable right sheet with synthetic details.", host);
+    description->setWordWrap(true);
+    layout->addWidget(description);
+    auto* open = new Button("Open right sheet", host);
+    open->setObjectName("previewOpenRightSheet");
+    layout->addWidget(open);
+    auto* sheet = new RightSheet(host);
+    sheet->setObjectName("previewRightSheet");
+    sheet->setTitle("Example details");
+    auto* body = new QPlainTextEdit(sheet);
+    body->setObjectName("previewRightSheetContent");
+    body->setAccessibleName("Example details");
+    body->setReadOnly(true);
+    body->setPlainText("{\n  \"id\": 42,\n  \"state\": \"ready\"\n}");
+    sheet->setBody(body);
+    auto* done = new Button("Done", sheet);
+    done->setObjectName("previewRightSheetDone");
+    done->setAccessibleName("Done");
+    sheet->footerLayout()->addWidget(done);
+    QObject::connect(done, &QPushButton::clicked, sheet, &QDialog::reject);
+    open->setProperty("previewSurface", QVariant::fromValue<QObject*>(sheet));
+    QObject::connect(open, &QPushButton::clicked, sheet, &QDialog::open);
+    layout->addStretch();
+}
+
 void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     layout->addWidget(new QLabel("Open the real modal to inspect its compact action bars.", host));
     auto* open = new Button("Open sectioned modal", host);
@@ -776,6 +805,8 @@ void PreviewWindow::rebuildSpecimens() {
             table->setItem(1, 1, new QTableWidgetItem("Pending"));
             table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
             contentLayout->addWidget(table, 1);
+        } else if (id == "right-sheet") {
+            populateRightSheet(content, contentLayout);
         } else if (id == "dialog-sections") {
             populateDialogSections(content, contentLayout);
         } else if (id == "dialogs" || id == "nonmodal" || id == "confirmations") {

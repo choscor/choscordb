@@ -37,6 +37,7 @@ preserved by the component extraction.
 | Dock | `dock/`: existing dock-title styles |
 | Dialog presentation | `dialog_presentation/`: owner-contained modal surfaces, shared backdrop, focus boundary and restoration |
 | Modal panel | `modal_panel/`: owner-contained modal `QDialog` surface |
+| Right sheet | `right_sheet/`: right-aligned modal shell with header, scrolling body and fixed muted footer |
 | Dialog shell | `dialog_shell/`: reusable nonmodal `QDialog` shell and content/status styles |
 | Dialog sections | `dialog_sections/`: compact header, growing body, and footer layout for dialogs |
 | Confirmation dialog | `confirmation_dialog/`: reusable QMessageBox contract and presentation |
@@ -109,6 +110,7 @@ owning modules.
 | Tooltips and popovers | Tooltip |
 | Dialog header, body and footer | Dialog sections |
 | Modal panel, Nonmodal content, Destructive confirmations | Modal panel, dialog shell, confirmation dialog, shared dialog presentation |
+| Right sheet | Right sheet and shared dialog presentation |
 | Menus and submenus | Menu |
 | Feedback and toast states | Badge, progress, toast region |
 

@@ -23,6 +23,7 @@ enum class Dimension {
     Icon,
     IconLarge,
     ModalWidth,
+    SheetWidth,
     TableRow,
     TableHeader,
     NavigationRow,

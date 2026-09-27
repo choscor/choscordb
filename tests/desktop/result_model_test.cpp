@@ -2,7 +2,10 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "models/result_table_model.h"
 #include <QAbstractItemModelTester>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QtTest>
+#include <limits>
 using namespace choscordb;
 namespace {
 ResultColumn column(const QString& name, const QString& databaseType) {
@@ -15,6 +18,142 @@ ResultColumn column(const QString& name, const QString& databaseType) {
 class ResultModelTest : public QObject {
     Q_OBJECT
   private slots:
+    void rowJsonReadinessFindsInvalidCellsAfterDeferredValues() {
+        ResultTableModel model;
+        QString invalid;
+        invalid.append(QChar(0xd800));
+        QVERIFY(model.setPage({column("payload", "blob"), column("text", "text")},
+                              {{DeferredValue{42, 70000, "binary"}, invalid}}, 0));
+        QString error;
+        QCOMPARE(model.rowJsonReadiness(0, &error), ResultTableModel::RowJsonReadiness::Invalid);
+        QVERIFY(!error.isEmpty());
+        QVERIFY(model.setPage({column("payload", "blob"), column("text", "text")},
+                              {{DeferredValue{42, 70000, "binary"}, QString("valid")}}, 0));
+        QCOMPARE(model.rowJsonReadiness(0, &error),
+                 ResultTableModel::RowJsonReadiness::NeedsDeferred);
+        QVERIFY(error.isEmpty());
+        QVERIFY(model.setPage({column("text", "text")}, {{QString("valid")}}, 0));
+        QCOMPARE(model.rowJsonReadiness(0, &error), ResultTableModel::RowJsonReadiness::Ready);
+    }
+    void rowJsonPreservesTypedValuesAndStagedState() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("null", "text"), column("empty", "text"),
+                               column("large", "bigint"), column("fraction", "double precision"),
+                               column("flag", "boolean"), column("json text", "jsonb"),
+                               column("bytes", "blob")},
+                              {{std::monostate{}, QString(""), qint64(9223372036854775807LL), 1.25,
+                                false, QString("{\"a\":1}"), QByteArray("\0\xff", 2)}},
+                              0));
+        model.setEditableColumns({true, true, true, true, true, true, false}, true, true);
+        QVERIFY(model.setData(model.index(0, 4), "true"));
+        QString json, error;
+        QVERIFY(model.rowJson(0, &json, &error));
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(json, QString("{\n"
+                               "  \"null\": null,\n"
+                               "  \"empty\": \"\",\n"
+                               "  \"large\": 9223372036854775807,\n"
+                               "  \"fraction\": 1.25,\n"
+                               "  \"flag\": true,\n"
+                               "  \"json text\": \"{\\\"a\\\":1}\",\n"
+                               "  \"bytes\": {\"$binary\": \"AP8=\"}\n"
+                               "}"));
+        const auto parsed = QJsonDocument::fromJson(json.toUtf8());
+        QVERIFY(parsed.isObject());
+        QCOMPARE(parsed.object().value("empty").toString(), QString(""));
+        QVERIFY(parsed.object().value("null").isNull());
+        QVERIFY(parsed.object().value("json text").isString());
+    }
+    void rowJsonKeepsAllCollidingAndUnnamedColumns() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("name", "text"), column("name", "text"),
+                               column("name (2)", "text"), column("", "text"),
+                               column("column 4", "text"), column("", "text")},
+                              {{QString("one"), QString("two"), QString("three"), QString("four"),
+                                QString("five"), QString("six")}},
+                              0));
+        QString json, error;
+        QVERIFY(model.rowJson(0, &json, &error));
+        const auto parsed = QJsonDocument::fromJson(json.toUtf8());
+        QVERIFY(parsed.isObject());
+        const auto object = parsed.object();
+        QCOMPARE(object.size(), 6);
+        QCOMPARE(object.value("name").toString(), QString("one"));
+        QCOMPARE(object.value("name (3)").toString(), QString("two"));
+        QCOMPARE(object.value("name (2)").toString(), QString("three"));
+        QCOMPARE(object.value("column 4 (2)").toString(), QString("four"));
+        QCOMPARE(object.value("column 4").toString(), QString("five"));
+        QCOMPARE(object.value("column 6").toString(), QString("six"));
+        QVERIFY(json.indexOf("\"name (3)\"") < json.indexOf("\"name (2)\""));
+        QString again;
+        QVERIFY(model.rowJson(0, &again));
+        QCOMPARE(again, json);
+    }
+    void rowJsonMarksOmittedInsertFieldsWithoutConfusingNullAndEmpty() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("omitted", "text"), column("null", "text"),
+                               column("empty", "text"), column("binary", "blob")},
+                              {}, 0));
+        model.setEditableColumns({true, true, true, true}, true, true);
+        QVERIFY(model.addRow());
+        QVERIFY(model.setNull(model.index(0, 1)));
+        QVERIFY(model.setData(model.index(0, 2), "x"));
+        QVERIFY(model.setData(model.index(0, 2), ""));
+        QString json, error;
+        QVERIFY(model.rowJson(0, &json, &error));
+        const auto object = QJsonDocument::fromJson(json.toUtf8()).object();
+        QCOMPARE(object.value("omitted").toObject().value("$omitted").toBool(), true);
+        QVERIFY(object.value("null").isNull());
+        QCOMPARE(object.value("empty").toString(), QString(""));
+        QCOMPARE(object.value("binary").toObject().value("$omitted").toBool(), true);
+    }
+    void rowJsonRequiresCompleteDeferredValuesAndRejectsInvalidNumbers() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("text", "text"), column("bytes", "blob")},
+                              {{DeferredValue{91, 4, "text"}, DeferredValue{92, 0, "blob"}}}, 0));
+        QString json = "stale", error;
+        QVERIFY(!model.rowJson(0, &json, &error));
+        QVERIFY(json.isEmpty());
+        QVERIFY(error.contains("deferred", Qt::CaseInsensitive));
+        QVERIFY(!model.rowJson(0, &json, &error, {{0, QString("abc")}, {1, QByteArray()}}));
+        QVERIFY(json.isEmpty());
+        QVERIFY(error.contains("incomplete", Qt::CaseInsensitive));
+        QVERIFY(model.rowJson(0, &json, &error, {{0, QString("full")}, {1, QByteArray()}}));
+        QCOMPARE(QJsonDocument::fromJson(json.toUtf8()).object().value("text").toString(),
+                 QString("full"));
+        QCOMPARE(QJsonDocument::fromJson(json.toUtf8())
+                     .object()
+                     .value("bytes")
+                     .toObject()
+                     .value("$binary")
+                     .toString(),
+                 QString(""));
+        QVERIFY(!model.rowJson(5, &json, &error));
+        QVERIFY(json.isEmpty());
+        QVERIFY(!error.isEmpty());
+        QVERIFY(model.setPage({column("number", "real")},
+                              {{std::numeric_limits<double>::infinity()}}, 0));
+        QVERIFY(!model.rowJson(0, &json, &error));
+        QVERIFY(json.isEmpty());
+        QVERIFY(error.contains("non-finite", Qt::CaseInsensitive));
+    }
+    void rowJsonEscapesLongTextAtSpanBoundaries() {
+        QString value(1024 * 1024, 'x');
+        value[0] = '"';
+        value[4096] = '\\';
+        value[8192] = QChar(0x001f);
+        value += QString::fromUcs4(U"\U0001f642");
+        value += '\n';
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("payload", "text")}, {{value}}, 0));
+        QString json, error;
+        QVERIFY(model.rowJson(0, &json, &error));
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(QJsonDocument::fromJson(json.toUtf8()).object().value("payload").toString(),
+                 value);
+        QVERIFY(json.contains(QStringLiteral("\\u001f")));
+        QVERIFY(json.endsWith(QStringLiteral("\\u000a\"\n}")));
+    }
     void unchangedEditorValuesDoNotStageEdits() {
         ResultTableModel model;
         QVERIFY(model.setPage({column("text", "text"), column("number", "bigint"),

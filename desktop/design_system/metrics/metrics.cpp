@@ -96,6 +96,8 @@ int dimension(Dimension value) {
         return 20;
     case Dimension::ModalWidth:
         return 700;
+    case Dimension::SheetWidth:
+        return 480;
     case Dimension::TableRow:
         return 29;
     case Dimension::TableHeader:
