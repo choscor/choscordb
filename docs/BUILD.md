@@ -93,6 +93,14 @@ application data. Set
 `CMAKE_CXX_COMPILER_LAUNCHER` to an empty value and `RUSTC_WRAPPER` to an empty
 value to bypass the cache for a particular build.
 
+Development and test builds keep Rust source line tables while omitting full
+debug information from dependencies. Use `cargo build --profile debugging` when
+full Rust type and variable information is needed. Cargo keeps old artifacts
+when build flags or features change, so `target/` and `build/dev/cargo/` can
+still grow over time. To reclaim them, run `cargo clean`, remove `build/dev/`,
+then configure and build again with the commands above. This removes generated
+outputs only; the shared `sccache` remains available for the rebuild.
+
 Linux builds also require `pkg-config` and `libdbus-1-dev` for the Secret Service credential adapter, and `libssl-dev` for PostgreSQL TLS. A running, unlocked Secret Service is needed only for native credential operations; ordinary tests use injected or explicitly unavailable stores.
 
 For a disposable PostgreSQL server and verified-TLS integration checks, see [PostgreSQL testing](testing/postgres.md).

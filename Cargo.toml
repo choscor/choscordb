@@ -16,6 +16,21 @@ dbg_macro = "deny"
 todo = "deny"
 unimplemented = "deny"
 
+[profile.dev]
+# Keep file and line information without storing full type/variable debug data.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+# Third-party debug data dominates the static bridge and test binaries.
+debug = 0
+
+[profile.debugging]
+inherits = "dev"
+debug = "full"
+
+[profile.debugging.package."*"]
+debug = "full"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
