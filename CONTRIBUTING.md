@@ -1,11 +1,15 @@
 # Contributing to ChoscorDB
 
-ChoscorDB accepts focused issues and pull requests. Keep changes small enough to
-explain and verify independently, include behavior-focused tests, and avoid
-unrelated cleanup. One approving review is not required while the project has a
-single maintainer; the automated quality gates are the required review surface.
+Anyone is welcome to create an issue to report a bug or suggest a change.
+ChoscorDB does not accept external pull requests. The maintainer implements
+changes and opens any pull requests needed for the project.
 
-## Pull request title and description
+## Maintainer pull request title and description
+
+Keep changes small enough to explain and verify independently, include
+behavior-focused tests, and avoid unrelated cleanup. One approving review is not
+required while the project has a single maintainer; the automated quality gates
+are the required review surface.
 
 Use a specific, action-oriented title. The preferred format is
 `<type>(<scope>): <imperative summary>`, matching the project's Conventional
@@ -20,7 +24,7 @@ call out compatibility or migration effects. Link an issue if one exists; use
 `Closes #N` only when the PR fully resolves it. Delete unused template sections
 for small changes. Revisit the description if the change evolves during review.
 
-## Before submitting a change
+## Before submitting a maintainer change
 
 Install Python 3.12+, the Rust toolchain pinned by `rust-toolchain.toml`, LLVM 23,
 actionlint 1.7.7, cargo-deny 0.20.2, and the dependencies in
