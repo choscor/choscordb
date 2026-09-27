@@ -1,4 +1,5 @@
 #include "design_system/button/button_style.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell_style.h"
 #include "design_system/dock/dock_style.h"
 #include "design_system/field/field_style.h"
@@ -24,6 +25,7 @@ QString applicationStyleSheet(const ResolvedTheme& theme, const DesignMetrics& m
                     toolbarApplicationStyleSheet() + menuApplicationStyleSheet() +
                     tooltipApplicationStyleSheet() + tabsApplicationStyleSheet() +
                     dockApplicationStyleSheet() + dialogShellApplicationStyleSheet() +
+                    dialogSectionsApplicationStyleSheet(theme) +
                     buttonApplicationStateStyleSheet() + labelApplicationStateStyleSheet() +
                     toastRegionApplicationStyleSheet(theme);
     style = style.arg(metrics.controlHeight)

@@ -132,6 +132,9 @@ void ControlStyle::drawPrimitive(PrimitiveElement element, const QStyleOption* o
 }
 int ControlStyle::pixelMetric(PixelMetric metric, const QStyleOption* option,
                               const QWidget* widget) const {
+    if (metric == PM_TabBarIconSize && widget &&
+        widget->property("designTabVariant").toString() == QLatin1String("document"))
+        return dimension(Dimension::IconSmall);
     if (metric == PM_ExclusiveIndicatorWidth || metric == PM_ExclusiveIndicatorHeight)
         return 18;
     // Anchor nested menus to the painted panel, excluding transparent shadow

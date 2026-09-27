@@ -66,6 +66,7 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* newQuery = fileMenu->addAction(tr("New query"));
     newQuery->setObjectName("newQuery");
     newQuery->setShortcut(QKeySequence::New);
+    auto* newConnection = fileMenu->addAction(tr("New SQLite session…"));
     auto* open = fileMenu->addAction(tr("Open SQL file…"));
     open->setShortcut(QKeySequence::Open);
     auto* save = fileMenu->addAction(tr("Save SQL file…"));
@@ -116,11 +117,34 @@ MainWindow::Ui MainWindow::buildUi() {
     editorAction("copy", tr("Copy"), QKeySequence::Copy, &SqlEditor::copy);
     editorAction("paste", tr("Paste"), QKeySequence::Paste, &SqlEditor::paste);
     auto* queryMenu = menuBar()->addMenu(tr("&Query"));
-    auto* connectionMenu = menuBar()->addMenu(tr("&Connection"));
-    auto* newConnection = connectionMenu->addAction(tr("New SQLite session…"));
 
     auto* viewMenu = menuBar()->addMenu(tr("&View"));
     viewMenu->setObjectName("viewMenu");
+    auto* windowMenu = menuBar()->addMenu(tr("&Window"));
+    windowMenu->setObjectName("windowMenu");
+    auto* minimizeWindow = windowMenu->addAction(tr("Minimize"));
+    minimizeWindow->setObjectName("minimizeWindow");
+    minimizeWindow->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_M));
+    connect(minimizeWindow, &QAction::triggered, this, &QWidget::showMinimized);
+    auto* zoomWindow = windowMenu->addAction(tr("Zoom"));
+    zoomWindow->setObjectName("zoomWindow");
+    connect(zoomWindow, &QAction::triggered, this, [this] {
+        if (isMaximized())
+            showNormal();
+        else
+            showMaximized();
+    });
+    windowMenu->addSeparator();
+    auto* bringAllWindowsToFront = windowMenu->addAction(tr("Bring All to Front"));
+    bringAllWindowsToFront->setObjectName("bringAllWindowsToFront");
+    connect(bringAllWindowsToFront, &QAction::triggered, this, [this] {
+        auto* active = QApplication::activeWindow();
+        for (auto* window : QApplication::topLevelWidgets()) {
+            if (window->isVisible() && !window->isMinimized())
+                window->raise();
+        }
+        (active ? active : this)->activateWindow();
+    });
     auto* helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->setObjectName("helpMenu");
     auto* documentation = helpMenu->addAction(tr("ChoscorDB Help"));
@@ -268,7 +292,7 @@ MainWindow::Ui MainWindow::buildUi() {
     savedConnections->setMouseTracking(true);
     savedConnections->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
     auto* connectionsEmpty = new design::Text(
-        tr("No saved connections yet.\n\nUse + to add a database connection."), connectionSection);
+        tr("No saved connections yet.\nUse + to add a database connection."), connectionSection);
     connectionsEmpty->setObjectName("sidebarConnectionsEmpty");
     connectionsEmpty->setWordWrap(true);
     connectionsEmpty->setForegroundRole(QPalette::PlaceholderText);
@@ -826,12 +850,8 @@ MainWindow::Ui MainWindow::buildUi() {
     colorStartIcon();
     connect(theme_, &design::ThemeManager::themeChanged, startIcon, colorStartIcon);
     startLayout->addWidget(startIcon);
-    auto* welcome = new design::Text(tr("No database open"), start);
-    welcome->setAlignment(Qt::AlignCenter);
-    welcome->setWeight(QFont::Medium);
-    startLayout->addWidget(welcome);
-    auto* startHint =
-        new design::Text(tr("Select a connection in the sidebar or create a new one."), start);
+    auto* startHint = new design::Text(
+        tr("No database open\nSelect a connection in the sidebar or create a new one."), start);
     startHint->setObjectName("startHint");
     startHint->setForegroundRole(QPalette::PlaceholderText);
     startHint->setWordWrap(true);

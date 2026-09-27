@@ -12,10 +12,19 @@
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QStringList>
 #include <QTableView>
 #include <QVBoxLayout>
+#include <memory>
 #include <utility>
 namespace choscordb {
+namespace {
+struct HeaderSizingState {
+    QStringList labels;
+    QVector<bool> keys;
+    bool newLabels = false;
+};
+} // namespace
 ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* parent)
     : QWidget(parent), sql_(sqlWorkspace) {
     setObjectName("objectDataWorkspace");
@@ -41,9 +50,9 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     table->setFrameShape(QFrame::NoFrame);
     table->verticalHeader()->setDefaultSectionSize(metrics.objectDataRowHeight);
     table->horizontalHeader()->setFixedHeight(metrics.objectDataHeaderHeight);
-    table->horizontalHeader()->setResizeContentsPrecision(64);
-    table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    table->horizontalHeader()->setStretchLastSection(true);
+    table->horizontalHeader()->setDefaultSectionSize(
+        design::dimension(design::Dimension::TableColumn));
+    table->horizontalHeader()->setStretchLastSection(false);
     layout->addWidget(table, 1);
     auto* messages = new QPlainTextEdit(this);
     messages->setObjectName("objectDataMessages");
@@ -139,6 +148,38 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
          [this](quint64 connection) { return sql_ && sql_->activeManualTransaction(connection); },
          restoreRows},
         this);
+    auto headerSizing = std::make_shared<HeaderSizingState>();
+    connect(table->model(), &QAbstractItemModel::modelReset, table, [table, headerSizing] {
+        auto* model = table->model();
+        QStringList current;
+        for (int column = 0; column < model->columnCount(); ++column)
+            current.append(model->headerData(column, Qt::Horizontal, Qt::DisplayRole).toString());
+        headerSizing->newLabels = current != headerSizing->labels;
+        if (!headerSizing->newLabels)
+            return;
+        headerSizing->labels = current;
+        auto* header = table->horizontalHeader();
+        for (int column = 0; column < current.size(); ++column)
+            header->resizeSection(column, header->sectionSizeHint(column));
+    });
+    connect(table->model(), &QAbstractItemModel::headerDataChanged, table,
+            [table, headerSizing](Qt::Orientation orientation, int first, int last) {
+                if (orientation != Qt::Horizontal)
+                    return;
+                auto* model = table->model();
+                auto* header = table->horizontalHeader();
+                headerSizing->keys.resize(model->columnCount());
+                for (int column = first; column <= last; ++column) {
+                    const bool key =
+                        model->headerData(column, Qt::Horizontal, ResultTableModel::HeaderKeyRole)
+                            .toBool();
+                    if ((headerSizing->newLabels || key != headerSizing->keys[column]) && key)
+                        header->resizeSection(column, qMax(header->sectionSize(column),
+                                                           header->sectionSizeHint(column)));
+                    headerSizing->keys[column] = key;
+                }
+                headerSizing->newLabels = false;
+            });
     connect(cancel, &QAction::changed, cancelButton, [cancel, cancelButton] {
         cancelButton->setEnabled(cancel->isEnabled());
         cancelButton->setAccessibleName(cancel->text());

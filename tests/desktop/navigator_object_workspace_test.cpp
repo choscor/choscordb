@@ -193,6 +193,8 @@ void NavigatorSqlWorkspaceTest::objectTabsUseConnectionAndQualifiedIdentity() {
     QCOMPARE(initial, 0);
     emit window.objectContextSelected(11, R"(["main","account"])", "main.account", "table");
     QCOMPARE(tabs->count(), initial + 1);
+    QCOMPARE(tabs->tabText(tabs->currentIndex()), QString("account"));
+    QVERIFY(!tabs->tabIcon(tabs->currentIndex()).isNull());
     auto* first = qobject_cast<choscordb::ObjectExplorer*>(tabs->currentWidget());
     QVERIFY(first);
     QCOMPARE(first->paneIndex(), 5);

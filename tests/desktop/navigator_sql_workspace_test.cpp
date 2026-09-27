@@ -590,12 +590,12 @@ void NavigatorSqlWorkspaceTest::workspaceTabsUseContentWidth() {
     const auto barRight = tabs->tabBar()->mapTo(tabs, QPoint(tabs->tabBar()->width(), 0)).x();
     QVERIFY(addPosition().x() < barRight);
     QVERIFY(addPosition().x() - tabs->tabBar()->tabRect(0).right() >=
-            choscordb::design::spacing(choscordb::design::Spacing::Two));
-    QVERIFY(addPosition().x() - tabs->tabBar()->tabRect(0).right() <= 14);
+            choscordb::design::spacing(choscordb::design::Spacing::One));
+    QVERIFY(addPosition().x() - tabs->tabBar()->tabRect(0).right() <= 6);
     QVERIFY(addPosition().x() + addButton->width() <= tabs->width());
     window.resize(960, 640);
     QCoreApplication::processEvents();
-    QVERIFY(addPosition().x() - tabs->tabBar()->tabRect(0).right() <= 14);
+    QVERIFY(addPosition().x() - tabs->tabBar()->tabRect(0).right() <= 6);
     window.resize(1280, 800);
     QCoreApplication::processEvents();
     const auto stripColor = choscordb::design::resolvedThemeForWidget(*tabs).colors.muted;
@@ -624,7 +624,7 @@ void NavigatorSqlWorkspaceTest::workspaceTabsUseContentWidth() {
             tabs->tabBar()->mapTo(tabs, QPoint(tabs->tabBar()->width(), 0)).x());
     QVERIFY(addPosition().x() -
                 tabs->tabBar()->mapTo(tabs, QPoint(tabs->tabBar()->width(), 0)).x() >=
-            choscordb::design::spacing(choscordb::design::Spacing::Two));
+            choscordb::design::spacing(choscordb::design::Spacing::One));
     QVERIFY(tabs->width() - (addPosition().x() + addButton->width()) <= 2);
     QVERIFY(addPosition().x() + addButton->width() <= tabs->width());
     QCOMPARE(cornerColor(), stripColor);

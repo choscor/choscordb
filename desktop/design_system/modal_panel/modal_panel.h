@@ -4,12 +4,12 @@
 
 namespace choscordb::design {
 
-// Owner-window modal surface; standard QDialog rejection never accepts an action.
-class ModalPanel : public QDialog {
+// Owner-window modal dialog. DialogPresentation owns its separate dimmed backdrop.
+class ModalDialog : public QDialog {
     Q_OBJECT
   public:
-    explicit ModalPanel(QWidget* parent);
-    ~ModalPanel() override;
+    explicit ModalDialog(QWidget* parent);
+    ~ModalDialog() override;
     [[nodiscard]] QSize sizeHint() const override;
     void setEdgeToEdgeContent(bool enabled);
 
@@ -26,4 +26,5 @@ class ModalPanel : public QDialog {
     DialogPresentation presentation_;
     bool edgeToEdgeContent_ = false;
 };
+using ModalPanel = ModalDialog;
 } // namespace choscordb::design

@@ -22,7 +22,7 @@ bool drawSwitchIndicator(const QStyleOption* option, QPainter* painter, const QW
             right ? option->rect.right() - inset - thumbSize + 1 : option->rect.left() + inset;
         painter->setPen(Qt::NoPen);
         painter->setBrush(theme.forcedContrast ? (checked ? colors.primaryForeground : colors.text)
-                                               : QColor(Qt::white));
+                                               : colors.switchThumb);
         painter->drawEllipse(QRectF(x, option->rect.top() + inset, thumbSize, thumbSize));
         return true;
     }

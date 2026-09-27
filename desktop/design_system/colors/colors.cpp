@@ -207,6 +207,7 @@ SemanticColors resolveColors(ResolvedAppearance appearance, const Accent&) {
         .neutral = mutedText,
         .backdrop = QColor(25, 44, 54, 80),
         .switchTrack = QColor(dark ? "#465359" : "#d8dfe0"),
+        .switchThumb = QColor("#ffffff"),
         // Preserve prototype syntax hues; adjust only colors below 4.5:1 on
         // the editor panel (light comments/numbers and dark keywords).
         .sqlKeyword = QColor(dark ? "#a984c8" : "#885da7"),
@@ -278,6 +279,7 @@ SemanticColors resolveForcedContrastColors(const QPalette& palette) {
         .neutral = text,
         .backdrop = QColor(0, 0, 0, 160),
         .switchTrack = surface,
+        .switchThumb = surface,
         .sqlKeyword = text,
         .sqlString = text,
         .sqlComment = text,

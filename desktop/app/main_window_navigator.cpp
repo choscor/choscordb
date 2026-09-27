@@ -41,11 +41,11 @@ void MainWindow::connectNavigator(const Ui& ui) {
     const auto updateObjectsEmpty = [this, tree, filter, objectsEmpty] {
         objectsEmpty->setVisible(tree->model()->rowCount() == 0);
         objectsEmpty->setText(
-            !browsingConnection_ ? tr("No database selected.\n\nSelect a connection to browse its "
+            !browsingConnection_ ? tr("No database selected.\nSelect a connection to browse its "
                                       "schemas and objects.")
             : !filter->text().isEmpty()
-                ? tr("No matching objects.\n\nTry a different filter or clear the search.")
-                : tr("No objects to show.\n\nRefresh to check for schemas and objects."));
+                ? tr("No matching objects.\nTry a different filter or clear the search.")
+                : tr("No objects to show.\nRefresh to check for schemas and objects."));
     };
     connect(tree->model(), &QAbstractItemModel::rowsInserted, objectsEmpty, updateObjectsEmpty);
     connect(tree->model(), &QAbstractItemModel::rowsRemoved, objectsEmpty, updateObjectsEmpty);

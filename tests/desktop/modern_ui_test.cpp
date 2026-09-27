@@ -37,6 +37,8 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSignalSpy>
@@ -83,6 +85,37 @@ void ModernUiTest::applicationMenusExposeHelpAndAbout() {
     QVERIFY(tabs);
     QVERIFY(window.actions().contains(tabs));
 #endif
+}
+
+void ModernUiTest::applicationMenusProvideWindowControlsWithoutConnectionMenu() {
+    choscordb::MainWindow window;
+    window.show();
+    QStringList topLevelMenus;
+    for (auto* action : window.menuBar()->actions())
+        topLevelMenus.append(action->text().remove('&'));
+    QVERIFY(!topLevelMenus.contains("Connection"));
+    QVERIFY(topLevelMenus.contains("Window"));
+
+    auto* file = window.menuBar()->actions().first()->menu();
+    QVERIFY(file);
+    bool hasNewSession = false;
+    for (auto* action : file->actions())
+        hasNewSession |= action->text() == "New SQLite session…";
+    QVERIFY(hasNewSession);
+
+    auto* windowMenu = window.findChild<QMenu*>("windowMenu");
+    QVERIFY(windowMenu);
+    QVERIFY(window.menuBar()->actions().contains(windowMenu->menuAction()));
+    auto* minimize = windowMenu->findChild<QAction*>("minimizeWindow");
+    auto* zoom = windowMenu->findChild<QAction*>("zoomWindow");
+    auto* bringToFront = windowMenu->findChild<QAction*>("bringAllWindowsToFront");
+    QVERIFY(minimize && zoom && bringToFront);
+    minimize->trigger();
+    QVERIFY(window.windowState().testFlag(Qt::WindowMinimized));
+    zoom->trigger();
+    QVERIFY(window.windowState().testFlag(Qt::WindowMaximized));
+    zoom->trigger();
+    QVERIFY(!window.windowState().testFlag(Qt::WindowMaximized));
 }
 
 void ModernUiTest::resultActionsUseIconsInToolbarAndFootersOnlyContainPagination() {
@@ -164,6 +197,96 @@ void ModernUiTest::startUsesPanelAndMutedSupportingText() {
         QVERIFY(hint);
         QCOMPARE(hint->foregroundRole(), QPalette::PlaceholderText);
     }
+}
+
+void ModernUiTest::emptyStatesUseOneTextWithOneLineBreak() {
+    QTemporaryDir storage;
+    choscordb::MainWindow window(nullptr, storage.filePath("workspace.sqlite"));
+    window.show();
+    auto* start = window.findChild<QWidget*>("startScreen");
+    auto* startHint = start->findChild<QLabel*>("startHint");
+    QVERIFY(startHint);
+    QCOMPARE(startHint->text(),
+             QString("No database open\nSelect a connection in the sidebar or create a new one."));
+    int startMessageLabels = 0;
+    for (auto* label : start->findChildren<QLabel*>())
+        startMessageLabels += label->text().contains("No database open");
+    QCOMPARE(startMessageLabels, 1);
+    auto* connections = window.findChild<QLabel*>("sidebarConnectionsEmpty");
+    QVERIFY(connections);
+    QCOMPARE(connections->text(),
+             QString("No saved connections yet.\nUse + to add a database connection."));
+    auto* objects = window.findChild<QLabel*>("sidebarObjectsEmpty");
+    QVERIFY(objects);
+    QCOMPARE(
+        objects->text(),
+        QString("No database selected.\nSelect a connection to browse its schemas and objects."));
+}
+
+void ModernUiTest::savedAndHistoryEmptyStatesUseOneLineBreak() {
+    if (!qEnvironmentVariableIsSet("CHOSCORDB_EMPTY_STATES_CHILD")) {
+        QTemporaryDir home;
+        QVERIFY(home.isValid());
+        QProcess child;
+        auto environment = QProcessEnvironment::systemEnvironment();
+        environment.insert("CFFIXED_USER_HOME", home.path());
+        environment.insert("XDG_DATA_HOME", home.filePath("data"));
+        environment.insert("APPDATA", home.filePath("data"));
+        environment.insert("LOCALAPPDATA", home.filePath("data"));
+        environment.insert("CHOSCORDB_EMPTY_STATES_CHILD", "1");
+        child.setProcessEnvironment(environment);
+        child.start(QCoreApplication::applicationFilePath(),
+                    {"savedAndHistoryEmptyStatesUseOneLineBreak"});
+        QVERIFY(child.waitForStarted());
+        QVERIFY(child.waitForFinished(30000));
+        const auto output = child.readAllStandardOutput() + child.readAllStandardError();
+        QVERIFY2(child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0,
+                 output.constData());
+        return;
+    }
+    QTemporaryDir storage;
+    choscordb::MainWindow window(nullptr, storage.filePath("workspace.sqlite"));
+    window.show();
+    QTRY_VERIFY(window.findChild<choscordb::WorkspaceRecoveryController*>()->isReady());
+    window.findChild<QPushButton*>("sidebarSaved")->click();
+    auto* saved = window.findChild<QLabel*>("sidebarSavedStatus");
+    QVERIFY(saved);
+    QCOMPARE(saved->text(), QString("No saved queries yet.\nSave a query as a SQL file in the "
+                                    "default folder to find it here."));
+    window.findChild<QPushButton*>("sidebarHistory")->click();
+    auto* history = window.findChild<QLabel*>("sidebarHistoryStatus");
+    QVERIFY(history);
+    QTRY_COMPARE(history->text(), QString("No query history yet.\nRun a query to see it here."));
+}
+
+void ModernUiTest::navigatorEmptyVariantsUseOneLineBreak() {
+    QTemporaryDir storage;
+    choscordb::MainWindow window(nullptr, storage.filePath("workspace.sqlite"));
+    window.show();
+    QTRY_VERIFY(window.findChild<choscordb::WorkspaceRecoveryController*>()->isReady());
+    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+    auto* profiles = window.findChild<QListWidget*>("savedConnections");
+    auto* objects = window.findChild<QLabel*>("sidebarObjectsEmpty");
+    QLineEdit* filter = nullptr;
+    QVERIFY(workspace && profiles && objects);
+    choscordb::SavedProfile profile;
+    profile.id = "empty-nav";
+    profile.name = "Empty navigator";
+    profile.path = ":memory:";
+    workspace->adapter()->saveProfile(profile, 801);
+    QTRY_COMPARE(profiles->count(), 1);
+    QTest::mouseClick(profiles->viewport(), Qt::LeftButton, Qt::NoModifier,
+                      profiles->visualItemRect(profiles->item(0)).center());
+    QTRY_VERIFY(window.browsingConnection().has_value());
+    QTRY_COMPARE(objects->text(),
+                 QString("No objects to show.\nRefresh to check for schemas and objects."));
+    for (auto* candidate : window.findChildren<QLineEdit*>())
+        if (candidate->accessibleName() == "Filter database objects")
+            filter = candidate;
+    QVERIFY(filter);
+    filter->setText("missing");
+    QCOMPARE(objects->text(),
+             QString("No matching objects.\nTry a different filter or clear the search."));
 }
 
 void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections() {

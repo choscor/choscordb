@@ -40,9 +40,6 @@ class DesignSystemTest final : public QObject {
                                                     "#fff3d6", "#fdecea"}
                                       : QStringList{manager.resolvedTheme().colors.success.name(),
                                                     "#473b22", "#492d2b"};
-            const auto borders = QStringList{manager.resolvedTheme().colors.success.name(),
-                                             manager.resolvedTheme().colors.warning.name(),
-                                             manager.resolvedTheme().colors.danger.name()};
             int index = 0;
             for (const auto* variant : {"success", "warning", "danger"}) {
                 const auto selector =
@@ -51,12 +48,16 @@ class DesignSystemTest final : public QObject {
                 QVERIFY2(
                     rule.contains(QStringLiteral("background-color: %1").arg(expected.at(index))),
                     qPrintable(rule));
-                QVERIFY2(rule.contains(
-                             QStringLiteral("border-left: 4px solid %1").arg(borders.at(index))),
-                         qPrintable(rule));
+                QVERIFY2(!rule.contains(QStringLiteral("border-left")), qPrintable(rule));
                 ++index;
             }
-            QVERIFY(sheet.contains(QStringLiteral("QLabel#progressToast[variant=\"progress\"]")));
+            const auto progressRule =
+                sheet
+                    .mid(
+                        sheet.indexOf(QStringLiteral("QLabel#progressToast[variant=\"progress\"]")))
+                    .section('}', 0, 0);
+            QVERIFY2(!progressRule.contains(QStringLiteral("border-left")),
+                     qPrintable(progressRule));
         }
     }
     void dockTitleUsesThemeText() {

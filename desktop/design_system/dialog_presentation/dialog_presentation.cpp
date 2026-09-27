@@ -143,7 +143,7 @@ class Backdrop final : public QWidget {
             shadowPainter.setClipPath(outside.subtracted(path));
             for (const auto& layer : elevation(Elevation::Dialog)) {
                 QGraphicsScene scene;
-                auto* item = scene.addPath(path, Qt::NoPen, Qt::black);
+                auto* item = scene.addPath(path, Qt::NoPen, theme.colors.text);
                 auto* effect = new QGraphicsDropShadowEffect;
                 effect->setBlurRadius(layer.blur * 2);
                 effect->setOffset(layer.x, layer.y);

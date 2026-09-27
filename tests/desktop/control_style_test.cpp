@@ -421,7 +421,8 @@ void ControlStyleTest::closableDocumentTabsUseCompactHeight() {
     QVERIFY(close);
     QVERIFY(tabs.tabRect(0).contains(close->geometry()));
     QCOMPARE(tabs.tabRect(0).width(), tabs.tabRect(1).width());
-    QVERIFY2(tabs.tabRect(0).width() <= 118, qPrintable(QString::number(tabs.tabRect(0).width())));
+    QVERIFY2(tabs.tabRect(0).width() >= 140 && tabs.tabRect(0).width() <= 160,
+             qPrintable(QString::number(tabs.tabRect(0).width())));
 }
 
 void ControlStyleTest::inputTrackingResetsBodyTrackingAndRemainsEditable() {

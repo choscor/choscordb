@@ -1,14 +1,17 @@
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
+#include "design_system/control_style.h"
 #include "design_system/icons.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/theme_manager.h"
 #include "design_system/tree/navigation_tree_view.h"
 #include <QHBoxLayout>
 #include <QListWidget>
+#include <QPainter>
 #include <QScrollBar>
 #include <QSignalSpy>
 #include <QStandardItemModel>
+#include <QStyleOption>
 #include <QTabBar>
 #include <QTreeView>
 #include <QTreeWidget>
@@ -211,6 +214,92 @@ class ComponentsTest final : public QObject {
             const auto image = list.viewport()->grab().toImage();
             const auto colors = resolvedThemeForWidget(list).colors;
             QCOMPARE(image.pixelColor(row.left() + 3, row.center().y()), colors.muted);
+        }
+    }
+    void connectionRowsAreCompactAndShowOnlyCenteredNames() {
+        using namespace choscordb::design;
+        for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
+            QWidget root;
+            ThemeManager theme;
+            theme.setMode(mode);
+            theme.applyTo(root);
+            QListWidget list(&root);
+            list.setProperty("designSurface", "sidebar");
+            list.setItemDelegate(new NavigationProfileDelegate(&list));
+            auto* item = new QListWidgetItem("Example Postgres\nPostgreSQL", &list);
+            item->setData(NavigationProfileDelegate::DriverRole, "postgres");
+            list.resize(240, 55);
+            root.resize(250, 65);
+            root.show();
+            list.setCurrentItem(item);
+            QCoreApplication::processEvents();
+            const auto row = list.visualItemRect(item);
+            QVERIFY(row.height() <= 36);
+            const auto withDetail = list.viewport()->grab(row).toImage();
+            const auto ink = resolvedThemeForWidget(list).colors.text;
+            int inkTop = withDetail.height();
+            int inkBottom = -1;
+            for (int y = 0; y < withDetail.height(); ++y)
+                for (int x = 42; x < 150; ++x) {
+                    const auto pixel = withDetail.pixelColor(x, y);
+                    if (qAbs(pixel.red() - ink.red()) <= 10 &&
+                        qAbs(pixel.green() - ink.green()) <= 10 &&
+                        qAbs(pixel.blue() - ink.blue()) <= 10) {
+                        inkTop = qMin(inkTop, y);
+                        inkBottom = qMax(inkBottom, y);
+                    }
+                }
+            QVERIFY(inkBottom >= inkTop);
+            QVERIFY(qAbs((inkTop + inkBottom) / 2 - withDetail.height() / 2) <= 2);
+            item->setText("Example Postgres\nDifferent detail");
+            QCoreApplication::processEvents();
+            QCOMPARE(list.viewport()->grab(row).toImage(), withDetail);
+        }
+    }
+    void navigationBranchesUseMutedInkInBothThemes() {
+        using namespace choscordb::design;
+        for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
+            QWidget root;
+            ThemeManager theme;
+            theme.setMode(mode);
+            theme.applyTo(root);
+            NavigationTreeView tree(&root);
+            ControlStyle style;
+            tree.setStyle(&style);
+            QStyleOption branch;
+            branch.rect = QRect(0, 0, 20, 20);
+            branch.state = QStyle::State_Enabled | QStyle::State_Children;
+            branch.palette = tree.palette();
+            QImage image(branch.rect.size(), QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            style.drawPrimitive(QStyle::PE_IndicatorBranch, &branch, &painter, &tree);
+            painter.end();
+            const auto muted = resolvedThemeForWidget(tree).colors.mutedText;
+            int inkPixels = 0;
+            for (int y = 0; y < image.height(); ++y)
+                for (int x = 0; x < image.width(); ++x) {
+                    const auto pixel = image.pixelColor(x, y);
+                    if (pixel.alpha() > 120 && qAbs(pixel.red() - muted.red()) <= 8 &&
+                        qAbs(pixel.green() - muted.green()) <= 8 &&
+                        qAbs(pixel.blue() - muted.blue()) <= 8)
+                        ++inkPixels;
+                }
+            QVERIFY(inkPixels > 0);
+
+            QStandardItemModel model;
+            auto* parent = new QStandardItem("Group");
+            parent->appendRow(new QStandardItem("Child"));
+            model.appendRow(parent);
+            tree.setModel(&model);
+            tree.setHeaderHidden(true);
+            tree.resize(220, 90);
+            root.resize(230, 100);
+            root.show();
+            QCoreApplication::processEvents();
+            const auto row = tree.visualRect(model.index(0, 0));
+            const auto rendered = tree.viewport()->grab().toImage();
+            QCOMPARE(rendered.pixelColor(5, row.center().y()), muted);
         }
     }
     void primaryKeyboardFocusContrastsWithTheActionFill_data() {

@@ -80,13 +80,14 @@ class TabAddCorner final : public QWidget {
             const int y = bar->mapTo(tabs_, QPoint(0, 0)).y();
             const int height = tabs_->count() ? bar->tabRect(0).height() : addButton_->height();
             setGeometry(x, y, addButton_->width() + leftPadding_, height);
+            addButton_->move(leftPadding_, (height - addButton_->height()) / 2);
             raise();
         });
     }
 
     QTabWidget* tabs_;
     Button* addButton_;
-    const int leftPadding_ = spacing(Spacing::Two);
+    const int leftPadding_ = spacing(Spacing::One);
     bool positionPending_ = false;
 };
 } // namespace choscordb::design

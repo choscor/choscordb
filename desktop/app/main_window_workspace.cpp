@@ -30,6 +30,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -150,7 +151,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         savedStatus->show();
         const QDir directory(savedDirectory);
         if (!directory.exists()) {
-            savedStatus->setText(QObject::tr("No saved queries yet.\n\nSave a query as a SQL file "
+            savedStatus->setText(QObject::tr("No saved queries yet.\nSave a query as a SQL file "
                                              "in the default folder to find it here."));
             return;
         }
@@ -188,7 +189,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         savedFiles->sortItems(0, Qt::AscendingOrder);
         savedStatus->setText(files.hasNext() ? QObject::tr("Showing the first %1 files.").arg(limit)
                              : count ? QString{}
-                                     : QObject::tr("No saved queries yet.\n\nSave a query as a SQL "
+                                     : QObject::tr("No saved queries yet.\nSave a query as a SQL "
                                                    "file in the default folder to find it here."));
         savedStatus->setVisible(!savedStatus->text().isEmpty());
         filterSavedFiles();
@@ -320,7 +321,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         // retains column widths the user adjusted for this result.
         grid->resizeColumnsToContents();
         for (int column = 0; column < grid->model()->columnCount(); ++column)
-            grid->setColumnWidth(column, qBound(80, grid->columnWidth(column), 400));
+            grid->setColumnWidth(column, qMax(grid->horizontalHeader()->sectionSizeHint(column),
+                                              qBound(80, grid->columnWidth(column), 400)));
         fitted = true;
     });
     connect(workspace_, &QueryWorkspace::executionStateChanged, results,
@@ -385,12 +387,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     : QString{};
             savedConnections->clear();
             for (const auto& profile : profiles) {
-                auto* item =
-                    new QListWidgetItem(profile.name + "\n" +
-                                            (profile.driver == "sqlite"  ? tr("SQLite")
-                                             : profile.driver == "mysql" ? tr("MySQL")
-                                                                         : tr("PostgreSQL")),
-                                        savedConnections);
+                auto* item = new QListWidgetItem(profile.name, savedConnections);
                 item->setData(Qt::UserRole, QVariant::fromValue(profile));
                 item->setData(design::NavigationProfileDelegate::DriverRole, profile.driver);
                 item->setIcon(

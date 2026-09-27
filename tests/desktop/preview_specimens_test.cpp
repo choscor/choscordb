@@ -5,9 +5,11 @@
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/field/field.h"
+#include "design_system/icons.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/right_sheet/right_sheet.h"
+#include "design_system/tabs/tab_add_corner.h"
 #include "design_system/text/text.h"
 #include "design_system/toast_region/toast_region.h"
 #include "design_system/tree/navigation_tree_view.h"
@@ -67,6 +69,25 @@
 #include <QtTest>
 #include <cstring>
 
+void PreviewTest::codePreviewTextAreaUsesSharedVariantInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("textareas"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        auto* code = host->findChild<QPlainTextEdit*>("previewCodePreview");
+        QVERIFY(code);
+        QVERIFY(code->isVisible());
+        QVERIFY(code->isReadOnly());
+        QCOMPARE(code->property("designRole").toString(), QString("codePreview"));
+        QCOMPARE(code->frameShape(), QFrame::NoFrame);
+        QVERIFY(code->toPlainText().contains("CREATE TABLE example"));
+        QCOMPARE(code->viewport()->geometry().top(), 0);
+        QCOMPARE(code->viewport()->geometry().left(), 0);
+    }
+}
 void PreviewTest::workspaceToolbarSpecimenUsesMutedSurfaceInBothThemes() {
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen("toolbar"));
@@ -514,7 +535,7 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
         auto* list = host->findChild<QListWidget*>("previewNavigationProfiles");
         QVERIFY(list);
         QCOMPARE(list->count(), 3);
-        QCOMPARE(list->item(2)->text(), QString("test mysql\nMySQL"));
+        QCOMPARE(list->item(2)->text(), QString("test mysql"));
         QCOMPARE(list->item(2)->toolTip(), QString("MySQL · Dolphin icon"));
         const auto mysqlRow = list->visualItemRect(list->item(2));
         const auto branded = list->viewport()->grab(mysqlRow).toImage();
@@ -529,7 +550,7 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
         QCOMPARE(list->spacing(), choscordb::design::spacing(choscordb::design::Spacing::Half));
         QCOMPARE(list->currentRow(), 1);
         QVERIFY(list->visualItemRect(list->item(1)).bottom() < list->viewport()->height());
-        QCOMPARE(list->item(0)->text(), QString("test sqlite\nSQLite"));
+        QCOMPARE(list->item(0)->text(), QString("test sqlite"));
         QCOMPARE(list->item(1)
                      ->data(choscordb::design::NavigationProfileDelegate::DriverRole)
                      .toString(),
@@ -540,7 +561,7 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
                      .pixelSize(),
                  10);
         const auto height = list->visualItemRect(list->item(0)).height();
-        QVERIFY(height >= 40 && height <= 44);
+        QVERIFY(height >= 32 && height <= 36);
     }
 }
 
@@ -740,4 +761,147 @@ void PreviewTest::rightSheetSpecimenUsesModalBoundaryInBothThemes() {
     QVERIFY(narrowSheet.rect().contains(
         QRect(narrowAction->mapTo(&narrowSheet, QPoint()), narrowAction->size())));
     narrowSheet.reject();
+}
+
+void PreviewTest::dialogSectionsHaveMutedPaddedFooterInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("dialog-sections"));
+    window.show();
+    for (const auto* theme : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(theme);
+        auto* open = host->findChild<QPushButton*>("previewOpenDialogSections");
+        auto* dialog = previewSurface<QDialog>(host, "previewOpenDialogSections");
+        QVERIFY(open && dialog);
+        open->click();
+        QTRY_VERIFY(dialog->isVisible());
+        auto* sections = dialog->findChild<choscordb::design::DialogSections*>();
+        QVERIFY(sections);
+        const auto headerMargins = sections->headerLayout()->contentsMargins();
+        const auto footerMargins = sections->footerLayout()->contentsMargins();
+        QVERIFY(headerMargins.right() <= 8);
+        QVERIFY(footerMargins.top() >= 10);
+        QVERIFY(footerMargins.bottom() >= 10);
+        auto* footer = sections->footerLayout()->parentWidget();
+        auto* body = sections->bodyLayout()->parentWidget();
+        const auto footerColor = footer->grab().toImage().pixelColor(20, footer->height() / 2);
+        const auto bodyColor = body->grab().toImage().pixelColor(20, body->height() - 10);
+        QVERIFY(footerColor != bodyColor);
+        QVERIFY(qAbs(footerColor.red() - footerColor.green()) <= 2);
+        QVERIFY(qAbs(footerColor.green() - footerColor.blue()) <= 2);
+        dialog->reject();
+    }
+}
+
+void PreviewTest::modalSpecimenNamesTheDialogSurface() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("dialogs"));
+    auto* selector = window.findChild<QComboBox*>("previewSpecimen");
+    QVERIFY(selector);
+    QCOMPARE(selector->currentText(), QString("Modal dialog"));
+}
+
+void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("tabs"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const auto* theme : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(theme);
+        QVERIFY(host);
+        auto* tabs = host->findChild<QTabWidget*>();
+        QVERIFY(tabs);
+        auto* corner = dynamic_cast<choscordb::design::TabAddCorner*>(
+            tabs->findChild<QWidget*>("tabAddCorner"));
+        QVERIFY(corner);
+        QVERIFY(corner->addButton()->isVisible());
+        QCOMPARE(corner->addButton()->variant(), choscordb::design::ButtonVariant::Ghost);
+        QCOMPARE(corner->grab().toImage().pixelColor(1, corner->height() / 2),
+                 choscordb::design::resolvedThemeForWidget(*corner).colors.muted);
+        QCOMPARE(tabs->tabText(0), QString("Untitled query 1"));
+        QCOMPARE(tabs->tabText(1), QString("orders"));
+        QVERIFY(!tabs->tabIcon(1).isNull());
+        QCOMPARE(qobject_cast<QLabel*>(tabs->widget(0))->text(),
+                 QString("Neutral document chrome"));
+        QVERIFY(!tabs->tabIcon(0).isNull());
+        QCOMPARE(tabs->tabBar()->font().pixelSize(), 11);
+        QCOMPARE(tabs->tabBar()->tabRect(0).width(), tabs->tabBar()->tabRect(1).width());
+        QVERIFY(tabs->tabBar()->tabRect(0).width() >= 138);
+        QVERIFY(tabs->tabBar()->tabRect(0).width() <= 150);
+        QCOMPARE(tabs->tabBar()->style()->pixelMetric(QStyle::PM_TabBarIconSize, nullptr,
+                                                      tabs->tabBar()),
+                 12);
+        const auto selected = tabs->tabBar()->tabRect(0);
+        const auto tabPixels = tabs->tabBar()->grab().toImage();
+        const auto background = tabPixels.pixelColor(selected.left() + 38, selected.top() + 3);
+        int leftTextInk = 0;
+        for (int y = selected.center().y() - 6; y <= selected.center().y() + 6; ++y)
+            for (int x = selected.left() + 33; x <= selected.left() + 45; ++x)
+                leftTextInk +=
+                    qAbs(tabPixels.pixelColor(x, y).lightness() - background.lightness()) > 50;
+        QVERIFY(leftTextInk > 5);
+        tabs->setTabText(0, {});
+        tabs->setTabIcon(0, {});
+        const auto withoutIcon = tabs->tabBar()->grab().toImage();
+        tabs->setTabIcon(0, choscordb::design::themedIcon(
+                                choscordb::design::Icon::Table,
+                                choscordb::design::resolvedThemeForWidget(*tabs).colors.mutedText,
+                                16));
+        const auto withTableIcon = tabs->tabBar()->grab().toImage();
+        int iconPixels = 0;
+        for (int y = selected.center().y() - 8; y <= selected.center().y() + 8; ++y)
+            for (int x = selected.left() + 4; x <= selected.left() + 28; ++x)
+                iconPixels += withTableIcon.pixelColor(x, y) != withoutIcon.pixelColor(x, y);
+        QVERIFY2(iconPixels > 10, qPrintable(QString("Table icon pixels: %1").arg(iconPixels)));
+        tabs->setTabText(0, "Untitled query 1");
+        QVERIFY(qAbs(corner->addButton()->geometry().center().y() - corner->rect().center().y()) <=
+                1);
+        auto* paneTabs = host->findChild<QTabBar*>("previewObjectTabs");
+        QVERIFY(paneTabs);
+        const auto paneRect = paneTabs->tabRect(paneTabs->currentIndex());
+        const auto paneImage = paneTabs->grab().toImage();
+        const auto colors = choscordb::design::resolvedThemeForWidget(*paneTabs).colors;
+        QCOMPARE(paneImage.pixelColor(paneRect.left() + 1, paneRect.top() + 1), colors.surface);
+        while (tabs->count() > 1)
+            tabs->removeTab(tabs->count() - 1);
+        QCoreApplication::processEvents();
+        const auto addPoint = corner->addButton()->mapTo(tabs, QPoint(1, 2));
+        QVERIFY(addPoint.x() - tabs->tabBar()->tabRect(0).right() <= 6);
+        QCOMPARE(tabs->grab().toImage().pixelColor(addPoint),
+                 choscordb::design::resolvedThemeForWidget(*tabs).colors.muted);
+        const QPoint hoverLocal(5, corner->addButton()->height() / 2);
+        const auto hoverPoint = corner->addButton()->mapTo(tabs, hoverLocal);
+        const auto normalImage = tabs->grab().toImage();
+        QTest::mouseMove(corner->addButton(), hoverLocal);
+        QCoreApplication::processEvents();
+        const auto hoverImage = tabs->grab().toImage();
+        QCOMPARE(hoverImage.pixelColor(hoverPoint), normalImage.pixelColor(hoverPoint));
+        const auto buttonTopLeft = corner->addButton()->mapTo(tabs, QPoint());
+        const QRect iconArea(buttonTopLeft.x() + 7, buttonTopLeft.y() + 7, 16, 16);
+        int changedIconPixels = 0;
+        for (int y = iconArea.top(); y <= iconArea.bottom(); ++y)
+            for (int x = iconArea.left(); x <= iconArea.right(); ++x)
+                changedIconPixels += hoverImage.pixelColor(x, y) != normalImage.pixelColor(x, y);
+        QVERIFY(changedIconPixels > 0);
+    }
+}
+
+void PreviewTest::documentTabsShowKeyboardFocusInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("tabs"));
+    window.show();
+    for (const auto* theme : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(theme);
+        auto* tabs = host->findChild<QTabWidget*>();
+        QVERIFY(tabs);
+        auto* selector = window.findChild<QComboBox*>("previewSpecimen");
+        QVERIFY(selector);
+        selector->setFocus();
+        QCoreApplication::processEvents();
+        QVERIFY(!tabs->tabBar()->hasFocus());
+        const auto before = tabs->tabBar()->grab().toImage();
+        tabs->tabBar()->setFocus(Qt::TabFocusReason);
+        QCoreApplication::processEvents();
+        QVERIFY(tabs->tabBar()->hasFocus());
+        QVERIFY(tabs->tabBar()->grab().toImage() != before);
+    }
 }

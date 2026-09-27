@@ -79,6 +79,7 @@ struct SemanticColors final {
     QColor neutral;
     QColor backdrop;
     QColor switchTrack;
+    QColor switchThumb;
     QColor sqlKeyword;
     QColor sqlString;
     QColor sqlComment;

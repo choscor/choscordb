@@ -3,6 +3,7 @@
 #include "tools/preview/preview_window.h"
 #include <QAction>
 #include <QComboBox>
+#include <QHeaderView>
 #include <QPointer>
 #include <QStandardItemModel>
 #include <QTableView>
@@ -48,6 +49,24 @@ void PreviewTest::typedTableSpecimenUsesSharedControlsInBothThemes() {
                  QString("Open customers.id"));
         QVERIFY(!(table->item(1, 1)->flags() & Qt::ItemIsEditable));
         QVERIFY(table->actions().size() > 0);
+    }
+}
+
+void PreviewTest::choiceEditorSpecimenShowsRealControlInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("tables"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        auto* table = host->findChild<QTableWidget*>("previewChoiceEditorTable");
+        QVERIFY(table);
+        auto* choice = table->findChild<QComboBox*>("resultCellChoiceEditor");
+        QVERIFY(choice);
+        QVERIFY(choice->isVisible());
+        QCOMPARE(choice->count(), 2);
+        QCOMPARE(choice->currentText(), QString("true"));
     }
 }
 
@@ -140,4 +159,20 @@ void PreviewTest::typedTableDropdownStagesSelection() {
     QCOMPARE(editor->currentText(), QString("false"));
     QTest::keyClick(editor, Qt::Key_Return);
     QTRY_COMPARE(table->item(0, 1)->text(), QString("false"));
+}
+
+void PreviewTest::tableHeadersCanBeDraggedInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("tables"));
+    window.show();
+    for (const auto* theme : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(theme);
+        auto* table = host->findChild<QTableWidget*>("previewResultTable");
+        QVERIFY(table);
+        auto* header = table->horizontalHeader();
+        QCOMPARE(header->sectionResizeMode(0), QHeaderView::Interactive);
+        const int oldWidth = header->sectionSize(0);
+        header->resizeSection(0, oldWidth + 32);
+        QCOMPARE(header->sectionSize(0), oldWidth + 32);
+    }
 }

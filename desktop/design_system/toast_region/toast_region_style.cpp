@@ -12,6 +12,12 @@ QString toastRegionApplicationStyleSheet(const ResolvedTheme& theme) {
     sheet.replace(QStringLiteral("@success"), theme.colors.success.name());
     sheet.replace(QStringLiteral("@warningSurface"), theme.colors.warningSurface.name());
     sheet.replace(QStringLiteral("@dangerSurface"), theme.colors.dangerSurface.name());
+    sheet.replace(QStringLiteral("@toastProgressTopPadding"),
+                  QString::number(spacing(Spacing::One)) + QStringLiteral("px"));
+    sheet.replace(QStringLiteral("@toastProgressHeight"),
+                  QString::number(spacing(Spacing::Two)) + QStringLiteral("px"));
+    sheet.replace(QStringLiteral("@toastProgressRadius"),
+                  QString::number(radius(Radius::Small)) + QStringLiteral("px"));
     return sheet;
 }
 } // namespace choscordb::design

@@ -127,6 +127,14 @@ class ObjectDataWorkspaceTest : public QObject {
         auto* grid = data.findChild<QTableView*>("objectDataResults");
         QVERIFY(grid);
         QCOMPARE(grid->horizontalHeader()->height(), 34);
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+        QVERIFY(model);
+        choscordb::ResultColumn first{}, second{};
+        first.name = "name";
+        second.name = "value";
+        QVERIFY(model->setPage({first, second}, {{QString("Active"), QString("true")}}, 0));
+        QCOMPARE(grid->horizontalHeader()->sectionResizeMode(0), QHeaderView::Interactive);
+        QVERIFY(!grid->horizontalHeader()->stretchLastSection());
         QVERIFY(grid->alternatingRowColors());
         QCOMPARE(data.property("designSurface").toString(), QString("panel"));
         auto* queryGrid = window.findChild<QTableView*>("queryResults");

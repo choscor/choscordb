@@ -1,4 +1,5 @@
 #include "design_system/dialog_sections/dialog_sections.h"
+#include "design_system/style/style_resource.h"
 #include "design_system/theme.h"
 
 #include <QFrame>
@@ -22,6 +23,7 @@ DialogSections::DialogSections(QWidget* parent) : QWidget(parent) {
     footerSeparator->setFrameShape(QFrame::HLine);
     root_->addWidget(footerSeparator);
     auto* footer = new QWidget(this);
+    footer->setObjectName(QStringLiteral("dialogSectionsFooter"));
     footer_ = new QHBoxLayout(footer);
     root_->addWidget(footer);
     applyCompactSpacing();
@@ -45,10 +47,19 @@ void DialogSections::applyCompactSpacing() {
     body_->setContentsMargins(horizontalInset, metrics.spacingMedium, horizontalInset,
                               metrics.spacingMedium);
     body_->setSpacing(0);
-    header_->setContentsMargins(horizontalInset, metrics.spacingSmall, horizontalInset,
+    header_->setContentsMargins(horizontalInset, metrics.spacingSmall, spacing(Spacing::Two),
                                 metrics.spacingSmall);
-    footer_->setContentsMargins(horizontalInset, metrics.spacingSmall, horizontalInset,
-                                metrics.spacingSmall);
+    footer_->setContentsMargins(horizontalInset, spacing(Spacing::Three), horizontalInset,
+                                spacing(Spacing::Three));
+}
+
+QString dialogSectionsApplicationStyleSheet(const ResolvedTheme& theme) {
+    auto sheet = loadStyleSheet(
+        QStringLiteral("dialog_sections/dialog_sections_application_style_sheet.qss"));
+    sheet.replace(QStringLiteral("@footerSurface"), theme.colors.muted.name());
+    sheet.replace(QStringLiteral("@dialogRadius"),
+                  QString::number(radius(Radius::ExtraLarge)) + QStringLiteral("px"));
+    return sheet;
 }
 
 } // namespace choscordb::design

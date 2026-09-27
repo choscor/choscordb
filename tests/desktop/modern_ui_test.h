@@ -8,9 +8,13 @@ class ModernUiTest final : public QObject {
   private slots:
     void queryToolbarShowsOnlyRequestedControls();
     void applicationMenusExposeHelpAndAbout();
+    void applicationMenusProvideWindowControlsWithoutConnectionMenu();
     void resultActionsUseIconsInToolbarAndFootersOnlyContainPagination();
     void recoveryKeepsUnavailableToolbarActionsDisabled();
     void startUsesPanelAndMutedSupportingText();
+    void emptyStatesUseOneTextWithOneLineBreak();
+    void navigatorEmptyVariantsUseOneLineBreak();
+    void savedAndHistoryEmptyStatesUseOneLineBreak();
     void freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections();
     void savedProfileBadgesDistinguishDriversInBothThemes();
     void completedResultsKeepContentWidthsAndDisableCancel();

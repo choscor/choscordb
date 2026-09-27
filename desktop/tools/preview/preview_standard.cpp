@@ -9,6 +9,7 @@
 #include "design_system/metrics/metrics.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/tabs/tab_add_corner.h"
+#include "design_system/tabs/tabs_style.h"
 #include "design_system/text_area/text_area_style.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
@@ -46,6 +47,15 @@
 #include <QVBoxLayout>
 
 namespace choscordb::design::preview_detail {
+namespace {
+class PreviewDocumentTabs final : public QTabWidget {
+  public:
+    explicit PreviewDocumentTabs(QWidget* parent) : QTabWidget(parent) {
+        setTabBar(new DocumentTabBar(this));
+    }
+};
+} // namespace
+
 void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
     if (id == "numeric-fields") {
         auto* form = new QFormLayout;
@@ -87,6 +97,14 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         validated->setObjectName("select-validation");
         validated->setError("Select an option.");
         layout->addWidget(validated);
+    } else if (id == "switches") {
+        for (const bool checked : {false, true}) {
+            auto* control = new QCheckBox(checked ? "Switch on" : "Switch off", host);
+            control->setObjectName(checked ? "previewSwitchOn" : "previewSwitchOff");
+            control->setProperty("designRole", "switch");
+            control->setChecked(checked);
+            layout->addWidget(control);
+        }
     } else if (id == "checks-toggles") {
         for (auto state : {Qt::Unchecked, Qt::PartiallyChecked, Qt::Checked}) {
             auto* check = new QCheckBox(state == Qt::Unchecked ? "Unchecked"
@@ -198,16 +216,16 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         list->setMouseTracking(true);
         for (const auto& driver :
              {QStringLiteral("sqlite"), QStringLiteral("postgres"), QStringLiteral("mysql")}) {
-            auto* item = new QListWidgetItem(driver == "sqlite"     ? "test sqlite\nSQLite"
-                                             : driver == "postgres" ? "test postgres\nPostgreSQL"
-                                                                    : "test mysql\nMySQL",
+            auto* item = new QListWidgetItem(driver == "sqlite"     ? "test sqlite"
+                                             : driver == "postgres" ? "test postgres"
+                                                                    : "test mysql",
                                              list);
             item->setData(NavigationProfileDelegate::DriverRole, driver);
             if (driver == "mysql")
                 item->setToolTip("MySQL · Dolphin icon");
         }
         list->setCurrentRow(1);
-        list->setFixedHeight(138);
+        list->setFixedHeight(116);
         layout->addWidget(list);
         layout->addStretch();
     } else if (id == "dock") {
@@ -216,7 +234,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         styleDockWidget(*dock, resolvedThemeForWidget(*host));
         layout->addWidget(dock);
     } else if (id == "tabs") {
-        auto* tabs = new QTabWidget(host);
+        auto* tabs = new PreviewDocumentTabs(host);
         new TabAddCorner(tabs);
         tabs->tabBar()->setProperty("designTabVariant", "document");
         tabs->tabBar()->setElideMode(Qt::ElideRight);
@@ -224,9 +242,12 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         tabs->setTabsClosable(true);
         tabs->setMovable(true);
         for (int i = 0; i < 8; ++i) {
+            const auto icon = i == 1 ? Icon::Table : Icon::Code;
             tabs->addTab(new QLabel("Neutral document chrome", tabs),
-                         themedIcon(Icon::Code, resolvedThemeForWidget(*host).colors.mutedText, 16),
-                         i == 0 ? "abc.sql" : QString("History query %1 · 日本語").arg(i));
+                         themedIcon(icon, resolvedThemeForWidget(*host).colors.mutedText, 16),
+                         i == 0   ? "Untitled query 1"
+                         : i == 1 ? "orders"
+                                  : QString("History query %1 · 日本語").arg(i));
         }
         QObject::connect(tabs, &QTabWidget::tabCloseRequested, tabs, [tabs](int index) {
             auto* page = tabs->widget(index);

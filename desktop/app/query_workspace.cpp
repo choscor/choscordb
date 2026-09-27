@@ -549,7 +549,7 @@ bool QueryWorkspace::applyStagedEdits() {
     }
     if (batch.empty())
         return false;
-    design::ModalPanel box(widgets_.dialogParent);
+    design::ModalDialog box(widgets_.dialogParent);
     box.setWindowTitle(tr("Review grid changes"));
     auto* layout = new QVBoxLayout(&box);
     layout->addWidget(new QLabel(tr("Statements and bound parameter values"), &box));

@@ -6,6 +6,7 @@
 #include <QHeaderView>
 #include <QPainter>
 #include <QStyleOptionHeader>
+#include <QTextLayout>
 #include <algorithm>
 
 namespace choscordb {
@@ -33,12 +34,12 @@ class ResultColumnHeader final : public QHeaderView {
         const int icon =
             model()->headerData(logicalIndex, Qt::Horizontal, ResultTableModel::HeaderKeyRole)
                     .toBool()
-                ? 16
+                ? 17
                 : 0;
-        size.setWidth(
-            std::max(size.width(),
-                     26 + icon + fontMetrics().horizontalAdvance(name) +
-                         (type.isEmpty() ? 0 : 8 + QFontMetrics(small).horizontalAdvance(type))));
+        size.setWidth(24 + icon + fontMetrics().horizontalAdvance(name) +
+                      (type.isEmpty() ? 0
+                                      : 7 + QFontMetrics(small).horizontalAdvance(
+                                                QStringLiteral("· ") + type)));
         return size;
     }
 
@@ -79,23 +80,48 @@ class ResultColumnHeader final : public QHeaderView {
         }
         painter->setPen(text);
         const int available = std::max(0, rect.right() - x - 12);
-        const int nameWidth = std::min(fontMetrics().horizontalAdvance(name), available);
-        const QString shownName = fontMetrics().elidedText(name, Qt::ElideRight, nameWidth);
-        painter->drawText(QRect(x, rect.top(), nameWidth, rect.height()),
-                          Qt::AlignLeft | Qt::AlignVCenter, shownName);
-        x += fontMetrics().horizontalAdvance(shownName) + 7;
-        if (!type.isEmpty()) {
-            const QFont small = design::resolveTypography(design::TypographyRole::Small);
-            painter->setFont(small);
+        const QString label = type.isEmpty() ? name : name + QStringLiteral(" · ") + type;
+        const QFont small = design::resolveTypography(design::TypographyRole::Small);
+        const QFontMetrics primaryMetrics(font());
+        const QFontMetrics secondaryMetrics(small);
+        const auto textWidth = [&](const QString& candidate) {
+            const int primaryLength = type.isEmpty()
+                                          ? candidate.size()
+                                          : std::min(int(name.size()), int(candidate.size()));
+            return primaryMetrics.horizontalAdvance(candidate.left(primaryLength)) +
+                   secondaryMetrics.horizontalAdvance(candidate.mid(primaryLength));
+        };
+        QString shown = label;
+        if (textWidth(label) > available) {
+            int lower = 0;
+            int upper = label.size();
+            while (lower < upper) {
+                const int middle = (lower + upper + 1) / 2;
+                if (textWidth(label.left(middle) + QChar(0x2026)) <= available)
+                    lower = middle;
+                else
+                    upper = middle - 1;
+            }
+            shown = label.left(lower) + QChar(0x2026);
+        }
+        QTextLayout layout(shown, font());
+        QTextOption textOption;
+        textOption.setWrapMode(QTextOption::NoWrap);
+        layout.setTextOption(textOption);
+        if (!type.isEmpty() && shown.size() > name.size()) {
+            QTextCharFormat secondaryFormat;
+            secondaryFormat.setFont(small);
             QColor secondary = text;
             secondary.setAlphaF(0.65);
-            painter->setPen(secondary);
-            const int typeWidth = std::max(0, rect.right() - x - 12);
-            painter->drawText(QRect(x, rect.top(), typeWidth, rect.height()),
-                              Qt::AlignLeft | Qt::AlignVCenter,
-                              QFontMetrics(small).elidedText(QStringLiteral("· ") + type,
-                                                             Qt::ElideRight, typeWidth));
+            secondaryFormat.setForeground(secondary);
+            layout.setFormats(
+                {{int(name.size()), int(shown.size() - name.size()), secondaryFormat}});
         }
+        layout.beginLayout();
+        QTextLine line = layout.createLine();
+        line.setLineWidth(available);
+        layout.endLayout();
+        layout.draw(painter, QPointF(x, rect.top() + (rect.height() - line.height()) / 2));
         painter->restore();
     }
 };

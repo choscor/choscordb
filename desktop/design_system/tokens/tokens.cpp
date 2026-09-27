@@ -47,6 +47,7 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     color(QStringLiteral("backdrop"), colors.backdrop);
     add(QStringLiteral("backdrop.blur"), QString::number(backdropBlurRadius()) + "px");
     color(QStringLiteral("switch-track"), colors.switchTrack);
+    color(QStringLiteral("switch-thumb"), colors.switchThumb);
     color(QStringLiteral("sqlite-badge-background"), colors.sqliteBadgeBackground);
     color(QStringLiteral("sqlite-badge-foreground"), colors.sqliteBadgeForeground);
     color(QStringLiteral("sqlite-badge-border"), colors.sqliteBadgeBorder);
@@ -85,10 +86,12 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     pixels(QStringLiteral("size.icon.large"), dimension(Dimension::IconLarge));
     pixels(QStringLiteral("size.modal.width"), dimension(Dimension::ModalWidth));
     pixels(QStringLiteral("size.table.row"), dimension(Dimension::TableRow));
+    pixels(QStringLiteral("size.table.column"), dimension(Dimension::TableColumn));
     pixels(QStringLiteral("size.table.header"), dimension(Dimension::TableHeader));
     pixels(QStringLiteral("size.navigation.row"), dimension(Dimension::NavigationRow));
     pixels(QStringLiteral("size.tab.pane"), dimension(Dimension::PaneTab));
     pixels(QStringLiteral("size.tab.document"), dimension(Dimension::DocumentTab));
+    pixels(QStringLiteral("size.toast.progress"), dimension(Dimension::ToastProgress));
     add(QStringLiteral("icon.stroke"), QString::number(iconStrokeWidth()) + "px");
 
     pixels(QStringLiteral("border.width"), focusSpec().borderWidth);

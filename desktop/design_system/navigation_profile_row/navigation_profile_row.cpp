@@ -5,7 +5,7 @@
 
 namespace choscordb::design {
 QSize NavigationProfileDelegate::sizeHint(const QStyleOptionViewItem&, const QModelIndex&) const {
-    return {180, 42};
+    return {180, dimension(Dimension::NavigationRow)};
 }
 void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
                                       const QModelIndex& index) const {
@@ -25,29 +25,21 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     painter->setPen(sqlite ? colors.sqliteBadgeBorder : colors.postgresBadgeBorder);
     painter->setBrush(sqlite ? colors.sqliteBadgeBackground : colors.postgresBadgeBackground);
     painter->drawRoundedRect(badge, 6, 6);
-    const auto ink = selected ? colors.sidebarForeground : colors.mutedText;
     themedIcon(sqlite                                            ? Icon::SQLite
                : index.data(DriverRole).toString() == "postgres" ? Icon::PostgreSQL
                : index.data(DriverRole).toString() == "mysql"    ? Icon::MySQL
                                                                  : Icon::Database,
                sqlite ? colors.sqliteBadgeForeground : colors.postgresBadgeForeground, 16)
         .paint(painter, badge.adjusted(5, 6, -6, -7));
-    const auto lines = index.data(Qt::DisplayRole).toString().split('\n');
+    const auto title = index.data(Qt::DisplayRole).toString().section('\n', 0, 0);
     const int textLeft = badge.right() + 8;
     const int textWidth = qMax(0, bounds.right() - textLeft - 25);
     auto titleFont = resolveTypography(TypographyRole::Field);
     painter->setFont(titleFont);
     painter->setPen(colors.text);
-    painter->drawText(
-        QRect(textLeft, bounds.top() + 4, textWidth, 17), Qt::AlignLeft | Qt::AlignVCenter,
-        QFontMetrics(titleFont).elidedText(lines.value(0), Qt::ElideRight, textWidth));
-    const auto detailFont = resolveTypography(TypographyRole::NavigationDetail);
-    painter->setFont(detailFont);
-    painter->setPen(ink);
-    const auto detail = lines.value(1) + (selected ? tr(" · Selected") : QString{});
-    painter->drawText(QRect(textLeft, bounds.top() + 22, textWidth, 13),
+    painter->drawText(QRect(textLeft, bounds.top(), textWidth, bounds.height()),
                       Qt::AlignLeft | Qt::AlignVCenter,
-                      QFontMetrics(detailFont).elidedText(detail, Qt::ElideRight, textWidth));
+                      QFontMetrics(titleFont).elidedText(title, Qt::ElideRight, textWidth));
     if (selected)
         themedIcon(Icon::Check, colors.sidebarForeground, 14)
             .paint(painter, QRect(bounds.right() - 21, bounds.center().y() - 7, 14, 14));

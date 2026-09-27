@@ -407,7 +407,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                 filterHistory();
                 historyStatus->setVisible(entries.isEmpty());
                 historyStatus->setText(
-                    entries.isEmpty() ? tr("No query history yet.\n\nRun a query to see it here.")
+                    entries.isEmpty() ? tr("No query history yet.\nRun a query to see it here.")
                                       : QString{});
             });
     connect(workspace_->adapter(), &EngineAdapter::recoveryFailed, this,

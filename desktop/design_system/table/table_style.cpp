@@ -9,6 +9,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
+#include <QHeaderView>
 #include <QHelpEvent>
 #include <QItemSelectionModel>
 #include <QMouseEvent>
@@ -129,6 +130,11 @@ QWidget* ResultTableDelegate::createEditor(QWidget* parent, const QStyleOptionVi
     combo->addItems(labels);
     if (index.data(ChoiceNullableRole).toBool())
         combo->addItem(tr("NULL"), true);
+    connect(combo, &QComboBox::activated, combo,
+            [delegate = const_cast<ResultTableDelegate*>(this), combo](int) {
+                emit delegate->commitData(combo);
+                emit delegate->closeEditor(combo);
+            });
     return combo;
 }
 
@@ -197,6 +203,7 @@ QString tableItemStyleSheet() {
 ResultTableDelegate* configureResultTable(QTableView& table, bool showGrid) {
     table.setShowGrid(showGrid);
     table.setGridStyle(Qt::SolidLine);
+    table.horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     auto* delegate = new ResultTableDelegate(table);
     table.setItemDelegate(delegate);
     return delegate;

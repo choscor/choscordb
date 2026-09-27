@@ -21,12 +21,12 @@ preserved by the component extraction.
 | Switch | `switch/`: existing `designRole="switch"` track and thumb painting |
 | Tool button | `tool_button/`: QToolButton states and menu-indicator rules |
 | Toolbar | `toolbar/`: toolbar geometry, separators, and muted workspace variant |
-| Tabs | `tabs/`: pane/document variants and tab-close painting |
-| Table | `table/`: table font and row styles |
+| Tabs | `tabs/`: pane/document variants, left-aligned document labels, and tab-close painting |
+| Table | `table/`: table font, row styles, and interactive result headers |
 | Tree | `tree/`: navigation rows and branch painting |
 | List | `list/`: list item styles |
 | Item view | `item_view/`: selectors genuinely shared by table/tree/list |
-| Saved connection row | `navigation_profile_row/`: two-line database profile delegate and selection state |
+| Saved connection row | `navigation_profile_row/`: compact database profile delegate and selection state |
 | Recent history row | `history_row/`: SQL excerpt, database metadata, status badge, and muted hover delegate |
 | Header | `header/`: header and table-corner styles |
 | Scrollbar | `scrollbar/`: scrollbar dimensions and states |
@@ -36,10 +36,10 @@ preserved by the component extraction.
 | Tooltip | `tooltip/`: owner-contained painted surface and event lifecycle |
 | Dock | `dock/`: existing dock-title styles |
 | Dialog presentation | `dialog_presentation/`: owner-contained modal surfaces, shared backdrop, focus boundary and restoration |
-| Modal panel | `modal_panel/`: owner-contained modal `QDialog` surface |
+| Modal dialog | `modal_panel/`: `ModalDialog` surface; the dimmed overlay belongs to `dialog_presentation/` |
 | Right sheet | `right_sheet/`: right-aligned modal shell with header, scrolling body and fixed muted footer |
 | Dialog shell | `dialog_shell/`: reusable nonmodal `QDialog` shell and content/status styles |
-| Dialog sections | `dialog_sections/`: compact header, growing body, and footer layout for dialogs |
+| Dialog sections | `dialog_sections/`: compact header, growing body, and muted padded footer for dialogs |
 | Confirmation dialog | `confirmation_dialog/`: reusable QMessageBox contract and presentation |
 | Toast region | `toast_region/`: host-attached success, warning, danger, and persistent progress overlays with accessibility announcement |
 | Shared glyphs | `control_glyphs/`: select/spin overlays and arrow painting; Qt retains hit testing |
@@ -49,6 +49,8 @@ where already present, private painting/event helpers. For example, input and
 key-sequence fields share selectors in `field/`; radio/group captions share a
 color rule there. They do not need empty subclasses to count as organized
 components. Runtime helpers in `design::detail` are implementation details.
+The ERD's stock `QGraphicsView` receives the application palette; its scene
+uses semantic theme colors and metrics in the feature widget.
 
 ## Foundations and integration
 
@@ -98,6 +100,7 @@ owning modules.
 | Text areas and diagnostics | Text area |
 | Selects and popup rows | Select, shared control glyphs |
 | Checks and toggles | Checkbox, switch, radio button |
+| Switches | Switch thumb and track in both states |
 | Lists and navigation | List, tree, shared item view styles |
 | Saved connection rows | Navigation profile row |
 | Recent query history rows | Recent history row |
@@ -109,7 +112,7 @@ owning modules.
 | Table headers, cells and selection | Table, header, shared item view styles |
 | Tooltips and popovers | Tooltip |
 | Dialog header, body and footer | Dialog sections |
-| Modal panel, Nonmodal content, Destructive confirmations | Modal panel, dialog shell, confirmation dialog, shared dialog presentation |
+| Modal dialog, Nonmodal content, Destructive confirmations | Modal dialog, dialog shell, confirmation dialog, shared dialog presentation |
 | Right sheet | Right sheet and shared dialog presentation |
 | Menus and submenus | Menu |
 | Feedback and toast states | Badge, progress, toast region |

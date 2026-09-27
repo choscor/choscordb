@@ -2,6 +2,7 @@
 #include "design_system/control_glyphs/arrow_indicator.h"
 #include "design_system/theme.h"
 #include <QStyleOption>
+#include <QWidget>
 
 namespace choscordb::design::detail {
 bool drawTreeIndicator(QStyle::PrimitiveElement element, const QStyleOption* option,
@@ -13,7 +14,11 @@ bool drawTreeIndicator(QStyle::PrimitiveElement element, const QStyleOption* opt
                     ? QStyle::PE_IndicatorArrowDown
                     : (option->direction == Qt::RightToLeft ? QStyle::PE_IndicatorArrowLeft
                                                             : QStyle::PE_IndicatorArrowRight);
-            drawArrowIndicator(arrow, option, painter, widget);
+            QStyleOption branch(*option);
+            if (widget && widget->property("designNavigationTree").toBool())
+                branch.palette.setColor(QPalette::ButtonText,
+                                        resolvedThemeForWidget(*widget).colors.mutedText);
+            drawArrowIndicator(arrow, &branch, painter, widget);
         }
         return true;
     }

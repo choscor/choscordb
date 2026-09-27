@@ -6,6 +6,7 @@
     <file alias="button/button_painted_style_sheet.qss">../design_system/button/button_painted_style_sheet.qss</file>
     <file alias="button/button_style_sheet.qss">../design_system/button/button_style_sheet.qss</file>
     <file alias="dialog_shell/dialog_shell_application_style_sheet.qss">../design_system/dialog_shell/dialog_shell_application_style_sheet.qss</file>
+    <file alias="dialog_sections/dialog_sections_application_style_sheet.qss">../design_system/dialog_sections/dialog_sections_application_style_sheet.qss</file>
     <file alias="dock/title.qss">../design_system/dock/title.qss</file>
     <file alias="dock/widget.qss">../design_system/dock/widget.qss</file>
     <file alias="field/field_application_base_style_sheet.qss">../design_system/field/field_application_base_style_sheet.qss</file>

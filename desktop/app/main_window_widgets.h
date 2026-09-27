@@ -1,6 +1,7 @@
 #pragma once
 #include "design_system/icons.h"
 #include "design_system/tabs/tab_add_corner.h"
+#include "design_system/tabs/tabs_style.h"
 #include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
 #include <QApplication>
@@ -126,9 +127,9 @@ class HoveredTabCloseVisibility final : public QObject {
     QTabBar* tabs_;
 };
 
-class WorkspaceTabBar final : public QTabBar {
+class WorkspaceTabBar final : public design::DocumentTabBar {
   public:
-    using QTabBar::QTabBar;
+    using design::DocumentTabBar::DocumentTabBar;
 
     void setHeader(QWidget* header) {
         header_ = header;

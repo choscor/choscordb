@@ -1,6 +1,7 @@
 #include "design_system/toast_region/toast_region.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/icons.h"
+#include "design_system/metrics/metrics.h"
 #include <QAccessible>
 #include <QDialog>
 #include <QEvent>
@@ -77,8 +78,13 @@ void ToastRegion::placeOverlay() {
     setMaximumHeight(QWIDGETSIZE_MAX);
     adjustSize();
     if (!progress_->isHidden()) {
-        setFixedHeight(qMax(sizeHint().height() + 28, 72));
-        progress_->setGeometry(12, height() - 20, this->width() - 24, 8);
+        setFixedHeight(qMax(sizeHint().height() + design::spacing(design::Spacing::Eight),
+                            design::dimension(design::Dimension::ToastProgress)));
+        progress_->setGeometry(design::spacing(design::Spacing::Three),
+                               height() - design::spacing(design::Spacing::Three) -
+                                   design::spacing(design::Spacing::Two),
+                               this->width() - 2 * design::spacing(design::Spacing::Three),
+                               design::spacing(design::Spacing::Two));
     }
     move(qMax(0, overlayHost_->width() - this->width() - 16),
          qMax(0, overlayHost_->height() - this->height() - 16));

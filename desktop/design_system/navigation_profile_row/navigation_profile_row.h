@@ -3,8 +3,8 @@
 #include <QStyledItemDelegate>
 
 namespace choscordb::design {
-// A bounded two-line sidebar row. DisplayRole contains title and detail
-// separated by a newline, paired with a theme-aware database icon.
+// A compact sidebar row. The first DisplayRole line is the title, paired with
+// a theme-aware database icon.
 class NavigationProfileDelegate final : public QStyledItemDelegate {
   public:
     enum { DriverRole = Qt::UserRole + 72 };

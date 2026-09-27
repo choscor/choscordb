@@ -8,9 +8,14 @@ class PreviewTest final : public QObject {
   private slots:
     void codePreviewTextAreaUsesSharedVariantInBothThemes();
     void navigationTreeSpecimenUsesRealTreeInBothThemes();
+    void switchSpecimenUsesRealControlsInBothThemes();
     void recentHistoryRowsUseSharedDelegateInBothThemes();
     void editorResultsSplitUsesEqualPanesInBothThemes();
     void documentTabSpecimenShowsFixedWidthTabsInBothThemes();
+    void documentTabsShowKeyboardFocusInBothThemes();
+    void tableHeadersCanBeDraggedInBothThemes();
+    void dialogSectionsHaveMutedPaddedFooterInBothThemes();
+    void modalSpecimenNamesTheDialogSurface();
     void workspaceToolbarSpecimenUsesMutedSurfaceInBothThemes();
     void richTextParagraphsHaveCompactSpacing();
     void showToastOpensTransientToastAtViewportCorner();
@@ -34,6 +39,7 @@ class PreviewTest final : public QObject {
     void rightSheetSpecimenUsesModalBoundaryInBothThemes();
     void tableHoverPreservesBackgroundInBothThemes();
     void typedTableSpecimenUsesSharedControlsInBothThemes();
+    void choiceEditorSpecimenShowsRealControlInBothThemes();
     void typedTableDropdownAndLinkActionWorkThroughView();
     void resultTableActionTracksModelReplacement();
     void typedTableDropdownStagesSelection();

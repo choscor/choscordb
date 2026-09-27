@@ -4,8 +4,10 @@
 
 class QHBoxLayout;
 class QVBoxLayout;
+class QString;
 
 namespace choscordb::design {
+struct ResolvedTheme;
 
 // Three-part dialog content with compact, separated action bars.
 class DialogSections : public QWidget {
@@ -23,5 +25,7 @@ class DialogSections : public QWidget {
     QVBoxLayout* body_ = nullptr;
     QHBoxLayout* footer_ = nullptr;
 };
+
+QString dialogSectionsApplicationStyleSheet(const ResolvedTheme& theme);
 
 } // namespace choscordb::design

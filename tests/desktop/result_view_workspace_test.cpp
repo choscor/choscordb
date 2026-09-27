@@ -5,6 +5,7 @@
 #include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
+#include "design_system/fonts/fonts.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/table/table_style.h"
 #include "models/result_table_model.h"
@@ -54,6 +55,102 @@ class ResultViewWorkspaceTest : public QObject {
     }
 
   private slots:
+    void resultHeaderStartsAtCombinedLabelWidthAndRemainsResizable() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+        QVERIFY(model);
+        choscordb::ResultColumn shortColumn{}, longColumn{};
+        shortColumn.name = "id";
+        shortColumn.databaseType = "bigint";
+        longColumn.name = "created_at";
+        longColumn.databaseType = "timestamp with time zone";
+        QVERIFY(model->setPage({shortColumn, longColumn}, {{qint64(1), QString("x")}}, 0));
+        auto* header = grid->horizontalHeader();
+        const auto primary = QFontMetrics(header->font());
+        const auto secondary = QFontMetrics(
+            choscordb::design::resolveTypography(choscordb::design::TypographyRole::Small));
+        const int shortText =
+            primary.horizontalAdvance("id") + secondary.horizontalAdvance("· bigint");
+        const int longText = primary.horizontalAdvance("created_at") +
+                             secondary.horizontalAdvance("· timestamp with time zone");
+        QVERIFY(grid->columnWidth(0) >= shortText + 24);
+        QVERIFY(grid->columnWidth(0) <= shortText + 48);
+        QVERIFY(grid->columnWidth(1) >= longText + 24);
+        QVERIFY(grid->columnWidth(1) <= longText + 48);
+        const int beforeKey = grid->columnWidth(0);
+        model->setKeyColumns({true, false});
+        QVERIFY(grid->columnWidth(0) >= beforeKey + 17);
+        header->resizeSection(1, 100);
+        QCOMPARE(grid->columnWidth(1), 100);
+        QVERIFY(model->setPage({shortColumn, longColumn}, {{qint64(2), QString("y")}}, 0));
+        model->setKeyColumns({true, false});
+        QCOMPARE(grid->columnWidth(1), 100);
+    }
+    void queryResultHeaderKeepsTheFullLabelWhenDataIsShort() {
+        choscordb::MainWindow window;
+        auto* grid = window.findChild<QTableView*>("queryResults");
+        QVERIFY(grid);
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+        QVERIFY(model);
+        choscordb::ResultColumn column{};
+        column.name = "created_at";
+        column.databaseType = QString(70, 'x');
+        QVERIFY(model->setPage({column}, {{QString("x")}}, 0));
+        const auto primary = QFontMetrics(grid->horizontalHeader()->font());
+        const auto secondary = QFontMetrics(
+            choscordb::design::resolveTypography(choscordb::design::TypographyRole::Small));
+        const int label = primary.horizontalAdvance(column.name) +
+                          secondary.horizontalAdvance("· " + column.databaseType);
+        QVERIFY(grid->columnWidth(0) >= label + 24);
+    }
+    void choosingBooleanCommitsTheCellImmediately() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(500, 300);
+        data.show();
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+        QVERIFY(model);
+        choscordb::ResultColumn column{};
+        column.name = "active";
+        column.databaseType = "boolean";
+        QVERIFY(model->setPage({column}, {{true}}, 0));
+        choscordb::ResultCellMetadata metadata{};
+        metadata.boolean = true;
+        metadata.nullable = false;
+        QVERIFY(model->setCellMetadata({metadata}));
+        model->setEditableColumns({true}, false, false);
+        const auto cell = model->index(0, 0);
+        grid->edit(cell);
+        auto* combo = grid->findChild<QComboBox*>("resultCellChoiceEditor");
+        QVERIFY(combo);
+        QPointer<QComboBox> firstEditor = combo;
+        QCOMPARE(combo->currentText(), QString("true"));
+        combo->showPopup();
+        const auto second = combo->view()->model()->index(1, 0);
+        QTest::mouseClick(combo->view()->viewport(), Qt::LeftButton, {},
+                          combo->view()->visualRect(second).center());
+        QCOMPARE(combo->currentText(), QString("false"));
+        QTRY_COMPARE(model->data(cell, Qt::DisplayRole).toString(), QString("false"));
+        QVERIFY(model->hasPendingEdits());
+        QTRY_VERIFY(firstEditor.isNull() || !firstEditor->isVisible());
+        grid->edit(cell);
+        combo = nullptr;
+        for (auto* candidate : grid->findChildren<QComboBox*>("resultCellChoiceEditor"))
+            if (candidate->isVisible())
+                combo = candidate;
+        QVERIFY(combo);
+        QCOMPARE(combo->currentText(), QString("false"));
+        combo->showPopup();
+        const auto first = combo->view()->model()->index(0, 0);
+        QTest::mouseClick(combo->view()->viewport(), Qt::LeftButton, {},
+                          combo->view()->visualRect(first).center());
+        QTRY_COMPARE(model->data(cell, Qt::DisplayRole).toString(), QString("true"));
+    }
     void duplicateRowUsesTheRowUnderThePointer() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();

@@ -147,8 +147,9 @@ void ModernUiTest::startListsRealSavedProfilesAndConnectsWithoutExecuting() {
     profile.path = ":memory:";
     workspace->adapter()->saveProfile(profile, 991);
     QTRY_COMPARE(profiles->count(), 1);
-    QVERIFY(profiles->item(0)->text().contains("Start SQLite"));
-    QCOMPARE(profiles->visualItemRect(profiles->item(0)).height(), 42);
+    QCOMPARE(profiles->item(0)->text(), QString("Start SQLite"));
+    const auto rowHeight = profiles->visualItemRect(profiles->item(0)).height();
+    QVERIFY(rowHeight >= 32 && rowHeight <= 36);
     QVERIFY(profiles->height() < 100);
     QVERIFY(!profiles->item(0)->icon().isNull());
     auto* startIcon = window.findChild<QLabel*>("startDatabaseIcon");

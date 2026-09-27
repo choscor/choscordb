@@ -7,7 +7,7 @@
 #include <QShowEvent>
 
 namespace choscordb::design {
-ModalPanel::ModalPanel(QWidget* parent) : QDialog(parent), presentation_(*this) {
+ModalDialog::ModalDialog(QWidget* parent) : QDialog(parent), presentation_(*this) {
     presentation_.makeModal();
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_WindowPropagation);
@@ -16,8 +16,8 @@ ModalPanel::ModalPanel(QWidget* parent) : QDialog(parent), presentation_(*this) 
     }
     setProperty("appDialog", true);
 }
-ModalPanel::~ModalPanel() = default;
-void ModalPanel::setEdgeToEdgeContent(bool enabled) {
+ModalDialog::~ModalDialog() = default;
+void ModalDialog::setEdgeToEdgeContent(bool enabled) {
     edgeToEdgeContent_ = enabled;
     if (layout()) {
         const int padding = enabled ? 0 : spacing(Spacing::Four);
@@ -25,13 +25,13 @@ void ModalPanel::setEdgeToEdgeContent(bool enabled) {
         layout()->setSpacing(padding);
     }
 }
-void ModalPanel::open() {
+void ModalDialog::open() {
     // Keep the asynchronous QDialog contract without requesting a native sheet.
     setResult(0);
     show();
 }
-QSize ModalPanel::sizeHint() const {
-    const_cast<ModalPanel*>(this)->ensurePolished();
+QSize ModalDialog::sizeHint() const {
+    const_cast<ModalDialog*>(this)->ensurePolished();
     const int width = parentWidget() ? qMin(dimension(Dimension::ModalWidth),
                                             qMax(1, parentWidget()->width() - 32))
                                      : dimension(Dimension::ModalWidth);
@@ -42,7 +42,7 @@ QSize ModalPanel::sizeHint() const {
     }
     return hint;
 }
-bool ModalPanel::event(QEvent* event) {
+bool ModalDialog::event(QEvent* event) {
     if (event->type() == QEvent::Polish && layout()) {
         const int padding = edgeToEdgeContent_ ? 0 : spacing(Spacing::Four);
         layout()->setContentsMargins(padding, padding, padding, padding);
@@ -50,15 +50,15 @@ bool ModalPanel::event(QEvent* event) {
     }
     return QDialog::event(event);
 }
-void ModalPanel::paintEvent(QPaintEvent*) {
+void ModalDialog::paintEvent(QPaintEvent*) {
     paintDialogSurface(*this);
 }
-void ModalPanel::showEvent(QShowEvent* event) {
+void ModalDialog::showEvent(QShowEvent* event) {
     resize(sizeHint());
     QDialog::showEvent(event);
     presentation_.shown();
 }
-void ModalPanel::hideEvent(QHideEvent* event) {
+void ModalDialog::hideEvent(QHideEvent* event) {
     QDialog::hideEvent(event);
     presentation_.hidden();
 }

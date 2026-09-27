@@ -100,6 +100,8 @@ int dimension(Dimension value) {
         return 480;
     case Dimension::TableRow:
         return 29;
+    case Dimension::TableColumn:
+        return 160;
     case Dimension::TableHeader:
         return 30;
     case Dimension::NavigationRow:
@@ -110,6 +112,8 @@ int dimension(Dimension value) {
         return 33;
     case Dimension::Progress:
         return 5;
+    case Dimension::ToastProgress:
+        return 82;
     case Dimension::Badge:
         return 20;
     case Dimension::SwitchWidth:

@@ -105,16 +105,17 @@ QList<Specimen> specimens() {
          "desktop/design_system/select/select_popup.cpp"},
         {"Components", "checks-toggles", "Checks and toggles",
          "desktop/design_system/checkbox/checkbox_indicator.cpp"},
+        {"Components", "switches", "Switches", "desktop/design_system/switch/switch_indicator.cpp"},
         {"Components", "shortcuts", "Shortcut entry",
          "desktop/design_system/field/field_style.cpp"},
         {"Components", "lists-navigation", "Lists and navigation",
          "desktop/design_system/tree/tree_style.cpp"},
-        {"Components", "navigation-profile-row", "Saved connection rows",
+        {"Components", "navigation-profile-row", "Compact saved connection rows",
          "desktop/design_system/navigation_profile_row/navigation_profile_row.cpp"},
         {"Components", "recent-history-row", "Recent query history rows",
          "desktop/design_system/history_row/history_row.cpp"},
         {"Components", "dock", "Dock panel", "desktop/design_system/dock/dock_style.cpp"},
-        {"Components", "tabs", "Tabs with close and overflow",
+        {"Components", "tabs", "Compact document tabs with close and overflow",
          "desktop/design_system/tabs/tabs_style.cpp"},
         {"Components", "toolbar", "Workspace toolbar",
          "desktop/design_system/toolbar/toolbar_style.cpp"},
@@ -128,7 +129,7 @@ QList<Specimen> specimens() {
          "desktop/design_system/tooltip/tooltip.cpp"},
         {"Components", "dialog-sections", "Dialog header, body and footer",
          "desktop/design_system/dialog_sections/dialog_sections.cpp"},
-        {"Components", "dialogs", "Modal panel",
+        {"Components", "dialogs", "Modal dialog",
          "desktop/design_system/modal_panel/modal_panel.cpp"},
         {"Components", "right-sheet", "Right sheet",
          "desktop/design_system/right_sheet/right_sheet.cpp"},
@@ -272,7 +273,7 @@ void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     auto* open = new Button("Open sectioned modal", host);
     open->setObjectName("previewOpenDialogSections");
     layout->addWidget(open);
-    auto* dialog = new ModalPanel(host);
+    auto* dialog = new ModalDialog(host);
     dialog->setEdgeToEdgeContent(true);
     dialog->setObjectName("previewDialogSectionsModal");
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
@@ -348,7 +349,7 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
         return;
     }
     QDialog* dialog = modeless ? static_cast<QDialog*>(new choscordb::DialogShell(host))
-                               : static_cast<QDialog*>(new ModalPanel(host));
+                               : static_cast<QDialog*>(new ModalDialog(host));
     dialog->setAttribute(Qt::WA_WindowPropagation);
     dialog->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
     dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
@@ -505,10 +506,10 @@ void populateButtons(QWidget* host, QVBoxLayout* layout) {
     profiles->setObjectName("savedConnections");
     profiles->setProperty("designSurface", "sidebar");
     profiles->setItemDelegate(new NavigationProfileDelegate(profiles));
-    auto* profile = new QListWidgetItem("Example Postgres\nPostgreSQL · Selected", profiles);
+    auto* profile = new QListWidgetItem("Example Postgres", profiles);
     profile->setData(NavigationProfileDelegate::DriverRole, "postgres");
     profiles->setCurrentItem(profile);
-    profiles->setFixedHeight(52);
+    profiles->setFixedHeight(44);
     navigatorLayout->addWidget(profiles);
     layout->addWidget(navigator);
 
@@ -814,8 +815,21 @@ void PreviewWindow::rebuildSpecimens() {
             auto* enumeration = new QTableWidgetItem("ready");
             enumeration->setData(ChoiceLabelsRole, QStringList{"ready", "pending", "done"});
             table->setItem(2, 1, enumeration);
-            table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+            table->horizontalHeader()->resizeSection(0, 240);
             contentLayout->addWidget(table, 1);
+            auto* choiceTable = new QTableWidget(content);
+            choiceTable->setObjectName("previewChoiceEditorTable");
+            configureResultTable(*choiceTable, false);
+            choiceTable->setColumnCount(2);
+            choiceTable->setHorizontalHeaderLabels({"Choice editor", "Boolean"});
+            choiceTable->setRowCount(1);
+            choiceTable->setItem(0, 0, new QTableWidgetItem("Active"));
+            auto* choice = new QTableWidgetItem("true");
+            choice->setData(ChoiceLabelsRole, QStringList{"true", "false"});
+            choiceTable->setItem(0, 1, choice);
+            choiceTable->openPersistentEditor(choice);
+            choiceTable->setFixedHeight(80);
+            contentLayout->addWidget(choiceTable);
         } else if (id == "right-sheet") {
             populateRightSheet(content, contentLayout);
         } else if (id == "dialog-sections") {

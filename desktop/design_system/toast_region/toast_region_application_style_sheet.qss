@@ -4,28 +4,34 @@ QLabel#toastRegion, QLabel#progressToast {
   border: %2px solid %3;
   border-radius: %16px;
   padding: %5px;
-  border-left: 4px solid %20;
 }
 
 QLabel#toastRegion[variant="success"] {
   background-color: @success;
   color: @successForeground;
-  border-left: 4px solid %19;
 }
 
 QLabel#toastRegion[variant="warning"] {
   background-color: @warningSurface;
-  border-left: 4px solid %20;
 }
 
 QLabel#toastRegion[variant="danger"] {
   background-color: @dangerSurface;
-  border-left: 4px solid %21;
 }
 
 QLabel#toastRegion[variant="progress"], QLabel#progressToast[variant="progress"] {
   background-color: @warningSurface;
-  border-left: 4px solid %20;
+  padding-top: @toastProgressTopPadding;
+}
+
+QProgressBar#toastProgress {
+  min-height: @toastProgressHeight;
+  max-height: @toastProgressHeight;
+  border-radius: @toastProgressRadius;
+}
+
+QProgressBar#toastProgress::chunk {
+  border-radius: @toastProgressRadius;
 }
 
 QToolButton#toastDismiss {
