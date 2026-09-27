@@ -51,6 +51,21 @@ def macos_qmake_overrides(sdk):
     return [] if agl.exists() else ["QMAKE_LIBS_OPENGL="]
 
 
+def macos_native_architecture():
+    """Use the host CPU even when setup-python runs under Rosetta."""
+    try:
+        arm_capability = subprocess.check_output(
+            ["sysctl", "-n", "hw.optional.arm64"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except subprocess.CalledProcessError:
+        arm_capability = "0"
+    if arm_capability == "1":
+        return "arm64"
+    return platform.machine()
+
+
 def remove_missing_agl_from_makefile(makefile):
     """Remove obsolete AGL inherited from Qt framework PRL metadata."""
     text = makefile.read_text(encoding="utf-8")
@@ -113,7 +128,7 @@ def main():
     ]
     without_agl = False
     if platform.system() == "Darwin":
-        command.append(f"QMAKE_APPLE_DEVICE_ARCHS={platform.machine()}")
+        command.append(f"QMAKE_APPLE_DEVICE_ARCHS={macos_native_architecture()}")
         sdk = subprocess.check_output(["xcrun", "--show-sdk-path"], text=True).strip()
         overrides = macos_qmake_overrides(sdk)
         command.extend(overrides)
