@@ -8,6 +8,7 @@
 #include <QMenuBar>
 #include <QPointer>
 #include <QStandardPaths>
+#include <QStyle>
 #include <QTimer>
 #import <Sparkle/Sparkle.h>
 
@@ -15,8 +16,6 @@
   @public
     QPointer<choscordb::MainWindow> window;
     QPointer<QAction> checkAction;
-    QPointer<QAction> automaticAction;
-    QPointer<QAction> installAction;
 }
 - (void)retryInstall;
 @property(nonatomic, strong) SPUStandardUpdaterController* controller;
@@ -30,10 +29,8 @@
                        context:(void*)context {
     if ([keyPath isEqualToString:@"canCheckForUpdates"]) {
         if (checkAction)
-            checkAction->setEnabled(self.controller.updater.canCheckForUpdates);
-    } else if ([keyPath isEqualToString:@"automaticallyChecksForUpdates"]) {
-        if (automaticAction)
-            automaticAction->setChecked(self.controller.updater.automaticallyChecksForUpdates);
+            checkAction->setEnabled(self.installHandler != nil ||
+                                    self.controller.updater.canCheckForUpdates);
     } else {
         [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
     }
@@ -44,8 +41,8 @@
     (void)updater;
     (void)item;
     self.installHandler = installHandler;
-    if (installAction)
-        installAction->setEnabled(true);
+    if (checkAction)
+        checkAction->setEnabled(true);
     // Return to Sparkle before starting Qt's asynchronous persistence/shutdown path.
     QTimer::singleShot(0, window, [self] { [self retryInstall]; });
     return YES;
@@ -56,15 +53,14 @@
     window->requestUpdateRestart([self] {
         auto handler = self.installHandler;
         self.installHandler = nil;
-        if (installAction)
-            installAction->setEnabled(false);
+        if (checkAction)
+            checkAction->setEnabled(self.controller.updater.canCheckForUpdates);
         if (handler)
             handler();
     });
 }
 - (void)dealloc {
     [self.controller.updater removeObserver:self forKeyPath:@"canCheckForUpdates"];
-    [self.controller.updater removeObserver:self forKeyPath:@"automaticallyChecksForUpdates"];
 }
 @end
 
@@ -77,36 +73,29 @@ class NativeUpdater final : public QObject {
         auto* check = menu->addAction(tr("Check for Updates…"));
         check->setObjectName("checkForUpdates");
         check->setMenuRole(QAction::ApplicationSpecificRole);
+        check->setIcon(window.style()->standardIcon(QStyle::SP_BrowserReload));
+        check->setIconVisibleInMenu(true);
         check->setEnabled(false);
-        auto* automatic = menu->addAction(tr("Automatically Check for Updates"));
-        automatic->setObjectName("automaticUpdateChecks");
-        automatic->setMenuRole(QAction::ApplicationSpecificRole);
-        automatic->setCheckable(true);
-        auto* install = menu->addAction(tr("Install Downloaded Update…"));
-        install->setObjectName("installDownloadedUpdate");
-        install->setMenuRole(QAction::ApplicationSpecificRole);
-        install->setEnabled(false);
         delegate_ = [[ChoscorUpdaterDelegate alloc] init];
         delegate_->window = &window;
         delegate_->checkAction = check;
-        delegate_->automaticAction = automatic;
-        delegate_->installAction = install;
         delegate_.controller =
             [[SPUStandardUpdaterController alloc] initWithStartingUpdater:NO
                                                           updaterDelegate:delegate_
                                                        userDriverDelegate:nil];
-        for (NSString* key in @[ @"canCheckForUpdates", @"automaticallyChecksForUpdates" ])
-            [delegate_.controller.updater
-                addObserver:delegate_
-                 forKeyPath:key
-                    options:(NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew)
-                    context:nullptr];
-        connect(check, &QAction::triggered, this,
-                [this] { [delegate_.controller checkForUpdates:nil]; });
-        connect(automatic, &QAction::triggered, this, [this](bool enabled) {
-            delegate_.controller.updater.automaticallyChecksForUpdates = enabled;
+        [delegate_.controller.updater
+            addObserver:delegate_
+             forKeyPath:@"canCheckForUpdates"
+                options:(NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew)
+                context:nullptr];
+        // A cancelled close leaves Sparkle's postponed install pending. The remaining
+        // update action must let the user retry after resolving unsaved work.
+        connect(check, &QAction::triggered, this, [this] {
+            if (delegate_.installHandler)
+                [delegate_ retryInstall];
+            else
+                [delegate_.controller checkForUpdates:nil];
         });
-        connect(install, &QAction::triggered, this, [this] { [delegate_ retryInstall]; });
         // Sparkle owns consent and persisted NSUserDefaults. With no plist override,
         // its standard permission prompt appears before scheduled checks are enabled.
         [delegate_.controller startUpdater];
