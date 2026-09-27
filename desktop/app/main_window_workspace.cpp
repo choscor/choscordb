@@ -308,6 +308,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                             {},
                             restoreResultRows},
                            this);
+    connect(workspace_, &QueryWorkspace::foreignKeyRequested, this, &MainWindow::openReferencedRow);
     connect(grid->model(), &QAbstractItemModel::modelReset, grid, [grid, fitted = false]() mutable {
         if (!grid->model()->columnCount()) {
             fitted = false;

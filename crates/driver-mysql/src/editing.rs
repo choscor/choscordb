@@ -2,6 +2,16 @@ use crate::{error, id, normalize, parse_table, quote};
 use choscordb_driver_api::*;
 use mysql_async::{Conn, prelude::Queryable};
 
+type ForeignKeyCatalogRow = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+);
+
 pub(crate) async fn inspect_target(conn: &mut Conn, object: &ObjectId) -> Result<EditTarget> {
     let (database, table) = parse_table(object)?;
     let mut target = EditTarget {
@@ -136,6 +146,181 @@ pub(crate) async fn inspect_query(
     output.target = target;
     output.source_columns = sources;
     output.reason.clear();
+    Ok(output)
+}
+fn enum_labels(database_type: &str) -> Option<Vec<String>> {
+    let mut text = database_type
+        .strip_prefix("enum(")?
+        .strip_suffix(')')?
+        .chars()
+        .peekable();
+    let mut labels = Vec::new();
+    loop {
+        if text.next()? != '\'' {
+            return None;
+        }
+        let mut label = String::new();
+        loop {
+            match text.next()? {
+                '\'' if text.peek() == Some(&'\'') => {
+                    text.next();
+                    label.push('\'');
+                }
+                '\'' => break,
+                // COLUMN_TYPE quoting depends on server SQL mode. Without a
+                // catalog encoding guarantee, escaped labels stay text-editable.
+                '\\' => return None,
+                ch => label.push(ch),
+            }
+        }
+        labels.push(label);
+        match text.next() {
+            Some(',') => continue,
+            None => return Some(labels),
+            _ => return None,
+        }
+    }
+}
+pub(crate) async fn result_cells(
+    conn: &mut Conn,
+    object: Option<&ObjectId>,
+    sql: &str,
+    result_columns: Vec<String>,
+) -> Result<Vec<ResultCellMetadata>> {
+    let mut output = vec![ResultCellMetadata::default(); result_columns.len()];
+    let (database, table, sources) = if let Some(object) = object {
+        let (database, table) = parse_table(object)?;
+        (database, table, result_columns.clone())
+    } else {
+        let Some(shape) = query_shape(sql, &result_columns) else {
+            return Ok(output);
+        };
+        let database = match shape.schema {
+            Some(name) => name,
+            None => match conn
+                .query_first::<String, _>("SELECT DATABASE()")
+                .await
+                .map_err(normalize)?
+            {
+                Some(name) => name,
+                None => return Ok(output),
+            },
+        };
+        (database, shape.table, shape.source_columns)
+    };
+    let kind: Option<String> = conn.exec_first("SELECT TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA=? AND TABLE_NAME=?", (&database, &table)).await.map_err(normalize)?;
+    if kind.as_deref() != Some("BASE TABLE") {
+        return Ok(output);
+    }
+    let columns: Vec<(String,String,String,String)> = conn.exec("SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION LIMIT 10001", (&database, &table)).await.map_err(normalize)?;
+    if columns.len() > 10_000 {
+        return Err(error(
+            ErrorKind::ResourceLimit,
+            "MySQL metadata exceeds the display limit",
+        ));
+    }
+    if columns
+        .iter()
+        .map(|(name, kind, definition, nullable)| {
+            name.len() + kind.len() + definition.len() + nullable.len()
+        })
+        .sum::<usize>()
+        > 1024 * 1024
+    {
+        return Err(error(
+            ErrorKind::ResourceLimit,
+            "MySQL metadata exceeds the display limit",
+        ));
+    }
+    let columns: std::collections::HashMap<_, _> = columns
+        .into_iter()
+        .map(|(name, data_type, column_type, nullable)| (name, (data_type, column_type, nullable)))
+        .collect();
+    let fk_rows: Vec<ForeignKeyCatalogRow> = conn.exec("SELECT k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_SCHEMA, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME, t.TABLE_TYPE, tc.COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE k LEFT JOIN information_schema.TABLES t ON t.TABLE_SCHEMA=k.REFERENCED_TABLE_SCHEMA AND t.TABLE_NAME=k.REFERENCED_TABLE_NAME LEFT JOIN information_schema.COLUMNS tc ON tc.TABLE_SCHEMA=k.REFERENCED_TABLE_SCHEMA AND tc.TABLE_NAME=k.REFERENCED_TABLE_NAME AND tc.COLUMN_NAME=k.REFERENCED_COLUMN_NAME WHERE k.TABLE_SCHEMA=? AND k.TABLE_NAME=? AND k.REFERENCED_TABLE_NAME IS NOT NULL ORDER BY k.CONSTRAINT_NAME,k.ORDINAL_POSITION LIMIT 10001", (&database, &table)).await.map_err(normalize)?;
+    if fk_rows.len() > 10_000 {
+        return Err(error(
+            ErrorKind::ResourceLimit,
+            "MySQL metadata exceeds the display limit",
+        ));
+    }
+    if fk_rows
+        .iter()
+        .map(|(constraint, source, schema, table, column, kind, found)| {
+            constraint.len()
+                + source.len()
+                + schema.len()
+                + table.len()
+                + column.len()
+                + kind.as_ref().map_or(0, String::len)
+                + found.as_ref().map_or(0, String::len)
+        })
+        .sum::<usize>()
+        > 1024 * 1024
+    {
+        return Err(error(
+            ErrorKind::ResourceLimit,
+            "MySQL metadata exceeds the display limit",
+        ));
+    }
+    let mut groups =
+        std::collections::HashMap::<String, Vec<(String, String, String, String, bool)>>::new();
+    for (constraint, from, target_schema, target_table, target_column, kind, found_column) in
+        fk_rows
+    {
+        groups.entry(constraint).or_default().push((
+            from,
+            target_schema,
+            target_table,
+            target_column,
+            kind.as_deref() == Some("BASE TABLE") && found_column.is_some(),
+        ));
+    }
+    let mut fks = std::collections::HashMap::<String, Vec<(String, String, String, bool)>>::new();
+    for rows in groups.into_values() {
+        if rows.len() == 1 {
+            let (from, schema, table, column, supported) = rows.into_iter().next().unwrap();
+            fks.entry(from)
+                .or_default()
+                .push((schema, table, column, supported));
+        } else {
+            for (from, _, _, _, _) in rows {
+                fks.entry(from).or_default().push((
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    false,
+                ));
+            }
+        }
+    }
+    let source_object = id(&[&database, &table]).0;
+    let qualified = format!("{}.{}", quote(&database), quote(&table));
+    for (meta, source) in output.iter_mut().zip(&sources) {
+        if source.is_empty() || sources.iter().filter(|name| *name == source).count() != 1 {
+            continue;
+        }
+        let Some((data_type, column_type, nullable)) = columns.get(source) else {
+            continue;
+        };
+        meta.source_column = source.clone();
+        meta.source_object = source_object.clone();
+        meta.source_qualified_name = qualified.clone();
+        meta.nullable = Some(nullable == "YES");
+        if data_type == "enum" {
+            meta.enum_choices = enum_labels(column_type).unwrap_or_default();
+        }
+        if let Some(entries) = fks.get(source)
+            && entries.len() == 1
+        {
+            let (target_schema, target_table, target_column, supported) = &entries[0];
+            if *supported {
+                meta.fk_target_object = id(&[target_schema, target_table]).0;
+                meta.fk_target_qualified_name =
+                    format!("{}.{}", quote(target_schema), quote(target_table));
+                meta.fk_target_column = target_column.clone();
+            }
+        }
+    }
     Ok(output)
 }
 

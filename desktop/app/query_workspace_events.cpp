@@ -26,6 +26,8 @@ Cell cell(const CellDto& value) {
         return static_cast<qint64>(value.integer);
     if (kind == "real")
         return value.real;
+    if (kind == "decimal")
+        return DecimalValue{text(value.text)};
     if (kind == "binary")
         return QByteArray(reinterpret_cast<const char*>(value.bytes.data()),
                           static_cast<qsizetype>(value.bytes.size()));
@@ -99,6 +101,34 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             widgets_.grid->setToolTip(editReason_);
         configureEditability();
         updateActions();
+        return;
+    }
+    if ((kind == "result_cells" || kind == "result_cells_failed") &&
+        e.request_token == cellMetadataToken_ && queryConnection_ == e.id &&
+        cellMetadataQuery_ == query_) {
+        cellMetadataToken_ = 0;
+        cellMetadata_.clear();
+        if (kind == "result_cells" && e.result_cell_metadata.size() == columns_.size()) {
+            cellMetadata_.reserve(e.result_cell_metadata.size());
+            for (const auto& source : e.result_cell_metadata) {
+                ResultCellMetadata metadata;
+                metadata.sourceColumn = text(source.source_column);
+                metadata.sourceObject = text(source.source_object);
+                metadata.sourceQualifiedName = text(source.source_qualified_name);
+                if (source.nullability == 0 || source.nullability == 1)
+                    metadata.nullable = source.nullability == 1;
+                metadata.boolean = source.boolean;
+                for (const auto& choice : source.enum_choices)
+                    metadata.enumChoices << text(choice);
+                metadata.targetObject = text(source.fk_target_object);
+                metadata.targetQualifiedName = text(source.fk_target_qualified_name);
+                metadata.targetColumn = text(source.fk_target_column);
+                cellMetadata_.push_back(std::move(metadata));
+            }
+            if (model_->columnCount() == static_cast<int>(cellMetadata_.size()))
+                model_->setCellMetadata(cellMetadata_);
+            configureEditability();
+        }
         return;
     }
     if ((kind == "edit_applied" || kind == "edit_failed") && e.request_token == editApplyToken_ &&
@@ -251,6 +281,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         return;
     }
     if (kind == "result_view_applied") {
+        referenceFilterPending_ = false;
+        referenceFilterFailed_ = false;
         viewFilters_ = proposedViewFilters_;
         viewSortColumn_ = proposedViewSortColumn_;
         viewSortDirection_ = proposedViewSortDirection_;
@@ -269,6 +301,23 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     }
     if (kind == "result_view_failed") {
         viewBusy_ = false;
+        if (referenceFilterPending_ || referenceFilterFailed_) {
+            referenceFilterPending_ = false;
+            referenceFilterFailed_ = true;
+            model_->setPage(columns_, {}, 0);
+            currentPage_.reset();
+            hasMore_ = false;
+            hasMoreResults_ = false;
+            if (filterBar_) {
+                filterBar_->setBusy(false);
+                filterBar_->showValidationError(
+                    tr("Referenced row filter failed: %1").arg(text(e.error)));
+            }
+            message(tr("Referenced row filter failed: %1").arg(text(e.error)));
+            setExecutionState(QStringLiteral("failed"), tr("! Referenced row filter failed"));
+            updateActions();
+            return;
+        }
         if (filterBar_ && proposedFiltersFromDraft_)
             filterBar_->showValidationError(text(e.error));
         if (filterBar_)
@@ -317,6 +366,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                 names << column.name;
             adapter_->inspectQueryEdit(*queryConnection_, executedSql_, names, editTargetToken_);
         }
+        if (queryConnection_ && driverForConnection(*queryConnection_) != "mysql")
+            requestCellMetadata();
         quint64 bytes = columns_.capacity() * sizeof(ResultColumn);
         for (const auto& column : columns_)
             bytes += 96 + sizeof(QChar) * (column.name.capacity() + column.databaseType.capacity() +
@@ -367,6 +418,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             hasMoreResults_ = false;
         } else {
             configureEditability();
+            if (cellMetadata_.size() == columns_.size())
+                model_->setCellMetadata(cellMetadata_);
             if (filterBar_)
                 filterBar_->setColumns(columns_, model_->rows());
             // setPage destroyed the old Qt buffers before we release their reservation.
@@ -398,7 +451,25 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                           .arg(model_->residentBytes() / 1024));
             if (filterBar_)
                 filterBar_->setBusy(false);
-            if (deferredViewRequest_ && !model_->hasPendingEdits()) {
+            if (initialFilterPending_) {
+                initialFilterPending_ = false;
+                model_->setPage(columns_, {}, 0);
+                if (visibleLease_) {
+                    adapter_->releasePageLease(*visibleLease_);
+                    visibleLease_.reset();
+                }
+                submitResultView({{0, "sql", "text", initialFilter_}}, -1, {});
+                if (!viewBusy_) {
+                    referenceFilterPending_ = false;
+                    referenceFilterFailed_ = true;
+                    currentPage_.reset();
+                    hasMore_ = false;
+                    hasMoreResults_ = false;
+                    filterBar_->showValidationError(tr("Referenced row filter could not start."));
+                    setExecutionState(QStringLiteral("failed"),
+                                      tr("! Referenced row filter failed"));
+                }
+            } else if (deferredViewRequest_ && !model_->hasPendingEdits()) {
                 deferredViewRequest_ = false;
                 preserveViewOnRefresh_ = false;
                 submitResultView(deferredViewFilters_, deferredViewSortColumn_,
@@ -424,6 +495,9 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                 names << column.name;
             adapter_->inspectQueryEdit(*queryConnection_, executedSql_, names, editTargetToken_);
         }
+        if (queryConnection_ && driverForConnection(*queryConnection_) == "mysql" &&
+            !hasMoreResults_)
+            requestCellMetadata();
         if (hasMoreResults_)
             message(tr("More results are available. Use Next result to continue."));
         cancellationPending_ = false;

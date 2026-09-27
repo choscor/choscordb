@@ -26,6 +26,51 @@ async fn connect() -> Box<dyn Connection> {
         .await
         .unwrap()
 }
+#[tokio::test]
+#[ignore = "requires disposable MySQL server on localhost:33306"]
+async fn result_cell_catalog_reports_native_enum_and_single_column_fk() {
+    let mut conn = connect().await;
+    for sql in [
+        "DROP TABLE IF EXISTS mysql_cell_child",
+        "DROP TABLE IF EXISTS mysql_cell_parent",
+        "CREATE TABLE mysql_cell_parent(id INT PRIMARY KEY) ENGINE=InnoDB",
+        "CREATE TABLE mysql_cell_child(parent_id INT, mood ENUM('sleepy','ready','away') NULL, enabled TINYINT(1) NOT NULL, FOREIGN KEY(parent_id) REFERENCES mysql_cell_parent(id)) ENGINE=InnoDB",
+    ] {
+        conn.execute(sql, QueryOptions::default())
+            .await
+            .unwrap()
+            .close()
+            .await
+            .unwrap();
+    }
+    let columns = conn
+        .inspect_result_cells(
+            None,
+            "SELECT parent_id,mood,enabled FROM mysql_cell_child",
+            vec!["parent_id".into(), "mood".into(), "enabled".into()],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        columns[0].fk_target_object,
+        r#"["choscordb_test","mysql_cell_parent"]"#
+    );
+    assert_eq!(columns[0].fk_target_column, "id");
+    assert_eq!(columns[1].enum_choices, ["sleepy", "ready", "away"]);
+    assert_eq!(columns[1].nullable, Some(true));
+    assert!(!columns[2].boolean);
+    for sql in [
+        "DROP TABLE mysql_cell_child",
+        "DROP TABLE mysql_cell_parent",
+    ] {
+        conn.execute(sql, QueryOptions::default())
+            .await
+            .unwrap()
+            .close()
+            .await
+            .unwrap();
+    }
+}
 
 #[tokio::test]
 #[ignore = "requires disposable MySQL server on localhost:33306"]

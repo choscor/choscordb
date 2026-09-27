@@ -88,6 +88,18 @@ pub mod ffi {
         reason: String,
     }
     #[derive(Default)]
+    struct ResultCellMetadataDto {
+        source_column: String,
+        source_object: String,
+        source_qualified_name: String,
+        nullability: i8,
+        boolean: bool,
+        enum_choices: Vec<String>,
+        fk_target_object: String,
+        fk_target_qualified_name: String,
+        fk_target_column: String,
+    }
+    #[derive(Default)]
     struct MetadataPropertyDto {
         name: String,
         value: String,
@@ -389,6 +401,7 @@ pub mod ffi {
         edit_affected_rows: Vec<u64>,
         edit_target: EditTargetDto,
         edit_source_columns: Vec<String>,
+        result_cell_metadata: Vec<ResultCellMetadataDto>,
         capabilities: u64,
     }
     #[derive(Default)]
@@ -627,6 +640,14 @@ pub mod ffi {
         fn edit_query_request(
             engine: &mut BridgeEngine,
             connection: u64,
+            sql: &str,
+            result_columns: Vec<String>,
+            request_token: u64,
+        ) -> Submit;
+        fn result_cells_request(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            object: &str,
             sql: &str,
             result_columns: Vec<String>,
             request_token: u64,
@@ -1923,6 +1944,26 @@ pub fn edit_query_request(
     submit(engine, |e| {
         e.edit_query_request(
             unpack(connection),
+            sql.into(),
+            result_columns,
+            request_token,
+        )
+        .map(|()| connection)
+        .map_err(|error| error.to_string())
+    })
+}
+pub fn result_cells_request(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    object: &str,
+    sql: &str,
+    result_columns: Vec<String>,
+    request_token: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        e.result_cells_request(
+            unpack(connection),
+            (!object.is_empty()).then(|| ObjectId(object.into())),
             sql.into(),
             result_columns,
             request_token,

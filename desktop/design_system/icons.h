@@ -33,6 +33,7 @@ enum class Icon {
     Folder,
     File,
     Key,
+    Link,
     Eye,
     EyeOff
 };

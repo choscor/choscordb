@@ -113,6 +113,7 @@ QList<IconDefinition> iconCatalog() {
          QStringLiteral("desktop/resources/icons/folder.svg")},
         {Icon::File, QStringLiteral("file"), QStringLiteral("desktop/resources/icons/file.svg")},
         {Icon::Key, QStringLiteral("key"), QStringLiteral("desktop/resources/icons/key.svg")},
+        {Icon::Link, QStringLiteral("link"), QStringLiteral("desktop/resources/icons/link.svg")},
         {Icon::Eye, QStringLiteral("eye"), QStringLiteral("desktop/resources/icons/eye.svg")},
         {Icon::EyeOff, QStringLiteral("eye-off"),
          QStringLiteral("desktop/resources/icons/eye-off.svg")},
@@ -173,6 +174,8 @@ QString iconResourcePath(Icon icon) {
         return QStringLiteral(":/icons/file.svg");
     case Icon::Key:
         return QStringLiteral(":/icons/key.svg");
+    case Icon::Link:
+        return QStringLiteral(":/icons/link.svg");
     case Icon::Eye:
         return QStringLiteral(":/icons/eye.svg");
     case Icon::EyeOff:

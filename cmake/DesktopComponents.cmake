@@ -48,6 +48,7 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/style/control_stylesheet.cpp
   desktop/design_system/switch/switch_indicator.cpp
   desktop/design_system/table/table_style.cpp
+  desktop/design_system/table/table_style.h
   desktop/design_system/tabs/tab_indicator.cpp
   desktop/design_system/tabs/tabs_style.cpp
   desktop/design_system/text/text.cpp

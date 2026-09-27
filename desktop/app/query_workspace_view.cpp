@@ -1,6 +1,8 @@
 #include "app/query_workspace.h"
+#include "app/query_workspace_p.h"
 #include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
+#include "design_system/table/table_style.h"
 #include <QBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -8,8 +10,68 @@
 #include <QStyle>
 #include <QTableView>
 #include <algorithm>
+#include <cmath>
 
 namespace choscordb {
+namespace {
+QString quotedIdentifier(QString name) {
+    name.replace('"', QStringLiteral("\"\""));
+    return '"' + name + '"';
+}
+std::optional<QString> sqlLiteral(const Cell& cell) {
+    return std::visit(
+        [](const auto& value) -> std::optional<QString> {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, bool>)
+                return value ? QStringLiteral("1") : QStringLiteral("0");
+            else if constexpr (std::is_same_v<T, qint64>)
+                return QString::number(value);
+            else if constexpr (std::is_same_v<T, double>)
+                return std::isfinite(value)
+                           ? std::optional<QString>(QString::number(value, 'g', 17))
+                           : std::nullopt;
+            else if constexpr (std::is_same_v<T, DecimalValue>)
+                return value.text;
+            else if constexpr (std::is_same_v<T, QString>) {
+                QString escaped = value;
+                escaped.replace('\'', QStringLiteral("''"));
+                return '\'' + escaped + '\'';
+            } else
+                return std::nullopt;
+        },
+        cell);
+}
+} // namespace
+
+void QueryWorkspace::activateForeignKey(const QModelIndex& index) {
+    if (!queryConnection_ || !queryAvailable() || workInFlight() || stopping_ ||
+        widgets_.grid->model() != model_)
+        return;
+    const auto metadata = model_->linkedColumn(index);
+    const auto value = model_->cellValue(index);
+    if (!metadata || !value)
+        return;
+    const auto literal = sqlLiteral(*value);
+    if (!literal)
+        return;
+    emit foreignKeyRequested(*queryConnection_, metadata->targetObject,
+                             metadata->targetQualifiedName,
+                             quotedIdentifier(metadata->targetColumn) + " = " + *literal);
+}
+
+void QueryWorkspace::requestCellMetadata() {
+    if (!query_ || !queryConnection_ || columns_.empty() || !adapter_)
+        return;
+    cellMetadataToken_ = query_workspace_detail::nextEditRequestToken();
+    cellMetadataQuery_ = query_;
+    QStringList names;
+    for (const auto& column : columns_)
+        names << column.name;
+    adapter_->inspectResultCells(*queryConnection_, widgets_.objectReadOnly ? objectId_ : QString{},
+                                 widgets_.objectReadOnly ? QString{} : executedSql_, names,
+                                 cellMetadataToken_);
+}
+
 void QueryWorkspace::setupResultViewControls() {
     widgets_.grid->horizontalHeader()->setSectionsClickable(widgets_.objectReadOnly);
     if (widgets_.objectReadOnly) {
@@ -30,6 +92,8 @@ void QueryWorkspace::setupResultViewControls() {
                 [this] { requestResultView({}, viewSortColumn_, viewSortDirection_); });
         connect(widgets_.grid->horizontalHeader(), &QHeaderView::sectionClicked, this,
                 [this](int column) {
+                    if (referenceFilterFailed_)
+                        return;
                     if (std::any_of(model_->rows().begin(), model_->rows().end(),
                                     [column](const auto& row) {
                                         return column >= 0 &&
@@ -85,6 +149,10 @@ void QueryWorkspace::clearViewState() {
     proposedFiltersFromDraft_ = false;
     preserveViewOnRefresh_ = false;
     viewRefreshQuery_.reset();
+    initialFilterPending_ = false;
+    referenceFilterPending_ = false;
+    referenceFilterFailed_ = false;
+    initialFilter_.clear();
     if (filterBar_)
         filterBar_->reset();
     updateSortIndicator();

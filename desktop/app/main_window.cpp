@@ -234,6 +234,8 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
     auto* objectData = new ObjectDataWorkspace(workspace_, explorer);
     explorer->installDataWidget(objectData);
     connect(explorer, &ObjectExplorer::dataRequested, objectData, &ObjectDataWorkspace::openObject);
+    connect(objectData, &ObjectDataWorkspace::foreignKeyRequested, this,
+            &MainWindow::openReferencedRow);
     connect(explorer, &ObjectExplorer::objectChanged, objectData, &ObjectDataWorkspace::invalidate);
     connect(explorer, &ObjectExplorer::paneChanged, this, [this](int) {
         if (recovery_)
@@ -369,6 +371,30 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
     if (pane >= 0)
         explorer->selectPane(pane);
+    if (recovery_)
+        recovery_->changed();
+}
+void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
+                                   const QString& label, const QString& filter) {
+    if (!allowDocumentChange() || objectId.isEmpty() || filter.isEmpty())
+        return;
+    auto* explorer = makeObjectExplorer();
+    const auto profileId = workspace_->profileIdForConnection(connection);
+    explorer->setProperty("objectProfileId", profileId.isEmpty()
+                                                 ? QStringLiteral("session:%1").arg(connection)
+                                                 : QStringLiteral("profile:%1").arg(profileId));
+    explorer->setProperty("objectConnection", QVariant::fromValue<qulonglong>(connection));
+    explorer->setProperty("objectId", objectId);
+    explorer->setProperty("objectType", QStringLiteral("table"));
+    explorer->setProperty("objectLabel", label);
+    auto* data = explorer->findChild<ObjectDataWorkspace*>();
+    data->setInitialFilter(filter);
+    explorer->openObject(connection, objectId, label, QStringLiteral("table"));
+    const auto icon =
+        design::themedIcon(design::Icon::Table, theme_->resolvedTheme().colors.mutedText, 16);
+    editors_->setCurrentIndex(editors_->addTab(explorer, icon, label));
+    screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
+    explorer->selectPane(4);
     if (recovery_)
         recovery_->changed();
 }

@@ -14,6 +14,7 @@
 #include <QPushButton>
 #include <QTableView>
 #include <QVBoxLayout>
+#include <utility>
 namespace choscordb {
 ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* parent)
     : QWidget(parent), sql_(sqlWorkspace) {
@@ -153,6 +154,8 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
         cancelButton->setProperty("busy", busy);
         emit busyChanged(busy);
     });
+    connect(result_, &QueryWorkspace::foreignKeyRequested, this,
+            &ObjectDataWorkspace::foreignKeyRequested);
     connect(sql_, &QueryWorkspace::transactionStateChanged, this,
             [this](quint64, bool) { result_->refreshEditActions(); });
 }
@@ -160,7 +163,9 @@ void ObjectDataWorkspace::openObject(quint64 connection, const QString& object,
                                      const QString& label, const QString& kind) {
     if (!sql_ || !sql_->navigationAllowed() || !result_->navigationAllowed() || object.isEmpty())
         return;
-    result_->openObjectData(connection, object, label, sql_->queryPreferences(), kind);
+    const auto filter = std::exchange(initialFilter_, {});
+    result_->openObjectData(connection, object, label, sql_->queryPreferences(), kind, false,
+                            filter);
 }
 void ObjectDataWorkspace::invalidate() {
     if (!resolvePendingEdits())

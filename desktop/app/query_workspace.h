@@ -82,7 +82,8 @@ class QueryWorkspace final : public QObject {
     void setExternalWork(bool busy);
     void openObjectData(quint64 connection, const QString& object, const QString& label,
                         const QueryPreferences& preferences,
-                        const QString& kind = QStringLiteral("table"), bool preserveView = false);
+                        const QString& kind = QStringLiteral("table"), bool preserveView = false,
+                        const QString& initialFilter = {});
     void invalidateResult();
     bool hasPendingEdits() const { return model_->hasPendingEdits(); }
     bool activeManualTransaction(quint64 connection) const {
@@ -98,6 +99,8 @@ class QueryWorkspace final : public QObject {
     void activityChanged(bool busy);
     void executionStateChanged(const QString& state);
     void transactionStateChanged(quint64 connection, bool active);
+    void foreignKeyRequested(quint64 connection, const QString& object, const QString& label,
+                             const QString& filter);
 
   private:
     void execute();
@@ -109,6 +112,8 @@ class QueryWorkspace final : public QObject {
     std::optional<quint64> executionModeConnection_;
     bool applyStagedEdits();
     void configureEditability();
+    void requestCellMetadata();
+    void activateForeignKey(const QModelIndex& index);
     void setupResultViewControls();
     void requestResultView(const QList<ResultFilterCondition>& filters, qint32 sortColumn,
                            const QString& sortDirection);
@@ -154,6 +159,13 @@ class QueryWorkspace final : public QObject {
     QSet<quint64> confirmingDisconnects_;
     QSet<quint64> disconnecting_;
     std::vector<ResultColumn> columns_;
+    std::vector<ResultCellMetadata> cellMetadata_;
+    quint64 cellMetadataToken_ = 0;
+    std::optional<quint64> cellMetadataQuery_;
+    QString initialFilter_;
+    bool initialFilterPending_ = false;
+    bool referenceFilterPending_ = false;
+    bool referenceFilterFailed_ = false;
     std::optional<quint64> currentPage_;
     std::optional<quint64> visibleLease_;
     std::optional<quint64> schemaLease_;

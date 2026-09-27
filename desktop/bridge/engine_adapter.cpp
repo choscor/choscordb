@@ -746,6 +746,20 @@ bool EngineAdapter::inspectQueryEdit(quint64 connection, const QString& sql,
         emit commandFailed(string(reply.error));
     return reply.accepted;
 }
+bool EngineAdapter::inspectResultCells(quint64 connection, const QString& object,
+                                       const QString& sql, const QStringList& resultColumns,
+                                       quint64 token) {
+    rust::Vec<rust::String> names;
+    for (const auto& name : resultColumns)
+        names.push_back(rustString(name));
+    const auto objectBytes = object.toUtf8();
+    const auto sqlBytes = sql.toUtf8();
+    auto reply = result_cells_request(*d_->engine, connection, utf8View(objectBytes),
+                                      utf8View(sqlBytes), std::move(names), token);
+    if (!reply.accepted)
+        emit commandFailed(string(reply.error));
+    return reply.accepted;
+}
 bool EngineAdapter::applyEditBatch(quint64 connection,
                                    const std::vector<ReviewedEditStatement>& statements,
                                    quint64 token) {
@@ -771,6 +785,9 @@ bool EngineAdapter::applyEditBatch(quint64 connection,
             } else if (const auto* realValue = std::get_if<double>(&value)) {
                 cell.kind = "real";
                 cell.real = *realValue;
+            } else if (const auto* decimalValue = std::get_if<DecimalValue>(&value)) {
+                cell.kind = "decimal";
+                cell.text = rustString(decimalValue->text);
             } else if (const auto* textValue = std::get_if<QString>(&value)) {
                 cell.kind = type.startsWith("numeric") || type.startsWith("decimal") ? "decimal"
                             : type == "date"                                         ? "date"

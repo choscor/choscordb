@@ -599,6 +599,35 @@ impl Engine {
             },
         )
     }
+    pub fn result_cells_request(
+        &self,
+        connection: ConnectionId,
+        object: Option<ObjectId>,
+        sql: String,
+        result_columns: Vec<String>,
+        request_token: u64,
+    ) -> std::result::Result<(), SubmitError> {
+        if object.is_none() == sql.is_empty()
+            || object
+                .as_ref()
+                .is_some_and(|id| id.0.is_empty() || id.0.len() > 16_384)
+            || sql.len() > MAX_SQL_BYTES
+            || result_columns.is_empty()
+            || result_columns.len() > 1000
+            || result_columns.iter().any(|name| name.len() > 1024)
+        {
+            return Err(SubmitError::InvalidInput);
+        }
+        self.submit(
+            connection,
+            actor::Command::ResultCells {
+                object,
+                sql,
+                result_columns,
+                request_token,
+            },
+        )
+    }
     pub fn load_metadata(
         &self,
         connection: ConnectionId,

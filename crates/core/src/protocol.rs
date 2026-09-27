@@ -84,6 +84,16 @@ pub enum Event {
         request_token: u64,
         error: DriverError,
     },
+    ResultCells {
+        connection: ConnectionId,
+        request_token: u64,
+        columns: Vec<ResultCellMetadata>,
+    },
+    ResultCellsFailed {
+        connection: ConnectionId,
+        request_token: u64,
+        error: DriverError,
+    },
     EditTarget {
         connection: ConnectionId,
         request_token: u64,

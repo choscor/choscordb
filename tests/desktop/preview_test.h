@@ -32,6 +32,10 @@ class PreviewTest final : public QObject {
     void standaloneCapturesRequestedThemeAndViewport();
     void confirmationSpecimenUsesProductionCancellationBoundary();
     void tableHoverPreservesBackgroundInBothThemes();
+    void typedTableSpecimenUsesSharedControlsInBothThemes();
+    void typedTableDropdownAndLinkActionWorkThroughView();
+    void resultTableActionTracksModelReplacement();
+    void typedTableDropdownStagesSelection();
     void initTestCase();
     void exportedPopupContainsItsVisibleContent_data();
     void exportedPopupContainsItsVisibleContent();

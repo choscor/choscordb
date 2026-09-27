@@ -126,6 +126,20 @@ pub struct EditColumn {
     pub generated: bool,
     pub key: bool,
 }
+/// Catalog-verified presentation metadata for one result column. Empty source or
+/// target fields mean that no corresponding cell action can be offered.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResultCellMetadata {
+    pub source_column: String,
+    pub source_object: String,
+    pub source_qualified_name: String,
+    pub nullable: Option<bool>,
+    pub boolean: bool,
+    pub enum_choices: Vec<String>,
+    pub fk_target_object: String,
+    pub fk_target_qualified_name: String,
+    pub fk_target_column: String,
+}
 #[async_trait]
 pub trait DatabaseDriver: Send + Sync {
     fn id(&self) -> &'static str;
@@ -238,6 +252,16 @@ pub trait Connection: Send {
             ErrorKind::Unsupported,
             "Editable query results are unavailable",
         ))
+    }
+    /// Read-only catalog inspection, independent of result edit eligibility.
+    /// `object` identifies Object Data; otherwise `sql` identifies a SQL result.
+    async fn inspect_result_cells(
+        &mut self,
+        _object: Option<&ObjectId>,
+        _sql: &str,
+        result_columns: Vec<String>,
+    ) -> Result<Vec<ResultCellMetadata>> {
+        Ok(vec![ResultCellMetadata::default(); result_columns.len()])
     }
     /// Execute the reviewed statements in one owned transaction.
     async fn apply_edit_batch(&mut self, _batch: EditBatch) -> Result<EditBatchSummary> {

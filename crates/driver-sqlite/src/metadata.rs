@@ -201,6 +201,172 @@ pub(crate) fn edit_query(
     output.reason.clear();
     Ok(output)
 }
+pub(crate) fn result_cells(
+    db: &Connection,
+    object: Option<&ObjectId>,
+    sql: &str,
+    result_columns: Vec<String>,
+) -> Result<Vec<ResultCellMetadata>> {
+    let mut output = vec![ResultCellMetadata::default(); result_columns.len()];
+    let (schema, table, sources) = if let Some(object) = object {
+        let p = parts(object)?;
+        let [schema, table] = p.as_slice() else {
+            return Ok(output);
+        };
+        (schema.clone(), table.clone(), result_columns)
+    } else {
+        let Some(shape) = simple_select(sql, &result_columns) else {
+            return Ok(output);
+        };
+        if shape.schema.is_none() {
+            let shadowed: bool = db
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM temp.sqlite_schema WHERE name=?1)",
+                    [&shape.table],
+                    |r| r.get(0),
+                )
+                .map_err(normalize)?;
+            if shadowed {
+                return Ok(output);
+            }
+        }
+        (
+            shape.schema.unwrap_or_else(|| "main".into()),
+            shape.table,
+            shape.source_columns,
+        )
+    };
+    let kind: Option<String> = db
+        .query_row(
+            &format!(
+                "SELECT type FROM {}.sqlite_schema WHERE name=?1",
+                quote(&schema)
+            ),
+            [&table],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(normalize)?;
+    if kind.as_deref() != Some("table") {
+        return Ok(output);
+    }
+    let source_object = serde_json::to_string(&[&schema, &table])
+        .map_err(|_| DriverError::new(ErrorKind::Internal, "Cannot identify table"))?;
+    let qualified = format!("{}.{}", quote(&schema), quote(&table));
+    let source_id = ObjectId(source_object.clone());
+    let columns = edit_target(db, &source_id)?
+        .columns
+        .into_iter()
+        .map(|column| (column.name, column.nullable))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut foreign =
+        std::collections::HashMap::<String, Vec<(i64, i64, String, Option<String>)>>::new();
+    let mut stmt = db
+        .prepare("SELECT id, seq, \"table\", \"from\", \"to\" FROM pragma_foreign_key_list(?1,?2)")
+        .map_err(normalize)?;
+    let rows = stmt
+        .query_map(params![table, schema], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(4)?,
+            ))
+        })
+        .map_err(normalize)?;
+    let mut groups =
+        std::collections::HashMap::<i64, Vec<(i64, String, String, Option<String>)>>::new();
+    let mut row_count = 0usize;
+    for row in rows {
+        row_count += 1;
+        if row_count > 10_000 {
+            return Err(limit());
+        }
+        let (id, seq, target, from, to) = row.map_err(normalize)?;
+        groups.entry(id).or_default().push((seq, from, target, to));
+    }
+    for (id, rows) in groups {
+        if rows.len() == 1 {
+            let (seq, from, target, to) = rows.into_iter().next().unwrap();
+            foreign.entry(from).or_default().push((id, seq, target, to));
+        } else {
+            for (_, from, _, _) in rows {
+                foreign
+                    .entry(from)
+                    .or_default()
+                    .push((id, -1, String::new(), None));
+            }
+        }
+    }
+    for (meta, source) in output.iter_mut().zip(&sources) {
+        if source.is_empty() || sources_ambiguous(&sources, source) {
+            continue;
+        }
+        let Some(nullable) = columns.get(source) else {
+            continue;
+        };
+        meta.source_column = source.clone();
+        meta.source_object = source_object.clone();
+        meta.source_qualified_name = qualified.clone();
+        meta.nullable = Some(*nullable);
+        let Some(entries) = foreign.get(source) else {
+            continue;
+        };
+        if entries.len() != 1 {
+            continue;
+        }
+        let (_, _, target, target_column) = &entries[0];
+        if target.is_empty() {
+            continue;
+        }
+        let target_kind: Option<String> = db
+            .query_row(
+                &format!(
+                    "SELECT type FROM {}.sqlite_schema WHERE name=?1",
+                    quote(&schema)
+                ),
+                [target],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(normalize)?;
+        if target_kind.as_deref() != Some("table") {
+            continue;
+        }
+        let target_column =
+            if let Some(name) = target_column.as_ref().filter(|name| !name.is_empty()) {
+                name.clone()
+            } else {
+                let mut stmt = db
+                    .prepare(
+                        "SELECT name FROM pragma_table_xinfo(?1,?2) WHERE pk>0 ORDER BY pk LIMIT 2",
+                    )
+                    .map_err(normalize)?;
+                let keys = stmt
+                    .query_map(params![target, schema], |r| r.get::<_, String>(0))
+                    .map_err(normalize)?
+                    .collect::<std::result::Result<Vec<_>, _>>()
+                    .map_err(normalize)?;
+                let [name] = keys.as_slice() else { continue };
+                name.clone()
+            };
+        let target_exists: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_xinfo(?1,?2) WHERE name=?3 AND hidden!=1)",
+            params![target, schema, target_column], |r| r.get(0)).map_err(normalize)?;
+        if !target_exists {
+            continue;
+        }
+        meta.fk_target_object = serde_json::to_string(&[&schema, target])
+            .map_err(|_| DriverError::new(ErrorKind::Internal, "Cannot identify table"))?;
+        meta.fk_target_qualified_name = format!("{}.{}", quote(&schema), quote(target));
+        meta.fk_target_column = target_column;
+    }
+    Ok(output)
+}
+fn sources_ambiguous(columns: &[String], source: &str) -> bool {
+    columns.iter().filter(|name| *name == source).count() > 1
+}
 const MAX_METADATA_BYTES: usize = 1024 * 1024;
 fn limit() -> DriverError {
     DriverError::new(

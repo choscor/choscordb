@@ -57,6 +57,12 @@ enum Command {
     Edit(EditBatch, Reply<EditBatchSummary>),
     EditTarget(ObjectId, Reply<EditTarget>),
     EditQuery(String, Vec<String>, Reply<EditQueryTarget>),
+    ResultCells(
+        Option<ObjectId>,
+        String,
+        Vec<String>,
+        Reply<Vec<ResultCellMetadata>>,
+    ),
     Transaction(bool, Reply<()>),
     BeginTransaction(TransactionCharacteristics, Reply<()>),
     ChainTransaction(bool, Reply<()>),
@@ -466,6 +472,16 @@ impl PostgresDriver {
 }
 #[async_trait]
 impl Connection for PostgresConnection {
+    async fn inspect_result_cells(
+        &mut self,
+        object: Option<&ObjectId>,
+        sql: &str,
+        result_columns: Vec<String>,
+    ) -> Result<Vec<ResultCellMetadata>> {
+        self.client
+            .request(|r| Command::ResultCells(object.cloned(), sql.into(), result_columns, r))
+            .await
+    }
     async fn idle_transaction_state(&mut self) -> Result<Option<IdleTransactionState>> {
         self.client.request(Command::IdleTransactionState).await
     }
