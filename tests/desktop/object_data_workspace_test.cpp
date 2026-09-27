@@ -20,6 +20,7 @@
 #include <QDialogButtonBox>
 #include <QFile>
 #include <QHeaderView>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -56,6 +57,51 @@ class ObjectDataWorkspaceTest : public QObject {
     }
 
   private slots:
+    void objectRowJsonOpensForReadOnlyRowsWithoutChangingSelection() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(700, 400);
+        data.show();
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+        QVERIFY(model);
+        choscordb::ResultColumn column{};
+        column.name = "value";
+        QVERIFY(model->setPage({column}, {{QString("first")}, {QString("second")}}, 0));
+        grid->setCurrentIndex(model->index(0, 0));
+        const auto selected = grid->currentIndex();
+        const auto point = grid->visualRect(model->index(1, 0)).center();
+        QTimer::singleShot(0, grid, [&] {
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+            if (!menu) {
+                if (auto* popup = QApplication::activePopupWidget())
+                    popup->close();
+                QFAIL("Row context menu did not open");
+            }
+            auto* action = menu->findChild<QAction*>("viewRowJson");
+            const bool enabled = action && action->isEnabled();
+            menu->close();
+            QVERIFY(enabled);
+            action->trigger();
+        });
+        grid->customContextMenuRequested(point);
+        auto* sheet = data.findChild<QDialog*>("rowJsonSheet");
+        QVERIFY(sheet);
+        QTRY_VERIFY(sheet->isVisible());
+        auto* text = sheet->findChild<QPlainTextEdit*>("rowJsonText");
+        QVERIFY(text && text->isReadOnly());
+        QCOMPARE(QJsonDocument::fromJson(text->toPlainText().toUtf8())
+                     .object()
+                     .value("value")
+                     .toString(),
+                 QString("second"));
+        QCOMPARE(grid->currentIndex(), selected);
+        sheet->reject();
+        QCOMPARE(grid->currentIndex(), selected);
+        QCOMPARE(model->rowCount(), 2);
+    }
+
     void valueLoadFailureUsesWindowToast() {
         choscordb::EngineAdapter adapter;
         QWidget host;
@@ -212,9 +258,9 @@ class ObjectDataWorkspaceTest : public QObject {
                 if (!action->isSeparator())
                     labels << action->text();
             QCOMPARE(labels,
-                     QStringList({"Copy selected cells", "Copy selected rows", "Copy current page",
-                                  "Duplicate row", "Add row", "Delete selected", "Restore selected",
-                                  "Set NULL", "Cancel"}));
+                     QStringList({"View row as JSON", "Copy selected cells", "Copy selected rows",
+                                  "Copy current page", "Duplicate row", "Add row",
+                                  "Delete selected", "Restore selected", "Set NULL", "Cancel"}));
             for (auto* action : actions)
                 if (!action->isSeparator())
                     QVERIFY(!action->isEnabled());
@@ -240,7 +286,7 @@ class ObjectDataWorkspaceTest : public QObject {
         auto* data = new choscordb::ObjectDataWorkspace(sql);
         explorer.installDataWidget(data);
         explorer.restoreObject(1, R"(["main","records"])", "records");
-        explorer.selectPane(4);
+        explorer.selectPane(5);
         explorer.show();
         QCoreApplication::processEvents();
         auto* header = explorer.findChild<QWidget*>("objectHeader");
@@ -605,7 +651,7 @@ class ObjectDataWorkspaceTest : public QObject {
         connect(&data, &choscordb::ObjectDataWorkspace::busyChanged, &explorer,
                 &choscordb::ObjectExplorer::setOperationBusy);
         explorer.restoreObject(connection, R"(["main","editable_rows"])", "editable_rows", "table");
-        explorer.selectPane(4);
+        explorer.selectPane(5);
         explorer.show();
         explorer.activateRestoredObject();
         auto* grid = data.findChild<QTableView*>("objectDataResults");

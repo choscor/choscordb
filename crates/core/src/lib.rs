@@ -521,6 +521,23 @@ impl Engine {
     ) -> std::result::Result<(), SubmitError> {
         self.object_ddl_request(connection, object, 0)
     }
+    pub fn load_object_graph_request(
+        &self,
+        connection: ConnectionId,
+        object: ObjectId,
+        request_token: u64,
+    ) -> std::result::Result<(), SubmitError> {
+        if object.0.is_empty() || object.0.len() > 16384 {
+            return Err(SubmitError::InvalidInput);
+        }
+        self.submit(
+            connection,
+            actor::Command::ObjectGraph {
+                object,
+                request_token,
+            },
+        )
+    }
     pub fn object_ddl_request(
         &self,
         connection: ConnectionId,

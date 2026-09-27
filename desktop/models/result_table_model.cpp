@@ -4,6 +4,7 @@
 #include <QBrush>
 #include <QColor>
 #include <QFont>
+#include <QSet>
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -562,6 +563,174 @@ bool ResultTableModel::hasPendingEdits() const {
                 return true;
     }
     return false;
+}
+namespace {
+bool appendJson(QString& output, QStringView part, qsizetype limit) {
+    if (part.size() > limit - output.size())
+        return false;
+    output += part;
+    return true;
+}
+
+bool appendJsonString(QString& output, QStringView value, qsizetype limit) {
+    if (!appendJson(output, QStringLiteral("\""), limit))
+        return false;
+    constexpr char16_t hex[] = u"0123456789abcdef";
+    qsizetype spanStart = 0;
+    for (qsizetype i = 0; i < value.size(); ++i) {
+        const auto character = value[i].unicode();
+        if (QChar::isHighSurrogate(character)) {
+            if (i + 1 >= value.size() || !QChar::isLowSurrogate(value[i + 1].unicode()))
+                return false;
+            ++i;
+        } else if (QChar::isLowSurrogate(character)) {
+            return false;
+        } else if (character == '"' || character == '\\') {
+            if (!appendJson(output, value.mid(spanStart, i - spanStart), limit) ||
+                !appendJson(output, QStringLiteral("\\"), limit) ||
+                !appendJson(output, value.mid(i, 1), limit))
+                return false;
+            spanStart = i + 1;
+        } else if (character < 0x20) {
+            const char16_t escaped[] = {
+                u'\\', u'u', u'0', u'0', hex[character >> 4], hex[character & 0xf]};
+            if (!appendJson(output, value.mid(spanStart, i - spanStart), limit) ||
+                !appendJson(output, QStringView(escaped, 6), limit))
+                return false;
+            spanStart = i + 1;
+        }
+    }
+    return appendJson(output, value.mid(spanStart), limit) &&
+           appendJson(output, QStringLiteral("\""), limit);
+}
+
+bool appendJsonCell(QString& output, const Cell& cell, qsizetype limit, QString* error) {
+    const auto fail = [error](const QString& message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    if (std::holds_alternative<std::monostate>(cell))
+        return appendJson(output, QStringLiteral("null"), limit);
+    if (const auto* value = std::get_if<bool>(&cell))
+        return appendJson(output, *value ? QStringLiteral("true") : QStringLiteral("false"), limit);
+    if (const auto* value = std::get_if<qint64>(&cell))
+        return appendJson(output, QString::number(*value), limit);
+    if (const auto* value = std::get_if<double>(&cell)) {
+        if (!std::isfinite(*value))
+            return fail(
+                QObject::tr("This row contains a non-finite number that JSON cannot represent."));
+        return appendJson(output, QString::number(*value, 'g', 17), limit);
+    }
+    if (const auto* value = std::get_if<QString>(&cell)) {
+        if (!appendJsonString(output, *value, limit))
+            return fail(
+                QObject::tr("This row contains invalid text or exceeds the JSON size limit."));
+        return true;
+    }
+    if (const auto* value = std::get_if<QByteArray>(&cell)) {
+        if (value->size() > limit * 3 / 4)
+            return fail(QObject::tr("This row exceeds the JSON size limit."));
+        return appendJson(output, QStringLiteral("{\"$binary\": \""), limit) &&
+               appendJson(output, QString::fromLatin1(value->toBase64()), limit) &&
+               appendJson(output, QStringLiteral("\"}"), limit);
+    }
+    return fail(QObject::tr("Load every deferred value before viewing this row as JSON."));
+}
+} // namespace
+
+bool ResultTableModel::rowJson(int row, QString* json, QString* error,
+                               const std::map<int, Cell>& resolved) const {
+    return rowJsonImpl(row, json, error, resolved, false, nullptr);
+}
+
+ResultTableModel::RowJsonReadiness ResultTableModel::rowJsonReadiness(int row,
+                                                                      QString* error) const {
+    QString json;
+    bool unresolved = false;
+    if (!rowJsonImpl(row, &json, error, {}, true, &unresolved))
+        return RowJsonReadiness::Invalid;
+    return unresolved ? RowJsonReadiness::NeedsDeferred : RowJsonReadiness::Ready;
+}
+
+bool ResultTableModel::rowJsonImpl(int row, QString* json, QString* error,
+                                   const std::map<int, Cell>& resolved, bool allowDeferred,
+                                   bool* unresolved) const {
+    if (json)
+        json->clear();
+    if (error)
+        error->clear();
+    if (unresolved)
+        *unresolved = false;
+    const auto fail = [error](const QString& message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    if (!json || row < 0 || row >= rowCount())
+        return fail(tr("This result row is no longer available."));
+    const qsizetype limit =
+        static_cast<qsizetype>(std::min(byteBudget_, std::size_t{16 * 1024 * 1024}));
+    for (const auto& [column, value] : resolved) {
+        if (column < 0 || column >= columnCount() ||
+            !std::holds_alternative<DeferredValue>(rows_[row][column]) ||
+            !(std::holds_alternative<QString>(value) || std::holds_alternative<QByteArray>(value)))
+            return fail(tr("A loaded row value is invalid."));
+        const auto expected = std::get<DeferredValue>(rows_[row][column]).bytes;
+        const auto actual = std::holds_alternative<QString>(value)
+                                ? std::get<QString>(value).toUtf8().size()
+                                : std::get<QByteArray>(value).size();
+        if (actual < 0 || static_cast<quint64>(actual) != expected)
+            return fail(tr("A loaded row value is incomplete."));
+    }
+    QSet<QString> originalNames;
+    for (const auto& column : columns_)
+        if (!column.name.isEmpty())
+            originalNames.insert(column.name);
+    QSet<QString> usedNames;
+    QString output;
+    output.reserve(std::min<qsizetype>(limit, 4096));
+    if (!appendJson(output, QStringLiteral("{"), limit))
+        return fail(tr("This row exceeds the JSON size limit."));
+    for (int column = 0; column < columnCount(); ++column) {
+        if (!appendJson(output, column ? QStringLiteral(",\n  ") : QStringLiteral("\n  "), limit))
+            return fail(tr("This row exceeds the JSON size limit."));
+        const auto& originalName = columns_[column].name;
+        QString key =
+            originalName.isEmpty() ? QStringLiteral("column %1").arg(column + 1) : originalName;
+        if (usedNames.contains(key) || (originalName.isEmpty() && originalNames.contains(key))) {
+            const QString base = key;
+            int suffix = 2;
+            do {
+                key = base + QStringLiteral(" (%1)").arg(suffix++);
+            } while (usedNames.contains(key) || originalNames.contains(key));
+        }
+        usedNames.insert(key);
+        if (!appendJsonString(output, key, limit) ||
+            !appendJson(output, QStringLiteral(": "), limit))
+            return fail(tr("This row has invalid column text or exceeds the JSON size limit."));
+        if (inserted_[row] && !touched_[row][column]) {
+            if (!appendJson(output, QStringLiteral("{\"$omitted\": true}"), limit))
+                return fail(tr("This row exceeds the JSON size limit."));
+            continue;
+        }
+        const auto found = resolved.find(column);
+        const Cell& value = found == resolved.end() ? rows_[row][column] : found->second;
+        if (allowDeferred && std::holds_alternative<DeferredValue>(value)) {
+            if (unresolved)
+                *unresolved = true;
+            if (!appendJson(output, QStringLiteral("null"), limit))
+                return fail(tr("This row exceeds the JSON size limit."));
+            continue;
+        }
+        if (!appendJsonCell(output, value, limit, error))
+            return error && !error->isEmpty() ? false
+                                              : fail(tr("This row exceeds the JSON size limit."));
+    }
+    if (!appendJson(output, columnCount() ? QStringLiteral("\n}") : QStringLiteral("}"), limit))
+        return fail(tr("This row exceeds the JSON size limit."));
+    *json = std::move(output);
+    return true;
 }
 QString ResultTableModel::copyRows(QModelIndexList selection, QString* error) const {
     return copyScope(std::move(selection), 1, error);

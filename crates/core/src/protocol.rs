@@ -230,6 +230,18 @@ pub enum Event {
         request_token: u64,
         error: DriverError,
     },
+    ObjectGraph {
+        connection: ConnectionId,
+        object: ObjectId,
+        request_token: u64,
+        graph: ObjectGraph,
+    },
+    ObjectGraphFailed {
+        connection: ConnectionId,
+        object: ObjectId,
+        request_token: u64,
+        error: DriverError,
+    },
     Connected {
         connection: ConnectionId,
         capabilities: DriverCapabilities,

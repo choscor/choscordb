@@ -13,6 +13,20 @@ quint64 nextToken() {
     return token.fetch_add(1);
 }
 } // namespace
+quint32 savedObjectPane(int paneIndex) {
+    if (paneIndex == 4) // ERD is inserted before Data in the UI.
+        return 5;
+    if (paneIndex == 5)
+        return 4;
+    return static_cast<quint32>(paneIndex);
+}
+int restoredObjectPane(quint32 savedPane) {
+    if (savedPane == 4) // Legacy value 4 must continue to select Data.
+        return 5;
+    if (savedPane == 5)
+        return 4;
+    return static_cast<int>(savedPane);
+}
 WorkspaceRecoveryController::WorkspaceRecoveryController(QTabWidget* tabs,
                                                          std::function<SqlEditor*()> addEditor,
                                                          QObject* parent)
@@ -125,7 +139,7 @@ QList<SavedWorkspaceTab> WorkspaceRecoveryController::snapshotTabs() const {
             tab.objectType = object->property("objectType").toString();
             tab.objectId = object->property("objectId").toString();
             tab.label = object->property("objectLabel").toString();
-            tab.pane = static_cast<quint32>(object->paneIndex());
+            tab.pane = savedObjectPane(object->paneIndex());
         } else
             continue;
         tabs.append(std::move(tab));
@@ -250,7 +264,9 @@ void WorkspaceRecoveryController::restoredTabs(quint64 token, const QList<SavedW
             const auto key =
                 QStringLiteral("object:%1:%2:%3").arg(tab.profileId, tab.objectType, tab.objectId);
             if (tab.profileId.isEmpty() || tab.objectType.isEmpty() || tab.objectId.isEmpty() ||
-                tab.label.isEmpty() || tab.pane > 4 || identities.contains(key)) {
+                tab.label.isEmpty() || tab.pane > 5 ||
+                (tab.pane == 5 && tab.objectType != QStringLiteral("table")) ||
+                identities.contains(key)) {
                 failed(token, tr("Saved object tab is invalid."));
                 return;
             }

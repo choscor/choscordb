@@ -57,10 +57,46 @@ fn mixed_workspace_round_trips_order_active_pane_and_legacy_sql() {
     assert_eq!(store.restore_workspace_tabs().unwrap(), distinct);
     let mut invalid_pane = distinct.clone();
     if let WorkspaceTab::Object(object) = &mut invalid_pane.tabs[1] {
-        object.pane = 5;
+        object.pane = 6;
     }
     assert!(store.save_workspace_tabs(&invalid_pane).is_err());
     assert_eq!(store.restore_workspace_tabs().unwrap(), distinct);
+}
+#[test]
+fn erd_pane_round_trips_without_changing_legacy_data_value() {
+    let mut store = Storage::in_memory().unwrap();
+    for pane in [4, 5] {
+        let snapshot = WorkspaceSnapshot {
+            tabs: vec![WorkspaceTab::Object(ObjectTab {
+                profile_id: "profile".into(),
+                object_type: "table".into(),
+                object_id: "main.orders".into(),
+                label: "orders".into(),
+                pane,
+            })],
+            active_index: 0,
+        };
+        store.save_workspace_tabs(&snapshot).unwrap();
+        assert_eq!(store.restore_workspace_tabs().unwrap(), snapshot);
+    }
+}
+#[test]
+fn erd_pane_rejects_non_table_objects() {
+    let mut store = Storage::in_memory().unwrap();
+    let snapshot = WorkspaceSnapshot {
+        tabs: vec![WorkspaceTab::Object(ObjectTab {
+            profile_id: "profile".into(),
+            object_type: "view".into(),
+            object_id: "main.summary".into(),
+            label: "summary".into(),
+            pane: 5,
+        })],
+        active_index: 0,
+    };
+    assert!(matches!(
+        store.save_workspace_tabs(&snapshot),
+        Err(StorageError::InvalidDocument)
+    ));
 }
 #[test]
 fn mixed_workspace_distinguishes_colons_and_sql_ids_from_object_ids() {

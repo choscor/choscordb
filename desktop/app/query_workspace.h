@@ -3,10 +3,12 @@
 #include "models/result_table_model.h"
 #include <QHash>
 #include <QObject>
+#include <QPersistentModelIndex>
 #include <QPointer>
 #include <QSet>
 #include <QString>
 #include <functional>
+#include <map>
 #include <optional>
 class QComboBox;
 class QAction;
@@ -15,6 +17,9 @@ class QLabel;
 class QPlainTextEdit;
 class QTableView;
 class QWidget;
+namespace choscordb::design {
+class RightSheet;
+}
 namespace choscordb {
 class SqlEditor;
 class ValueDetailDialog;
@@ -122,6 +127,11 @@ class QueryWorkspace final : public QObject {
     void updateSortIndicator();
     void clearViewState();
     void clearResult();
+    void openRowJson(int row);
+    void requestRowJsonChunk();
+    void failRowJson(const QString& error);
+    void clearRowJson();
+    void handleRowJsonEvent(const BridgeEvent& event);
     void handleEvent(const BridgeEvent& event);
     bool connectionCanDisconnect(quint64 connection) const;
     void updateActions();
@@ -137,6 +147,21 @@ class QueryWorkspace final : public QObject {
     ResultFilterBar* filterBar_ = nullptr;
     ResultTableModel* model_;
     ValueDetailDialog* detail_ = nullptr;
+    QPointer<design::RightSheet> rowJsonSheet_;
+    QPointer<QPlainTextEdit> rowJsonText_;
+    QPointer<QPushButton> rowJsonCopy_;
+    QPointer<QLabel> rowJsonStatus_;
+    QPersistentModelIndex rowJsonIndex_;
+    std::optional<quint64> rowJsonQuery_;
+    std::map<int, Cell> rowJsonResolved_;
+    QByteArray rowJsonLoadingBytes_;
+    QString rowJsonLoadingKind_;
+    QString rowJsonExpectedKind_;
+    int rowJsonLoadingColumn_ = -1;
+    quint64 rowJsonLoadingHandle_ = 0;
+    quint64 rowJsonLoadingOffset_ = 0;
+    quint64 rowJsonLoadingTotal_ = 0;
+    quint64 rowJsonResolvedBytes_ = 0;
     ExportDialog* export_ = nullptr;
     ProfileDialog* profiles_ = nullptr;
     QString resultOrigin_;

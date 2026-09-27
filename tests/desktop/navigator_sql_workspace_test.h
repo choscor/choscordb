@@ -7,6 +7,10 @@ class NavigatorSqlWorkspaceTest : public QObject {
 
   private slots:
     void sqlRowActionsLiveInResultContextMenu();
+    void sqlRowJsonUsesClickedRowAndCopiesDisplayedDocument();
+    void sqlRowJsonLoadsFullDeferredBinaryAndRejectsOversizedValue();
+    void sqlRowJsonLoadsUtf8TextAndIgnoresReplacedResult();
+    void sqlRowJsonDoesNotChangeDatabaseContents();
     void sqlOpensWithEqualEditorAndResults();
     void sqlToolbarInsetsControls();
     void tabContextMenuFollowsCursor();
@@ -27,6 +31,7 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void historyNavigationStaysInSidebar();
     void recoveryActionsRemainInMenuWithoutToolButtons();
     void objectTabsUseConnectionAndQualifiedIdentity();
+    void erdKeyboardActivationOpensAndRefocusesRelatedTable();
     void sidebarViewsKeepTheirDefaultPane();
     void savedProfileIdCannotCollideWithSessionContext();
     void selectedConnectionShowsOnlyItsTree();

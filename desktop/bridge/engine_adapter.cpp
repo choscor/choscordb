@@ -8,6 +8,7 @@
 #include <vector>
 namespace choscordb {
 using engine_adapter_detail::addHopCredentials;
+using engine_adapter_detail::parseObjectGraph;
 using engine_adapter_detail::profileDto;
 using engine_adapter_detail::rustString;
 using engine_adapter_detail::string;
@@ -86,6 +87,35 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
     : QObject(parent), d_(std::make_unique<Private>(storagePath)) {
     connect(this, &EngineAdapter::eventReady, this, [this](const BridgeEvent& event) {
         const auto kind = string(event.kind);
+        if (kind == "object_graph" || kind == "object_graph_failed") {
+            const auto it = d_->graphs.find(event.request_token);
+            if (it != d_->graphs.end() && it->connection == event.id &&
+                it->object == string(event.object)) {
+                const auto request = it.value();
+                d_->graphs.erase(it);
+                if (kind == "object_graph_failed") {
+                    if (string(event.error_kind) == "Unsupported") {
+                        ObjectGraph graph;
+                        graph.availability = MetadataAvailability::Unsupported;
+                        graph.reason = string(event.error);
+                        emit objectGraphReady(request.connection, request.object, request.token,
+                                              graph);
+                    } else {
+                        emit objectGraphFailed(request.connection, request.object, request.token,
+                                               string(event.error));
+                    }
+                } else {
+                    bool valid = false;
+                    auto graph = parseObjectGraph(event.graph_json, &valid);
+                    if (valid)
+                        emit objectGraphReady(request.connection, request.object, request.token,
+                                              graph);
+                    else
+                        emit objectGraphFailed(request.connection, request.object, request.token,
+                                               tr("Invalid ER diagram metadata"));
+                }
+            }
+        }
         if (kind == "metadata" || kind == "metadata_failed" || kind == "ddl" ||
             kind == "ddl_failed") {
             const auto it = d_->inspections.find(event.request_token);
@@ -158,6 +188,15 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
         }
         if (kind == "disconnected" || kind == "connection_failed") {
             d_->connections.remove(event.id);
+            for (auto it = d_->graphs.begin(); it != d_->graphs.end();) {
+                if (it->connection == event.id) {
+                    const auto request = it.value();
+                    it = d_->graphs.erase(it);
+                    emit objectGraphFailed(request.connection, request.object, request.token,
+                                           tr("Connection disconnected"));
+                } else
+                    ++it;
+            }
             for (auto it = d_->inspections.begin(); it != d_->inspections.end();) {
                 if (it->connection == event.id) {
                     const auto request = it.value();

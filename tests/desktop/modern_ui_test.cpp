@@ -513,7 +513,7 @@ void ModernUiTest::captureScreenFixtures() {
                             ->toPlainText()
                             .contains("CREATE TABLE"));
             capture("object-ddl");
-            panes->setCurrentIndex(4);
+            panes->setCurrentIndex(5);
             QTRY_COMPARE(explorer->findChild<QTableView*>("objectDataResults")->model()->rowCount(),
                          8);
             QTRY_VERIFY(window.findChild<QPushButton*>("objectDataExport")->isEnabled());

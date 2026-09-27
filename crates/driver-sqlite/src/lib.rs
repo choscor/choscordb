@@ -26,6 +26,7 @@ enum Command {
     Load(u32, Handle, Reply<Value>),
     Finish(u32, Reply<()>),
     Metadata(Option<ObjectId>, Reply<Vec<SchemaObject>>),
+    ObjectGraph(ObjectId, Reply<ObjectGraph>),
     Ddl(ObjectId, Reply<String>),
     Edit(EditBatch, Reply<EditBatchSummary>),
     EditTarget(ObjectId, Reply<EditTarget>),
@@ -241,6 +242,11 @@ impl Connection for SqliteConnection {
     }
     async fn load_metadata(&mut self, parent: Option<ObjectId>) -> Result<Vec<SchemaObject>> {
         self.client.request(|r| Command::Metadata(parent, r)).await
+    }
+    async fn load_object_graph(&mut self, object: &ObjectId) -> Result<ObjectGraph> {
+        self.client
+            .request(|r| Command::ObjectGraph(object.clone(), r))
+            .await
     }
     async fn object_ddl(&mut self, object: &ObjectId) -> Result<String> {
         self.client

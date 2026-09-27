@@ -660,6 +660,15 @@ pub(super) async fn run(
                         clear_notices(&notices);
                         let _ = reply.send(result);
                     }
+                    Command::Graph(object, reply) => {
+                        clear_notices(&notices);
+                        let result = cancel
+                            .closing
+                            .auxiliary(&pump, graph::load_object_graph(&client, &object))
+                            .await;
+                        clear_notices(&notices);
+                        let _ = reply.send(result);
+                    }
                     Command::Ddl(object, reply) => {
                         clear_notices(&notices);
                         let result = cancel
@@ -1025,6 +1034,15 @@ pub(super) async fn run(
                     let result = cancel
                         .closing
                         .auxiliary(&pump, metadata::load_metadata(&transaction, parent))
+                        .await;
+                    clear_notices(&notices);
+                    let _ = reply.send(result);
+                }
+                Command::Graph(object, reply) => {
+                    clear_notices(&notices);
+                    let result = cancel
+                        .closing
+                        .auxiliary(&pump, graph::load_object_graph(&transaction, &object))
                         .await;
                     clear_notices(&notices);
                     let _ = reply.send(result);

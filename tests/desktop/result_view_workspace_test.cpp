@@ -82,7 +82,7 @@ class ResultViewWorkspaceTest : public QObject {
         choscordb::ObjectExplorer explorer(sql->adapter());
         auto* data = new choscordb::ObjectDataWorkspace(sql);
         explorer.installDataWidget(data);
-        explorer.selectPane(4);
+        explorer.selectPane(5);
         explorer.resize(800, 500);
         explorer.show();
         auto* grid = data->findChild<QTableView*>("objectDataResults");
@@ -365,7 +365,7 @@ class ResultViewWorkspaceTest : public QObject {
         QTRY_COMPARE(tabs->count(), before + 1);
         auto* target = qobject_cast<choscordb::ObjectExplorer*>(tabs->currentWidget());
         QVERIFY(target);
-        QCOMPARE(target->paneIndex(), 4);
+        QCOMPARE(target->paneIndex(), 5);
         auto* filter = target->findChild<QLineEdit*>("resultFilterSql");
         auto* targetGrid = target->findChild<QTableView*>("objectDataResults");
         QVERIFY(filter && targetGrid);

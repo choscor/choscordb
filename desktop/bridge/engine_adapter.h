@@ -156,6 +156,25 @@ struct ObjectInspection {
     QString reason, ddl;
     QList<ObjectInspectionRow> rows;
 };
+struct ObjectGraphColumn {
+    QString name, databaseType;
+    bool primaryKey = false, foreignKey = false;
+};
+struct ObjectGraphTable {
+    QString id, qualifiedName;
+    QList<ObjectGraphColumn> columns;
+};
+struct ObjectGraphEdge {
+    QString id, sourceId, targetId;
+    QStringList sourceColumns, targetColumns;
+};
+struct ObjectGraph {
+    MetadataAvailability availability = MetadataAvailability::Available;
+    QString reason;
+    QStringList warnings;
+    QList<ObjectGraphTable> tables;
+    QList<ObjectGraphEdge> edges;
+};
 class EngineAdapter final : public QObject {
     Q_OBJECT
   public:
@@ -260,6 +279,7 @@ class EngineAdapter final : public QObject {
                         quint64 token);
     void loadObjectInspection(quint64 connection, const QString& object, ObjectInspectionPane pane,
                               quint64 requestToken);
+    void loadObjectGraph(quint64 connection, const QString& object, quint64 requestToken);
     void objectDdl(quint64 connection, const QString& object);
     void commitTransaction(quint64 connection);
     void rollbackTransaction(quint64 connection);
@@ -312,6 +332,10 @@ class EngineAdapter final : public QObject {
                                const choscordb::ObjectInspection& inspection);
     void objectInspectionFailed(quint64 connection, const QString& object, quint64 token,
                                 const QString& error);
+    void objectGraphReady(quint64 connection, const QString& object, quint64 token,
+                          const choscordb::ObjectGraph& graph);
+    void objectGraphFailed(quint64 connection, const QString& object, quint64 token,
+                           const QString& error);
     void metadataSubmissionFailed(quint64 connection, const QString& parent, quint64 token,
                                   const QString& error);
 
@@ -342,3 +366,4 @@ Q_DECLARE_METATYPE(choscordb::QueryPreferences)
 Q_DECLARE_METATYPE(choscordb::AppearanceLayout)
 
 Q_DECLARE_METATYPE(choscordb::ObjectInspection)
+Q_DECLARE_METATYPE(choscordb::ObjectGraph)

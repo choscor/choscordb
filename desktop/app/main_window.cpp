@@ -236,6 +236,10 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
     connect(explorer, &ObjectExplorer::dataRequested, objectData, &ObjectDataWorkspace::openObject);
     connect(objectData, &ObjectDataWorkspace::foreignKeyRequested, this,
             &MainWindow::openReferencedRow);
+    connect(explorer, &ObjectExplorer::relatedTableActivated, this,
+            [this](quint64 connection, const QString& objectId, const QString& label) {
+                openObjectTab(connection, objectId, label, QStringLiteral("table"), {});
+            });
     connect(explorer, &ObjectExplorer::objectChanged, objectData, &ObjectDataWorkspace::invalidate);
     connect(explorer, &ObjectExplorer::paneChanged, this, [this](int) {
         if (recovery_)
@@ -394,7 +398,7 @@ void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
         design::themedIcon(design::Icon::Table, theme_->resolvedTheme().colors.mutedText, 16);
     editors_->setCurrentIndex(editors_->addTab(explorer, icon, label));
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
-    explorer->selectPane(4);
+    explorer->selectPane(5);
     if (recovery_)
         recovery_->changed();
 }

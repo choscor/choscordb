@@ -1123,7 +1123,8 @@ impl WorkspaceTab {
                 document_field(&o.object_type, 128)?;
                 document_field(&o.object_id, 16 * 1024)?;
                 document_field(&o.label, 1024)?;
-                if o.pane > 4 {
+                // Saved pane 4 remains Data for pre-ERD workspaces; 5 selects ERD.
+                if o.pane > 5 || (o.pane == 5 && o.object_type != "table") {
                     return Err(StorageError::InvalidDocument);
                 }
                 document_field(&self.storage_id(), 16 * 1024 + 512)

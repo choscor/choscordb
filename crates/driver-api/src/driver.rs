@@ -33,8 +33,9 @@ pub enum ObjectKind {
     Index,
     Other,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MetadataAvailability {
+    #[default]
     Available,
     Unsupported,
     Unavailable,
@@ -86,6 +87,36 @@ pub struct QuerySummary {
 pub struct MetadataPage {
     pub objects: Vec<SchemaObject>,
     pub next_offset: Option<u64>,
+}
+/// Bounded, one-hop foreign-key neighborhood returned by native catalog metadata.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectGraph {
+    pub availability: MetadataAvailability,
+    pub reason: String,
+    pub warnings: Vec<String>,
+    pub tables: Vec<ObjectGraphTable>,
+    pub edges: Vec<ObjectGraphEdge>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectGraphTable {
+    pub id: ObjectId,
+    pub qualified_name: String,
+    pub columns: Vec<ObjectGraphColumn>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectGraphColumn {
+    pub name: String,
+    pub database_type: String,
+    pub primary_key: bool,
+    pub foreign_key: bool,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectGraphEdge {
+    pub id: String,
+    pub source_id: ObjectId,
+    pub target_id: ObjectId,
+    pub source_columns: Vec<String>,
+    pub target_columns: Vec<String>,
 }
 
 /// A statement and its values as shown in the edit review. Values are always bound.
@@ -314,6 +345,12 @@ pub trait Connection: Send {
         ))
     }
     async fn load_metadata(&mut self, parent: Option<ObjectId>) -> Result<Vec<SchemaObject>>;
+    async fn load_object_graph(&mut self, _object: &ObjectId) -> Result<ObjectGraph> {
+        Err(DriverError::new(
+            ErrorKind::Unsupported,
+            "ER diagram metadata is unsupported",
+        ))
+    }
     async fn sql_mode(&mut self) -> Result<Option<String>> {
         Ok(None)
     }

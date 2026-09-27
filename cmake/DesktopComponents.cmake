@@ -38,6 +38,7 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/modal_panel/modal_panel.cpp
   desktop/design_system/platform_accessibility.cpp
   desktop/design_system/progress/progress_style.cpp
+  desktop/design_system/right_sheet/right_sheet.cpp
   desktop/design_system/scrollbar/scrollbar_style.cpp
   desktop/design_system/select/select_popup.cpp
   desktop/design_system/select/select_style.cpp
@@ -82,6 +83,7 @@ choscordb_add_library(choscordb-desktop-services
   desktop/bridge/completion_service.cpp
   desktop/bridge/result_column_adapter.cpp
   desktop/bridge/engine_adapter.cpp
+  desktop/bridge/engine_adapter_graph.cpp
   desktop/bridge/engine_adapter_ssh_trust.cpp
   desktop/bridge/engine_adapter_storage.cpp
   desktop/models/shortcut_catalog.cpp
@@ -96,6 +98,7 @@ target_link_libraries(choscordb-desktop-services PUBLIC
 add_dependencies(choscordb-desktop-services cargo-build_choscordb_bridge)
 
 choscordb_add_library(choscordb-widgets
+  desktop/widgets/object_erd_widget.cpp
   desktop/widgets/query_settings_dialog/query_settings_dialog.cpp
   desktop/widgets/editor_completion/editor_completion.cpp
   desktop/widgets/preferences_dialog/preferences_dialog.cpp
@@ -134,6 +137,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/main_window_navigator.cpp
   desktop/app/workspace_recovery.cpp
   desktop/app/query_workspace.cpp
+  desktop/app/query_workspace_json.cpp
   desktop/app/query_workspace_events.cpp
   desktop/app/query_workspace_lifecycle.cpp
   desktop/app/query_workspace_view.cpp

@@ -143,6 +143,38 @@ fn metadata_tokens_survive_success_and_failure() {
 }
 
 #[test]
+fn object_graph_transport_preserves_structured_identity_and_request_token() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("graph.sqlite");
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute_batch("CREATE TABLE parent(id INTEGER PRIMARY KEY); CREATE TABLE child(id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent(id));").unwrap();
+    drop(db);
+    let mut engine = new_engine();
+    let connection = connect_sqlite(&mut engine, path.to_str().unwrap(), false);
+    assert!(connection.accepted);
+    await_event(&mut engine, "connected");
+    let object = r#"["main","parent"]"#;
+    assert!(object_graph_request(&mut engine, connection.id, object, 73).accepted);
+    let event = await_event(&mut engine, "object_graph");
+    assert_eq!(event.request_token, 73);
+    assert_eq!(event.object, object);
+    let graph: serde_json::Value = serde_json::from_str(&event.graph_json).unwrap();
+    assert_eq!(graph["tables"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        graph["edges"][0]["source_columns"],
+        serde_json::json!(["parent_id"])
+    );
+    assert_eq!(
+        graph["edges"][0]["target_columns"],
+        serde_json::json!(["id"])
+    );
+    assert!(object_graph_request(&mut engine, connection.id, "bad id", 74).accepted);
+    let failed = await_event(&mut engine, "object_graph_failed");
+    assert_eq!(failed.request_token, 74);
+    assert_eq!(failed.object, "bad id");
+}
+
+#[test]
 fn transfer_leases_remain_accounted_until_explicit_release() {
     let mut engine = new_engine();
     let c = connect_sqlite(&mut engine, ":memory:", false);

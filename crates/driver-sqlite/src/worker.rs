@@ -121,6 +121,9 @@ pub(super) fn run(
             Command::Metadata(parent, r) => {
                 let _ = r.send(metadata::load(&db, parent));
             }
+            Command::ObjectGraph(object, r) => {
+                let _ = r.send(metadata::object_graph(&db, &object));
+            }
             Command::Ddl(id, r) => {
                 let _ = r.send(metadata::ddl(&db, id));
             }
@@ -444,6 +447,18 @@ fn execute(
                 // must not inherit an exhausted result's query deadline.
                 let _ = db.progress_handler(0, None::<fn() -> bool>);
                 let _ = reply.send(metadata::load(db, parent));
+                let stop = cancel.clone();
+                let _ = db.progress_handler(
+                    1000,
+                    Some(move || {
+                        stop.load(Ordering::Acquire)
+                            || deadline.is_some_and(|d| Instant::now() >= d)
+                    }),
+                );
+            }
+            Command::ObjectGraph(object, reply) => {
+                let _ = db.progress_handler(0, None::<fn() -> bool>);
+                let _ = reply.send(metadata::object_graph(db, &object));
                 let stop = cancel.clone();
                 let _ = db.progress_handler(
                     1000,

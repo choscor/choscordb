@@ -4,6 +4,7 @@
 #include <QString>
 #include <QStringList>
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <variant>
 #include <vector>
@@ -40,6 +41,7 @@ struct ResultCellMetadata {
 class ResultTableModel final : public QAbstractTableModel {
     Q_OBJECT
   public:
+    enum class RowJsonReadiness { Ready, NeedsDeferred, Invalid };
     static constexpr int HeaderTypeRole = Qt::UserRole + 1;
     static constexpr int HeaderKeyRole = Qt::UserRole + 2;
     static constexpr int HeaderNameRole = Qt::UserRole + 3;
@@ -91,11 +93,18 @@ class ResultTableModel final : public QAbstractTableModel {
     QString copyCells(QModelIndexList selection, QString* error = nullptr) const;
     QString copyRows(QModelIndexList selection, QString* error = nullptr) const;
     QString copyPage(QString* error = nullptr) const;
+    // Returns a complete typed JSON object. Deferred cells require full values
+    // keyed by column index; failure clears json and sets error.
+    bool rowJson(int row, QString* json, QString* error = nullptr,
+                 const std::map<int, Cell>& resolved = {}) const;
+    RowJsonReadiness rowJsonReadiness(int row, QString* error = nullptr) const;
 
   signals:
     void pendingEditsChanged(bool pending);
 
   private:
+    bool rowJsonImpl(int row, QString* json, QString* error, const std::map<int, Cell>& resolved,
+                     bool allowDeferred, bool* unresolved) const;
     QString copyScope(QModelIndexList selection, int scope, QString* error) const;
     std::vector<ResultColumn> columns_;
     std::vector<ResultCellMetadata> cellMetadata_;
