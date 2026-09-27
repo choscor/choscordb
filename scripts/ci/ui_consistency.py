@@ -2,12 +2,14 @@
 """Audit desktop UI construction sites and local visual ownership."""
 
 import argparse
+from bisect import bisect_right
 import json
 from pathlib import Path
 import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+CPP_SUFFIXES = {".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".mm"}
 
 # Stock Qt controls styled by the shared control style or application palette.
 # Their component families are documented in desktop/design_system/README.md.
@@ -16,6 +18,8 @@ STOCK_CONTROLS = {
     "QComboBox",
     "QDoubleSpinBox",
     "QFontComboBox",
+    "QGraphicsView",
+    "QGroupBox",
     "QKeySequenceEdit",
     "QLabel",
     "QLineEdit",
@@ -23,6 +27,8 @@ STOCK_CONTROLS = {
     "QMenu",
     "QPlainTextEdit",
     "QProgressBar",
+    "QPushButton",
+    "QRadioButton",
     "QSpinBox",
     "QTableView",
     "QTextEdit",
@@ -35,6 +41,7 @@ DESIGN_COMPOSITES = {
     "ButtonGroup",
     "DialogSections",
     "FieldValidation",
+    "ModalDialog",
     "NavigationProfileDelegate",
     "RecentHistoryRowDelegate",
     "TabAddCorner",
@@ -44,11 +51,11 @@ DESIGN_NON_VISUAL = {
     "PreviewWindow",
     "ThemeManager",
 }
-FEATURE_COMPOSITES = {"QuerySettingsDialog"}
 STRUCTURAL_CONTROLS = {
     "QDialogButtonBox",
     "QDockWidget",
     "QFrame",
+    "QMessageBox",
     "QScrollArea",
     "QSplitter",
     "QStackedWidget",
@@ -59,9 +66,17 @@ STRUCTURAL_CONTROLS = {
     "QWidgetAction",
     "QButtonGroup",
 }
-NEW_CONTROL = re.compile(r"\bnew\s+(?:(design)::)?([A-Z][A-Za-z0-9_]*)\s*(?=[({;])")
+TYPE = r"(?:(?:[A-Za-z_]\w*)::)*[A-Z][A-Za-z0-9_]*"
+NEW_CONTROL = re.compile(r"\bnew\s+(" + TYPE + r")\s*(?=[({;])")
+SMART_CONTROL = re.compile(rf"\b(?:std::)?make_(?:unique|shared)\s*<\s*({TYPE})\s*>")
+STACK_CONTROL = re.compile(
+    r"(?<![\w:])(?:const\s+)?(" + TYPE + r")\s+[A-Za-z_]\w*\s*(?=[({])"
+)
+FEATURE_CLASS = re.compile(
+    r"\b(?:class|struct)\s+([A-Za-z_]\w*)(?:\s+final)?\s*:\s*public\s+(" + TYPE + r")\b"
+)
 FONT_FAMILY = re.compile(
-    r'\bQFont\s*(?:\(\s*|[A-Za-z_]\w*\s*\(\s*)(?:(?:QStringLiteral|QLatin1String)\s*\(\s*)?"'
+    r'\bQFont\s*(?:[({]\s*|[A-Za-z_]\w*\s*[({]\s*)(?:(?:QStringLiteral|QLatin1String)\s*\(\s*)?"'
 )
 FONT_SIZE = re.compile(
     r"\bset(?:Pixel|Point)Size(?:F)?\s*\(\s*(?:[0-9]+(?:\.[0-9]+)?\b|std::(?:max|min)\s*\(\s*[0-9]+(?:\.[0-9]+)?\b)"
@@ -70,8 +85,14 @@ FONT_FAMILY_SETTER = re.compile(
     r'\bsetFamily\s*\(\s*(?:(?:QStringLiteral|QLatin1String)\s*\(\s*)?"'
 )
 COMPONENT_FONT_SIZE = re.compile(r"\bset(?:Pixel|Point)Size(?:F)?\s*\(")
-HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?\b")
-COLOR_VALUE = re.compile(r"\bQColor\s*\(\s*[0-9]+\s*,")
+HEX_COLOR = re.compile(
+    r"(?<![\w#])#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b"
+)
+COLOR_VALUE = re.compile(
+    r"\bQColor\s*(?:[({]|[A-Za-z_]\w*\s*[({])\s*[0-9]+\s*,|"
+    r"\bQColor::from(?:Rgb|Hsv|Cmyk)F?\s*\(\s*[0-9]+(?:\.[0-9]+)?\s*,|"
+    r'\bQColor\s*(?:[({]|[A-Za-z_]\w*\s*[({])\s*"(?:red|blue|green|yellow|cyan|magenta|black|white|gray|grey|orange|purple)"'
+)
 QT_COLOR = re.compile(
     r"\bQt::(?:black|white|red|darkRed|green|darkGreen|blue|darkBlue|cyan|darkCyan|magenta|darkMagenta|yellow|darkYellow|gray|darkGray|lightGray)\b"
 )
@@ -79,31 +100,119 @@ QSS_COLOR = re.compile(
     r":\s*(?:rgb|rgba|hsl|hsla)\s*\(|"
     r":\s*(?:red|blue|green|yellow|cyan|magenta|black|white|gray|grey|orange|purple)\s*;"
 )
-MESSAGE_BOX = re.compile(r"\b(?:new\s+)?QMessageBox\s+[A-Za-z_]\w*\s*\(")
+MESSAGE_BOX = re.compile(
+    r"\bnew\s+QMessageBox\s*[({]|\bQMessageBox\s+[A-Za-z_]\w*\s*[({]|"
+    r"\bQMessageBox::(?:information|warning|critical|question|about|aboutQt)\s*\("
+)
 
 
 def screen_sources(desktop):
-    app = desktop / "app"
-    app_groups = {}
-    if app.is_dir():
-        for source in sorted((*app.glob("*.cpp"), *app.glob("*.h"))):
-            name = source.stem
-            if name.startswith("main_window"):
+    """Group every production C++ source, including loose and nested widgets."""
+    groups = {}
+    for area in ("app", "widgets"):
+        directory = desktop / area
+        if not directory.is_dir():
+            continue
+        for source in sorted(directory.rglob("*")):
+            if not source.is_file() or source.suffix not in CPP_SUFFIXES:
+                continue
+            relative = source.relative_to(directory)
+            name = relative.parts[0] if len(relative.parts) > 1 else source.stem
+            if area == "app" and name.startswith("main_window"):
                 name = "main_window"
-            elif name.startswith("query_workspace"):
+            elif area == "app" and name.startswith("query_workspace"):
                 name = "query_workspace"
-            app_groups.setdefault(f"app/{name}", []).append(source)
-    for name, sources in sorted(app_groups.items()):
+            groups.setdefault(f"{area}/{name}", []).append(source)
+    for name, sources in sorted(groups.items()):
         yield name, sources
-    widgets = desktop / "widgets"
-    if widgets.is_dir():
-        for directory in sorted(widgets.iterdir()):
-            if directory.is_dir():
-                sources = sorted(directory.glob("*.cpp")) + sorted(
-                    directory.glob("*.h")
-                )
-                if sources:
-                    yield f"widgets/{directory.name}", sources
+
+
+def cpp_without_comments(source, *, mask_literals=False):
+    """Preserve offsets and newlines while hiding comments (and optionally literals)."""
+    output = list(source)
+    index = 0
+    while index < len(source):
+        if source.startswith('R"', index):
+            opening = source.find("(", index + 2)
+            delimiter = source[index + 2 : opening] if opening >= 0 else ""
+            closing = source.find(")" + delimiter + '"', opening + 1)
+            end = len(source) if closing < 0 else closing + len(delimiter) + 2
+            if not mask_literals:
+                index = end
+                continue
+        elif source.startswith("//", index):
+            end = source.find("\n", index)
+            end = len(source) if end < 0 else end
+        elif source.startswith("/*", index):
+            closing = source.find("*/", index + 2)
+            end = len(source) if closing < 0 else closing + 2
+        elif source[index] in {'"', "'"}:
+            quote = source[index]
+            end = index + 1
+            while end < len(source):
+                if source[end] == "\\":
+                    end += 2
+                elif source[end] == quote:
+                    end += 1
+                    break
+                else:
+                    end += 1
+            if not mask_literals:
+                index = end
+                continue
+        else:
+            index += 1
+            continue
+        for offset in range(index, min(end, len(source))):
+            if output[offset] != "\n":
+                output[offset] = " "
+        index = end
+    return "".join(output)
+
+
+def feature_composites(sources):
+    """Find feature UI classes by their QWidget inheritance, including local bases."""
+    bases = {}
+    for path in sources:
+        code = cpp_without_comments(
+            path.read_text(encoding="utf-8"), mask_literals=True
+        )
+        bases.update(
+            (match.group(1), match.group(2).split("::")[-1])
+            for match in FEATURE_CLASS.finditer(code)
+        )
+    composites = set()
+    while True:
+        found = {
+            name
+            for name, base in bases.items()
+            if base in composites
+            or base in {"DialogShell", "QsciScintilla"}
+            or is_visual_qt(base)
+        }
+        if found == composites:
+            return composites
+        composites = found
+
+
+def control_kind(qualified_name, feature_classes):
+    parts = qualified_name.split("::")
+    name = parts[-1]
+    if "design" in parts[:-1]:
+        if name in DESIGN_CONTROLS:
+            return "explicit", None
+        if name in DESIGN_COMPOSITES:
+            return "composite", None
+        if name in DESIGN_NON_VISUAL:
+            return None, None
+        return "unclassified", f"unclassified design control {name}"
+    if name in STOCK_CONTROLS:
+        return "stock", None
+    if name in feature_classes:
+        return "composite", None
+    if name not in STRUCTURAL_CONTROLS and is_visual_qt(name):
+        return "unclassified", f"unclassified visual control {name}"
+    return None, None
 
 
 def is_visual_qt(name):
@@ -139,62 +248,56 @@ def audit(root=ROOT):
     desktop = root / "desktop"
     screens = {}
     problems = []
-    for screen, sources in screen_sources(desktop):
+    groups = dict(screen_sources(desktop))
+    feature_sources = sorted({path for sources in groups.values() for path in sources})
+    feature_classes = feature_composites(feature_sources)
+    for screen, sources in groups.items():
         counts = {"explicit": 0, "stock": 0, "unclassified": 0, "composite": 0}
         for path in sources:
-            for number, line in enumerate(
-                path.read_text(encoding="utf-8").splitlines(), 1
-            ):
-                location = f"{path.relative_to(root)}:{number}"
-                for match in NEW_CONTROL.finditer(line):
-                    name = match.group(2)
-                    if match.group(1):
-                        if name in DESIGN_CONTROLS:
-                            counts["explicit"] += 1
-                        elif name in DESIGN_COMPOSITES:
-                            counts["composite"] += 1
-                        elif name not in DESIGN_NON_VISUAL:
-                            counts["unclassified"] += 1
-                            problems.append(
-                                f"{location}: unclassified design control {name}"
-                            )
-                    elif name in STOCK_CONTROLS:
-                        counts["stock"] += 1
-                    elif name in FEATURE_COMPOSITES:
-                        counts["composite"] += 1
-                    elif name not in STRUCTURAL_CONTROLS and is_visual_qt(name):
-                        counts["unclassified"] += 1
-                        problems.append(
-                            f"{location}: unclassified visual control {name}"
-                        )
+            source = cpp_without_comments(
+                path.read_text(encoding="utf-8"), mask_literals=True
+            )
+            starts = [0] + [match.end() for match in re.finditer("\n", source)]
+            for pattern in (NEW_CONTROL, SMART_CONTROL, STACK_CONTROL):
+                for match in pattern.finditer(source):
+                    if pattern is STACK_CONTROL:
+                        arguments = source[match.end() :].lstrip()
+                        if re.match(
+                            r"\(\s*\)|\(\s*(?:const\s+)?" + TYPE + r"\s*[*&]", arguments
+                        ):
+                            continue
+                    kind, problem = control_kind(match.group(1), feature_classes)
+                    if kind is None:
+                        continue
+                    counts[kind] += 1
+                    if problem:
+                        number = bisect_right(starts, match.start())
+                        problems.append(f"{path.relative_to(root)}:{number}: {problem}")
         screens[screen] = counts
 
     # Check every production application / widget file, including controllers that
     # are not themselves visual composition roots.
-    for area in (desktop / "app", desktop / "widgets"):
-        if not area.is_dir():
-            continue
-        for path in sorted(area.rglob("*")):
-            if path.suffix not in {".cpp", ".h"}:
-                continue
-            for number, line in enumerate(
-                path.read_text(encoding="utf-8").splitlines(), 1
-            ):
-                location = f"{path.relative_to(root)}:{number}"
-                for pattern, label in (
-                    (FONT_FAMILY, "local font family"),
-                    (FONT_FAMILY_SETTER, "local font family"),
-                    (FONT_SIZE, "local font size"),
-                    (COLOR_VALUE, "local color value"),
-                    (QT_COLOR, "local color value"),
-                    (MESSAGE_BOX, "use shared confirmation dialog"),
-                ):
-                    if pattern.search(line):
-                        problems.append(f"{location}: {label}")
+    for path in feature_sources:
+        source = cpp_without_comments(path.read_text(encoding="utf-8"))
+        code = cpp_without_comments(source, mask_literals=True)
+        starts = [0] + [match.end() for match in re.finditer("\n", source)]
+        for pattern, label in (
+            (FONT_FAMILY, "local font family"),
+            (FONT_FAMILY_SETTER, "local font family"),
+            (FONT_SIZE, "local font size"),
+            (COLOR_VALUE, "local color value"),
+            (QT_COLOR, "local color value"),
+            (MESSAGE_BOX, "use shared confirmation dialog"),
+        ):
+            for match in pattern.finditer(source):
+                if code[match.start()].isspace():
+                    continue
+                number = bisect_right(starts, match.start())
+                problems.append(f"{path.relative_to(root)}:{number}: {label}")
 
     # Hex tokens belong to the colors foundation, including those embedded in QSS.
     for path in sorted(desktop.rglob("*")):
-        if path.suffix not in {".cpp", ".h", ".qss"}:
+        if not path.is_file() or path.suffix not in CPP_SUFFIXES | {".qss"}:
             continue
         if (
             desktop / "design_system/colors" in path.parents
@@ -203,13 +306,32 @@ def audit(root=ROOT):
             or path == desktop / "design_system/icons.cpp"
         ):
             continue
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if (
-                desktop / "design_system" in path.parents
-                and desktop / "design_system/fonts" not in path.parents
-                and COMPONENT_FONT_SIZE.search(line)
-            ):
-                problems.append(f"{path.relative_to(root)}:{number}: local font size")
+        content = path.read_text(encoding="utf-8")
+        if path.suffix in CPP_SUFFIXES:
+            content = cpp_without_comments(content)
+            if desktop / "design_system" in path.parents:
+                code = cpp_without_comments(content, mask_literals=True)
+                starts = [0] + [match.end() for match in re.finditer("\n", content)]
+                checks = [
+                    (COLOR_VALUE, "local color value"),
+                    (QT_COLOR, "local color value"),
+                ]
+                if desktop / "design_system/fonts" not in path.parents:
+                    checks.extend(
+                        (
+                            (FONT_FAMILY, "local font family"),
+                            (FONT_FAMILY_SETTER, "local font family"),
+                            (COMPONENT_FONT_SIZE, "local font size"),
+                        )
+                    )
+                for pattern, label in checks:
+                    for match in pattern.finditer(content):
+                        if not code[match.start()].isspace():
+                            number = bisect_right(starts, match.start())
+                            problems.append(
+                                f"{path.relative_to(root)}:{number}: {label}"
+                            )
+        for number, line in enumerate(content.splitlines(), 1):
             if HEX_COLOR.search(line):
                 problems.append(f"{path.relative_to(root)}:{number}: local hex color")
             if path.suffix == ".qss" and QSS_COLOR.search(line):

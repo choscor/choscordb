@@ -1,39 +1,56 @@
-# Repository UI rules
+# Repository instructions
 
-The desktop UI is Qt Widgets in `desktop/app/` and `desktop/widgets/`. Reuse the
-presentation owned by `desktop/design_system/`. Stock Qt controls covered by
-`ThemeManager`, `ControlStyle`, and shared QSS are shared components too; do not
-add an empty subclass merely to raise a subclass count. Use a semantic design
-component when it owns behavior or presentation beyond the stock control.
+## Desktop UI ownership
 
-Keep workflow and database state in app/widgets, and reusable appearance in the
-design system. Screen code may choose a semantic role, theme color, typography
-role, or spacing token. Do not add screen-owned QSS, literal visual colors, font
-families/sizes, or a second implementation of an existing component. Keep user
-selected SQL editor fonts as user settings. Use `ConfirmationDialog` for message
-boxes and shared dialog shells for modal content when their contract fits.
+These rules apply to the Qt Widgets UI in `desktop/app/` and `desktop/widgets/`.
+For changes in `desktop/design_system/`, also follow its `AGENTS.md`.
 
-Before extracting a component, check the design-system ownership map and its
-call sites. Extract only repeated presentation or behavior with the same contract;
-similar-looking workflow code can remain separate. Keep changes compact and
-preserve existing object names, accessibility names, focus and signal behavior.
+- Reuse presentation from `desktop/design_system/`. Stock Qt controls styled by
+  `ThemeManager`, `ControlStyle`, or shared QSS count as shared components; do not
+  add an empty subclass just to increase the subclass count.
+- Use a semantic design component when it owns behavior or presentation beyond
+  a stock control.
+- Keep workflow and database state in app/widgets. Keep reusable appearance in
+  the design system.
+- In screen code, choose semantic roles, theme colors, typography roles, and
+  spacing tokens. Do not add screen-owned QSS, literal visual colors, font
+  families or sizes, or another implementation of an existing component.
+- Keep user-selected SQL editor fonts as user settings.
+- Use `ConfirmationDialog` for message boxes and shared dialog shells for modal
+  content when their contracts fit.
 
-Run `python3 scripts/ci/ui_consistency.py` for a per-screen source census and
-visual-ownership violations; `--json` emits the deterministic report. Its
-construction-site percentage includes explicitly instantiated design controls
-and stock Qt controls covered by the shared style. It is a static estimate, not
-a runtime or pixel-level claim. Run `python3 scripts/ci/ui_policy.py` and
-`python3 scripts/ci/qss_policy.py` as well. The canonical quality runner includes
-the consistency gate and Python tests. For native UI changes, build and run the
-relevant CTest targets, then the full native suite when dependencies are present.
+## Component changes
 
-Design-system edits must also follow `desktop/design_system/AGENTS.md`, including
-the Light and Dark gallery specimen and its test.
+- Before extracting a component, check the ownership map in
+  `desktop/design_system/README.md` and its call sites. Extract only repeated
+  presentation or behavior with the same contract; similar-looking workflow
+  code may remain separate.
+- Keep changes compact. Preserve object names, accessibility names, focus, and
+  signal behavior.
+- For each new UI component, check that its call site appears in the
+  `python3 scripts/ci/ui_consistency.py --json` census. If it uses a new
+  construction pattern, extend the checker and add a regression test.
 
-# Commit messages
+## Verification checklist for UI changes
 
-Use Conventional Commits. Every commit message must include a type, scope,
-description, body, and footer. Separate each section with a blank line:
+- [ ] Run `python3 scripts/ci/ui_consistency.py`. Use `--json` to inspect the
+      deterministic per-screen source census and visual-ownership violations.
+- [ ] Run `python3 scripts/ci/ui_policy.py` and
+      `python3 scripts/ci/qss_policy.py`.
+- [ ] For native UI changes, build and run relevant CTest targets. Run the full
+      native suite when dependencies are present.
+- [ ] For design-system edits, follow `desktop/design_system/AGENTS.md`, including
+      its Light and Dark gallery specimen and matching test.
+
+The consistency report's construction-site percentage includes explicitly
+instantiated design controls and stock Qt controls covered by the shared style.
+It is a static estimate, not a runtime or pixel-level claim. The canonical
+quality runner includes the consistency gate and Python tests.
+
+## Commit messages
+
+Use Conventional Commits. Include a type, scope, description, body, and footer,
+with a blank line between each section:
 
 ```
 <type>(<scope>): <description>

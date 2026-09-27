@@ -6,6 +6,7 @@ import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+CPP_SUFFIXES = {".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".mm"}
 COLOR = re.compile(r"QColor\s*\(\s*(?:QStringLiteral\s*\()?\s*\"#[0-9A-Fa-f]{3,8}")
 STYLE = re.compile(r"\bsetStyleSheet\s*\(")
 METRIC = re.compile(
@@ -25,7 +26,7 @@ def violations(root=ROOT):
     allowed = desktop / "design_system"
     preview = desktop / "tools/preview"
     for path in sorted(desktop.rglob("*")):
-        if path.suffix not in {".cpp", ".h"}:
+        if path.suffix not in CPP_SUFFIXES:
             continue
         text = path.read_text(encoding="utf-8")
         for line_number, line in enumerate(text.splitlines(), 1):

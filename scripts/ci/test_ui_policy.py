@@ -67,6 +67,18 @@ class UiPolicyTest(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("tools/other.cpp", found[0])
 
+    def test_scans_objcxx_and_additional_cpp_suffixes(self):
+        temporary, root = self.fixture("")
+        with temporary:
+            (root / "desktop/widgets/native.mm").write_text(
+                "widget.resize(640, 480);\n", encoding="utf-8"
+            )
+            (root / "desktop/widgets/extra.hpp").write_text(
+                'widget.setStyleSheet("color: red");\n', encoding="utf-8"
+            )
+            found = ui_policy.violations(root)
+        self.assertEqual(len(found), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
