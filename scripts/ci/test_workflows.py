@@ -191,6 +191,17 @@ class WorkflowPolicyTests(unittest.TestCase):
     def test_security_has_exact_advanced_analysis_matrix(self):
         validate_security(self.files["security.yml"])
 
+    def test_codeql_builds_third_party_qscintilla_before_extraction(self):
+        codeql = yaml_block(self.files["security.yml"], "codeql", 2)
+        self.assertLess(
+            codeql.index("quality.py native-dependencies"),
+            codeql.index("github/codeql-action/init@"),
+        )
+        self.assertLess(
+            codeql.index("github/codeql-action/init@"),
+            codeql.index("quality.py native-build"),
+        )
+
     def test_coverage_is_parser_validated_and_separate(self):
         validate_coverage(self.files["coverage.yml"])
 

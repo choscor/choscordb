@@ -31,6 +31,11 @@ Ninja 1.11.1.4, actionlint 1.7.7, and cargo-deny 0.20.2. Patch updates to LLVM
 
 Qt installation uses the project's [documented aqt CLI](https://aqtinstall.readthedocs.io/en/v3.3.0/cli.html). macOS QScintilla is compiled only for the runner's native architecture. `MACOSX_DEPLOYMENT_TARGET=13.0` is shared by Rust's native dependencies, qmake, and CMake in CI. This is a build setting, not evidence of an installation smoke test on macOS 13.
 
+The QScintilla bootstrap reads the macOS host architecture rather than the
+Python process architecture, which can report `x86_64` under Rosetta on an
+Apple Silicon runner. The C++ CodeQL job provisions Qt and QScintilla before
+starting extraction, then traces the first-party native build.
+
 The unsigned macOS CI build remains a development compatibility check. Production
 macOS releases use a separate isolated toolchain with an arm64, macOS 26.0 target
 for application code, Rust/native dependencies, and QScintilla. The release
