@@ -60,6 +60,10 @@ class NavigatorModel final : public QAbstractItemModel {
     bool failChildren(quint64 connection, const QString& parentObjectId, quint64 token,
                       const QString& error);
     void refresh(const QModelIndex& index);
+    bool refreshObject(quint64 connection, const QString& objectId);
+    bool matchesObject(quint64 connection, const QString& objectId, const QString& kind,
+                       const QString& qualifiedName, const QString& parentObjectId,
+                       const QString& relationSubtype = {}) const;
     // Accepted loaded metadata only. partial marks omitted or still-unloaded data;
     // maxUtf8Bytes charges all copied strings, including object IDs.
     CompletionSnapshot completionSnapshot(quint64 connection, quint64 maxEntries,

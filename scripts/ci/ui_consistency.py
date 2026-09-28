@@ -46,6 +46,7 @@ DESIGN_COMPOSITES = {
     "RecentHistoryRowDelegate",
     "TabAddCorner",
 }
+SHARED_DIALOGS = {"ConfirmationDialog", "DialogShell"}
 DESIGN_NON_VISUAL = {
     "PlatformAccessibilityMonitor",
     "PreviewWindow",
@@ -208,6 +209,8 @@ def control_kind(qualified_name, feature_classes):
         return "unclassified", f"unclassified design control {name}"
     if name in STOCK_CONTROLS:
         return "stock", None
+    if name in SHARED_DIALOGS:
+        return "composite", None
     if name in feature_classes:
         return "composite", None
     if name not in STRUCTURAL_CONTROLS and is_visual_qt(name):

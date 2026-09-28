@@ -3,7 +3,9 @@
 #include <QModelIndex>
 #include <QObject>
 #include <QPointer>
+#include <QString>
 #include <QVariant>
+#include <functional>
 class QMenu;
 class QTreeView;
 class QLineEdit;
@@ -27,6 +29,7 @@ class NavigatorController final : public QObject {
     void removePendingConnection(quint64 pendingId);
     void setPendingConnection(const QString& label);
     quint64 selectedConnection() const;
+    void setDriverResolver(std::function<QString(quint64)> resolver);
     void populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex);
     void refreshCurrent();
     void disconnectCurrent();
@@ -37,6 +40,10 @@ class NavigatorController final : public QObject {
                       const QString& kind, const QVariantList& properties);
     void generationFailed(const QString& error);
     void searchStatusChanged(const QString& status);
+    void objectActionRequested(const QString& action, quint64 connection,
+                               const QString& objectId, const QString& shortName,
+                               const QString& kind, const QString& parentObjectId,
+                               const QString& qualifiedName, const QString& relationSubtype);
 
   private:
     NavigatorModel* model_;
@@ -44,6 +51,7 @@ class NavigatorController final : public QObject {
     QTreeView* tree_;
     QSortFilterProxyModel* proxy_;
     QLineEdit* filter_;
+    std::function<QString(quint64)> driverResolver_;
     quint64 searchGeneration_ = 0;
     int searchRequests_ = 0;
     bool searchPending_ = false;

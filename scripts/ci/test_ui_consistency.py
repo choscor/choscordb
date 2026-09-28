@@ -318,6 +318,17 @@ class UiConsistencyTest(unittest.TestCase):
             report["screens"]["app/navigator_controller"]["stock"], 1
         )
 
+    def test_census_counts_shared_dialog_construction(self):
+        temporary, root = self.fixture()
+        with temporary:
+            (root / "desktop/app/main_window_ui.cpp").write_text(
+                "DialogShell rename(this);\n"
+                "ConfirmationDialog drop(QMessageBox::Warning, title, text);\n",
+                encoding="utf-8",
+            )
+            report = ui_consistency.audit(root)
+        self.assertEqual(report["screens"]["app/main_window"]["composite"], 2)
+
     def test_discovers_feature_composites_through_inheritance(self):
         temporary, root = self.fixture()
         with temporary:

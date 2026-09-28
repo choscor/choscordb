@@ -26,6 +26,7 @@ class SearchPanel;
 class EditorCompletionController;
 class EditorPreferencesController;
 class AppearanceController;
+struct BridgeEvent;
 class MainWindow final : public QMainWindow {
     Q_OBJECT
   public:
@@ -56,6 +57,14 @@ class MainWindow final : public QMainWindow {
     void connectWorkspace(const Ui& ui, const QString& storagePath);
     void connectLifecycle(const Ui& ui, const QString& storagePath);
     void connectNavigator(const Ui& ui);
+    void requestObjectAction(const QString& action, quint64 connection, const QString& objectId,
+                             const QString& shortName, const QString& kind,
+                             const QString& parentObjectId, const QString& qualifiedName,
+                             const QString& relationSubtype);
+    void handleObjectActionEvent(const BridgeEvent& event);
+    bool objectActionReady(quint64 connection, const QString& objectId, const QString& kind,
+                           const QString& parentObjectId, const QString& qualifiedName,
+                           const QString& relationSubtype);
 #ifdef Q_OS_MACOS
     void updateNativeTitleBar();
 #endif
@@ -76,6 +85,17 @@ class MainWindow final : public QMainWindow {
     QString navigatorSearchStatus_;
     bool submittingBrowseProfile_ = false;
     NavigatorController* navigatorController_ = nullptr;
+    struct PendingObjectAction {
+        QString action, objectId, kind, displayKind, parentObjectId, qualifiedName;
+        QString newObjectId, newQualifiedName, context;
+        quint64 connection = 0, query = 0;
+    };
+    std::optional<PendingObjectAction> pendingObjectAction_;
+    struct PendingObjectRefresh {
+        quint64 connection = 0, token = 0;
+        QString parentObjectId;
+    };
+    std::optional<PendingObjectRefresh> pendingObjectRefresh_;
     QStackedWidget* screens_ = nullptr;
     ToastRegion* toast_ = nullptr;
     bool constructing_ = true;
