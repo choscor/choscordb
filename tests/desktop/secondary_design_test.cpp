@@ -308,8 +308,8 @@ class SecondaryDesignTest final : public QObject {
         auto* authentication = dialog.findChild<QComboBox*>("profileSshAuthentication");
         auto* identity = dialog.findChild<QLineEdit*>("profileSshIdentityFile");
         auto* secret = dialog.findChild<QLineEdit*>("profileSshSecret");
-        auto* remember = dialog.findChild<QCheckBox*>("profileRememberSshSecret");
-        QVERIFY(authentication && identity && secret && remember);
+        auto* saveCredentials = dialog.findChild<QCheckBox*>("profileSaveCredentials");
+        QVERIFY(authentication && identity && secret && saveCredentials);
         QCOMPARE(authentication->count(), 3);
         authentication->setCurrentIndex(authentication->findData("agent"));
         QVERIFY(!identity->isVisible());
@@ -323,7 +323,8 @@ class SecondaryDesignTest final : public QObject {
         QVERIFY(!identity->isVisible());
         QVERIFY(secret->isVisible());
         QVERIFY(secret->text().isEmpty());
-        QVERIFY(remember->isVisible());
+        QVERIFY(saveCredentials->isVisible());
+        QVERIFY(!saveCredentials->isChecked());
         port->setValue(3307);
         dialog.findChild<QPushButton*>("profileDriverSqlite")->click();
         mysql->click();
@@ -462,15 +463,31 @@ class SecondaryDesignTest final : public QObject {
         QVERIFY(host->isVisible());
         QVERIFY(!path->isVisible());
         host->setText("database.example");
+        auto* useTls = dialog.findChild<QCheckBox*>("profileUseTls");
         auto* tls = dialog.findChild<QComboBox*>("profileTls");
+        QVERIFY(useTls);
+        QVERIFY(tls);
+        QVERIFY(useTls->isVisible());
+        QVERIFY(!useTls->isChecked());
+        QVERIFY(!tls->isVisible());
+        QCOMPARE(tls->currentData().toString(), QString("verify_full"));
+        useTls->setChecked(true);
         QVERIFY(tls->isVisible());
-        QCOMPARE(tls->currentData().toString(), QString("disable"));
+        QCOMPARE(tls->currentData().toString(), QString("verify_full"));
+        tls->setCurrentIndex(tls->findData("verify_ca"));
+        useTls->setChecked(false);
+        QVERIFY(!tls->isVisible());
+        useTls->setChecked(true);
+        QCOMPARE(tls->currentData().toString(), QString("verify_ca"));
         sqlite->setFocus();
         QTest::keyClick(sqlite, Qt::Key_Space);
         QVERIFY(sqlite->isChecked());
         QCOMPARE(path->text(), QString("/tmp/分析.db"));
         QTest::mouseClick(postgres, Qt::LeftButton);
         QCOMPARE(host->text(), QString("database.example"));
+        QVERIFY(useTls->isChecked());
+        QVERIFY(tls->isVisible());
+        QCOMPARE(tls->currentData().toString(), QString("verify_ca"));
         QCOMPARE(dialog.findChild<QComboBox*>("profileDriver")->currentData().toString(),
                  QString("postgres"));
     }

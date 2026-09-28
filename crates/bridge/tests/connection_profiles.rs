@@ -68,6 +68,7 @@ fn event(engine: &mut BridgeEngine) -> ffi::BridgeEvent {
 fn tls_save_update_reaches_credential_store_without_exposing_password() {
     let mut engine = new_engine();
     let credentials = ffi::ProfileCredentialsDto {
+        save_credentials: true,
         database_action: "keep".into(),
         ssh_action: "keep".into(),
         tls_action: "replace".into(),
@@ -81,6 +82,24 @@ fn tls_save_update_reaches_credential_store_without_exposing_password() {
     assert_eq!(failed.request_token, 71);
     assert!(failed.error.contains("unavailable"));
     assert!(!failed.error.contains("private-tls-password"));
+}
+
+#[test]
+fn unchecked_save_does_not_store_entered_secrets() {
+    let mut engine = new_engine();
+    let credentials = ffi::ProfileCredentialsDto {
+        database_action: "replace".into(),
+        database: "transient-only-password".into(),
+        tls_action: "replace".into(),
+        tls: "transient-only-tls".into(),
+        ..Default::default()
+    };
+    let submitted = profile_save_credentials(&mut engine, draft(), credentials, 75);
+    assert!(submitted.accepted, "{}", submitted.error);
+    let saved = event(&mut engine);
+    assert_eq!(saved.kind, "profile_saved");
+    assert!(saved.profiles[0].credential_ref.is_empty());
+    assert!(saved.profiles[0].tls_credential_ref.is_empty());
 }
 
 #[test]

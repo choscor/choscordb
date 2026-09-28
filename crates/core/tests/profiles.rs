@@ -2,7 +2,6 @@ use choscordb_core::{ConnectionProfile, Engine, EngineConfig, Event, ProfileConf
 use std::time::{Duration, Instant};
 fn profile(id: &str) -> ConnectionProfile {
     ConnectionProfile {
-        authentication: Default::default(),
         id: id.into(),
         name: "Local".into(),
         group_id: None,

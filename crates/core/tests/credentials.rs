@@ -92,6 +92,90 @@ fn database_and_ssh_secrets_have_independent_secure_references() {
     assert!(profile.ssh_credential_ref.is_none());
     assert_eq!(vault.items.lock().unwrap().len(), 1);
 }
+
+#[test]
+fn unchecked_profile_policy_clears_every_saved_secret_even_with_draft_replacements() {
+    let vault = Arc::new(Vault::default());
+    let mut engine =
+        Engine::new_with_credentials(EngineConfig::default(), vec![], vault.clone()).unwrap();
+    engine
+        .profile_save_with_credential_policy(
+            profile(),
+            CredentialUpdates {
+                database: CredentialUpdate::Replace(Secret::new("database-marker")),
+                ssh: CredentialUpdate::Replace(Secret::new("ssh-marker")),
+                tls: CredentialUpdate::Replace(Secret::new("tls-marker")),
+                proxy: CredentialUpdate::Replace(Secret::new("proxy-marker")),
+                ssh_private_key: CredentialUpdate::Keep,
+                ssh_jumps: Default::default(),
+                ssh_jump_private_keys: Default::default(),
+            },
+            true,
+            101,
+        )
+        .unwrap();
+    let Event::ProfileSaved { profile: saved, .. } = event(&mut engine) else {
+        panic!("initial save failed")
+    };
+    assert!(saved.credential_ref.is_some());
+    assert!(saved.ssh_credential_ref.is_some());
+    assert!(saved.tls_credential_ref.is_some());
+    assert!(saved.proxy_credential_ref.is_some());
+    assert_eq!(vault.items.lock().unwrap().len(), 4);
+
+    engine
+        .profile_save_with_credential_policy(
+            *saved,
+            CredentialUpdates {
+                database: CredentialUpdate::Replace(Secret::new("transient-only")),
+                ssh: CredentialUpdate::Keep,
+                tls: CredentialUpdate::Keep,
+                proxy: CredentialUpdate::Keep,
+                ssh_private_key: CredentialUpdate::Keep,
+                ssh_jumps: Default::default(),
+                ssh_jump_private_keys: Default::default(),
+            },
+            false,
+            102,
+        )
+        .unwrap();
+    let Event::ProfileSaved { profile: saved, .. } = event(&mut engine) else {
+        panic!("unchecked save failed")
+    };
+    assert!(saved.credential_ref.is_none());
+    assert!(saved.ssh_credential_ref.is_none());
+    assert!(saved.tls_credential_ref.is_none());
+    assert!(saved.proxy_credential_ref.is_none());
+    assert!(vault.items.lock().unwrap().is_empty());
+}
+
+#[test]
+fn blank_database_password_does_not_create_a_credential() {
+    let vault = Arc::new(Vault::default());
+    let mut engine =
+        Engine::new_with_credentials(EngineConfig::default(), vec![], vault.clone()).unwrap();
+    engine
+        .profile_save_with_credential_policy(
+            profile(),
+            CredentialUpdates {
+                database: CredentialUpdate::Replace(Secret::new("")),
+                ssh: CredentialUpdate::Keep,
+                tls: CredentialUpdate::Keep,
+                proxy: CredentialUpdate::Keep,
+                ssh_private_key: CredentialUpdate::Keep,
+                ssh_jumps: Default::default(),
+                ssh_jump_private_keys: Default::default(),
+            },
+            true,
+            103,
+        )
+        .unwrap();
+    let Event::ProfileSaved { profile, .. } = event(&mut engine) else {
+        panic!("passwordless profile save failed")
+    };
+    assert!(profile.credential_ref.is_none());
+    assert!(vault.items.lock().unwrap().is_empty());
+}
 impl CredentialStore for Vault {
     fn get(&self, r: &str) -> choscordb_credentials::Result<Secret> {
         self.items
@@ -122,7 +206,6 @@ impl CredentialStore for Vault {
 }
 fn profile() -> ConnectionProfile {
     ConnectionProfile {
-        authentication: Default::default(),
         id: "p".into(),
         name: "Remote".into(),
         group_id: None,

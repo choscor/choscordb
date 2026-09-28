@@ -2,13 +2,11 @@
 #include "design_system/button/button.h"
 #include "design_system/theme.h"
 #include <QApplication>
-#include <QCheckBox>
 #include <QClipboard>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QPlainTextEdit>
-#include <QSignalBlocker>
 #include <QVBoxLayout>
 namespace choscordb {
 SshPrivateKeyEditor::SshPrivateKeyEditor(const QString& prefix, QWidget* parent) : QWidget(parent) {
@@ -38,9 +36,6 @@ SshPrivateKeyEditor::SshPrivateKeyEditor(const QString& prefix, QWidget* parent)
     error_ = new QLabel(this);
     error_->setWordWrap(true);
     layout->addWidget(error_);
-    remember_ = new QCheckBox(tr("Save private key in OS credential store"), this);
-    remember_->setObjectName(prefix + "Remember");
-    layout->addWidget(remember_);
     connect(pasteButton, &QPushButton::clicked, this, &SshPrivateKeyEditor::paste);
     connect(clear, &QPushButton::clicked, this, [this] {
         value_.secret.clear();
@@ -48,18 +43,13 @@ SshPrivateKeyEditor::SshPrivateKeyEditor(const QString& prefix, QWidget* parent)
         refresh();
         emit changed();
     });
-    connect(remember_, &QCheckBox::toggled, this, &SshPrivateKeyEditor::changed);
     setDraft({});
 }
 SshPrivateKeyDraft SshPrivateKeyEditor::draft() const {
-    auto value = value_;
-    value.remember = remember_->isChecked();
-    return value;
+    return value_;
 }
 void SshPrivateKeyEditor::setDraft(const SshPrivateKeyDraft& value, bool saved) {
     value_ = value;
-    const QSignalBlocker blocker(remember_);
-    remember_->setChecked(value.remember);
     preview_->setPlaceholderText(
         saved ? tr("Saved private key — leave unchanged to keep")
               : tr("Paste a complete private key. Its contents stay hidden."));

@@ -1,6 +1,5 @@
 //! Database-independent contracts shared by adapters and application services.
 mod bootstrap_transaction;
-mod database_auth;
 mod driver;
 mod edit_query;
 mod error;
@@ -25,7 +24,6 @@ mod value;
 pub use bootstrap_transaction::{
     Control as PostgresTransactionControl, classify as postgres_transaction_control,
 };
-pub use database_auth::*;
 pub use driver::*;
 pub use edit_query::*;
 pub use error::*;

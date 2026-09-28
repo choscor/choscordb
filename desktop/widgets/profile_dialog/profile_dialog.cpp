@@ -13,6 +13,7 @@
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QGridLayout>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHideEvent>
 #include <QLabel>
@@ -22,6 +23,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScreen>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QTimer>
@@ -64,7 +66,10 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     setObjectName("profileDialog");
     setWindowTitle(tr("New connection"));
     setAppModal();
-    resize(design::dialogInitialSize(design::DialogSize::Profiles));
+    const auto available = QGuiApplication::primaryScreen()->availableGeometry().size();
+    const auto margin = design::spacing(design::Spacing::Four);
+    resize(design::dialogInitialSize(design::DialogSize::Profiles)
+               .boundedTo(available - QSize(margin * 2, margin * 2)));
     const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* outer = new QVBoxLayout(this);
     auto* sections = new design::DialogSections(this);
@@ -189,29 +194,39 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     port_ = new QSpinBox(form_);
     port_->setObjectName("profilePort");
     port_->setRange(1, 65535);
-    auto* serverFields = new QGridLayout;
-    const auto serverField = [&](const QString& title, QWidget* widget, int row, int column) {
-        auto* field = new QVBoxLayout;
-        auto* label = new QLabel(title, postgresFields_);
-        label->setBuddy(widget);
-        field->addWidget(label);
-        field->addWidget(widget == host_ || widget == user_ ? validated(widget) : widget);
-        serverFields->addLayout(field, row, column);
-    };
-    serverField(tr("&Host"), host_, 0, 0);
-    serverField(tr("P&ort"), port_, 0, 1);
-    serverField(tr("Data&base"), database_, 1, 0);
-    serverField(tr("&Username"), user_, 1, 1);
-    pg->addRow(serverFields);
     password_ = line("profilePassword");
     password_->setEchoMode(QLineEdit::Password);
     password_->setMaxLength(16384);
     password_->setPlaceholderText(tr("Optional — leave blank for passwordless authentication"));
-    pg->addRow(tr("&Password"), validated(password_));
-    rememberPassword_ = new QCheckBox(tr("Save password in OS credential store"), form_);
-    rememberPassword_->setObjectName("profileRememberPassword");
-    pg->addRow(rememberPassword_);
-    connect(rememberPassword_, &QCheckBox::toggled, this, [this] {
+    auto* serverFields = new QGridLayout;
+    const auto serverField = [&](const QString& title, QWidget* widget, int row, int column,
+                                 int span = 1) {
+        auto* field = new QVBoxLayout;
+        auto* label = new QLabel(title, postgresFields_);
+        label->setBuddy(widget);
+        field->addWidget(label);
+        field->addWidget(widget == host_ || widget == user_ || widget == password_
+                             ? validated(widget)
+                             : widget);
+        serverFields->addLayout(field, row, column, 1, span);
+    };
+    serverFields->setColumnStretch(0, 5);
+    serverFields->setColumnStretch(1, 1);
+    serverFields->setColumnStretch(2, 5);
+    serverField(tr("&Host"), host_, 0, 0);
+    serverField(tr("P&ort"), port_, 0, 1);
+    serverField(tr("Data&base"), database_, 0, 2);
+    serverField(tr("&Username"), user_, 1, 0);
+    serverField(tr("&Password"), password_, 1, 1, 2);
+    pg->addRow(serverFields);
+    QWidget::setTabOrder(host_, port_);
+    QWidget::setTabOrder(port_, database_);
+    QWidget::setTabOrder(database_, user_);
+    QWidget::setTabOrder(user_, password_);
+    saveCredentials_ = new QCheckBox(tr("Save credentials in OS credential store"), form_);
+    saveCredentials_->setObjectName("profileSaveCredentials");
+    pg->addRow(saveCredentials_);
+    connect(saveCredentials_, &QCheckBox::toggled, this, [this] {
         if (!filling_) {
             dirty_ = true;
             ++revision_;
@@ -223,8 +238,12 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     tls_->addItem(tr("Verify certificate authority"), "verify_ca");
     tls_->addItem(tr("Require encryption"), "require");
     tls_->addItem(tr("Prefer TLS (PostgreSQL only)"), "prefer");
-    tls_->addItem(tr("Disable TLS"), "disable");
+    useTls_ = new QCheckBox(tr("Use TLS"), postgresFields_);
+    useTls_->setObjectName("profileUseTls");
+    useTls_->setProperty("designRole", "switch");
+    pg->addRow(validated(useTls_));
     auto* security = new QWidget(postgresFields_);
+    tlsFields_ = security;
     auto* securityLayout = new QFormLayout(security);
     securityLayout->setContentsMargins(0, 0, 0, 0);
     securityLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
@@ -259,8 +278,6 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     sshSecret_ = line("profileSshSecret");
     sshSecret_->setEchoMode(QLineEdit::Password);
     sshSecret_->setMaxLength(16384);
-    rememberSshSecret_ = new QCheckBox(tr("Save SSH credential in OS credential store"), sshFields);
-    rememberSshSecret_->setObjectName("profileRememberSshSecret");
     sshPort_ = new QSpinBox(sshFields);
     sshPort_->setObjectName("profileSshPort");
     sshPort_->setRange(1, 65535);
@@ -270,7 +287,6 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     sshLayout->addRow(tr("Authentication"), sshAuthentication_);
     sshLayout->addRow(tr("SSH private key file"), validated(sshIdentityFile_));
     sshLayout->addRow(tr("SSH passphrase"), validated(sshSecret_));
-    sshLayout->addRow(rememberSshSecret_);
     pg->addRow(sshFields);
     connect(sshEnabled_, &QCheckBox::toggled, sshFields, &QWidget::setVisible);
     connect(sshEnabled_, &QCheckBox::toggled, this, [this] {
@@ -291,7 +307,6 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         const bool publicKey = authentication == "public_key";
         sshLayout->setRowVisible(validationFor(sshIdentityFile_), publicKey);
         sshLayout->setRowVisible(validationFor(sshSecret_), !agent);
-        sshLayout->setRowVisible(rememberSshSecret_, !agent);
         if (auto* label =
                 qobject_cast<QLabel*>(sshLayout->labelForField(validationFor(sshSecret_))))
             label->setText(publicKey ? tr("SSH passphrase") : tr("SSH password"));
@@ -316,7 +331,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                     ++revision_;
                 }
             });
-    connect(rememberSshSecret_, &QCheckBox::toggled, this, [this] {
+    connect(useTls_, &QCheckBox::toggled, security, &QWidget::setVisible);
+    connect(useTls_, &QCheckBox::toggled, this, [this] {
         if (!filling_) {
             dirty_ = true;
             ++revision_;
@@ -531,18 +547,17 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                 return;
             pendingPrivateKey_ = savingDraft_ && profile.sshEnabled &&
                                          profile.sshIdentitySource == "inline" &&
-                                         !sshPrivateKey_->draft().remember
+                                         !saveCredentials_->isChecked()
                                      ? std::optional<SshPrivateKeyDraft>(sshPrivateKey_->draft())
                                      : std::nullopt;
             pendingHopSecrets_ = savingDraft_ && profile.sshEnabled
-                                     ? sshHopEditor_->captureSecrets(true)
+                                     ? sshHopEditor_->captureSecrets(saveCredentials_->isChecked())
                                      : SshHopSecrets{};
             preserveProxySecretOnRefresh_ =
-                savingDraft_ && !rememberProxySecret_->isChecked() && proxyNeedsPassword(profile);
-            preserveTlsSecretOnRefresh_ = savingDraft_ && !rememberTlsSecret_->isChecked();
-            preservePasswordOnRefresh_ = savingDraft_ && !rememberPassword_->isChecked() &&
-                                         authenticationMethod(profile) == "password";
-            preserveSshSecretOnRefresh_ = savingDraft_ && !rememberSshSecret_->isChecked() &&
+                savingDraft_ && !saveCredentials_->isChecked() && proxyNeedsPassword(profile);
+            preserveTlsSecretOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked();
+            preservePasswordOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked();
+            preserveSshSecretOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked() &&
                                           sshAuthentication_->currentData() != "agent";
             const auto sessionPassword = preservePasswordOnRefresh_ ? password_->text() : QString();
             const bool passwordModified = password_->isModified();

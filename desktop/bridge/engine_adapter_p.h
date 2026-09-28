@@ -41,7 +41,6 @@ inline ProfileDto profileDto(const SavedProfile& value) {
     dto.ssh_private_key_ref = rustString(value.sshPrivateKeyRef);
     dto.ssh_jump_private_key_refs = rustString(value.sshJumpPrivateKeyRefs);
     dto.ssh_options = rustString(value.sshOptions);
-    dto.authentication = rustString(value.authentication);
     dto.credential_ref = rustString(value.credentialRef);
     dto.ssh_credential_ref = rustString(value.sshCredentialRef);
     dto.ssh_enabled = value.sshEnabled;

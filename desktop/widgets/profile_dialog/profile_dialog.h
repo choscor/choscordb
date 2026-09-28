@@ -7,7 +7,6 @@
 #include <QPointer>
 class QComboBox;
 class QFormLayout;
-class QPlainTextEdit;
 class QLabel;
 class QDialog;
 class QHideEvent;
@@ -55,11 +54,6 @@ class ProfileDialog final : public DialogShell {
     void writeProxyDraft(SavedProfile& profile) const;
     void setProxyDraft(const SavedProfile& profile);
     static bool proxyNeedsPassword(const SavedProfile& profile);
-    void createAuthenticationControls(QFormLayout* form);
-    void updateAuthenticationControls();
-    void writeAuthenticationDraft(SavedProfile& profile) const;
-    void setAuthenticationDraft(const SavedProfile& profile);
-    static QString authenticationMethod(const SavedProfile& profile);
     void createConnectionControls(QFormLayout* security, QFormLayout* ssh);
     static bool validServerHost(const QString& host);
     bool validateSecurityDraft(const SavedProfile& profile);
@@ -103,13 +97,13 @@ class ProfileDialog final : public DialogShell {
     QWidget* sshFields_;
     QLineEdit *name_, *path_, *host_, *database_, *user_, *rootCertificate_, *password_;
     QComboBox *driver_, *tls_, *sshAuthentication_;
-    QCheckBox *readOnly_, *rememberPassword_, *rememberSshSecret_;
+    QCheckBox *readOnly_, *saveCredentials_, *useTls_;
     QSpinBox* port_;
     QCheckBox* sshEnabled_;
     QLineEdit *sshHost_, *sshUser_, *sshIdentityFile_, *sshSecret_;
     QSpinBox* sshPort_;
     QLineEdit *tlsClientIdentity_, *tlsSecret_, *sshAgentSocket_, *sshKnownHosts_;
-    QCheckBox* rememberTlsSecret_;
+    QWidget* tlsFields_;
     QSpinBox *sshTimeout_, *sshKeepalive_, *sshKeepaliveCount_, *sshRemotePort_;
     QLineEdit* sshRemoteHost_;
     QCheckBox *sshLocalBinding_, *sshShareTunnels_;
@@ -126,12 +120,7 @@ class ProfileDialog final : public DialogShell {
     QPointer<SshHostKeyDialog> trustDialog_;
     SshHopEditor* sshHopEditor_;
     SshHopSecrets pendingHopSecrets_;
-    QComboBox* authentication_;
-    QWidget* authenticationFields_;
-    QLineEdit *pgPassFile_, *pgPassHostname_, *passwordCommandDirectory_;
-    QPlainTextEdit* passwordCommand_;
-    QSpinBox* passwordCommandTimeout_;
-    QCheckBox *proxyEnabled_ = nullptr, *rememberProxySecret_ = nullptr;
+    QCheckBox* proxyEnabled_ = nullptr;
     QWidget* proxyFields_ = nullptr;
     QComboBox* proxyProtocol_ = nullptr;
     QLineEdit *proxyHost_ = nullptr, *proxyUser_ = nullptr, *proxySecret_ = nullptr;

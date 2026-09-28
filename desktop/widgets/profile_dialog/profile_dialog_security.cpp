@@ -13,7 +13,6 @@
 #include <QSpinBox>
 namespace choscordb {
 void ProfileDialog::createConnectionControls(QFormLayout* security, QFormLayout* ssh) {
-    createAuthenticationControls(qobject_cast<QFormLayout*>(postgresFields_->layout()));
     createProxyControls(qobject_cast<QFormLayout*>(postgresFields_->layout()));
     const auto changed = [this] {
         if (!filling_) {
@@ -36,10 +35,6 @@ void ProfileDialog::createConnectionControls(QFormLayout* security, QFormLayout*
     tlsSecret_->setEchoMode(QLineEdit::Password);
     tlsSecret_->setPlaceholderText(tr("PKCS#12 password; leave blank for an unencrypted identity"));
     security->addRow(tr("Client identity password"), validated(tlsSecret_));
-    rememberTlsSecret_ = new QCheckBox(tr("Save identity password in OS credential store"), form_);
-    rememberTlsSecret_->setObjectName("profileRememberTlsSecret");
-    connect(rememberTlsSecret_, &QCheckBox::toggled, this, changed);
-    security->addRow(rememberTlsSecret_);
     const auto spin = [this, changed](const char* name, int minimum, int maximum, int value) {
         auto* field = new QSpinBox(form_);
         field->setObjectName(name);
@@ -147,9 +142,8 @@ void ProfileDialog::setSecurityDraft(const SavedProfile& value) {
         value.tlsCredentialRef.isEmpty()
             ? tr("PKCS#12 password; leave blank for an unencrypted identity")
             : tr("Saved identity password — leave unchanged to keep"));
-    rememberTlsSecret_->setChecked(!value.tlsCredentialRef.isEmpty());
     sshIdentitySource_->setCurrentIndex(sshIdentitySource_->findData(value.sshIdentitySource));
-    sshPrivateKey_->setDraft({{}, false, !value.sshPrivateKeyRef.isEmpty()},
+    sshPrivateKey_->setDraft({{}, false},
                              !value.sshPrivateKeyRef.isEmpty());
     updatePrivateKeyControls();
     const auto options = QJsonDocument::fromJson(value.sshOptions.toUtf8()).object();

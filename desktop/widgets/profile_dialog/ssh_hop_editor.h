@@ -5,7 +5,6 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QWidget>
-class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QListWidget;
@@ -15,7 +14,6 @@ namespace choscordb {
 struct SshHopSecretDraft {
     QString secret;
     bool modified = false;
-    bool remember = false;
     SshPrivateKeyDraft privateKey;
     bool restoreSecret = true, restorePrivateKey = true;
 };
@@ -61,6 +59,5 @@ class SshHopEditor final : public QWidget {
     QComboBox *authentication_, *identitySource_;
     SshPrivateKeyEditor* privateKey_;
     QSpinBox* port_;
-    QCheckBox* remember_;
 };
 } // namespace choscordb

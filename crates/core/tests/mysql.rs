@@ -36,7 +36,6 @@ fn mysql_profile_connects_streams_typed_rows_and_disconnects_through_engine() {
     let connection = engine
         .connect_profile(
             ConnectionProfile {
-                authentication: Default::default(),
                 id: "mysql-fixture".into(),
                 name: "MySQL fixture".into(),
                 group_id: None,

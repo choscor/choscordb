@@ -111,7 +111,6 @@ choscordb_add_library(choscordb-widgets
   desktop/widgets/profile_dialog/profile_dialog.cpp
   desktop/widgets/profile_dialog/profile_dialog_actions.cpp
   desktop/widgets/profile_dialog/profile_dialog_security.cpp
-  desktop/widgets/profile_dialog/profile_dialog_authentication.cpp
   desktop/widgets/profile_dialog/profile_dialog_proxy.cpp
   desktop/widgets/profile_dialog/profile_dialog_ssh_trust.cpp
   desktop/widgets/profile_dialog/ssh_host_key_dialog.cpp

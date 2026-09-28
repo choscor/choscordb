@@ -84,6 +84,44 @@ fn inline_profile() -> ConnectionProfile {
 }
 
 #[test]
+fn unchecked_policy_clears_target_and_hop_private_keys_and_passwords() {
+    let vault = Arc::new(Vault::default());
+    let mut engine =
+        Engine::new_with_credentials(EngineConfig::default(), vec![], vault.clone()).unwrap();
+    let mut initial = updates();
+    initial.ssh_private_key = CredentialUpdate::Replace(Secret::new("target-key"));
+    initial.ssh_jump_private_keys.insert(
+        "first".into(),
+        CredentialUpdate::Replace(Secret::new("hop-key")),
+    );
+    initial.ssh_jumps.insert(
+        "second".into(),
+        CredentialUpdate::Replace(Secret::new("hop-password")),
+    );
+    engine
+        .profile_save_with_credential_policy(inline_profile(), initial, true, 101)
+        .unwrap();
+    let Event::ProfileSaved { profile: saved, .. } = event(&mut engine) else {
+        panic!("initial save failed")
+    };
+    assert!(saved.ssh_private_key_ref.is_some());
+    assert_eq!(saved.ssh_jump_private_key_refs.len(), 1);
+    assert_eq!(saved.ssh_jump_credential_refs.len(), 1);
+    assert_eq!(vault.items.lock().unwrap().len(), 3);
+
+    engine
+        .profile_save_with_credential_policy(*saved, updates(), false, 102)
+        .unwrap();
+    let Event::ProfileSaved { profile: saved, .. } = event(&mut engine) else {
+        panic!("unchecked save failed")
+    };
+    assert!(saved.ssh_private_key_ref.is_none());
+    assert!(saved.ssh_jump_private_key_refs.is_empty());
+    assert!(saved.ssh_jump_credential_refs.is_empty());
+    assert!(vault.items.lock().unwrap().is_empty());
+}
+
+#[test]
 fn inline_private_keys_have_independent_refs_and_follow_stable_hop_ids() {
     let vault = Arc::new(Vault::default());
     let directory = tempfile::tempdir().unwrap();
