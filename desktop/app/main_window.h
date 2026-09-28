@@ -54,6 +54,7 @@ class MainWindow final : public QMainWindow {
   private:
     struct Ui;
     Ui buildUi();
+    void refreshResultFooterColor();
     void connectWorkspace(const Ui& ui, const QString& storagePath);
     void connectLifecycle(const Ui& ui, const QString& storagePath);
     void connectNavigator(const Ui& ui);
@@ -82,7 +83,6 @@ class MainWindow final : public QMainWindow {
     QSet<quint64> retiredBrowseConnections_;
     quint64 nextPendingPlaceholder_ = std::numeric_limits<quint64>::max();
     QString submittingBrowseProfileId_, submissionError_;
-    QString navigatorSearchStatus_;
     bool submittingBrowseProfile_ = false;
     NavigatorController* navigatorController_ = nullptr;
     struct PendingObjectAction {

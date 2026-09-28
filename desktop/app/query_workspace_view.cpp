@@ -124,14 +124,43 @@ void QueryWorkspace::message(const QString& value) {
     widgets_.messages->appendPlainText(value);
 }
 
-void QueryWorkspace::setExecutionState(const QString& state, const QString& detail) {
+void QueryWorkspace::setExecutionState(const QString& state, const QString& detail,
+                                       const ExecutionMetrics& metrics) {
+    if (state == QLatin1String("queued"))
+        completedDurationMs_.reset();
     widgets_.summary->setProperty("state", state);
     const auto status = detail.isEmpty() ? state : detail;
-    const auto label =
-        resultOrigin_.isEmpty() ? status : resultOrigin_ + QStringLiteral(" · ") + status;
-    widgets_.summary->setText(label);
-    widgets_.summary->setToolTip(label);
-    widgets_.summary->setAccessibleName(tr("Execution status: %1").arg(label));
+    QStringList parts;
+    if (!resultOrigin_.isEmpty())
+        parts << resultOrigin_;
+    parts << status;
+    for (const auto& metric : {metrics.duration, metrics.page, metrics.rows, metrics.visibleSize})
+        if (!metric.isEmpty())
+            parts << metric;
+    const auto fullSummary = parts.join(QStringLiteral(" · "));
+    widgets_.summary->setProperty("fullSource", resultOrigin_);
+    widgets_.summary->setText(widgets_.outcome ? resultOrigin_ : fullSummary);
+    widgets_.summary->setToolTip(fullSummary);
+    widgets_.summary->setAccessibleName(tr("Execution status: %1").arg(fullSummary));
+    if (widgets_.outcome) {
+        widgets_.outcome->setProperty("fullOutcome", status);
+        widgets_.outcome->setMinimumWidth(widgets_.outcome->fontMetrics().horizontalAdvance(state));
+        widgets_.outcome->setText(status);
+        widgets_.outcome->setToolTip(fullSummary);
+        widgets_.outcome->setAccessibleName(tr("Execution outcome: %1").arg(status));
+    }
+    const auto updateMetric = [&fullSummary](QLabel* label, const QString& value) {
+        if (!label)
+            return;
+        label->setText(value);
+        label->setToolTip(fullSummary);
+        label->setAccessibleName(value);
+        label->setVisible(!value.isEmpty());
+    };
+    updateMetric(widgets_.durationMetric, metrics.duration);
+    updateMetric(widgets_.pageMetric, metrics.page);
+    updateMetric(widgets_.rowsMetric, metrics.rows);
+    updateMetric(widgets_.visibleSizeMetric, metrics.visibleSize);
     widgets_.summary->style()->unpolish(widgets_.summary);
     widgets_.summary->style()->polish(widgets_.summary);
     emit executionStateChanged(state);
