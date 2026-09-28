@@ -677,7 +677,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             savedConnections->setCurrentItem(item, QItemSelectionModel::NoUpdate);
             if (!selectedProfileIds_.contains(id))
                 selectProfile(item);
-            return true;
+            return selectedProfileIds_.contains(id) || pendingBrowseProfiles_.contains(id);
         }
         return false;
     };

@@ -2,6 +2,7 @@
 
 #include "app/editor_preferences.h"
 #include "app/main_window_ui.h"
+#include "app/main_window_ui_pins.h"
 #include "app/main_window_widgets.h"
 #include "app/object_explorer.h"
 #include "app/query_workspace.h"
@@ -51,6 +52,7 @@
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <algorithm>
 #ifdef CHOSCORDB_DEVELOPMENT_PREVIEW
 #include "tools/preview/preview_window.h"
 #endif
@@ -311,6 +313,10 @@ MainWindow::Ui MainWindow::buildUi() {
     connect(savedConnections->model(), &QAbstractItemModel::modelReset, connectionsEmpty,
             updateConnectionsEmpty);
     connectionSection->contentLayout()->addWidget(savedConnections);
+    const auto pinned = buildPinnedSidebar(navBody, connectionsLayout, theme_);
+    auto* pinnedSection = pinned.section;
+    auto* pinnedList = pinned.list;
+    auto* pinnedEmpty = pinned.empty;
     auto* objectSection = new SidebarSection(tr("Schema & objects"), navBody);
     connectionsLayout->addWidget(objectSection, 1);
     auto* filter = new QLineEdit;
@@ -378,9 +384,9 @@ MainWindow::Ui MainWindow::buildUi() {
     historyLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     auto* historySection = new SidebarSection(tr("Recent history"), historyPanel);
     historyLayout->addWidget(historySection);
-    const auto alignSidebarHeadings = [connectionSection, savedSection, historySection,
-                                       addConnection] {
-        for (auto* section : {connectionSection, savedSection, historySection})
+    const auto alignSidebarHeadings = [connectionSection, pinnedSection, savedSection,
+                                       historySection, addConnection] {
+        for (auto* section : {connectionSection, pinnedSection, savedSection, historySection})
             section->titleLabel()->setMinimumHeight(addConnection->sizeHint().height());
     };
     connect(theme_, &design::ThemeManager::metricsChanged, this, alignSidebarHeadings);
@@ -915,6 +921,9 @@ MainWindow::Ui MainWindow::buildUi() {
         .refreshNavigator = refreshNavigator,
         .sidebarPanels = sidebarPanels,
         .savedConnections = savedConnections,
+        .pinnedSection = pinnedSection,
+        .pinnedList = pinnedList,
+        .pinnedEmpty = pinnedEmpty,
         .filter = filter,
         .tree = tree,
         .objectsEmpty = objectsEmpty,

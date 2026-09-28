@@ -10,11 +10,13 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPersistentModelIndex>
+#include <QSet>
 #include <QSortFilterProxyModel>
 #include <QTimer>
 #include <QTreeView>
 #include <QVariantMap>
 #include <limits>
+#include <memory>
 #include <utility>
 namespace choscordb {
 namespace {
@@ -236,6 +238,172 @@ void NavigatorController::setShowSystemSchemas(bool show) {
         emit searchStatusChanged({});
     }
 }
+void NavigatorController::setPinStateResolver(
+    std::function<std::optional<bool>(const QModelIndex&)> resolver) {
+    pinStateResolver_ = std::move(resolver);
+}
+bool NavigatorController::revealObject(quint64 connection, const QStringList& ancestryIds,
+                                       const QString& objectId, const QString& kind,
+                                       const QString& qualifiedName, const QString& subtype,
+                                       std::function<void(RevealResult, const QString&)> finished,
+                                       std::function<bool()> stillCurrent) {
+    QModelIndex root;
+    for (int row = 0; row < model_->rowCount(); ++row) {
+        const auto candidate = model_->index(row, 0);
+        if (candidate.data(NavigatorModel::ConnectionRole).toULongLong() == connection &&
+            candidate.data(NavigatorModel::KindRole).toString() == QStringLiteral("connection")) {
+            root = candidate;
+            break;
+        }
+    }
+    if (!root.isValid() ||
+        !static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection))
+        return false;
+    struct State {
+        QPersistentModelIndex parent;
+        QStringList route;
+        QString objectId, kind, qualifiedName, subtype;
+        quint64 connection = 0;
+        int depth = 0, requests = 0;
+        bool finalRefreshStarted = false;
+        QSet<QString> requestedParents;
+        QPointer<QObject> task;
+        std::function<void(RevealResult, const QString&)> finished;
+        std::function<bool()> stillCurrent;
+        std::function<void()> step;
+    };
+    auto state = std::make_shared<State>();
+    state->parent = root;
+    state->route = ancestryIds;
+    state->objectId = objectId;
+    state->kind = kind;
+    state->qualifiedName = qualifiedName;
+    state->subtype = subtype;
+    state->connection = connection;
+    state->finished = std::move(finished);
+    state->stillCurrent = std::move(stillCurrent);
+    state->task = new QObject(this);
+    const auto weak = std::weak_ptr<State>(state);
+    state->step = [this, weak] {
+        const auto state = weak.lock();
+        if (!state || !state->task)
+            return;
+        const auto finish = [state](RevealResult result, const QString& reason) {
+            if (state->finished)
+                state->finished(result, reason);
+            state->finished = {};
+            state->task->deleteLater();
+            state->task = nullptr;
+        };
+        if (state->stillCurrent && !state->stillCurrent()) {
+            finish(RevealResult::Retry, {});
+            return;
+        }
+        if (!state->parent.isValid() ||
+            !static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(state->connection)) {
+            finish(RevealResult::Retry,
+                   tr("The connection is no longer visible. Activate the pin to retry."));
+            return;
+        }
+        const auto parent = QModelIndex(state->parent);
+        if (state->depth == state->route.size() && !state->finalRefreshStarted) {
+            state->finalRefreshStarted = true;
+            const auto parentId = parent.data(NavigatorModel::ObjectIdRole).toString();
+            if (!model_->canFetchMore(parent) && !state->requestedParents.contains(parentId)) {
+                if (++state->requests > 32) {
+                    finish(RevealResult::Retry,
+                           tr("The metadata lookup limit was reached. Activate the pin to retry."));
+                    return;
+                }
+                state->requestedParents.insert(parentId);
+                model_->refresh(parent);
+                return;
+            }
+        }
+        const auto error = parent.data(NavigatorModel::ErrorRole).toString();
+        if (!error.isEmpty()) {
+            const auto parentId = parent.data(NavigatorModel::ObjectIdRole).toString();
+            if (!state->requestedParents.contains(parentId) && state->requests < 32) {
+                state->requestedParents.insert(parentId);
+                ++state->requests;
+                model_->refresh(parent);
+                return;
+            }
+            finish(RevealResult::Retry,
+                   tr("Metadata could not load: %1. Activate the pin to retry.").arg(error));
+            return;
+        }
+        const auto expected =
+            state->depth < state->route.size() ? state->route.at(state->depth) : state->objectId;
+        for (int row = 0; row < model_->rowCount(parent); ++row) {
+            const auto child = model_->index(row, 0, parent);
+            if (child.data(NavigatorModel::ObjectIdRole).toString() != expected ||
+                child.data(NavigatorModel::KindRole).toString() == QStringLiteral("load_more"))
+                continue;
+            if (state->depth < state->route.size()) {
+                state->parent = child;
+                ++state->depth;
+                QTimer::singleShot(0, state->task, [state] { state->step(); });
+                return;
+            }
+            if (child.data(NavigatorModel::KindRole).toString() != state->kind ||
+                child.data(NavigatorModel::QualifiedNameRole).toString() != state->qualifiedName ||
+                relationSubtype(child.data(NavigatorModel::PropertiesRole).toList()) !=
+                    state->subtype) {
+                finish(RevealResult::Unavailable,
+                       tr("The pinned object no longer matches its saved identity."));
+                return;
+            }
+            filter_->clear();
+            for (auto ancestor = child.parent(); ancestor.isValid(); ancestor = ancestor.parent()) {
+                const auto visible = proxy_->mapFromSource(ancestor);
+                if (visible.isValid())
+                    tree_->expand(visible);
+            }
+            const auto visible = proxy_->mapFromSource(child);
+            if (!visible.isValid()) {
+                finish(RevealResult::Retry,
+                       tr("The object could not be shown. Activate the pin to retry."));
+                return;
+            }
+            tree_->setCurrentIndex(visible);
+            if (tree_->currentIndex() != visible) {
+                finish(RevealResult::Retry, tr("Finish active database work before opening this "
+                                               "pin. Activate it to retry."));
+                return;
+            }
+            tree_->scrollTo(visible);
+            finish(RevealResult::Found, {});
+            return;
+        }
+        if (parent.data(NavigatorModel::ChildrenLoadedRole).toBool() ||
+            !model_->hasChildren(parent)) {
+            finish(RevealResult::Unavailable,
+                   tr("The pinned object is no longer in its saved location."));
+            return;
+        }
+        if (++state->requests > 32) {
+            finish(RevealResult::Retry,
+                   tr("The metadata lookup limit was reached. Activate the pin to retry."));
+            return;
+        }
+        if (model_->canFetchMore(parent)) {
+            state->requestedParents.insert(parent.data(NavigatorModel::ObjectIdRole).toString());
+            model_->fetchMore(parent);
+        } else if (parent.data(NavigatorModel::HasMoreRole).toBool()) {
+            state->requestedParents.insert(parent.data(NavigatorModel::ObjectIdRole).toString());
+            model_->requestNextPage(parent);
+        } else
+            --state->requests; // The current page is already loading.
+    };
+    connect(model_, &NavigatorModel::completionChanged, state->task,
+            [state](quint64 changedConnection) {
+                if (state->connection == changedConnection && state->task)
+                    QTimer::singleShot(0, state->task, [state] { state->step(); });
+            });
+    QTimer::singleShot(0, state->task, [state] { state->step(); });
+    return true;
+}
 void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex) {
     if (!menu || !sourceIndex.isValid() || sourceIndex.model() != model_)
         return;
@@ -258,6 +426,39 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
             if (index.isValid() && index.data(NavigatorModel::KindRole).toString() == "connection")
                 emit disconnectRequested(index.data(NavigatorModel::ConnectionRole).toULongLong());
         });
+        menu->addSeparator();
+    }
+    const auto pinKind = index.data(NavigatorModel::KindRole).toString();
+    static const QSet<QString> pinKinds = {
+        QStringLiteral("schema"),   QStringLiteral("table"),      QStringLiteral("view"),
+        QStringLiteral("index"),    QStringLiteral("sequence"),   QStringLiteral("function"),
+        QStringLiteral("column"),   QStringLiteral("primarykey"), QStringLiteral("foreignkey"),
+        QStringLiteral("uniquekey")};
+    if (pinKinds.contains(pinKind) &&
+        !index.data(NavigatorModel::ObjectIdRole).toString().isEmpty()) {
+        const auto state = pinStateResolver_ ? pinStateResolver_(index) : std::nullopt;
+        auto* pin = menu->addAction(state.value_or(false) ? tr("Unpin") : tr("Pin"));
+        pin->setObjectName(state.value_or(false) ? "unpinObject" : "pinObject");
+        pin->setEnabled(state.has_value());
+        if (!state) {
+            const auto reason = tr("Save this connection before pinning its objects.");
+            pin->setToolTip(reason);
+            pin->setStatusTip(reason);
+            menu->setToolTipsVisible(true);
+        }
+        const auto connection = index.data(NavigatorModel::ConnectionRole).toULongLong();
+        const auto objectId = index.data(NavigatorModel::ObjectIdRole).toString();
+        connect(pin, &QAction::triggered, this,
+                [this, index, connection, objectId, pinKind, unpin = state.value_or(false)] {
+                    if (!index.isValid() || index.model() != model_ ||
+                        index.data(NavigatorModel::ConnectionRole).toULongLong() != connection ||
+                        index.data(NavigatorModel::ObjectIdRole).toString() != objectId ||
+                        index.data(NavigatorModel::KindRole).toString() != pinKind ||
+                        !pinStateResolver_ ||
+                        pinStateResolver_(index) != std::optional<bool>(unpin))
+                        return;
+                    emit pinRequested(index, unpin);
+                });
         menu->addSeparator();
     }
     auto* refresh = menu->addAction(tr("Refresh"));

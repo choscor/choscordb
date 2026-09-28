@@ -131,10 +131,13 @@ choscordb_add_library(choscordb-desktop
   desktop/app/editor_preferences.cpp
   desktop/app/main_window.cpp
   desktop/app/main_window_ui.cpp
+  desktop/app/main_window_ui_pins.cpp
   desktop/app/main_window_workspace.cpp
   desktop/app/main_window_lifecycle.cpp
   desktop/app/main_window_navigator.cpp
   desktop/app/main_window_object_actions.cpp
+  desktop/app/pin_store.cpp
+  desktop/app/main_window_pins.cpp
   desktop/app/workspace_recovery.cpp
   desktop/app/query_workspace.cpp
   desktop/app/query_workspace_json.cpp

@@ -1,4 +1,5 @@
 #pragma once
+#include "app/pin_store.h"
 #include "design_system/toast_region/toast_region.h"
 #include <QHash>
 #include <QMainWindow>
@@ -53,11 +54,17 @@ class MainWindow final : public QMainWindow {
 
   private:
     struct Ui;
+    struct PendingObjectAction;
     Ui buildUi();
     void refreshResultFooterColor();
     void connectWorkspace(const Ui& ui, const QString& storagePath);
     void connectLifecycle(const Ui& ui, const QString& storagePath);
     void connectNavigator(const Ui& ui);
+    void initializePins(const Ui& ui);
+    void renderPins();
+    void activatePin(const QString& key);
+    void tryRevealPendingPin();
+    void updatePinsForObjectAction(const PendingObjectAction& action);
     void requestObjectAction(const QString& action, quint64 connection, const QString& objectId,
                              const QString& shortName, const QString& kind,
                              const QString& parentObjectId, const QString& qualifiedName,
@@ -87,7 +94,7 @@ class MainWindow final : public QMainWindow {
     NavigatorController* navigatorController_ = nullptr;
     struct PendingObjectAction {
         QString action, objectId, kind, displayKind, parentObjectId, qualifiedName;
-        QString newObjectId, newQualifiedName, context;
+        QString newObjectId, newQualifiedName, newName, context;
         quint64 connection = 0, query = 0;
     };
     std::optional<PendingObjectAction> pendingObjectAction_;
@@ -96,6 +103,13 @@ class MainWindow final : public QMainWindow {
         QString parentObjectId;
     };
     std::optional<PendingObjectRefresh> pendingObjectRefresh_;
+    PinStore pinStore_;
+    QList<PinRecord> pins_;
+    QPointer<QListWidget> pinnedList_;
+    QString pendingPinKey_;
+    quint64 pinActivationGeneration_ = 0;
+    bool pinRevealInFlight_ = false;
+    int pinStartAttempts_ = 0;
     QStackedWidget* screens_ = nullptr;
     ToastRegion* toast_ = nullptr;
     bool constructing_ = true;

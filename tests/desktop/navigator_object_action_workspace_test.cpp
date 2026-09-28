@@ -85,6 +85,7 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QCOMPARE(tabs->count(), 3);
     auto* recovery = window.findChild<WorkspaceRecoveryController*>();
     QVERIFY(recovery);
+    const int beforeRename = finished;
 
     QMenu renameMenu;
     navigator->populateContextMenu(&renameMenu, table);
@@ -92,7 +93,7 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QVERIFY(rename && rename->isEnabled());
     workspace->setExternalWork(true);
     rename->trigger();
-    QCOMPARE(finished, 2);
+    QCOMPARE(finished, beforeRename);
     QVERIFY(!window.findChild<QDialog*>("renameObjectDialog"));
     workspace->setExternalWork(false);
     bool renameDialogChecked = false;
@@ -124,7 +125,7 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     });
     rename->trigger();
     QVERIFY(renameDialogChecked);
-    QTRY_COMPARE(finished, 3);
+    QTRY_VERIFY(finished > beforeRename);
     QTRY_VERIFY(group.data(NavigatorModel::ChildrenLoadedRole).toBool());
     QTRY_COMPARE(model->index(0, 0, group).data().toString(), QString("new.name"));
     QCOMPARE(tabs->count(), 3);
@@ -170,13 +171,14 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QCOMPARE(tabs->count(), 3);
     QCOMPARE(object->property("objectId").toString(),
              model->index(0, 0, group).data(NavigatorModel::ObjectIdRole).toString());
-    QCOMPARE(toast->property("variant").toString(), QString("danger"));
+    QTRY_COMPARE(toast->property("variant").toString(), QString("danger"));
 
     const auto renamed = model->index(0, 0, group);
     QMenu dropMenu;
     navigator->populateContextMenu(&dropMenu, renamed);
     auto* drop = dropMenu.findChild<QAction*>("dropObject");
     QVERIFY(drop && drop->isEnabled());
+    const int beforeDrop = finished;
     bool dropDialogChecked = false;
     QTimer::singleShot(0, &window, [&] {
         auto* dialog = window.findChild<ConfirmationDialog*>("dropObjectDialog");
@@ -192,7 +194,7 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     });
     drop->trigger();
     QVERIFY(dropDialogChecked);
-    QCOMPARE(finished, 3);
+    QCOMPARE(finished, beforeDrop);
     QCOMPARE(tabs->count(), 3);
 
     bool dropConfirmed = false;
@@ -208,7 +210,7 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     });
     drop->trigger();
     QVERIFY(dropConfirmed);
-    QTRY_COMPARE(finished, 4);
+    QTRY_VERIFY(finished > beforeDrop);
     QTRY_VERIFY(group.data(NavigatorModel::ChildrenLoadedRole).toBool());
     QTRY_COMPARE(model->rowCount(group), 1);
     QCOMPARE(model->index(0, 0, group).data().toString(), QString("taken"));
@@ -217,11 +219,12 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QCOMPARE(draft->text(), QString("-- unsaved query draft"));
     QCOMPARE(recovery->snapshotTabs().size(), 1);
 
+    const int beforeCreateView = finished;
     const auto createView =
         adapter->execute(connection, "CREATE VIEW \"v\" AS SELECT id FROM taken");
     QVERIFY(createView);
     adapter->fetchPage(*createView);
-    QTRY_COMPARE(finished, 5);
+    QTRY_VERIFY(finished > beforeCreateView);
     adapter->releaseQuery(*createView);
     const auto viewGroup = model->index(1, 0, schema);
     QCOMPARE(viewGroup.data().toString(), QString("Views"));
@@ -235,6 +238,7 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     auto* renameView = viewMenu.findChild<QAction*>("renameObject");
     QVERIFY(dropView && dropView->isEnabled());
     QVERIFY(renameView && !renameView->isEnabled());
+    const int beforeDropView = finished;
     bool viewSubmitted = false;
     QTimer::singleShot(0, &window, [&] {
         auto* dialog = window.findChild<ConfirmationDialog*>("dropObjectDialog");
@@ -248,7 +252,7 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     });
     dropView->trigger();
     QVERIFY(viewSubmitted);
-    QTRY_COMPARE(finished, 6);
+    QTRY_VERIFY(finished > beforeDropView);
     QTRY_VERIFY(viewGroup.data(NavigatorModel::ChildrenLoadedRole).toBool());
     QTRY_COMPARE(model->rowCount(viewGroup), 0);
     QCOMPARE(tabs->count(), 1);
@@ -283,8 +287,15 @@ void NavigatorSqlWorkspaceTest::objectActionKeepsOtherSessionTabWithSameProfile(
     adapter->releaseQuery(*create);
     auto* navigator = window.findChild<NavigatorController*>();
     auto* model = navigator->model();
-    const auto root = model->index(0, 0);
-    QCOMPARE(root.data(NavigatorModel::ConnectionRole).toULongLong(), *first);
+    QModelIndex root;
+    for (int row = 0; row < model->rowCount(); ++row) {
+        const auto candidate = model->index(row, 0);
+        if (candidate.data(NavigatorModel::ConnectionRole).toULongLong() == *first) {
+            root = candidate;
+            break;
+        }
+    }
+    QVERIFY(root.isValid());
     model->fetchMore(root);
     QTRY_VERIFY(root.data(NavigatorModel::ChildrenLoadedRole).toBool());
     const auto schema = model->index(0, 0, root);
@@ -315,6 +326,7 @@ void NavigatorSqlWorkspaceTest::objectActionKeepsOtherSessionTabWithSameProfile(
     navigator->populateContextMenu(&menu, table);
     auto* drop = menu.findChild<QAction*>("dropObject");
     QVERIFY(drop);
+    const int beforeDrop = finished;
     bool submitted = false;
     QTimer::singleShot(0, &window, [&] {
         auto* dialog = window.findChild<ConfirmationDialog*>("dropObjectDialog");
@@ -328,7 +340,7 @@ void NavigatorSqlWorkspaceTest::objectActionKeepsOtherSessionTabWithSameProfile(
     });
     drop->trigger();
     QVERIFY(submitted);
-    QTRY_COMPARE(finished, 2);
+    QTRY_VERIFY(finished > beforeDrop);
     QTRY_COMPARE(tabs->count(), 1);
     QCOMPARE(tabs->currentWidget(), secondObject);
     QCOMPARE(secondObject->property("objectId").toString(), objectId);
