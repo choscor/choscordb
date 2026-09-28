@@ -217,6 +217,10 @@ def package_windows(build, qt, qsci, qt_notices, output):
             raise ValueError("QScintilla runtime DLL is missing")
         for dll in dlls:
             shutil.copy2(dll, stage / dll.name)
+        print_support = qt / "bin/Qt6PrintSupport.dll"
+        if not print_support.is_file():
+            raise ValueError("QScintilla Qt PrintSupport runtime DLL is missing")
+        shutil.copy2(print_support, stage / print_support.name)
         env = os.environ.copy()
         env["PATH"] = os.pathsep.join(
             [str(qt / "bin"), str(qsci / "bin"), env.get("PATH", "")]
@@ -243,6 +247,7 @@ def package_windows(build, qt, qsci, qt_notices, output):
                 raise ValueError("Windows ZIP failed integrity verification")
             for required in (
                 f"{name}/choscordb.exe",
+                f"{name}/Qt6PrintSupport.dll",
                 f"{name}/share/licenses/choscordb/LICENSE",
                 f"{name}/share/licenses/choscordb/Qt/source.json",
                 f"{name}/share/licenses/choscordb/QScintilla/LICENSE",
