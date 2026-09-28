@@ -24,6 +24,7 @@ class EditorPreferencesController final : public QObject {
     void queryPreferencesSaveSubmitted(quint64 token);
     void queryPreferencesConfirmed(const choscordb::QueryPreferences& preferences);
     void historyPolicyConfirmed(const choscordb::HistoryPolicy& policy);
+    void systemSchemaVisibilitySaved(bool visible);
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

@@ -5,11 +5,169 @@
 #include <QAction>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPersistentModelIndex>
 #include <QTreeView>
 #include <QtTest>
 class NavigatorSqlTest : public QObject {
     Q_OBJECT
   private slots:
+    void postgresSystemSchemasStayOutOfTreeAndCompletionUntilEnabled() {
+        using namespace choscordb;
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        controller.setDriverResolver([](quint64 id) {
+            return id == 9 ? "postgres" : id == 10 ? "mysql" : "sqlite";
+        });
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requests(model, &NavigatorModel::childrenRequested);
+        controller.addConnection(9, "PostgreSQL");
+        controller.addConnection(10, "MySQL");
+        controller.addConnection(11, "SQLite");
+        controller.setVisibleConnections({9, 10, 11});
+        for (auto connection : {quint64(9), quint64(10), quint64(11)}) {
+            const auto root = model->index(int(connection - 9), 0);
+            model->fetchMore(root);
+            QTRY_COMPARE(requests.count(), int((connection - 9) * 2 + 1));
+            const auto databaseId = QString::number(connection) + "-database";
+            QVERIFY(model->applyChildren(connection, {}, requests.last().at(2).toULongLong(),
+                                         {{databaseId, "database", "database", "database", true}}));
+            const auto database = model->index(0, 0, root);
+            model->fetchMore(database);
+            QTRY_COMPARE(requests.count(), int((connection - 9) * 2 + 2));
+            QVERIFY(model->applyChildren(
+                connection, databaseId, requests.last().at(2).toULongLong(),
+                {{QString::number(connection) + "-catalog", "pg_catalog", "pg_catalog", "schema",
+                  true},
+                 {QString::number(connection) + "-info", "information_schema", "information_schema",
+                  "schema", true},
+                 {QString::number(connection) + "-temp", "pg_temp_3", "pg_temp_3", "schema", true},
+                 {QString::number(connection) + "-toast-root", "pg_toast", "pg_toast", "schema",
+                  true},
+                 {QString::number(connection) + "-toast", "pg_toast_temp_3", "pg_toast_temp_3",
+                  "schema", true},
+                 {QString::number(connection) + "-future", "pg_future_internal",
+                  "pg_future_internal", "schema", true},
+                 {QString::number(connection) + "-app", "app_tmp", "app_tmp", "schema", true},
+                 {QString::number(connection) + "-public", "public", "public", "schema", true}}));
+        }
+        auto* visible = tree.model();
+        const QPersistentModelIndex pgDatabase(visible->index(0, 0, visible->index(0, 0)));
+        const QPersistentModelIndex mysqlDatabase(visible->index(0, 0, visible->index(1, 0)));
+        const QPersistentModelIndex sqliteDatabase(visible->index(0, 0, visible->index(2, 0)));
+        QCOMPARE(visible->rowCount(pgDatabase), 2);
+        QCOMPARE(visible->index(0, 0, pgDatabase).data().toString(), QString("app_tmp"));
+        QCOMPARE(visible->index(1, 0, pgDatabase).data().toString(), QString("public"));
+        QCOMPARE(visible->rowCount(mysqlDatabase), 8);
+        QCOMPARE(visible->rowCount(sqliteDatabase), 8);
+        auto pgSnapshot = model->completionSnapshot(9, 100, 4096);
+        QCOMPARE(pgSnapshot.objects.size(), size_t(3));
+        QCOMPARE(model->completionSnapshot(10, 100, 4096).objects.size(), size_t(9));
+        QCOMPARE(model->completionSnapshot(11, 100, 4096).objects.size(), size_t(9));
+        controller.setShowSystemSchemas(true);
+        QCOMPARE(visible->rowCount(pgDatabase), 8);
+        QCOMPARE(model->completionSnapshot(9, 100, 4096).objects.size(), size_t(9));
+        const auto pgRoot = model->index(0, 0);
+        const auto pgSourceDatabase = model->index(0, 0, pgRoot);
+        const auto catalog = model->index(0, 0, pgSourceDatabase);
+        model->fetchMore(catalog);
+        QTRY_COMPARE(requests.count(), 7);
+        QVERIFY(model->applyChildren(
+            9, "9-catalog", requests.last().at(2).toULongLong(),
+            {{"catalog-table", "tmp_result", "pg_catalog.tmp_result", "table", false}}));
+        QCOMPARE(model->completionSnapshot(9, 100, 4096).objects.size(), size_t(10));
+        tree.setCurrentIndex(visible->index(0, 0, pgDatabase));
+        controller.setShowSystemSchemas(false);
+        QCOMPARE(visible->rowCount(pgDatabase), 2);
+        QCOMPARE(tree.currentIndex().data(NavigatorModel::KindRole).toString(),
+                 QString("database"));
+        QCOMPARE(model->completionSnapshot(9, 100, 4096).objects.size(), size_t(3));
+        controller.setShowSystemSchemas(true);
+        QCOMPARE(model->completionSnapshot(9, 100, 4096).objects.size(), size_t(10));
+    }
+    void searchDoesNotFetchHiddenSchemasOrResurrectLateReplies() {
+        using namespace choscordb;
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        controller.setDriverResolver([](quint64) { return "postgres"; });
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requests(model, &NavigatorModel::childrenRequested);
+        controller.addConnection(9, "PostgreSQL");
+        controller.setSelectedConnection(9);
+        const auto root = model->index(0, 0);
+        model->fetchMore(root);
+        QTRY_COMPARE(requests.count(), 1);
+        QVERIFY(model->applyChildren(9, {}, requests.last().at(2).toULongLong(),
+                                     {{"db", "database", "database", "database", true}}));
+        const auto database = model->index(0, 0, root);
+        model->fetchMore(database);
+        QTRY_COMPARE(requests.count(), 2);
+        QVERIFY(model->applyChildren(9, "db", requests.last().at(2).toULongLong(),
+                                     {{"temp", "pg_temp_3", "pg_temp_3", "schema", true},
+                                      {"public", "public", "public", "schema", false}}));
+        filter.setText("pg_temp");
+        QCoreApplication::processEvents();
+        QCOMPARE(requests.count(), 2);
+        QCOMPARE(tree.model()->rowCount(), 0);
+        controller.setShowSystemSchemas(true);
+        QTRY_COMPARE(requests.count(), 3);
+        QCOMPARE(requests.last().at(1).toString(), QString("temp"));
+        const auto lateToken = requests.last().at(2).toULongLong();
+        controller.setShowSystemSchemas(false);
+        QVERIFY(model->applyChildren(
+            9, "temp", lateToken,
+            {{"catalog-table", "tmp_result", "pg_temp_3.tmp_result", "table", false}}));
+        QCoreApplication::processEvents();
+        QCOMPARE(tree.model()->rowCount(), 0);
+        QCOMPARE(model->completionSnapshot(9, 100, 4096).objects.size(), size_t(2));
+        QCOMPARE(requests.count(), 3);
+    }
+    void lateHiddenFailureDoesNotInterruptVisibleSearch() {
+        using namespace choscordb;
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        controller.setDriverResolver([](quint64) { return "postgres"; });
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requests(model, &NavigatorModel::childrenRequested);
+        QSignalSpy status(&controller, &NavigatorController::searchStatusChanged);
+        controller.addConnection(9, "PostgreSQL");
+        controller.setSelectedConnection(9);
+        const auto root = model->index(0, 0);
+        model->fetchMore(root);
+        QTRY_COMPARE(requests.count(), 1);
+        QVERIFY(model->applyChildren(9, {}, requests.last().at(2).toULongLong(),
+                                     {{"db", "database", "database", "database", true}}));
+        const auto database = model->index(0, 0, root);
+        model->fetchMore(database);
+        QTRY_COMPARE(requests.count(), 2);
+        QVERIFY(model->applyChildren(9, "db", requests.last().at(2).toULongLong(),
+                                     {{"temp", "pg_temp_3", "pg_temp_3", "schema", true},
+                                      {"public", "public", "public", "schema", true}}));
+        controller.setShowSystemSchemas(true);
+        model->fetchMore(model->index(0, 0, database));
+        QTRY_COMPARE(requests.count(), 3);
+        const auto hiddenToken = requests.last().at(2).toULongLong();
+        controller.setShowSystemSchemas(false);
+        filter.setText("public");
+        QTRY_COMPARE(requests.count(), 4);
+        QCOMPARE(requests.last().at(1).toString(), QString("public"));
+        const auto visibleToken = requests.last().at(2).toULongLong();
+        emit engine.metadataSubmissionFailed(9, "temp", hiddenToken, "Hidden error");
+        QVERIFY(!status.last().first().toString().contains("Hidden error"));
+        QVERIFY(model->applyChildren(9, "public", visibleToken, {}));
+        QTRY_VERIFY(!status.isEmpty() && status.last().first().toString().isEmpty());
+    }
     void metadataContinuationMenuRequestsTheNextBoundedPage() {
         choscordb::EngineAdapter engine;
         QTreeView tree;

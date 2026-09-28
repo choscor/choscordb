@@ -1,5 +1,7 @@
 #include "design_system/toast_region/toast_region.h"
+#include "widgets/preferences_dialog/preferences_dialog.h"
 #include "widgets/query_settings_dialog/query_settings_dialog.h"
+#include <QCheckBox>
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
@@ -7,6 +9,50 @@
 class QuerySettingsDialogTest : public QObject {
     Q_OBJECT
   private slots:
+    void openQuerySettingsKeepsLaterPreferencesVisibilitySave() {
+        using namespace choscordb;
+        EngineAdapter adapter;
+        QuerySettingsDialog query(&adapter);
+        QSignalSpy queryConfirmed(&query, &QuerySettingsDialog::queryPreferencesConfirmed);
+        query.show();
+        auto* queryApply = query.findChild<QPushButton*>("querySettingsApply");
+        QTRY_VERIFY(queryApply->isEnabled());
+        QCOMPARE(queryConfirmed.count(), 1);
+        PreferencesDialog preferences(&adapter, {});
+        preferences.show();
+        auto* preferencesApply = preferences.findChild<QPushButton*>("preferencesApply");
+        QTRY_VERIFY(preferencesApply->isEnabled());
+        preferences.findChild<QCheckBox*>("preferencesShowSystemSchemas")->setChecked(true);
+        preferencesApply->click();
+        QTRY_VERIFY(!preferences.isVisible());
+        query.findChild<QSpinBox*>("queryPageSize")->setValue(456);
+        queryApply->click();
+        QTRY_COMPARE(queryConfirmed.count(), 2);
+        const auto saved = qvariant_cast<QueryPreferences>(queryConfirmed.last().at(0));
+        QCOMPARE(saved.pageSize, quint32(456));
+        QVERIFY(saved.showSystemSchemas);
+    }
+    void changingPageSizePreservesSystemSchemaVisibility() {
+        using namespace choscordb;
+        EngineAdapter adapter;
+        QueryPreferences initial;
+        initial.showSystemSchemas = true;
+        QSignalSpy ready(&adapter, &EngineAdapter::queryPreferencesReady);
+        QVERIFY(adapter.setQueryPreferences(initial, 901));
+        QTRY_COMPARE(ready.count(), 1);
+        QuerySettingsDialog dialog(&adapter);
+        QSignalSpy confirmed(&dialog, &QuerySettingsDialog::queryPreferencesConfirmed);
+        dialog.show();
+        auto* apply = dialog.findChild<QPushButton*>("querySettingsApply");
+        QTRY_VERIFY(apply->isEnabled());
+        QCOMPARE(confirmed.count(), 1);
+        dialog.findChild<QSpinBox*>("queryPageSize")->setValue(456);
+        apply->click();
+        QTRY_COMPARE(confirmed.count(), 2);
+        const auto saved = qvariant_cast<QueryPreferences>(confirmed.last().at(0));
+        QCOMPARE(saved.pageSize, quint32(456));
+        QVERIFY(saved.showSystemSchemas);
+    }
     void submittedSaveSurvivesDialogClosing() {
         choscordb::EngineAdapter adapter;
         QSignalSpy ready(&adapter, &choscordb::EngineAdapter::queryPreferencesReady);

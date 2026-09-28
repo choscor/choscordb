@@ -35,12 +35,10 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QTRY_COMPARE(connected.count(), 1);
     const auto connection = connected.first().at(0).toULongLong();
     auto* adapter = workspace->adapter();
-    int finished = 0, failed = 0;
+    int finished = 0;
     connect(adapter, &EngineAdapter::eventReady, &window, [&](const BridgeEvent& event) {
-        if (event.kind == "query_finished")
+        if (event.kind == "query_finished" && event.has_affected_rows)
             ++finished;
-        if (event.kind == "query_failed")
-            ++failed;
     });
     const auto create = adapter->execute(connection, "CREATE TABLE \"old.name\" (id INTEGER)");
     QVERIFY(create);
@@ -166,12 +164,13 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     });
     collisionRename->trigger();
     QVERIFY(collisionSubmitted);
-    QTRY_COMPARE(failed, 1);
+    auto* toast = window.findChild<ToastRegion*>("toastRegion");
+    QVERIFY(toast);
+    QTRY_VERIFY(toast->accessibleDescription().contains("Could not rename"));
     QCOMPARE(tabs->count(), 3);
     QCOMPARE(object->property("objectId").toString(),
              model->index(0, 0, group).data(NavigatorModel::ObjectIdRole).toString());
-    QCOMPARE(window.findChild<ToastRegion*>("toastRegion")->property("variant").toString(),
-             QString("danger"));
+    QCOMPARE(toast->property("variant").toString(), QString("danger"));
 
     const auto renamed = model->index(0, 0, group);
     QMenu dropMenu;
@@ -274,7 +273,7 @@ void NavigatorSqlWorkspaceTest::objectActionKeepsOtherSessionTabWithSameProfile(
     auto* adapter = workspace->adapter();
     int finished = 0;
     connect(adapter, &EngineAdapter::eventReady, &window, [&](const BridgeEvent& event) {
-        if (event.kind == "query_finished")
+        if (event.kind == "query_finished" && event.has_affected_rows)
             ++finished;
     });
     const auto create = adapter->execute(*first, "CREATE TABLE shared_table (id INTEGER)");

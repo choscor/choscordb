@@ -165,6 +165,13 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     connectionForm->addRow(tr("Connection timeout (seconds)"), connectionTimeout_);
     connectionForm->addRow(createDescription(
         tr("Applies to new SSH tunnels and database logins through them."), connections));
+    showSystemSchemas_ = new QCheckBox(tr("Show system schemas"), connections);
+    showSystemSchemas_->setObjectName("preferencesShowSystemSchemas");
+    showSystemSchemas_->setAccessibleName(tr("Show system schemas"));
+    connectionForm->addRow(showSystemSchemas_);
+    connectionForm->addRow(createDescription(tr("Show PostgreSQL catalog and temporary schemas in "
+                                                "Schema & Objects and SQL suggestions."),
+                                             connections));
     addPage(connections, tr("Connections"));
     auto* history = new QWidget(pages);
     auto* historyForm = new QFormLayout(history);
@@ -328,6 +335,8 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                 else {
                     if (!saving_)
                         fillQuery(value);
+                    else
+                        confirmedSystemSchemaVisibility_ = value.showSystemSchemas;
                     emit queryPreferencesConfirmed(value);
                 }
                 finishRequests();
@@ -494,12 +503,14 @@ void PreferencesDialog::apply() {
     query.pageSize = quint32(pageSize_->value());
     query.timeoutSeconds = quint32(timeout_->value());
     query.connectionTimeoutSeconds = quint32(connectionTimeout_->value());
+    query.showSystemSchemas = showSystemSchemas_->isChecked();
     HistoryPolicy history;
     history.enabled = recordHistory_->isChecked();
     history.maxAgeDays = quint32(historyDays_->value());
     history.maxRecords = quint32(historyRecords_->value());
     errors_.clear();
     saving_ = true;
+    confirmedSystemSchemaVisibility_.reset();
     setBusy(true);
     // Register every participant before submitting: shutdown/queue failures may
     // be synchronous, while success must wait for all storage acknowledgements.
@@ -520,6 +531,7 @@ void PreferencesDialog::fillQuery(const QueryPreferences& value) {
     pageSize_->setValue(value.pageSize);
     timeout_->setValue(value.timeoutSeconds);
     connectionTimeout_->setValue(value.connectionTimeoutSeconds);
+    showSystemSchemas_->setChecked(value.showSystemSchemas);
 }
 void PreferencesDialog::fillHistory(const HistoryPolicy& value) {
     recordHistory_->setChecked(value.enabled);
@@ -542,8 +554,11 @@ void PreferencesDialog::finishRequests() {
     windowToast(this)->showToast(tr("Success"),
                                  saved ? tr("Preferences saved.") : tr("Preferences loaded."),
                                  ToastVariant::Success);
-    if (saved)
+    if (saved) {
+        if (confirmedSystemSchemaVisibility_)
+            emit systemSchemaVisibilitySaved(*confirmedSystemSchemaVisibility_);
         accept();
+    }
 }
 void PreferencesDialog::reject() {
     if (saving_) {

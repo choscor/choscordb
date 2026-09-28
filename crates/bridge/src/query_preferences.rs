@@ -7,6 +7,7 @@ pub(crate) fn dto(value: QueryPreferences) -> ffi::QueryPreferencesDto {
         page_size: value.page_size.get(),
         timeout_seconds: value.timeout_seconds,
         connection_timeout_seconds: value.connection_timeout_seconds,
+        show_system_schemas: value.show_system_schemas,
     }
 }
 pub fn query_preference_limits() -> ffi::QueryPreferenceLimitsDto {
@@ -40,6 +41,7 @@ pub fn query_preferences_set(
                 page_size,
                 timeout_seconds: value.timeout_seconds,
                 connection_timeout_seconds: value.connection_timeout_seconds,
+                show_system_schemas: value.show_system_schemas,
             },
             token,
         )

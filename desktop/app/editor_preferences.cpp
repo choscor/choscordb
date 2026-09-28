@@ -125,6 +125,8 @@ void EditorPreferencesController::open() {
                 &EditorPreferencesController::queryPreferencesConfirmed);
         connect(dialog_, &PreferencesDialog::historyPolicyConfirmed, this,
                 &EditorPreferencesController::historyPolicyConfirmed);
+        connect(dialog_, &PreferencesDialog::systemSchemaVisibilitySaved, this,
+                &EditorPreferencesController::systemSchemaVisibilitySaved);
     }
     dialog_->show();
     dialog_->raise();

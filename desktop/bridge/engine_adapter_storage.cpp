@@ -80,6 +80,7 @@ bool EngineAdapter::setQueryPreferences(const QueryPreferences& preferences, qui
         dto.page_size = preferences.pageSize;
         dto.timeout_seconds = preferences.timeoutSeconds;
         dto.connection_timeout_seconds = preferences.connectionTimeoutSeconds;
+        dto.show_system_schemas = preferences.showSystemSchemas;
         return query_preferences_set(*d_->engine, dto, token);
     });
 }

@@ -237,6 +237,7 @@ pub mod ffi {
         page_size: u32,
         timeout_seconds: u32,
         connection_timeout_seconds: u32,
+        show_system_schemas: bool,
     }
     #[derive(Default)]
     struct AppearanceLayoutDto {
