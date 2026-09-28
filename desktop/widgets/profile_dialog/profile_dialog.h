@@ -7,6 +7,7 @@
 #include <QPointer>
 class QComboBox;
 class QFormLayout;
+class QGridLayout;
 class QLabel;
 class QDialog;
 class QHideEvent;
@@ -46,7 +47,7 @@ class ProfileDialog final : public DialogShell {
     QWidget* validated(QWidget* field);
     design::FieldValidation* validationFor(QWidget* field) const;
     void showFieldError(QWidget* field, const QString& message);
-    void createPrivateKeyControls(QFormLayout* form);
+    void createPrivateKeyControls(QFormLayout* form, QGridLayout* grid);
     void updatePrivateKeyControls();
     SshPrivateKeyCredential privateKeyCredential(const SavedProfile& profile, bool saving) const;
     void createProxyControls(QFormLayout* form);
@@ -54,7 +55,7 @@ class ProfileDialog final : public DialogShell {
     void writeProxyDraft(SavedProfile& profile) const;
     void setProxyDraft(const SavedProfile& profile);
     static bool proxyNeedsPassword(const SavedProfile& profile);
-    void createConnectionControls(QFormLayout* security, QFormLayout* ssh);
+    void createConnectionControls(QFormLayout* ssh, QGridLayout* grid);
     static bool validServerHost(const QString& host);
     bool validateSecurityDraft(const SavedProfile& profile);
     QString sshOptionsDraft() const;
@@ -95,15 +96,15 @@ class ProfileDialog final : public DialogShell {
     QWidget* sqliteFields_;
     QWidget* postgresFields_;
     QWidget* sshFields_;
-    QLineEdit *name_, *path_, *host_, *database_, *user_, *rootCertificate_, *password_;
-    QComboBox *driver_, *tls_, *sshAuthentication_;
-    QCheckBox *readOnly_, *saveCredentials_, *useTls_;
+    QLineEdit *name_, *path_, *host_, *database_, *user_, *password_;
+    QComboBox *driver_, *sshAuthentication_;
+    QCheckBox *readOnly_, *saveCredentials_;
     QSpinBox* port_;
     QCheckBox* sshEnabled_;
     QLineEdit *sshHost_, *sshUser_, *sshIdentityFile_, *sshSecret_;
     QSpinBox* sshPort_;
-    QLineEdit *tlsClientIdentity_, *tlsSecret_, *sshAgentSocket_, *sshKnownHosts_;
-    QWidget* tlsFields_;
+    QLineEdit *tlsSecret_, *sshAgentSocket_, *sshKnownHosts_;
+    QWidget* tlsSecretField_ = nullptr;
     QSpinBox *sshTimeout_, *sshKeepalive_, *sshKeepaliveCount_, *sshRemotePort_;
     QLineEdit* sshRemoteHost_;
     QCheckBox *sshLocalBinding_, *sshShareTunnels_;
@@ -111,6 +112,8 @@ class ProfileDialog final : public DialogShell {
     QSpinBox* sshLocalPort_;
     QLabel* sshLocalBindingWarning_;
     QComboBox* sshIdentitySource_ = nullptr;
+    QLabel *sshIdentitySourceLabel_ = nullptr, *sshIdentityFileLabel_ = nullptr,
+           *sshSecretLabel_ = nullptr;
     SshPrivateKeyEditor* sshPrivateKey_ = nullptr;
     std::optional<SshPrivateKeyDraft> pendingPrivateKey_;
     QPushButton* inspectSshKeys_ = nullptr;

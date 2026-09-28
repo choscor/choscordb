@@ -76,6 +76,6 @@ The tests cover required encryption with an untrusted server, CA verification
 without hostname verification, full hostname verification, multiple certificates
 in a PEM trust bundle, and absent/incorrect/valid client identities. A protocol
 fixture also verifies that `Prefer` falls back when a server declines TLS while
-`Require` refuses. `Prefer` and `Require` do not authenticate the server;
-`VerifyFull` remains the default. PKCS#12 archive passwords are kept separately
-from profile configuration.
+`Require` refuses. `Prefer` and `Require` do not authenticate the server.
+New profiles default to `Prefer`; existing explicit verification settings remain
+in force. PKCS#12 archive passwords are kept separately from profile configuration.

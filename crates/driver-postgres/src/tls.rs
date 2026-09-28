@@ -43,7 +43,9 @@ pub async fn connector(
         ));
         builder.danger_accept_invalid_certs(matches!(mode, TlsMode::Prefer | TlsMode::Require));
         if mode != TlsMode::Disable {
-            if let Some(path) = root {
+            if let Some(path) =
+                root.filter(|_| matches!(mode, TlsMode::VerifyCa | TlsMode::VerifyFull))
+            {
                 let bytes = read_material(&path)?;
                 let invalid = || DriverError::new(ErrorKind::Tls, "Invalid root certificate");
                 const BEGIN: &[u8] = b"-----BEGIN CERTIFICATE-----";
@@ -94,4 +96,23 @@ pub async fn connector(
     })
     .await
     .map_err(|_| DriverError::new(ErrorKind::Internal, "TLS worker failed"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn nonverifying_modes_ignore_saved_root_certificate() {
+        let directory = tempfile::tempdir().unwrap();
+        let missing = directory.path().join("missing-ca.pem");
+        for mode in [TlsMode::Prefer, TlsMode::Require] {
+            assert!(connector(mode, Some(missing.clone()), None).await.is_ok());
+        }
+        assert!(
+            connector(TlsMode::VerifyCa, Some(missing), None)
+                .await
+                .is_err()
+        );
+    }
 }

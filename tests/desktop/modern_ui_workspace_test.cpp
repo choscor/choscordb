@@ -698,7 +698,7 @@ void ModernUiTest::preferencesUseSectionNavigationAndCancelableLivePreview() {
     auto* status = dialog->findChild<QLabel*>("appearanceStatus");
     auto* apply = dialog->findChild<QPushButton*>("preferencesApply");
     QVERIFY(sections);
-    QCOMPARE(sections->count(), 5);
+    QCOMPARE(sections->count(), 6);
     QCOMPARE(dialog->layout()->contentsMargins().left(), 0);
     QTRY_VERIFY(apply->isEnabled());
     mode->setCurrentIndex(mode->findData("dark"));

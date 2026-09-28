@@ -78,6 +78,31 @@ async fn explicit_unix_directory_reaches_postgres_socket() {
     attempt.abort();
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn prefer_uses_plaintext_on_unix_socket_without_user_tls_setup() {
+    let directory = tempfile::tempdir_in("/tmp").unwrap();
+    let listener = tokio::net::UnixListener::bind(directory.path().join(".s.PGSQL.5432")).unwrap();
+    let mut opts = options(
+        directory.path().to_str().unwrap().into(),
+        5432,
+        "local_database",
+    );
+    if let ConnectionOptions::Postgres { tls, .. } = &mut opts {
+        *tls = TlsMode::Prefer;
+    }
+    let attempt = tokio::spawn(async { PostgresDriver.connect(opts).await });
+    let (mut socket, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+        .await
+        .expect("prefer should reach the local socket")
+        .unwrap();
+    let size = socket.read_u32().await.unwrap();
+    let mut startup = vec![0; size as usize - 4];
+    socket.read_exact(&mut startup).await.unwrap();
+    assert_eq!(&startup[..4], &[0, 3, 0, 0]);
+    attempt.abort();
+}
+
 #[tokio::test]
 async fn unix_socket_rejects_tls_and_ssh_without_silent_downgrade() {
     for tunneled in [false, true] {

@@ -72,12 +72,15 @@ void QuerySettingsController::open() {
 void QuerySettingsController::apply(const QueryPreferences& value) {
     const auto limits = EngineAdapter::queryPreferenceLimits();
     if (value.version != limits.version || value.pageSize < limits.minPageSize ||
-        value.pageSize > limits.maxPageSize || value.timeoutSeconds > limits.maxTimeoutSeconds) {
+        value.pageSize > limits.maxPageSize || value.timeoutSeconds > limits.maxTimeoutSeconds ||
+        value.connectionTimeoutSeconds < 1 ||
+        value.connectionTimeoutSeconds > limits.maxConnectionTimeoutSeconds) {
         emit failed(tr("Invalid query settings received; current settings remain unchanged."));
         return;
     }
     if (value.version == preferences_.version && value.pageSize == preferences_.pageSize &&
-        value.timeoutSeconds == preferences_.timeoutSeconds)
+        value.timeoutSeconds == preferences_.timeoutSeconds &&
+        value.connectionTimeoutSeconds == preferences_.connectionTimeoutSeconds)
         return;
     preferences_ = value;
     emit preferencesChanged(preferences_);

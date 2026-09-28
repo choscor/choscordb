@@ -23,6 +23,38 @@ fn defaults_restart_and_atomic_validation() {
         Err(StorageError::ReservedSetting)
     ));
 }
+
+#[test]
+fn connection_timeout_defaults_and_persists_with_global_preferences() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("prefs.sqlite");
+    let mut storage = Storage::open(&path).unwrap();
+    let defaults = serde_json::to_value(storage.query_preferences().unwrap()).unwrap();
+    assert_eq!(defaults["connection_timeout_seconds"], 20);
+    let legacy: QueryPreferences =
+        serde_json::from_str(r#"{"version":1,"page_size":1000,"timeout_seconds":0}"#).unwrap();
+    assert_eq!(
+        serde_json::to_value(legacy).unwrap()["connection_timeout_seconds"],
+        20
+    );
+    let changed = serde_json::from_value::<QueryPreferences>(serde_json::json!({
+        "version": 1,
+        "page_size": 1000,
+        "timeout_seconds": 0,
+        "connection_timeout_seconds": 27
+    }))
+    .unwrap();
+    storage.set_query_preferences(&changed).unwrap();
+    for invalid_seconds in [0, 301] {
+        let mut invalid = changed.clone();
+        invalid.connection_timeout_seconds = invalid_seconds;
+        assert!(storage.set_query_preferences(&invalid).is_err());
+    }
+    drop(storage);
+    let storage = Storage::open(path).unwrap();
+    let restored = serde_json::to_value(storage.query_preferences().unwrap()).unwrap();
+    assert_eq!(restored["connection_timeout_seconds"], 27);
+}
 #[test]
 fn corrupt_settings_do_not_default() {
     let dir = tempfile::tempdir().unwrap();

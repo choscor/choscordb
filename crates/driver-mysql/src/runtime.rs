@@ -84,6 +84,7 @@ pub(super) struct Start {
 pub(super) async fn start(
     conn: Conn,
     opts: Opts,
+    prefer_tls: bool,
     request: Start,
 ) -> Result<(Result<StreamCursor>, tokio::task::JoinHandle<Option<Conn>>)> {
     let Start {
@@ -204,7 +205,7 @@ pub(super) async fn start(
                         })?;
                         let opts =
                             OptsBuilder::from_opts(opts).max_allowed_packet(Some(1024 * 1024));
-                        let mut control = connection::connect(opts.into()).await?;
+                        let mut control = connection::connect(opts.into(), prefer_tls).await?;
                         control
                             .connection()
                             .query_drop(format!("KILL QUERY {id}"))

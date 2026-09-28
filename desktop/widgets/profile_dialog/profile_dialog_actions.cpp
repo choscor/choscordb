@@ -2,10 +2,10 @@
 #include "widgets/profile_dialog/profile_dialog.h"
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFormLayout>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSpinBox>
-#include <QStandardItemModel>
 #include <QUrl>
 #include <QUuid>
 namespace choscordb {
@@ -44,8 +44,7 @@ void ProfileDialog::connectDraft(bool openQuery) {
                              !password_->text().isEmpty();
     const bool hasSshSecret = value.sshEnabled && value.sshAuthentication != "agent" &&
                               (sshSecret_->isModified() || !sshSecret_->text().isEmpty());
-    const bool hasTlsSecret = value.driver != "sqlite" && value.tls != "disable" &&
-                              !value.tlsClientIdentity.isEmpty() &&
+    const bool hasTlsSecret = !value.tlsClientIdentity.isEmpty() &&
                               (tlsSecret_->isModified() || !tlsSecret_->text().isEmpty());
     const bool hasProxySecret = proxyNeedsPassword(value) &&
                                 (proxySecret_->isModified() || !proxySecret_->text().isEmpty());
@@ -83,8 +82,6 @@ SavedProfile ProfileDialog::draft() const {
     value.user = user_->text();
     if (password_->isModified() && password_->text().isEmpty())
         value.credentialRef.clear();
-    value.tls = useTls_->isChecked() ? tls_->currentData().toString() : QStringLiteral("disable");
-    value.rootCertificate = rootCertificate_->text();
     value.sshEnabled =
         (value.driver == "postgres" || value.driver == "mysql") && sshEnabled_->isChecked();
     value.sshHost = sshHost_->text();
@@ -117,11 +114,6 @@ void ProfileDialog::setDraft(const SavedProfile& value) {
     port_->setValue(value.port ? value.port : value.driver == "mysql" ? 3306 : 5432);
     database_->setText(value.database);
     user_->setText(value.user);
-    const auto tlsIndex = tls_->findData(value.tls);
-    tls_->setCurrentIndex(tlsIndex < 0 ? tls_->findData("verify_full") : tlsIndex);
-    useTls_->setChecked(value.tls != "disable" && !value.tls.isEmpty());
-    tlsFields_->setVisible(useTls_->isChecked());
-    rootCertificate_->setText(value.rootCertificate);
     sshEnabled_->setChecked(value.sshEnabled);
     sshHost_->setText(value.sshHost);
     sshPort_->setValue(value.sshPort ? value.sshPort : 22);
@@ -171,12 +163,12 @@ void ProfileDialog::updateDriver() {
     const bool mysql = driver_->currentData().toString() == "mysql";
     database_->setPlaceholderText(mysql ? tr("Optional — connect to the server")
                                         : tr("Optional — defaults to the username"));
-    if (auto* model = qobject_cast<QStandardItemModel*>(tls_->model()))
-        if (auto* prefer = model->item(tls_->findData("prefer")))
-            prefer->setEnabled(!mysql);
     postgresChoice_->setChecked(!sqlite && !mysql);
     mysqlChoice_->setChecked(mysql);
     sshEnabled_->setVisible(!sqlite);
+    qobject_cast<QFormLayout*>(postgresFields_->layout())
+        ->setRowVisible(tlsSecretField_, !sqlite && current_.tls != "disable" &&
+                                             !current_.tlsClientIdentity.isEmpty());
     sshFields_->setVisible(!sqlite && sshEnabled_->isChecked());
 
     sqliteFields_->setVisible(sqlite);
@@ -238,8 +230,7 @@ void ProfileDialog::saveDraft(const SavedProfile& profile) {
             sshAction = "keep";
     }
     QString tlsAction = "clear";
-    if (value.driver != "sqlite" && value.tls != "disable" && !value.tlsClientIdentity.isEmpty() &&
-        saveCredentials) {
+    if (saveCredentials && !value.tlsClientIdentity.isEmpty()) {
         if (tlsSecretModified || !tlsSecret.isEmpty())
             tlsAction = tlsSecret.isEmpty() ? "clear" : "replace";
         else if (!value.tlsCredentialRef.isEmpty())
@@ -281,8 +272,7 @@ void ProfileDialog::testDraft(const SavedProfile& profile) {
                              !password_->text().isEmpty();
     const bool hasSshSecret = value.sshEnabled && value.sshAuthentication != "agent" &&
                               (sshSecret_->isModified() || !sshSecret_->text().isEmpty());
-    const bool hasTlsSecret = value.driver != "sqlite" && value.tls != "disable" &&
-                              !value.tlsClientIdentity.isEmpty() &&
+    const bool hasTlsSecret = !value.tlsClientIdentity.isEmpty() &&
                               (tlsSecret_->isModified() || !tlsSecret_->text().isEmpty());
     const bool hasProxySecret = proxyNeedsPassword(value) &&
                                 (proxySecret_->isModified() || !proxySecret_->text().isEmpty());
@@ -323,8 +313,7 @@ bool ProfileDialog::validateConnectionDraft(const SavedProfile& profile) {
         if (((profile.driver == "postgres" || profile.driver == "mysql") &&
              oversized(password_)) ||
             (profile.sshEnabled && profile.sshAuthentication != "agent" && oversized(sshSecret_)) ||
-            (profile.driver != "sqlite" && profile.tls != "disable" &&
-             !profile.tlsClientIdentity.isEmpty() && oversized(tlsSecret_)) ||
+            (!profile.tlsClientIdentity.isEmpty() && oversized(tlsSecret_)) ||
             (proxyNeedsPassword(profile) && oversized(proxySecret_)))
             return false;
         QString error;
@@ -348,13 +337,10 @@ bool ProfileDialog::validateConnectionDraft(const SavedProfile& profile) {
         return false;
     };
     const bool socket = profile.host.startsWith('/');
-    if (socket && profile.tls != "disable")
-        return invalid(tls_, tr("Unix sockets require TLS disabled."));
+    if (socket && profile.tls != "disable" && profile.tls != "prefer")
+        return invalid(host_, tr("Unix sockets do not support required or verified TLS."));
     if (socket && profile.sshEnabled)
         return invalid(sshEnabled_, tr("Unix sockets cannot use an SSH tunnel."));
-    if (profile.driver == "mysql" && profile.tls == "prefer")
-        return invalid(
-            tls_, tr("MySQL does not support Prefer TLS. Choose Require or a verification mode."));
     if (!socket && !validServerHost(profile.host))
         return invalid(host_, tr("Host must be a hostname or IPv4/IPv6 address. "
                                  "Enter the port separately; omit URLs and usernames."));

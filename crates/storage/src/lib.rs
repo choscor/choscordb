@@ -17,7 +17,8 @@ pub use preferences::{
     ShortcutOverride,
 };
 pub use query_preferences::{
-    MAX_QUERY_TIMEOUT_SECONDS, QUERY_PREFERENCES_VERSION, QueryPreferences,
+    DEFAULT_CONNECTION_TIMEOUT_SECONDS, MAX_CONNECTION_TIMEOUT_SECONDS, MAX_QUERY_TIMEOUT_SECONDS,
+    QUERY_PREFERENCES_VERSION, QueryPreferences,
 };
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -730,7 +731,7 @@ fn validate_field(value: &str, limit: usize) -> Result<()> {
 fn validate_server_endpoint(host: &str, tls: &TlsMode, ssh: Option<&SshTunnel>) -> Result<()> {
     if host.starts_with('/') {
         validate_field(host, 16 * 1024)?;
-        if *tls != TlsMode::Disable || ssh.is_some() {
+        if !matches!(tls, TlsMode::Disable | TlsMode::Prefer) || ssh.is_some() {
             return Err(StorageError::InvalidProfile);
         }
         Ok(())

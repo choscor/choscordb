@@ -64,7 +64,12 @@ def main():
                 row = connection.execute(
                     "SELECT value FROM settings WHERE key='query_preferences'"
                 ).fetchone()
-                expected = {"version": 1, "page_size": 222, "timeout_seconds": 0}
+                expected = {
+                    "version": 1,
+                    "page_size": 222,
+                    "timeout_seconds": 0,
+                    "connection_timeout_seconds": 20,
+                }
                 if row is None or json.loads(row[0]) != expected:
                     raise AssertionError(
                         f"{name}: native repair was not persisted: {row!r}"

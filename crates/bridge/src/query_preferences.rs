@@ -6,6 +6,7 @@ pub(crate) fn dto(value: QueryPreferences) -> ffi::QueryPreferencesDto {
         version: value.version,
         page_size: value.page_size.get(),
         timeout_seconds: value.timeout_seconds,
+        connection_timeout_seconds: value.connection_timeout_seconds,
     }
 }
 pub fn query_preference_limits() -> ffi::QueryPreferenceLimitsDto {
@@ -15,6 +16,8 @@ pub fn query_preference_limits() -> ffi::QueryPreferenceLimitsDto {
         max_page_size: choscordb_driver_api::MAX_PAGE_SIZE,
         default_page_size: choscordb_driver_api::DEFAULT_PAGE_SIZE,
         max_timeout_seconds: choscordb_core::MAX_QUERY_TIMEOUT_SECONDS,
+        default_connection_timeout_seconds: choscordb_core::DEFAULT_CONNECTION_TIMEOUT_SECONDS,
+        max_connection_timeout_seconds: choscordb_core::MAX_CONNECTION_TIMEOUT_SECONDS,
     }
 }
 pub fn query_preferences_get(engine: &mut BridgeEngine, token: u64) -> ffi::Submit {
@@ -36,6 +39,7 @@ pub fn query_preferences_set(
                 version: value.version,
                 page_size,
                 timeout_seconds: value.timeout_seconds,
+                connection_timeout_seconds: value.connection_timeout_seconds,
             },
             token,
         )

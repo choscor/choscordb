@@ -3,6 +3,8 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
+#include <QGridLayout>
+#include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
@@ -11,8 +13,9 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSpinBox>
+#include <QVBoxLayout>
 namespace choscordb {
-void ProfileDialog::createConnectionControls(QFormLayout* security, QFormLayout* ssh) {
+void ProfileDialog::createConnectionControls(QFormLayout* ssh, QGridLayout* grid) {
     createProxyControls(qobject_cast<QFormLayout*>(postgresFields_->layout()));
     const auto changed = [this] {
         if (!filling_) {
@@ -27,14 +30,6 @@ void ProfileDialog::createConnectionControls(QFormLayout* security, QFormLayout*
         connect(field, &QLineEdit::textEdited, this, changed);
         return field;
     };
-    tlsClientIdentity_ = line("profileTlsClientIdentity");
-    tlsClientIdentity_->setPlaceholderText(
-        tr("Optional PKCS#12 client certificate (.p12 or .pfx)"));
-    security->addRow(tr("Client identity"), validated(tlsClientIdentity_));
-    tlsSecret_ = line("profileTlsSecret");
-    tlsSecret_->setEchoMode(QLineEdit::Password);
-    tlsSecret_->setPlaceholderText(tr("PKCS#12 password; leave blank for an unencrypted identity"));
-    security->addRow(tr("Client identity password"), validated(tlsSecret_));
     const auto spin = [this, changed](const char* name, int minimum, int maximum, int value) {
         auto* field = new QSpinBox(form_);
         field->setObjectName(name);
@@ -99,13 +94,13 @@ void ProfileDialog::createConnectionControls(QFormLayout* security, QFormLayout*
     ssh->addRow(tr("Unanswered keepalives"), sshKeepaliveCount_);
     ssh->addRow(tr("Custom agent socket"), sshAgentSocket_);
     ssh->addRow(tr("Known hosts file"), sshKnownHosts_);
-    createPrivateKeyControls(ssh);
+    createPrivateKeyControls(ssh, grid);
     sshHopEditor_ = new SshHopEditor(form_);
     connect(sshHopEditor_, &SshHopEditor::changed, this, changed);
     ssh->addRow(tr("SSH jump hosts"), sshHopEditor_);
     createTrustControls(ssh);
-    // Retain the internal widgets for older saved drafts and asynchronous state,
-    // but keep the connection form limited to the four basic SSH settings.
+    // Retain internal widgets for older saved drafts and asynchronous state,
+    // while the connection form shows the basic SSH fields.
     for (QWidget* control : QList<QWidget*>{
              sshRemoteHost_, sshRemotePort_, sshLocalBinding_, sshLocalHost_, sshLocalPort_,
              sshLocalBindingWarning_, sshShareTunnels_, sshTimeout_, sshKeepalive_,
@@ -119,9 +114,6 @@ bool ProfileDialog::validateSecurityDraft(const SavedProfile&) {
     return true;
 }
 void ProfileDialog::writeSecurityDraft(SavedProfile& value) const {
-    value.tlsClientIdentity = tlsClientIdentity_->text();
-    if (value.tlsClientIdentity != current_.tlsClientIdentity)
-        value.tlsCredentialRef.clear();
     value.sshIdentitySource = value.sshAuthentication == "public_key"
                                   ? sshIdentitySource_->currentData().toString()
                                   : QStringLiteral("file");
@@ -135,13 +127,11 @@ void ProfileDialog::writeSecurityDraft(SavedProfile& value) const {
     value.sshJumpCredentialRefs = QStringLiteral("{}");
 }
 void ProfileDialog::setSecurityDraft(const SavedProfile& value) {
-    tlsClientIdentity_->setText(value.tlsClientIdentity);
     tlsSecret_->clear();
     tlsSecret_->setModified(false);
-    tlsSecret_->setPlaceholderText(
-        value.tlsCredentialRef.isEmpty()
-            ? tr("PKCS#12 password; leave blank for an unencrypted identity")
-            : tr("Saved identity password — leave unchanged to keep"));
+    tlsSecret_->setPlaceholderText(value.tlsCredentialRef.isEmpty()
+                                       ? tr("Client identity password")
+                                       : tr("Saved identity password — leave unchanged to keep"));
     sshIdentitySource_->setCurrentIndex(sshIdentitySource_->findData(value.sshIdentitySource));
     sshPrivateKey_->setDraft({{}, false},
                              !value.sshPrivateKeyRef.isEmpty());

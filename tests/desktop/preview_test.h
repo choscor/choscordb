@@ -29,6 +29,8 @@ class PreviewTest final : public QObject {
     void galleryOpenKeepsOverlayInsideWindow_data();
     void galleryOpenKeepsOverlayInsideWindow();
     void popupSpecimensStayInsideWindowInBothThemes();
+    void selectPopupFitsRowsInBothThemes();
+    void selectPopupStaysAttachedNearWindowBottom();
     void contextMenuSpecimenUsesCursorInBothThemes();
     void moreButtonUsesThemeSurface();
     void scrollSpecimensKeepTheirIndependentThemePaper();

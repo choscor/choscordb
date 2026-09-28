@@ -186,7 +186,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     host_->setPlaceholderText(tr("localhost, IP address or absolute Unix socket path"));
     host_->setToolTip(
         tr("TCP hostname/IP address, or Unix socket path (PostgreSQL directory; MySQL file). "
-           "Unix sockets require TLS disabled and no SSH. Enter TCP ports separately. "
+           "Unix sockets use a local connection without TLS or SSH. Enter TCP ports separately. "
            "With SSH enabled, this address is reached from the SSH server; "
            "localhost refers to that server."));
     database_ = line("profileDatabase");
@@ -226,37 +226,22 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     saveCredentials_ = new QCheckBox(tr("Save credentials in OS credential store"), form_);
     saveCredentials_->setObjectName("profileSaveCredentials");
     pg->addRow(saveCredentials_);
+    tlsSecret_ = line("profileTlsSecret");
+    tlsSecret_->setEchoMode(QLineEdit::Password);
+    tlsSecret_->setToolTip(tr("Password for a client identity saved by an earlier profile version."));
+    tlsSecretField_ = validated(tlsSecret_);
+    pg->addRow(tr("Client identity password"), tlsSecretField_);
     connect(saveCredentials_, &QCheckBox::toggled, this, [this] {
         if (!filling_) {
             dirty_ = true;
             ++revision_;
         }
     });
-    tls_ = new QComboBox(form_);
-    tls_->setObjectName("profileTls");
-    tls_->addItem(tr("Verify server identity"), "verify_full");
-    tls_->addItem(tr("Verify certificate authority"), "verify_ca");
-    tls_->addItem(tr("Require encryption"), "require");
-    tls_->addItem(tr("Prefer TLS (PostgreSQL only)"), "prefer");
-    useTls_ = new QCheckBox(tr("Use TLS"), postgresFields_);
-    useTls_->setObjectName("profileUseTls");
-    useTls_->setProperty("designRole", "switch");
-    pg->addRow(validated(useTls_));
-    auto* security = new QWidget(postgresFields_);
-    tlsFields_ = security;
-    auto* securityLayout = new QFormLayout(security);
-    securityLayout->setContentsMargins(0, 0, 0, 0);
-    securityLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    securityLayout->addRow(tr("&TLS"), validated(tls_));
-    rootCertificate_ = line("profileRootCertificate");
-    securityLayout->addRow(tr("Root &certificate"), rootCertificate_);
-    pg->addRow(security);
     sshEnabled_ = new QCheckBox(tr("Connect through SSH tunnel"), postgresFields_);
     sshEnabled_->setObjectName("profileSshEnabled");
     sshEnabled_->setProperty("designRole", "switch");
     pg->addRow(validated(sshEnabled_));
     connect(host_, &QLineEdit::textChanged, this, [this] {
-        validationFor(tls_)->setError({});
         validationFor(sshEnabled_)->setError({});
     });
     auto* sshFields = new QWidget(postgresFields_);
@@ -281,12 +266,31 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     sshPort_ = new QSpinBox(sshFields);
     sshPort_->setObjectName("profileSshPort");
     sshPort_->setRange(1, 65535);
-    sshLayout->addRow(tr("SSH host"), validated(sshHost_));
-    sshLayout->addRow(tr("SSH port"), sshPort_);
-    sshLayout->addRow(tr("SSH username"), validated(sshUser_));
-    sshLayout->addRow(tr("Authentication"), sshAuthentication_);
-    sshLayout->addRow(tr("SSH private key file"), validated(sshIdentityFile_));
-    sshLayout->addRow(tr("SSH passphrase"), validated(sshSecret_));
+    auto* sshGrid = new QGridLayout;
+    for (int column = 0; column < 6; ++column)
+        sshGrid->setColumnStretch(column, column == 2 ? 1 : column == 3 ? 3 : 2);
+    const auto sshField = [this, sshGrid](const QString& title, QWidget* widget, int row,
+                                          int column, int span = 1) {
+        auto* label = new QLabel(title, sshFields_);
+        label->setBuddy(widget);
+        sshGrid->addWidget(label, row * 2, column, 1, span);
+        sshGrid->addWidget(widget == sshHost_ || widget == sshUser_ ||
+                                   widget == sshIdentityFile_ || widget == sshSecret_
+                               ? validated(widget)
+                               : widget,
+                           row * 2 + 1, column, 1, span);
+        return label;
+    };
+    sshField(tr("SSH host"), sshHost_, 0, 0, 2);
+    sshField(tr("SSH port"), sshPort_, 0, 2);
+    sshField(tr("SSH username"), sshUser_, 0, 3, 3);
+    sshField(tr("Authentication"), sshAuthentication_, 1, 0, 3);
+    sshIdentityFileLabel_ = sshField(tr("SSH private key file"), sshIdentityFile_, 2, 2, 2);
+    sshSecretLabel_ = sshField(tr("SSH passphrase"), sshSecret_, 2, 4, 2);
+    sshLayout->addRow(sshGrid);
+    QWidget::setTabOrder(sshHost_, sshPort_);
+    QWidget::setTabOrder(sshPort_, sshUser_);
+    QWidget::setTabOrder(sshUser_, sshAuthentication_);
     pg->addRow(sshFields);
     connect(sshEnabled_, &QCheckBox::toggled, sshFields, &QWidget::setVisible);
     connect(sshEnabled_, &QCheckBox::toggled, this, [this] {
@@ -301,15 +305,13 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
             ++revision_;
         }
     });
-    const auto updateSshAuthentication = [this, sshLayout] {
+    const auto updateSshAuthentication = [this] {
         const auto authentication = sshAuthentication_->currentData().toString();
         const bool agent = authentication == "agent";
         const bool publicKey = authentication == "public_key";
-        sshLayout->setRowVisible(validationFor(sshIdentityFile_), publicKey);
-        sshLayout->setRowVisible(validationFor(sshSecret_), !agent);
-        if (auto* label =
-                qobject_cast<QLabel*>(sshLayout->labelForField(validationFor(sshSecret_))))
-            label->setText(publicKey ? tr("SSH passphrase") : tr("SSH password"));
+        sshSecretLabel_->setVisible(!agent);
+        validationFor(sshSecret_)->setVisible(!agent);
+        sshSecretLabel_->setText(publicKey ? tr("SSH passphrase") : tr("SSH password"));
         updatePrivateKeyControls();
         sshIdentityFile_->setPlaceholderText(tr("Private key file"));
         sshSecret_->setPlaceholderText(publicKey ? tr("Optional for an unencrypted key")
@@ -331,14 +333,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                     ++revision_;
                 }
             });
-    connect(useTls_, &QCheckBox::toggled, security, &QWidget::setVisible);
-    connect(useTls_, &QCheckBox::toggled, this, [this] {
-        if (!filling_) {
-            dirty_ = true;
-            ++revision_;
-        }
-    });
-    createConnectionControls(securityLayout, sshLayout);
+    createConnectionControls(sshLayout, sshGrid);
     updateSshAuthentication();
     sshFields->hide();
     formLayout->addRow(postgresFields_);
@@ -399,12 +394,6 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
             (port_->value() == 5432 || port_->value() == 3306))
             port_->setValue(driver_->currentData() == "mysql" ? 3306 : 5432);
         updateDriver();
-        if (!filling_) {
-            dirty_ = true;
-            ++revision_;
-        }
-    });
-    connect(tls_, &QComboBox::currentIndexChanged, this, [this] {
         if (!filling_) {
             dirty_ = true;
             ++revision_;
@@ -555,7 +544,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                                      : SshHopSecrets{};
             preserveProxySecretOnRefresh_ =
                 savingDraft_ && !saveCredentials_->isChecked() && proxyNeedsPassword(profile);
-            preserveTlsSecretOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked();
+            preserveTlsSecretOnRefresh_ =
+                savingDraft_ && !saveCredentials_->isChecked() && !profile.tlsClientIdentity.isEmpty();
             preservePasswordOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked();
             preserveSshSecretOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked() &&
                                           sshAuthentication_->currentData() != "agent";

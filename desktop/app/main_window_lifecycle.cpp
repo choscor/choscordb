@@ -173,7 +173,6 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     const auto historyItems = ui.historyItems;
     const auto resetLayout = ui.resetLayout;
     const auto toolbar = ui.toolbar;
-    const auto connections = ui.connections;
     const auto splitter = ui.splitter;
     const auto workspaceTabs = ui.workspaceTabs;
     const auto toolbarHost = ui.toolbarHost;

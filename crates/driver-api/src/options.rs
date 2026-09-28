@@ -56,10 +56,10 @@ impl Default for QueryOptions {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TlsMode {
     Disable,
+    #[default]
     Prefer,
     Require,
     VerifyCa,
-    #[default]
     VerifyFull,
 }
 /// Secret bytes are deliberately excluded from Debug and serialization.

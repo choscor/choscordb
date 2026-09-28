@@ -5,6 +5,7 @@
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
+#include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"

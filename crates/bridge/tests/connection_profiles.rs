@@ -23,7 +23,6 @@ fn connection_dialog_rejects_removed_transport_settings() {
     for options in [
         r#"{"remote_host":"other.example"}"#,
         r#"{"local_port":5433}"#,
-        r#"{"connect_timeout_seconds":45}"#,
         r#"{"jump_hosts":[{"host":"jump.example","port":22,"user":"alice"}]}"#,
     ] {
         let mut profile = draft();
@@ -37,6 +36,20 @@ fn connection_dialog_rejects_removed_transport_settings() {
             !validate_connection_profile(profile).is_empty(),
             "{options}"
         );
+    }
+}
+
+#[test]
+fn connection_dialog_accepts_connection_timeout() {
+    for seconds in [20, 27] {
+        let mut profile = draft();
+        profile.ssh_enabled = true;
+        profile.ssh_host = "ssh.example".into();
+        profile.ssh_port = 22;
+        profile.ssh_user = "alice".into();
+        profile.ssh_authentication = "agent".into();
+        profile.ssh_options = format!(r#"{{"connect_timeout_seconds":{seconds}}}"#);
+        assert!(validate_connection_profile(profile).is_empty(), "{seconds}");
     }
 }
 

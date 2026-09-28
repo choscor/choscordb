@@ -18,7 +18,8 @@ quint64 nextToken() {
 }
 } // namespace
 QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent)
-    : DialogShell(parent), adapter_(adapter) {
+    : DialogShell(parent), adapter_(adapter),
+      connectionTimeoutSeconds_(QueryPreferences().connectionTimeoutSeconds) {
     setObjectName("querySettingsDialog");
     setWindowTitle(tr("Query settings"));
     auto* layout = new QVBoxLayout(this);
@@ -66,7 +67,9 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     connect(reset_, &QPushButton::clicked, this, [this] {
         if (token_)
             return;
-        fill(QueryPreferences{});
+        auto defaults = QueryPreferences{};
+        defaults.connectionTimeoutSeconds = connectionTimeoutSeconds_;
+        fill(defaults);
         ready_ = true;
         windowToast(this)->clearNotice();
         updateControls();
@@ -133,6 +136,7 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
 void QuerySettingsDialog::fill(const QueryPreferences& value) {
     pageSize_->setValue(value.pageSize);
     timeout_->setValue(value.timeoutSeconds);
+    connectionTimeoutSeconds_ = value.connectionTimeoutSeconds;
 }
 void QuerySettingsDialog::updateControls() {
     pageSize_->setEnabled(!token_);
@@ -146,6 +150,7 @@ void QuerySettingsDialog::apply() {
     QueryPreferences value;
     value.pageSize = quint32(pageSize_->value());
     value.timeoutSeconds = quint32(timeout_->value());
+    value.connectionTimeoutSeconds = connectionTimeoutSeconds_;
     const auto limits = EngineAdapter::queryPreferenceLimits();
     if (value.version != limits.version || value.pageSize < limits.minPageSize ||
         value.pageSize > limits.maxPageSize || value.timeoutSeconds > limits.maxTimeoutSeconds) {

@@ -101,7 +101,7 @@ QList<Specimen> specimens() {
          "desktop/design_system/spin_box/spin_box_style.cpp"},
         {"Components", "textareas", "Text areas and diagnostics",
          "desktop/design_system/text_area/text_area_style.cpp"},
-        {"Components", "selects", "Selects and popup rows",
+        {"Components", "selects", "Selects and fitted popup rows",
          "desktop/design_system/select/select_popup.cpp"},
         {"Components", "checks-toggles", "Checks and toggles",
          "desktop/design_system/checkbox/checkbox_indicator.cpp"},
@@ -337,10 +337,6 @@ void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     auto* saveCredentials = new QCheckBox("Save credentials in OS credential store", sections);
     saveCredentials->setObjectName("previewProfileSaveCredentials");
     sections->bodyLayout()->addWidget(saveCredentials);
-    auto* useTls = new QCheckBox("Use TLS", sections);
-    useTls->setObjectName("previewProfileUseTls");
-    useTls->setProperty("designRole", "switch");
-    sections->bodyLayout()->addWidget(useTls);
     sections->bodyLayout()->addStretch();
     sections->footerLayout()->addStretch();
     auto* cancel = new Button("Cancel", sections);

@@ -4,9 +4,9 @@ Choose **MySQL** when creating a connection profile. Enter the server, user, and
 The database is optional: leave it empty to connect without selecting a default
 schema, or enter a database to select it at login. Passwords can remain scoped to
 the session or be saved in the existing operating-system credential store.
-TLS verifies the server certificate and hostname by default. Use the root
-certificate field for a private certificate authority. Disable TLS only when
-appropriate for your server, such as the disposable local fixture below.
+New profiles try TLS first and use plaintext when the server does not offer it.
+The connection form requires no TLS setup. Existing profiles with explicit
+verification settings retain those checks.
 
 The adapter supports queries, paged results, exact decimal and unsigned integer
 values, transactions, database/table/view/column browsing, object data, and DDL.
@@ -127,10 +127,11 @@ CHOSCORDB_TEST_MYSQL=1 QT_QPA_PLATFORM=offscreen build/dev/choscordb-workspace-t
 
 ## Native TLS policy and client identity tests
 
-`Disable` uses plaintext TCP. `Require` requires encryption without checking the
-server certificate. `VerifyCa` additionally validates its CA chain; `VerifyFull`
-(the default) also validates the database hostname. MySQL's native client does
-not expose a safe `Prefer` downgrade policy, so that mode is rejected explicitly.
+`Disable` uses plaintext TCP. `Prefer` tries TLS first and retries in plaintext
+only when the server does not advertise TLS; a TLS handshake or authentication
+failure does not trigger a downgrade. `Require` requires encryption without
+checking the server certificate. `VerifyCa` additionally validates its CA chain;
+`VerifyFull` also validates the database hostname. New profiles default to `Prefer`.
 A PKCS#12 (`.p12`/`.pfx`) client identity can supply a certificate and private key;
 its archive password is a separate credential, never part of the saved profile.
 Custom trust files accept PEM certificate bundles or DER certificates.

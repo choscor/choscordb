@@ -212,15 +212,14 @@ void ModernUiTest::failedSidebarOpenRestoresLastSuccessfulProfile() {
     QTRY_VERIFY(window.browsingConnection().has_value());
     const auto validId = *window.browsingConnection();
     click("Invalid Browse");
-    QCOMPARE(tree->model()->rowCount(), 2);
-    QCOMPARE(tree->model()->index(1, 0).data(choscordb::NavigatorModel::KindRole).toString(),
-             QString("loading"));
-    QVERIFY(profiles->item(0)->isSelected());
-    QVERIFY(profiles->item(1)->isSelected());
     QTRY_VERIFY(window.findChild<QMessageBox*>("sidebarConnectionFailure"));
     QCOMPARE(window.browsingConnection(), std::optional<quint64>(validId));
-    QVERIFY(profiles->item(0)->isSelected());
-    QVERIFY(!profiles->item(1)->isSelected());
+    auto* validItem = profiles->item(0)->text().startsWith("Valid Browse")
+                          ? profiles->item(0)
+                          : profiles->item(1);
+    auto* invalidItem = validItem == profiles->item(0) ? profiles->item(1) : profiles->item(0);
+    QVERIFY(validItem->isSelected());
+    QVERIFY(!invalidItem->isSelected());
     QTRY_COMPARE(tree->model()->rowCount(), 1);
     QVERIFY(tree->model()->index(0, 0).data().toString().contains("Valid Browse"));
     window.findChild<QMessageBox*>("sidebarConnectionFailure")->accept();

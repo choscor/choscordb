@@ -28,6 +28,23 @@ AppearanceLayoutDto appearanceDto(const AppearanceLayout& value) {
     return dto;
 }
 } // namespace
+QueryPreferences::QueryPreferences() {
+    const auto limits = query_preference_limits();
+    version = limits.version;
+    pageSize = limits.default_page_size;
+    timeoutSeconds = 0;
+    connectionTimeoutSeconds = limits.default_connection_timeout_seconds;
+}
+QueryPreferenceLimits EngineAdapter::queryPreferenceLimits() {
+    const auto limits = query_preference_limits();
+    return {limits.version,
+            limits.min_page_size,
+            limits.max_page_size,
+            limits.default_page_size,
+            limits.max_timeout_seconds,
+            limits.default_connection_timeout_seconds,
+            limits.max_connection_timeout_seconds};
+}
 bool EngineAdapter::listHistory(quint32 limit, quint32 offset, quint64 token) {
     return queueRecovery(token, [this, limit, offset, token] {
         return history_list(*d_->engine, limit, offset, token);
@@ -62,6 +79,7 @@ bool EngineAdapter::setQueryPreferences(const QueryPreferences& preferences, qui
         dto.version = preferences.version;
         dto.page_size = preferences.pageSize;
         dto.timeout_seconds = preferences.timeoutSeconds;
+        dto.connection_timeout_seconds = preferences.connectionTimeoutSeconds;
         return query_preferences_set(*d_->engine, dto, token);
     });
 }

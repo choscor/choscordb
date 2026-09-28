@@ -39,7 +39,7 @@ struct SshHostKeyCandidate {
 };
 struct SavedProfile {
     QString id, name, groupId, driver = "sqlite", path, host, database, user;
-    QString tls = "disable", rootCertificate, credentialRef, sshCredentialRef;
+    QString tls = "prefer", rootCertificate, credentialRef, sshCredentialRef;
     QString tlsClientIdentity, tlsCredentialRef, sshOptions;
     QString proxyOptions, proxyCredentialRef;
     QString sshJumpCredentialRefs;
@@ -77,7 +77,7 @@ struct EditorPreferenceLimits {
 };
 struct QueryPreferences {
     QueryPreferences();
-    quint32 version, pageSize, timeoutSeconds;
+    quint32 version, pageSize, timeoutSeconds, connectionTimeoutSeconds;
 };
 struct ResultFilterCondition {
     quint32 column = 0;
@@ -87,6 +87,7 @@ struct ResultFilterCondition {
 };
 struct QueryPreferenceLimits {
     quint32 version, minPageSize, maxPageSize, defaultPageSize, maxTimeoutSeconds;
+    quint32 defaultConnectionTimeoutSeconds, maxConnectionTimeoutSeconds;
 };
 struct AppearanceLayout {
     quint32 version = 1;

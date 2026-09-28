@@ -213,7 +213,7 @@ class ComponentsTest final : public QObject {
             const auto row = list.visualItemRect(item);
             const auto image = list.viewport()->grab().toImage();
             const auto colors = resolvedThemeForWidget(list).colors;
-            QCOMPARE(image.pixelColor(row.left() + 3, row.center().y()), colors.muted);
+            QCOMPARE(image.pixelColor(row.left() + 3, row.center().y()), colors.sidebarAccent);
         }
     }
     void connectionRowsAreCompactAndShowOnlyCenteredNames() {

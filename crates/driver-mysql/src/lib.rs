@@ -57,6 +57,7 @@ struct MysqlConnection {
     connect_timeout: Duration,
     conn: Option<Conn>,
     opts: Opts,
+    prefer_tls: bool,
     next: Arc<Cancellation>,
     pending: Option<tokio::task::JoinHandle<Option<Conn>>>,
     active: Option<Arc<Cancellation>>,
@@ -151,10 +152,12 @@ impl MysqlDriver {
             return Err(error(ErrorKind::InvalidInput, "MySQL options required"));
         };
         let unix_socket = host.starts_with('/');
-        if unix_socket && (!cfg!(unix) || tls != TlsMode::Disable || ssh.is_some()) {
+        if unix_socket
+            && (!cfg!(unix) || !matches!(tls, TlsMode::Disable | TlsMode::Prefer) || ssh.is_some())
+        {
             return Err(DriverError::new(
                 ErrorKind::InvalidInput,
-                "Unix sockets require a local connection with TLS disabled",
+                "Unix sockets require a local connection without explicit TLS",
             ));
         }
         let host = if unix_socket {
@@ -185,7 +188,13 @@ impl MysqlDriver {
         });
         // The budget includes queued TLS preparation, DNS, tunnel establishment, and authentication.
         tokio::time::timeout(connect_timeout, async move {
-            let ssl = tls::options(tls, root_certificate, tls_identity).await?;
+            let prefer_tls = tls == TlsMode::Prefer && !unix_socket;
+            let ssl = tls::options(
+                if unix_socket { TlsMode::Disable } else { tls },
+                root_certificate,
+                tls_identity,
+            )
+            .await?;
             if fresh && let Some(settings) = &ssh {
                 SshForward::invalidate_shared_context(
                     settings,
@@ -257,7 +266,7 @@ impl MysqlDriver {
                 .max_allowed_packet(Some(64 * 1024 * 1024));
             let opts: Opts = builder.into();
             let transport = reserve_transport()?;
-            let pending = connection::connect(opts.clone()).await?;
+            let pending = connection::connect(opts.clone(), prefer_tls).await?;
             let idle = pending.1.clone();
 
             let conn = pending.ready();
@@ -266,6 +275,7 @@ impl MysqlDriver {
                 connect_timeout,
                 conn: Some(conn),
                 opts,
+                prefer_tls,
                 next: Cancellation::new(),
                 pending: None,
                 active: None,
@@ -415,6 +425,7 @@ impl Connection for MysqlConnection {
         let (cursor, task) = runtime::start(
             conn,
             self.opts.clone(),
+            self.prefer_tls,
             runtime::Start {
                 sql: sql.to_owned(),
                 options,
@@ -465,7 +476,7 @@ impl Connection for MysqlConnection {
         let (db, table) = parse_table(object)?;
         let transport = reserve_transport()?;
         let mut conn = tokio::time::timeout(self.connect_timeout, async {
-            let pending = connection::connect(self.opts.clone()).await?;
+            let pending = connection::connect(self.opts.clone(), self.prefer_tls).await?;
 
             Ok::<_, DriverError>(pending)
         })
@@ -495,6 +506,7 @@ impl Connection for MysqlConnection {
             cancel: Cancellation::new(),
             inner: None,
             opts: self.opts.clone(),
+            prefer_tls: self.prefer_tls,
             task: None,
             _tunnel: self._tunnel.clone(),
             _proxy: self._proxy.clone(),
@@ -605,6 +617,7 @@ struct ObjectCursor {
     cancel: Arc<Cancellation>,
     inner: Option<runtime::StreamCursor>,
     opts: Opts,
+    prefer_tls: bool,
     task: Option<tokio::task::JoinHandle<Option<Conn>>>,
     spool: spool::Spool,
     _tunnel: Option<Arc<ssh::Tunnel>>,
@@ -641,6 +654,7 @@ impl ResultCursor for ObjectCursor {
             let (cursor, task) = runtime::start(
                 conn.ready(),
                 self.opts.clone(),
+                self.prefer_tls,
                 runtime::Start {
                     sql: self.sql.clone(),
                     options: QueryOptions::default(),

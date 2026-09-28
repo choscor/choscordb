@@ -157,6 +157,15 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     resultForm->addRow(createDescription(
         tr("Applies to new queries. Existing results keep their page size and timeout."), results));
     addPage(results, tr("Results && execution"));
+    auto* connections = new QWidget(pages);
+    auto* connectionForm = new QFormLayout(connections);
+    connectionTimeout_ = new QSpinBox(connections);
+    connectionTimeout_->setObjectName("connectionTimeoutSeconds");
+    connectionTimeout_->setRange(1, queryLimits.maxConnectionTimeoutSeconds);
+    connectionForm->addRow(tr("Connection timeout (seconds)"), connectionTimeout_);
+    connectionForm->addRow(createDescription(
+        tr("Applies to new SSH tunnels and database logins through them."), connections));
+    addPage(connections, tr("Connections"));
     auto* history = new QWidget(pages);
     auto* historyForm = new QFormLayout(history);
     recordHistory_ = new QCheckBox(tr("Record query history"), history);
@@ -311,8 +320,10 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                 const auto limits = EngineAdapter::queryPreferenceLimits();
                 if (value.version != limits.version || value.pageSize < limits.minPageSize ||
                     value.pageSize > limits.maxPageSize ||
-                    value.timeoutSeconds > limits.maxTimeoutSeconds)
-                    errors_.append(tr("Results & execution: stored settings are invalid. "
+                    value.timeoutSeconds > limits.maxTimeoutSeconds ||
+                    value.connectionTimeoutSeconds < 1 ||
+                    value.connectionTimeoutSeconds > limits.maxConnectionTimeoutSeconds)
+                    errors_.append(tr("Connections or results: stored settings are invalid. "
                                       "Restore defaults to replace them."));
                 else {
                     if (!saving_)
@@ -461,7 +472,7 @@ bool PreferencesDialog::placeValidationError(const QString& message) {
     }
     for (qsizetype index = 0; index < catalog_.size(); ++index) {
         if (message.contains(catalog_[index].label)) {
-            tabs->setCurrentIndex(4);
+            tabs->setCurrentIndex(5);
             sequenceValidations_[index]->setError(message);
             sequences_[index]->setFocus();
             return true;
@@ -482,6 +493,7 @@ void PreferencesDialog::apply() {
     QueryPreferences query;
     query.pageSize = quint32(pageSize_->value());
     query.timeoutSeconds = quint32(timeout_->value());
+    query.connectionTimeoutSeconds = quint32(connectionTimeout_->value());
     HistoryPolicy history;
     history.enabled = recordHistory_->isChecked();
     history.maxAgeDays = quint32(historyDays_->value());
@@ -507,6 +519,7 @@ void PreferencesDialog::apply() {
 void PreferencesDialog::fillQuery(const QueryPreferences& value) {
     pageSize_->setValue(value.pageSize);
     timeout_->setValue(value.timeoutSeconds);
+    connectionTimeout_->setValue(value.connectionTimeoutSeconds);
 }
 void PreferencesDialog::fillHistory(const HistoryPolicy& value) {
     recordHistory_->setChecked(value.enabled);

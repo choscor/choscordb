@@ -626,6 +626,54 @@ void PreviewTest::scrollSpecimensKeepTheirIndependentThemePaper() {
     }
 }
 
+void PreviewTest::selectPopupFitsRowsInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("selects"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const char* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        auto* select = host->findChild<QComboBox*>("previewSelectPopupFit");
+        QVERIFY(select);
+        QCOMPARE(select->currentIndex(), select->count() - 1);
+        select->showPopup();
+        QCoreApplication::processEvents();
+        auto* view = select->view();
+        QVERIFY(view->isVisible());
+        const auto last = view->visualRect(select->model()->index(select->count() - 1, 0));
+        QVERIFY(last.bottom() < view->viewport()->height());
+        QVERIFY(view->viewport()->height() - last.bottom() <= 20);
+        select->hidePopup();
+    }
+}
+
+void PreviewTest::selectPopupStaysAttachedNearWindowBottom() {
+    QDialog dialog;
+    dialog.resize(360, 220);
+    QComboBox select(&dialog);
+    select.setGeometry(20, 178, 240, 32);
+    select.addItems({"Verify server identity", "Verify certificate authority",
+                     "Require encryption", "Prefer TLS"});
+    select.setCurrentIndex(select.count() - 1);
+    select.view()->setMinimumHeight(180);
+    dialog.show();
+    QCoreApplication::processEvents();
+    select.showPopup();
+    QCoreApplication::processEvents();
+    auto* popup = select.view()->parentWidget();
+    QVERIFY(popup->isVisible());
+    const int gap = qMax(0, qMax(popup->geometry().top() - select.geometry().bottom(),
+                                 select.geometry().top() - popup->geometry().bottom()));
+    QVERIFY2(gap <= 8, qPrintable(QString("popup %1-%2, select %3-%4, gap %5")
+                                     .arg(popup->geometry().top())
+                                     .arg(popup->geometry().bottom())
+                                     .arg(select.geometry().top())
+                                     .arg(select.geometry().bottom())
+                                     .arg(gap)));
+    select.hidePopup();
+}
+
 void PreviewTest::narrowGalleryKeepsNavigationAndActionsReachable() {
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen("buttons"));

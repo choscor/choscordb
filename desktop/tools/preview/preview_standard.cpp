@@ -78,6 +78,12 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
             {"First option", "Second option", "Long Unicode value · Việt Nam · 日本語"});
         select->setAccessibleName("Synthetic selection");
         layout->addWidget(select);
+        auto* fitted = new QComboBox(host);
+        fitted->setObjectName("previewSelectPopupFit");
+        fitted->addItems({"Verify server identity", "Verify certificate authority",
+                          "Require encryption", "Prefer TLS"});
+        fitted->setCurrentIndex(fitted->count() - 1);
+        layout->addWidget(fitted);
         auto* status = new QLabel(
             "The dropdown stays inside this window. Scroll over the field to keep its selection; "
             "open the list to choose another option.",

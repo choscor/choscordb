@@ -15,6 +15,7 @@ async-trait = "0.1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "process", "io-util", "net"] }
 tokio-postgres = "0.7"
 postgres-native-tls = "0.5"
+socket2 = "0.6"
 native-tls = { version = "0.2", features = ["alpn"] }
 futures-util = "0.3"
 tempfile = "3"

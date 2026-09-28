@@ -9,6 +9,7 @@
 #include <QHelpEvent>
 #include <QPointer>
 #include <QStyledItemDelegate>
+#include <QTimer>
 
 namespace choscordb::design::detail {
 namespace {
@@ -79,6 +80,47 @@ class NormalFontPopupDelegate final : public QAbstractItemDelegate {
     QPointer<QAbstractItemDelegate> delegate_;
     mutable QStyledItemDelegate fallback_;
 };
+
+class PopupContentFitFilter final : public QObject {
+  public:
+    PopupContentFitFilter(QComboBox* combo, QWidget* popup)
+        : QObject(popup), combo_(combo), popup_(popup) {
+        popup->installEventFilter(this);
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == popup_ && event->type() == QEvent::Show) {
+            QTimer::singleShot(0, this, [this] {
+                if (!combo_ || !popup_ || !popup_->isVisible() || combo_->count() == 0)
+                    return;
+                auto* view = combo_->view();
+                const auto first = view->visualRect(combo_->model()->index(0, 0));
+                const auto last = view->visualRect(combo_->model()->index(combo_->count() - 1, 0));
+                if (!first.isValid() || !last.isValid() || first.top() < 0 ||
+                    last.bottom() >= view->viewport()->height())
+                    return;
+                const int slack = view->viewport()->height() - 1 - last.bottom();
+                const int padding = spacing(Spacing::One);
+                if (slack > padding * 2) {
+                    popup_->resize(popup_->width(), popup_->height() - slack + padding);
+                    if (auto* owner = popup_->parentWidget()) {
+                        const int comboTop = combo_->mapTo(owner, QPoint()).y();
+                        if (popup_->geometry().bottom() < comboTop)
+                            popup_->move(popup_->x(),
+                                         qMin(comboTop - popup_->height() + 1,
+                                              owner->height() - popup_->height()));
+                    }
+                }
+            });
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    QPointer<QComboBox> combo_;
+    QPointer<QWidget> popup_;
+};
 } // namespace
 
 bool handleFontComboResize(QComboBox& combo, QEvent* event) {
@@ -124,6 +166,10 @@ void prepareComboPopup(QComboBox& combo) {
     popup->setStyleSheet(
         loadStyleSheet(QStringLiteral("select/popup.qss")).arg(colors.popover.name()));
     embedPopup(popup, &combo);
+    if (!popup->property("designPopupContentFit").toBool()) {
+        new PopupContentFitFilter(&combo, popup);
+        popup->setProperty("designPopupContentFit", true);
+    }
     view->setAttribute(Qt::WA_MacShowFocusRect, false);
     view->setPalette(applicationPalette(theme));
     view->setStyleSheet(loadStyleSheet(QStringLiteral("select/popup_view.qss"))

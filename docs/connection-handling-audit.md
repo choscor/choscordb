@@ -29,8 +29,8 @@ properties are not interpreted as native options.
 | PostgreSQL omitted database | Uses the explicit database username, matching the effective upstream default. |
 | MySQL anonymous login / no database | Empty username and database accepted; server authentication decides access. |
 | TCP hostnames, localhost, IPv4, IPv6 | Supported, including bracketed IPv6 normalization; localhost remains TCP. |
-| Unix sockets | Explicit absolute endpoint: PostgreSQL socket directory, MySQL socket file. TLS/SSH combinations rejected; unavailable platforms return a clear error. |
-| TLS policy | Verify-full remains default. Require encrypts without certificate validation; verify-CA checks trust without hostname validation. PostgreSQL prefer follows native fallback semantics. Unsupported MySQL prefer is rejected. |
+| Unix sockets | Explicit absolute endpoint: PostgreSQL socket directory, MySQL socket file. Automatic Prefer uses the local plaintext transport; required TLS and SSH combinations are rejected. |
+| TLS policy | New PostgreSQL and MySQL profiles use Prefer automatically. Both try TLS first and use plaintext only when the server does not offer TLS. Explicit Require and verification modes remain available to existing profile metadata and native callers. |
 | TLS trust and client identity | CA files/bundles and native PKCS#12 client identities; original database TLS hostname retained through SSH. |
 | TLS identity password | Separate transient value or OS credential reference, with keep/replace/clear, atomic cleanup, duplication isolation, and no plaintext metadata. |
 | SOCKS proxy | SOCKS5 anonymous or username/password authentication, SOCKS4/4a user ID, proxy-side DNS, separate OS credential reference, and bounded setup/cancellation. Original database TLS identity is retained. Unsupported SSH/Unix/failover combinations fail validation. |
@@ -40,7 +40,7 @@ properties are not interpreted as native options.
 | SSH trust | Strict verification uses each original hostname and port, including forwarded hops. Selected first-use approval records a host key; unknown or changed keys fail until explicitly approved. |
 | Deadlines and cleanup | Bounded connection setup and credential broker work; selected connection deadline also governs cancellation, including direct PostgreSQL TLS negotiation. Broker/task/socket cleanup tested. |
 | Database authentication | Manual or stored passwords, PostgreSQL passfiles with SSH/explicit-host lookup and database-host fallback, and bounded command-generated passwords. Provider secrets are resolved for each connection and excluded from profile metadata. |
-| Qt connection form | Socket/default guidance, TLS identity/password, SSH controls, proxy settings and authentication providers. Save/Test/Connect share configuration and preserve failed drafts. |
+| Qt connection form | Socket/default guidance and automatic TLS, SSH controls, proxy settings and authentication providers. Save/Test/Connect share configuration and preserve failed drafts. TLS policy and client identity remain in saved metadata for existing profiles. |
 
 ## Upstream source evidence
 
@@ -74,8 +74,8 @@ native implementation rejects settings it cannot honor. In particular:
 - No JVM, replacement JDBC JARs, Java socket factories, or arbitrary JDBC
   properties. URL import uses a tested allowlist; unsupported URL options are
   rejected rather than silently discarded.
-- PostgreSQL `allow` and MySQL `preferred` TLS fallback are not provided by the
-  selected native clients. Use an exposed policy with its stated verification.
+- PostgreSQL `allow` is not provided. Automatic Prefer does not validate the
+  server certificate; existing explicit verification modes retain their checks.
 - Native MySQL identity loading uses PKCS#12. PEM private-key, Java keystore,
   inline-key/certificate editors and client-certificate generation are not
   exposed. PKCS#12 conversion can be done externally.

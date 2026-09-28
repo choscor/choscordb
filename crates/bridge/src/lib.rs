@@ -236,6 +236,7 @@ pub mod ffi {
         version: u32,
         page_size: u32,
         timeout_seconds: u32,
+        connection_timeout_seconds: u32,
     }
     #[derive(Default)]
     struct AppearanceLayoutDto {
@@ -263,6 +264,8 @@ pub mod ffi {
         max_page_size: u32,
         default_page_size: u32,
         max_timeout_seconds: u32,
+        default_connection_timeout_seconds: u32,
+        max_connection_timeout_seconds: u32,
     }
     #[derive(Default)]
     struct EditorPreferencesDto {
@@ -1430,7 +1433,10 @@ fn ssh_options(value: &str) -> std::result::Result<choscordb_driver_api::SshOpti
     }
     let options: choscordb_driver_api::SshOptions =
         serde_json::from_str(value).map_err(|_| "Invalid SSH options".to_string())?;
-    if options != choscordb_driver_api::SshOptions::default() {
+    let defaults = choscordb_driver_api::SshOptions::default();
+    let mut basic = options.clone();
+    basic.connect_timeout_seconds = defaults.connect_timeout_seconds;
+    if basic != defaults {
         return Err("Advanced SSH tunnel settings are no longer supported".into());
     }
     Ok(options)

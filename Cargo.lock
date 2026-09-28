@@ -400,6 +400,7 @@ dependencies = [
  "futures-util",
  "native-tls",
  "postgres-native-tls",
+ "socket2 0.6.5",
  "tempfile",
  "tokio",
  "tokio-postgres",

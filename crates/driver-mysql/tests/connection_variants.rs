@@ -84,24 +84,54 @@ async fn explicit_unix_file_reaches_mysql_socket() {
     attempt.abort();
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn prefer_uses_plaintext_on_local_unix_socket() {
+    let directory = tempfile::tempdir_in("/tmp").unwrap();
+    let path = directory.path().join("mysql.sock");
+    let listener = tokio::net::UnixListener::bind(&path).unwrap();
+    let mut opts = options(path.to_str().unwrap().into(), 3306, "tester");
+    if let ConnectionOptions::Mysql { tls, .. } = &mut opts {
+        *tls = TlsMode::Prefer;
+    }
+    let attempt = tokio::spawn(async { MysqlDriver.connect(opts).await });
+    let (mut socket, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+        .await
+        .expect("Prefer should reach the local Unix socket")
+        .unwrap();
+    // Advertise TLS even though a local Unix socket must not request it.
+    let mut greeting = vec![10];
+    greeting.extend_from_slice(b"8.0.0\0");
+    greeting.extend_from_slice(&1u32.to_le_bytes());
+    greeting.extend_from_slice(b"12345678\0");
+    greeting.extend_from_slice(&0x8a00u16.to_le_bytes());
+    greeting.push(45);
+    greeting.extend_from_slice(&2u16.to_le_bytes());
+    greeting.extend_from_slice(&0u16.to_le_bytes());
+    greeting.push(0);
+    greeting.extend_from_slice(&[0; 10]);
+    greeting.extend_from_slice(b"abcdefghijkl\0");
+    let length = greeting.len() as u32;
+    socket
+        .write_all(&[length as u8, (length >> 8) as u8, (length >> 16) as u8, 0])
+        .await
+        .unwrap();
+    socket.write_all(&greeting).await.unwrap();
+    let mut header = [0; 4];
+    socket.read_exact(&mut header).await.unwrap();
+    let length = u32::from_le_bytes([header[0], header[1], header[2], 0]) as usize;
+    let mut response = vec![0; length];
+    socket.read_exact(&mut response).await.unwrap();
+    assert_eq!(response[1] & 0x08, 0, "Unix sockets must not request TLS");
+    attempt.abort();
+}
+
 #[tokio::test]
 async fn unix_socket_rejects_tls_and_ssh_without_silent_downgrade() {
-    for tunneled in [false, true] {
+    for mode in [TlsMode::Require, TlsMode::VerifyCa, TlsMode::VerifyFull] {
         let mut opts = options("/tmp/choscordb-missing.sock".into(), 5432, "db");
-        if let ConnectionOptions::Mysql { tls, ssh, .. } = &mut opts {
-            if tunneled {
-                *ssh = Some(SshTunnel {
-                    options: Default::default(),
-                    host: "127.0.0.1".into(),
-                    port: 22,
-                    user: "operator".into(),
-                    authentication: SshAuthentication::Agent,
-                    identity_source: Default::default(),
-                    identity_file: None,
-                });
-            } else {
-                *tls = TlsMode::VerifyFull;
-            }
+        if let ConnectionOptions::Mysql { tls, .. } = &mut opts {
+            *tls = mode;
         }
         let error = MysqlDriver
             .connect(opts)
@@ -110,4 +140,22 @@ async fn unix_socket_rejects_tls_and_ssh_without_silent_downgrade() {
             .expect("unsupported transport combination");
         assert_eq!(error.kind, ErrorKind::InvalidInput);
     }
+    let mut opts = options("/tmp/choscordb-missing.sock".into(), 5432, "db");
+    if let ConnectionOptions::Mysql { ssh, .. } = &mut opts {
+        *ssh = Some(SshTunnel {
+            options: Default::default(),
+            host: "127.0.0.1".into(),
+            port: 22,
+            user: "operator".into(),
+            authentication: SshAuthentication::Agent,
+            identity_source: Default::default(),
+            identity_file: None,
+        });
+    }
+    let error = MysqlDriver
+        .connect(opts)
+        .await
+        .err()
+        .expect("Unix socket cannot use SSH tunneling");
+    assert_eq!(error.kind, ErrorKind::InvalidInput);
 }

@@ -53,7 +53,8 @@ namespace choscordb {
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
     if (watched == savedConnectionsList_.data() && event->type() == QEvent::KeyPress) {
         const auto* key = static_cast<QKeyEvent*>(event);
-        if ((key->key() == Qt::Key_Space || key->key() == Qt::Key_Select) &&
+        if ((key->key() == Qt::Key_Space || key->key() == Qt::Key_Select ||
+             key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter) &&
             key->modifiers() == Qt::NoModifier && activateFocusedSavedProfile_) {
             activateFocusedSavedProfile_();
             return true;

@@ -86,6 +86,7 @@ struct EngineAdapter::Private {
         quint32 pageSize;
     };
     QHash<quint64, QueryPaging> queryPaging;
+    quint32 connectionTimeoutSeconds;
     struct InspectionRequest {
         quint64 connection, token;
         QString object;

@@ -52,7 +52,9 @@ void WorkspaceTest::inlineSshKeysStayMaskedAndOutsideProfileMetadata() {
     QTRY_VERIFY(save->isEnabled());
     QCOMPARE(source->currentData().toString(), QString("inline"));
     QCOMPARE(preview->toPlainText().count('\n'), key.count('\n'));
-    dialog.findChild<QCheckBox*>("profileSshPrivateKeyRemember")->setChecked(true);
+    auto* remember = dialog.findChild<QCheckBox*>("profileSaveCredentials");
+    QVERIFY(remember);
+    remember->setChecked(true);
     save->click();
     QTRY_COMPARE(failed.count(), 1);
     QTRY_VERIFY(save->isEnabled());

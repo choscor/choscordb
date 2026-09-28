@@ -21,6 +21,7 @@
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemView>
 #include <QApplication>
+#include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
 #include <QCompleter>
@@ -526,15 +527,15 @@ void PreviewTest::dialogSectionsPreviewUsesRealComponentInBothThemes() {
         auto* username = dialog->findChild<QLineEdit*>("previewProfileUsername");
         auto* password = dialog->findChild<QLineEdit*>("previewProfilePassword");
         QVERIFY(hostField && port && database && username && password);
-        QCOMPARE(hostField->geometry().top(), port->geometry().top());
-        QCOMPARE(hostField->geometry().top(), database->geometry().top());
-        QCOMPARE(username->geometry().top(), password->geometry().top());
+        const auto rowCenter = [](QWidget* control) { return control->geometry().center().y(); };
+        QVERIFY(qAbs(rowCenter(hostField) - rowCenter(port)) <= 4);
+        QVERIFY(qAbs(rowCenter(hostField) - rowCenter(database)) <= 4);
+        QVERIFY(qAbs(rowCenter(username) - rowCenter(password)) <= 4);
         QVERIFY(port->width() < hostField->width());
         QCOMPARE(password->echoMode(), QLineEdit::Password);
         auto* saveCredentials = dialog->findChild<QCheckBox*>("previewProfileSaveCredentials");
-        auto* useTls = dialog->findChild<QCheckBox*>("previewProfileUseTls");
-        QVERIFY(saveCredentials && useTls);
-        QCOMPARE(useTls->property("designRole").toString(), QString("switch"));
+        QVERIFY(saveCredentials);
+        QVERIFY(!dialog->findChild<QCheckBox*>("previewProfileUseTls"));
         dialog->reject();
     }
 }

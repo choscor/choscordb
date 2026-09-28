@@ -1,5 +1,5 @@
 use choscordb_driver_api::Result;
-use mysql_async::{Conn, Opts, OptsBuilder};
+use mysql_async::{Conn, DriverError as MysqlDriverError, Error as MysqlError, Opts, OptsBuilder};
 /// A partially consumed result cannot use mysql_async's default Drop, which
 /// spawns an unbounded drain. Consuming disconnect sets its disconnected flag
 /// before any await; poll it once, then drop its stream even if draining rows
@@ -33,14 +33,28 @@ impl Drop for PendingConnection {
 
 /// Disable native startup SQL so cancellation never hands a pending result to
 /// mysql_async's unbounded Drop cleanup before we own its connection.
-pub(super) async fn connect(options: Opts) -> Result<PendingConnection> {
+/// A server without CLIENT_SSL can be retried in plaintext. All other TLS and
+/// authentication failures retain their original error and never downgrade.
+pub(super) async fn connect(options: Opts, prefer_tls: bool) -> Result<PendingConnection> {
+    if !prefer_tls {
+        return connect_raw(options).await.map_err(super::normalize);
+    }
+    match connect_raw(options.clone()).await {
+        Ok(connection) => Ok(connection),
+        Err(MysqlError::Driver(MysqlDriverError::NoClientSslFlagFromServer)) => {
+            let plain: Opts = OptsBuilder::from_opts(options).ssl_opts(None).into();
+            connect_raw(plain).await.map_err(super::normalize)
+        }
+        Err(error) => Err(super::normalize(error)),
+    }
+}
+
+async fn connect_raw(options: Opts) -> mysql_async::Result<PendingConnection> {
     let raw = OptsBuilder::from_opts(options.clone())
         .init(Vec::<String>::new())
         .setup(Vec::<String>::new())
         // This is only an idle-expiry hint for pools. We use direct connections;
         // querying the server for this otherwise-unused hint can itself hang.
         .wait_timeout(Some(28_800));
-    Ok(PendingConnection::new(
-        Conn::new(raw).await.map_err(super::normalize)?,
-    ))
+    Ok(PendingConnection::new(Conn::new(raw).await?))
 }

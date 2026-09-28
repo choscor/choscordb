@@ -116,18 +116,19 @@ class PreferencesTest : public QObject {
                           background.mapTo(&owner, background.rect().center()));
         QCOMPARE(clicked.count(), 1);
     }
-    void preferencesExposeFiveSectionsAndCloseOnlyAfterSave() {
+    void preferencesExposeSixSectionsAndCloseOnlyAfterSave() {
         choscordb::EngineAdapter adapter;
         choscordb::PreferencesDialog dialog(&adapter, {});
         dialog.show();
         auto* sections = dialog.findChild<QTabWidget*>("preferencesSections");
         QVERIFY(sections);
-        QCOMPARE(sections->count(), 5);
+        QCOMPARE(sections->count(), 6);
         QCOMPARE(sections->tabText(0), QString("Appearance"));
         QCOMPARE(sections->tabText(1), QString("SQL editor"));
         QCOMPARE(sections->tabText(2).replace("&&", "&"), QString("Results & execution"));
-        QCOMPARE(sections->tabText(3).replace("&&", "&"), QString("History & recovery"));
-        QCOMPARE(sections->tabText(4), QString("Keyboard shortcuts"));
+        QCOMPARE(sections->tabText(3), QString("Connections"));
+        QCOMPARE(sections->tabText(4).replace("&&", "&"), QString("History & recovery"));
+        QCOMPARE(sections->tabText(5), QString("Keyboard shortcuts"));
         auto* save = dialog.findChild<QPushButton*>("preferencesApply");
         QTRY_VERIFY(save->isEnabled());
         QCOMPARE(save->text(), QString("Save preferences"));

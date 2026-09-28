@@ -46,6 +46,11 @@ class WorkspaceTest : public QObject {
     void savedProfilesCreateDuplicateTestDeleteAndConnect();
     void profileAdapterPersistsAcrossRestart();
     void connectionSshFormShowsOnlyBasicSettings();
+    void connectionFormHasNoTlsSettings();
+    void savedTlsVerificationSurvivesProfileEdit();
+    void savedDisabledTlsSurvivesProfileEdit();
+    void newServerProfilePrefersTlsWithoutSetup_data();
+    void newServerProfilePrefersTlsWithoutSetup();
     void connectionOperationsShowDedicatedProgressModal();
     void connectionProxyControlsAreHidden();
     void connectionProxyControlsStayHiddenForServerDriver();
@@ -56,7 +61,7 @@ class WorkspaceTest : public QObject {
     void inlineSshKeysStayMaskedAndOutsideProfileMetadata();
     void connectionManualPasswordIsOptionalAndUsesOneCredentialChoice();
     void connectionEditedEmptyPasswordSuppressesSavedReference();
-    void connectionIdentityCredentialErrorsPreserveDraft();
+    void savedTlsClientIdentitySurvivesProfileEdit();
     void connectionSshFormKeepsBasicFields();
     void connectionTransportValidationRejectsIncompatibleSettings();
     void connectionFormRejectsMalformedHostsBeforeSubmission();

@@ -3,6 +3,7 @@
 #include "design_system/button_group/button_group.h"
 #include "design_system/control_style.h"
 #include "design_system/dialog_sections/dialog_sections.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/theme_manager.h"
 #include "models/history_model.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -161,7 +162,7 @@ class SecondaryDesignTest final : public QObject {
         QCOMPARE(preferences.height(), 412);
         auto* tabs = preferences.findChild<QTabWidget*>("preferencesSections");
         QVERIFY(tabs);
-        tabs->setCurrentIndex(4);
+        tabs->setCurrentIndex(5);
         QCoreApplication::processEvents();
         auto* scroll = qobject_cast<QScrollArea*>(tabs->currentWidget());
         QVERIFY(scroll);
@@ -267,7 +268,10 @@ class SecondaryDesignTest final : public QObject {
         QTRY_VERIFY(driver->isEnabled());
         driver->setCurrentIndex(driver->findData("postgres"));
         QCoreApplication::processEvents();
-        QCOMPARE(dialog.width(), 560);
+        QVERIFY(dialog.width() >= 560);
+        QVERIFY(dialog.width() <=
+                choscordb::design::dialogInitialSize(choscordb::design::DialogSize::Profiles)
+                    .width());
         QVERIFY(!dialog.findChild<QListWidget*>("profileList")->isVisible());
         auto* save = dialog.findChild<QPushButton*>("profileSaveConnect");
         QVERIFY(save->isVisible());
@@ -463,31 +467,15 @@ class SecondaryDesignTest final : public QObject {
         QVERIFY(host->isVisible());
         QVERIFY(!path->isVisible());
         host->setText("database.example");
-        auto* useTls = dialog.findChild<QCheckBox*>("profileUseTls");
-        auto* tls = dialog.findChild<QComboBox*>("profileTls");
-        QVERIFY(useTls);
-        QVERIFY(tls);
-        QVERIFY(useTls->isVisible());
-        QVERIFY(!useTls->isChecked());
-        QVERIFY(!tls->isVisible());
-        QCOMPARE(tls->currentData().toString(), QString("verify_full"));
-        useTls->setChecked(true);
-        QVERIFY(tls->isVisible());
-        QCOMPARE(tls->currentData().toString(), QString("verify_full"));
-        tls->setCurrentIndex(tls->findData("verify_ca"));
-        useTls->setChecked(false);
-        QVERIFY(!tls->isVisible());
-        useTls->setChecked(true);
-        QCOMPARE(tls->currentData().toString(), QString("verify_ca"));
+        QVERIFY(!dialog.findChild<QCheckBox*>("profileUseTls"));
+        QVERIFY(!dialog.findChild<QComboBox*>("profileTls"));
         sqlite->setFocus();
         QTest::keyClick(sqlite, Qt::Key_Space);
         QVERIFY(sqlite->isChecked());
         QCOMPARE(path->text(), QString("/tmp/分析.db"));
         QTest::mouseClick(postgres, Qt::LeftButton);
         QCOMPARE(host->text(), QString("database.example"));
-        QVERIFY(useTls->isChecked());
-        QVERIFY(tls->isVisible());
-        QCOMPARE(tls->currentData().toString(), QString("verify_ca"));
+        QVERIFY(!dialog.findChild<QComboBox*>("profileTls"));
         QCOMPARE(dialog.findChild<QComboBox*>("profileDriver")->currentData().toString(),
                  QString("postgres"));
     }

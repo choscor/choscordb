@@ -35,24 +35,19 @@ pub async fn options(
     root: Option<PathBuf>,
     identity: Option<TlsIdentity>,
 ) -> Result<Option<SslOpts>> {
-    if mode == TlsMode::Prefer {
-        return Err(DriverError::new(
-            ErrorKind::InvalidInput,
-            "MySQL does not support TLS Prefer; select Disable, Require, Verify CA, or Verify Full",
-        ));
-    }
     if mode == TlsMode::Disable {
         return Ok(None);
     }
     tokio::task::spawn_blocking(move || {
         let mut options = SslOpts::default()
             .with_disable_built_in_roots(false)
-            .with_danger_accept_invalid_certs(mode == TlsMode::Require)
+            .with_danger_accept_invalid_certs(matches!(mode, TlsMode::Prefer | TlsMode::Require))
             .with_danger_skip_domain_validation(matches!(
                 mode,
-                TlsMode::Require | TlsMode::VerifyCa
+                TlsMode::Prefer | TlsMode::Require | TlsMode::VerifyCa
             ));
-        if let Some(path) = root {
+        if let Some(path) = root.filter(|_| matches!(mode, TlsMode::VerifyCa | TlsMode::VerifyFull))
+        {
             options = options.with_root_certs(vec![read_material(&path)?.into()]);
         }
         if let Some(identity) = identity {
@@ -67,4 +62,25 @@ pub async fn options(
     })
     .await
     .map_err(|_| DriverError::new(ErrorKind::Internal, "MySQL TLS worker failed"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn nonverifying_mode_ignores_saved_root_certificate() {
+        let directory = tempfile::tempdir().unwrap();
+        let missing = directory.path().join("missing-ca.pem");
+        assert!(
+            options(TlsMode::Require, Some(missing.clone()), None)
+                .await
+                .is_ok()
+        );
+        assert!(
+            options(TlsMode::VerifyCa, Some(missing), None)
+                .await
+                .is_err()
+        );
+    }
 }

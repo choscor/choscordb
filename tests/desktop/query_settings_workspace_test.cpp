@@ -19,6 +19,31 @@
 class QuerySettingsWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void querySettingsKeepGlobalConnectionTimeout() {
+        QTemporaryDir directory;
+        const auto path = directory.filePath("settings.sqlite");
+        {
+            choscordb::EngineAdapter adapter(nullptr, path);
+            choscordb::QueryPreferences initial;
+            initial.connectionTimeoutSeconds = 27;
+            QSignalSpy saved(&adapter, &choscordb::EngineAdapter::queryPreferencesReady);
+            QVERIFY(adapter.setQueryPreferences(initial, 88));
+            QTRY_COMPARE(saved.count(), 1);
+        }
+        choscordb::MainWindow window(nullptr, path);
+        window.show();
+        auto* controller = window.findChild<choscordb::QuerySettingsController*>();
+        QTRY_COMPARE(controller->preferences().connectionTimeoutSeconds, quint32(27));
+        window.findChild<QAction*>("querySettings")->trigger();
+        auto* dialog = window.findChild<QDialog*>("querySettingsDialog");
+        QVERIFY(dialog);
+        auto* apply = dialog->findChild<QPushButton*>("querySettingsApply");
+        QTRY_VERIFY(apply->isEnabled());
+        dialog->findChild<QSpinBox*>("queryPageSize")->setValue(2000);
+        apply->click();
+        QTRY_COMPARE(controller->preferences().pageSize, quint32(2000));
+        QCOMPARE(controller->preferences().connectionTimeoutSeconds, quint32(27));
+    }
     void changingDefaultsDoesNotExtendAnActiveDeadline() {
         choscordb::MainWindow window;
         window.show();

@@ -18,6 +18,37 @@
 class PreferencesWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void connectionTimeoutPreferencePersistsAcrossRestart() {
+        using namespace choscordb;
+        QTemporaryDir directory;
+        const auto path = directory.filePath("connection-timeout.sqlite");
+        {
+            MainWindow window(nullptr, path);
+            window.show();
+            window.findChild<QAction*>("preferences")->trigger();
+            auto* dialog = window.findChild<QDialog*>("preferencesDialog");
+            QVERIFY(dialog);
+            auto* timeout = dialog->findChild<QSpinBox*>("connectionTimeoutSeconds");
+            QVERIFY(timeout);
+            QTRY_VERIFY(timeout->isEnabled());
+            QCOMPARE(timeout->value(), 20);
+            timeout->setValue(27);
+            auto* apply = dialog->findChild<QPushButton*>("preferencesApply");
+            QTRY_VERIFY(apply->isEnabled());
+            apply->click();
+            QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
+            window.close();
+        }
+        MainWindow restarted(nullptr, path);
+        restarted.show();
+        restarted.findChild<QAction*>("preferences")->trigger();
+        auto* dialog = restarted.findChild<QDialog*>("preferencesDialog");
+        QVERIFY(dialog);
+        auto* timeout = dialog->findChild<QSpinBox*>("connectionTimeoutSeconds");
+        QVERIFY(timeout);
+        QTRY_VERIFY(timeout->isEnabled());
+        QCOMPARE(timeout->value(), 27);
+    }
     void appearanceResetRequiresSaveAndSurvivesRestart_data() {
         QTest::addColumn<bool>("corrupt");
         QTest::addColumn<bool>("save");

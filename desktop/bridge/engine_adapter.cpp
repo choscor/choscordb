@@ -1,6 +1,9 @@
 #include "bridge/engine_adapter_p.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include <QHash>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QQueue>
 #include <QSet>
 #include <QTimer>
@@ -14,6 +17,20 @@ using engine_adapter_detail::rustString;
 using engine_adapter_detail::string;
 using engine_adapter_detail::utf8View;
 namespace {
+SavedProfile withConnectionTimeout(const SavedProfile& profile, quint32 timeout) {
+    if (!profile.sshEnabled)
+        return profile;
+    QJsonParseError error;
+    const auto document = QJsonDocument::fromJson(profile.sshOptions.toUtf8(), &error);
+    if (!profile.sshOptions.isEmpty() &&
+        (error.error != QJsonParseError::NoError || !document.isObject()))
+        return profile;
+    auto effective = profile;
+    auto options = document.object();
+    options["connect_timeout_seconds"] = int(timeout);
+    effective.sshOptions = QString::fromUtf8(QJsonDocument(options).toJson(QJsonDocument::Compact));
+    return effective;
+}
 SavedProfile savedProfile(const ProfileDto& dto) {
     SavedProfile value;
     value.groupId = string(dto.group_id);
@@ -69,19 +86,9 @@ AppearanceLayout appearanceLayout(const AppearanceLayoutDto& dto) {
             string(dto.screen_name)};
 }
 } // namespace
-QueryPreferences::QueryPreferences() {
-    const auto limits = query_preference_limits();
-    version = limits.version;
-    pageSize = limits.default_page_size;
-    timeoutSeconds = 0;
-}
-QueryPreferenceLimits EngineAdapter::queryPreferenceLimits() {
-    const auto limits = query_preference_limits();
-    return {limits.version, limits.min_page_size, limits.max_page_size, limits.default_page_size,
-            limits.max_timeout_seconds};
-}
 EngineAdapter::Private::Private(const QString& path)
-    : engine(path.isEmpty() ? new_engine() : new_engine_with_storage(utf8View(path.toUtf8()))) {}
+    : engine(path.isEmpty() ? new_engine() : new_engine_with_storage(utf8View(path.toUtf8()))),
+      connectionTimeoutSeconds(query_preference_limits().default_connection_timeout_seconds) {}
 EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
     : QObject(parent), d_(std::make_unique<Private>(storagePath)) {
     connect(this, &EngineAdapter::eventReady, this, [this](const BridgeEvent& event) {
@@ -251,6 +258,12 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             preferences.version = event.query_preferences.version;
             preferences.pageSize = event.query_preferences.page_size;
             preferences.timeoutSeconds = event.query_preferences.timeout_seconds;
+            preferences.connectionTimeoutSeconds =
+                event.query_preferences.connection_timeout_seconds;
+            if (preferences.connectionTimeoutSeconds >= 1 &&
+                preferences.connectionTimeoutSeconds <=
+                    queryPreferenceLimits().maxConnectionTimeoutSeconds)
+                d_->connectionTimeoutSeconds = preferences.connectionTimeoutSeconds;
             emit queryPreferencesReady(event.request_token, preferences);
         } else if (kind == "appearance_layout") {
             emit appearanceLayoutReady(event.request_token, event.has_appearance,
@@ -586,7 +599,9 @@ void EngineAdapter::testProfileWithSecrets(
     credentials.has_tls = hasTlsSecret;
     credentials.has_proxy = hasProxySecret;
     auto result =
-        profile_test_credentials(*d_->engine, profileDto(profile), std::move(credentials), token);
+        profile_test_credentials(*d_->engine,
+                                 profileDto(withConnectionTimeout(profile, d_->connectionTimeoutSeconds)),
+                                 std::move(credentials), token);
     if (!result.accepted)
         emit profileFailed(token, string(result.error));
 }
@@ -620,7 +635,9 @@ std::optional<quint64> EngineAdapter::connectProfileWithSecrets(
     credentials.has_tls = hasTlsSecret;
     credentials.has_proxy = hasProxySecret;
     auto result =
-        profile_connect_credentials(*d_->engine, profileDto(profile), std::move(credentials));
+        profile_connect_credentials(*d_->engine,
+                                    profileDto(withConnectionTimeout(profile, d_->connectionTimeoutSeconds)),
+                                    std::move(credentials));
     if (!result.accepted) {
         emit profileConnectFailed(string(result.error));
         return std::nullopt;

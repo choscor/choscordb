@@ -5,6 +5,7 @@
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "workspace_test.h"
 #include "workspace_test_fixture.h"
+#include <QAbstractItemView>
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
@@ -91,13 +92,8 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     QVERIFY(dialog.width() > 560);
     QVERIFY(dialog.height() > 440);
     dialog.findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
-    auto* tls = dialog.findChild<QComboBox*>("profileTls");
-    QCOMPARE(tls->currentData().toString(), QString("verify_full"));
-    auto* useTls = dialog.findChild<QCheckBox*>("profileUseTls");
-    QVERIFY(useTls);
-    QVERIFY(!useTls->isChecked());
-    QVERIFY(!tls->isVisibleTo(&dialog));
-    QVERIFY(!dialog.findChild<QLineEdit*>("profileRootCertificate")->isVisibleTo(&dialog));
+    QVERIFY(!dialog.findChild<QComboBox*>("profileTls"));
+    QVERIFY(!dialog.findChild<QCheckBox*>("profileUseTls"));
     QVERIFY(!dialog.findChild<QPushButton*>("profileSecurity"));
     auto* sections = dialog.findChild<choscordb::design::DialogSections*>("profileSections");
     QVERIFY(sections);
@@ -111,9 +107,12 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     auto* database = dialog.findChild<QLineEdit*>("profileDatabase");
     auto* user = dialog.findChild<QLineEdit*>("profileUser");
     auto* password = dialog.findChild<QLineEdit*>("profilePassword");
-    QCOMPARE(host->geometry().top(), port->geometry().top());
-    QCOMPARE(host->geometry().top(), database->geometry().top());
-    QCOMPARE(user->geometry().top(), password->geometry().top());
+    const auto serverY = [&dialog](QWidget* widget) {
+        return widget->mapTo(&dialog, QPoint(0, widget->height() / 2)).y();
+    };
+    QVERIFY(qAbs(serverY(host) - serverY(port)) <= 4);
+    QVERIFY(qAbs(serverY(host) - serverY(database)) <= 4);
+    QVERIFY(qAbs(serverY(user) - serverY(password)) <= 4);
     QVERIFY(port->width() < host->width());
     QVERIFY(port->width() < database->width());
     for (const auto& expected : QList<QPair<QString, QWidget*>>{
@@ -124,11 +123,6 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
             hasBuddy |= label->text() == expected.first && label->buddy() == expected.second;
         QVERIFY(hasBuddy);
     }
-    useTls->setChecked(true);
-    QVERIFY(tls->isVisibleTo(&dialog));
-    QVERIFY(dialog.findChild<QLineEdit*>("profileRootCertificate")->isVisibleTo(&dialog));
-    useTls->setChecked(false);
-    QVERIFY(!tls->isVisibleTo(&dialog));
     QCOMPARE(scroll->geometry().right(), sections->bodyLayout()->parentWidget()->rect().right());
     dialog.findChild<QCheckBox*>("profileSshEnabled")->setChecked(true);
     for (const char* name : {"profileSshHost", "profileSshUser"})
@@ -146,40 +140,147 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     QVERIFY(sections->footerLayout()->parentWidget()->isVisible());
 }
 
-void WorkspaceTest::connectionIdentityCredentialErrorsPreserveDraft() {
-    WorkspaceFixture f;
-    QTRY_COMPARE(f.connections.count(), 1);
-    f.newConnection.trigger();
-    auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
-    auto* save = dialog->findChild<QPushButton*>("profileSave");
+void WorkspaceTest::connectionFormHasNoTlsSettings() {
+    choscordb::EngineAdapter adapter;
+    choscordb::ProfileDialog dialog(&adapter);
+    dialog.findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
+    dialog.show();
+    QCoreApplication::processEvents();
+    QVERIFY(!dialog.findChild<QCheckBox*>("profileUseTls"));
+    QVERIFY(!dialog.findChild<QComboBox*>("profileTls"));
+    QVERIFY(!dialog.findChild<QLineEdit*>("profileRootCertificate"));
+    QVERIFY(!dialog.findChild<QLineEdit*>("profileTlsClientIdentity"));
+    QVERIFY(!dialog.findChild<QLineEdit*>("profileTlsSecret")->isVisibleTo(&dialog));
+    QCOMPARE(dialog.findChild<QScrollArea*>("profileFormScroll")
+                 ->horizontalScrollBar()->maximum(), 0);
+}
+
+void WorkspaceTest::savedTlsVerificationSurvivesProfileEdit() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    choscordb::EngineAdapter adapter(nullptr, directory.filePath("metadata.sqlite"));
+    choscordb::ProfileDialog dialog(&adapter);
+    choscordb::SavedProfile legacy;
+    legacy.name = "Saved verified TLS";
+    legacy.driver = "postgres";
+    legacy.host = "localhost";
+    legacy.user = "operator";
+    legacy.tls = "verify_full";
+    legacy.rootCertificate = "/tmp/ca.pem";
+    QSignalSpy saved(&adapter, &choscordb::EngineAdapter::profileSaved);
+    QTRY_VERIFY(dialog.findChild<QPushButton*>("profileSave")->isEnabled());
+    dialog.saveDraft(legacy);
+    QTRY_COMPARE(saved.count(), 1);
+    dialog.show();
+    QCoreApplication::processEvents();
+    QVERIFY(!dialog.findChild<QLineEdit*>("profileTlsSecret")->isVisibleTo(&dialog));
+    const auto first = qvariant_cast<choscordb::SavedProfile>(saved.at(0).at(1));
+    QCOMPARE(first.tls, QString("verify_full"));
+    QCOMPARE(first.rootCertificate, QString("/tmp/ca.pem"));
+    dialog.findChild<QLineEdit*>("profileName")->setText("Renamed verified TLS");
+    auto* save = dialog.findChild<QPushButton*>("profileSave");
     QTRY_VERIFY(save->isEnabled());
-    dialog->findChild<QLineEdit*>("profileName")->setText("Identity draft");
-    dialog->findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
-    auto* tls = dialog->findChild<QComboBox*>("profileTls");
-    tls->setCurrentIndex(tls->findData("verify_full"));
-    dialog->findChild<QCheckBox*>("profileUseTls")->setChecked(true);
-    dialog->findChild<QLineEdit*>("profileUser")->setText("operator");
-    auto* identity = dialog->findChild<QLineEdit*>("profileTlsClientIdentity");
-    identity->setText("/missing/client.p12");
-    auto* secret = dialog->findChild<QLineEdit*>("profileTlsSecret");
-    const auto oversized = QString(16384, QChar(0x00e9));
-    secret->setText(oversized);
+    save->click();
+    QTRY_COMPARE(saved.count(), 2);
+    const auto updated = qvariant_cast<choscordb::SavedProfile>(saved.at(1).at(1));
+    QCOMPARE(updated.tls, QString("verify_full"));
+    QCOMPARE(updated.rootCertificate, QString("/tmp/ca.pem"));
+}
+
+void WorkspaceTest::savedDisabledTlsSurvivesProfileEdit() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    choscordb::EngineAdapter adapter(nullptr, directory.filePath("metadata.sqlite"));
+    choscordb::ProfileDialog dialog(&adapter);
+    choscordb::SavedProfile legacy;
+    legacy.name = "Saved plaintext";
+    legacy.driver = "mysql";
+    legacy.host = "localhost";
+    legacy.tls = "disable";
+    QSignalSpy saved(&adapter, &choscordb::EngineAdapter::profileSaved);
+    QTRY_VERIFY(dialog.findChild<QPushButton*>("profileSave")->isEnabled());
+    dialog.saveDraft(legacy);
+    QTRY_COMPARE(saved.count(), 1);
+    dialog.findChild<QLineEdit*>("profileName")->setText("Renamed plaintext");
+    auto* save = dialog.findChild<QPushButton*>("profileSave");
+    QTRY_VERIFY(save->isEnabled());
+    save->click();
+    QTRY_COMPARE(saved.count(), 2);
+    const auto updated = qvariant_cast<choscordb::SavedProfile>(saved.at(1).at(1));
+    QCOMPARE(updated.tls, QString("disable"));
+}
+
+void WorkspaceTest::newServerProfilePrefersTlsWithoutSetup_data() {
+    QTest::addColumn<QString>("driver");
+    QTest::addColumn<QString>("host");
+    QTest::newRow("postgres-tcp") << QString("postgres") << QString("localhost");
+    QTest::newRow("mysql-tcp") << QString("mysql") << QString("localhost");
+    QTest::newRow("postgres-socket") << QString("postgres") << QString("/tmp");
+    QTest::newRow("mysql-socket") << QString("mysql") << QString("/tmp/mysql.sock");
+}
+
+void WorkspaceTest::newServerProfilePrefersTlsWithoutSetup() {
+    QFETCH(QString, driver);
+    QFETCH(QString, host);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    choscordb::EngineAdapter adapter(nullptr, directory.filePath("metadata.sqlite"));
+    choscordb::ProfileDialog dialog(&adapter);
+    auto* save = dialog.findChild<QPushButton*>("profileSave");
+    QTRY_VERIFY(save->isEnabled());
+    auto* driverChoice = dialog.findChild<QComboBox*>("profileDriver");
+    driverChoice->setCurrentIndex(driverChoice->findData(driver));
+    QVERIFY(!dialog.findChild<QComboBox*>("profileTls"));
+    QVERIFY(!dialog.findChild<QCheckBox*>("profileUseTls"));
+    QVERIFY(!dialog.findChild<QLineEdit*>("profileRootCertificate"));
+    dialog.findChild<QLineEdit*>("profileHost")->setText(host);
+    dialog.findChild<QLineEdit*>("profileName")->setText("Automatic TLS");
+    dialog.findChild<QLineEdit*>("profileUser")->setText("operator");
+    QSignalSpy saved(&adapter, &choscordb::EngineAdapter::profileSaved);
+    save->click();
+    QTRY_COMPARE(saved.count(), 1);
+    const auto profile = qvariant_cast<choscordb::SavedProfile>(saved.at(0).at(1));
+    QCOMPARE(profile.driver, driver);
+    QCOMPARE(profile.tls, QString("prefer"));
+    QCOMPARE(profile.host, host);
+}
+
+void WorkspaceTest::savedTlsClientIdentitySurvivesProfileEdit() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    choscordb::EngineAdapter adapter(nullptr, directory.filePath("metadata.sqlite"));
+    choscordb::ProfileDialog dialog(&adapter);
+    choscordb::SavedProfile legacy;
+    legacy.name = "Saved client identity";
+    legacy.driver = "postgres";
+    legacy.host = "localhost";
+    legacy.user = "operator";
+    legacy.tls = "require";
+    legacy.tlsClientIdentity = "/tmp/client.p12";
+    QSignalSpy saved(&adapter, &choscordb::EngineAdapter::profileSaved);
+    QTRY_VERIFY(dialog.findChild<QPushButton*>("profileSave")->isEnabled());
+    dialog.saveDraft(legacy);
+    QTRY_COMPARE(saved.count(), 1);
+    dialog.show();
+    QCoreApplication::processEvents();
+    auto* secret = dialog.findChild<QLineEdit*>("profileTlsSecret");
+    QVERIFY(secret->isVisibleTo(&dialog));
+    secret->setText(QString(16384, QChar(0x00e9)));
     secret->setModified(true);
-    dialog->findChild<QCheckBox*>("profileSaveCredentials")->setChecked(true);
-    auto* validation = dynamic_cast<choscordb::design::FieldValidation*>(secret->parentWidget());
-    QSignalSpy saved(f.workspace.adapter(), &choscordb::EngineAdapter::profileSaved);
-    QSignalSpy submitted(dialog, &choscordb::ProfileDialog::connectionSubmitted);
-    for (const auto* action : {"profileSave", "profileTest", "profileConnect"}) {
-        dialog->findChild<QPushButton*>(action)->click();
-        QTRY_VERIFY(save->isEnabled());
-        QVERIFY2(validation->error().contains("Credential exceeds"),
-                 qPrintable(validation->error()));
-        QCOMPARE(secret->text(), oversized);
-        QVERIFY(secret->isModified());
-        QCOMPARE(identity->text(), QString("/missing/client.p12"));
-    }
-    QCOMPARE(saved.count(), 0);
-    QCOMPARE(submitted.count(), 0);
+    dialog.findChild<QPushButton*>("profileTest")->click();
+    auto* secretValidation =
+        dynamic_cast<choscordb::design::FieldValidation*>(secret->parentWidget());
+    QVERIFY(secretValidation->error().contains("Credential exceeds"));
+    secret->clear();
+    secret->setModified(false);
+    dialog.findChild<QLineEdit*>("profileName")->setText("Renamed client identity");
+    auto* save = dialog.findChild<QPushButton*>("profileSave");
+    QTRY_VERIFY(save->isEnabled());
+    save->click();
+    QTRY_COMPARE(saved.count(), 2);
+    const auto updated = qvariant_cast<choscordb::SavedProfile>(saved.at(1).at(1));
+    QCOMPARE(updated.tls, QString("require"));
+    QCOMPARE(updated.tlsClientIdentity, QString("/tmp/client.p12"));
 }
 
 void WorkspaceTest::connectionSshFormKeepsBasicFields() {
@@ -187,9 +288,56 @@ void WorkspaceTest::connectionSshFormKeepsBasicFields() {
     choscordb::ProfileDialog dialog(&adapter);
     dialog.findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
     dialog.findChild<QCheckBox*>("profileSshEnabled")->setChecked(true);
-    QCOMPARE(dialog.findChild<QSpinBox*>("profileSshPort")->minimum(), 1);
-    QCOMPARE(dialog.findChild<QSpinBox*>("profileSshPort")->maximum(), 65535);
-    QVERIFY(dialog.findChild<QComboBox*>("profileSshAuthentication")->isVisibleTo(&dialog));
+    auto* host = dialog.findChild<QLineEdit*>("profileSshHost");
+    auto* port = dialog.findChild<QSpinBox*>("profileSshPort");
+    auto* user = dialog.findChild<QLineEdit*>("profileSshUser");
+    auto* authentication = dialog.findChild<QComboBox*>("profileSshAuthentication");
+    auto* source = dialog.findChild<QComboBox*>("profileSshIdentitySource");
+    auto* file = dialog.findChild<QLineEdit*>("profileSshIdentityFile");
+    auto* secret = dialog.findChild<QLineEdit*>("profileSshSecret");
+    QCOMPARE(port->minimum(), 1);
+    QCOMPARE(port->maximum(), 65535);
+    authentication->setCurrentIndex(authentication->findData("public_key"));
+    dialog.show();
+    QCoreApplication::processEvents();
+    const auto y = [&dialog](QWidget* widget) { return widget->mapTo(&dialog, QPoint()).y(); };
+    QVERIFY(qAbs(y(host) - y(port)) <= 2);
+    QVERIFY(qAbs(y(host) - y(user)) <= 2);
+    QVERIFY(port->width() < host->width());
+    QVERIFY(port->width() < user->width());
+    QVERIFY(qAbs(y(source) - y(file)) <= 2);
+    QVERIFY(qAbs(y(file) - y(secret)) <= 2);
+    QVERIFY(y(host) < y(authentication));
+    QVERIFY(y(authentication) < y(source));
+    for (const auto& expected : QList<QPair<QString, QWidget*>>{
+             {"SSH host", host}, {"SSH port", port}, {"SSH username", user},
+             {"Authentication", authentication}, {"Private key source", source},
+             {"SSH private key file", file}, {"SSH passphrase", secret}}) {
+        bool hasBuddy = false;
+        for (auto* label : dialog.findChildren<QLabel*>())
+            hasBuddy |= label->text() == expected.first && label->buddy() == expected.second;
+        QVERIFY2(hasBuddy, qPrintable(expected.first));
+    }
+    QVERIFY(source->isVisibleTo(&dialog));
+    QVERIFY(file->isVisibleTo(&dialog));
+    QVERIFY(secret->isVisibleTo(&dialog));
+    authentication->setCurrentIndex(authentication->findData("password"));
+    QVERIFY(!source->isVisibleTo(&dialog));
+    QVERIFY(!file->isVisibleTo(&dialog));
+    QVERIFY(secret->isVisibleTo(&dialog));
+    bool hasPasswordLabel = false;
+    for (auto* label : dialog.findChildren<QLabel*>())
+        hasPasswordLabel |= label->text() == "SSH password" && label->buddy() == secret;
+    QVERIFY(hasPasswordLabel);
+    authentication->setCurrentIndex(authentication->findData("agent"));
+    QVERIFY(!source->isVisibleTo(&dialog));
+    QVERIFY(!file->isVisibleTo(&dialog));
+    QVERIFY(!secret->isVisibleTo(&dialog));
+    authentication->setCurrentIndex(authentication->findData("public_key"));
+    source->setCurrentIndex(source->findData("inline"));
+    QVERIFY(source->isVisibleTo(&dialog));
+    QVERIFY(!file->isVisibleTo(&dialog));
+    QVERIFY(dialog.findChild<QWidget*>("profileSshPrivateKey")->isVisibleTo(&dialog));
     QVERIFY(!dialog.findChild<QWidget*>("profileSshHopList")->isVisibleTo(&dialog));
 }
 
@@ -206,19 +354,11 @@ void WorkspaceTest::connectionTransportValidationRejectsIncompatibleSettings() {
     auto* host = dialog->findChild<QLineEdit*>("profileHost");
     host->setText("/tmp/postgres socket");
     dialog->findChild<QLineEdit*>("profileUser")->setText("operator");
-    auto* tls = dialog->findChild<QComboBox*>("profileTls");
-    auto* useTls = dialog->findChild<QCheckBox*>("profileUseTls");
     const auto errorFor = [](QWidget* field) {
         return dynamic_cast<choscordb::design::FieldValidation*>(field->parentWidget())->error();
     };
     QSignalSpy saved(f.workspace.adapter(), &choscordb::EngineAdapter::profileSaved);
     QSignalSpy failed(f.workspace.adapter(), &choscordb::EngineAdapter::profileFailed);
-    useTls->setChecked(true);
-    tls->setCurrentIndex(tls->findData("verify_full"));
-    save->click();
-    QVERIFY(errorFor(tls).contains("Unix"));
-    QVERIFY(errorFor(tls).contains("TLS"));
-    useTls->setChecked(false);
     auto* sshEnabled = dialog->findChild<QCheckBox*>("profileSshEnabled");
     sshEnabled->setChecked(true);
     save->click();
@@ -227,13 +367,7 @@ void WorkspaceTest::connectionTransportValidationRejectsIncompatibleSettings() {
     sshEnabled->setChecked(false);
     host->setText("localhost");
     driver->setCurrentIndex(2);
-    useTls->setChecked(true);
-    tls->setCurrentIndex(tls->findData("prefer"));
-    save->click();
-    QVERIFY(errorFor(tls).contains("MySQL"));
-    QVERIFY(errorFor(tls).contains("Prefer"));
     driver->setCurrentIndex(1);
-    tls->setCurrentIndex(tls->findData("verify_full"));
     dialog->findChild<QCheckBox*>("profileSshEnabled")->setChecked(true);
     dialog->findChild<QLineEdit*>("profileSshHost")->setText("bastion.example");
     dialog->findChild<QLineEdit*>("profileSshUser")->setText("operator");
@@ -332,7 +466,7 @@ void WorkspaceTest::mysqlConnectionFormExplainsOptionalDatabaseAndPreservesLiter
     QTRY_VERIFY(save->isEnabled());
     auto profile = qvariant_cast<choscordb::SavedProfile>(saved.at(0).at(1));
     QCOMPARE(profile.driver, QString("mysql"));
-    QCOMPARE(profile.tls, QString("disable"));
+    QCOMPARE(profile.tls, QString("prefer"));
     QVERIFY(profile.database.isEmpty());
     QCOMPARE(profile.host, QString("[::1]"));
     QCOMPARE(profile.user, QString(" operator "));
@@ -379,7 +513,7 @@ void WorkspaceTest::connectionManualPasswordIsOptionalAndUsesOneCredentialChoice
     save->click();
     QTRY_COMPARE(saved.count(), 1);
     auto profile = qvariant_cast<choscordb::SavedProfile>(saved.at(0).at(1));
-    QCOMPARE(profile.tls, QString("disable"));
+    QCOMPARE(profile.tls, QString("prefer"));
     QVERIFY(profile.credentialRef.isEmpty());
     password->setText("session-only-secret");
     password->setModified(true);

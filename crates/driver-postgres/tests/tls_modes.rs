@@ -142,6 +142,50 @@ async fn prefer_falls_back_when_server_declines_tls_but_require_does_not() {
 }
 
 #[tokio::test]
+async fn prefer_rejects_malformed_tls_reply_without_plaintext_startup() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut ssl_request = [0; 8];
+        socket.read_exact(&mut ssl_request).await.unwrap();
+        socket.write_all(b"X").await.unwrap();
+        let mut next = [0; 4];
+        assert!(
+            !matches!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(250),
+                    socket.read_exact(&mut next)
+                )
+                .await,
+                Ok(Ok(_))
+            ),
+            "malformed TLS reply must not send plaintext startup"
+        );
+    });
+    let settings = ConnectionOptions::Postgres {
+        ssh_jump_secrets: Default::default(),
+        ssh_private_key: None,
+        ssh_jump_private_keys: Default::default(),
+        proxy: None,
+        proxy_secret: None,
+        host: "127.0.0.1".into(),
+        port,
+        database: "test".into(),
+        user: "tester".into(),
+        password: None,
+        ssh_secret: None,
+        ssh: None,
+        root_certificate: None,
+        tls_identity: None,
+        tls: TlsMode::Prefer,
+    };
+    assert!(PostgresDriver.connect(settings).await.is_err());
+    server.await.unwrap();
+}
+
+#[tokio::test]
 #[ignore = "requires disposable PostgreSQL fixture"]
 async fn certificate_authentication_requires_the_correct_client_identity() {
     let identity = std::env::var_os("CHOSCORDB_TEST_POSTGRES_CLIENT_IDENTITY").unwrap();

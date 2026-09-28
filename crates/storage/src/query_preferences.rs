@@ -1,9 +1,11 @@
-//! Versioned defaults captured by future executions only.
+//! Versioned defaults for future queries and tunneled connections.
 use crate::{Result, Storage, StorageError};
 use choscordb_driver_api::PageSize;
 use serde::{Deserialize, Serialize};
 pub const QUERY_PREFERENCES_VERSION: u32 = 1;
 pub const MAX_QUERY_TIMEOUT_SECONDS: u32 = 86_400;
+pub const DEFAULT_CONNECTION_TIMEOUT_SECONDS: u32 = 20;
+pub const MAX_CONNECTION_TIMEOUT_SECONDS: u32 = 300;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QueryPreferences {
@@ -11,6 +13,12 @@ pub struct QueryPreferences {
     pub page_size: PageSize,
     /// Zero maps to the driver's absent timeout.
     pub timeout_seconds: u32,
+    /// Global limit for new SSH tunnels and database logins through them.
+    #[serde(default = "default_connection_timeout_seconds")]
+    pub connection_timeout_seconds: u32,
+}
+fn default_connection_timeout_seconds() -> u32 {
+    DEFAULT_CONNECTION_TIMEOUT_SECONDS
 }
 impl Default for QueryPreferences {
     fn default() -> Self {
@@ -18,6 +26,7 @@ impl Default for QueryPreferences {
             version: QUERY_PREFERENCES_VERSION,
             page_size: PageSize::default(),
             timeout_seconds: 0,
+            connection_timeout_seconds: DEFAULT_CONNECTION_TIMEOUT_SECONDS,
         }
     }
 }
@@ -25,6 +34,7 @@ impl QueryPreferences {
     pub fn validate(&self) -> Result<()> {
         if self.version != QUERY_PREFERENCES_VERSION
             || self.timeout_seconds > MAX_QUERY_TIMEOUT_SECONDS
+            || !(1..=MAX_CONNECTION_TIMEOUT_SECONDS).contains(&self.connection_timeout_seconds)
         {
             return Err(StorageError::InvalidQueryPreferences);
         }

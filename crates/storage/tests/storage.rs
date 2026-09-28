@@ -213,7 +213,7 @@ fn postgres_profile_persists_only_credential_references() {
     assert!(data.get("password").is_none());
     assert!(data["configuration"].get("password").is_none());
     assert!(data["configuration"]["tls"].get("private_key").is_none());
-    assert_eq!(data["configuration"]["tls"]["mode"], "VerifyFull");
+    assert_eq!(data["configuration"]["tls"]["mode"], "Prefer");
 }
 
 #[test]
@@ -362,7 +362,7 @@ fn every_supported_profile_option_reaches_driver_unchanged() {
         }
         _ => panic!("wrong driver"),
     }
-    assert_eq!(PostgresTls::default().mode, TlsMode::VerifyFull);
+    assert_eq!(PostgresTls::default().mode, TlsMode::Prefer);
 }
 
 #[test]
@@ -489,6 +489,27 @@ fn postgres_required_fields_and_certificate_path_are_validated() {
     p.configuration = ProfileConfiguration::Sqlite {
         path: ":memory:".into(),
         read_only: false,
+    };
+    store.save_profile(&p).unwrap();
+    assert_eq!(store.profile(&p.id).unwrap(), Some(p));
+}
+
+#[test]
+fn prefer_profiles_can_use_local_socket_without_tls_configuration() {
+    let mut store = Storage::in_memory().unwrap();
+    let mut p = profile();
+    p.configuration = ProfileConfiguration::Postgres {
+        proxy: None,
+        ssh: None,
+        host: "/tmp".into(),
+        port: 5432,
+        database: "app".into(),
+        user: "operator".into(),
+        tls: PostgresTls {
+            mode: TlsMode::Prefer,
+            root_certificate_path: None,
+            client_identity_path: None,
+        },
     };
     store.save_profile(&p).unwrap();
     assert_eq!(store.profile(&p.id).unwrap(), Some(p));
