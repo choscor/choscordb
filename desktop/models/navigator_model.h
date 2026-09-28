@@ -46,6 +46,7 @@ class NavigatorModel final : public QAbstractItemModel {
     bool canFetchMore(const QModelIndex& parent) const override;
     void fetchMore(const QModelIndex& parent) override;
     bool addConnection(quint64 id, const QString& label);
+    bool renameConnection(quint64 id, const QString& label);
     bool addPendingConnection(quint64 id, const QString& label);
     bool removeConnection(quint64 id);
     // Token must be echoed from childrenRequested, never derived on response.

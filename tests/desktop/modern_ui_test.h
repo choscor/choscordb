@@ -23,9 +23,12 @@ class ModernUiTest final : public QObject {
     void newLayoutUsesReferenceProportionsAndPreservesSavedPlacement();
     void centralScreensPreserveDraftsAndLastCloseReturnsToStart();
     void startListsRealSavedProfilesAndConnectsWithoutExecuting();
-    void savedProfileSelectionKeepsEditorTargetAndShowsOneTree();
+    void savedProfileSelectionKeepsEditorTargetAndShowsMultipleTrees();
+    void savedProfileSelectionSurvivesRefreshEditAndDeletionOnlyForExistingIds();
     void failedSidebarOpenShowsReasonAndClearsBrowseSelection();
     void failedSidebarOpenRestoresLastSuccessfulProfile();
+    void rejectedSidebarOpenKeepsOtherRootsAndShowsOneReason();
+    void removedPendingSidebarOpenCannotRestoreItsRoot();
     void savedConnectionMenuDuplicatesTheChosenProfileWithoutConnecting();
     void appearanceSaveDuringLayoutWriteReturnsRetryAndKeepsPreview();
     void activeWorkKeepsSqlVisibleAndRejectsPreferences();

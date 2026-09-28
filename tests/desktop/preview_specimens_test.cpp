@@ -564,6 +564,21 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
                  QString("mysql"));
         QCOMPARE(list->spacing(), choscordb::design::spacing(choscordb::design::Spacing::Half));
         QCOMPARE(list->currentRow(), 1);
+        QCOMPARE(list->selectionMode(), QAbstractItemView::MultiSelection);
+        QVERIFY(list->item(0)->isSelected());
+        QVERIFY(list->item(1)->isSelected());
+        QVERIFY(!list->item(2)->isSelected());
+        const auto colors = choscordb::design::resolvedThemeForWidget(*list).colors;
+        const auto firstSelectedRow = list->visualItemRect(list->item(0));
+        const auto selectedRow = list->visualItemRect(list->item(1));
+        const auto regularRow = list->visualItemRect(list->item(2));
+        const auto image = list->viewport()->grab().toImage();
+        QCOMPARE(image.pixelColor(firstSelectedRow.right() - 30, firstSelectedRow.center().y()),
+                 colors.sidebarAccent);
+        QCOMPARE(image.pixelColor(selectedRow.right() - 30, selectedRow.center().y()),
+                 colors.sidebarAccent);
+        QCOMPARE(image.pixelColor(regularRow.right() - 30, regularRow.center().y()),
+                 colors.sidebar);
         QVERIFY(list->visualItemRect(list->item(1)).bottom() < list->viewport()->height());
         QCOMPARE(list->item(0)->text(), QString("test sqlite"));
         QCOMPARE(list->item(1)

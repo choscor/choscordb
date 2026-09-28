@@ -306,7 +306,7 @@ void NavigatorSqlWorkspaceTest::savedProfileIdCannotCollideWithSessionContext() 
     QVERIFY(tabs->widget(1)->property("objectProfileId").toString().startsWith("profile:"));
 }
 
-void NavigatorSqlWorkspaceTest::selectedConnectionShowsOnlyItsTree() {
+void NavigatorSqlWorkspaceTest::visibleConnectionsPreserveMetadataAndOrder() {
     choscordb::EngineAdapter adapter;
     QTreeView tree;
     QLineEdit filter;
@@ -315,13 +315,48 @@ void NavigatorSqlWorkspaceTest::selectedConnectionShowsOnlyItsTree() {
                         &choscordb::EngineAdapter::loadMetadata);
     navigator.addConnection(11, "First");
     navigator.addConnection(22, "Second");
-    navigator.setSelectedConnection(11);
+    navigator.setVisibleConnections({22, 11});
+    QCOMPARE(tree.model()->rowCount(), 2);
+    QCOMPARE(tree.model()->index(0, 0).data().toString(), QString("Second"));
+    QCOMPARE(tree.model()->index(1, 0).data().toString(), QString("First"));
+    QSignalSpy disconnects(&navigator, &choscordb::NavigatorController::disconnectRequested);
+    tree.setCurrentIndex(tree.model()->index(0, 0));
+    navigator.disconnectCurrent();
+    QCOMPARE(disconnects.count(), 1);
+    QCOMPARE(disconnects.last().first().toULongLong(), quint64(22));
+    tree.setCurrentIndex(tree.model()->index(1, 0));
+    navigator.disconnectCurrent();
+    QCOMPARE(disconnects.count(), 2);
+    QCOMPARE(disconnects.last().first().toULongLong(), quint64(11));
+    auto firstRoot = navigator.model()->index(0, 0);
+    QSignalSpy requested(navigator.model(), &choscordb::NavigatorModel::childrenRequested);
+    navigator.model()->fetchMore(firstRoot);
+    QTRY_COMPARE(requested.count(), 1);
+    QVERIFY(navigator.model()->applyChildren(
+        11, {}, requested.first().at(2).toULongLong(),
+        {{"schema", "public", "public", "schema", false}}));
+    navigator.setVisibleConnections({11});
     QCOMPARE(tree.model()->rowCount(), 1);
     QCOMPARE(tree.model()->index(0, 0).data().toString(), QString("First"));
-    navigator.setSelectedConnection(22);
-    QCOMPARE(tree.model()->rowCount(), 1);
+    QCOMPARE(navigator.model()->rowCount(), 2);
+    navigator.setVisibleConnections({22, 11});
+    QCOMPARE(tree.model()->rowCount(), 2);
     QCOMPARE(tree.model()->index(0, 0).data().toString(), QString("Second"));
-    navigator.clearSelectedConnection();
+    QCOMPARE(tree.model()->rowCount(tree.model()->index(1, 0)), 1);
+    QCOMPARE(tree.model()->index(0, 0, tree.model()->index(1, 0)).data().toString(),
+             QString("public"));
+    QCOMPARE(requested.count(), 1);
+    navigator.renameConnection(11, "Renamed First");
+    QCOMPARE(tree.model()->index(1, 0).data().toString(), QString("Renamed First"));
+    QCOMPARE(tree.model()->rowCount(tree.model()->index(1, 0)), 1);
+    QCOMPARE(requested.count(), 1);
+    navigator.setPendingConnection(33, "Connecting");
+    navigator.setVisibleConnections({22, 33, 11});
+    QCOMPARE(tree.model()->rowCount(), 3);
+    QCOMPARE(tree.model()->index(1, 0).data().toString(), QString("Connecting — Loading…"));
+    navigator.removePendingConnection(33);
+    QCOMPARE(tree.model()->rowCount(), 2);
+    navigator.setVisibleConnections({});
     QCOMPARE(tree.model()->rowCount(), 0);
 }
 
@@ -334,18 +369,17 @@ void NavigatorSqlWorkspaceTest::searchLoadsCollapsedGroupsOnlyForSelectedConnect
                         &choscordb::EngineAdapter::loadMetadata);
     navigator.addConnection(11, "First");
     navigator.addConnection(22, "Second");
-    navigator.setSelectedConnection(11);
+    navigator.setVisibleConnections({22, 11});
     connect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &tree,
             [&](quint64 connection, const QString& parent, quint64 token) {
-                if (connection != 11)
-                    return;
                 std::vector<choscordb::NavigatorObject> objects;
                 if (parent.isEmpty())
                     objects.push_back({"schema", "public", "public", "schema", true});
                 else if (parent == "schema")
                     objects.push_back({"group", "Tables", "", "group", true});
                 else if (parent == "group")
-                    objects.push_back({"table", "needle", "public.needle", "table", false});
+                    objects.push_back({"table", connection == 11 ? "needle one" : "needle two",
+                                       "public.needle", "table", false});
                 navigator.model()->applyChildren(connection, parent, token, std::move(objects));
             });
     filter.setText("needle");
@@ -353,13 +387,34 @@ void NavigatorSqlWorkspaceTest::searchLoadsCollapsedGroupsOnlyForSelectedConnect
                     ->index(0, 0)
                     .data(choscordb::NavigatorModel::ChildrenLoadedRole)
                     .toBool());
-    QTRY_COMPARE(tree.model()->rowCount(), 1);
+    QTRY_COMPARE(tree.model()->rowCount(), 2);
     auto root = tree.model()->index(0, 0);
+    QCOMPARE(root.data().toString(), QString("Second"));
     QTRY_COMPARE(tree.model()->rowCount(root), 1);
     auto schema = tree.model()->index(0, 0, root);
     QTRY_COMPARE(tree.model()->rowCount(schema), 1);
     auto group = tree.model()->index(0, 0, schema);
-    QTRY_COMPARE(tree.model()->index(0, 0, group).data().toString(), QString("needle"));
+    QTRY_COMPARE(tree.model()->index(0, 0, group).data().toString(), QString("needle two"));
+    root = tree.model()->index(1, 0);
+    QCOMPARE(root.data().toString(), QString("First"));
+    schema = tree.model()->index(0, 0, root);
+    group = tree.model()->index(0, 0, schema);
+    QTRY_COMPARE(tree.model()->index(0, 0, group).data().toString(), QString("needle one"));
+    navigator.setVisibleConnections({11});
+    QCOMPARE(tree.model()->rowCount(), 1);
+    QCOMPARE(tree.model()->index(0, 0).data().toString(), QString("First"));
+    navigator.setVisibleConnections({22, 11});
+    QCOMPARE(tree.model()->rowCount(), 2);
+    QSignalSpy status(&navigator, &choscordb::NavigatorController::searchStatusChanged);
+    navigator.setPendingConnection(33, "Third");
+    navigator.setVisibleConnections({22, 33, 11});
+    QCOMPARE(tree.model()->rowCount(), 3);
+    QCOMPARE(tree.model()->index(1, 0).data().toString(), QString("Third — Loading…"));
+    QVERIFY(status.last().first().toString().contains("incomplete", Qt::CaseInsensitive));
+    navigator.removePendingConnection(33);
+    navigator.setVisibleConnections({22, 11});
+    filter.clear();
+    QCOMPARE(tree.model()->rowCount(), 2);
 }
 
 void NavigatorSqlWorkspaceTest::searchFailureKeepsRefineMessage() {
@@ -370,10 +425,21 @@ void NavigatorSqlWorkspaceTest::searchFailureKeepsRefineMessage() {
     QObject::disconnect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &adapter,
                         &choscordb::EngineAdapter::loadMetadata);
     navigator.addConnection(11, "First");
-    navigator.setSelectedConnection(11);
+    navigator.addConnection(22, "Second");
+    navigator.setVisibleConnections({11, 22});
     QSignalSpy status(&navigator, &choscordb::NavigatorController::searchStatusChanged);
+    int searchedOtherRoot = 0;
     connect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &tree,
-            [&adapter, &status](quint64 connection, const QString& parent, quint64 token) {
+            [&adapter, &status, &navigator, &searchedOtherRoot](quint64 connection,
+                                                                 const QString& parent,
+                                                                 quint64 token) {
+                if (connection == 11) {
+                    ++searchedOtherRoot;
+                    navigator.model()->applyChildren(
+                        connection, parent, token,
+                        {{"other", "needle from First", "", "table", false}});
+                    return;
+                }
                 emit adapter.metadataSubmissionFailed(connection, parent, token + 1, "Stale error");
                 QCOMPARE(status.last().first().toString(), QString("Searching objects…"));
                 emit adapter.metadataSubmissionFailed(connection, parent, token,
@@ -381,6 +447,9 @@ void NavigatorSqlWorkspaceTest::searchFailureKeepsRefineMessage() {
             });
     filter.setText("needle");
     QTRY_VERIFY(!status.isEmpty() && status.last().first().toString().contains("Refine the text"));
+    QTRY_COMPARE(searchedOtherRoot, 1);
+    QCOMPARE(tree.model()->rowCount(), 1);
+    QCOMPARE(tree.model()->index(0, 0).data().toString(), QString("First"));
     QCoreApplication::processEvents();
     QVERIFY(status.last().first().toString().contains("Metadata limit exceeded"));
 }

@@ -1,12 +1,16 @@
 #pragma once
 #include "design_system/toast_region/toast_region.h"
+#include <QHash>
 #include <QMainWindow>
 #include <QPointer>
+#include <QSet>
 #include <QVariant>
 #include <functional>
+#include <limits>
 #include <optional>
 class QTabWidget;
 class QStackedWidget;
+class QListWidget;
 namespace choscordb {
 namespace design {
 class PlatformAccessibilityMonitor;
@@ -40,6 +44,7 @@ class MainWindow final : public QMainWindow {
     explicit MainWindow(QWidget* parent = nullptr, const QString& storagePath = {});
 
   protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
 #ifdef Q_OS_MACOS
     void showEvent(QShowEvent* event) override;
@@ -55,8 +60,20 @@ class MainWindow final : public QMainWindow {
     void updateNativeTitleBar();
 #endif
     quint64 profileListToken_ = 0;
-    std::optional<quint64> pendingBrowseConnection_, browsingConnection_;
-    QString pendingBrowseProfileId_, pendingBrowseProfileName_, lastBrowsedProfileId_;
+    struct PendingBrowse {
+        quint64 placeholder = 0;
+        std::optional<quint64> connection;
+        QString name;
+    };
+    std::optional<quint64> browsingConnection_;
+    QSet<QString> selectedProfileIds_;
+    QHash<QString, PendingBrowse> pendingBrowseProfiles_;
+    QHash<quint64, QString> sessionProfileIds_;
+    QHash<QString, quint64> selectedSessionIds_;
+    QSet<quint64> retiredBrowseConnections_;
+    quint64 nextPendingPlaceholder_ = std::numeric_limits<quint64>::max();
+    QString submittingBrowseProfileId_, submissionError_;
+    QString navigatorSearchStatus_;
     bool submittingBrowseProfile_ = false;
     NavigatorController* navigatorController_ = nullptr;
     QStackedWidget* screens_ = nullptr;
@@ -92,6 +109,8 @@ class MainWindow final : public QMainWindow {
     ObjectExplorer* initialObjectExplorer_ = nullptr;
     std::function<void(quint64, const QString&)> openGeneratedSql_;
     std::function<bool(const QString&)> reconnectProfile_;
+    QPointer<QListWidget> savedConnectionsList_;
+    std::function<void()> activateFocusedSavedProfile_;
     design::PlatformAccessibilityMonitor* platformAccessibility_ = nullptr;
     design::ThemeManager* theme_ = nullptr;
     QueryWorkspace* workspace_ = nullptr;

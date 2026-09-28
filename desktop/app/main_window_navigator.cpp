@@ -21,6 +21,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QStyle>
 #include <QTabWidget>
 #include <QTreeView>
 #include <utility>
@@ -41,7 +42,7 @@ void MainWindow::connectNavigator(const Ui& ui) {
     const auto updateObjectsEmpty = [this, tree, filter, objectsEmpty] {
         objectsEmpty->setVisible(tree->model()->rowCount() == 0);
         objectsEmpty->setText(
-            !browsingConnection_ ? tr("No database selected.\nSelect a connection to browse its "
+            selectedProfileIds_.isEmpty() ? tr("No database selected.\nSelect a connection to browse its "
                                       "schemas and objects.")
             : !filter->text().isEmpty()
                 ? tr("No matching objects.\nTry a different filter or clear the search.")
@@ -62,10 +63,22 @@ void MainWindow::connectNavigator(const Ui& ui) {
             });
     connect(navigatorController, &NavigatorController::searchStatusChanged, navigatorStatus,
             [this, navigatorStatus](const QString& status) {
+                navigatorSearchStatus_ = status;
                 navigatorStatus->setText(
-                    status.isEmpty()
-                        ? (browsingConnection_ ? tr("● Connected") : tr("○ Disconnected"))
-                        : status);
+                    status.isEmpty() ? browsingConnection_ ? tr("● Connected")
+                                       : selectedProfileIds_.isEmpty() ? tr("○ Disconnected")
+                                                                       : tr("Loading connections…")
+                                     : status);
+                navigatorStatus->setProperty("state", status.isEmpty()
+                                                          ? browsingConnection_ ? "success"
+                                                            : selectedProfileIds_.isEmpty()
+                                                                ? "disconnected"
+                                                                : "loading"
+                                                          : "search");
+                navigatorStatus->setAccessibleName(
+                    tr("Navigator connection status: %1").arg(navigatorStatus->text()));
+                navigatorStatus->style()->unpolish(navigatorStatus);
+                navigatorStatus->style()->polish(navigatorStatus);
             });
     auto* refreshNavigatorAction = new QAction(tr("Refresh selected object"), tree);
     refreshNavigatorAction->setObjectName("navigatorRefreshAction");

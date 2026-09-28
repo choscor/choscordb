@@ -21,29 +21,35 @@ QString text(const rust::String& s) {
 class SelectedConnectionProxy final : public QSortFilterProxyModel {
   public:
     using QSortFilterProxyModel::QSortFilterProxyModel;
-    void select(quint64 connection) {
-        if (hasSelection_ && selected_ == connection)
+    void setVisible(const QList<quint64>& orderedIds) {
+        if (ordered_ == orderedIds)
             return;
-        selected_ = connection;
-        hasSelection_ = true;
+        ordered_ = orderedIds;
         refreshFilter();
+        sort(0);
     }
-    void clear() {
-        hasSelection_ = false;
-        refreshFilter();
-    }
-    quint64 selected() const { return selected_; }
-    bool hasSelection() const { return hasSelection_; }
+    const QList<quint64>& visible() const { return ordered_; }
 
   protected:
     bool filterAcceptsRow(int row, const QModelIndex& parent) const override {
-        if (!parent.isValid()) {
-            const auto root = sourceModel()->index(row, 0);
-            if (!hasSelection_ ||
-                root.data(NavigatorModel::ConnectionRole).toULongLong() != selected_)
-                return false;
-        }
+        auto root = sourceModel()->index(row, 0, parent);
+        while (root.parent().isValid())
+            root = root.parent();
+        if (!ordered_.contains(root.data(NavigatorModel::ConnectionRole).toULongLong()))
+            return false;
+        if (!parent.isValid() && root.data(NavigatorModel::KindRole).toString() == "loading")
+            return true;
         return QSortFilterProxyModel::filterAcceptsRow(row, parent);
+    }
+    bool lessThan(const QModelIndex& left, const QModelIndex& right) const override {
+        if (!left.parent().isValid() && !right.parent().isValid()) {
+            const auto leftOrder =
+                ordered_.indexOf(left.data(NavigatorModel::ConnectionRole).toULongLong());
+            const auto rightOrder =
+                ordered_.indexOf(right.data(NavigatorModel::ConnectionRole).toULongLong());
+            return leftOrder < rightOrder;
+        }
+        return left.row() < right.row();
     }
 
   private:
@@ -55,8 +61,7 @@ class SelectedConnectionProxy final : public QSortFilterProxyModel {
         invalidateFilter();
 #endif
     }
-    quint64 selected_ = 0;
-    bool hasSelection_ = false;
+    QList<quint64> ordered_;
 };
 } // namespace
 NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree, QLineEdit* filter,
@@ -74,7 +79,7 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
         ++searchGeneration_;
         searchRequests_ = 0;
         searchPending_ = false;
-        searchAborted_ = false;
+        searchError_.clear();
         if (filter_->text().trimmed().isEmpty()) {
             emit searchStatusChanged({});
             return;
@@ -83,11 +88,15 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
         advanceSearch(searchGeneration_);
     });
     connect(model_, &NavigatorModel::completionChanged, this, [this](quint64 connection) {
-        if (connection == selectedConnection() && !filter_->text().trimmed().isEmpty()) {
+        if (filter_->text().trimmed().isEmpty() ||
+            !static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection))
+            return;
+        if (searchPending_ && connection == searchPendingConnection_)
             searchPending_ = false;
-            const auto generation = searchGeneration_;
-            QTimer::singleShot(0, this, [this, generation] { advanceSearch(generation); });
-        }
+        if (searchPending_)
+            return;
+        const auto generation = searchGeneration_;
+        QTimer::singleShot(0, this, [this, generation] { advanceSearch(generation); });
     });
     connect(model_, &NavigatorModel::childrenRequested, engine, &EngineAdapter::loadMetadata);
     connect(model_, &NavigatorModel::childrenPageRequested, engine,
@@ -100,12 +109,13 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
     connect(engine, &EngineAdapter::metadataSubmissionFailed, this,
             [this](quint64 connection, const QString& parent, quint64 token, const QString& error) {
                 const bool accepted = model_->failChildren(connection, parent, token, error);
-                if (accepted && searchPending_ && connection == selectedConnection()) {
+                if (accepted && searchPending_ && connection == searchPendingConnection_) {
                     searchPending_ = false;
                     if (!filter_->text().trimmed().isEmpty()) {
-                        searchAborted_ = true;
-                        emit searchStatusChanged(
-                            tr("Search incomplete: %1. Refine the text or retry.").arg(error));
+                        searchError_ = error;
+                        const auto generation = searchGeneration_;
+                        QTimer::singleShot(0, this,
+                                           [this, generation] { advanceSearch(generation); });
                     }
                 }
             });
@@ -132,7 +142,7 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
                 const bool accepted = model_->applyChildrenPage(
                     e.id, text(e.parent), e.request_token, std::move(objects), e.metadata_offset,
                     e.has_more_metadata, e.next_metadata_offset);
-                if (accepted && e.id == selectedConnection() && searchPending_) {
+                if (accepted && searchPending_ && e.id == searchPendingConnection_) {
                     searchPending_ = false;
                     const auto generation = searchGeneration_;
                     QTimer::singleShot(0, this, [this, generation] { advanceSearch(generation); });
@@ -140,13 +150,13 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
             } else if (kind == "metadata_failed") {
                 const bool accepted =
                     model_->failChildren(e.id, text(e.parent), e.request_token, text(e.error));
-                if (accepted && searchPending_ && e.id == selectedConnection()) {
+                if (accepted && searchPending_ && e.id == searchPendingConnection_) {
                     searchPending_ = false;
                     if (!filter_->text().trimmed().isEmpty()) {
-                        searchAborted_ = true;
-                        emit searchStatusChanged(
-                            tr("Search incomplete: %1. Refine the text or retry.")
-                                .arg(text(e.error)));
+                        searchError_ = text(e.error);
+                        const auto generation = searchGeneration_;
+                        QTimer::singleShot(0, this,
+                                           [this, generation] { advanceSearch(generation); });
                     }
                 }
             }
@@ -295,81 +305,104 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
     }
 }
 void NavigatorController::addConnection(quint64 connection, const QString& label) {
-    model_->addConnection(connection, label);
-}
-void NavigatorController::setSelectedConnection(quint64 connection) {
-    model_->removeConnection(std::numeric_limits<quint64>::max());
-    static_cast<SelectedConnectionProxy*>(proxy_)->select(connection);
-    ++searchGeneration_;
-    searchRequests_ = 0;
-    searchPending_ = false;
-    searchAborted_ = false;
-    if (!filter_->text().trimmed().isEmpty()) {
+    if (model_->addConnection(connection, label) && !filter_->text().trimmed().isEmpty() &&
+        static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection)) {
+        ++searchGeneration_;
+        searchRequests_ = 0;
+        searchPending_ = false;
+        searchError_.clear();
         emit searchStatusChanged(tr("Searching objects…"));
         advanceSearch(searchGeneration_);
     }
 }
-void NavigatorController::clearSelectedConnection() {
-    model_->removeConnection(std::numeric_limits<quint64>::max());
-    static_cast<SelectedConnectionProxy*>(proxy_)->clear();
+void NavigatorController::renameConnection(quint64 connection, const QString& label) {
+    model_->renameConnection(connection, label);
+}
+void NavigatorController::setVisibleConnections(const QList<quint64>& orderedIds) {
+    QList<quint64> uniqueIds;
+    for (const auto id : orderedIds)
+        if (!uniqueIds.contains(id))
+            uniqueIds.append(id);
+    auto* selected = static_cast<SelectedConnectionProxy*>(proxy_);
+    if (selected->visible() == uniqueIds)
+        return;
+    selected->setVisible(uniqueIds);
     ++searchGeneration_;
+    searchRequests_ = 0;
     searchPending_ = false;
-    searchAborted_ = false;
-    emit searchStatusChanged({});
+    searchError_.clear();
+    if (!filter_->text().trimmed().isEmpty()) {
+        emit searchStatusChanged(tr("Searching objects…"));
+        advanceSearch(searchGeneration_);
+    } else {
+        emit searchStatusChanged({});
+    }
+}
+void NavigatorController::setSelectedConnection(quint64 connection) {
+    removePendingConnection(std::numeric_limits<quint64>::max());
+    setVisibleConnections({connection});
+}
+void NavigatorController::clearSelectedConnection() {
+    removePendingConnection(std::numeric_limits<quint64>::max());
+    setVisibleConnections({});
+}
+void NavigatorController::setPendingConnection(quint64 pendingId, const QString& label) {
+    model_->addPendingConnection(pendingId, label);
+}
+void NavigatorController::removePendingConnection(quint64 pendingId) {
+    model_->removeConnection(pendingId);
 }
 void NavigatorController::setPendingConnection(const QString& label) {
     constexpr auto pendingId = std::numeric_limits<quint64>::max();
-    model_->removeConnection(pendingId);
-    model_->addPendingConnection(pendingId, label);
-    static_cast<SelectedConnectionProxy*>(proxy_)->select(pendingId);
-    ++searchGeneration_;
-    searchPending_ = false;
-    searchAborted_ = false;
-    emit searchStatusChanged({});
+    removePendingConnection(pendingId);
+    setPendingConnection(pendingId, label);
+    setVisibleConnections({pendingId});
 }
 quint64 NavigatorController::selectedConnection() const {
-    return static_cast<SelectedConnectionProxy*>(proxy_)->selected();
+    const auto& visible = static_cast<SelectedConnectionProxy*>(proxy_)->visible();
+    return visible.isEmpty() ? 0 : visible.first();
 }
 void NavigatorController::advanceSearch(quint64 generation) {
-    if (generation != searchGeneration_ || searchPending_ || searchAborted_ ||
-        filter_->text().trimmed().isEmpty())
+    if (generation != searchGeneration_ || searchPending_ || filter_->text().trimmed().isEmpty())
         return;
-    const auto connection = selectedConnection();
-    if (!static_cast<SelectedConnectionProxy*>(proxy_)->hasSelection() ||
-        connection == std::numeric_limits<quint64>::max())
+    const auto& visible = static_cast<SelectedConnectionProxy*>(proxy_)->visible();
+    if (visible.isEmpty()) {
+        emit searchStatusChanged({});
         return;
-    QModelIndex root;
-    for (int row = 0; row < model_->rowCount(); ++row) {
-        auto candidate = model_->index(row, 0);
-        if (candidate.data(NavigatorModel::ConnectionRole).toULongLong() == connection) {
-            root = candidate;
-            break;
-        }
     }
-    if (!root.isValid())
-        return;
-    std::vector<QModelIndex> stack{root};
+    std::vector<QModelIndex> stack;
+    bool incomplete = !searchError_.isEmpty();
+    for (int row = 0; row < model_->rowCount(); ++row) {
+        const auto root = model_->index(row, 0);
+        if (visible.contains(root.data(NavigatorModel::ConnectionRole).toULongLong()))
+            stack.push_back(root);
+    }
     std::vector<QModelIndex> matches;
     int visited = 0;
     while (!stack.empty()) {
         if (++visited > 20000) {
-            emit searchStatusChanged(tr("Search limit reached. Refine the text."));
+            emit searchStatusChanged(tr("Search incomplete: limit reached. Refine the text."));
             return;
         }
         auto current = stack.back();
         stack.pop_back();
         const auto kind = current.data(NavigatorModel::KindRole).toString();
+        if (kind == "loading" || kind == "error")
+            incomplete = true;
         if (current.data(Qt::DisplayRole).toString().contains(filter_->text(), Qt::CaseInsensitive))
             matches.push_back(current);
         if (kind != "connection" && kind != "database" && kind != "schema" && kind != "group")
             continue;
+        if (!current.data(NavigatorModel::ErrorRole).toString().isEmpty())
+            incomplete = true;
         if (model_->canFetchMore(current) || current.data(NavigatorModel::HasMoreRole).toBool()) {
             if (searchRequests_ >= 256) {
-                emit searchStatusChanged(tr("Search limit reached. Refine the text."));
+                emit searchStatusChanged(tr("Search incomplete: limit reached. Refine the text."));
                 return;
             }
             ++searchRequests_;
             searchPending_ = true;
+            searchPendingConnection_ = current.data(NavigatorModel::ConnectionRole).toULongLong();
             if (current.data(NavigatorModel::HasMoreRole).toBool())
                 model_->requestNextPage(current);
             else
@@ -386,6 +419,12 @@ void NavigatorController::advanceSearch(quint64 generation) {
                 tree_->expand(visible);
         }
     }
-    emit searchStatusChanged({});
+    if (!searchError_.isEmpty())
+        emit searchStatusChanged(
+            tr("Search incomplete: %1. Refine the text or retry.").arg(searchError_));
+    else if (incomplete)
+        emit searchStatusChanged(tr("Search incomplete. Refine the text or retry."));
+    else
+        emit searchStatusChanged({});
 }
 } // namespace choscordb

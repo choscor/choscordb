@@ -31,12 +31,15 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QItemSelectionModel>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QSignalBlocker>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QTabWidget>
@@ -46,6 +49,18 @@
 #include <atomic>
 
 namespace choscordb {
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == savedConnectionsList_.data() && event->type() == QEvent::KeyPress) {
+        const auto* key = static_cast<QKeyEvent*>(event);
+        if ((key->key() == Qt::Key_Space || key->key() == Qt::Key_Select) &&
+            key->modifiers() == Qt::NoModifier && activateFocusedSavedProfile_) {
+            activateFocusedSavedProfile_();
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
+}
 
 void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto newQuery = ui.newQuery;
@@ -376,15 +391,108 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         profileListToken_ = next.fetch_add(1);
         workspace_->adapter()->listProfiles(profileListToken_);
     };
+    const auto syncVisible = [this, savedConnections, connections, navigatorStatus] {
+        QList<quint64> ordered;
+        std::optional<quint64> firstUsable;
+        const QSignalBlocker selectionBlocked(savedConnections->selectionModel());
+        for (int row = 0; row < savedConnections->count(); ++row) {
+            auto* item = savedConnections->item(row);
+            const auto profile = item->data(Qt::UserRole).value<SavedProfile>();
+            const bool selected = selectedProfileIds_.contains(profile.id);
+            item->setSelected(selected);
+            item->setData(Qt::AccessibleDescriptionRole,
+                          selected ? tr("Visible in Schema & Objects")
+                                   : tr("Hidden from Schema & Objects"));
+            if (!selected)
+                continue;
+            if (pendingBrowseProfiles_.contains(profile.id)) {
+                ordered.append(pendingBrowseProfiles_.value(profile.id).placeholder);
+                continue;
+            }
+            std::optional<quint64> session;
+            const auto preferred = selectedSessionIds_.value(profile.id, 0);
+            for (int i = 0; i < connections->count(); ++i) {
+                if (!connections->itemData(i).isValid())
+                    continue;
+                const auto id = connections->itemData(i).toULongLong();
+                if (id == preferred && workspace_->profileIdForConnection(id) == profile.id) {
+                    session = id;
+                    sessionProfileIds_.insert(id, profile.id);
+                    break;
+                }
+            }
+            if (!session)
+                for (int i = 0; i < connections->count(); ++i) {
+                    if (!connections->itemData(i).isValid())
+                        continue;
+                    const auto id = connections->itemData(i).toULongLong();
+                    if (workspace_->profileIdForConnection(id) == profile.id &&
+                        !retiredBrowseConnections_.contains(id)) {
+                        session = id;
+                        sessionProfileIds_.insert(id, profile.id);
+                        break;
+                    }
+                }
+            if (session) {
+                ordered.append(*session);
+                if (!firstUsable)
+                    firstUsable = *session;
+            }
+        }
+        if (!browsingConnection_ || !ordered.contains(*browsingConnection_))
+            browsingConnection_ = firstUsable;
+        if (navigatorController_)
+            navigatorController_->setVisibleConnections(ordered);
+        navigatorStatus->setText(!navigatorSearchStatus_.isEmpty()
+                                     ? navigatorSearchStatus_
+                                     : firstUsable ? tr("● Connected")
+                                     : ordered.isEmpty() ? tr("○ Disconnected")
+                                                         : tr("Loading connections…"));
+        navigatorStatus->setProperty("state", !navigatorSearchStatus_.isEmpty()
+                                                  ? "search"
+                                                  : firstUsable ? "connected" : "disconnected");
+        navigatorStatus->setAccessibleName(
+            tr("Navigator connection status: %1").arg(navigatorStatus->text()));
+        navigatorStatus->style()->unpolish(navigatorStatus);
+        navigatorStatus->style()->polish(navigatorStatus);
+    };
+    const auto showBrowseFailure = [this](const QString& name, const QString& reason) {
+        auto* dialog = new ConfirmationDialog(
+            QMessageBox::Warning, tr("Connection failed"),
+            tr("Could not open %1: %2").arg(name, reason), QMessageBox::Ok, this);
+        dialog->setObjectName("sidebarConnectionFailure");
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->open();
+    };
     connect(
         workspace_->adapter(), &EngineAdapter::profilesReady, this,
-        [this, savedConnections](quint64 token, const QList<SavedProfile>& profiles) {
+        [this, savedConnections, connections, syncVisible](quint64 token,
+                                               const QList<SavedProfile>& profiles) {
             if (token != profileListToken_)
                 return;
-            const auto selected =
+            const auto focused =
                 savedConnections->currentItem()
                     ? savedConnections->currentItem()->data(Qt::UserRole).value<SavedProfile>().id
                     : QString{};
+            QSet<QString> surviving;
+            for (const auto& profile : profiles)
+                surviving.insert(profile.id);
+            for (const auto& id : selectedProfileIds_)
+                if (!surviving.contains(id) && pendingBrowseProfiles_.contains(id)) {
+                    const auto pending = pendingBrowseProfiles_.take(id);
+                    if (pending.connection)
+                        retiredBrowseConnections_.insert(*pending.connection);
+                    if (navigatorController_)
+                        navigatorController_->removePendingConnection(pending.placeholder);
+                }
+            for (auto it = selectedSessionIds_.begin(); it != selectedSessionIds_.end();)
+                if (!surviving.contains(it.key()))
+                    it = selectedSessionIds_.erase(it);
+                else
+                    ++it;
+            selectedProfileIds_.intersect(surviving);
+            const QSignalBlocker blocked(savedConnections);
+            const QSignalBlocker selectionBlocked(savedConnections->selectionModel());
             savedConnections->clear();
             for (const auto& profile : profiles) {
                 auto* item = new QListWidgetItem(profile.name, savedConnections);
@@ -397,8 +505,25 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                                                                       : design::Icon::Database,
                                        theme_->resolvedTheme().colors.mutedText, 16));
                 item->setToolTip(profile.name);
-                if (profile.id == selected)
-                    savedConnections->setCurrentItem(item);
+                if (profile.id == focused)
+                    savedConnections->setCurrentItem(item, QItemSelectionModel::NoUpdate);
+                for (int i = 0; i < connections->count(); ++i) {
+                    if (!connections->itemData(i).isValid())
+                        continue;
+                    const auto id = connections->itemData(i).toULongLong();
+                    if (workspace_->profileIdForConnection(id) == profile.id &&
+                        navigatorController_)
+                        navigatorController_->renameConnection(id, profile.name);
+                }
+                if (pendingBrowseProfiles_.contains(profile.id)) {
+                    auto& pending = pendingBrowseProfiles_[profile.id];
+                    if (pending.name != profile.name && navigatorController_) {
+                        navigatorController_->removePendingConnection(pending.placeholder);
+                        navigatorController_->setPendingConnection(pending.placeholder,
+                                                                   profile.name);
+                    }
+                    pending.name = profile.name;
+                }
             }
             const int rowHeight = savedConnections->sizeHintForRow(0);
             savedConnections->setMaximumHeight(
@@ -406,116 +531,112 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     ? 0
                     : profiles.size() * (rowHeight + 2 * savedConnections->spacing()) +
                           2 * savedConnections->frameWidth());
+            syncVisible();
         });
     connect(workspace_->adapter(), &EngineAdapter::profileSaved, this,
             [refreshProfiles] { refreshProfiles(); });
     connect(workspace_->adapter(), &EngineAdapter::profileDeleted, this,
-            [this, refreshProfiles, savedConnections](quint64, const QString& id, const QString&) {
-                if (id == pendingBrowseProfileId_) {
-                    pendingBrowseConnection_.reset();
-                    pendingBrowseProfileId_.clear();
-                    pendingBrowseProfileName_.clear();
-                }
-                if (id == lastBrowsedProfileId_)
-                    lastBrowsedProfileId_.clear();
-                if (savedConnections->currentItem() &&
-                    savedConnections->currentItem()->data(Qt::UserRole).value<SavedProfile>().id ==
-                        id) {
-                    savedConnections->setCurrentItem(nullptr);
-                    browsingConnection_.reset();
+            [this, refreshProfiles, syncVisible](quint64, const QString& id, const QString&) {
+                selectedProfileIds_.remove(id);
+                selectedSessionIds_.remove(id);
+                if (pendingBrowseProfiles_.contains(id)) {
+                    const auto pending = pendingBrowseProfiles_.take(id);
+                    if (pending.connection)
+                        retiredBrowseConnections_.insert(*pending.connection);
                     if (navigatorController_)
-                        navigatorController_->clearSelectedConnection();
+                        navigatorController_->removePendingConnection(pending.placeholder);
                 }
+                syncVisible();
                 refreshProfiles();
             });
-    const auto selectProfile = [this, connections, savedConnections](QListWidgetItem* item) {
-        if (!item || !allowDocumentChange())
+    const auto selectProfile = [this, connections, syncVisible,
+                                showBrowseFailure](QListWidgetItem* item) {
+        if (!item)
             return;
-        const auto profileData = item->data(Qt::UserRole);
-        const auto profile = profileData.value<SavedProfile>();
-        pendingBrowseConnection_.reset();
-        pendingBrowseProfileId_.clear();
-        pendingBrowseProfileName_.clear();
+        const auto profile = item->data(Qt::UserRole).value<SavedProfile>();
+        if (selectedProfileIds_.remove(profile.id)) {
+            selectedSessionIds_.remove(profile.id);
+            if (pendingBrowseProfiles_.contains(profile.id)) {
+                const auto pending = pendingBrowseProfiles_.take(profile.id);
+                if (pending.connection)
+                    retiredBrowseConnections_.insert(*pending.connection);
+                if (navigatorController_)
+                    navigatorController_->removePendingConnection(pending.placeholder);
+            }
+            syncVisible();
+            return;
+        }
+        selectedProfileIds_.insert(profile.id);
         for (int i = 0; i < connections->count(); ++i) {
             if (!connections->itemData(i).isValid())
                 continue;
             const auto id = connections->itemData(i).toULongLong();
             if (workspace_->profileIdForConnection(id) == profile.id) {
-                if (allowDocumentChange()) {
-                    browsingConnection_ = id;
-                    lastBrowsedProfileId_ = profile.id;
-                    if (navigatorController_)
-                        navigatorController_->setSelectedConnection(id);
-                    emit browsingConnectionChanged(id);
-                }
+                retiredBrowseConnections_.remove(id);
+                selectedSessionIds_.insert(profile.id, id);
+                browsingConnection_ = id;
+                syncVisible();
+                emit browsingConnectionChanged(id);
                 return;
             }
         }
-        pendingBrowseProfileId_ = profile.id;
-        pendingBrowseProfileName_ = profile.name;
-        browsingConnection_.reset();
+        const quint64 placeholder = --nextPendingPlaceholder_;
+        pendingBrowseProfiles_.insert(profile.id,
+                                      PendingBrowse{placeholder, std::nullopt, profile.name});
         if (navigatorController_)
-            navigatorController_->setPendingConnection(profile.name);
+            navigatorController_->setPendingConnection(placeholder, profile.name);
+        syncVisible();
+        submittingBrowseProfileId_ = profile.id;
+        submissionError_.clear();
         submittingBrowseProfile_ = true;
-        pendingBrowseConnection_ = workspace_->connectSavedProfile(profile);
+        const auto submitted = workspace_->connectSavedProfile(profile);
         submittingBrowseProfile_ = false;
-        if (!pendingBrowseConnection_ && pendingBrowseProfileId_ == profile.id) {
-            pendingBrowseProfileId_.clear();
-            pendingBrowseProfileName_.clear();
-            const auto reason = tr("Finish or cancel active database work before connecting.");
-            std::optional<quint64> restore;
-            QListWidgetItem* restoreItem = nullptr;
-            for (int i = 0; i < savedConnections->count(); ++i) {
-                auto* candidate = savedConnections->item(i);
-                if (candidate->data(Qt::UserRole).value<SavedProfile>().id != lastBrowsedProfileId_)
-                    continue;
-                for (int j = 0; j < connections->count(); ++j) {
-                    if (connections->itemData(j).isValid()) {
-                        const auto id = connections->itemData(j).toULongLong();
-                        if (workspace_->profileIdForConnection(id) == lastBrowsedProfileId_) {
-                            restore = id;
-                            restoreItem = candidate;
-                            break;
-                        }
-                    }
-                }
-            }
-            savedConnections->setCurrentItem(restoreItem);
-            browsingConnection_ = restore;
-            if (navigatorController_) {
-                if (restore)
-                    navigatorController_->setSelectedConnection(*restore);
-                else
-                    navigatorController_->clearSelectedConnection();
-            }
-            auto* dialog = new ConfirmationDialog(
-                QMessageBox::Warning, tr("Connection failed"),
-                tr("Could not open %1: %2").arg(profile.name, reason), QMessageBox::Ok, this);
-            dialog->setObjectName("sidebarConnectionFailure");
-            dialog->setAttribute(Qt::WA_DeleteOnClose);
-            dialog->open();
+        submittingBrowseProfileId_.clear();
+        if (submitted) {
+            if (pendingBrowseProfiles_.contains(profile.id))
+                pendingBrowseProfiles_[profile.id].connection = submitted;
+            return;
         }
+        const auto reason = submissionError_.isEmpty()
+                                ? tr("Finish or cancel active database work before connecting.")
+                                : submissionError_;
+        pendingBrowseProfiles_.remove(profile.id);
+        if (navigatorController_)
+            navigatorController_->removePendingConnection(placeholder);
+        selectedProfileIds_.remove(profile.id);
+        syncVisible();
+        showBrowseFailure(profile.name, reason);
     };
-    reconnectProfile_ = [savedConnections, selectProfile](const QString& id) {
+    reconnectProfile_ = [this, savedConnections, selectProfile](const QString& id) {
         for (int i = 0; i < savedConnections->count(); ++i) {
             auto* item = savedConnections->item(i);
             if (item->data(Qt::UserRole).value<SavedProfile>().id != id)
                 continue;
-            savedConnections->setCurrentItem(item);
-            selectProfile(item);
+            savedConnections->setCurrentItem(item, QItemSelectionModel::NoUpdate);
+            if (!selectedProfileIds_.contains(id))
+                selectProfile(item);
             return true;
         }
         return false;
     };
+    savedConnectionsList_ = savedConnections;
+    activateFocusedSavedProfile_ = [savedConnections, selectProfile] {
+        selectProfile(savedConnections->currentItem());
+    };
+    savedConnections->installEventFilter(this);
+    connect(savedConnections->selectionModel(), &QItemSelectionModel::selectionChanged, this,
+            [syncVisible] { syncVisible(); });
     connect(savedConnections, &QListWidget::itemClicked, this, selectProfile);
     connect(savedConnections, &QListWidget::itemActivated, this, selectProfile);
     savedConnections->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(savedConnections, &QWidget::customContextMenuRequested, this,
-            [this, savedConnections, connections, selectProfile](const QPoint& position) {
+            [this, savedConnections, connections, selectProfile,
+             syncVisible](const QPoint& position) {
                 auto* item = savedConnections->itemAt(position);
                 if (!item || !allowDocumentChange())
                     return;
-                savedConnections->setCurrentItem(item);
+                savedConnections->setCurrentItem(item, QItemSelectionModel::NoUpdate);
+                syncVisible();
                 const auto profileData = item->data(Qt::UserRole);
                 const auto profile = profileData.value<SavedProfile>();
                 std::optional<quint64> session;
@@ -531,7 +652,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 menu->setAttribute(Qt::WA_DeleteOnClose);
                 auto* connectAction = menu->addAction(tr("Connect"));
                 connectAction->setObjectName("connectSavedConnection");
-                connectAction->setEnabled(!session && !pendingBrowseConnection_);
+                connectAction->setEnabled(!selectedProfileIds_.contains(profile.id) &&
+                                          !pendingBrowseProfiles_.contains(profile.id));
                 connect(connectAction, &QAction::triggered, this,
                         [selectProfile, item] { selectProfile(item); });
                 auto* disconnectAction = menu->addAction(tr("Disconnect"));
@@ -557,69 +679,64 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 design::popupContextMenu(*menu,
                                          savedConnections->viewport()->mapToGlobal(position));
             });
-    connect(workspace_, &QueryWorkspace::connectionReady, this, [this](quint64 id) {
-        if (pendingBrowseConnection_ != id)
+    connect(workspace_, &QueryWorkspace::connectionReady, this, [this, syncVisible](quint64 id) {
+        const auto profileId = workspace_->profileIdForConnection(id);
+        if (profileId.isEmpty())
             return;
-        pendingBrowseConnection_.reset();
-        lastBrowsedProfileId_ = pendingBrowseProfileId_;
-        pendingBrowseProfileId_.clear();
-        pendingBrowseProfileName_.clear();
-        if (allowDocumentChange()) {
-            browsingConnection_ = id;
+        sessionProfileIds_.insert(id, profileId);
+        if (retiredBrowseConnections_.contains(id))
+            return;
+        bool selectedAttempt = false;
+        if (pendingBrowseProfiles_.contains(profileId) &&
+            (!pendingBrowseProfiles_.value(profileId).connection ||
+             pendingBrowseProfiles_.value(profileId).connection == id)) {
+            const auto pending = pendingBrowseProfiles_.take(profileId);
             if (navigatorController_)
-                navigatorController_->setSelectedConnection(id);
-            emit browsingConnectionChanged(id);
+                navigatorController_->removePendingConnection(pending.placeholder);
+            selectedAttempt = true;
+        } else if (pendingBrowseProfiles_.contains(profileId)) {
+            return;
         }
+        if (!selectedProfileIds_.contains(profileId))
+            return;
+        if (!selectedAttempt && selectedSessionIds_.contains(profileId))
+            return;
+        selectedSessionIds_.insert(profileId, id);
+        browsingConnection_ = id;
+        syncVisible();
+        emit browsingConnectionChanged(id);
     });
     connect(
         workspace_->adapter(), &EngineAdapter::eventReady, this,
-        [this, savedConnections, connections](const BridgeEvent& event) {
+        [this, syncVisible, showBrowseFailure](const BridgeEvent& event) {
             const auto kind = QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
-            if (kind == "connection_failed" && pendingBrowseConnection_ == event.id) {
-                pendingBrowseConnection_.reset();
-                const auto failedName = pendingBrowseProfileName_;
-                pendingBrowseProfileId_.clear();
-                pendingBrowseProfileName_.clear();
-                std::optional<quint64> restore;
-                QListWidgetItem* restoreItem = nullptr;
-                for (int i = 0; i < savedConnections->count(); ++i) {
-                    auto* item = savedConnections->item(i);
-                    if (item->data(Qt::UserRole).value<SavedProfile>().id != lastBrowsedProfileId_)
+            if (kind == "connection_failed") {
+                retiredBrowseConnections_.remove(event.id);
+                for (auto it = pendingBrowseProfiles_.begin();
+                     it != pendingBrowseProfiles_.end(); ++it) {
+                    if (it->connection != event.id)
                         continue;
-                    for (int j = 0; j < connections->count(); ++j) {
-                        if (connections->itemData(j).isValid()) {
-                            const auto id = connections->itemData(j).toULongLong();
-                            if (workspace_->profileIdForConnection(id) == lastBrowsedProfileId_) {
-                                restore = id;
-                                restoreItem = item;
-                                break;
-                            }
-                        }
+                    const auto profileId = it.key();
+                    const auto pending = it.value();
+                    pendingBrowseProfiles_.erase(it);
+                    if (navigatorController_)
+                        navigatorController_->removePendingConnection(pending.placeholder);
+                    if (selectedProfileIds_.remove(profileId)) {
+                        syncVisible();
+                        showBrowseFailure(
+                            pending.name,
+                            QString::fromUtf8(event.error.data(), qsizetype(event.error.size())));
                     }
+                    break;
                 }
-                savedConnections->setCurrentItem(restoreItem);
-                browsingConnection_ = restore;
-                if (navigatorController_) {
-                    if (restore)
-                        navigatorController_->setSelectedConnection(*restore);
-                    else
-                        navigatorController_->clearSelectedConnection();
+            } else if (kind == "disconnected") {
+                const auto profileId = sessionProfileIds_.take(event.id);
+                retiredBrowseConnections_.remove(event.id);
+                if (!profileId.isEmpty() && selectedSessionIds_.value(profileId) == event.id) {
+                    selectedSessionIds_.remove(profileId);
+                    selectedProfileIds_.remove(profileId);
+                    syncVisible();
                 }
-                auto* dialog = new ConfirmationDialog(
-                    QMessageBox::Warning, tr("Connection failed"),
-                    tr("Could not open %1: %2")
-                        .arg(failedName,
-                             QString::fromUtf8(event.error.data(), qsizetype(event.error.size()))),
-                    QMessageBox::Ok, this);
-                dialog->setObjectName("sidebarConnectionFailure");
-                dialog->setAttribute(Qt::WA_DeleteOnClose);
-                dialog->open();
-            }
-            if (kind == "disconnected" && browsingConnection_ == event.id) {
-                browsingConnection_.reset();
-                savedConnections->setCurrentItem(nullptr);
-                if (navigatorController_)
-                    navigatorController_->clearSelectedConnection();
             }
         },
         Qt::DirectConnection);
@@ -629,46 +746,12 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     showToast(tr("Saved connections: %1").arg(error), ToastVariant::Danger);
             });
     connect(workspace_->adapter(), &EngineAdapter::profileConnectFailed, this,
-            [this, navigatorStatus, savedConnections, connections](const QString& error) {
-                navigatorStatus->setText(tr("! Connection failed"));
-                navigatorStatus->setProperty("state", "error");
-                navigatorStatus->setAccessibleName(
-                    tr("Navigator connection status: %1").arg(navigatorStatus->text()));
-                navigatorStatus->style()->unpolish(navigatorStatus);
-                navigatorStatus->style()->polish(navigatorStatus);
-                if (!submittingBrowseProfile_ || pendingBrowseProfileId_.isEmpty()) {
+            [this](const QString& error) {
+                if (!submittingBrowseProfile_ || submittingBrowseProfileId_.isEmpty()) {
                     showToast(error, ToastVariant::Danger);
                     return;
                 }
-                const auto name = pendingBrowseProfileName_;
-                pendingBrowseProfileId_.clear();
-                pendingBrowseProfileName_.clear();
-                auto* dialog = new ConfirmationDialog(QMessageBox::Warning, tr("Connection failed"),
-                                                      tr("Could not open %1: %2").arg(name, error),
-                                                      QMessageBox::Ok, this);
-                dialog->setObjectName("sidebarConnectionFailure");
-                dialog->setAttribute(Qt::WA_DeleteOnClose);
-                dialog->open();
-                std::optional<quint64> restore;
-                for (int i = 0; i < savedConnections->count(); ++i)
-                    if (savedConnections->item(i)->data(Qt::UserRole).value<SavedProfile>().id ==
-                        lastBrowsedProfileId_)
-                        savedConnections->setCurrentRow(i);
-                for (int i = 0; i < connections->count(); ++i)
-                    if (connections->itemData(i).isValid()) {
-                        const auto id = connections->itemData(i).toULongLong();
-                        if (workspace_->profileIdForConnection(id) == lastBrowsedProfileId_)
-                            restore = id;
-                    }
-                if (!restore)
-                    savedConnections->setCurrentItem(nullptr);
-                browsingConnection_ = restore;
-                if (navigatorController_) {
-                    if (restore)
-                        navigatorController_->setSelectedConnection(*restore);
-                    else
-                        navigatorController_->clearSelectedConnection();
-                }
+                submissionError_ = error;
             });
     auto* refreshSaved = viewMenu->addAction(tr("Refresh saved connections"));
     refreshSaved->setObjectName("refreshSavedConnections");
