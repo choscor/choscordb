@@ -7,16 +7,16 @@
 namespace choscordb {
 
 struct PinRecord {
-    QString profileId;
-    QString profileName;
-    QString objectId;
-    QString name;
-    QString qualifiedName;
-    QString kind;
-    QString parentObjectId;
-    QString relationSubtype;
-    QStringList ancestryIds;
-    QStringList ancestryNames;
+    QString profileId{};
+    QString profileName{};
+    QString objectId{};
+    QString name{};
+    QString qualifiedName{};
+    QString kind{};
+    QString parentObjectId{};
+    QString relationSubtype{};
+    QStringList ancestryIds{};
+    QStringList ancestryNames{};
     bool unavailable = false;
 };
 

@@ -95,6 +95,7 @@ class EditorCompletionTest : public QObject {
         QTRY_COMPARE(editor->text(), QString("SELECT"));
         editor->undo();
         QCOMPARE(editor->text(), QString("sel"));
+        editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, editor->length());
         controller.requestCompletion();
         QTRY_VERIFY(popup->isVisible());
         owner->resize(500, 300);
