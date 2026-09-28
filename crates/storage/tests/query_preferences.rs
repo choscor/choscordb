@@ -25,6 +25,28 @@ fn defaults_restart_and_atomic_validation() {
 }
 
 #[test]
+fn system_schema_visibility_defaults_for_old_records_and_survives_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("prefs.sqlite");
+    drop(Storage::open(&path).unwrap());
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute(
+        "INSERT INTO settings(key,value) VALUES ('query_preferences',?1)",
+        [r#"{"version":1,"page_size":1000,"timeout_seconds":0,"connection_timeout_seconds":20}"#],
+    )
+    .unwrap();
+    drop(db);
+    let mut storage = Storage::open(&path).unwrap();
+    let mut preferences = storage.query_preferences().unwrap();
+    assert!(!preferences.show_system_schemas);
+    preferences.show_system_schemas = true;
+    storage.set_query_preferences(&preferences).unwrap();
+    drop(storage);
+    let storage = Storage::open(path).unwrap();
+    assert!(storage.query_preferences().unwrap().show_system_schemas);
+}
+
+#[test]
 fn connection_timeout_defaults_and_persists_with_global_preferences() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("prefs.sqlite");

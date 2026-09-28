@@ -22,6 +22,7 @@
 #include <QComboBox>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QPalette>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStyleHints>
@@ -32,6 +33,22 @@
 int qInitResources_resources();
 
 namespace choscordb {
+
+void MainWindow::refreshResultFooterColor() {
+    auto* footer = findChild<QWidget*>("sqlResultFooter");
+    if (!footer)
+        return;
+    const bool available = workspace_ && workspace_->selectedTargetAvailable();
+    const auto& colors = theme_->resolvedTheme().colors;
+    auto palette = footer->palette();
+    palette.setColor(QPalette::Window,
+                     available ? colors.successSurface : colors.dangerSurface);
+    palette.setColor(QPalette::WindowText, colors.text);
+    footer->setAutoFillBackground(true);
+    footer->setPalette(palette);
+    footer->setAccessibleName(available ? tr("SQL target available")
+                                        : tr("SQL target unavailable"));
+}
 
 void MainWindow::showToast(const QString& message, ToastVariant variant) {
     if (toast_) {

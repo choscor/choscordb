@@ -456,17 +456,16 @@ class NavigatorModelTest : public QObject {
         const auto subtype = [](const QString& value) -> QVariantList {
             return {QVariantMap{{"name", "Relation subtype"}, {"value", value}}};
         };
-        QVERIFY(model->applyChildren(
-            9, {}, requested.last().at(2).toULongLong(),
-            {{"table", "ordinary_table", "\"ordinary_table\"", "table", false},
-             {"view", "ordinary_view", "\"ordinary_view\"", "view", false},
-             {"foreign", "remote_table", "\"remote_table\"", "table", false,
-              subtype("foreign_table")},
-             {"materialized", "cached_view", "\"cached_view\"", "view", false,
-              subtype("materialized_view")}}));
+        QVERIFY(
+            model->applyChildren(9, {}, requested.last().at(2).toULongLong(),
+                                 {{"table", "ordinary_table", "\"ordinary_table\"", "table", false},
+                                  {"view", "ordinary_view", "\"ordinary_view\"", "view", false},
+                                  {"foreign", "remote_table", "\"remote_table\"", "table", false,
+                                   subtype("foreign_table")},
+                                  {"materialized", "cached_view", "\"cached_view\"", "view", false,
+                                   subtype("materialized_view")}}));
         QSignalSpy actions(&controller, &NavigatorController::objectActionRequested);
-        const QStringList expectedSubtypes{QString{}, QString{},
-                                           QStringLiteral("foreign_table"),
+        const QStringList expectedSubtypes{QString{}, QString{}, QStringLiteral("foreign_table"),
                                            QStringLiteral("materialized_view")};
         for (int row = 0; row < 4; ++row) {
             QMenu menu;
@@ -792,6 +791,32 @@ class NavigatorModelTest : public QObject {
         snapshot = model.completionSnapshot(1, 100, 1);
         QVERIFY(snapshot.objects.empty());
         QVERIFY(snapshot.partial);
+    }
+    void hiddenPostgresSchemasDoNotConsumeCompletionVisitBudget() {
+        NavigatorModel model;
+        model.setDriverResolver([](quint64) { return QStringLiteral("postgres"); });
+        QSignalSpy requested(&model, &NavigatorModel::childrenRequested);
+        model.addConnection(1, "PostgreSQL");
+        const auto root = model.index(0, 0);
+        model.fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(model.applyChildren(1, {}, requested.last().at(2).toULongLong(),
+                                    {{"db", "database", "database", "database", true}}));
+        const auto database = model.index(0, 0, root);
+        model.fetchMore(database);
+        QTRY_COMPARE(requested.count(), 2);
+        std::vector<NavigatorObject> schemas;
+        for (int i = 0; i < 100; ++i) {
+            const auto name = QStringLiteral("pg_temp_%1").arg(i);
+            schemas.push_back({QString::number(i), name, name, "schema", false});
+        }
+        schemas.push_back({"public", "public", "public", "schema", false});
+        QVERIFY(
+            model.applyChildren(1, "db", requested.last().at(2).toULongLong(), std::move(schemas)));
+        const auto snapshot = model.completionSnapshot(1, 2, 4096);
+        QCOMPARE(snapshot.objects.size(), size_t(2));
+        QCOMPARE(snapshot.objects[1].name, QString("public"));
+        QVERIFY(!snapshot.partial);
     }
     void refreshKeepsSiblingIndexesAndRejectsStaleResults() {
         NavigatorModel model;

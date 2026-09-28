@@ -2,6 +2,7 @@
 #include <QList>
 #include <QModelIndex>
 #include <QObject>
+#include <QPersistentModelIndex>
 #include <QPointer>
 #include <QString>
 #include <QStringList>
@@ -34,6 +35,7 @@ class NavigatorController final : public QObject {
     quint64 selectedConnection() const;
     void setDriverResolver(std::function<QString(quint64)> resolver);
     void setPinStateResolver(std::function<std::optional<bool>(const QModelIndex&)> resolver);
+    void setShowSystemSchemas(bool show);
     void populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex);
     bool revealObject(quint64 connection, const QStringList& ancestryIds, const QString& objectId,
                       const QString& kind, const QString& qualifiedName,
@@ -67,7 +69,10 @@ class NavigatorController final : public QObject {
     int searchRequests_ = 0;
     bool searchPending_ = false;
     quint64 searchPendingConnection_ = 0;
+    QPersistentModelIndex searchPendingIndex_;
+    quint64 searchPendingToken_ = 0;
     QString searchError_;
+    bool matchesSearchRequest(quint64 connection, const QString& parent, quint64 token) const;
     void advanceSearch(quint64 generation);
 };
 } // namespace choscordb

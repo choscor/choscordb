@@ -60,6 +60,11 @@ class QueryWorkspace final : public QObject {
         QPushButton* discardEdits = nullptr;
         std::function<bool(quint64)> transactionActive = {};
         QPushButton* restoreRows = nullptr;
+        QLabel* outcome = nullptr;
+        QLabel* durationMetric = nullptr;
+        QLabel* pageMetric = nullptr;
+        QLabel* rowsMetric = nullptr;
+        QLabel* visibleSizeMetric = nullptr;
     };
     explicit QueryWorkspace(Widgets widgets, QObject* parent = nullptr);
     ~QueryWorkspace() override;
@@ -81,6 +86,10 @@ class QueryWorkspace final : public QObject {
     void disconnectConnection(quint64 connection);
     void showQuerySettings();
     void documentChanged();
+    bool selectedTargetAvailable() const {
+        const auto selected = selectedConnection();
+        return selected && connectionAvailable(*selected);
+    }
     void trackQueryPreferencesSave(quint64 token);
     void applyQueryPreferences(const QueryPreferences& preferences);
     QueryPreferences queryPreferences() const;
@@ -108,6 +117,12 @@ class QueryWorkspace final : public QObject {
                              const QString& filter);
 
   private:
+    struct ExecutionMetrics {
+        QString duration;
+        QString page;
+        QString rows;
+        QString visibleSize;
+    };
     void execute();
     quint64 executionModeToken_ = 0;
     bool executionModeReady_ = false;
@@ -139,7 +154,8 @@ class QueryWorkspace final : public QObject {
     bool queryAvailable() const;
     bool workInFlight() const;
     void message(const QString& text);
-    void setExecutionState(const QString& state, const QString& detail = {});
+    void setExecutionState(const QString& state, const QString& detail = {},
+                           const ExecutionMetrics& metrics = {});
     std::optional<quint64> selectedConnection() const;
     Widgets widgets_;
     QPointer<EngineAdapter> adapter_;
@@ -165,6 +181,7 @@ class QueryWorkspace final : public QObject {
     ExportDialog* export_ = nullptr;
     ProfileDialog* profiles_ = nullptr;
     QString resultOrigin_;
+    std::optional<quint64> completedDurationMs_;
     QString objectKind_, objectId_;
     QString executedSql_, editParameterStyle_;
     QString editQualifiedName_, editReason_;

@@ -346,9 +346,9 @@ MainWindow::Ui MainWindow::buildUi() {
     objectsEmpty->setTextFormat(Qt::PlainText);
     objectSection->contentLayout()->addWidget(objectsEmpty);
     objectSection->contentLayout()->addWidget(tree, 3);
-    auto* navigatorStatus = new QLabel(tr("Disconnected"), navBody);
+    auto* navigatorStatus = new QLabel(navBody);
     navigatorStatus->setObjectName("navigatorStatus");
-    navigatorStatus->setAccessibleName(tr("Navigator connection status: Disconnected"));
+    navigatorStatus->hide();
     objectSection->contentLayout()->addWidget(navigatorStatus);
     sidebarPanels->addWidget(connectionsPanel);
     auto* savedPanel = new QWidget(sidebarPanels);
@@ -709,12 +709,23 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* pager = new QHBoxLayout(resultFooter);
     pager->setContentsMargins(initialMetrics.spacingMedium, initialMetrics.spacingSmall,
                               initialMetrics.spacingMedium, initialMetrics.spacingSmall);
-    pager->addWidget(empty);
+    pager->addWidget(empty, 1);
     auto* compactState = new design::Text(tr("Disconnected"), resultFooter);
     compactState->setObjectName("executionStateCompact");
     compactState->setTypographyRole(design::TypographyRole::Small);
     pager->addWidget(compactState);
     pager->addStretch(1);
+    const auto addMetric = [pager](const char* name) {
+        auto* label = new design::Text;
+        label->setObjectName(QString::fromLatin1(name));
+        label->setTypographyRole(design::TypographyRole::Small);
+        pager->addWidget(label);
+        return label;
+    };
+    auto* durationMetric = addMetric("executionDuration");
+    auto* pageMetric = addMetric("executionPage");
+    auto* rowsMetric = addMetric("executionRows");
+    auto* visibleSizeMetric = addMetric("executionVisibleSize");
     auto* previousPage = new design::Button({});
     previousPage->setAccessibleName(tr("Previous page"));
     previousPage->setToolTip(tr("Previous page"));
@@ -772,14 +783,8 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* applyResultEdits =
         addGridAction(tr("Apply"), "queryResultApplyEdits", design::Icon::Check, false);
     toolbar->addWidget(exportResult);
-    const auto colorResultFooter = [this, resultFooter] {
-        auto palette = resultFooter->palette();
-        palette.setColor(QPalette::Window, theme_->resolvedTheme().colors.subtleAccent);
-        resultFooter->setAutoFillBackground(true);
-        resultFooter->setPalette(palette);
-    };
-    connect(theme_, &design::ThemeManager::themeChanged, this, colorResultFooter);
-    colorResultFooter();
+    connect(theme_, &design::ThemeManager::themeChanged, this,
+            &MainWindow::refreshResultFooterColor);
     auto* messages = new QPlainTextEdit;
     messages->setObjectName("queryMessages");
     messages->setReadOnly(true);
@@ -946,6 +951,10 @@ MainWindow::Ui MainWindow::buildUi() {
         .empty = empty,
         .grid = grid,
         .compactState = compactState,
+        .durationMetric = durationMetric,
+        .pageMetric = pageMetric,
+        .rowsMetric = rowsMetric,
+        .visibleSizeMetric = visibleSizeMetric,
         .previousPage = previousPage,
         .nextPage = nextPage,
         .exportResult = exportResult,

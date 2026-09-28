@@ -69,6 +69,7 @@ def main():
                     "page_size": 222,
                     "timeout_seconds": 0,
                     "connection_timeout_seconds": 20,
+                    "show_system_schemas": False,
                 }
                 if row is None or json.loads(row[0]) != expected:
                     raise AssertionError(

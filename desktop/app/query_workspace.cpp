@@ -135,8 +135,8 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             });
     connect(adapter_, &EngineAdapter::commandFailed, this, [this](const QString& error) {
         if (fetching_) {
-            busy_ = false;
-            fetching_ = false;
+            busy_ = fetching_ = false;
+            setExecutionState(QStringLiteral("failed"), tr("! Failed to load result page"));
         }
         message(error);
         updateActions();
@@ -210,12 +210,14 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 return;
             fetching_ = true;
             busy_ = true;
+            setExecutionState(QStringLiteral("running"), tr("◷ Loading result page…"));
             updateActions();
             if (hasMore_) {
                 adapter_->fetchPageAt(*query_, currentPage_.value_or(0) + 1);
             } else {
                 hasMoreResults_ = false;
                 currentPage_.reset();
+                completedDurationMs_.reset();
                 executionFinished_ = false;
                 clearViewState();
                 adapter_->nextResultSet(*query_);
@@ -229,6 +231,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 if (!resolvePendingEdits())
                     return;
                 fetching_ = true;
+                setExecutionState(QStringLiteral("running"), tr("◷ Loading result page…"));
                 updateActions();
                 adapter_->fetchPageAt(*query_, *currentPage_ - 1);
             }
@@ -633,9 +636,11 @@ void QueryWorkspace::disconnectConnection(quint64 connection) {
         return;
     disconnecting_.insert(connection);
     updateActions();
+    emit documentTargetChanged();
     if (!adapter_->disconnectConnection(connection)) {
         disconnecting_.remove(connection);
         updateActions();
+        emit documentTargetChanged();
         return;
     }
     // Separate dialogs can otherwise submit work even with the toolbar disabled.

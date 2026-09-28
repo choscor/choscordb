@@ -2,6 +2,7 @@
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "models/shortcut_catalog.h"
 #include <QPointer>
+#include <optional>
 class QCheckBox;
 class QFontComboBox;
 class QKeySequenceEdit;
@@ -29,6 +30,7 @@ class PreferencesDialog final : public DialogShell {
     void queryPreferencesSaveSubmitted(quint64 token);
     void queryPreferencesConfirmed(const choscordb::QueryPreferences& preferences);
     void historyPolicyConfirmed(const choscordb::HistoryPolicy& policy);
+    void systemSchemaVisibilitySaved(bool visible);
 
   protected:
     void reject() override;
@@ -58,6 +60,7 @@ class PreferencesDialog final : public DialogShell {
     QSpinBox *pageSize_, *timeout_, *connectionTimeout_;
     QDoubleSpinBox *historyDays_, *historyRecords_;
     QCheckBox* recordHistory_;
+    QCheckBox* showSystemSchemas_;
     SqlEditor* preview_;
     QWidget* pages_;
     QLabel* appearanceStatus_ = nullptr;
@@ -68,6 +71,7 @@ class PreferencesDialog final : public DialogShell {
     quint64 token_ = 0, queryToken_ = 0, historyToken_ = 0;
     bool appearancePending_ = false;
     QStringList errors_;
+    std::optional<bool> confirmedSystemSchemaVisibility_;
     bool busy_ = false, ready_ = false, saving_ = false, appearanceValid_ = true;
 };
 } // namespace choscordb

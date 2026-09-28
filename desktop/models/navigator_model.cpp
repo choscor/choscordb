@@ -18,6 +18,43 @@ struct NavigatorModel::Node {
 };
 NavigatorModel::NavigatorModel(QObject* parent) : QAbstractItemModel(parent) {}
 NavigatorModel::~NavigatorModel() = default;
+void NavigatorModel::setDriverResolver(std::function<QString(quint64)> resolver) {
+    driverResolver_ = std::move(resolver);
+    for (const auto& root : roots_)
+        emit completionChanged(root->connection);
+}
+void NavigatorModel::setShowSystemSchemas(bool show) {
+    if (showSystemSchemas_ == show)
+        return;
+    showSystemSchemas_ = show;
+    for (const auto& root : roots_)
+        if (driverResolver_ &&
+            driverResolver_(root->connection)
+                    .compare(QLatin1String("postgres"), Qt::CaseInsensitive) == 0)
+            emit completionChanged(root->connection);
+}
+bool NavigatorModel::isBrowsable(const QModelIndex& index) const {
+    return isBrowsable(node(index));
+}
+quint64 NavigatorModel::pendingRequestToken(const QModelIndex& index) const {
+    const auto* value = node(index);
+    return value && value->state == Node::Loading ? value->token : 0;
+}
+bool NavigatorModel::isBrowsable(const Node* value) const {
+    if (!value || showSystemSchemas_ || !driverResolver_ ||
+        driverResolver_(value->connection)
+                .compare(QLatin1String("postgres"), Qt::CaseInsensitive) != 0)
+        return true;
+    for (auto* ancestor = value; ancestor; ancestor = ancestor->parent) {
+        if (ancestor->object.kind != QLatin1String("schema"))
+            continue;
+        const auto& name = ancestor->object.name;
+        // PostgreSQL reserves the pg_ prefix for system namespaces.
+        if (name == QLatin1String("information_schema") || name.startsWith(QLatin1String("pg_")))
+            return false;
+    }
+    return true;
+}
 CompletionSnapshot NavigatorModel::completionSnapshot(quint64 connection, quint64 maxEntries,
                                                       quint64 maxUtf8Bytes) const {
     CompletionSnapshot snapshot;
@@ -97,11 +134,13 @@ CompletionSnapshot NavigatorModel::completionSnapshot(quint64 connection, quint6
             stack.pop_back();
             continue;
         }
+        const auto* child = frame.node->children[frame.child++].get();
+        if (!isBrowsable(child))
+            continue;
         if (++visited > visitLimit) {
             snapshot.partial = true;
             break;
         }
-        const auto* child = frame.node->children[frame.child++].get();
         if (!visit(child))
             break;
         if (!child->placeholder && !child->children.empty())
@@ -419,14 +458,12 @@ bool NavigatorModel::refreshObject(quint64 connection, const QString& objectId) 
     refresh(indexFor(value));
     return true;
 }
-bool NavigatorModel::matchesObject(quint64 connection, const QString& objectId,
-                                   const QString& kind, const QString& qualifiedName,
-                                   const QString& parentObjectId,
+bool NavigatorModel::matchesObject(quint64 connection, const QString& objectId, const QString& kind,
+                                   const QString& qualifiedName, const QString& parentObjectId,
                                    const QString& relationSubtype) const {
     const auto* value = find(connection, objectId);
     if (!value || !value->parent || value->object.kind != kind ||
-        value->object.qualifiedName != qualifiedName ||
-        value->parent->object.id != parentObjectId)
+        value->object.qualifiedName != qualifiedName || value->parent->object.id != parentObjectId)
         return false;
     QString actualSubtype;
     for (const auto& entry : value->object.properties) {

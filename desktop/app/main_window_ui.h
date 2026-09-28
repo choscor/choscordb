@@ -73,6 +73,10 @@ struct MainWindow::Ui {
     design::Text* empty{};
     QTableView* grid{};
     design::Text* compactState{};
+    design::Text* durationMetric{};
+    design::Text* pageMetric{};
+    design::Text* rowsMetric{};
+    design::Text* visibleSizeMetric{};
     design::Button* previousPage{};
     design::Button* nextPage{};
     design::Button* exportResult{};

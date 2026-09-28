@@ -390,6 +390,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         fetching_ = false;
         if (e.column_count != columns_.size() && e.row_count != 0) {
             message(tr("Result page has an invalid column count."));
+            setExecutionState(QStringLiteral("failed"), tr("! Failed to load result page"));
+            busy_ = false;
             hasMore_ = false;
             hasMoreResults_ = false;
             updateActions();
@@ -397,6 +399,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         }
         if (static_cast<quint64>(e.row_count) * e.column_count != e.cells.size()) {
             message(tr("Result page has an invalid cell count."));
+            setExecutionState(QStringLiteral("failed"), tr("! Failed to load result page"));
+            busy_ = false;
             hasMore_ = false;
             hasMoreResults_ = false;
             updateActions();
@@ -414,6 +418,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         }
         if (!model_->setPage(columns_, std::move(rows), e.first_row)) {
             message(tr("Result page exceeds the grid memory budget."));
+            setExecutionState(QStringLiteral("failed"), tr("! Failed to load result page"));
             hasMore_ = false;
             hasMoreResults_ = false;
         } else {
@@ -435,20 +440,24 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                 hasMoreResults_ = false;
                 busy_ = false;
                 message(tr("Result page exceeds its transfer reservation."));
+                setExecutionState(QStringLiteral("failed"), tr("! Failed to load result page"));
                 updateActions();
                 return;
             }
             visibleLease_ = e.lease_id;
             currentPage_ = e.page_index;
             hasMore_ = e.has_more;
+            const bool hasResultPage = !columns_.empty();
             setExecutionState(
                 QStringLiteral("completed"),
                 e.row_count == 0 && !viewFilters_.isEmpty()
                     ? tr("✓ No rows match the active filters · Clear filters to restore all rows")
-                    : tr("✓ Completed · Page %1 · %2 rows · %3 KiB visible")
-                          .arg(e.page_index + 1)
-                          .arg(e.row_count)
-                          .arg(model_->residentBytes() / 1024));
+                    : tr("✓ Completed"),
+                {completedDurationMs_ ? tr("%1 ms").arg(*completedDurationMs_) : QString{},
+                 hasResultPage ? tr("Page %1").arg(e.page_index + 1) : QString{},
+                 hasResultPage ? tr("%1 rows").arg(e.row_count) : QString{},
+                 hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024)
+                               : QString{}});
             if (filterBar_)
                 filterBar_->setBusy(false);
             if (initialFilterPending_) {
@@ -517,16 +526,19 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                                           .arg(e.duration_ms)
                                           .arg(e.affected_rows)
                                     : tr("Completed in %1 ms.").arg(e.duration_ms));
-        QString summary = e.has_affected_rows ? tr("✓ Completed · %1 ms · %2 rows affected")
-                                                    .arg(e.duration_ms)
-                                                    .arg(e.affected_rows)
-                                              : tr("✓ Completed · %1 ms").arg(e.duration_ms);
-        if (currentPage_)
-            summary += tr(" · Page %1 · %2 rows · %3 KiB visible")
-                           .arg(*currentPage_ + 1)
-                           .arg(model_->rowCount())
-                           .arg(model_->residentBytes() / 1024);
-        setExecutionState(QStringLiteral("completed"), summary);
+        completedDurationMs_ = e.duration_ms;
+        const bool hasResultPage = currentPage_ && !columns_.empty();
+        QString rowMetric = e.has_affected_rows ? tr("%1 rows affected").arg(e.affected_rows)
+                                                : QString{};
+        if (hasResultPage)
+            rowMetric += (rowMetric.isEmpty() ? QString{} : QStringLiteral(" · ")) +
+                         tr("%1 rows").arg(model_->rowCount());
+        setExecutionState(QStringLiteral("completed"), tr("✓ Completed"),
+                          {tr("%1 ms").arg(e.duration_ms),
+                           hasResultPage ? tr("Page %1").arg(*currentPage_ + 1) : QString{},
+                           rowMetric,
+                           hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024)
+                                        : QString{}});
         updateActions();
     } else if (kind == "query_failed") {
         if (preserveViewOnRefresh_ && viewRefreshQuery_ == query_) {
