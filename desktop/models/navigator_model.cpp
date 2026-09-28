@@ -36,14 +36,48 @@ void NavigatorModel::setShowSystemSchemas(bool show) {
 bool NavigatorModel::isBrowsable(const QModelIndex& index) const {
     return isBrowsable(node(index));
 }
+bool NavigatorModel::canShowUnverifiedObject(quint64 connection,
+                                             const QString& qualifiedName) const {
+    if (showSystemSchemas_ || !driverResolver_ ||
+        driverResolver_(connection).compare(QLatin1String("postgres"), Qt::CaseInsensitive) != 0)
+        return true;
+    QString schema;
+    if (qualifiedName.startsWith(QLatin1Char('"'))) {
+        bool closed = false;
+        for (qsizetype index = 1; index < qualifiedName.size(); ++index) {
+            if (qualifiedName[index] != QLatin1Char('"')) {
+                schema += qualifiedName[index];
+                continue;
+            }
+            if (index + 1 < qualifiedName.size() && qualifiedName[index + 1] == QLatin1Char('"')) {
+                schema += QLatin1Char('"');
+                ++index;
+                continue;
+            }
+            if (index + 1 >= qualifiedName.size() || qualifiedName[index + 1] != QLatin1Char('.'))
+                return false;
+            closed = true;
+            break;
+        }
+        if (!closed)
+            return false;
+    } else {
+        const auto separator = qualifiedName.indexOf(QLatin1Char('.'));
+        if (separator <= 0)
+            return false;
+        schema = qualifiedName.left(separator);
+        if (schema.contains(QLatin1Char('"')))
+            return false;
+    }
+    return !schema.isEmpty() && schema != QLatin1String("information_schema") &&
+           !schema.startsWith(QLatin1String("pg_"));
+}
 quint64 NavigatorModel::pendingRequestToken(const QModelIndex& index) const {
     const auto* value = node(index);
     return value && value->state == Node::Loading ? value->token : 0;
 }
 bool NavigatorModel::isBrowsable(const Node* value) const {
-    if (!value || showSystemSchemas_ || !driverResolver_ ||
-        driverResolver_(value->connection)
-                .compare(QLatin1String("postgres"), Qt::CaseInsensitive) != 0)
+    if (!value || canShowUnverifiedObject(value->connection))
         return true;
     for (auto* ancestor = value; ancestor; ancestor = ancestor->parent) {
         if (ancestor->object.kind != QLatin1String("schema"))
@@ -460,20 +494,79 @@ bool NavigatorModel::refreshObject(quint64 connection, const QString& objectId) 
 }
 bool NavigatorModel::matchesObject(quint64 connection, const QString& objectId, const QString& kind,
                                    const QString& qualifiedName, const QString& parentObjectId,
-                                   const QString& relationSubtype) const {
-    const auto* value = find(connection, objectId);
-    if (!value || !value->parent || value->object.kind != kind ||
-        value->object.qualifiedName != qualifiedName || value->parent->object.id != parentObjectId)
+                                   const QString& relationSubtype, bool requireBrowsable) const {
+    const auto root = std::find_if(roots_.begin(), roots_.end(), [connection](const auto& node) {
+        return node->connection == connection;
+    });
+    if (root == roots_.end() || objectId.isEmpty())
         return false;
-    QString actualSubtype;
-    for (const auto& entry : value->object.properties) {
-        const auto property = entry.toMap();
-        if (property.value(QStringLiteral("name")).toString() ==
-            QStringLiteral("Relation subtype")) {
-            actualSubtype = property.value(QStringLiteral("value")).toString();
-            break;
+    constexpr size_t visitLimit = 100000;
+    std::vector<const Node*> stack{root->get()};
+    size_t visited = 0;
+    while (!stack.empty()) {
+        if (++visited > visitLimit)
+            return false;
+        const auto* value = stack.back();
+        stack.pop_back();
+        if (requireBrowsable && !isBrowsable(value))
+            continue;
+        if (!value->placeholder && value->parent && value->object.id == objectId &&
+            value->object.kind == kind && value->object.qualifiedName == qualifiedName &&
+            value->parent->object.id == parentObjectId) {
+            QString actualSubtype;
+            for (const auto& entry : value->object.properties) {
+                const auto property = entry.toMap();
+                if (property.value(QStringLiteral("name")).toString() ==
+                    QStringLiteral("Relation subtype")) {
+                    actualSubtype = property.value(QStringLiteral("value")).toString();
+                    break;
+                }
+            }
+            return actualSubtype == relationSubtype;
         }
+        if (value->children.size() > visitLimit - stack.size())
+            return false;
+        for (const auto& child : value->children)
+            stack.push_back(child.get());
     }
-    return actualSubtype == relationSubtype;
+    return false;
+}
+std::optional<NavigatorObjectSnapshot>
+NavigatorModel::objectSnapshot(quint64 connection, const QString& objectId) const {
+    if (objectId.isEmpty())
+        return std::nullopt;
+    const auto root = std::find_if(roots_.begin(), roots_.end(), [connection](const auto& node) {
+        return node->connection == connection;
+    });
+    if (root == roots_.end())
+        return std::nullopt;
+    constexpr size_t visitLimit = 100000;
+    std::vector<const Node*> stack{root->get()};
+    std::optional<NavigatorObjectSnapshot> snapshot;
+    size_t visited = 0;
+    while (!stack.empty()) {
+        if (++visited > visitLimit)
+            return std::nullopt;
+        const auto* current = stack.back();
+        stack.pop_back();
+        if (!isBrowsable(current))
+            continue;
+        if (!current->placeholder && current->parent && current->object.id == objectId) {
+            if (snapshot)
+                return std::nullopt;
+            snapshot = NavigatorObjectSnapshot{connection,
+                                               current->object.id,
+                                               current->object.name,
+                                               current->object.qualifiedName,
+                                               current->object.kind,
+                                               current->parent->object.id,
+                                               current->object.properties};
+        }
+        if (current->children.size() > visitLimit - stack.size())
+            return std::nullopt;
+        for (const auto& child : current->children)
+            stack.push_back(child.get());
+    }
+    return snapshot;
 }
 } // namespace choscordb

@@ -1,4 +1,5 @@
 #include "app/navigator_controller.h"
+#include "app/quick_search_match.h"
 #include "bridge/engine_adapter.h"
 #include "bridge/template_service.h"
 #include "choscordb-bridge/src/lib.rs.h"
@@ -116,6 +117,19 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
             return;
         const auto generation = searchGeneration_;
         QTimer::singleShot(0, this, [this, generation] { advanceSearch(generation); });
+    });
+    connect(model_, &NavigatorModel::completionChanged, this, [this](quint64 connection) {
+        if (quickObjectQuery_.isEmpty() || !quickObjectConnectionValid_ ||
+            connection != quickObjectConnection_)
+            return;
+        // A refresh may have removed a previously published object. Invalidate
+        // rows before the next event-loop turn, when the fresh scan runs.
+        quickObjectResults_.clear();
+        quickObjectIncomplete_ = true;
+        quickObjectStatus_ = tr("Searching objects…");
+        emit quickObjectSearchChanged();
+        const auto generation = quickObjectGeneration_;
+        QTimer::singleShot(0, this, [this, generation] { advanceQuickObjectSearch(generation); });
     });
     connect(model_, &NavigatorModel::childrenRequested, engine, &EngineAdapter::loadMetadata);
     connect(model_, &NavigatorModel::childrenPageRequested, engine,
@@ -237,6 +251,7 @@ void NavigatorController::setShowSystemSchemas(bool show) {
     } else {
         emit searchStatusChanged({});
     }
+    emit browsingVisibilityChanged();
 }
 void NavigatorController::setPinStateResolver(
     std::function<std::optional<bool>(const QModelIndex&)> resolver) {
@@ -599,7 +614,14 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
     }
 }
 void NavigatorController::addConnection(quint64 connection, const QString& label) {
-    if (model_->addConnection(connection, label) && !filter_->text().trimmed().isEmpty() &&
+    if (!model_->addConnection(connection, label))
+        return;
+    if (!quickObjectQuery_.isEmpty() && quickObjectConnectionValid_ &&
+        connection == quickObjectConnection_) {
+        const auto generation = quickObjectGeneration_;
+        QTimer::singleShot(0, this, [this, generation] { advanceQuickObjectSearch(generation); });
+    }
+    if (!filter_->text().trimmed().isEmpty() &&
         static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection)) {
         ++searchGeneration_;
         searchRequests_ = 0;
@@ -621,6 +643,9 @@ void NavigatorController::setVisibleConnections(const QList<quint64>& orderedIds
     if (selected->visible() == uniqueIds)
         return;
     selected->setVisible(uniqueIds);
+    if (!quickObjectQuery_.isEmpty() || !quickObjectResults_.isEmpty())
+        cancelQuickObjectSearch();
+    emit selectedConnectionsChanged();
     ++searchGeneration_;
     searchRequests_ = 0;
     searchPending_ = false;
@@ -655,6 +680,170 @@ void NavigatorController::setPendingConnection(const QString& label) {
 quint64 NavigatorController::selectedConnection() const {
     const auto& visible = static_cast<SelectedConnectionProxy*>(proxy_)->visible();
     return visible.isEmpty() ? 0 : visible.first();
+}
+bool NavigatorController::hasSelectedConnection() const {
+    return !static_cast<SelectedConnectionProxy*>(proxy_)->visible().isEmpty();
+}
+bool NavigatorController::isVisibleConnection(quint64 connection) const {
+    return static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection);
+}
+void NavigatorController::startQuickObjectSearch(const QString& query,
+                                                 std::optional<quint64> connection) {
+    quickObjectQuery_ = query.trimmed();
+    quickObjectResults_.clear();
+    quickObjectRequests_ = 0;
+    quickObjectIncomplete_ = !quickObjectQuery_.isEmpty();
+    const auto& visible = static_cast<SelectedConnectionProxy*>(proxy_)->visible();
+    quickObjectConnectionValid_ = connection ? visible.contains(*connection) : !visible.isEmpty();
+    quickObjectConnection_ = connection.value_or(visible.isEmpty() ? 0 : visible.first());
+    quickObjectStatus_ = quickObjectQuery_.isEmpty() ? QString{}
+                         : !quickObjectConnectionValid_
+                             ? tr("Select an available connection to search objects.")
+                             : tr("Searching objects…");
+    ++quickObjectGeneration_;
+    emit quickObjectSearchChanged();
+    if (!quickObjectQuery_.isEmpty() && quickObjectConnectionValid_) {
+        const auto generation = quickObjectGeneration_;
+        QTimer::singleShot(0, this, [this, generation] { advanceQuickObjectSearch(generation); });
+    }
+}
+void NavigatorController::cancelQuickObjectSearch() {
+    quickObjectQuery_.clear();
+    quickObjectResults_.clear();
+    quickObjectStatus_.clear();
+    quickObjectIncomplete_ = false;
+    quickObjectRequests_ = 0;
+    quickObjectConnectionValid_ = false;
+    ++quickObjectGeneration_;
+    emit quickObjectSearchChanged();
+}
+void NavigatorController::advanceQuickObjectSearch(quint64 generation) {
+    if (generation != quickObjectGeneration_ || quickObjectQuery_.isEmpty() ||
+        !quickObjectConnectionValid_)
+        return;
+    constexpr int visitLimit = 10000;
+    constexpr int requestLimit = 96;
+    constexpr int resultLimit = 100;
+    const auto& visible = static_cast<SelectedConnectionProxy*>(proxy_)->visible();
+    if (!visible.contains(quickObjectConnection_))
+        return;
+    const auto matches = [this](const QString& candidate) {
+        return quickSearchNameScore(quickObjectQuery_, candidate).has_value();
+    };
+    std::vector<QModelIndex> stack;
+    for (int row = model_->rowCount() - 1; row >= 0; --row) {
+        const auto root = model_->index(row, 0);
+        if (root.data(NavigatorModel::ConnectionRole).toULongLong() == quickObjectConnection_)
+            stack.push_back(root);
+    }
+    QList<QuickObjectResult> results;
+    QString error;
+    bool loading = false;
+    bool limited = false;
+    int visited = 0;
+    while (!stack.empty()) {
+        if (++visited > visitLimit) {
+            limited = true;
+            break;
+        }
+        const auto current = stack.back();
+        stack.pop_back();
+        if (!model_->isBrowsable(current))
+            continue;
+        const auto kind = current.data(NavigatorModel::KindRole).toString();
+        if (kind == QStringLiteral("loading")) {
+            loading = true;
+            continue;
+        }
+        if (kind == QStringLiteral("load_more") || kind == QStringLiteral("error"))
+            continue;
+        const auto nodeError = current.data(NavigatorModel::ErrorRole).toString();
+        if (error.isEmpty() && !nodeError.isEmpty())
+            error = nodeError;
+        if (kind != QStringLiteral("connection") &&
+            (matches(current.data(Qt::DisplayRole).toString()) ||
+             matches(current.data(NavigatorModel::QualifiedNameRole).toString()))) {
+            auto target = current;
+            QString targetKind = kind;
+            while (target.isValid() && targetKind != QStringLiteral("table") &&
+                   targetKind != QStringLiteral("view") && targetKind != QStringLiteral("index") &&
+                   targetKind != QStringLiteral("sequence") &&
+                   targetKind != QStringLiteral("function")) {
+                target = target.parent();
+                targetKind = target.data(NavigatorModel::KindRole).toString();
+            }
+            if (target.isValid()) {
+                if (results.size() == resultLimit) {
+                    limited = true;
+                    break;
+                }
+                QStringList ancestors;
+                for (auto parent = current.parent(); parent.isValid(); parent = parent.parent())
+                    ancestors.prepend(parent.data(Qt::DisplayRole).toString());
+                QuickObjectResult result;
+                result.connection = current.data(NavigatorModel::ConnectionRole).toULongLong();
+                result.objectId = current.data(NavigatorModel::ObjectIdRole).toString();
+                result.name = current.data(Qt::DisplayRole).toString();
+                result.qualifiedName = current.data(NavigatorModel::QualifiedNameRole).toString();
+                result.kind = kind;
+                result.parentObjectId =
+                    current.parent().data(NavigatorModel::ObjectIdRole).toString();
+                result.context = ancestors.join(QStringLiteral(" / "));
+                result.properties = current.data(NavigatorModel::PropertiesRole).toList();
+                result.targetObjectId = target.data(NavigatorModel::ObjectIdRole).toString();
+                result.targetQualifiedName =
+                    target.data(NavigatorModel::QualifiedNameRole).toString();
+                result.targetKind = targetKind;
+                result.targetParentObjectId =
+                    target.parent().data(NavigatorModel::ObjectIdRole).toString();
+                result.targetProperties = target.data(NavigatorModel::PropertiesRole).toList();
+                if (kind == QStringLiteral("column"))
+                    result.targetPane = 0;
+                else if (kind == QStringLiteral("index"))
+                    result.targetPane = 1;
+                else if (kind.contains(QStringLiteral("key")))
+                    result.targetPane = 2;
+                else if (kind == QStringLiteral("ddl"))
+                    result.targetPane = 3;
+                else if (kind == QStringLiteral("data") || kind == QStringLiteral("table"))
+                    result.targetPane = 5;
+                results.append(std::move(result));
+            }
+        }
+        if (model_->canFetchMore(current) || current.data(NavigatorModel::HasMoreRole).toBool()) {
+            if (quickObjectRequests_ >= requestLimit) {
+                limited = true;
+                break;
+            }
+            const QPersistentModelIndex requestIndex(current);
+            const bool hasMore = current.data(NavigatorModel::HasMoreRole).toBool();
+            ++quickObjectRequests_;
+            quickObjectResults_ = std::move(results);
+            quickObjectIncomplete_ = true;
+            quickObjectStatus_ = tr("Searching objects…");
+            emit quickObjectSearchChanged();
+            if (generation != quickObjectGeneration_ || !requestIndex.isValid())
+                return;
+            if (hasMore)
+                model_->requestNextPage(requestIndex);
+            else
+                model_->fetchMore(requestIndex);
+            return;
+        }
+        for (int row = model_->rowCount(current) - 1; row >= 0; --row)
+            stack.push_back(model_->index(row, 0, current));
+    }
+    quickObjectResults_ = std::move(results);
+    quickObjectIncomplete_ = limited || loading || !error.isEmpty();
+    if (limited)
+        quickObjectStatus_ = tr("Object search incomplete: limit reached. Refine the query.");
+    else if (!error.isEmpty())
+        quickObjectStatus_ = tr("Object search incomplete: %1. Refine or retry.").arg(error);
+    else if (loading)
+        quickObjectStatus_ = tr("Searching objects…");
+    else
+        quickObjectStatus_.clear();
+    emit quickObjectSearchChanged();
 }
 void NavigatorController::advanceSearch(quint64 generation) {
     if (generation != searchGeneration_ || searchPending_ || filter_->text().trimmed().isEmpty())

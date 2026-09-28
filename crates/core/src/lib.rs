@@ -746,6 +746,7 @@ impl Engine {
                 | Event::WorkspaceRestored { .. }
                 | Event::WorkspaceTabsRestored { .. }
                 | Event::HistoryListed { .. }
+                | Event::HistorySearched { .. }
                 | Event::HistoryCleared { .. }
                 | Event::HistoryPolicy { .. }
                 | Event::HistoryRecorded { .. }

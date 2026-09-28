@@ -225,10 +225,17 @@ void DialogPresentation::center() {
         dialog_.setMaximumSize(available);
         dialog_.resize(dialog_.size().boundedTo(available));
     }
-    if (placement_ != Placement::RightEdge || dialog_.isWindow())
-        dialog_.move((dialog_.isWindow() ? owner_->mapToGlobal(owner_->rect().center())
-                                         : owner_->rect().center()) -
-                     dialog_.rect().center());
+    if (placement_ != Placement::RightEdge || dialog_.isWindow()) {
+        const QPoint center = dialog_.isWindow() ? owner_->mapToGlobal(owner_->rect().center())
+                                                 : owner_->rect().center();
+        QPoint origin = center - dialog_.rect().center();
+        if (placement_ == Placement::TopCenter) {
+            const int topInset = qMin(spacing(Spacing::Eight) * 3,
+                                      qMax(spacing(Spacing::Eight), owner_->height() / 8));
+            origin.setY((dialog_.isWindow() ? owner_->mapToGlobal(QPoint()).y() : 0) + topInset);
+        }
+        dialog_.move(origin);
+    }
     if (backdrop_)
         backdrop_->update();
 }

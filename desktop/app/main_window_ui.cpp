@@ -179,24 +179,21 @@ MainWindow::Ui MainWindow::buildUi() {
                                                         {"showSql", tr("SQL workspace")},
                                                         {"showObjects", tr("Object explorer")},
                                                         {"showHistory", tr("Query history")}};
-    QList<QAction*> screenActions;
     for (int i = 0; i < screenNames.size(); ++i) {
         auto* action = viewMenu->addAction(screenNames[i].second);
         action->setObjectName(screenNames[i].first);
         connect(action, &QAction::triggered, this,
                 [this, i] { showScreen(static_cast<Screen>(i)); });
-        screenActions.append(action);
     }
     auto* quickSwitch = viewMenu->addAction(tr("Quick switch…"));
     quickSwitch->setObjectName("quickSwitch");
-    connect(quickSwitch, &QAction::triggered, this, [this, screenActions] {
-        auto* menu = new QMenu(this);
-        menu->setObjectName("quickSwitchMenu");
-        menu->setAttribute(Qt::WA_DeleteOnClose);
-        for (auto* action : screenActions)
-            menu->addAction(action);
-        menu->popup(mapToGlobal(rect().center()));
-    });
+#ifdef Q_OS_MACOS
+    quickSwitch->setShortcut(QKeySequence("Meta+P"));
+#else
+    quickSwitch->setShortcut(QKeySequence("Ctrl+P"));
+#endif
+    preferences_->addAction("quick_search", quickSwitch);
+    connect(quickSwitch, &QAction::triggered, this, &MainWindow::showQuickSearch);
 #ifdef CHOSCORDB_DEVELOPMENT_PREVIEW
     auto* previewAction = viewMenu->addAction(tr("Design system preview…"));
     previewAction->setObjectName("openDesignSystemPreview");

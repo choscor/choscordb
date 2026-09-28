@@ -4,6 +4,7 @@
 #include <QVariantList>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 namespace choscordb {
 struct NavigatorObject {
@@ -22,6 +23,15 @@ struct NavigatorObject {
 struct CompletionSnapshot {
     std::vector<NavigatorObject> objects;
     bool partial = false;
+};
+struct NavigatorObjectSnapshot {
+    quint64 connection = 0;
+    QString objectId;
+    QString name;
+    QString qualifiedName;
+    QString kind;
+    QString parentObjectId;
+    QVariantList properties;
 };
 class NavigatorModel final : public QAbstractItemModel {
     Q_OBJECT
@@ -64,12 +74,17 @@ class NavigatorModel final : public QAbstractItemModel {
     bool refreshObject(quint64 connection, const QString& objectId);
     bool matchesObject(quint64 connection, const QString& objectId, const QString& kind,
                        const QString& qualifiedName, const QString& parentObjectId,
-                       const QString& relationSubtype = {}) const;
+                       const QString& relationSubtype = {}, bool requireBrowsable = false) const;
     void setDriverResolver(std::function<QString(quint64)> resolver);
     void setShowSystemSchemas(bool show);
     bool showSystemSchemas() const { return showSystemSchemas_; }
+    bool canShowUnverifiedObject(quint64 connection, const QString& qualifiedName = {}) const;
     bool isBrowsable(const QModelIndex& index) const;
     quint64 pendingRequestToken(const QModelIndex& index) const;
+    // A (connection, object ID) must identify exactly one currently loaded node.
+    // Duplicate IDs under different parents are intentionally not resolved.
+    std::optional<NavigatorObjectSnapshot> objectSnapshot(quint64 connection,
+                                                          const QString& objectId) const;
     // Accepted loaded metadata only. partial marks omitted or still-unloaded data;
     // maxUtf8Bytes charges all copied strings, including object IDs.
     CompletionSnapshot completionSnapshot(quint64 connection, quint64 maxEntries,

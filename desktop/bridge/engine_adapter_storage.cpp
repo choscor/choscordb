@@ -50,8 +50,34 @@ bool EngineAdapter::listHistory(quint32 limit, quint32 offset, quint64 token) {
         return history_list(*d_->engine, limit, offset, token);
     });
 }
+bool EngineAdapter::searchHistory(const QString& query, quint32 limit, quint64 token,
+                                  quint64 offset) {
+    const auto utf8 = query.toUtf8();
+    if (!query.isValidUtf16() || utf8.size() > 1024 || limit == 0 || limit > 100) {
+        emit recoveryFailed(token, tr("History search limit exceeded."));
+        return false;
+    }
+    return queueRecovery(
+        token,
+        [this, utf8, limit, token, offset] {
+            return history_search(*d_->engine, engine_adapter_detail::utf8View(utf8), limit, offset,
+                                  token);
+        },
+        quint64(utf8.size()));
+}
 bool EngineAdapter::clearHistory(quint64 token) {
+    d_->pendingHistoryClears.insert(token);
+    emit historyClearStarted(token);
     return queueRecovery(token, [this, token] { return history_clear(*d_->engine, token); });
+}
+bool EngineAdapter::historyClearInProgress() const {
+    return !d_->pendingHistoryClears.isEmpty();
+}
+void EngineAdapter::trackHistoryClears() {
+    connect(this, &EngineAdapter::historyCleared, this,
+            [this](quint64 token) { d_->pendingHistoryClears.remove(token); });
+    connect(this, &EngineAdapter::recoveryFailed, this,
+            [this](quint64 token, const QString&) { d_->pendingHistoryClears.remove(token); });
 }
 bool EngineAdapter::getHistoryPolicy(quint64 token) {
     return queueRecovery(token, [this, token] { return history_policy_get(*d_->engine, token); });

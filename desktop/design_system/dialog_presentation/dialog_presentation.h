@@ -11,7 +11,7 @@ namespace choscordb::design {
 // Shared modal behavior for QDialog and QMessageBox without replacing their APIs.
 class DialogPresentation final : public QObject {
   public:
-    enum class Placement { Center, RightEdge };
+    enum class Placement { Center, RightEdge, TopCenter };
     explicit DialogPresentation(QDialog& dialog, Placement placement = Placement::Center);
     ~DialogPresentation() override;
     void makeModal();

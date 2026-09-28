@@ -17,6 +17,22 @@ class QSortFilterProxyModel;
 namespace choscordb {
 class EngineAdapter;
 class NavigatorModel;
+struct QuickObjectResult {
+    quint64 connection = 0;
+    QString objectId;
+    QString name;
+    QString qualifiedName;
+    QString kind;
+    QString parentObjectId;
+    QString context;
+    QVariantList properties;
+    QString targetObjectId;
+    QString targetQualifiedName;
+    QString targetKind;
+    QString targetParentObjectId;
+    QVariantList targetProperties;
+    int targetPane = -1;
+};
 class NavigatorController final : public QObject {
     Q_OBJECT
   public:
@@ -33,6 +49,15 @@ class NavigatorController final : public QObject {
     void removePendingConnection(quint64 pendingId);
     void setPendingConnection(const QString& label);
     quint64 selectedConnection() const;
+    bool isVisibleConnection(quint64 connection) const;
+    bool hasSelectedConnection() const;
+    void startQuickObjectSearch(const QString& query,
+                                std::optional<quint64> connection = std::nullopt);
+    void cancelQuickObjectSearch();
+    QList<QuickObjectResult> quickObjectResults() const { return quickObjectResults_; }
+    QString quickObjectSearchStatus() const { return quickObjectStatus_; }
+    bool quickObjectSearchIncomplete() const { return quickObjectIncomplete_; }
+    quint64 quickObjectSearchGeneration() const { return quickObjectGeneration_; }
     void setDriverResolver(std::function<QString(quint64)> resolver);
     void setPinStateResolver(std::function<std::optional<bool>(const QModelIndex&)> resolver);
     void setShowSystemSchemas(bool show);
@@ -45,16 +70,19 @@ class NavigatorController final : public QObject {
     void refreshCurrent();
     void disconnectCurrent();
   signals:
+    void selectedConnectionsChanged();
+    void browsingVisibilityChanged();
     void disconnectRequested(quint64 connection);
     void sqlGenerated(quint64 connection, const QString& sql);
     void ddlRequested(quint64 connection, const QString& objectId, const QString& label,
                       const QString& kind, const QVariantList& properties);
     void generationFailed(const QString& error);
     void searchStatusChanged(const QString& status);
-    void objectActionRequested(const QString& action, quint64 connection,
-                               const QString& objectId, const QString& shortName,
-                               const QString& kind, const QString& parentObjectId,
-                               const QString& qualifiedName, const QString& relationSubtype);
+    void quickObjectSearchChanged();
+    void objectActionRequested(const QString& action, quint64 connection, const QString& objectId,
+                               const QString& shortName, const QString& kind,
+                               const QString& parentObjectId, const QString& qualifiedName,
+                               const QString& relationSubtype);
     void pinRequested(const QModelIndex& sourceIndex, bool unpin);
 
   private:
@@ -73,6 +101,15 @@ class NavigatorController final : public QObject {
     quint64 searchPendingToken_ = 0;
     QString searchError_;
     bool matchesSearchRequest(quint64 connection, const QString& parent, quint64 token) const;
+    QList<QuickObjectResult> quickObjectResults_;
+    QString quickObjectStatus_;
+    QString quickObjectQuery_;
+    quint64 quickObjectGeneration_ = 0;
+    quint64 quickObjectConnection_ = 0;
+    bool quickObjectConnectionValid_ = false;
+    int quickObjectRequests_ = 0;
+    bool quickObjectIncomplete_ = false;
     void advanceSearch(quint64 generation);
+    void advanceQuickObjectSearch(quint64 generation);
 };
 } // namespace choscordb

@@ -110,6 +110,19 @@ pub fn history_list(engine: &mut BridgeEngine, limit: u32, offset: u32, token: u
             .map_err(|e| e.to_string())
     })
 }
+pub fn history_search(
+    engine: &mut BridgeEngine,
+    query: &str,
+    limit: u32,
+    offset: u64,
+    token: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        e.history_search(query.to_owned(), limit, offset, token)
+            .map(|()| token)
+            .map_err(|e| e.to_string())
+    })
+}
 pub fn history_clear(engine: &mut BridgeEngine, token: u64) -> ffi::Submit {
     submit(engine, |e| {
         e.history_clear(token)

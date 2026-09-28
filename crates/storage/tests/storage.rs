@@ -109,6 +109,265 @@ fn history_retention_disable_and_clear() {
 }
 
 #[test]
+fn history_search_finds_literal_sql_beyond_first_page_and_reports_limits() {
+    let mut store = Storage::in_memory().unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    for index in 0..25 {
+        store
+            .record_history(
+                &HistoryEntry {
+                    id: format!("query-{index}"),
+                    profile_id: Some("p1".into()),
+                    sql: if index == 2 || index == 18 {
+                        format!("SELECT 'Private_%{index}'")
+                    } else {
+                        format!("SELECT {index}")
+                    },
+                    timestamp: now + index,
+                    duration_ms: 0,
+                    status: HistoryStatus::Completed,
+                    row_count: None,
+                },
+                now,
+            )
+            .unwrap();
+    }
+    assert!(
+        !store
+            .history(10, 0)
+            .unwrap()
+            .iter()
+            .any(|entry| entry.id == "query-2")
+    );
+    let found = store.search_history("private_%", 10, 0).unwrap();
+    assert_eq!(
+        found
+            .entries
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["query-18", "query-2"]
+    );
+    assert!(!found.incomplete);
+    assert_eq!(
+        store.search_history("PRIVATE_%", 1, 0).unwrap().entries[0].id,
+        "query-18"
+    );
+    let limited = store.search_history("private_%", 1, 0).unwrap();
+    assert!(limited.incomplete);
+    assert_eq!(limited.entries[0].id, "query-18");
+    assert_eq!(
+        store
+            .search_history("private_%", 1, limited.next_offset)
+            .unwrap()
+            .entries[0]
+            .id,
+        "query-2"
+    );
+    assert!(store.search_history("private_%", 0, 0).is_err());
+    assert!(store.search_history("private_%", 101, 0).is_err());
+    assert!(store.search_history(&"x".repeat(1025), 10, 0).is_err());
+    store.clear_history().unwrap();
+    assert!(
+        store
+            .search_history("private_%", 10, 0)
+            .unwrap()
+            .entries
+            .is_empty()
+    );
+}
+
+#[test]
+fn history_search_continues_past_a_bounded_scan_chunk() {
+    let mut store = Storage::in_memory().unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    for index in 0..1030 {
+        store
+            .record_history(
+                &HistoryEntry {
+                    id: format!("saved-{index}"),
+                    profile_id: None,
+                    sql: if index == 0 || index == 6 {
+                        "SELECT 'rare needle'".into()
+                    } else {
+                        "SELECT 1".into()
+                    },
+                    timestamp: now + index,
+                    duration_ms: 0,
+                    status: HistoryStatus::Completed,
+                    row_count: None,
+                },
+                now,
+            )
+            .unwrap();
+    }
+    let first = store.search_history("rare needle", 10, 0).unwrap();
+    assert_eq!(
+        first
+            .entries
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["saved-6"]
+    );
+    assert!(first.incomplete);
+    store
+        .record_history(
+            &HistoryEntry {
+                id: "newer".into(),
+                profile_id: None,
+                sql: "SELECT 42".into(),
+                timestamp: now + 2000,
+                duration_ms: 0,
+                status: HistoryStatus::Completed,
+                row_count: None,
+            },
+            now,
+        )
+        .unwrap();
+    let second = store
+        .search_history("rare needle", 10, first.next_offset)
+        .unwrap();
+    assert_eq!(
+        second
+            .entries
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["saved-0"]
+    );
+    assert!(!second.incomplete);
+}
+
+#[test]
+fn history_search_reports_expired_continuation_cursor() {
+    let mut store = Storage::in_memory().unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    for index in 0..2 {
+        store
+            .record_history(
+                &HistoryEntry {
+                    id: format!("saved-{index}"),
+                    profile_id: None,
+                    sql: "SELECT 'needle'".into(),
+                    timestamp: now + index,
+                    duration_ms: 0,
+                    status: HistoryStatus::Completed,
+                    row_count: None,
+                },
+                now,
+            )
+            .unwrap();
+    }
+    let first = store.search_history("needle", 1, 0).unwrap();
+    assert!(first.incomplete);
+    store.clear_history().unwrap();
+    assert!(
+        store
+            .search_history("needle", 1, first.next_offset)
+            .is_err()
+    );
+}
+
+#[test]
+fn history_search_cursor_preserves_timestamp_order_when_insert_order_differs() {
+    let mut store = Storage::in_memory().unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    for (id, timestamp) in [("newest", now + 2), ("oldest", now), ("middle", now + 1)] {
+        store
+            .record_history(
+                &HistoryEntry {
+                    id: id.into(),
+                    profile_id: None,
+                    sql: "SELECT 1".into(),
+                    timestamp,
+                    duration_ms: 0,
+                    status: HistoryStatus::Completed,
+                    row_count: None,
+                },
+                now,
+            )
+            .unwrap();
+    }
+    let first = store.search_history("", 1, 0).unwrap();
+    assert_eq!(first.entries[0].id, "newest");
+    let second = store.search_history("", 1, first.next_offset).unwrap();
+    assert_eq!(second.entries[0].id, "middle");
+    let third = store.search_history("", 1, second.next_offset).unwrap();
+    assert_eq!(third.entries[0].id, "oldest");
+    assert!(!third.incomplete);
+}
+
+#[test]
+fn history_search_returns_large_valid_sql_and_reaches_older_match() {
+    let mut store = Storage::in_memory().unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let large_sql = format!("SELECT '{}' /* needle */", "x".repeat(9 * 1024 * 1024));
+    for (id, sql, timestamp) in [
+        ("older", "SELECT 'needle'".to_owned(), now - 1),
+        ("large", large_sql, now),
+    ] {
+        assert!(
+            store
+                .record_history(
+                    &HistoryEntry {
+                        id: id.into(),
+                        profile_id: None,
+                        sql,
+                        timestamp,
+                        duration_ms: 0,
+                        status: HistoryStatus::Completed,
+                        row_count: None,
+                    },
+                    now
+                )
+                .unwrap()
+        );
+    }
+    let first = store.search_history("needle", 1, 0).unwrap();
+    assert_eq!(first.entries[0].id, "large");
+    assert!(first.entries[0].sql.len() > 8 * 1024 * 1024);
+    assert!(first.entries[0].sql.ends_with("/* needle */"));
+    assert!(first.incomplete);
+    let second = store
+        .search_history("needle", 1, first.next_offset)
+        .unwrap();
+    assert_eq!(second.entries[0].id, "older");
+    assert!(!second.incomplete);
+
+    // JSON escapes each NUL as six bytes. Records above the 64 MiB scan
+    // budget are rejected by the existing saved-history storage limit.
+    let oversized = HistoryEntry {
+        id: "oversized".into(),
+        profile_id: None,
+        sql: "\0".repeat(12 * 1024 * 1024),
+        timestamp: now + 1,
+        duration_ms: 0,
+        status: HistoryStatus::Completed,
+        row_count: None,
+    };
+    assert!(matches!(
+        store.record_history(&oversized, now),
+        Err(StorageError::ResourceLimit)
+    ));
+}
+
+#[test]
 fn recovery_is_only_editor_data_and_settings_persist() {
     let mut store = Storage::in_memory().unwrap();
     let tabs = vec![EditorDocument {

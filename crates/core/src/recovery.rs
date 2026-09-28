@@ -19,6 +19,7 @@ pub(crate) enum Command {
     Restore(u64),
     RestoreTabs(u64),
     List(u32, u32, u64),
+    Search(String, u32, u64, u64),
     Clear(u64),
     Policy(u64),
     SetPolicy(HistoryPolicy, u64),
@@ -40,6 +41,7 @@ impl Command {
             | Self::Restore(t)
             | Self::RestoreTabs(t)
             | Self::List(_, _, t)
+            | Self::Search(_, _, _, t)
             | Self::Clear(t)
             | Self::Policy(t)
             | Self::SetPolicy(_, t)
@@ -55,6 +57,12 @@ fn invalid(error: StorageError) -> SubmitError {
 }
 fn failure(error: StorageError) -> DriverError {
     match error {
+        StorageError::StaleHistoryCursor => {
+            return DriverError::new(
+                ErrorKind::InvalidInput,
+                "Saved history changed while searching; retry the search",
+            );
+        }
         StorageError::CorruptAppearance => {
             return DriverError::new(
                 ErrorKind::InvalidInput,
@@ -159,6 +167,17 @@ pub(crate) fn execute(storage: &mut Storage, command: Command) -> Result<Event, 
             request_token,
             entries: storage.history(limit, offset).map_err(failure)?,
         },
+        Command::Search(query, limit, offset, _) => {
+            let result = storage
+                .search_history(&query, limit, offset)
+                .map_err(failure)?;
+            Event::HistorySearched {
+                request_token,
+                entries: result.entries,
+                incomplete: result.incomplete,
+                next_offset: result.next_offset,
+            }
+        }
         Command::Clear(_) => {
             storage.clear_history().map_err(failure)?;
             Event::HistoryCleared { request_token }
@@ -249,6 +268,9 @@ impl Engine {
             Command::List(limit, offset, _) => {
                 choscordb_storage::validate_history_page(*limit, *offset)
             }
+            Command::Search(query, limit, offset, _) => {
+                choscordb_storage::validate_history_search(query, *limit, *offset)
+            }
             Command::SetPolicy(policy, _) => policy.validate(),
             Command::Record(entry, _) => entry.validate(),
             _ => Ok(()),
@@ -290,6 +312,15 @@ impl Engine {
     }
     pub fn history_list(&self, limit: u32, offset: u32, token: u64) -> Result<(), SubmitError> {
         self.submit_recovery(Command::List(limit, offset, token))
+    }
+    pub fn history_search(
+        &self,
+        query: String,
+        limit: u32,
+        offset: u64,
+        token: u64,
+    ) -> Result<(), SubmitError> {
+        self.submit_recovery(Command::Search(query, limit, offset, token))
     }
     pub fn history_clear(&self, token: u64) -> Result<(), SubmitError> {
         self.submit_recovery(Command::Clear(token))

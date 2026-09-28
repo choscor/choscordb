@@ -39,6 +39,9 @@ class PreviewTest final : public QObject {
     void standaloneCapturesRequestedThemeAndViewport();
     void confirmationSpecimenUsesProductionCancellationBoundary();
     void rightSheetSpecimenUsesModalBoundaryInBothThemes();
+    void quickSearchSpecimenUsesRealOverlayInBothThemes();
+    void quickSearchInteractionPreservesFocusAndSelection();
+    void quickSearchKeepsSelectionAcrossResultUpdates();
     void tableHoverPreservesBackgroundInBothThemes();
     void typedTableSpecimenUsesSharedControlsInBothThemes();
     void choiceEditorSpecimenShowsRealControlInBothThemes();

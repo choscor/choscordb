@@ -96,6 +96,10 @@ int dimension(Dimension value) {
         return 20;
     case Dimension::ModalWidth:
         return 700;
+    case Dimension::QuickSearchWidth:
+        return 640;
+    case Dimension::QuickSearchRow:
+        return 52;
     case Dimension::SheetWidth:
         return 480;
     case Dimension::TableRow:

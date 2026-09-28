@@ -344,6 +344,21 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
                 .collect();
             "history_listed"
         }
+        Event::HistorySearched {
+            request_token,
+            entries,
+            incomplete,
+            next_offset,
+        } => {
+            e.request_token = request_token;
+            e.history = entries
+                .into_iter()
+                .map(super::recovery::history_entry)
+                .collect();
+            e.history_incomplete = incomplete;
+            e.history_next_offset = next_offset;
+            "history_searched"
+        }
         Event::HistoryCleared { request_token } => {
             e.request_token = request_token;
             "history_cleared"

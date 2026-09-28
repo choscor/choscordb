@@ -91,6 +91,7 @@ EngineAdapter::Private::Private(const QString& path)
       connectionTimeoutSeconds(query_preference_limits().default_connection_timeout_seconds) {}
 EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
     : QObject(parent), d_(std::make_unique<Private>(storagePath)) {
+    trackHistoryClears();
     connect(this, &EngineAdapter::eventReady, this, [this](const BridgeEvent& event) {
         const auto kind = string(event.kind);
         if (kind == "object_graph" || kind == "object_graph_failed") {
@@ -241,9 +242,9 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
         const bool recoveryTerminal =
             kind == "workspace_restored" || kind == "workspace_tabs_restored" ||
             kind == "workspace_saved" || kind == "recovery_failed" || kind == "history_listed" ||
-            kind == "history_cleared" || kind == "history_policy" || kind == "history_flushed" ||
-            kind == "editor_preferences" || kind == "query_preferences" ||
-            kind == "appearance_layout";
+            kind == "history_searched" || kind == "history_cleared" || kind == "history_policy" ||
+            kind == "history_flushed" || kind == "editor_preferences" ||
+            kind == "query_preferences" || kind == "appearance_layout";
         if (recoveryTerminal && d_->activeRecovery == event.request_token) {
             const auto token = event.request_token;
             QTimer::singleShot(0, this, [this, token] {
@@ -279,14 +280,18 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                 preferences.shortcuts.push_back(
                     {string(shortcut.command), string(shortcut.sequence)});
             emit editorPreferencesReady(event.request_token, preferences);
-        } else if (kind == "history_listed") {
+        } else if (kind == "history_listed" || kind == "history_searched") {
             QList<SavedHistoryEntry> entries;
             entries.reserve(static_cast<qsizetype>(event.history.size()));
             for (const auto& h : event.history)
                 entries.push_back({string(h.id), h.has_profile ? string(h.profile_id) : QString{},
                                    string(h.sql), h.timestamp, h.duration_ms, h.row_count,
                                    string(h.status), h.has_row_count});
-            emit historyListed(event.request_token, entries);
+            if (kind == "history_listed")
+                emit historyListed(event.request_token, entries);
+            else
+                emit historySearched(event.request_token, entries, event.history_incomplete,
+                                     event.history_next_offset);
         } else if (kind == "history_cleared")
             emit historyCleared(event.request_token);
         else if (kind == "history_policy")

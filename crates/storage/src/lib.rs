@@ -20,7 +20,7 @@ pub use query_preferences::{
     DEFAULT_CONNECTION_TIMEOUT_SECONDS, MAX_CONNECTION_TIMEOUT_SECONDS, MAX_QUERY_TIMEOUT_SECONDS,
     QUERY_PREFERENCES_VERSION, QueryPreferences,
 };
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::path::Path;
 
@@ -52,6 +52,8 @@ pub enum StorageError {
     InvalidDocument,
     #[error("invalid history retention policy")]
     InvalidRetention,
+    #[error("saved history changed while searching; retry the search")]
+    StaleHistoryCursor,
     #[error("local database schema is newer than this application")]
     NewerSchema,
 }
@@ -183,6 +185,25 @@ pub struct HistoryEntry {
     pub duration_ms: u64,
     pub status: HistoryStatus,
     pub row_count: Option<u64>,
+}
+/// A bounded search over retained history, ordered newest first.
+pub struct HistorySearchResult {
+    pub entries: Vec<HistoryEntry>,
+    pub incomplete: bool,
+    /// Opaque cursor for the next request. Pass it back unchanged when incomplete.
+    pub next_offset: u64,
+}
+pub const MAX_HISTORY_SEARCH_RESULTS: u32 = 100;
+pub const MAX_HISTORY_SEARCH_QUERY_BYTES: usize = 1024;
+pub fn validate_history_search(query: &str, limit: u32, offset: u64) -> Result<()> {
+    if limit == 0
+        || limit > MAX_HISTORY_SEARCH_RESULTS
+        || query.len() > MAX_HISTORY_SEARCH_QUERY_BYTES
+        || offset > i64::MAX as u64
+    {
+        return Err(StorageError::ResourceLimit);
+    }
+    Ok(())
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -606,6 +627,98 @@ impl Storage {
             entries.push(entry);
         }
         Ok(entries)
+    }
+    /// Match the complete saved SQL literally, ignoring case. Per-request row
+    /// and byte caps bound work; returned entries are a subset of those rows.
+    /// `offset` is an opaque row cursor, not a count of skipped records.
+    pub fn search_history(
+        &self,
+        query: &str,
+        limit: u32,
+        offset: u64,
+    ) -> Result<HistorySearchResult> {
+        const MAX_SCAN_ROWS: usize = 1024;
+        const MAX_SCAN_BYTES: usize = MAX_COLLECTION_BYTES;
+        self.history_policy()?;
+        validate_history_search(query, limit, offset)?;
+        let needle = query.to_lowercase();
+        let cursor_timestamp = if offset == 0 {
+            None
+        } else {
+            Some(
+                self.db
+                    .query_row(
+                        "SELECT timestamp FROM query_history WHERE rowid = ?1",
+                        [offset as i64],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .optional()?
+                    .ok_or(StorageError::StaleHistoryCursor)?,
+            )
+        };
+        let mut stmt = self.db.prepare(if cursor_timestamp.is_some() {
+            "SELECT id,timestamp,data,rowid FROM query_history \
+             WHERE (timestamp,rowid) < (?1,?2) \
+             ORDER BY timestamp DESC,rowid DESC LIMIT ?3"
+        } else {
+            "SELECT id,timestamp,data,rowid FROM query_history \
+             ORDER BY timestamp DESC,rowid DESC LIMIT ?1"
+        })?;
+        let mut rows = if let Some(timestamp) = cursor_timestamp {
+            stmt.query(params![timestamp, offset as i64, MAX_SCAN_ROWS as i64 + 1])?
+        } else {
+            stmt.query([MAX_SCAN_ROWS as i64 + 1])?
+        };
+        let mut entries = Vec::new();
+        let mut scanned_bytes = 0_usize;
+        let mut scanned_rows = 0_usize;
+        let mut incomplete = false;
+        let mut next_offset = offset;
+        while let Some(row) = rows.next()? {
+            if scanned_rows == MAX_SCAN_ROWS {
+                incomplete = true;
+                break;
+            }
+            let data = row
+                .get_ref(2)?
+                .as_str()
+                .map_err(|_| StorageError::InvalidDocument)?;
+            if data.len() > MAX_SCAN_BYTES {
+                return Err(StorageError::ResourceLimit);
+            }
+            if data.len() > MAX_SCAN_BYTES - scanned_bytes {
+                incomplete = true;
+                break;
+            }
+            scanned_rows += 1;
+            scanned_bytes += data.len();
+            let entry: HistoryEntry =
+                serde_json::from_str(data).map_err(|_| StorageError::InvalidDocument)?;
+            entry.validate()?;
+            if row.get_ref(0)?.as_str().ok() != Some(entry.id.as_str())
+                || row.get::<_, i64>(1)? != entry.timestamp
+            {
+                return Err(StorageError::InvalidDocument);
+            }
+            let matches = entry.sql.to_lowercase().contains(&needle);
+            if matches && entries.len() == limit as usize {
+                incomplete = true;
+                break;
+            }
+            let rowid = row.get::<_, i64>(3)?;
+            if rowid <= 0 {
+                return Err(StorageError::InvalidDocument);
+            }
+            next_offset = rowid as u64;
+            if matches {
+                entries.push(entry);
+            }
+        }
+        Ok(HistorySearchResult {
+            entries,
+            incomplete,
+            next_offset,
+        })
     }
     pub fn clear_history(&mut self) -> Result<()> {
         self.db.execute("DELETE FROM query_history", [])?;

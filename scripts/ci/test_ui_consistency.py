@@ -329,6 +329,18 @@ class UiConsistencyTest(unittest.TestCase):
             report = ui_consistency.audit(root)
         self.assertEqual(report["screens"]["app/main_window"]["composite"], 2)
 
+    def test_census_recognizes_quick_search_dialog_construction(self):
+        temporary, root = self.fixture()
+        with temporary:
+            (root / "desktop/app/main_window_ui.cpp").write_text(
+                "auto* palette = new design::QuickSearchDialog(this);\n",
+                encoding="utf-8",
+            )
+            report = ui_consistency.audit(root)
+        self.assertEqual(report["screens"]["app/main_window"]["composite"], 1)
+        self.assertEqual(report["screens"]["app/main_window"]["unclassified"], 0)
+        self.assertEqual(report["violations"], [])
+
     def test_discovers_feature_composites_through_inheritance(self):
         temporary, root = self.fixture()
         with temporary:

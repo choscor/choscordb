@@ -1,0 +1,21 @@
+QListWidget#quickSearchResults {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: @foreground;
+}
+QListWidget#quickSearchResults::item {
+  border-radius: @controlRadius;
+  padding: 4px 8px;
+  margin: 1px 0;
+}
+QListWidget#quickSearchResults::item:selected {
+  background: @accent;
+  color: @accentText;
+}
+QLabel#quickSearchStatus {
+  color: @mutedText;
+}
+QLabel#quickSearchStatus[state="error"] {
+  color: @dangerText;
+}

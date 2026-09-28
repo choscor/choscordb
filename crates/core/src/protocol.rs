@@ -148,6 +148,12 @@ pub enum Event {
         request_token: u64,
         entries: Vec<crate::HistoryEntry>,
     },
+    HistorySearched {
+        request_token: u64,
+        entries: Vec<crate::HistoryEntry>,
+        incomplete: bool,
+        next_offset: u64,
+    },
     HistoryCleared {
         request_token: u64,
     },

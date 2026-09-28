@@ -9,6 +9,7 @@
 #include "design_system/history_row/history_row.h"
 #include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/quick_search/quick_search_dialog.h"
 #include "design_system/table/table_style.h"
 #include "design_system/tabs/tab_add_corner.h"
 #include "design_system/text/text.h"
