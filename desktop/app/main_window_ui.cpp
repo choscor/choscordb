@@ -286,6 +286,7 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* savedConnections = new QListWidget(navBody);
     savedConnections->setObjectName("savedConnections");
     savedConnections->setAccessibleName(tr("Saved database connections"));
+    savedConnections->setSelectionMode(QAbstractItemView::MultiSelection);
     savedConnections->setItemDelegate(new design::NavigationProfileDelegate(savedConnections));
     savedConnections->setSpacing(design::spacing(design::Spacing::Half));
     savedConnections->setProperty("designSurface", "sidebar");
@@ -313,6 +314,7 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* objectSection = new SidebarSection(tr("Schema & objects"), navBody);
     connectionsLayout->addWidget(objectSection, 1);
     auto* filter = new QLineEdit;
+    filter->setObjectName("navigatorFilter");
     filter->setPlaceholderText(tr("Filter objects…"));
     filter->setAccessibleName(tr("Filter database objects"));
     objectSection->contentLayout()->addWidget(filter);

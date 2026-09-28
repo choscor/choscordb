@@ -214,6 +214,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         list->setSpacing(spacing(Spacing::Half));
         list->setProperty("designSurface", "sidebar");
         list->setMouseTracking(true);
+        list->setSelectionMode(QAbstractItemView::MultiSelection);
         for (const auto& driver :
              {QStringLiteral("sqlite"), QStringLiteral("postgres"), QStringLiteral("mysql")}) {
             auto* item = new QListWidgetItem(driver == "sqlite"     ? "test sqlite"
@@ -225,6 +226,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
                 item->setToolTip("MySQL · Dolphin icon");
         }
         list->setCurrentRow(1);
+        list->item(0)->setSelected(true);
         list->setFixedHeight(116);
         layout->addWidget(list);
         layout->addStretch();

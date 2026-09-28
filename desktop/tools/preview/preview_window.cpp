@@ -110,7 +110,7 @@ QList<Specimen> specimens() {
          "desktop/design_system/field/field_style.cpp"},
         {"Components", "lists-navigation", "Lists and navigation",
          "desktop/design_system/tree/tree_style.cpp"},
-        {"Components", "navigation-profile-row", "Compact saved connection rows",
+        {"Components", "navigation-profile-row", "Selected and unselected saved connections",
          "desktop/design_system/navigation_profile_row/navigation_profile_row.cpp"},
         {"Components", "recent-history-row", "Recent query history rows",
          "desktop/design_system/history_row/history_row.cpp"},

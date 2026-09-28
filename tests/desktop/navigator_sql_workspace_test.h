@@ -34,7 +34,7 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void erdKeyboardActivationOpensAndRefocusesRelatedTable();
     void sidebarViewsKeepTheirDefaultPane();
     void savedProfileIdCannotCollideWithSessionContext();
-    void selectedConnectionShowsOnlyItsTree();
+    void visibleConnectionsPreserveMetadataAndOrder();
     void searchLoadsCollapsedGroupsOnlyForSelectedConnection();
     void searchFailureKeepsRefineMessage();
     void selectingObjectLoadsMetadataAndSeparateDataThenReturnsToSql();

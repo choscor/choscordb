@@ -18,7 +18,7 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(selected ? colors.sidebarBorder : Qt::transparent);
-    painter->setBrush(selected ? colors.muted : hovered ? colors.muted : colors.sidebar);
+    painter->setBrush(selected ? colors.sidebarAccent : hovered ? colors.muted : colors.sidebar);
     painter->drawRoundedRect(bounds, 6, 6);
     const QRect badge(bounds.left() + 7, bounds.center().y() - 13, 26, 27);
     const bool sqlite = index.data(DriverRole).toString() == "sqlite";

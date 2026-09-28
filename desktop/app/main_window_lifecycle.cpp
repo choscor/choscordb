@@ -181,20 +181,21 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     const auto toast = ui.toast;
     connect(
         workspace_->adapter(), &EngineAdapter::eventReady, this,
-        [connections, navigatorStatus](const BridgeEvent& event) {
+        [this, navigatorStatus](const BridgeEvent& event) {
             const auto kind =
                 QString::fromUtf8(event.kind.data(), static_cast<qsizetype>(event.kind.size()));
-            if (kind == "connected") {
-                navigatorStatus->setText(tr("● Connected"));
-                navigatorStatus->setProperty("state", "success");
-            } else if (kind == "disconnected") {
-                const bool connected = connections->currentData().isValid();
-                navigatorStatus->setText(connected ? tr("● Connected") : tr("○ Disconnected"));
-                navigatorStatus->setProperty("state", connected ? "success" : "disconnected");
-            } else if (kind == "connection_failed") {
-                navigatorStatus->setText(tr("! Connection failed"));
-                navigatorStatus->setProperty("state", "error");
-            }
+            if (kind != "connected" && kind != "disconnected" && kind != "connection_failed")
+                return;
+            navigatorStatus->setText(!navigatorSearchStatus_.isEmpty()
+                                         ? navigatorSearchStatus_
+                                         : browsingConnection_ ? tr("● Connected")
+                                         : selectedProfileIds_.isEmpty() ? tr("○ Disconnected")
+                                                                         : tr("Loading connections…"));
+            navigatorStatus->setProperty("state", !navigatorSearchStatus_.isEmpty()
+                                                      ? "search"
+                                                      : browsingConnection_ ? "success"
+                                                      : selectedProfileIds_.isEmpty() ? "disconnected"
+                                                                                      : "loading");
             navigatorStatus->setAccessibleName(
                 tr("Navigator connection status: %1").arg(navigatorStatus->text()));
             navigatorStatus->style()->unpolish(navigatorStatus);

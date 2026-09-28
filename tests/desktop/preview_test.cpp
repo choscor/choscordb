@@ -204,6 +204,10 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
             window.findChild<QWidget*>(name)->findChild<QListWidget*>("previewNavigationProfiles");
         QVERIFY(list &&
                 dynamic_cast<choscordb::design::NavigationProfileDelegate*>(list->itemDelegate()));
+        QCOMPARE(list->selectionMode(), QAbstractItemView::MultiSelection);
+        QVERIFY(list->item(0)->isSelected());
+        QVERIFY(list->item(1)->isSelected());
+        QVERIFY(!list->item(2)->isSelected());
         QVERIFY(list->visualItemRect(list->item(1)).height() <= 36);
     }
 }

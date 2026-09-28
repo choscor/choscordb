@@ -259,6 +259,19 @@ bool NavigatorModel::addConnection(quint64 id, const QString& label) {
     endInsertRows();
     return true;
 }
+bool NavigatorModel::renameConnection(quint64 id, const QString& label) {
+    const auto it = std::find_if(roots_.begin(), roots_.end(), [id](const auto& root) {
+        return root->connection == id && root->object.kind == "connection";
+    });
+    if (it == roots_.end())
+        return false;
+    if ((*it)->object.name == label)
+        return true;
+    (*it)->object.name = label;
+    const auto rootIndex = indexFor(it->get());
+    emit dataChanged(rootIndex, rootIndex, {Qt::DisplayRole});
+    return true;
+}
 bool NavigatorModel::addPendingConnection(quint64 id, const QString& label) {
     if (!addConnection(id, label))
         return false;
@@ -380,6 +393,7 @@ bool NavigatorModel::failChildren(quint64 connection, const QString& parentObjec
     emit dataChanged(indexFor(placeholder.get()), indexFor(placeholder.get()),
                      {Qt::DisplayRole, KindRole, ErrorRole});
     emit dataChanged(parentIndex, parentIndex, {ErrorRole, ChildrenLoadedRole});
+    emit completionChanged(connection);
     return true;
 }
 void NavigatorModel::refresh(const QModelIndex& index) {
