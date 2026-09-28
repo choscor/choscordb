@@ -96,6 +96,9 @@ class EditorCompletionTest : public QObject {
         editor->undo();
         QCOMPARE(editor->text(), QString("sel"));
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, editor->length());
+        owner->activateWindow();
+        editor->setFocus();
+        QTRY_VERIFY(editor->hasFocus());
         controller.requestCompletion();
         QTRY_VERIFY(popup->isVisible());
         owner->resize(500, 300);

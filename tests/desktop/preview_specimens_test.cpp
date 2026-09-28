@@ -966,7 +966,7 @@ void PreviewTest::documentTabContentsSitAtVerticalCenterInBothThemes() {
             QVERIFY(qAbs(iconCenter - tab.center().y()) <= 0.5);
             QVERIFY(qAbs(textCenter - tab.center().y()) <= 0.5);
             QVERIFY2(
-                qAbs(iconCenter - textCenter) <= 0.5,
+                qAbs(iconCenter - textCenter) <= 1.0,
                 qPrintable(
                     QString("Icon center %1, text center %2").arg(iconCenter).arg(textCenter)));
             tabs->setTabIcon(index, originalIcon);

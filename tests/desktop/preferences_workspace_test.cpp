@@ -109,6 +109,9 @@ class PreferencesWorkspaceTest : public QObject {
         controller->setVisibleConnections({second});
         editor->setText("pg_cat");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 6);
+        window.activateWindow();
+        editor->setFocus();
+        QTRY_VERIFY(editor->hasFocus());
         auto* completion = window.findChild<EditorCompletionController*>();
         auto* completer = completion->findChild<QCompleter*>();
         window.findChild<QAction*>("completeSql")->trigger();
