@@ -1,13 +1,168 @@
+#include "app/navigator_controller.h"
+#include "bridge/engine_adapter.h"
 #include "models/navigator_model.h"
+#include <QAction>
 #include <QAbstractItemModelTester>
+#include <QLineEdit>
+#include <QMenu>
 #include <QSortFilterProxyModel>
 #include <QTimer>
 #include <QTreeView>
+#include <QVariantMap>
 #include <QtTest>
 using namespace choscordb;
 class NavigatorModelTest : public QObject {
     Q_OBJECT
   private slots:
+    void mutationMenuTargetsClickedObjectAndExplainsUnsupportedRename() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        controller.setDriverResolver([](quint64) { return QStringLiteral("sqlite"); });
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        QVERIFY(model->addConnection(7, "fixture"));
+        controller.setSelectedConnection(7);
+        auto root = model->index(0, 0);
+        model->fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(model->applyChildren(7, {}, requested.last().at(2).toULongLong(),
+                                     {{"schema-id", "main", "\"main\"", "schema", true}}));
+        const auto schema = model->index(0, 0, root);
+        model->fetchMore(schema);
+        QTRY_COMPARE(requested.count(), 2);
+        QVERIFY(model->applyChildren(
+            7, "schema-id", requested.last().at(2).toULongLong(),
+            {{"table-id", "Odd.table", "\"main\".\"Odd.table\"", "table", false},
+             {"view-id", "A view", "\"main\".\"A view\"", "view", false},
+             {"index-id", "idx", "\"main\".\"idx\"", "index", false},
+             {"column-id", "col", "\"main\".\"col\"", "column", false}}));
+        const auto table = model->index(0, 0, schema);
+        const auto view = model->index(1, 0, schema);
+        QSignalSpy actions(&controller, &NavigatorController::objectActionRequested);
+        tree.setCurrentIndex(tree.model()->index(0, 0)); // Selection differs from clicked node.
+
+        QMenu tableMenu;
+        controller.populateContextMenu(&tableMenu, table);
+        auto* dropTable = tableMenu.findChild<QAction*>("dropObject");
+        auto* renameTable = tableMenu.findChild<QAction*>("renameObject");
+        QVERIFY(dropTable && dropTable->isEnabled());
+        QVERIFY(renameTable && renameTable->isEnabled());
+        renameTable->trigger();
+        QCOMPARE(actions.count(), 1);
+        QCOMPARE(actions.last().at(0).toString(), QString("rename"));
+        QCOMPARE(actions.last().at(1).toULongLong(), quint64(7));
+        QCOMPARE(actions.last().at(2).toString(), QString("table-id"));
+        QCOMPARE(actions.last().at(3).toString(), QString("Odd.table"));
+        QCOMPARE(actions.last().at(4).toString(), QString("table"));
+        QCOMPARE(actions.last().at(5).toString(), QString("schema-id"));
+        QCOMPARE(actions.last().at(6).toString(), QString("\"main\".\"Odd.table\""));
+        QCOMPARE(actions.last().at(7).toString(), QString());
+        dropTable->trigger();
+        QCOMPARE(actions.count(), 2);
+        QCOMPARE(actions.last().at(0).toString(), QString("drop"));
+
+        QMenu viewMenu;
+        controller.populateContextMenu(&viewMenu, view);
+        auto* dropView = viewMenu.findChild<QAction*>("dropObject");
+        auto* renameView = viewMenu.findChild<QAction*>("renameObject");
+        QVERIFY(dropView && dropView->isEnabled());
+        QVERIFY(renameView && !renameView->isEnabled());
+        QVERIFY(renameView->toolTip().contains("SQLite", Qt::CaseInsensitive));
+        renameView->trigger();
+        QCOMPARE(actions.count(), 2);
+        dropView->trigger();
+        QCOMPARE(actions.count(), 3);
+        QCOMPARE(actions.last().at(2).toString(), QString("view-id"));
+
+        for (const auto node : {schema, model->index(2, 0, schema), model->index(3, 0, schema)}) {
+            QMenu otherMenu;
+            controller.populateContextMenu(&otherMenu, node);
+            QVERIFY(!otherMenu.findChild<QAction*>("dropObject"));
+            QVERIFY(!otherMenu.findChild<QAction*>("renameObject"));
+        }
+
+        model->refresh(schema);
+        renameTable->trigger();
+        QCOMPARE(actions.count(), 3); // The old menu cannot act on removed metadata.
+    }
+
+    void viewRenameIsAvailableForPostgresAndMysql() {
+        for (const auto& driver : {QStringLiteral("postgres"), QStringLiteral("mysql")}) {
+            EngineAdapter engine;
+            QTreeView tree;
+            QLineEdit filter;
+            NavigatorController controller(&engine, &tree, &filter, &tree);
+            controller.setDriverResolver([driver](quint64) { return driver; });
+            auto* model = controller.model();
+            QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                                &EngineAdapter::loadMetadata);
+            QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+            QVERIFY(model->addConnection(8, "fixture"));
+            const auto root = model->index(0, 0);
+            model->fetchMore(root);
+            QTRY_COMPARE(requested.count(), 1);
+            QVERIFY(model->applyChildren(8, {}, requested.last().at(2).toULongLong(),
+                                         {{"view-id", "v", "\"v\"", "view", false}}));
+            QMenu menu;
+            controller.populateContextMenu(&menu, model->index(0, 0, root));
+            auto* drop = menu.findChild<QAction*>("dropObject");
+            auto* rename = menu.findChild<QAction*>("renameObject");
+            QVERIFY(drop && drop->isEnabled());
+            QVERIFY(rename && rename->isEnabled());
+        }
+    }
+
+    void postgresRelationSubtypesKeepActionsAndReachTheRequest() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        controller.setDriverResolver([](quint64) { return QStringLiteral("postgres"); });
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        QVERIFY(model->addConnection(9, "fixture"));
+        const auto root = model->index(0, 0);
+        model->fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
+        const auto subtype = [](const QString& value) -> QVariantList {
+            return {QVariantMap{{"name", "Relation subtype"}, {"value", value}}};
+        };
+        QVERIFY(model->applyChildren(
+            9, {}, requested.last().at(2).toULongLong(),
+            {{"table", "ordinary_table", "\"ordinary_table\"", "table", false},
+             {"view", "ordinary_view", "\"ordinary_view\"", "view", false},
+             {"foreign", "remote_table", "\"remote_table\"", "table", false,
+              subtype("foreign_table")},
+             {"materialized", "cached_view", "\"cached_view\"", "view", false,
+              subtype("materialized_view")}}));
+        QSignalSpy actions(&controller, &NavigatorController::objectActionRequested);
+        const QStringList expectedSubtypes{QString{}, QString{},
+                                           QStringLiteral("foreign_table"),
+                                           QStringLiteral("materialized_view")};
+        for (int row = 0; row < 4; ++row) {
+            QMenu menu;
+            controller.populateContextMenu(&menu, model->index(row, 0, root));
+            auto* drop = menu.findChild<QAction*>("dropObject");
+            auto* rename = menu.findChild<QAction*>("renameObject");
+            QVERIFY(drop && drop->isEnabled());
+            QVERIFY(rename && rename->isEnabled());
+            rename->trigger();
+            QCOMPARE(actions.count(), 2 * row + 1);
+            QCOMPARE(actions.last().at(0).toString(), QString("rename"));
+            QCOMPARE(actions.last().at(7).toString(), expectedSubtypes.at(row));
+            drop->trigger();
+            QCOMPARE(actions.count(), 2 * row + 2);
+            QCOMPARE(actions.last().at(0).toString(), QString("drop"));
+            QCOMPARE(actions.last().at(7).toString(), expectedSubtypes.at(row));
+        }
+    }
+
     void metadataPagesAppendOnlyAfterExplicitContinuation() {
         NavigatorModel model;
         QAbstractItemModelTester tester(&model,

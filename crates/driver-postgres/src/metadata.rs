@@ -471,6 +471,11 @@ async fn group_children<C: GenericClient + Sync>(
         let oid: u32 = row.get("oid");
         let name = text(&row, "name")?;
         let schema = text(&row, "schema")?;
+        let relation_subtype: &str = if group_kind == "function" {
+            ""
+        } else {
+            row.get("kind")
+        };
         let (id_kind, kind, label, qualified) = if group_kind == "function" {
             let signature = text(&row, "signature")?;
             (
@@ -507,6 +512,14 @@ async fn group_children<C: GenericClient + Sync>(
             kind,
             matches!(group_kind, "table" | "view"),
         );
+        if let Some(subtype) = match relation_subtype {
+            "m" => Some("materialized_view"),
+            "f" => Some("foreign_table"),
+            _ => None,
+        } {
+            item.properties
+                .push(MetadataProperty::available("Relation subtype", subtype));
+        }
         if group_kind == "index" {
             let definition = client
                 .query_one(

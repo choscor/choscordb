@@ -31,6 +31,7 @@ class ObjectExplorer final : public QWidget {
     void activateRestoredObject();
     int paneIndex() const { return activePane_; }
     bool needsConnection() const { return !connection_.has_value(); }
+    bool operationInFlight() const { return requestToken_ != 0 || operationBusy_; }
     void selectPane(int index);
     void setDisconnected();
     void installDataWidget(QWidget* widget);

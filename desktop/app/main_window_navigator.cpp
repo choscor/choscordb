@@ -39,6 +39,31 @@ void MainWindow::connectNavigator(const Ui& ui) {
     const auto toast = ui.toast;
     auto* navigatorController = new NavigatorController(workspace_->adapter(), tree, filter, this);
     navigatorController_ = navigatorController;
+    navigatorController->setDriverResolver(
+        [this](quint64 connection) { return workspace_->driverForConnection(connection); });
+    connect(navigatorController, &NavigatorController::objectActionRequested, this,
+            &MainWindow::requestObjectAction);
+    connect(workspace_->adapter(), &EngineAdapter::eventReady, this,
+            &MainWindow::handleObjectActionEvent, Qt::DirectConnection);
+    connect(navigatorController->model(), &NavigatorModel::childrenRequested, this,
+            [this](quint64 connection, const QString& parent, quint64 token) {
+                if (pendingObjectRefresh_ && pendingObjectRefresh_->connection == connection &&
+                    pendingObjectRefresh_->parentObjectId == parent)
+                    pendingObjectRefresh_->token = token;
+            });
+    connect(workspace_->adapter(), &EngineAdapter::metadataSubmissionFailed, this,
+            [this](quint64 connection, const QString& parent, quint64 token,
+                   const QString& error) {
+                if (!pendingObjectRefresh_ || pendingObjectRefresh_->connection != connection ||
+                    pendingObjectRefresh_->parentObjectId != parent ||
+                    (pendingObjectRefresh_->token != 0 &&
+                     pendingObjectRefresh_->token != token))
+                    return;
+                pendingObjectRefresh_.reset();
+                showToast(tr("Object changed, but navigator refresh failed: %1. Choose Refresh to retry.")
+                              .arg(error),
+                          ToastVariant::Danger);
+            });
     const auto updateObjectsEmpty = [this, tree, filter, objectsEmpty] {
         objectsEmpty->setVisible(tree->model()->rowCount() == 0);
         objectsEmpty->setText(

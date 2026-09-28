@@ -134,6 +134,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/main_window_workspace.cpp
   desktop/app/main_window_lifecycle.cpp
   desktop/app/main_window_navigator.cpp
+  desktop/app/main_window_object_actions.cpp
   desktop/app/workspace_recovery.cpp
   desktop/app/query_workspace.cpp
   desktop/app/query_workspace_json.cpp
@@ -143,6 +144,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/result_filter_bar.cpp
   desktop/app/object_data_workspace.cpp
   desktop/app/object_explorer.cpp
+  desktop/app/object_action_sql.cpp
   desktop/app/navigator_controller.cpp
 )
 target_link_libraries(choscordb-desktop PUBLIC choscordb-widgets)

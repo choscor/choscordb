@@ -412,4 +412,31 @@ void NavigatorModel::refresh(const QModelIndex& index) {
     emit completionChanged(value->connection);
     fetchMore(indexFor(value));
 }
+bool NavigatorModel::refreshObject(quint64 connection, const QString& objectId) {
+    auto* value = find(connection, objectId);
+    if (!value || !value->object.hasChildren)
+        return false;
+    refresh(indexFor(value));
+    return true;
+}
+bool NavigatorModel::matchesObject(quint64 connection, const QString& objectId,
+                                   const QString& kind, const QString& qualifiedName,
+                                   const QString& parentObjectId,
+                                   const QString& relationSubtype) const {
+    const auto* value = find(connection, objectId);
+    if (!value || !value->parent || value->object.kind != kind ||
+        value->object.qualifiedName != qualifiedName ||
+        value->parent->object.id != parentObjectId)
+        return false;
+    QString actualSubtype;
+    for (const auto& entry : value->object.properties) {
+        const auto property = entry.toMap();
+        if (property.value(QStringLiteral("name")).toString() ==
+            QStringLiteral("Relation subtype")) {
+            actualSubtype = property.value(QStringLiteral("value")).toString();
+            break;
+        }
+    }
+    return actualSubtype == relationSubtype;
+}
 } // namespace choscordb

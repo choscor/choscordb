@@ -12,11 +12,23 @@
 #include <QSortFilterProxyModel>
 #include <QTimer>
 #include <QTreeView>
+#include <QVariantMap>
 #include <limits>
+#include <utility>
 namespace choscordb {
 namespace {
 QString text(const rust::String& s) {
     return QString::fromUtf8(s.data(), static_cast<qsizetype>(s.size()));
+}
+QString relationSubtype(const QVariantList& properties) {
+    for (const auto& entry : properties) {
+        const auto property = entry.toMap();
+        if (property.value(QStringLiteral("name")).toString() !=
+            QStringLiteral("Relation subtype"))
+            continue;
+        return property.value(QStringLiteral("value")).toString();
+    }
+    return {};
 }
 class SelectedConnectionProxy final : public QSortFilterProxyModel {
   public:
@@ -183,6 +195,9 @@ void NavigatorController::disconnectCurrent() {
     if (source.isValid() && source.data(NavigatorModel::KindRole).toString() == "connection")
         emit disconnectRequested(source.data(NavigatorModel::ConnectionRole).toULongLong());
 }
+void NavigatorController::setDriverResolver(std::function<QString(quint64)> resolver) {
+    driverResolver_ = std::move(resolver);
+}
 void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex) {
     if (!menu || !sourceIndex.isValid() || sourceIndex.model() != model_)
         return;
@@ -233,6 +248,47 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
     });
     if (objectKind != "table" && objectKind != "view")
         return;
+    const auto connection = index.data(NavigatorModel::ConnectionRole).toULongLong();
+    const auto objectId = index.data(NavigatorModel::ObjectIdRole).toString();
+    const auto shortName = index.data(Qt::DisplayRole).toString();
+    const auto qualifiedName = index.data(NavigatorModel::QualifiedNameRole).toString();
+    const auto parentObjectId = index.parent().data(NavigatorModel::ObjectIdRole).toString();
+    const auto subtype = relationSubtype(index.data(NavigatorModel::PropertiesRole).toList());
+    const auto driver = driverResolver_ ? driverResolver_(connection).toLower() : QString{};
+    const bool supportedDriver = driver == "sqlite" || driver == "postgres" || driver == "mysql";
+    const bool sqliteView = driver == "sqlite" && objectKind == "view";
+    menu->addSeparator();
+    auto* drop = menu->addAction(tr("Drop"));
+    drop->setObjectName("dropObject");
+    drop->setEnabled(supportedDriver);
+    auto* rename = menu->addAction(
+        sqliteView ? tr("Rename (SQLite does not support view rename)") : tr("Rename"));
+    rename->setObjectName("renameObject");
+    rename->setEnabled(supportedDriver && !sqliteView);
+    if (sqliteView) {
+        const auto reason = tr("SQLite does not support renaming a view directly.");
+        rename->setToolTip(reason);
+        rename->setStatusTip(reason);
+        menu->setToolTipsVisible(true);
+    }
+    const auto dispatch = [this, index, connection, objectId, shortName, objectKind,
+                           parentObjectId, qualifiedName, subtype](const QString& action) {
+        if (!index.isValid() || index.model() != model_ ||
+            index.data(NavigatorModel::ConnectionRole).toULongLong() != connection ||
+            index.data(NavigatorModel::ObjectIdRole).toString() != objectId ||
+            index.data(NavigatorModel::KindRole).toString() != objectKind ||
+            index.data(Qt::DisplayRole).toString() != shortName ||
+            index.data(NavigatorModel::QualifiedNameRole).toString() != qualifiedName ||
+            index.parent().data(NavigatorModel::ObjectIdRole).toString() != parentObjectId ||
+            relationSubtype(index.data(NavigatorModel::PropertiesRole).toList()) != subtype)
+            return;
+        emit objectActionRequested(action, connection, objectId, shortName, objectKind,
+                                   parentObjectId, qualifiedName, subtype);
+    };
+    connect(drop, &QAction::triggered, this, [dispatch] { dispatch(QStringLiteral("drop")); });
+    connect(rename, &QAction::triggered, this,
+            [dispatch] { dispatch(QStringLiteral("rename")); });
+    menu->addSeparator();
     auto* generate = menu->addMenu(tr("Generate SQL"));
     const bool loaded = index.data(NavigatorModel::ChildrenLoadedRole).toBool();
     bool hasColumn = false;
