@@ -69,6 +69,7 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
             return;
         auto defaults = QueryPreferences{};
         defaults.connectionTimeoutSeconds = connectionTimeoutSeconds_;
+        defaults.showSystemSchemas = showSystemSchemas_;
         fill(defaults);
         ready_ = true;
         windowToast(this)->clearNotice();
@@ -76,8 +77,11 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     });
     connect(adapter, &EngineAdapter::queryPreferencesReady, this,
             [this](quint64 token, const QueryPreferences& value) {
-                if (!token_ || token != token_)
+                if (!token_ || token != token_) {
+                    // Preferences can save this shared record while Query Settings is open.
+                    showSystemSchemas_ = value.showSystemSchemas;
                     return;
+                }
                 token_ = 0;
                 clearProgressToast(this);
                 const auto limits = EngineAdapter::queryPreferenceLimits();
@@ -137,6 +141,7 @@ void QuerySettingsDialog::fill(const QueryPreferences& value) {
     pageSize_->setValue(value.pageSize);
     timeout_->setValue(value.timeoutSeconds);
     connectionTimeoutSeconds_ = value.connectionTimeoutSeconds;
+    showSystemSchemas_ = value.showSystemSchemas;
 }
 void QuerySettingsDialog::updateControls() {
     pageSize_->setEnabled(!token_);
@@ -151,6 +156,7 @@ void QuerySettingsDialog::apply() {
     value.pageSize = quint32(pageSize_->value());
     value.timeoutSeconds = quint32(timeout_->value());
     value.connectionTimeoutSeconds = connectionTimeoutSeconds_;
+    value.showSystemSchemas = showSystemSchemas_;
     const auto limits = EngineAdapter::queryPreferenceLimits();
     if (value.version != limits.version || value.pageSize < limits.minPageSize ||
         value.pageSize > limits.maxPageSize || value.timeoutSeconds > limits.maxTimeoutSeconds) {

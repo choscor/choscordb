@@ -2,6 +2,7 @@
 #include <QList>
 #include <QModelIndex>
 #include <QObject>
+#include <QPersistentModelIndex>
 #include <QPointer>
 #include <QString>
 #include <QVariant>
@@ -30,6 +31,7 @@ class NavigatorController final : public QObject {
     void setPendingConnection(const QString& label);
     quint64 selectedConnection() const;
     void setDriverResolver(std::function<QString(quint64)> resolver);
+    void setShowSystemSchemas(bool show);
     void populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex);
     void refreshCurrent();
     void disconnectCurrent();
@@ -40,10 +42,10 @@ class NavigatorController final : public QObject {
                       const QString& kind, const QVariantList& properties);
     void generationFailed(const QString& error);
     void searchStatusChanged(const QString& status);
-    void objectActionRequested(const QString& action, quint64 connection,
-                               const QString& objectId, const QString& shortName,
-                               const QString& kind, const QString& parentObjectId,
-                               const QString& qualifiedName, const QString& relationSubtype);
+    void objectActionRequested(const QString& action, quint64 connection, const QString& objectId,
+                               const QString& shortName, const QString& kind,
+                               const QString& parentObjectId, const QString& qualifiedName,
+                               const QString& relationSubtype);
 
   private:
     NavigatorModel* model_;
@@ -56,7 +58,10 @@ class NavigatorController final : public QObject {
     int searchRequests_ = 0;
     bool searchPending_ = false;
     quint64 searchPendingConnection_ = 0;
+    QPersistentModelIndex searchPendingIndex_;
+    quint64 searchPendingToken_ = 0;
     QString searchError_;
+    bool matchesSearchRequest(quint64 connection, const QString& parent, quint64 token) const;
     void advanceSearch(quint64 generation);
 };
 } // namespace choscordb

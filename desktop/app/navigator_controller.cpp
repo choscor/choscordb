@@ -6,6 +6,7 @@
 #include "models/navigator_model.h"
 #include <QApplication>
 #include <QClipboard>
+#include <QItemSelectionModel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPersistentModelIndex>
@@ -23,8 +24,7 @@ QString text(const rust::String& s) {
 QString relationSubtype(const QVariantList& properties) {
     for (const auto& entry : properties) {
         const auto property = entry.toMap();
-        if (property.value(QStringLiteral("name")).toString() !=
-            QStringLiteral("Relation subtype"))
+        if (property.value(QStringLiteral("name")).toString() != QStringLiteral("Relation subtype"))
             continue;
         return property.value(QStringLiteral("value")).toString();
     }
@@ -41,9 +41,13 @@ class SelectedConnectionProxy final : public QSortFilterProxyModel {
         sort(0);
     }
     const QList<quint64>& visible() const { return ordered_; }
+    void refreshVisibility() { refreshFilter(); }
 
   protected:
     bool filterAcceptsRow(int row, const QModelIndex& parent) const override {
+        const auto index = sourceModel()->index(row, 0, parent);
+        if (!static_cast<const NavigatorModel*>(sourceModel())->isBrowsable(index))
+            return false;
         auto root = sourceModel()->index(row, 0, parent);
         while (root.parent().isValid())
             root = root.parent();
@@ -103,7 +107,8 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
         if (filter_->text().trimmed().isEmpty() ||
             !static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection))
             return;
-        if (searchPending_ && connection == searchPendingConnection_)
+        if (searchPending_ && connection == searchPendingConnection_ &&
+            model_->pendingRequestToken(searchPendingIndex_) != searchPendingToken_)
             searchPending_ = false;
         if (searchPending_)
             return;
@@ -120,8 +125,9 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
     });
     connect(engine, &EngineAdapter::metadataSubmissionFailed, this,
             [this](quint64 connection, const QString& parent, quint64 token, const QString& error) {
+                const bool wasPending = matchesSearchRequest(connection, parent, token);
                 const bool accepted = model_->failChildren(connection, parent, token, error);
-                if (accepted && searchPending_ && connection == searchPendingConnection_) {
+                if (accepted && wasPending) {
                     searchPending_ = false;
                     if (!filter_->text().trimmed().isEmpty()) {
                         searchError_ = error;
@@ -138,6 +144,7 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
             if (kind == "disconnected")
                 model_->removeConnection(e.id);
             else if (kind == "metadata") {
+                const bool wasPending = matchesSearchRequest(e.id, text(e.parent), e.request_token);
                 std::vector<NavigatorObject> objects;
                 objects.reserve(e.objects.size());
                 for (const auto& object : e.objects) {
@@ -154,15 +161,16 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
                 const bool accepted = model_->applyChildrenPage(
                     e.id, text(e.parent), e.request_token, std::move(objects), e.metadata_offset,
                     e.has_more_metadata, e.next_metadata_offset);
-                if (accepted && searchPending_ && e.id == searchPendingConnection_) {
+                if (accepted && wasPending) {
                     searchPending_ = false;
                     const auto generation = searchGeneration_;
                     QTimer::singleShot(0, this, [this, generation] { advanceSearch(generation); });
                 }
             } else if (kind == "metadata_failed") {
+                const bool wasPending = matchesSearchRequest(e.id, text(e.parent), e.request_token);
                 const bool accepted =
                     model_->failChildren(e.id, text(e.parent), e.request_token, text(e.error));
-                if (accepted && searchPending_ && e.id == searchPendingConnection_) {
+                if (accepted && wasPending) {
                     searchPending_ = false;
                     if (!filter_->text().trimmed().isEmpty()) {
                         searchError_ = text(e.error);
@@ -197,6 +205,36 @@ void NavigatorController::disconnectCurrent() {
 }
 void NavigatorController::setDriverResolver(std::function<QString(quint64)> resolver) {
     driverResolver_ = std::move(resolver);
+    model_->setDriverResolver(driverResolver_);
+    static_cast<SelectedConnectionProxy*>(proxy_)->refreshVisibility();
+}
+void NavigatorController::setShowSystemSchemas(bool show) {
+    if (model_->showSystemSchemas() == show)
+        return;
+    const QPersistentModelIndex selected(proxy_->mapToSource(tree_->currentIndex()));
+    model_->setShowSystemSchemas(show);
+    static_cast<SelectedConnectionProxy*>(proxy_)->refreshVisibility();
+    if (selected.isValid() && !model_->isBrowsable(selected)) {
+        auto ancestor = selected.parent();
+        while (ancestor.isValid() && !model_->isBrowsable(ancestor))
+            ancestor = ancestor.parent();
+        const auto visible = proxy_->mapFromSource(ancestor);
+        if (visible.isValid())
+            tree_->selectionModel()->setCurrentIndex(visible, QItemSelectionModel::ClearAndSelect |
+                                                                  QItemSelectionModel::Rows);
+        else
+            tree_->selectionModel()->clearCurrentIndex();
+    }
+    ++searchGeneration_;
+    searchRequests_ = 0;
+    searchPending_ = false;
+    searchError_.clear();
+    if (!filter_->text().trimmed().isEmpty()) {
+        emit searchStatusChanged(tr("Searching objects…"));
+        advanceSearch(searchGeneration_);
+    } else {
+        emit searchStatusChanged({});
+    }
 }
 void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex) {
     if (!menu || !sourceIndex.isValid() || sourceIndex.model() != model_)
@@ -261,8 +299,8 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
     auto* drop = menu->addAction(tr("Drop"));
     drop->setObjectName("dropObject");
     drop->setEnabled(supportedDriver);
-    auto* rename = menu->addAction(
-        sqliteView ? tr("Rename (SQLite does not support view rename)") : tr("Rename"));
+    auto* rename = menu->addAction(sqliteView ? tr("Rename (SQLite does not support view rename)")
+                                              : tr("Rename"));
     rename->setObjectName("renameObject");
     rename->setEnabled(supportedDriver && !sqliteView);
     if (sqliteView) {
@@ -271,8 +309,8 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
         rename->setStatusTip(reason);
         menu->setToolTipsVisible(true);
     }
-    const auto dispatch = [this, index, connection, objectId, shortName, objectKind,
-                           parentObjectId, qualifiedName, subtype](const QString& action) {
+    const auto dispatch = [this, index, connection, objectId, shortName, objectKind, parentObjectId,
+                           qualifiedName, subtype](const QString& action) {
         if (!index.isValid() || index.model() != model_ ||
             index.data(NavigatorModel::ConnectionRole).toULongLong() != connection ||
             index.data(NavigatorModel::ObjectIdRole).toString() != objectId ||
@@ -286,8 +324,7 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
                                    parentObjectId, qualifiedName, subtype);
     };
     connect(drop, &QAction::triggered, this, [dispatch] { dispatch(QStringLiteral("drop")); });
-    connect(rename, &QAction::triggered, this,
-            [dispatch] { dispatch(QStringLiteral("rename")); });
+    connect(rename, &QAction::triggered, this, [dispatch] { dispatch(QStringLiteral("rename")); });
     menu->addSeparator();
     auto* generate = menu->addMenu(tr("Generate SQL"));
     const bool loaded = index.data(NavigatorModel::ChildrenLoadedRole).toBool();
@@ -436,12 +473,14 @@ void NavigatorController::advanceSearch(quint64 generation) {
     std::vector<QModelIndex> matches;
     int visited = 0;
     while (!stack.empty()) {
+        auto current = stack.back();
+        stack.pop_back();
+        if (!model_->isBrowsable(current))
+            continue;
         if (++visited > 20000) {
             emit searchStatusChanged(tr("Search incomplete: limit reached. Refine the text."));
             return;
         }
-        auto current = stack.back();
-        stack.pop_back();
         const auto kind = current.data(NavigatorModel::KindRole).toString();
         if (kind == "loading" || kind == "error")
             incomplete = true;
@@ -459,10 +498,12 @@ void NavigatorController::advanceSearch(quint64 generation) {
             ++searchRequests_;
             searchPending_ = true;
             searchPendingConnection_ = current.data(NavigatorModel::ConnectionRole).toULongLong();
+            searchPendingIndex_ = current;
             if (current.data(NavigatorModel::HasMoreRole).toBool())
                 model_->requestNextPage(current);
             else
                 model_->fetchMore(current);
+            searchPendingToken_ = model_->pendingRequestToken(current);
             return;
         }
         for (int row = model_->rowCount(current) - 1; row >= 0; --row)
@@ -482,5 +523,12 @@ void NavigatorController::advanceSearch(quint64 generation) {
         emit searchStatusChanged(tr("Search incomplete. Refine the text or retry."));
     else
         emit searchStatusChanged({});
+}
+bool NavigatorController::matchesSearchRequest(quint64 connection, const QString& parent,
+                                               quint64 token) const {
+    return searchPending_ && connection == searchPendingConnection_ &&
+           searchPendingIndex_.isValid() &&
+           searchPendingIndex_.data(NavigatorModel::ObjectIdRole).toString() == parent &&
+           searchPendingToken_ == token;
 }
 } // namespace choscordb

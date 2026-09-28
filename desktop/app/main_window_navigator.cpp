@@ -1,5 +1,6 @@
 #include "app/main_window.h"
 
+#include "app/editor_preferences.h"
 #include "app/main_window_ui.h"
 #include "app/navigator_controller.h"
 #include "app/object_explorer.h"
@@ -24,6 +25,7 @@
 #include <QStyle>
 #include <QTabWidget>
 #include <QTreeView>
+#include <memory>
 #include <utility>
 
 namespace choscordb {
@@ -41,6 +43,22 @@ void MainWindow::connectNavigator(const Ui& ui) {
     navigatorController_ = navigatorController;
     navigatorController->setDriverResolver(
         [this](quint64 connection) { return workspace_->driverForConnection(connection); });
+    constexpr quint64 visibilityLoadToken = quint64(1) << 58;
+    auto pendingVisibilityLoad = std::make_shared<bool>(true);
+    connect(preferences_, &EditorPreferencesController::systemSchemaVisibilitySaved, this,
+            [navigatorController, pendingVisibilityLoad](bool visible) {
+                *pendingVisibilityLoad = false;
+                navigatorController->setShowSystemSchemas(visible);
+            });
+    connect(workspace_->adapter(), &EngineAdapter::queryPreferencesReady, this,
+            [navigatorController, pendingVisibilityLoad](quint64 token,
+                                                         const QueryPreferences& preferences) {
+                if (token != visibilityLoadToken || !*pendingVisibilityLoad)
+                    return;
+                *pendingVisibilityLoad = false;
+                navigatorController->setShowSystemSchemas(preferences.showSystemSchemas);
+            });
+    workspace_->adapter()->getQueryPreferences(visibilityLoadToken);
     connect(navigatorController, &NavigatorController::objectActionRequested, this,
             &MainWindow::requestObjectAction);
     connect(workspace_->adapter(), &EngineAdapter::eventReady, this,
@@ -52,23 +70,23 @@ void MainWindow::connectNavigator(const Ui& ui) {
                     pendingObjectRefresh_->token = token;
             });
     connect(workspace_->adapter(), &EngineAdapter::metadataSubmissionFailed, this,
-            [this](quint64 connection, const QString& parent, quint64 token,
-                   const QString& error) {
+            [this](quint64 connection, const QString& parent, quint64 token, const QString& error) {
                 if (!pendingObjectRefresh_ || pendingObjectRefresh_->connection != connection ||
                     pendingObjectRefresh_->parentObjectId != parent ||
-                    (pendingObjectRefresh_->token != 0 &&
-                     pendingObjectRefresh_->token != token))
+                    (pendingObjectRefresh_->token != 0 && pendingObjectRefresh_->token != token))
                     return;
                 pendingObjectRefresh_.reset();
-                showToast(tr("Object changed, but navigator refresh failed: %1. Choose Refresh to retry.")
-                              .arg(error),
-                          ToastVariant::Danger);
+                showToast(
+                    tr("Object changed, but navigator refresh failed: %1. Choose Refresh to retry.")
+                        .arg(error),
+                    ToastVariant::Danger);
             });
     const auto updateObjectsEmpty = [this, tree, filter, objectsEmpty] {
         objectsEmpty->setVisible(tree->model()->rowCount() == 0);
         objectsEmpty->setText(
-            selectedProfileIds_.isEmpty() ? tr("No database selected.\nSelect a connection to browse its "
-                                      "schemas and objects.")
+            selectedProfileIds_.isEmpty()
+                ? tr("No database selected.\nSelect a connection to browse its "
+                     "schemas and objects.")
             : !filter->text().isEmpty()
                 ? tr("No matching objects.\nTry a different filter or clear the search.")
                 : tr("No objects to show.\nRefresh to check for schemas and objects."));
@@ -89,17 +107,16 @@ void MainWindow::connectNavigator(const Ui& ui) {
     connect(navigatorController, &NavigatorController::searchStatusChanged, navigatorStatus,
             [this, navigatorStatus](const QString& status) {
                 navigatorSearchStatus_ = status;
-                navigatorStatus->setText(
-                    status.isEmpty() ? browsingConnection_ ? tr("● Connected")
-                                       : selectedProfileIds_.isEmpty() ? tr("○ Disconnected")
-                                                                       : tr("Loading connections…")
-                                     : status);
-                navigatorStatus->setProperty("state", status.isEmpty()
-                                                          ? browsingConnection_ ? "success"
+                navigatorStatus->setText(status.isEmpty() ? browsingConnection_ ? tr("● Connected")
                                                             : selectedProfileIds_.isEmpty()
-                                                                ? "disconnected"
-                                                                : "loading"
-                                                          : "search");
+                                                                ? tr("○ Disconnected")
+                                                                : tr("Loading connections…")
+                                                          : status);
+                navigatorStatus->setProperty(
+                    "state", status.isEmpty() ? browsingConnection_             ? "success"
+                                                : selectedProfileIds_.isEmpty() ? "disconnected"
+                                                                                : "loading"
+                                              : "search");
                 navigatorStatus->setAccessibleName(
                     tr("Navigator connection status: %1").arg(navigatorStatus->text()));
                 navigatorStatus->style()->unpolish(navigatorStatus);

@@ -260,6 +260,7 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             preferences.timeoutSeconds = event.query_preferences.timeout_seconds;
             preferences.connectionTimeoutSeconds =
                 event.query_preferences.connection_timeout_seconds;
+            preferences.showSystemSchemas = event.query_preferences.show_system_schemas;
             if (preferences.connectionTimeoutSeconds >= 1 &&
                 preferences.connectionTimeoutSeconds <=
                     queryPreferenceLimits().maxConnectionTimeoutSeconds)
@@ -598,10 +599,9 @@ void EngineAdapter::testProfileWithSecrets(
     credentials.has_ssh_private_key = sshPrivateKey.hasSecret;
     credentials.has_tls = hasTlsSecret;
     credentials.has_proxy = hasProxySecret;
-    auto result =
-        profile_test_credentials(*d_->engine,
-                                 profileDto(withConnectionTimeout(profile, d_->connectionTimeoutSeconds)),
-                                 std::move(credentials), token);
+    auto result = profile_test_credentials(
+        *d_->engine, profileDto(withConnectionTimeout(profile, d_->connectionTimeoutSeconds)),
+        std::move(credentials), token);
     if (!result.accepted)
         emit profileFailed(token, string(result.error));
 }
@@ -634,10 +634,9 @@ std::optional<quint64> EngineAdapter::connectProfileWithSecrets(
     credentials.has_ssh_private_key = sshPrivateKey.hasSecret;
     credentials.has_tls = hasTlsSecret;
     credentials.has_proxy = hasProxySecret;
-    auto result =
-        profile_connect_credentials(*d_->engine,
-                                    profileDto(withConnectionTimeout(profile, d_->connectionTimeoutSeconds)),
-                                    std::move(credentials));
+    auto result = profile_connect_credentials(
+        *d_->engine, profileDto(withConnectionTimeout(profile, d_->connectionTimeoutSeconds)),
+        std::move(credentials));
     if (!result.accepted) {
         emit profileConnectFailed(string(result.error));
         return std::nullopt;

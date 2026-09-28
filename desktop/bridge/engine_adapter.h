@@ -78,6 +78,7 @@ struct EditorPreferenceLimits {
 struct QueryPreferences {
     QueryPreferences();
     quint32 version, pageSize, timeoutSeconds, connectionTimeoutSeconds;
+    bool showSystemSchemas = false;
 };
 struct ResultFilterCondition {
     quint32 column = 0;

@@ -194,6 +194,65 @@ class PreferencesTest : public QObject {
         QCOMPARE(qvariant_cast<EditorPreferences>(editor.first().at(1)).fontSize, quint16(21));
     }
 
+    void systemSchemasSaveRestoreAndCancelAcrossRestart() {
+        using namespace choscordb;
+        QTemporaryDir directory;
+        const auto path = directory.filePath("settings.sqlite");
+        {
+            EngineAdapter adapter(nullptr, path);
+            PreferencesDialog dialog(&adapter, {});
+            dialog.show();
+            auto* save = dialog.findChild<QPushButton*>("preferencesApply");
+            auto* show = dialog.findChild<QCheckBox*>("preferencesShowSystemSchemas");
+            QVERIFY(show);
+            QTRY_VERIFY(save->isEnabled());
+            QVERIFY(!show->isChecked());
+            QSignalSpy saved(&dialog, &PreferencesDialog::systemSchemaVisibilitySaved);
+            show->setChecked(true);
+            dialog.findChild<QPushButton*>("preferencesClose")->click();
+            QCOMPARE(saved.count(), 0);
+        }
+        {
+            EngineAdapter adapter(nullptr, path);
+            PreferencesDialog dialog(&adapter, {});
+            dialog.show();
+            auto* save = dialog.findChild<QPushButton*>("preferencesApply");
+            auto* show = dialog.findChild<QCheckBox*>("preferencesShowSystemSchemas");
+            QVERIFY(show);
+            QTRY_VERIFY(save->isEnabled());
+            QVERIFY(!show->isChecked());
+            show->setChecked(true);
+            dialog.findChild<QPushButton*>("preferencesReset")->click();
+            QVERIFY(!show->isChecked());
+            show->setChecked(true);
+            QSignalSpy saved(&dialog, &PreferencesDialog::systemSchemaVisibilitySaved);
+            QSignalSpy accepted(&dialog, &QDialog::accepted);
+            save->click();
+            QTRY_COMPARE(accepted.count(), 1);
+            QCOMPARE(saved.count(), 1);
+            QCOMPARE(saved.first().first().toBool(), true);
+        }
+        EngineAdapter adapter(nullptr, path);
+        PreferencesDialog dialog(&adapter, {});
+        dialog.show();
+        auto* show = dialog.findChild<QCheckBox*>("preferencesShowSystemSchemas");
+        QVERIFY(show);
+        auto* save = dialog.findChild<QPushButton*>("preferencesApply");
+        QTRY_VERIFY(save->isEnabled());
+        QVERIFY(show->isChecked());
+        dialog.findChild<QPushButton*>("preferencesReset")->click();
+        QVERIFY(!show->isChecked());
+        QSignalSpy saved(&dialog, &PreferencesDialog::systemSchemaVisibilitySaved);
+        save->click();
+        QTRY_COMPARE(saved.count(), 1);
+        QCOMPARE(saved.first().first().toBool(), false);
+        EngineAdapter afterReset(nullptr, path);
+        QSignalSpy restored(&afterReset, &EngineAdapter::queryPreferencesReady);
+        QVERIFY(afterReset.getQueryPreferences(804));
+        QTRY_COMPARE(restored.count(), 1);
+        QVERIFY(!qvariant_cast<QueryPreferences>(restored.first().at(1)).showSystemSchemas);
+    }
+
     void existingLargeRetentionValuesRemainUsableAndArePreserved() {
         using namespace choscordb;
         EngineAdapter adapter;
@@ -352,6 +411,8 @@ class PreferencesTest : public QObject {
         QSignalSpy confirmed(&adapter, &choscordb::EngineAdapter::editorPreferencesReady);
         choscordb::PreferencesDialog dialog(
             &adapter, {{"find", "Find", "Ctrl+F"}, {"copy", "Copy", "Ctrl+C"}});
+        QSignalSpy visibilitySaved(&dialog,
+                                   &choscordb::PreferencesDialog::systemSchemaVisibilitySaved);
         dialog.show();
         auto* apply = dialog.findChild<QPushButton*>("preferencesApply");
         QTRY_VERIFY(apply->isEnabled());
@@ -378,6 +439,7 @@ class PreferencesTest : public QObject {
         QTRY_VERIFY(!dialog.isVisible());
         dialog.show();
         adapter.shutdown();
+        dialog.findChild<QCheckBox*>("preferencesShowSystemSchemas")->setChecked(true);
         size->setValue(24);
         apply->click();
         QTRY_VERIFY(apply->isEnabled());
@@ -392,6 +454,7 @@ class PreferencesTest : public QObject {
         QVERIFY(error.contains("Results & execution"));
         QVERIFY(error.contains("History & recovery"));
         QVERIFY(dialog.isVisible());
+        QCOMPARE(visibilitySaved.count(), 2);
     }
 };
 QTEST_MAIN(PreferencesTest)
