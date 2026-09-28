@@ -901,9 +901,9 @@ void NavigatorController::advanceSearch(quint64 generation) {
     }
     for (const auto& match : matches) {
         for (auto ancestor = match.parent(); ancestor.isValid(); ancestor = ancestor.parent()) {
-            const auto visible = proxy_->mapFromSource(ancestor);
-            if (visible.isValid())
-                tree_->expand(visible);
+            const auto visibleAncestor = proxy_->mapFromSource(ancestor);
+            if (visibleAncestor.isValid())
+                tree_->expand(visibleAncestor);
         }
     }
     if (!searchError_.isEmpty())

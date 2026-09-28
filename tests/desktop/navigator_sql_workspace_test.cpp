@@ -809,8 +809,8 @@ void NavigatorSqlWorkspaceTest::historySidebarFormatsSqlAndShowsEntryDetails() {
     QVERIFY(displayed.contains("Unsaved connection"));
     QVERIFY(displayed.contains("failed"));
     QVERIFY(list->item(0)->toolTip().contains("WHERE id=6;"));
-    QCOMPARE(list->item(0)->data(Qt::UserRole).value<choscordb::SavedHistoryEntry>().sql,
-             entry.sql);
+    const QVariant historyData = list->item(0)->data(Qt::UserRole);
+    QCOMPARE(historyData.value<choscordb::SavedHistoryEntry>().sql, entry.sql);
     entry.sql = "select '-- from' as note /* where */ from logs;";
     emit adapter->historyListed(token, {entry});
     QCOMPARE(list->count(), 1);
