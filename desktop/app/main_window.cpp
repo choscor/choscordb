@@ -357,6 +357,7 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
             explorer->selectPane(pane);
         if (recovery_)
             recovery_->changed();
+        recordQuickObjectVisit(connection, objectId);
         return;
     }
     auto* explorer = initialObjectExplorer_;
@@ -378,6 +379,7 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
         explorer->selectPane(pane);
     if (recovery_)
         recovery_->changed();
+    recordQuickObjectVisit(connection, objectId);
 }
 void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
                                    const QString& label, const QString& filter) {
@@ -402,6 +404,7 @@ void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
     explorer->selectPane(5);
     if (recovery_)
         recovery_->changed();
+    recordQuickObjectVisit(connection, objectId);
 }
 void MainWindow::openConnectionQuery(quint64 connection) {
     auto* selector = findChild<QComboBox*>("connectionSelector");
@@ -424,6 +427,7 @@ SqlEditor* MainWindow::addEditor() {
         if (workspace_ && editors_->currentWidget() == editor)
             workspace_->documentChanged();
     });
+    connect(editor, &SqlEditor::textChanged, this, &MainWindow::refreshQuickSearchIfOpen);
     const auto title = tr("Untitled query %1").arg(++nextDocumentNumber_);
     editor->setProperty("documentTitle", title);
     if (workspace_) {

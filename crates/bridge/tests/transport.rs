@@ -472,6 +472,51 @@ fn recovery_transport_preserves_typed_documents_and_policy_without_connecting() 
     assert!(drain_events(&mut engine).is_empty());
 }
 #[test]
+fn history_search_transport_returns_correlated_bounded_results() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("history-search.sqlite");
+    let mut engine = new_engine_with_storage(path.to_str().unwrap());
+    assert!(history_list(&mut engine, 1, 0, 769).accepted);
+    assert_eq!(
+        await_event(&mut engine, "history_listed").request_token,
+        769
+    );
+    let db = rusqlite::Connection::open(path).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    for index in 0..1030 {
+        let sql = if index == 1 {
+            "SELECT 'LiTeRaL_%'".to_owned()
+        } else {
+            format!("SELECT {index}")
+        };
+        let id = format!("saved-{index}");
+        let entry = serde_json::json!({"id":id,"profile_id":null,"sql":sql,"timestamp":now + index,"duration_ms":0,"status":"completed","row_count":null});
+        db.execute(
+            "INSERT INTO query_history(id,timestamp,data) VALUES (?1,?2,?3)",
+            rusqlite::params![id, now + index, entry.to_string()],
+        )
+        .unwrap();
+    }
+    assert!(history_search(&mut engine, "literal_%", 10, 0, 770).accepted);
+    let first = await_event(&mut engine, "history_searched");
+    assert_eq!(first.request_token, 770);
+    assert!(first.history.is_empty());
+    assert!(first.history_incomplete);
+    assert_eq!(first.history_next_offset, 7);
+    assert!(history_search(&mut engine, "literal_%", 10, first.history_next_offset, 773).accepted);
+    let found = await_event(&mut engine, "history_searched");
+    assert_eq!(found.request_token, 773);
+    assert_eq!(found.history.len(), 1);
+    assert_eq!(found.history[0].id, "saved-1");
+    assert_eq!(found.history[0].sql, "SELECT 'LiTeRaL_%'");
+    assert!(!found.history_incomplete);
+    assert!(!history_search(&mut engine, "x", 101, 0, 771).accepted);
+    assert!(!history_search(&mut engine, &"x".repeat(1025), 10, 0, 772).accepted);
+}
+#[test]
 fn mixed_workspace_transport_preserves_order_active_and_object_pane() {
     let mut engine = new_engine();
     let sql = ffi::WorkspaceTabDto {

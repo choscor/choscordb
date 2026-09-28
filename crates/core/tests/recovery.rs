@@ -110,6 +110,41 @@ fn record_list_and_clear_are_ordered_and_correlated() {
     );
 }
 #[test]
+fn search_reaches_retained_history_beyond_a_page_and_reports_incomplete() {
+    let mut engine = Engine::new(Default::default(), vec![]).unwrap();
+    for index in 0..25 {
+        let mut saved = entry();
+        saved.id = format!("entry-{index}");
+        saved.timestamp += index;
+        saved.sql = if index == 2 || index == 18 {
+            format!("SELECT 'Private_%{index}'")
+        } else {
+            format!("SELECT {index}")
+        };
+        engine.history_record(saved, index as u64).unwrap();
+        assert!(matches!(
+            event(&mut engine),
+            Event::HistoryRecorded { recorded: true, .. }
+        ));
+    }
+    engine
+        .history_search("PRIVATE_%".into(), 1, 0, 100)
+        .unwrap();
+    assert!(
+        matches!(event(&mut engine), Event::HistorySearched { request_token: 100, entries, incomplete: true, .. } if entries.len() == 1 && entries[0].id == "entry-18" && entries[0].sql == "SELECT 'Private_%18'")
+    );
+    engine
+        .history_search("private_%".into(), 10, 0, 101)
+        .unwrap();
+    assert!(
+        matches!(event(&mut engine), Event::HistorySearched { request_token: 101, entries, incomplete: false, .. } if entries.iter().map(|entry| entry.id.as_str()).collect::<Vec<_>>() == vec!["entry-18", "entry-2"])
+    );
+    assert_eq!(
+        engine.history_search("x".repeat(1025), 10, 0, 102),
+        Err(SubmitError::ResourceLimit)
+    );
+}
+#[test]
 fn invalid_requests_do_not_enter_queue_and_failures_are_redacted() {
     let mut engine = Engine::new(Default::default(), vec![]).unwrap();
     let mut invalid = document();

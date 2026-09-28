@@ -80,6 +80,7 @@ struct EngineAdapter::Private {
     QQueue<RecoveryRequest> recoveryQueue;
     std::optional<quint64> activeRecovery;
     quint64 queuedRecoveryBytes = 0;
+    QSet<quint64> pendingHistoryClears;
     QSet<quint64> connections;
     struct QueryPaging {
         quint64 connection;

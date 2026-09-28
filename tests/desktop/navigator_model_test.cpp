@@ -5,15 +5,376 @@
 #include <QAction>
 #include <QLineEdit>
 #include <QMenu>
+#include <QSignalBlocker>
 #include <QSortFilterProxyModel>
 #include <QTimer>
 #include <QTreeView>
 #include <QVariantMap>
 #include <QtTest>
+#include <algorithm>
 using namespace choscordb;
 class NavigatorModelTest : public QObject {
     Q_OBJECT
   private slots:
+    void objectSnapshotTracksCurrentIdentityAcrossRefreshAndRemoval() {
+        NavigatorModel model;
+        QSignalSpy requested(&model, &NavigatorModel::childrenRequested);
+        QVERIFY(model.addConnection(7, "First"));
+        QVERIFY(model.addConnection(8, "Second"));
+        QVERIFY(!model.objectSnapshot(7, "table").has_value());
+        const auto first = model.index(0, 0);
+        model.fetchMore(first);
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(model.applyChildren(7, {}, requested.last().at(2).toULongLong(),
+                                    {{"schema", "public", "public", "schema", true}}));
+        const auto schema = model.index(0, 0, first);
+        QVERIFY(!model.objectSnapshot(7, "table").has_value());
+        model.fetchMore(schema);
+        QTRY_COMPARE(requested.count(), 2);
+        const QVariantList properties{
+            QVariantMap{{"name", "Relation subtype"}, {"value", "ordinary_table"}}};
+        QVERIFY(model.applyChildren(
+            7, "schema", requested.last().at(2).toULongLong(),
+            {{"table", "orders", "public.orders", "table", false, properties}}));
+        const auto loaded = model.objectSnapshot(7, "table");
+        QVERIFY(loaded.has_value());
+        QCOMPARE(loaded->connection, quint64(7));
+        QCOMPARE(loaded->objectId, QString("table"));
+        QCOMPARE(loaded->name, QString("orders"));
+        QCOMPARE(loaded->qualifiedName, QString("public.orders"));
+        QCOMPARE(loaded->kind, QString("table"));
+        QCOMPARE(loaded->parentObjectId, QString("schema"));
+        QCOMPARE(loaded->properties, properties);
+        QVERIFY(!model.objectSnapshot(8, "table").has_value());
+
+        model.refresh(schema);
+        QVERIFY(!model.objectSnapshot(7, "table").has_value());
+        QTRY_COMPARE(requested.count(), 3);
+        QVERIFY(model.applyChildren(7, "schema", requested.last().at(2).toULongLong(),
+                                    {{"table", "orders_new", "public.orders_new", "view", false}}));
+        const auto replacement = model.objectSnapshot(7, "table");
+        QVERIFY(replacement.has_value());
+        QCOMPARE(replacement->name, QString("orders_new"));
+        QCOMPARE(replacement->kind, QString("view"));
+        QVERIFY(model.removeConnection(7));
+        QVERIFY(!model.objectSnapshot(7, "table").has_value());
+    }
+
+    void objectSnapshotRejectsAmbiguousDuplicateIndexIdentity() {
+        NavigatorModel model;
+        QSignalSpy requested(&model, &NavigatorModel::childrenRequested);
+        QVERIFY(model.addConnection(7, "db"));
+        const auto root = model.index(0, 0);
+        model.fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(model.applyChildren(7, {}, requested.last().at(2).toULongLong(),
+                                    {{"table", "orders", "orders", "table", true},
+                                     {"group", "Indexes", {}, "group", true}}));
+        const auto table = model.index(0, 0, root);
+        const auto group = model.index(1, 0, root);
+        model.fetchMore(table);
+        QTRY_COMPARE(requested.count(), 2);
+        QVERIFY(model.applyChildren(7, "table", requested.last().at(2).toULongLong(),
+                                    {{"index-id", "orders_idx", "orders_idx", "index", false}}));
+        QVERIFY(model.objectSnapshot(7, "index-id").has_value());
+        model.fetchMore(group);
+        QTRY_COMPARE(requested.count(), 3);
+        QVERIFY(model.applyChildren(7, "group", requested.last().at(2).toULongLong(),
+                                    {{"index-id", "orders_idx", "orders_idx", "index", false}}));
+        QVERIFY(!model.objectSnapshot(7, "index-id").has_value());
+    }
+
+    void quickObjectSearchLoadsCollapsedSchemaWithoutChangingSidebar() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        controller.addConnection(7, "Selected");
+        controller.addConnection(8, "Other");
+        controller.setSelectedConnection(7);
+        {
+            const QSignalBlocker blocker(&filter);
+            filter.setText("sidebar text");
+        }
+        const auto previousSelection = tree.currentIndex();
+
+        controller.startQuickObjectSearch("sales orders");
+        QTRY_COMPARE(requested.count(), 1);
+        QCOMPARE(requested.last().at(0).toULongLong(), quint64(7));
+        QVERIFY(model->applyChildren(7, {}, requested.last().at(2).toULongLong(),
+                                     {{"schema", "public", "public", "schema", true}}));
+        QTRY_COMPARE(requested.count(), 2);
+        QCOMPARE(requested.last().at(1).toString(), QString("schema"));
+        QVERIFY(model->applyChildren(
+            7, "schema", requested.last().at(2).toULongLong(),
+            {{"table", "Sales_Orders", "public.Sales_Orders", "table", false}}));
+        QTRY_COMPARE(controller.quickObjectResults().size(), 1);
+        const auto result = controller.quickObjectResults().first();
+        QCOMPARE(result.connection, quint64(7));
+        QCOMPARE(result.objectId, QString("table"));
+        QCOMPARE(result.kind, QString("table"));
+        QCOMPARE(result.parentObjectId, QString("schema"));
+        QCOMPARE(result.qualifiedName, QString("public.Sales_Orders"));
+        QVERIFY(result.context.contains("public"));
+        QCOMPARE(filter.text(), QString("sidebar text"));
+        QCOMPARE(tree.currentIndex(), previousSelection);
+        QVERIFY(!tree.isExpanded(tree.model()->index(0, 0)));
+        QVERIFY(!controller.quickObjectSearchIncomplete());
+    }
+
+    void quickObjectSearchRespectsPostgresSystemSchemaVisibility() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        controller.setDriverResolver([](quint64) { return QStringLiteral("postgres"); });
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        controller.addConnection(7, "Postgres");
+        controller.setSelectedConnection(7);
+        controller.startQuickObjectSearch("catalog_table");
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(model->applyChildren(7, {}, requested.last().at(2).toULongLong(),
+                                     {{"catalog", "pg_catalog", "pg_catalog", "schema", true}}));
+        QTRY_COMPARE(controller.quickObjectSearchStatus(), QString());
+        QCOMPARE(requested.count(), 1);
+        QVERIFY(controller.quickObjectResults().isEmpty());
+
+        controller.setShowSystemSchemas(true);
+        QTRY_COMPARE(requested.count(), 2);
+        QCOMPARE(requested.last().at(1).toString(), QString("catalog"));
+        QVERIFY(model->applyChildren(
+            7, "catalog", requested.last().at(2).toULongLong(),
+            {{"catalog-table", "catalog_table", "pg_catalog.catalog_table", "table", false}}));
+        QTRY_COMPARE(controller.quickObjectResults().size(), 1);
+        QVERIFY(model->objectSnapshot(7, "catalog-table").has_value());
+        QVERIFY(model->matchesObject(7, "catalog-table", "table", "pg_catalog.catalog_table",
+                                     "catalog", {}, true));
+
+        controller.setShowSystemSchemas(false);
+        QVERIFY(model->canShowUnverifiedObject(7, "\"public\".\"ordinary\""));
+        QVERIFY(model->canShowUnverifiedObject(7, "public.ordinary"));
+        QVERIFY(!model->canShowUnverifiedObject(7, "\"pg_catalog\".\"hidden\""));
+        QVERIFY(!model->canShowUnverifiedObject(7, "pg_catalog.hidden"));
+        QVERIFY(!model->canShowUnverifiedObject(7, "unqualified"));
+        QTRY_VERIFY(controller.quickObjectResults().isEmpty());
+        QVERIFY(!model->objectSnapshot(7, "catalog-table").has_value());
+        QVERIFY(model->matchesObject(7, "catalog-table", "table", "pg_catalog.catalog_table",
+                                     "catalog"));
+        QVERIFY(!model->matchesObject(7, "catalog-table", "table", "pg_catalog.catalog_table",
+                                      "catalog", {}, true));
+    }
+
+    void quickObjectSearchInvalidatesOldQueriesAndConnectionResults() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        controller.addConnection(7, "First");
+        controller.addConnection(8, "Second");
+        controller.setSelectedConnection(7);
+        controller.startQuickObjectSearch("old");
+        QTRY_COMPARE(requested.count(), 1);
+        controller.startQuickObjectSearch("new");
+        QVERIFY(model->applyChildren(7, {}, requested.first().at(2).toULongLong(),
+                                     {{"old", "old table", "old table", "table", false},
+                                      {"new", "new table", "new table", "table", false}}));
+        QTRY_COMPARE(controller.quickObjectResults().size(), 1);
+        QCOMPARE(controller.quickObjectResults().first().objectId, QString("new"));
+
+        controller.setSelectedConnection(8);
+        QCOMPARE(controller.quickObjectResults().size(), 0);
+        QCOMPARE(controller.quickObjectSearchStatus(), QString());
+        controller.startQuickObjectSearch("second");
+        QTRY_COMPARE(requested.count(), 2);
+        QCOMPARE(requested.last().at(0).toULongLong(), quint64(8));
+        QVERIFY(model->applyChildren(8, {}, requested.last().at(2).toULongLong(),
+                                     {{"second", "second table", "second table", "table", false}}));
+        QTRY_COMPARE(controller.quickObjectResults().size(), 1);
+        QCOMPARE(controller.quickObjectResults().first().connection, quint64(8));
+        controller.cancelQuickObjectSearch();
+        QCOMPARE(controller.quickObjectResults().size(), 0);
+    }
+
+    void quickObjectSearchUsesForgivingOrderedNameMatching() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        controller.addConnection(7, "Selected");
+        controller.setSelectedConnection(7);
+        controller.startQuickObjectSearch("cma");
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(model->applyChildren(
+            7, {}, requested.last().at(2).toULongLong(),
+            {{"customer", "CustomerAccounts", "CustomerAccounts", "table", false},
+             {"other", "Orders", "Orders", "table", false}}));
+        QTRY_COMPARE(controller.quickObjectResults().size(), 1);
+        QCOMPARE(controller.quickObjectResults().first().objectId, QString("customer"));
+    }
+
+    void quickObjectSearchRetainsValidRowsWhenOneSchemaFails() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        controller.addConnection(7, "Selected");
+        controller.setSelectedConnection(7);
+        controller.startQuickObjectSearch("matched");
+        QTRY_COMPARE(requested.count(), 1);
+        const auto root = model->index(0, 0);
+        QVERIFY(model->applyChildren(7, {}, requested.last().at(2).toULongLong(),
+                                     {{"public", "public", "public", "schema", true},
+                                      {"archive", "archive", "archive", "schema", true}}));
+        QTRY_COMPARE(requested.count(), 2);
+        QCOMPARE(requested.last().at(1).toString(), QString("public"));
+        QVERIFY(model->applyChildren(
+            7, "public", requested.last().at(2).toULongLong(),
+            {{"table", "matched_table", "public.matched_table", "table", false}}));
+        QTRY_COMPARE(requested.count(), 3);
+        QCOMPARE(requested.last().at(1).toString(), QString("archive"));
+        QVERIFY(model->failChildren(7, "archive", requested.last().at(2).toULongLong(),
+                                    "Metadata unavailable"));
+        QTRY_COMPARE(controller.quickObjectResults().size(), 1);
+        QCOMPARE(controller.quickObjectResults().first().objectId, QString("table"));
+        QVERIFY(controller.quickObjectSearchIncomplete());
+        QVERIFY(controller.quickObjectSearchStatus().contains("Metadata unavailable"));
+
+        model->refresh(root);
+        QCOMPARE(controller.quickObjectResults().size(), 0);
+    }
+
+    void quickObjectSearchProvidesColumnAndKeyActivationTargets() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        controller.addConnection(7, "Selected");
+        controller.setSelectedConnection(7);
+        controller.startQuickObjectSearch("customer");
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(model->applyChildren(7, {}, requested.last().at(2).toULongLong(),
+                                     {{"schema", "public", "public", "schema", true}}));
+        QTRY_COMPARE(requested.count(), 2);
+        QVERIFY(model->applyChildren(7, "schema", requested.last().at(2).toULongLong(),
+                                     {{"table", "orders", "public.orders", "table", true}}));
+        QTRY_COMPARE(requested.count(), 3);
+        QVERIFY(model->applyChildren(
+            7, "table", requested.last().at(2).toULongLong(),
+            {{"column", "customer_id", "public.orders.customer_id", "column", false},
+             {"key", "customer_pk", "public.orders.customer_pk", "primary_key", false}}));
+        QTRY_COMPARE(controller.quickObjectResults().size(), 2);
+        const auto results = controller.quickObjectResults();
+        QCOMPARE(results.at(0).objectId, QString("column"));
+        QCOMPARE(results.at(0).targetObjectId, QString("table"));
+        QCOMPARE(results.at(0).targetQualifiedName, QString("public.orders"));
+        QCOMPARE(results.at(0).targetKind, QString("table"));
+        QCOMPARE(results.at(0).targetParentObjectId, QString("schema"));
+        QCOMPARE(results.at(0).targetPane, 0);
+        QCOMPARE(results.at(1).objectId, QString("key"));
+        QCOMPARE(results.at(1).targetObjectId, QString("table"));
+        QCOMPARE(results.at(1).targetPane, 2);
+
+        controller.startQuickObjectSearch("orders");
+        QTRY_VERIFY(!controller.quickObjectResults().isEmpty());
+        const auto tableResults = controller.quickObjectResults();
+        const auto tableResult = std::find_if(
+            tableResults.cbegin(), tableResults.cend(),
+            [](const QuickObjectResult& result) { return result.kind == QStringLiteral("table"); });
+        QVERIFY(tableResult != tableResults.cend());
+        QCOMPARE(tableResult->targetObjectId, QString("table"));
+        QCOMPARE(tableResult->targetPane, 5);
+    }
+
+    void quickObjectSearchSkipsStructuralRowsButTraversesThem() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        controller.addConnection(7, "Selected");
+        controller.setSelectedConnection(7);
+        controller.startQuickObjectSearch("matched");
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(
+            model->applyChildren(7, {}, requested.last().at(2).toULongLong(),
+                                 {{"schema", "matched schema", "matched schema", "schema", true}}));
+        QTRY_COMPARE(requested.count(), 2);
+        QVERIFY(model->applyChildren(7, "schema", requested.last().at(2).toULongLong(),
+                                     {{"group", "matched group", {}, "group", true}}));
+        QTRY_COMPARE(requested.count(), 3);
+        QVERIFY(
+            model->applyChildren(7, "group", requested.last().at(2).toULongLong(),
+                                 {{"table", "matched table", "matched table", "table", false}}));
+        QTRY_COMPARE(controller.quickObjectResults().size(), 1);
+        QCOMPARE(controller.quickObjectResults().first().objectId, QString("table"));
+    }
+
+    void quickObjectSearchCanChooseAnyVisibleConnectionIncludingZero() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        controller.addConnection(11, "First");
+        controller.addConnection(22, "Second");
+        controller.addConnection(0, "Zero");
+        controller.setVisibleConnections({11, 22, 0});
+        QVERIFY(controller.isVisibleConnection(11));
+        QVERIFY(controller.isVisibleConnection(22));
+        QVERIFY(controller.isVisibleConnection(0));
+        QVERIFY(!controller.isVisibleConnection(99));
+        controller.startQuickObjectSearch("needle", 22);
+        QTRY_COMPARE(requested.count(), 1);
+        QCOMPARE(requested.last().at(0).toULongLong(), quint64(22));
+        QVERIFY(
+            model->applyChildren(22, {}, requested.last().at(2).toULongLong(),
+                                 {{"second", "needle second", "needle second", "table", false}}));
+        QTRY_COMPARE(controller.quickObjectResults().size(), 1);
+        QCOMPARE(controller.quickObjectResults().first().connection, quint64(22));
+        controller.startQuickObjectSearch("needle", quint64(0));
+        QTRY_COMPARE(requested.count(), 2);
+        QCOMPARE(requested.last().at(0).toULongLong(), quint64(0));
+        QVERIFY(model->applyChildren(0, {}, requested.last().at(2).toULongLong(),
+                                     {{"zero", "needle zero", "needle zero", "table", false}}));
+        QTRY_COMPARE(controller.quickObjectResults().size(), 1);
+        QCOMPARE(controller.quickObjectResults().first().connection, quint64(0));
+        QVERIFY(!model->index(0, 0).data(NavigatorModel::ChildrenLoadedRole).toBool());
+        controller.startQuickObjectSearch("needle", 99);
+        QCoreApplication::processEvents();
+        QCOMPARE(requested.count(), 2);
+        QCOMPARE(controller.quickObjectResults().size(), 0);
+        QVERIFY(controller.quickObjectSearchStatus().contains("available"));
+    }
+
     void mutationMenuTargetsClickedObjectAndExplainsUnsupportedRename() {
         EngineAdapter engine;
         QTreeView tree;
@@ -298,6 +659,8 @@ class NavigatorModelTest : public QObject {
         QVERIFY(model.applyChildren(1, "group", requested.last().at(2).toULongLong(),
                                     {{"index-id", "idx", "idx", "index", false}}));
         QCOMPARE(model.index(0, 0, group).data().toString(), QString("idx"));
+        QVERIFY(model.matchesObject(1, "index-id", "index", "idx", "table"));
+        QVERIFY(model.matchesObject(1, "index-id", "index", "idx", "group"));
     }
     void failedChildrenStayVisibleUntilExplicitRefresh() {
         NavigatorModel model;

@@ -23,6 +23,8 @@ enum class Dimension {
     Icon,
     IconLarge,
     ModalWidth,
+    QuickSearchWidth,
+    QuickSearchRow,
     SheetWidth,
     TableRow,
     TableColumn,

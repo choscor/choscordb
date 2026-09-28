@@ -14,6 +14,7 @@
 #include "design_system/metrics/metrics.h"
 #include "design_system/modal_panel/modal_panel.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/quick_search/quick_search_dialog.h"
 #include "design_system/right_sheet/right_sheet.h"
 #include "design_system/table/table_style.h"
 #include "design_system/text/text.h"
@@ -133,6 +134,8 @@ QList<Specimen> specimens() {
          "desktop/design_system/modal_panel/modal_panel.cpp"},
         {"Components", "right-sheet", "Right sheet",
          "desktop/design_system/right_sheet/right_sheet.cpp"},
+        {"Components", "quick-search", "Quick search overlay",
+         "desktop/design_system/quick_search/quick_search_dialog.cpp"},
         {"Components", "nonmodal", "Nonmodal content",
          "desktop/design_system/dialog_shell/dialog_shell.cpp"},
         {"Components", "confirmations", "Destructive confirmations",
@@ -265,6 +268,27 @@ void populateRightSheet(QWidget* host, QVBoxLayout* layout) {
     QObject::connect(done, &QPushButton::clicked, sheet, &QDialog::reject);
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(sheet));
     QObject::connect(open, &QPushButton::clicked, sheet, &QDialog::open);
+    layout->addStretch();
+}
+
+void populateQuickSearch(QWidget* host, QVBoxLayout* layout) {
+    layout->addWidget(new Text("A compact switcher for destinations and SQL matches.", host));
+    auto* open = new Button("Open quick search", host);
+    open->setObjectName("previewOpenQuickSearch");
+    layout->addWidget(open);
+    auto* dialog = new QuickSearchDialog(host);
+    dialog->setObjectName("previewQuickSearchDialog");
+    dialog->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
+    dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
+    open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
+    QObject::connect(dialog, &QuickSearchDialog::queryChanged, dialog, [dialog](const QString&) {
+        dialog->setResults(
+            {{"Screen", "Query", "Open the SQL workspace", "screen:query"},
+             {"Object", "customers", "Example Postgres · public · table", "object:customers"},
+             {"SQL text", "SELECT * FROM customers", "Query 1 · line 4", "sql:query-1:4"}});
+        dialog->setStatus("3 destinations");
+    });
+    QObject::connect(open, &QPushButton::clicked, dialog, &QuickSearchDialog::openSearch);
     layout->addStretch();
 }
 
@@ -867,6 +891,8 @@ void PreviewWindow::rebuildSpecimens() {
             contentLayout->addWidget(choiceTable);
         } else if (id == "right-sheet") {
             populateRightSheet(content, contentLayout);
+        } else if (id == "quick-search") {
+            populateQuickSearch(content, contentLayout);
         } else if (id == "dialog-sections") {
             populateDialogSections(content, contentLayout);
         } else if (id == "dialogs" || id == "nonmodal" || id == "confirmations") {

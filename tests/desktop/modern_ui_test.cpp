@@ -1,6 +1,7 @@
 #include "modern_ui_test.h"
 #include "app/appearance_controller.h"
 #include "app/main_window.h"
+#include "app/navigator_controller.h"
 #include "app/object_explorer.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
@@ -9,6 +10,7 @@
 #include "design_system/button/button.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/menu.h"
+#include "design_system/quick_search/quick_search_dialog.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
@@ -58,6 +60,7 @@
 #include <QVBoxLayout>
 #include <Qsci/qscilexersql.h>
 #include <Qsci/qsciscintilla.h>
+#include <algorithm>
 
 void ModernUiTest::applicationMenusExposeHelpAndAbout() {
     choscordb::MainWindow window;

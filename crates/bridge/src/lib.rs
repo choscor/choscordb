@@ -361,6 +361,8 @@ pub mod ffi {
         workspace_tabs: Vec<WorkspaceTabDto>,
         active_tab: u32,
         history: Vec<HistoryEntryDto>,
+        history_incomplete: bool,
+        history_next_offset: u64,
         history_policy: HistoryPolicyDto,
         editor_preferences: EditorPreferencesDto,
         query_preferences: QueryPreferencesDto,
@@ -481,6 +483,13 @@ pub mod ffi {
         ) -> Submit;
         fn workspace_tabs_restore(engine: &mut BridgeEngine, token: u64) -> Submit;
         fn history_list(engine: &mut BridgeEngine, limit: u32, offset: u32, token: u64) -> Submit;
+        fn history_search(
+            engine: &mut BridgeEngine,
+            query: &str,
+            limit: u32,
+            offset: u64,
+            token: u64,
+        ) -> Submit;
         fn query_preference_limits() -> QueryPreferenceLimitsDto;
         fn appearance_layout_get(engine: &mut BridgeEngine, token: u64) -> Submit;
         fn appearance_layout_set(

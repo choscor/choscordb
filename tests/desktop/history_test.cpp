@@ -10,12 +10,24 @@
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QStringList>
 #include <QTableView>
 #include <QToolButton>
 #include <QtTest>
 class HistoryTest : public QObject {
     Q_OBJECT
   private slots:
+    void historyClearSignalsStartBeforeSynchronousRejection() {
+        choscordb::EngineAdapter adapter;
+        adapter.shutdown();
+        QStringList events;
+        connect(&adapter, &choscordb::EngineAdapter::historyClearStarted, this,
+                [&events](quint64) { events << "start"; });
+        connect(&adapter, &choscordb::EngineAdapter::recoveryFailed, this,
+                [&events](quint64, const QString&) { events << "failed"; });
+        QVERIFY(!adapter.clearHistory(991));
+        QCOMPARE(events, QStringList({"start", "failed"}));
+    }
     void actionsUseAnIconToolbarAndFooterOnlyShowsStatusAndPaging() {
         choscordb::EngineAdapter adapter;
         choscordb::HistoryDock history(&adapter);

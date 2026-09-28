@@ -1,4 +1,5 @@
 #pragma once
+#include "design_system/quick_search/quick_search_dialog.h"
 #include "design_system/toast_region/toast_region.h"
 #include <QHash>
 #include <QMainWindow>
@@ -15,6 +16,7 @@ namespace choscordb {
 namespace design {
 class PlatformAccessibilityMonitor;
 class ThemeManager;
+class QuickSearchDialog;
 } // namespace design
 class SqlEditor;
 class QueryWorkspace;
@@ -101,6 +103,15 @@ class MainWindow final : public QMainWindow {
     bool constructing_ = true;
     std::function<void()> updateInstall_;
     void finishClose(QCloseEvent* event);
+    void showQuickSearch();
+    void updateQuickSearch(const QString& query);
+    void renderQuickSearch();
+    void updateQuickObjectRows();
+    void scanQuickSearchEditors(quint64 generation, int tabIndex, int line, int remainingChars);
+    void refreshQuickSearchIfOpen();
+    std::optional<quint64> quickSearchConnection() const;
+    void recordQuickObjectVisit(quint64 connection, const QString& objectId);
+    void activateQuickSearch(const QString& id);
     SqlEditor* addEditor();
     ObjectExplorer* makeObjectExplorer();
     void openObjectTab(quint64 connection, const QString& objectId, const QString& label,
@@ -124,6 +135,40 @@ class MainWindow final : public QMainWindow {
     AppearanceController* appearance_ = nullptr;
     EditorCompletionController* completion_ = nullptr;
     SearchPanel* search_ = nullptr;
+    design::QuickSearchDialog* quickSearch_ = nullptr;
+    struct QuickEditorMatch {
+        QPointer<SqlEditor> editor;
+        quint64 revision = 0;
+        int line = 0, column = 0, length = 0;
+    };
+    quint64 quickSearchGeneration_ = 0;
+    bool quickEditorIncomplete_ = false;
+    bool quickEditorPending_ = false, quickHistoryPending_ = false;
+    bool quickHistoryIncomplete_ = false;
+    bool quickHistoryReady_ = false;
+    bool quickHistoryClearing_ = false;
+    bool quickObjectIncomplete_ = false;
+    quint64 quickHistoryToken_ = 0;
+    quint64 quickHistoryCursor_ = 0;
+    quint64 quickHistoryClearToken_ = 0;
+    quint64 quickHistoryPolicyToken_ = 0;
+    bool quickHistoryPolicyKnown_ = false;
+    bool quickHistoryRecordingEnabled_ = true;
+    QString quickHistoryPolicyError_;
+    QString quickHistoryError_;
+    QString quickObjectStatus_;
+    QList<design::QuickSearchResult> quickNameRows_, quickEditorRows_, quickHistoryRows_,
+        quickObjectRows_;
+    QHash<QString, QuickEditorMatch> quickEditorMatches_;
+    QHash<QString, QVariant> quickHistoryMatches_;
+    QHash<QString, QVariantMap> quickObjectMatches_;
+    QList<QVariantMap> quickRecentObjects_;
+    QHash<quint64, QPointer<ObjectExplorer>> quickRecentTabs_;
+    quint64 nextQuickRecentVisit_ = 0;
+    QVariantMap quickPendingRecentObject_;
+    QString quickRecentStatus_;
+    QHash<SqlEditor*, quint64> quickEditorRevisions_;
+    QHash<QString, QPointer<QWidget>> quickTabTargets_;
     QTabWidget* editors_ = nullptr;
     QWidget* sqlResultArea_ = nullptr;
     ObjectExplorer* initialObjectExplorer_ = nullptr;

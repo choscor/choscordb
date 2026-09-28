@@ -27,6 +27,7 @@
     <file alias="menu/menu_application_style_sheet.qss">../design_system/menu/menu_application_style_sheet.qss</file>
     <file alias="menu/menu_style_sheet.qss">../design_system/menu/menu_style_sheet.qss</file>
     <file alias="progress/progress_style_sheet.qss">../design_system/progress/progress_style_sheet.qss</file>
+    <file alias="quick_search/quick_search_style_sheet.qss">../design_system/quick_search/quick_search_style_sheet.qss</file>
     <file alias="scrollbar/scrollbar_style_sheet.qss">../design_system/scrollbar/scrollbar_style_sheet.qss</file>
     <file alias="select/popup.qss">../design_system/select/popup.qss</file>
     <file alias="select/popup_view.qss">../design_system/select/popup_view.qss</file>

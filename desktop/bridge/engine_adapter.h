@@ -203,7 +203,9 @@ class EngineAdapter final : public QObject {
                                           const QString& replacement, bool caseSensitive,
                                           bool wholeWord);
     bool listHistory(quint32 limit, quint32 offset, quint64 token);
+    bool searchHistory(const QString& query, quint32 limit, quint64 token, quint64 offset = 0);
     bool clearHistory(quint64 token);
+    bool historyClearInProgress() const;
     bool getHistoryPolicy(quint64 token);
     bool setHistoryPolicy(const HistoryPolicy& policy, quint64 token);
     bool restoreWorkspace(quint64 token);
@@ -304,6 +306,9 @@ class EngineAdapter final : public QObject {
     void shutdownFailed(const QString& error, bool retryable);
     void historyWriteFailed(quint64 query, const QString& error);
     void historyListed(quint64 token, const QList<choscordb::SavedHistoryEntry>& entries);
+    void historySearched(quint64 token, const QList<choscordb::SavedHistoryEntry>& entries,
+                         bool incomplete, quint64 nextOffset);
+    void historyClearStarted(quint64 token);
     void historyCleared(quint64 token);
     void editorPreferencesReady(quint64 token, const choscordb::EditorPreferences& preferences);
     void appearanceLayoutReady(quint64 token, bool hasSavedValue,
@@ -343,6 +348,7 @@ class EngineAdapter final : public QObject {
                                   const QString& error);
 
   private:
+    void trackHistoryClears();
     bool queueRecovery(quint64 token, std::function<Submit()> command, quint64 bytes = 0,
                        bool duringShutdown = false);
     void pumpRecovery();

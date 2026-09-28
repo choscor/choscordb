@@ -42,6 +42,7 @@ DESIGN_COMPOSITES = {
     "DialogSections",
     "FieldValidation",
     "ModalDialog",
+    "QuickSearchDialog",
     "NavigationProfileDelegate",
     "RecentHistoryRowDelegate",
     "TabAddCorner",

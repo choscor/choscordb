@@ -9,6 +9,7 @@
 #include "design_system/label/label_style.h"
 #include "design_system/menu/menu_style.h"
 #include "design_system/progress/progress_style.h"
+#include "design_system/quick_search/quick_search_dialog.h"
 #include "design_system/scrollbar/scrollbar_style.h"
 #include "design_system/select/select_style.h"
 #include "design_system/separator/separator_style.h"
@@ -42,8 +43,8 @@ QString controlStyleSheet(const ResolvedTheme& theme) {
         toolButtonStyleSheet() + toolbarStyleSheet() + itemViewStyleSheet() + tableStyleSheet() +
         treeStyleSheet() + tableItemStyleSheet() + listStyleSheet() + treeItemStyleSheet() +
         itemViewStateStyleSheet() + treeStateStyleSheet() + headerStyleSheet() + menuStyleSheet() +
-        scrollbarStyleSheet() + fieldBaseStyleSheet() + textAreaStyleSheet() +
-        fieldStateStyleSheet() + selectStyleSheet() + spinBoxStyleSheet();
+        scrollbarStyleSheet() + quickSearchStyleSheet() + fieldBaseStyleSheet() +
+        textAreaStyleSheet() + fieldStateStyleSheet() + selectStyleSheet() + spinBoxStyleSheet();
     auto field = theme.colors.surface;
     auto sidebarGlassTop = theme.colors.sidebar;
     sidebarGlassTop.setAlpha(232);

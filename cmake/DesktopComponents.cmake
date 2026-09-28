@@ -38,6 +38,7 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/modal_panel/modal_panel.cpp
   desktop/design_system/platform_accessibility.cpp
   desktop/design_system/progress/progress_style.cpp
+  desktop/design_system/quick_search/quick_search_dialog.cpp
   desktop/design_system/right_sheet/right_sheet.cpp
   desktop/design_system/scrollbar/scrollbar_style.cpp
   desktop/design_system/select/select_popup.cpp
@@ -130,6 +131,8 @@ choscordb_add_library(choscordb-desktop
   desktop/app/query_settings.cpp
   desktop/app/editor_preferences.cpp
   desktop/app/main_window.cpp
+  desktop/app/main_window_quick_search.cpp
+  desktop/app/quick_search_match.cpp
   desktop/app/main_window_ui.cpp
   desktop/app/main_window_workspace.cpp
   desktop/app/main_window_lifecycle.cpp
