@@ -7,6 +7,15 @@ Implementation is in progress. See [the PRD](docs/prd-mvp.md), [UI reference](do
 To try the application with sample data, use the runnable
 [PostgreSQL and SQLite examples](examples/databases/README.md).
 
+## Downloads
+
+Versioned binaries are hosted on [GitHub Releases](https://github.com/choscor/choscordb/releases).
+macOS downloads use the signed and notarized DMG. Windows ZIP and Linux AppImage
+assets are added after their native build and package checks pass; see the
+[platform release guide](docs/WINDOWS_LINUX_RELEASE.md). The Windows ZIP is
+unsigned and may trigger Windows security warnings or be blocked by device
+policy.
+
 ## Development
 
 Install the pinned tools, then use the repository-owned quality interface:

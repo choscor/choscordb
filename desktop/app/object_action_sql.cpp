@@ -10,8 +10,7 @@ namespace {
 constexpr qsizetype kMaximumNameSize = 1024 * 1024;
 
 bool validName(const QString& name, const QString& driver, bool newName = false) {
-    if (name.isEmpty() || (newName && name.trimmed().isEmpty()) ||
-        name.size() > kMaximumNameSize ||
+    if (name.isEmpty() || (newName && name.trimmed().isEmpty()) || name.size() > kMaximumNameSize ||
         name.contains(QChar::Null))
         return false;
     for (qsizetype i = 0; i < name.size(); ++i) {
@@ -66,11 +65,9 @@ std::optional<QString> quotedPart(const QString& input, qsizetype& position) {
     return std::nullopt;
 }
 
-std::optional<std::pair<QString, QString>> identity(const QString& driver,
-                                                     const QString& objectId,
-                                                     const QString& qualifiedName) {
-    if (objectId.size() > kMaximumNameSize * 2 ||
-        qualifiedName.size() > kMaximumNameSize * 2)
+std::optional<std::pair<QString, QString>> identity(const QString& driver, const QString& objectId,
+                                                    const QString& qualifiedName) {
+    if (objectId.size() > kMaximumNameSize * 2 || qualifiedName.size() > kMaximumNameSize * 2)
         return std::nullopt;
     if (driver == QStringLiteral("postgres")) {
         const auto idParts = objectId.split(QLatin1Char(':'));
@@ -108,18 +105,16 @@ std::optional<std::pair<QString, QString>> identity(const QString& driver,
     return std::pair{schema, name};
 }
 
-ObjectActionStatement prepare(const QString& driver, const QString& kind,
-                              const QString& objectId, const QString& qualifiedName,
-                              const std::optional<QString>& newName,
+ObjectActionStatement prepare(const QString& driver, const QString& kind, const QString& objectId,
+                              const QString& qualifiedName, const std::optional<QString>& newName,
                               const QString& relationSubtype) {
     if (kind != QStringLiteral("table") && kind != QStringLiteral("view"))
         return {.error = QStringLiteral("Only tables and views support this action.")};
-    if (!relationSubtype.isEmpty() &&
-        !(driver == QStringLiteral("postgres") &&
-          ((relationSubtype == QStringLiteral("materialized_view") &&
-            kind == QStringLiteral("view")) ||
-           (relationSubtype == QStringLiteral("foreign_table") &&
-            kind == QStringLiteral("table")))))
+    if (!relationSubtype.isEmpty() && !(driver == QStringLiteral("postgres") &&
+                                        ((relationSubtype == QStringLiteral("materialized_view") &&
+                                          kind == QStringLiteral("view")) ||
+                                         (relationSubtype == QStringLiteral("foreign_table") &&
+                                          kind == QStringLiteral("table")))))
         return {.error = QStringLiteral("The selected relation type is not supported.")};
     if (newName && driver == QStringLiteral("sqlite") && kind == QStringLiteral("view"))
         return {.error = QStringLiteral("SQLite does not support renaming views directly.")};
@@ -129,15 +124,16 @@ ObjectActionStatement prepare(const QString& driver, const QString& kind,
     const auto& [schema, oldName] = *parts;
     const auto delimiter = driver == QStringLiteral("mysql") ? QLatin1Char('`') : QLatin1Char('"');
     const auto original = quoted(schema, delimiter) + QLatin1Char('.') + quoted(oldName, delimiter);
-    QString keyword = kind == QStringLiteral("table") ? QStringLiteral("TABLE")
-                                                        : QStringLiteral("VIEW");
+    QString keyword =
+        kind == QStringLiteral("table") ? QStringLiteral("TABLE") : QStringLiteral("VIEW");
     if (relationSubtype == QStringLiteral("materialized_view"))
         keyword = QStringLiteral("MATERIALIZED VIEW");
     else if (relationSubtype == QStringLiteral("foreign_table"))
         keyword = QStringLiteral("FOREIGN TABLE");
     if (!newName)
-        return {.valid = true, .sql = QStringLiteral("DROP ") + keyword + QLatin1Char(' ') +
-                                      original + QLatin1Char(';'),
+        return {.valid = true,
+                .sql = QStringLiteral("DROP ") + keyword + QLatin1Char(' ') + original +
+                       QLatin1Char(';'),
                 .newQualifiedName = original};
     if (!validName(*newName, driver, true))
         return {.error = QStringLiteral("Enter a valid unqualified object name.")};
@@ -153,25 +149,23 @@ ObjectActionStatement prepare(const QString& driver, const QString& kind,
               QStringLiteral(" RENAME TO ") + quoted(*newName, delimiter) + QLatin1Char(';');
     QString renamedId = objectId;
     if (driver != QStringLiteral("postgres"))
-        renamedId = QString::fromUtf8(QJsonDocument(QJsonArray{schema, *newName}).toJson(
-            QJsonDocument::Compact));
+        renamedId = QString::fromUtf8(
+            QJsonDocument(QJsonArray{schema, *newName}).toJson(QJsonDocument::Compact));
     return {.valid = true, .sql = sql, .newObjectId = renamedId, .newQualifiedName = target};
 }
 
 } // namespace
 
 ObjectActionStatement ObjectActionSql::drop(const QString& driver, const QString& kind,
-                                             const QString& objectId,
-                                             const QString& qualifiedName,
-                                             const QString& relationSubtype) {
+                                            const QString& objectId, const QString& qualifiedName,
+                                            const QString& relationSubtype) {
     return prepare(driver, kind, objectId, qualifiedName, std::nullopt, relationSubtype);
 }
 
 ObjectActionStatement ObjectActionSql::rename(const QString& driver, const QString& kind,
-                                               const QString& objectId,
-                                               const QString& qualifiedName,
-                                               const QString& newName,
-                                               const QString& relationSubtype) {
+                                              const QString& objectId, const QString& qualifiedName,
+                                              const QString& newName,
+                                              const QString& relationSubtype) {
     return prepare(driver, kind, objectId, qualifiedName, newName, relationSubtype);
 }
 

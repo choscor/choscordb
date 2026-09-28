@@ -40,8 +40,8 @@ void ProfileDialog::connectDraft(bool openQuery) {
     setBusy(true, tr("Connecting…"));
     connectionSubmissionError_.clear();
     connecting_ = true;
-    const bool hasPassword = (value.driver == "postgres" || value.driver == "mysql") &&
-                             !password_->text().isEmpty();
+    const bool hasPassword =
+        (value.driver == "postgres" || value.driver == "mysql") && !password_->text().isEmpty();
     const bool hasSshSecret = value.sshEnabled && value.sshAuthentication != "agent" &&
                               (sshSecret_->isModified() || !sshSecret_->text().isEmpty());
     const bool hasTlsSecret = !value.tlsClientIdentity.isEmpty() &&
@@ -136,15 +136,12 @@ void ProfileDialog::setDraft(const SavedProfile& value) {
     password_->setPlaceholderText(value.credentialRef.isEmpty()
                                       ? tr("Optional — leave blank for passwordless authentication")
                                       : tr("Saved password — leave unchanged to keep"));
-    saveCredentials_->setChecked(!value.credentialRef.isEmpty() ||
-                                 !value.sshCredentialRef.isEmpty() ||
-                                 !value.sshPrivateKeyRef.isEmpty() ||
-                                 !value.tlsCredentialRef.isEmpty() ||
-                                 !value.proxyCredentialRef.isEmpty() ||
-                                 (value.sshJumpCredentialRefs != "{}" &&
-                                  !value.sshJumpCredentialRefs.isEmpty()) ||
-                                 (value.sshJumpPrivateKeyRefs != "{}" &&
-                                  !value.sshJumpPrivateKeyRefs.isEmpty()));
+    saveCredentials_->setChecked(
+        !value.credentialRef.isEmpty() || !value.sshCredentialRef.isEmpty() ||
+        !value.sshPrivateKeyRef.isEmpty() || !value.tlsCredentialRef.isEmpty() ||
+        !value.proxyCredentialRef.isEmpty() ||
+        (value.sshJumpCredentialRefs != "{}" && !value.sshJumpCredentialRefs.isEmpty()) ||
+        (value.sshJumpPrivateKeyRefs != "{}" && !value.sshJumpPrivateKeyRefs.isEmpty()));
     setSecurityDraft(value);
     setProxyDraft(value);
     filling_ = false;
@@ -268,8 +265,8 @@ void ProfileDialog::testDraft(const SavedProfile& profile) {
     if (!validateConnectionDraft(value))
         return;
     setBusy(true, tr("Testing connection…"));
-    const bool hasPassword = (value.driver == "postgres" || value.driver == "mysql") &&
-                             !password_->text().isEmpty();
+    const bool hasPassword =
+        (value.driver == "postgres" || value.driver == "mysql") && !password_->text().isEmpty();
     const bool hasSshSecret = value.sshEnabled && value.sshAuthentication != "agent" &&
                               (sshSecret_->isModified() || !sshSecret_->text().isEmpty());
     const bool hasTlsSecret = !value.tlsClientIdentity.isEmpty() &&
@@ -310,8 +307,7 @@ bool ProfileDialog::validateConnectionDraft(const SavedProfile& profile) {
             showFieldError(field, tr("Credential exceeds the supported size."));
             return true;
         };
-        if (((profile.driver == "postgres" || profile.driver == "mysql") &&
-             oversized(password_)) ||
+        if (((profile.driver == "postgres" || profile.driver == "mysql") && oversized(password_)) ||
             (profile.sshEnabled && profile.sshAuthentication != "agent" && oversized(sshSecret_)) ||
             (!profile.tlsClientIdentity.isEmpty() && oversized(tlsSecret_)) ||
             (proxyNeedsPassword(profile) && oversized(proxySecret_)))

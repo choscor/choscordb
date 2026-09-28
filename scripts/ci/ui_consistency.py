@@ -45,6 +45,7 @@ DESIGN_COMPOSITES = {
     "QuickSearchDialog",
     "NavigationProfileDelegate",
     "RecentHistoryRowDelegate",
+    "StatusLine",
     "TabAddCorner",
 }
 SHARED_DIALOGS = {"ConfirmationDialog", "DialogShell"}

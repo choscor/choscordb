@@ -299,6 +299,16 @@ class ObjectDataWorkspaceTest : public QObject {
         QCoreApplication::processEvents();
         auto* header = explorer.findChild<QWidget*>("objectHeader");
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
+        QCOMPARE(QString::fromLatin1(footer->metaObject()->className()),
+                 QString("choscordb::design::StatusLine"));
+        auto* sqlSummary = window.findChild<QLabel*>("executionSummary");
+        auto* dataSummary = explorer.findChild<QLabel*>("objectDataSummary");
+        auto* objectStatus = explorer.findChild<QLabel*>("objectStatus");
+        QVERIFY(sqlSummary && dataSummary && objectStatus);
+        QCOMPARE(sqlSummary->font().pixelSize(), 13);
+        QCOMPARE(footer->font().pixelSize(), sqlSummary->font().pixelSize());
+        QCOMPARE(dataSummary->font().pixelSize(), sqlSummary->font().pixelSize());
+        QCOMPARE(objectStatus->font().pixelSize(), sqlSummary->font().pixelSize());
         QCOMPARE(footer->findChildren<QPushButton*>().size(), 2);
         for (const char* name : {"objectOpenQuery", "objectGenerateSql", "objectDataCancel"}) {
             auto* control = explorer.findChild<QWidget*>(name);

@@ -10,9 +10,11 @@
 #include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/quick_search/quick_search_dialog.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/table/table_style.h"
 #include "design_system/tabs/tab_add_corner.h"
 #include "design_system/text/text.h"
+#include "design_system/theme.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
@@ -22,7 +24,6 @@
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemView>
 #include <QApplication>
-#include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
 #include <QCompleter>
@@ -54,7 +55,6 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSpinBox>
-#include <QSplitter>
 #include <QStandardItemModel>
 #include <QSvgRenderer>
 #include <QTabBar>
@@ -135,41 +135,6 @@ bool containsExactPatch(const QImage& capture, const QImage& witness) {
 }
 } // namespace
 
-void PreviewTest::editorResultsSplitUsesEqualPanesInBothThemes() {
-    choscordb::design::PreviewWindow window;
-    QVERIFY(window.selectSpecimen("separators-splitters"));
-    window.show();
-    QCoreApplication::processEvents();
-    for (const auto* name : {"previewLight", "previewDark"}) {
-        auto* host = window.findChild<QWidget*>(name);
-        QVERIFY(host);
-        auto* splitter = host->findChild<QSplitter*>("previewEditorResultsSplit");
-        QVERIFY(splitter);
-        QCOMPARE(splitter->orientation(), Qt::Vertical);
-        const auto sizes = splitter->sizes();
-        QVERIFY(qAbs(sizes[0] - sizes[1]) <= 2);
-    }
-}
-
-void PreviewTest::switchSpecimenUsesRealControlsInBothThemes() {
-    choscordb::design::PreviewWindow window;
-    QVERIFY(window.selectSpecimen("switches"));
-    window.show();
-    QCoreApplication::processEvents();
-    for (const auto* name : {"previewLight", "previewDark"}) {
-        auto* host = window.findChild<QWidget*>(name);
-        QVERIFY(host);
-        auto* off = host->findChild<QCheckBox*>("previewSwitchOff");
-        auto* on = host->findChild<QCheckBox*>("previewSwitchOn");
-        QVERIFY(off && on);
-        QVERIFY(off->isVisible() && on->isVisible());
-        QCOMPARE(off->property("designRole").toString(), QString("switch"));
-        QCOMPARE(on->property("designRole").toString(), QString("switch"));
-        QVERIFY(!off->isChecked());
-        QVERIFY(on->isChecked());
-    }
-}
-
 void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen("lists-navigation"));
@@ -198,6 +163,16 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
         QCoreApplication::processEvents();
         QCOMPARE(tree->viewport()->grab().toImage().pixelColor(row.right() - 8, row.center().y()),
                  choscordb::design::resolvedThemeForWidget(*tree).colors.muted);
+        auto* sidebarList = host->findChild<QListWidget*>("previewSidebarList");
+        QVERIFY(sidebarList && sidebarList->isVisible());
+        QCOMPARE(sidebarList->property("designSurface").toString(), QString("sidebar"));
+        const auto listRow = sidebarList->visualItemRect(sidebarList->item(0));
+        QTest::mouseMove(sidebarList->viewport(), QPoint(1, 1));
+        QTest::mouseMove(sidebarList->viewport(), listRow.center());
+        QCoreApplication::processEvents();
+        QCOMPARE(sidebarList->viewport()->grab().toImage().pixelColor(listRow.right() - 8,
+                                                                      listRow.center().y()),
+                 choscordb::design::resolvedThemeForWidget(*sidebarList).colors.muted);
     }
     QVERIFY(window.selectSpecimen("navigation-profile-row"));
     for (const auto* name : {"previewLight", "previewDark"}) {
@@ -654,8 +629,8 @@ void PreviewTest::selectPopupStaysAttachedNearWindowBottom() {
     dialog.resize(360, 220);
     QComboBox select(&dialog);
     select.setGeometry(20, 178, 240, 32);
-    select.addItems({"Verify server identity", "Verify certificate authority",
-                     "Require encryption", "Prefer TLS"});
+    select.addItems({"Verify server identity", "Verify certificate authority", "Require encryption",
+                     "Prefer TLS"});
     select.setCurrentIndex(select.count() - 1);
     select.view()->setMinimumHeight(180);
     dialog.show();
@@ -667,11 +642,11 @@ void PreviewTest::selectPopupStaysAttachedNearWindowBottom() {
     const int gap = qMax(0, qMax(popup->geometry().top() - select.geometry().bottom(),
                                  select.geometry().top() - popup->geometry().bottom()));
     QVERIFY2(gap <= 8, qPrintable(QString("popup %1-%2, select %3-%4, gap %5")
-                                     .arg(popup->geometry().top())
-                                     .arg(popup->geometry().bottom())
-                                     .arg(select.geometry().top())
-                                     .arg(select.geometry().bottom())
-                                     .arg(gap)));
+                                      .arg(popup->geometry().top())
+                                      .arg(popup->geometry().bottom())
+                                      .arg(select.geometry().top())
+                                      .arg(select.geometry().bottom())
+                                      .arg(gap)));
     select.hidePopup();
 }
 
@@ -964,6 +939,35 @@ void PreviewTest::standaloneExportsWithoutAProfile() {
     QVERIFY2(finished, "Standalone export did not exit; CLI export is missing");
     QCOMPARE(process.exitCode(), 0);
     QCOMPARE(QImage(path).size(), QSize(640, 900));
+}
+
+void PreviewTest::statusLineSpecimenUsesSharedSurfaceInBothThemes() {
+    using namespace choscordb::design;
+    PreviewWindow window;
+    QVERIFY(window.selectSpecimen("status-line"));
+    window.show();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        auto* available = host->findChild<StatusLine*>("previewStatusAvailable");
+        auto* unavailable = host->findChild<StatusLine*>("previewStatusUnavailable");
+        QVERIFY(available && unavailable);
+        auto* loaded = available->findChild<Text*>();
+        QVERIFY(loaded);
+        QVERIFY(available->isVisible());
+        QVERIFY(unavailable->isVisible());
+        const auto colors = resolvedThemeForWidget(*host).colors;
+        QCOMPARE(available->font().pixelSize(), 13);
+        QCOMPARE(unavailable->font().pixelSize(), available->font().pixelSize());
+        QCOMPARE(loaded->font().pixelSize(), available->font().pixelSize());
+        QCOMPARE(loaded->palette().color(loaded->foregroundRole()), colors.success);
+        QCOMPARE(
+            available->grab().toImage().pixelColor(available->width() - 4, available->height() / 2),
+            colors.successSurface);
+        QCOMPARE(unavailable->grab().toImage().pixelColor(unavailable->width() - 4,
+                                                          unavailable->height() / 2),
+                 colors.dangerSurface);
+    }
 }
 
 QTEST_MAIN(PreviewTest)

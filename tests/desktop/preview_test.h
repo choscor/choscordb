@@ -12,11 +12,13 @@ class PreviewTest final : public QObject {
     void recentHistoryRowsUseSharedDelegateInBothThemes();
     void editorResultsSplitUsesEqualPanesInBothThemes();
     void documentTabSpecimenShowsFixedWidthTabsInBothThemes();
+    void documentTabContentsSitAtVerticalCenterInBothThemes();
     void documentTabsShowKeyboardFocusInBothThemes();
     void tableHeadersCanBeDraggedInBothThemes();
     void dialogSectionsHaveMutedPaddedFooterInBothThemes();
     void modalSpecimenNamesTheDialogSurface();
     void workspaceToolbarSpecimenUsesMutedSurfaceInBothThemes();
+    void statusLineSpecimenUsesSharedSurfaceInBothThemes();
     void richTextParagraphsHaveCompactSpacing();
     void showToastOpensTransientToastAtViewportCorner();
     void toastPortalIsPresentInBothThemes();
@@ -40,6 +42,7 @@ class PreviewTest final : public QObject {
     void confirmationSpecimenUsesProductionCancellationBoundary();
     void rightSheetSpecimenUsesModalBoundaryInBothThemes();
     void quickSearchSpecimenUsesRealOverlayInBothThemes();
+    void quickSearchRowsUseSuppliedIconAndRetintWhenThemeChanges();
     void quickSearchInteractionPreservesFocusAndSelection();
     void quickSearchKeepsSelectionAcrossResultUpdates();
     void tableHoverPreservesBackgroundInBothThemes();

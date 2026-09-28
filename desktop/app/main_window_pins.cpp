@@ -236,14 +236,13 @@ void MainWindow::renderPins() {
                             : selectedSessionIds_.contains(pin.profileId)    ? tr("Connected")
                             : liveHidden                                     ? tr("Hidden")
                                                                              : tr("Disconnected");
-        auto* item = new QListWidgetItem(
-            QStringLiteral("%1  ·  %2\n%3  ·  %4").arg(pin.name, pin.kind, context, status),
-            pinnedList_);
+        auto* item = new QListWidgetItem(pin.name, pinnedList_);
         item->setData(Qt::UserRole, PinStore::identityKey(pin));
+        item->setData(NavigatorModel::KindRole, pin.kind);
         item->setData(Qt::AccessibleDescriptionRole,
                       tr("%1 %2 in %3. %4. Activate to reveal the original object.")
                           .arg(pin.kind, pin.name, context, status));
-        item->setToolTip(item->text());
+        item->setToolTip(tr("%1 · %2\n%3 · %4").arg(pin.name, pin.kind, context, status));
     }
 }
 

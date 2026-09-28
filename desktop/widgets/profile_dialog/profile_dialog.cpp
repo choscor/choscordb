@@ -22,8 +22,8 @@
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
-#include <QScrollArea>
 #include <QScreen>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QTimer>
@@ -205,9 +205,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         auto* label = new QLabel(title, postgresFields_);
         label->setBuddy(widget);
         field->addWidget(label);
-        field->addWidget(widget == host_ || widget == user_ || widget == password_
-                             ? validated(widget)
-                             : widget);
+        field->addWidget(
+            widget == host_ || widget == user_ || widget == password_ ? validated(widget) : widget);
         serverFields->addLayout(field, row, column, 1, span);
     };
     serverFields->setColumnStretch(0, 5);
@@ -228,7 +227,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     pg->addRow(saveCredentials_);
     tlsSecret_ = line("profileTlsSecret");
     tlsSecret_->setEchoMode(QLineEdit::Password);
-    tlsSecret_->setToolTip(tr("Password for a client identity saved by an earlier profile version."));
+    tlsSecret_->setToolTip(
+        tr("Password for a client identity saved by an earlier profile version."));
     tlsSecretField_ = validated(tlsSecret_);
     pg->addRow(tr("Client identity password"), tlsSecretField_);
     connect(saveCredentials_, &QCheckBox::toggled, this, [this] {
@@ -241,9 +241,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     sshEnabled_->setObjectName("profileSshEnabled");
     sshEnabled_->setProperty("designRole", "switch");
     pg->addRow(validated(sshEnabled_));
-    connect(host_, &QLineEdit::textChanged, this, [this] {
-        validationFor(sshEnabled_)->setError({});
-    });
+    connect(host_, &QLineEdit::textChanged, this,
+            [this] { validationFor(sshEnabled_)->setError({}); });
     auto* sshFields = new QWidget(postgresFields_);
     sshFields_ = sshFields;
     auto* sshLayout = new QFormLayout(sshFields);
@@ -274,8 +273,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         auto* label = new QLabel(title, sshFields_);
         label->setBuddy(widget);
         sshGrid->addWidget(label, row * 2, column, 1, span);
-        sshGrid->addWidget(widget == sshHost_ || widget == sshUser_ ||
-                                   widget == sshIdentityFile_ || widget == sshSecret_
+        sshGrid->addWidget(widget == sshHost_ || widget == sshUser_ || widget == sshIdentityFile_ ||
+                                   widget == sshSecret_
                                ? validated(widget)
                                : widget,
                            row * 2 + 1, column, 1, span);
@@ -286,7 +285,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     sshField(tr("SSH username"), sshUser_, 0, 3, 3);
     sshField(tr("Authentication"), sshAuthentication_, 1, 0, 3);
     sshIdentityFileLabel_ = sshField(tr("SSH private key file"), sshIdentityFile_, 2, 2, 2);
-    sshSecretLabel_ = sshField(tr("SSH passphrase"), sshSecret_, 2, 4, 2);
+    sshSecretLabel_ = sshField(tr("SSH passphrase"), sshSecret_, 1, 3, 3);
     sshLayout->addRow(sshGrid);
     QWidget::setTabOrder(sshHost_, sshPort_);
     QWidget::setTabOrder(sshPort_, sshUser_);
@@ -544,8 +543,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                                      : SshHopSecrets{};
             preserveProxySecretOnRefresh_ =
                 savingDraft_ && !saveCredentials_->isChecked() && proxyNeedsPassword(profile);
-            preserveTlsSecretOnRefresh_ =
-                savingDraft_ && !saveCredentials_->isChecked() && !profile.tlsClientIdentity.isEmpty();
+            preserveTlsSecretOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked() &&
+                                          !profile.tlsClientIdentity.isEmpty();
             preservePasswordOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked();
             preserveSshSecretOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked() &&
                                           sshAuthentication_->currentData() != "agent";

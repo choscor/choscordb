@@ -1,4 +1,5 @@
 #include "bridge/engine_adapter.h"
+#include "design_system/theme.h"
 #include "models/history_model.h"
 #include "widgets/history_dock/history_dock.h"
 #include <QAction>
@@ -37,6 +38,10 @@ class HistoryTest : public QObject {
         auto* table = history.findChild<QTableView*>("historyTable");
         auto* footer = history.findChild<QWidget*>("historyFooter");
         QVERIFY(footer);
+        QCOMPARE(QString::fromLatin1(footer->metaObject()->className()),
+                 QString("choscordb::design::StatusLine"));
+        QCOMPARE(footer->palette().color(QPalette::Window),
+                 choscordb::design::resolvedThemeForWidget(*footer).colors.successSurface);
         const int tableTop = table->mapTo(&history, QPoint{}).y();
         int previousRight = -1;
         for (const auto* name : {"historyManage", "clearHistory", "openHistoryQuery"}) {
@@ -59,6 +64,10 @@ class HistoryTest : public QObject {
         QVERIFY(footerButtons.contains(next));
         auto* range = history.findChild<QLabel*>("historyRange");
         auto* status = history.findChild<QLabel*>("historyStatus");
+        QVERIFY(range && status);
+        QCOMPARE(footer->font().pixelSize(), 13);
+        QCOMPARE(range->font().pixelSize(), footer->font().pixelSize());
+        QCOMPARE(status->font().pixelSize(), footer->font().pixelSize());
         QVERIFY(footer->isAncestorOf(range));
         QVERIFY(footer->isAncestorOf(status));
         QVERIFY(range->mapTo(footer, range->rect().topRight()).x() <

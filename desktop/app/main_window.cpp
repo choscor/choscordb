@@ -12,6 +12,7 @@
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/icons.h"
 #include "design_system/platform_accessibility.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "widgets/editor_completion/editor_completion.h"
@@ -22,7 +23,6 @@
 #include <QComboBox>
 #include <QFileInfo>
 #include <QMessageBox>
-#include <QPalette>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStyleHints>
@@ -35,17 +35,11 @@ int qInitResources_resources();
 namespace choscordb {
 
 void MainWindow::refreshResultFooterColor() {
-    auto* footer = findChild<QWidget*>("sqlResultFooter");
+    auto* footer = findChild<design::StatusLine*>("sqlResultFooter");
     if (!footer)
         return;
     const bool available = workspace_ && workspace_->selectedTargetAvailable();
-    const auto& colors = theme_->resolvedTheme().colors;
-    auto palette = footer->palette();
-    palette.setColor(QPalette::Window,
-                     available ? colors.successSurface : colors.dangerSurface);
-    palette.setColor(QPalette::WindowText, colors.text);
-    footer->setAutoFillBackground(true);
-    footer->setPalette(palette);
+    footer->setAvailable(available);
     footer->setAccessibleName(available ? tr("SQL target available")
                                         : tr("SQL target unavailable"));
 }

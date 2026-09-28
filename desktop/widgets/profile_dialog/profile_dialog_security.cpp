@@ -133,8 +133,7 @@ void ProfileDialog::setSecurityDraft(const SavedProfile& value) {
                                        ? tr("Client identity password")
                                        : tr("Saved identity password — leave unchanged to keep"));
     sshIdentitySource_->setCurrentIndex(sshIdentitySource_->findData(value.sshIdentitySource));
-    sshPrivateKey_->setDraft({{}, false},
-                             !value.sshPrivateKeyRef.isEmpty());
+    sshPrivateKey_->setDraft({{}, false}, !value.sshPrivateKeyRef.isEmpty());
     updatePrivateKeyControls();
     const auto options = QJsonDocument::fromJson(value.sshOptions.toUtf8()).object();
     sshLocalHost_->setText(options["local_host"].toString());

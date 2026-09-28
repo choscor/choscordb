@@ -41,6 +41,10 @@ def main():
     )
     env["QT_PLUGIN_PATH"] = str(qt / "plugins")
     env["QT_QPA_PLATFORM"] = "offscreen"
+    if host == "windows":
+        # The repository's optional compiler-cache launchers are POSIX scripts.
+        # Native Windows builds invoke both compilers directly.
+        env["RUSTC_WRAPPER"] = ""
     if host == "linux":
         env["LD_LIBRARY_PATH"] = os.pathsep.join(
             [str(qsci / "lib"), str(qt / "lib"), env.get("LD_LIBRARY_PATH", "")]
@@ -82,21 +86,21 @@ def main():
             env=env,
         )
     elif args.stage == "build":
-        run(
-            [
-                "cmake",
-                "-S",
-                ".",
-                "-B",
-                "build/ci/native",
-                "-G",
-                "Ninja",
-                "-DCMAKE_BUILD_TYPE=Release",
-                "-DBUILD_TESTING=ON",
-                f"-DCMAKE_PREFIX_PATH={qt};{qsci}",
-            ],
-            env=env,
-        )
+        configure = [
+            "cmake",
+            "-S",
+            ".",
+            "-B",
+            "build/ci/native",
+            "-G",
+            "Ninja",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DBUILD_TESTING=ON",
+            f"-DCMAKE_PREFIX_PATH={qt};{qsci}",
+        ]
+        if host == "windows":
+            configure.append("-DCMAKE_CXX_COMPILER_LAUNCHER=")
+        run(configure, env=env)
         run(["cmake", "--build", "build/ci/native", "--parallel", "2"], env=env)
     elif args.stage == "test":
         command = [

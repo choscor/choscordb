@@ -176,14 +176,36 @@ class WorkflowPolicyTests(unittest.TestCase):
                     nearby = text[checkout.start() : checkout.start() + 240]
                     self.assertIn("persist-credentials: false", nearby)
 
-    def test_every_job_uses_apple_silicon_macos(self):
+    def test_existing_quality_jobs_use_apple_silicon_macos(self):
         for name, content in self.files.items():
+            if name == "cross-platform-release.yml":
+                continue
             with self.subTest(workflow=name):
                 runners = re.findall(r"(?m)^\s+runs-on:\s*(.+)$", content)
                 self.assertTrue(runners)
                 self.assertEqual(set(runners), {"macos-15"})
                 self.assertNotIn("apt-get", content)
                 self.assertNotIn("services:", content)
+
+    def test_cross_platform_release_keeps_publication_manual(self):
+        workflow = self.files["cross-platform-release.yml"]
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("pull_request:", workflow)
+        self.assertNotIn("push:", workflow)
+        self.assertIn("windows-2022", workflow)
+        self.assertIn("ubuntu-24.04", workflow)
+        publish = yaml_block(workflow, "publish", 2)
+        self.assertNotIn("SIGNPATH", workflow)
+        require_values(
+            publish,
+            (
+                "if: inputs.publish",
+                "needs: [windows, linux]",
+                "contents: write",
+                "attach_platforms.py",
+                "--dry-run",
+            ),
+        )
 
     def test_ci_has_required_blocking_and_advisory_jobs(self):
         validate_ci(self.files["ci.yml"])

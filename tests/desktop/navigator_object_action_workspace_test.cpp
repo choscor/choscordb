@@ -1,7 +1,7 @@
 #include "app/main_window.h"
 #include "app/navigator_controller.h"
-#include "app/object_explorer.h"
 #include "app/object_data_workspace.h"
+#include "app/object_explorer.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
@@ -109,14 +109,14 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
         auto* preview = dialog->findChild<QPlainTextEdit*>("renameObjectSql");
         auto* confirm = dialog->findChild<QPushButton*>("renameObjectConfirm");
         if (name && preview && confirm) {
-            const auto initial = name->text() == QStringLiteral("old.name") &&
-                                 !confirm->isEnabled();
+            const auto initial =
+                name->text() == QStringLiteral("old.name") && !confirm->isEnabled();
             name->setText("new.name");
-            renameDialogChecked =
-                initial && preview->toPlainText() ==
-                               QStringLiteral("ALTER TABLE \"main\".\"old.name\" RENAME TO "
-                                              "\"new.name\";") &&
-                confirm->isEnabled();
+            renameDialogChecked = initial &&
+                                  preview->toPlainText() ==
+                                      QStringLiteral("ALTER TABLE \"main\".\"old.name\" RENAME TO "
+                                                     "\"new.name\";") &&
+                                  confirm->isEnabled();
             if (renameDialogChecked) {
                 confirm->click();
                 return;
@@ -134,7 +134,8 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QCOMPARE(tabs->tabText(tabs->indexOf(secondObject)), QString("new.name"));
     QCOMPARE(object->property("objectId").toString(),
              model->index(0, 0, group).data(NavigatorModel::ObjectIdRole).toString());
-    QCOMPARE(secondObject->property("objectId").toString(), object->property("objectId").toString());
+    QCOMPARE(secondObject->property("objectId").toString(),
+             object->property("objectId").toString());
     int recoveredObjects = 0;
     for (const auto& saved : recovery->snapshotTabs())
         if (saved.isObject && saved.objectId == object->property("objectId").toString())

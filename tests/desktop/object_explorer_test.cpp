@@ -405,7 +405,7 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(gutter->geometry().left(), 0);
         QCOMPARE(gutter->geometry().top(), 0);
         QCOMPARE(ddl->viewport()->geometry().top(), 0);
-        QCOMPARE(ddl->document()->documentMargin(), 0.0);
+        QCOMPARE(ddl->document()->documentMargin(), 8.0);
         QCOMPARE(gutter->font().family(), ddl->font().family());
         QCOMPARE(gutter->geometry().height(), ddl->contentsRect().height());
         QVERIFY(ddl->viewport()->geometry().left() >= gutter->width());
@@ -437,6 +437,21 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(darkBackground != background);
         const auto darkImage = gutter->grab().toImage();
         QCOMPARE(darkImage.pixelColor(1, darkImage.height() / 2), darkBackground);
+    }
+    void ddlTextHasTopAndLeftBreathingRoom() {
+        EngineAdapter adapter;
+        ObjectExplorer explorer(&adapter);
+        auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
+        QVERIFY(ddl);
+        explorer.findChild<QStackedWidget*>()->setCurrentWidget(ddl);
+        explorer.resize(700, 450);
+        explorer.show();
+        ddl->setPlainText("CREATE VIEW sample AS SELECT 1;");
+        QCoreApplication::processEvents();
+        ddl->moveCursor(QTextCursor::Start);
+        const QRect firstCharacter = ddl->cursorRect();
+        QVERIFY2(firstCharacter.top() >= 8, "DDL text needs at least 8 px top inset");
+        QVERIFY2(firstCharacter.left() >= 8, "DDL text needs at least 8 px left inset");
     }
     void ddlMatchesSqlEditorTypographyAndSyntaxPalette() {
         EngineAdapter adapter;
@@ -560,6 +575,16 @@ class ObjectExplorerTest final : public QObject {
         QSignalSpy failures(&adapter, &EngineAdapter::objectInspectionFailed);
         explorer.restoreObject(*connection, R"(["main","restored"])", "restored");
         explorer.selectPane(3);
+        auto* footer = explorer.findChild<QWidget*>("objectFooter");
+        design::ThemeManager theme;
+        theme.setMode(design::ThemeMode::Light);
+        theme.applyTo(explorer);
+        QCOMPARE(footer->palette().color(QPalette::Window),
+                 theme.resolvedTheme().colors.successSurface);
+        theme.setMode(design::ThemeMode::Dark);
+        theme.applyTo(explorer);
+        QCOMPARE(footer->palette().color(QPalette::Window),
+                 theme.resolvedTheme().colors.successSurface);
         QCOMPARE(explorer.paneIndex(), 3);
         QTest::qWait(50);
         QCOMPARE(inspections.count(), 0);
@@ -587,6 +612,9 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(inspections.count(), 0);
         auto* status = explorer.findChild<QLabel*>("objectStatus");
         QCOMPARE(status->property("state").toString(), QString("disconnected"));
+        auto* footer = explorer.findChild<QWidget*>("objectFooter");
+        QCOMPARE(footer->palette().color(QPalette::Window),
+                 design::resolvedThemeForWidget(*footer).colors.dangerSurface);
         QVERIFY(!explorer.findChild<QPushButton*>("objectReconnect"));
         auto* action = explorer.findChild<QAction*>("objectReconnect");
         QVERIFY(action);
@@ -602,6 +630,8 @@ class ObjectExplorerTest final : public QObject {
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
         QVERIFY(header);
         QVERIFY(footer);
+        QCOMPARE(QString::fromLatin1(footer->metaObject()->className()),
+                 QString("choscordb::design::StatusLine"));
         for (const char* name : {"objectRefresh", "objectOpenQuery", "objectGenerateSql"}) {
             auto* action = explorer.findChild<QPushButton*>(name);
             QVERIFY(action);
@@ -611,6 +641,7 @@ class ObjectExplorerTest final : public QObject {
             QVERIFY(!action->accessibleName().isEmpty());
         }
         QCOMPARE(explorer.findChild<QLabel*>("objectStatus")->parentWidget(), footer);
+        QVERIFY(!explorer.findChild<QLabel*>("objectStatus")->wordWrap());
         explorer.show();
         QCoreApplication::processEvents();
         auto* tabs = explorer.findChild<QTabBar*>("objectTabs");

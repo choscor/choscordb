@@ -850,6 +850,10 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
                  choscordb::design::resolvedThemeForWidget(*corner).colors.muted);
         QCOMPARE(tabs->tabText(0), QString("Untitled query 1"));
         QCOMPARE(tabs->tabText(1), QString("orders"));
+        QCOMPARE(tabs->tabText(2), QString("customers"));
+        QCOMPARE(tabs->tabText(3), QString("order_items"));
+        QVERIFY(!tabs->tabIcon(2).isNull());
+        QVERIFY(!tabs->tabIcon(3).isNull());
         QVERIFY(!tabs->tabIcon(1).isNull());
         QCOMPARE(qobject_cast<QLabel*>(tabs->widget(0))->text(),
                  QString("Neutral document chrome"));
@@ -913,6 +917,61 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
             for (int x = iconArea.left(); x <= iconArea.right(); ++x)
                 changedIconPixels += hoverImage.pixelColor(x, y) != normalImage.pixelColor(x, y);
         QVERIFY(changedIconPixels > 0);
+    }
+}
+
+void PreviewTest::documentTabContentsSitAtVerticalCenterInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("tabs"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const auto* theme : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(theme);
+        QVERIFY(host);
+        auto* tabs = host->findChild<QTabWidget*>();
+        QVERIFY(tabs);
+        auto* bar = tabs->tabBar();
+        for (int index : {0, 1}) {
+            const QRect tab = bar->tabRect(index);
+            const auto inkCenter = [tab](const QImage& withContent, const QImage& withoutContent) {
+                const qreal scale = withContent.devicePixelRatio();
+                int first = withContent.height();
+                int last = -1;
+                for (int y = qRound((tab.top() + 3) * scale);
+                     y < qRound((tab.bottom() - 3) * scale); ++y) {
+                    for (int x = qRound((tab.left() + 3) * scale);
+                         x < qRound((tab.right() - 20) * scale); ++x) {
+                        if (withContent.pixel(x, y) != withoutContent.pixel(x, y)) {
+                            first = qMin(first, y);
+                            last = qMax(last, y);
+                        }
+                    }
+                }
+                return last < 0 ? -1.0 : (first + last) / (2.0 * scale);
+            };
+            const QString originalText = tabs->tabText(index);
+            const QIcon originalIcon = tabs->tabIcon(index);
+            tabs->setTabText(index, {});
+            const auto withIcon = bar->grab().toImage();
+            tabs->setTabIcon(index, {});
+            const auto withoutIcon = bar->grab().toImage();
+            const qreal iconCenter = inkCenter(withIcon, withoutIcon);
+            QVERIFY(iconCenter >= 0);
+            tabs->setTabText(index, "orders");
+            const auto withText = bar->grab().toImage();
+            tabs->setTabText(index, {});
+            const auto withoutText = bar->grab().toImage();
+            const qreal textCenter = inkCenter(withText, withoutText);
+            QVERIFY(textCenter >= 0);
+            QVERIFY(qAbs(iconCenter - tab.center().y()) <= 0.5);
+            QVERIFY(qAbs(textCenter - tab.center().y()) <= 0.5);
+            QVERIFY2(
+                qAbs(iconCenter - textCenter) <= 0.5,
+                qPrintable(
+                    QString("Icon center %1, text center %2").arg(iconCenter).arg(textCenter)));
+            tabs->setTabIcon(index, originalIcon);
+            tabs->setTabText(index, originalText);
+        }
     }
 }
 

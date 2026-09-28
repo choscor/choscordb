@@ -8,8 +8,10 @@
 #include "design_system/menu/menu.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/tabs/tab_add_corner.h"
 #include "design_system/tabs/tabs_style.h"
+#include "design_system/text/text.h"
 #include "design_system/text_area/text_area_style.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
@@ -181,6 +183,14 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         list->item(4)->setFlags(list->item(4)->flags() & ~Qt::ItemIsEnabled);
         list->setCurrentRow(1);
         layout->addWidget(list, 1);
+        auto* sidebarList = new QListWidget(host);
+        sidebarList->setObjectName("previewSidebarList");
+        sidebarList->setProperty("designSurface", "sidebar");
+        sidebarList->setProperty("designNavigationItem", true);
+        sidebarList->setMouseTracking(true);
+        sidebarList->addItems({"Pinned table", "Pinned view"});
+        sidebarList->setFixedHeight(72);
+        layout->addWidget(sidebarList);
         auto* tree = new NavigationTreeView(host);
         tree->setObjectName("previewNavigationTree");
         auto* model = new QStandardItemModel(tree);
@@ -250,11 +260,13 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         tabs->setTabsClosable(true);
         tabs->setMovable(true);
         for (int i = 0; i < 8; ++i) {
-            const auto icon = i == 1 ? Icon::Table : Icon::Code;
+            const auto icon = i >= 1 && i <= 3 ? Icon::Table : Icon::Code;
             tabs->addTab(new QLabel("Neutral document chrome", tabs),
                          themedIcon(icon, resolvedThemeForWidget(*host).colors.mutedText, 16),
                          i == 0   ? "Untitled query 1"
                          : i == 1 ? "orders"
+                         : i == 2 ? "customers"
+                         : i == 3 ? "order_items"
                                   : QString("History query %1 · 日本語").arg(i));
         }
         QObject::connect(tabs, &QTabWidget::tabCloseRequested, tabs, [tabs](int index) {
@@ -346,6 +358,21 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         overflow->setPopupMode(QToolButton::InstantPopup);
         bar->addWidget(overflow);
         layout->addWidget(bar);
+    } else if (id == "status-line") {
+        auto* available = new StatusLine(host);
+        available->setObjectName("previewStatusAvailable");
+        available->setAvailable(true);
+        auto* loaded = new Text("orders · DDL loaded", available);
+        loaded->setTypographyRole(TypographyRole::Ui);
+        loaded->setProperty("state", "loaded");
+        available->contentLayout()->addWidget(loaded, 1);
+        layout->addWidget(available);
+        auto* unavailable = new StatusLine(host);
+        unavailable->setObjectName("previewStatusUnavailable");
+        auto* disconnected = new Text("orders · Connection unavailable", unavailable);
+        disconnected->setTypographyRole(TypographyRole::Ui);
+        unavailable->contentLayout()->addWidget(disconnected, 1);
+        layout->addWidget(unavailable);
     } else if (id == "feedback") {
         auto* viewport = host->parentWidget();
         auto* toast = new choscordb::ToastRegion;

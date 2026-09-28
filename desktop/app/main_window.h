@@ -1,6 +1,6 @@
 #pragma once
-#include "design_system/quick_search/quick_search_dialog.h"
 #include "app/pin_store.h"
+#include "design_system/quick_search/quick_search_dialog.h"
 #include "design_system/toast_region/toast_region.h"
 #include <QHash>
 #include <QMainWindow>

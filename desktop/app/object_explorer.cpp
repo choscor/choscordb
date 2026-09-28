@@ -6,6 +6,7 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
 #include "design_system/menu/menu.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
@@ -43,7 +44,7 @@ class DdlEditor final : public QPlainTextEdit {
         gutter_->setAccessibleName(tr("DDL line numbers"));
         gutter_->installEventFilter(this);
         setLineWrapMode(QPlainTextEdit::NoWrap);
-        document()->setDocumentMargin(0);
+        document()->setDocumentMargin(design::spacing(design::Spacing::Two));
         connect(this, &QPlainTextEdit::blockCountChanged, this, [this] { updateGutterWidth(); });
         connect(this, &QPlainTextEdit::updateRequest, this, [this](const QRect& rect, int dy) {
             if (dy)
@@ -299,18 +300,17 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     header->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
                                metrics.spacingSmall);
     layout->insertWidget(0, headerBody);
-    auto* footerBody = new QWidget(this);
+    auto* footerBody = new design::StatusLine(this);
     footerBody->setObjectName("objectFooter");
-    footerBody->setProperty("designSurface", "subtle");
-    footerBody->setAttribute(Qt::WA_StyledBackground);
-    auto* footer = new QHBoxLayout(footerBody);
+    auto* footer = footerBody->contentLayout();
     footer_ = footer;
-    footer->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
-                               metrics.spacingSmall);
     status_ = new design::Text(tr("Select a table or view in the sidebar."), this);
     status_->setObjectName("objectStatus");
     status_->setTextFormat(Qt::PlainText);
-    status_->setWordWrap(true);
+    status_->setWordWrap(false);
+    status_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    status_->setMinimumWidth(0);
+    status_->setTypographyRole(design::TypographyRole::Ui);
     footer->addWidget(status_, 1);
     setContextMenuPolicy(Qt::CustomContextMenu);
     connect(this, &QWidget::customContextMenuRequested, this, [this](const QPoint& position) {
@@ -464,6 +464,7 @@ void ObjectExplorer::openObject(quint64 connection, const QString& object, const
         properties_ = properties;
         reconnect_->setEnabled(false);
         updateActions();
+        updateFooter();
         activateRestoredObject();
         return;
     }
@@ -488,6 +489,7 @@ void ObjectExplorer::openObject(quint64 connection, const QString& object, const
     const QSignalBlocker blocker(tabs_);
     tabs_->setCurrentIndex(0);
     activePane_ = 0;
+    updateFooter();
     emit objectChanged();
     requestPane();
 }
@@ -839,6 +841,8 @@ void ObjectExplorer::installDataWidget(QWidget* widget) {
     previous->deleteLater();
 }
 void ObjectExplorer::updateFooter() {
+    static_cast<design::StatusLine*>(footer_->parentWidget())
+        ->setAvailable(connection_.has_value());
     const bool dataVisible = dataFooter_ && tabs_->currentIndex() == 5 && connection_.has_value();
     for (const auto& action : dataHeaderActions_)
         if (action)

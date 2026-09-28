@@ -136,6 +136,8 @@ QList<Specimen> specimens() {
          "desktop/design_system/right_sheet/right_sheet.cpp"},
         {"Components", "quick-search", "Quick search overlay",
          "desktop/design_system/quick_search/quick_search_dialog.cpp"},
+        {"Components", "status-line", "Workspace status line",
+         "desktop/design_system/status_line/status_line.cpp"},
         {"Components", "nonmodal", "Nonmodal content",
          "desktop/design_system/dialog_shell/dialog_shell.cpp"},
         {"Components", "confirmations", "Destructive confirmations",
@@ -283,10 +285,13 @@ void populateQuickSearch(QWidget* host, QVBoxLayout* layout) {
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
     QObject::connect(dialog, &QuickSearchDialog::queryChanged, dialog, [dialog](const QString&) {
         dialog->setResults(
-            {{"Screen", "Query", "Open the SQL workspace", "screen:query"},
-             {"Object", "customers", "Example Postgres · public · table", "object:customers"},
-             {"SQL text", "SELECT * FROM customers", "Query 1 · line 4", "sql:query-1:4"}});
-        dialog->setStatus("3 destinations");
+            {{"Screen", "Query", "Open the SQL workspace", "screen:query", Icon::Square},
+             {"Tab", "Untitled query 1", "Workspace tab 1", "tab:query-1", Icon::File},
+             {"Object", "customers", "Example Postgres · public · table", "object:customers",
+              Icon::Table},
+             {"SQL text", "SELECT * FROM customers", "Query 1 · line 4", "sql:query-1:4",
+              Icon::Code}});
+        dialog->setStatus("4 destinations");
     });
     QObject::connect(open, &QPushButton::clicked, dialog, &QuickSearchDialog::openSearch);
     layout->addStretch();

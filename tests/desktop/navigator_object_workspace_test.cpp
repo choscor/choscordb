@@ -332,9 +332,8 @@ void NavigatorSqlWorkspaceTest::visibleConnectionsPreserveMetadataAndOrder() {
     QSignalSpy requested(navigator.model(), &choscordb::NavigatorModel::childrenRequested);
     navigator.model()->fetchMore(firstRoot);
     QTRY_COMPARE(requested.count(), 1);
-    QVERIFY(navigator.model()->applyChildren(
-        11, {}, requested.first().at(2).toULongLong(),
-        {{"schema", "public", "public", "schema", false}}));
+    QVERIFY(navigator.model()->applyChildren(11, {}, requested.first().at(2).toULongLong(),
+                                             {{"schema", "public", "public", "schema", false}}));
     navigator.setVisibleConnections({11});
     QCOMPARE(tree.model()->rowCount(), 1);
     QCOMPARE(tree.model()->index(0, 0).data().toString(), QString("First"));
@@ -430,9 +429,8 @@ void NavigatorSqlWorkspaceTest::searchFailureKeepsRefineMessage() {
     QSignalSpy status(&navigator, &choscordb::NavigatorController::searchStatusChanged);
     int searchedOtherRoot = 0;
     connect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &tree,
-            [&adapter, &status, &navigator, &searchedOtherRoot](quint64 connection,
-                                                                 const QString& parent,
-                                                                 quint64 token) {
+            [&adapter, &status, &navigator,
+             &searchedOtherRoot](quint64 connection, const QString& parent, quint64 token) {
                 if (connection == 11) {
                     ++searchedOtherRoot;
                     navigator.model()->applyChildren(

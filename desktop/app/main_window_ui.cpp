@@ -13,6 +13,7 @@
 #include "design_system/icons.h"
 #include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/table/table_style.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
@@ -40,6 +41,7 @@
 #include <QPalette>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -187,11 +189,7 @@ MainWindow::Ui MainWindow::buildUi() {
     }
     auto* quickSwitch = viewMenu->addAction(tr("Quick switch…"));
     quickSwitch->setObjectName("quickSwitch");
-#ifdef Q_OS_MACOS
-    quickSwitch->setShortcut(QKeySequence("Meta+P"));
-#else
     quickSwitch->setShortcut(QKeySequence("Ctrl+P"));
-#endif
     preferences_->addAction("quick_search", quickSwitch);
     connect(quickSwitch, &QAction::triggered, this, &MainWindow::showQuickSearch);
 #ifdef CHOSCORDB_DEVELOPMENT_PREVIEW
@@ -276,6 +274,11 @@ MainWindow::Ui MainWindow::buildUi() {
     navLayout->addLayout(sidebarTabs);
     auto* connectionsPanel = new QWidget(sidebarPanels);
     connectionsPanel->setObjectName("connectionsPanel");
+    auto* connectionsScroll = new QScrollArea(sidebarPanels);
+    connectionsScroll->setObjectName("connectionsScroll");
+    connectionsScroll->setWidgetResizable(true);
+    connectionsScroll->setFrameShape(QFrame::NoFrame);
+    connectionsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto* connectionsLayout = new QVBoxLayout(connectionsPanel);
     connectionsLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     connectionsLayout->setSpacing(design::spacing(design::Spacing::Three));
@@ -315,7 +318,8 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* pinnedList = pinned.list;
     auto* pinnedEmpty = pinned.empty;
     auto* objectSection = new SidebarSection(tr("Schema & objects"), navBody);
-    connectionsLayout->addWidget(objectSection, 1);
+    connectionsLayout->addWidget(objectSection);
+    connectionsLayout->addStretch(1);
     auto* filter = new QLineEdit;
     filter->setObjectName("navigatorFilter");
     filter->setPlaceholderText(tr("Filter objects…"));
@@ -334,6 +338,12 @@ MainWindow::Ui MainWindow::buildUi() {
     tree->setItemDelegate(navigatorIcons);
     tree->setAccessibleName(tr("Database navigator"));
     tree->setHeaderHidden(true);
+    tree->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    tree->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    tree->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    tree->setUniformRowHeights(true);
+    new SidebarWheelForwarder(connectionsScroll, pinnedList->viewport());
+    new SidebarWheelForwarder(connectionsScroll, tree->viewport());
     auto* objectsEmpty = new design::Text({}, objectSection);
     objectsEmpty->setObjectName("sidebarObjectsEmpty");
     objectsEmpty->setWordWrap(true);
@@ -342,12 +352,14 @@ MainWindow::Ui MainWindow::buildUi() {
     objectsEmpty->setMargin(design::spacing(design::Spacing::Three));
     objectsEmpty->setTextFormat(Qt::PlainText);
     objectSection->contentLayout()->addWidget(objectsEmpty);
-    objectSection->contentLayout()->addWidget(tree, 3);
+    objectSection->contentLayout()->addWidget(tree);
     auto* navigatorStatus = new QLabel(navBody);
     navigatorStatus->setObjectName("navigatorStatus");
     navigatorStatus->hide();
     objectSection->contentLayout()->addWidget(navigatorStatus);
-    sidebarPanels->addWidget(connectionsPanel);
+    objectSection->contentLayout()->addStretch(1);
+    connectionsScroll->setWidget(connectionsPanel);
+    sidebarPanels->addWidget(connectionsScroll);
     auto* savedPanel = new QWidget(sidebarPanels);
     savedPanel->setObjectName("savedPanel");
     auto* savedLayout = new QVBoxLayout(savedPanel);
@@ -683,7 +695,7 @@ MainWindow::Ui MainWindow::buildUi() {
     empty->setObjectName("executionSummary");
     empty->setTextFormat(Qt::PlainText);
     empty->setWordWrap(false);
-    empty->setTypographyRole(design::TypographyRole::Small);
+    empty->setTypographyRole(design::TypographyRole::Ui);
     empty->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     empty->setMinimumWidth(0);
     empty->setProperty("state", "disconnected");
@@ -701,21 +713,19 @@ MainWindow::Ui MainWindow::buildUi() {
     grid->verticalHeader()->setDefaultSectionSize(initialMetrics.sqlResultRowHeight);
     grid->horizontalHeader()->setFixedHeight(initialMetrics.sqlResultHeaderHeight);
     resultLayout->addWidget(grid, 1);
-    auto* resultFooter = new QWidget;
+    auto* resultFooter = new design::StatusLine;
     resultFooter->setObjectName("sqlResultFooter");
-    auto* pager = new QHBoxLayout(resultFooter);
-    pager->setContentsMargins(initialMetrics.spacingMedium, initialMetrics.spacingSmall,
-                              initialMetrics.spacingMedium, initialMetrics.spacingSmall);
+    auto* pager = resultFooter->contentLayout();
     pager->addWidget(empty, 1);
     auto* compactState = new design::Text(tr("Disconnected"), resultFooter);
     compactState->setObjectName("executionStateCompact");
-    compactState->setTypographyRole(design::TypographyRole::Small);
+    compactState->setTypographyRole(design::TypographyRole::Ui);
     pager->addWidget(compactState);
     pager->addStretch(1);
     const auto addMetric = [pager](const char* name) {
         auto* label = new design::Text;
         label->setObjectName(QString::fromLatin1(name));
-        label->setTypographyRole(design::TypographyRole::Small);
+        label->setTypographyRole(design::TypographyRole::Ui);
         pager->addWidget(label);
         return label;
     };
@@ -744,7 +754,6 @@ MainWindow::Ui MainWindow::buildUi() {
     exportResult->setEnabled(false);
     for (auto* button : {previousPage, nextPage})
         button->setVariant(design::ButtonVariant::Ghost);
-    pager->setSpacing(initialMetrics.spacingMedium);
     previousPage->setDesignIcon(design::Icon::ChevronLeft);
     nextPage->setDesignIcon(design::Icon::ChevronRight);
     exportResult->setDesignIcon(design::Icon::Export);
@@ -877,7 +886,7 @@ MainWindow::Ui MainWindow::buildUi() {
         design::spacing(design::Spacing::TwoHalf), initialMetrics.spacingSmall,
         design::spacing(design::Spacing::TwoHalf), initialMetrics.spacingSmall);
     auto* startStatus = new design::Text(tr("PostgreSQL · MySQL · SQLite"), startFooter);
-    startStatus->setTypographyRole(design::TypographyRole::Small);
+    startStatus->setTypographyRole(design::TypographyRole::Ui);
     startStatus->setForegroundRole(QPalette::PlaceholderText);
     startActions->addWidget(startStatus);
     startActions->addStretch();

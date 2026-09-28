@@ -6,7 +6,6 @@
 #include <QWidget>
 #include <optional>
 class QAction;
-class QLabel;
 class QPushButton;
 class QTabBar;
 class QTableView;
@@ -15,6 +14,9 @@ class QStackedWidget;
 class QPlainTextEdit;
 class QHBoxLayout;
 namespace choscordb {
+namespace design {
+class Text;
+}
 class EngineAdapter;
 class ObjectErdWidget;
 struct ObjectGraph;
@@ -60,7 +62,7 @@ class ObjectExplorer final : public QWidget {
     QStackedWidget* pages_;
     QPlainTextEdit* ddl_;
     ObjectErdWidget* erd_;
-    QLabel* status_;
+    design::Text* status_;
     QAction* retry_;
     QAction* reconnect_;
     QPushButton* refresh_;

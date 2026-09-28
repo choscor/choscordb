@@ -136,8 +136,9 @@ versions remain X.Y.Z. Release signature metadata contains no private key.
 ## GitHub Release publication
 
 The repository's [release-new-version skill](../.agents/skills/release-new-version/SKILL.md)
-coordinates notes, quality checks, packaging, an exact-source-commit tag push,
-and GitHub Release publication. Invoke it with a version and the intended scope
+coordinates notes, quality checks, macOS packaging, an exact-source-commit tag
+push, GitHub Release publication, and the later Windows/Linux asset workflow.
+Invoke it with a version and the intended scope
 (prepare, publish an existing build, or release end to end). Packaging itself
 never tags or publishes.
 
@@ -222,8 +223,11 @@ network-failure UI. Neither an unsigned fixture nor a mocked signing command
 counts as this evidence. Rehearsal outputs must never be passed off as production
 manifests. Normal development, smoke and test runs suppress update checks.
 
-Windows/Linux installers and updater backends, Intel/universal distribution,
-beta channels and automatic key rotation remain outside this implementation.
+The separate [Windows and Linux release guide](WINDOWS_LINUX_RELEASE.md) covers
+portable Windows ZIP and Linux AppImage candidates and their GitHub attachment
+workflow. Windows/Linux installers and updater backends, Intel/universal
+distribution, beta channels and automatic key rotation remain outside this
+macOS implementation.
 
 ## Isolated rehearsal commands
 

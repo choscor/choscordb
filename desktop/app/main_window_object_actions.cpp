@@ -30,9 +30,8 @@ QString bridgeText(const rust::String& value) {
 }
 } // namespace
 
-bool MainWindow::objectActionReady(quint64 connection, const QString& objectId,
-                                   const QString& kind, const QString& parentObjectId,
-                                   const QString& qualifiedName,
+bool MainWindow::objectActionReady(quint64 connection, const QString& objectId, const QString& kind,
+                                   const QString& parentObjectId, const QString& qualifiedName,
                                    const QString& relationSubtype) {
     if (pendingObjectAction_ || pendingObjectRefresh_) {
         showToast(tr("Finish the current object action and navigator refresh before trying "
@@ -48,7 +47,7 @@ bool MainWindow::objectActionReady(quint64 connection, const QString& objectId,
         return false;
     }
     if (!navigatorController_->model()->matchesObject(connection, objectId, kind, qualifiedName,
-                                                       parentObjectId, relationSubtype)) {
+                                                      parentObjectId, relationSubtype)) {
         showToast(tr("The selected object changed. Refresh the navigator and try again."),
                   ToastVariant::Warning);
         return false;
@@ -84,30 +83,26 @@ bool MainWindow::objectActionReady(quint64 connection, const QString& objectId,
 void MainWindow::requestObjectAction(const QString& action, quint64 connection,
                                      const QString& objectId, const QString& shortName,
                                      const QString& kind, const QString& parentObjectId,
-                                     const QString& qualifiedName,
-                                     const QString& relationSubtype) {
+                                     const QString& qualifiedName, const QString& relationSubtype) {
     if (!objectActionReady(connection, objectId, kind, parentObjectId, qualifiedName,
                            relationSubtype))
         return;
     const auto driver = workspace_->driverForConnection(connection);
-    const auto displayKind = relationSubtype == QStringLiteral("materialized_view")
-                                 ? tr("materialized view")
-                             : relationSubtype == QStringLiteral("foreign_table")
-                                 ? tr("foreign table")
-                                 : kind;
+    const auto displayKind =
+        relationSubtype == QStringLiteral("materialized_view") ? tr("materialized view")
+        : relationSubtype == QStringLiteral("foreign_table")   ? tr("foreign table")
+                                                               : kind;
     ObjectActionStatement statement;
     QString newShortName;
     if (action == QStringLiteral("drop")) {
-        statement = ObjectActionSql::drop(driver, kind, objectId, qualifiedName,
-                                          relationSubtype);
+        statement = ObjectActionSql::drop(driver, kind, objectId, qualifiedName, relationSubtype);
         if (!statement.valid) {
             showToast(statement.error, ToastVariant::Danger);
             return;
         }
         ConfirmationDialog dialog(
             QMessageBox::Warning, tr("Drop %1").arg(displayKind),
-            tr("Drop %1 %2?\n\nSQL to execute:\n%3")
-                .arg(displayKind, qualifiedName, statement.sql),
+            tr("Drop %1 %2?\n\nSQL to execute:\n%3").arg(displayKind, qualifiedName, statement.sql),
             QMessageBox::NoButton, this);
         dialog.setObjectName("dropObjectDialog");
         dialog.setTextFormat(Qt::PlainText);
@@ -125,8 +120,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         dialog.setWindowTitle(tr("Rename %1").arg(displayKind));
         auto* layout = new QVBoxLayout(&dialog);
         layout->addWidget(dialog.createDescription(
-            tr("Rename %1 %2 in the same schema or database.")
-                .arg(displayKind, qualifiedName),
+            tr("Rename %1 %2 in the same schema or database.").arg(displayKind, qualifiedName),
             &dialog));
         auto* name = new QLineEdit(&dialog);
         name->setObjectName("renameObjectName");
@@ -155,7 +149,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         connect(confirm, &QPushButton::clicked, &dialog, &QDialog::accept);
         const auto update = [&] {
             const auto next = ObjectActionSql::rename(driver, kind, objectId, qualifiedName,
-                                                       name->text(), relationSubtype);
+                                                      name->text(), relationSubtype);
             preview->setPlainText(next.sql);
             status->setText(next.valid ? QString{} : next.error);
             confirm->setEnabled(next.valid);
@@ -200,18 +194,16 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
                                                connection,
                                                *query};
     workspace_->setExternalWork(true);
-    const auto fetchFailure = connect(workspace_->adapter(), &EngineAdapter::commandFailed, this,
-                                      [this, query](const QString& error) {
-                                          if (!pendingObjectAction_ ||
-                                              pendingObjectAction_->query != *query)
-                                              return;
-                                          pendingObjectAction_.reset();
-                                          workspace_->setExternalWork(false);
-                                          workspace_->adapter()->releaseQuery(*query);
-                                          showToast(tr("The object action could not start: %1")
-                                                        .arg(error),
-                                                    ToastVariant::Danger);
-                                      });
+    const auto fetchFailure = connect(
+        workspace_->adapter(), &EngineAdapter::commandFailed, this,
+        [this, query](const QString& error) {
+            if (!pendingObjectAction_ || pendingObjectAction_->query != *query)
+                return;
+            pendingObjectAction_.reset();
+            workspace_->setExternalWork(false);
+            workspace_->adapter()->releaseQuery(*query);
+            showToast(tr("The object action could not start: %1").arg(error), ToastVariant::Danger);
+        });
     workspace_->adapter()->fetchPage(*query);
     disconnect(fetchFailure);
 }
@@ -220,11 +212,9 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
     const auto eventKind = bridgeText(event.kind);
     if ((eventKind == QStringLiteral("disconnected") ||
          eventKind == QStringLiteral("connection_failed")) &&
-        pendingObjectRefresh_ &&
-        pendingObjectRefresh_->connection == event.id)
+        pendingObjectRefresh_ && pendingObjectRefresh_->connection == event.id)
         pendingObjectRefresh_.reset();
-    if (eventKind == QStringLiteral("metadata") ||
-        eventKind == QStringLiteral("metadata_failed")) {
+    if (eventKind == QStringLiteral("metadata") || eventKind == QStringLiteral("metadata_failed")) {
         if (pendingObjectRefresh_ && pendingObjectRefresh_->connection == event.id &&
             pendingObjectRefresh_->parentObjectId == bridgeText(event.parent) &&
             pendingObjectRefresh_->token == event.request_token) {
@@ -248,9 +238,8 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
                   ToastVariant::Danger);
         return;
     }
-    if (event.id != pendingObjectAction_->query ||
-        (eventKind != QStringLiteral("query_finished") &&
-         eventKind != QStringLiteral("query_failed")))
+    if (event.id != pendingObjectAction_->query || (eventKind != QStringLiteral("query_finished") &&
+                                                    eventKind != QStringLiteral("query_failed")))
         return;
     const auto action = *pendingObjectAction_;
     pendingObjectAction_.reset();
@@ -278,7 +267,8 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
             object->deleteLater();
         } else {
             const auto pane = object->paneIndex();
-            object->setProperty("objectConnection", QVariant::fromValue<qulonglong>(action.connection));
+            object->setProperty("objectConnection",
+                                QVariant::fromValue<qulonglong>(action.connection));
             object->setProperty("objectId", action.newObjectId);
             object->setProperty("objectLabel", action.newQualifiedName);
             object->restoreObject(action.connection, action.newObjectId, action.newQualifiedName,

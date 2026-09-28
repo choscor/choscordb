@@ -5,13 +5,14 @@
 class QCheckBox;
 class QLineEdit;
 class QComboBox;
-class QLabel;
 class QPlainTextEdit;
 class QTableView;
 namespace choscordb {
 namespace design {
 class Button;
-}
+class StatusLine;
+class Text;
+} // namespace design
 class HistoryModel;
 class HistoryDock final : public QWidget {
     Q_OBJECT
@@ -35,12 +36,13 @@ class HistoryDock final : public QWidget {
     HistoryModel* model_;
     QTableView* table_;
     QPlainTextEdit* preview_;
-    QLabel *status_, *page_;
+    design::Text *status_, *page_;
     QCheckBox* record_;
     QLineEdit* search_;
     QComboBox* statusFilter_;
     design::Button *clear_, *refresh_, *previous_, *next_, *open_;
     design::Button *previewPrevious_, *previewNext_;
+    design::StatusLine* footer_ = nullptr;
     HistoryPolicy policy_;
     quint64 listToken_ = 0, policyToken_ = 0, clearToken_ = 0, profilesToken_ = 0;
     quint32 offset_ = 0, pendingOffset_ = 0;

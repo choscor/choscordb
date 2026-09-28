@@ -1,11 +1,13 @@
 #pragma once
 
 #include "design_system/dialog_presentation/dialog_presentation.h"
+#include "design_system/icons.h"
 
 #include <QDialog>
 #include <QKeySequence>
 #include <QList>
 #include <QString>
+#include <QWidget>
 
 class QLabel;
 class QLineEdit;
@@ -18,6 +20,27 @@ struct QuickSearchResult final {
     QString title;
     QString context;
     QString id;
+    Icon icon = Icon::Search;
+};
+
+// Shared presentation for every destination returned by quick search.
+class QuickSearchResultRow final : public QWidget {
+  public:
+    explicit QuickSearchResultRow(const QuickSearchResult& result, QWidget* parent = nullptr);
+    void setSelected(bool selected);
+    void refreshAppearance();
+
+  protected:
+    void changeEvent(QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+
+  private:
+    Icon iconRole_;
+    QLabel* iconLabel_ = nullptr;
+    QLabel* titleLabel_ = nullptr;
+    QLabel* detailLabel_ = nullptr;
+    bool selected_ = false;
+    bool refreshing_ = false;
 };
 
 // Presentation and input only. The caller supplies result ordering and owns activation.
@@ -45,6 +68,7 @@ class QuickSearchDialog final : public QDialog {
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void changeEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;

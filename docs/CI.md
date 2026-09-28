@@ -1,7 +1,8 @@
 # Continuous integration
 
-The checked-in workflows run on pull requests, pushes to `main`/`master`, and
-manual dispatch. Superseded runs are cancelled,
+The core CI workflows run on pull requests, pushes to `main`/`master`, and
+manual dispatch. The separate Windows/Linux release workflow runs on relevant
+pull requests and manual dispatch. Superseded runs are cancelled,
 jobs have explicit timeouts, checkout credentials are not persisted, and
 permissions default to read-only.
 
@@ -20,6 +21,10 @@ advisory.
 | Runner | Architecture | Qt package | Compiler |
 |---|---|---|---|
 | `macos-15` | arm64 | Qt 6.8.3 `clang_64` universal package | Apple Clang |
+
+The release candidate workflow adds `windows-2022` x64 with Qt 6.8.3
+`msvc2022_64` and MSVC, plus `ubuntu-24.04` x86_64 with Qt 6.8.3 `gcc_64`
+and GCC. Its first native runs remain pending evidence.
 
 These labels avoid architecture changes behind `macos-latest`. Rust 1.97.1 is
 the sole supported Rust toolchain for this phase. CI uses Python 3.12, Qt 6.8.3,
@@ -43,6 +48,11 @@ verifier inspects every bundled Mach-O architecture and minimum OS. See
 [macOS releases](MACOS_RELEASE.md) for signing, notarization, and publication.
 Neither CI nor a successful local macOS 26.5 run proves launch on macOS 26.0;
 that manual check is required before the first public release.
+
+The separate [Windows/Linux workflow](WINDOWS_LINUX_RELEASE.md) now runs native
+builds, CTest, and candidate packaging on pull requests. Its first remote runs
+must establish platform evidence before those packages are described as verified
+releases. GitHub Release attachment is manual; its Windows ZIP is unsigned.
 
 Native tests use `QT_QPA_PLATFORM=offscreen`. This exercises widget/model logic, not a real window-manager accessibility or packaging test.
 

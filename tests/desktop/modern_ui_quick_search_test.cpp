@@ -1,4 +1,5 @@
 #include "app/appearance_controller.h"
+#include "app/editor_preferences.h"
 #include "app/main_window.h"
 #include "app/navigator_controller.h"
 #include "app/object_data_workspace.h"
@@ -72,11 +73,7 @@ void ModernUiTest::quickSwitchOpensOneSearchOverlayFromViewAction() {
     QTRY_VERIFY(window.isActiveWindow());
     auto* action = window.findChild<QAction*>("quickSwitch");
     QVERIFY(action);
-#ifdef Q_OS_MACOS
-    QCOMPARE(action->shortcut(), QKeySequence("Meta+P"));
-#else
     QCOMPARE(action->shortcut(), QKeySequence("Ctrl+P"));
-#endif
     action->trigger();
     auto* overlay = window.findChild<QDialog*>("quickSearchDialog");
     QVERIFY(overlay);
@@ -90,30 +87,15 @@ void ModernUiTest::quickSwitchOpensOneSearchOverlayFromViewAction() {
     QVERIFY(list);
     list->setFocus();
     QTRY_COMPARE(QApplication::focusWidget(), list);
-#ifdef Q_OS_MACOS
-    QTest::keyClick(list, Qt::Key_P, Qt::MetaModifier);
-#else
     QTest::keyClick(list, Qt::Key_P, Qt::ControlModifier);
-#endif
     QTRY_COMPARE(QApplication::focusWidget(), input);
     overlay->reject();
-#ifdef Q_OS_MACOS
-    QTest::keyClick(&window, Qt::Key_P, Qt::MetaModifier);
-#else
     QTest::keyClick(&window, Qt::Key_P, Qt::ControlModifier);
-#endif
     QTRY_VERIFY(overlay->isVisible());
     action->setShortcut(QKeySequence("Ctrl+Shift+P"));
-#ifdef Q_OS_MACOS
-    action->setShortcut(QKeySequence("Meta+Shift+P"));
-#endif
     list->setFocus();
     QTRY_COMPARE(QApplication::focusWidget(), list);
-#ifdef Q_OS_MACOS
-    QTest::keyClick(list, Qt::Key_P, Qt::MetaModifier | Qt::ShiftModifier);
-#else
     QTest::keyClick(list, Qt::Key_P, Qt::ControlModifier | Qt::ShiftModifier);
-#endif
     QTRY_COMPARE(QApplication::focusWidget(), input);
 }
 
@@ -132,6 +114,7 @@ void ModernUiTest::quickSearchEmptyQueryShowsScreensAndOpenTabs() {
     for (const auto& result : overlay->results()) {
         types.append(result.type);
         titles.append(result.title);
+        QCOMPARE(result.icon, choscordb::design::Icon::Square);
     }
     QCOMPARE(types, QStringList({"Screen", "Screen", "Screen", "Screen"}));
     QVERIFY(titles.contains("Start page"));
@@ -143,8 +126,12 @@ void ModernUiTest::quickSearchEmptyQueryShowsScreensAndOpenTabs() {
     action->trigger();
     QTRY_VERIFY(overlay->results().size() >= 5);
     bool hasTab = false;
-    for (const auto& result : overlay->results())
-        hasTab |= result.type == "Tab";
+    for (const auto& result : overlay->results()) {
+        if (result.type == "Tab") {
+            QCOMPARE(result.icon, choscordb::design::Icon::File);
+            hasTab = true;
+        }
+    }
     QVERIFY(hasTab);
     overlay->reject();
 }
@@ -216,6 +203,7 @@ void ModernUiTest::quickSearchFindsSqlInInactiveEditorsAndSelectsTheMatch() {
     input->setText("customer_name");
     QTRY_COMPARE(overlay->results().size(), 2);
     QCOMPARE(overlay->results().first().type, QString("SQL text"));
+    QCOMPARE(overlay->results().first().icon, choscordb::design::Icon::Code);
     QVERIFY(overlay->results().first().context.contains("Untitled query 1"));
     QVERIFY(overlay->results().first().context.contains("line 1"));
     QVERIFY(overlay->results().first().title.contains("customer_name"));
@@ -342,6 +330,7 @@ void ModernUiTest::quickSearchFindsSavedHistoryAndOpensItWithoutExecuting() {
     input->setText("kept_history_marker");
     QTRY_COMPARE(overlay->results().size(), 1);
     QCOMPARE(overlay->results().first().type, QString("History"));
+    QCOMPARE(overlay->results().first().icon, choscordb::design::Icon::Refresh);
     QVERIFY(overlay->results().first().title.contains("kept_history_marker"));
     QTest::keyClick(input, Qt::Key_Return);
     QTRY_COMPARE(tabs->count(), 2);
@@ -568,7 +557,8 @@ void ModernUiTest::quickSearchHidesRecentSystemObjectAfterPreferenceChanges() {
     auto* navigator = window.findChild<choscordb::NavigatorController*>();
     navigator->setSelectedConnection(connection);
     navigator->setDriverResolver([](quint64) { return QStringLiteral("postgres"); });
-    navigator->setShowSystemSchemas(true);
+    emit window.findChild<choscordb::EditorPreferencesController*>()->systemSchemaVisibilitySaved(
+        true);
     auto* model = navigator->model();
     QObject::disconnect(model, &choscordb::NavigatorModel::childrenRequested, workspace->adapter(),
                         &choscordb::EngineAdapter::loadMetadata);
@@ -633,7 +623,8 @@ void ModernUiTest::quickSearchHidesRecentSystemObjectAfterPreferenceChanges() {
         return result.type == "Object" && result.title == "\"public\".\"unloaded_normal\"";
     }));
 
-    navigator->setShowSystemSchemas(false);
+    emit window.findChild<choscordb::EditorPreferencesController*>()->systemSchemaVisibilitySaved(
+        false);
     QTRY_VERIFY([overlay] {
         const auto rows = overlay->results();
         return std::none_of(rows.cbegin(), rows.cend(), [](const auto& result) {
@@ -694,6 +685,7 @@ void ModernUiTest::quickSearchColumnResultOpensItsTablePane() {
     auto* input = overlay->findChild<QLineEdit*>("quickSearchInput");
     input->setText("distinct_field");
     QTRY_VERIFY(!overlay->results().isEmpty() && overlay->results().first().type == "Object");
+    QCOMPARE(overlay->results().first().icon, choscordb::design::Icon::Table);
     QVERIFY(overlay->results().first().context.contains("column"));
     overlay->findChild<QListWidget*>("quickSearchResults")->setCurrentRow(0);
     QTest::keyClick(input, Qt::Key_Return);

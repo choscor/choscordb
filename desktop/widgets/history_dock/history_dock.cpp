@@ -2,6 +2,7 @@
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
@@ -137,6 +138,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     clear_->setButtonSize(design::ButtonSize::IconSmall);
     refresh_->setButtonSize(design::ButtonSize::Small);
     status_ = new design::Text({}, body);
+    status_->setTypographyRole(design::TypographyRole::Ui);
     status_->setObjectName("historyStatus");
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
@@ -188,14 +190,9 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     preview_->setObjectName("historyPreview");
     preview_->setReadOnly(true);
     previewLayout->addWidget(preview_, 1);
-    auto* footerBody = new QWidget(body);
-    footerBody->setObjectName("historyFooter");
-    footerBody->setProperty("designSurface", "subtle");
-    footerBody->setAttribute(Qt::WA_StyledBackground);
-    auto* footer = new QHBoxLayout(footerBody);
-    footer->setContentsMargins(
-        design::spacing(design::Spacing::Three), design::spacing(design::Spacing::OneHalf),
-        design::spacing(design::Spacing::Three), design::spacing(design::Spacing::OneHalf));
+    footer_ = new design::StatusLine(body);
+    footer_->setObjectName("historyFooter");
+    auto* footer = footer_->contentLayout();
     auto* manage = new QToolButton(toolbarBody);
     manage->setObjectName("historyManage");
     manage->setText(tr("Manage history"));
@@ -224,6 +221,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     next_->setObjectName("historyNext");
     previous_->setObjectName("historyPrevious");
     page_ = new design::Text({}, body);
+    page_->setTypographyRole(design::TypographyRole::Ui);
     page_->setObjectName("historyRange");
     open_ = new design::Button(tr("Open in new query"), body);
     open_->setObjectName("openHistoryQuery");
@@ -256,7 +254,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     footer->addWidget(status_);
     footer->addStretch();
     footer->addWidget(paging);
-    layout->addWidget(footerBody);
+    layout->addWidget(footer_);
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(0, 0, 0, 0);
     outer->addWidget(body);
@@ -464,6 +462,7 @@ void HistoryDock::openSelection() {
         emit openRequested(*entry);
 }
 void HistoryDock::updateControls() {
+    footer_->setAvailable(!failed_);
     if (clearToken_)
         progressToast(this)->showProgress(tr("History"), tr("Clearing history…"));
     else if (policyToken_)

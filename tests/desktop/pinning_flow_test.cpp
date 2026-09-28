@@ -192,7 +192,7 @@ class PinningFlowTest : public QObject {
         drop->trigger();
         QVERIFY(dropDialogSeen);
         QTRY_COMPARE(completed, 3);
-        QTRY_VERIFY(pins->item(0)->text().contains("Unavailable"));
+        QTRY_VERIFY(pins->item(0)->toolTip().contains("Unavailable"));
         QCOMPARE(pins->count(), 1);
     }
 
@@ -207,8 +207,9 @@ class PinningFlowTest : public QObject {
             auto* workspace = window.findChild<QueryWorkspace*>();
             auto* profiles = window.findChild<QListWidget*>("savedConnections");
             auto* pins = window.findChild<QListWidget*>("pinnedList");
+            auto* pinnedSection = window.findChild<QWidget*>("pinnedSection");
             auto* navigator = window.findChild<NavigatorController*>();
-            QVERIFY(workspace && profiles && pins && navigator);
+            QVERIFY(workspace && profiles && pins && pinnedSection && navigator);
             SavedProfile profile;
             profile.id = "profile-alpha";
             profile.name = "Alpha";
@@ -262,6 +263,7 @@ class PinningFlowTest : public QObject {
             qApp->removeEventFilter(&probe);
             QVERIFY(probe.sawUnpin);
             QTRY_COMPARE(pins->count(), 0);
+            QVERIFY(!pinnedSection->isVisible());
             QCOMPARE(table.data(Qt::DisplayRole).toString(), QString("orders"));
             QMenu again;
             navigator->populateContextMenu(&again, table);
@@ -269,6 +271,7 @@ class PinningFlowTest : public QObject {
             QVERIFY(repin && repin->isEnabled());
             repin->trigger();
             QTRY_COMPARE(pins->count(), 1);
+            QVERIFY(pinnedSection->isVisible());
         }
         MainWindow restored(nullptr, store);
         restored.show();
@@ -281,7 +284,7 @@ class PinningFlowTest : public QObject {
         QVERIFY(pins && tree && filter && profiles && selector && workspace);
         QTRY_COMPARE(pins->count(), 1);
         QCOMPARE(tree->model()->rowCount(), 0);
-        QVERIFY(pins->item(0)->text().contains("Alpha"));
+        QVERIFY(pins->item(0)->toolTip().contains("Alpha"));
         QTRY_COMPARE(profiles->count(), 1);
         const auto editorTarget = selector->currentData();
         filter->setText("nothing_matches");
@@ -299,7 +302,7 @@ class PinningFlowTest : public QObject {
         auto renamedProfile = profiles->item(0)->data(Qt::UserRole).value<SavedProfile>();
         renamedProfile.name = "Alpha Renamed";
         workspace->adapter()->saveProfile(renamedProfile, 6002);
-        QTRY_VERIFY(pins->item(0)->text().contains("Alpha Renamed"));
+        QTRY_VERIFY(pins->item(0)->toolTip().contains("Alpha Renamed"));
         workspace->adapter()->deleteProfile(renamedProfile.id, 6003);
         QTRY_COMPARE(pins->count(), 0);
     }

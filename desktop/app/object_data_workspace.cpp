@@ -4,6 +4,7 @@
 #include "bridge/engine_adapter.h"
 #include "design_system/button/button.h"
 #include "design_system/table/table_style.h"
+#include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include <QAction>
 #include <QComboBox>
@@ -33,8 +34,9 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(metrics.spacingSmall);
-    auto* summary = new QLabel(tr("Open Data to read an object."), this);
+    auto* summary = new design::Text(tr("Open Data to read an object."), this);
     summary->setObjectName("objectDataSummary");
+    summary->setTypographyRole(design::TypographyRole::Ui);
     summary->setTextFormat(Qt::PlainText);
     summary->setWordWrap(false);
     summary->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
@@ -64,7 +66,6 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     layout->addWidget(messages);
     footer_ = new QWidget(this);
     footer_->setObjectName("objectDataFooter");
-    footer_->setProperty("resultFooter", true);
     auto* footer = new QHBoxLayout(footer_);
     footer->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
                                metrics.spacingSmall);

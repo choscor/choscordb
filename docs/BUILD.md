@@ -24,7 +24,7 @@ open build/dev/choscordb.app
 
 Intel Homebrew normally uses `/usr/local` instead. Homebrew's Qt bottle determines the supported macOS version; this is a local development build, not a redistributable release package. Set `CMAKE_OSX_DEPLOYMENT_TARGET` explicitly when preparing a deployment toolchain, and use Qt/QScintilla binaries built for that target.
 
-On other systems, supply the Qt and QScintilla installation roots through `CMAKE_PREFIX_PATH`, then use the same configure/build/test presets. Windows/Linux verification and installation work are deferred with distribution.
+On other systems, supply the Qt and QScintilla installation roots through `CMAKE_PREFIX_PATH`, then use the same configure/build/test presets. The separate [Windows and Linux release guide](WINDOWS_LINUX_RELEASE.md) describes unsigned candidate packages and GitHub Release assets.
 
 `Cargo.toml`'s `workspace.package.version` is the authoritative stable `X.Y.Z`
 application version. CMake reads it for bundle and executable metadata. Change it

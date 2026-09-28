@@ -45,6 +45,7 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/select/select_style.cpp
   desktop/design_system/separator/separator_style.cpp
   desktop/design_system/spin_box/spin_box_style.cpp
+  desktop/design_system/status_line/status_line.cpp
   desktop/design_system/splitter/splitter_style.cpp
   desktop/design_system/style/application_stylesheet.cpp
   desktop/design_system/style/control_stylesheet.cpp

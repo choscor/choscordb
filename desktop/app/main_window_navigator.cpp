@@ -9,6 +9,7 @@
 #include "bridge/engine_adapter.h"
 #include "design_system/button/button.h"
 #include "design_system/text/text.h"
+#include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "widgets/editor_completion/editor_completion.h"
@@ -21,10 +22,14 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QStyle>
 #include <QTabWidget>
+#include <QTimer>
 #include <QTreeView>
+#include <algorithm>
+#include <functional>
 #include <memory>
 #include <utility>
 
@@ -41,6 +46,56 @@ void MainWindow::connectNavigator(const Ui& ui) {
     const auto toast = ui.toast;
     auto* navigatorController = new NavigatorController(workspace_->adapter(), tree, filter, this);
     navigatorController_ = navigatorController;
+    auto* connectionsScroll = findChild<QScrollArea*>("connectionsScroll");
+    const auto revealCurrent = [tree, connectionsScroll] {
+        const auto current = tree->currentIndex();
+        if (!connectionsScroll || !current.isValid())
+            return;
+        const auto row = tree->visualRect(current);
+        const auto point = tree->viewport()->mapTo(connectionsScroll->widget(), row.center());
+        connectionsScroll->ensureVisible(point.x(), point.y(), 0, row.height());
+    };
+    const auto updateTreeHeight = [this, tree] {
+        const auto* model = tree->model();
+        if (!model)
+            return;
+        const std::function<int(const QModelIndex&)> countVisible =
+            [tree, model, &countVisible](const QModelIndex& parent) -> int {
+            int count = 0;
+            for (int row = 0; row < model->rowCount(parent); ++row) {
+                const auto index = model->index(row, 0, parent);
+                ++count;
+                if (tree->isExpanded(index))
+                    count += countVisible(index);
+            }
+            return count;
+        };
+        const int rowHeight =
+            std::max(theme_->metrics().navigationRowHeight, tree->sizeHintForRow(0));
+        tree->setFixedHeight(std::max(design::spacing(design::Spacing::Two),
+                                      countVisible({}) * rowHeight + 2 * tree->frameWidth()));
+    };
+    const auto scheduleTreeHeight = [tree, updateTreeHeight] {
+        QTimer::singleShot(0, tree, updateTreeHeight);
+    };
+    const auto scheduleRevealCurrent = [tree, revealCurrent] {
+        QTimer::singleShot(0, tree, revealCurrent);
+    };
+    auto* treeModel = tree->model();
+    connect(treeModel, &QAbstractItemModel::rowsInserted, tree, scheduleTreeHeight);
+    connect(treeModel, &QAbstractItemModel::rowsRemoved, tree, scheduleTreeHeight);
+    connect(treeModel, &QAbstractItemModel::modelReset, tree, scheduleTreeHeight);
+    connect(treeModel, &QAbstractItemModel::layoutChanged, tree, scheduleTreeHeight);
+    connect(treeModel, &QAbstractItemModel::dataChanged, tree, scheduleTreeHeight);
+    connect(tree, &QTreeView::expanded, tree, updateTreeHeight);
+    connect(tree, &QTreeView::collapsed, tree, updateTreeHeight);
+    connect(theme_, &design::ThemeManager::metricsChanged, tree, scheduleTreeHeight);
+    connect(navigatorController, &NavigatorController::selectedConnectionsChanged, tree,
+            scheduleTreeHeight);
+    connect(filter, &QLineEdit::textChanged, tree, scheduleTreeHeight);
+    connect(tree->selectionModel(), &QItemSelectionModel::currentChanged, tree,
+            scheduleRevealCurrent);
+    scheduleTreeHeight();
     navigatorController->setDriverResolver(
         [this](quint64 connection) { return workspace_->driverForConnection(connection); });
     constexpr quint64 visibilityLoadToken = quint64(1) << 58;

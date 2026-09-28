@@ -12,3 +12,9 @@ QListView[designSurface="sidebar"]::item:selected {
   color: @foreground;
   border-radius: 5px;
 }
+
+QListView[designNavigationItem="true"]::item:hover {
+  background: @muted;
+  color: @foreground;
+  border-radius: 5px;
+}

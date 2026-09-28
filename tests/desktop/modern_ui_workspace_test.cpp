@@ -750,26 +750,49 @@ void ModernUiTest::resultFooterTracksActiveSqlTargetIndependentlyOfExecution() {
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
     auto* run = window.findChild<QAction*>("runStatement");
     QVERIFY(workspace && theme && footer && summary && tabs && run);
-    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.dangerSurface);
+    auto* startFooter = window.findChild<QWidget*>("startFooter");
+    QVERIFY(startFooter);
+    const auto startLabels = startFooter->findChildren<QLabel*>();
+    QCOMPARE(startLabels.size(), 1);
+    QCOMPARE(startLabels.first()->font().pixelSize(), 13);
+    QCOMPARE(QString::fromLatin1(footer->metaObject()->className()),
+             QString("choscordb::design::StatusLine"));
+    QCOMPARE(footer->font().pixelSize(), 13);
+    QCOMPARE(summary->font().pixelSize(), footer->font().pixelSize());
+    for (const char* name : {"executionStateCompact", "executionDuration", "executionPage",
+                             "executionRows", "executionVisibleSize"}) {
+        auto* label = footer->findChild<QLabel*>(name);
+        QVERIFY(label);
+        QCOMPARE(label->font().pixelSize(), footer->font().pixelSize());
+    }
+    QCOMPARE(footer->palette().color(QPalette::Window),
+             theme->resolvedTheme().colors.dangerSurface);
 
     workspace->connectSqlite(":memory:");
     QTRY_VERIFY(run->isEnabled());
     QTRY_COMPARE(footer->palette().color(QPalette::Window),
                  theme->resolvedTheme().colors.successSurface);
+    theme->setMode(choscordb::design::ThemeMode::Dark);
+    QTRY_COMPARE(footer->palette().color(QPalette::Window),
+                 theme->resolvedTheme().colors.successSurface);
+    theme->setMode(choscordb::design::ThemeMode::Light);
     auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
     QVERIFY(editor);
     editor->setText("SELECT missing FROM nowhere");
     run->trigger();
     QTRY_COMPARE(summary->property("state").toString(), QString("failed"));
-    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.successSurface);
+    QCOMPARE(footer->palette().color(QPalette::Window),
+             theme->resolvedTheme().colors.successSurface);
 
     window.findChild<QAction*>("newQuery")->trigger();
     auto* other = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
     QVERIFY(other && other != editor);
     other->setConnectionTarget(std::nullopt, {});
-    QTRY_COMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.dangerSurface);
+    QTRY_COMPARE(footer->palette().color(QPalette::Window),
+                 theme->resolvedTheme().colors.dangerSurface);
     tabs->setCurrentWidget(editor);
-    QTRY_COMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.successSurface);
+    QTRY_COMPARE(footer->palette().color(QPalette::Window),
+                 theme->resolvedTheme().colors.successSurface);
 }
 
 void ModernUiTest::completedResultFooterSeparatesAndClearsMetrics() {

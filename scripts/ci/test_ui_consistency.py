@@ -341,6 +341,17 @@ class UiConsistencyTest(unittest.TestCase):
         self.assertEqual(report["screens"]["app/main_window"]["unclassified"], 0)
         self.assertEqual(report["violations"], [])
 
+    def test_census_recognizes_shared_status_line_construction(self):
+        temporary, root = self.fixture()
+        with temporary:
+            (root / "desktop/app/main_window_ui.cpp").write_text(
+                "auto* footer = new design::StatusLine(parent);\n", encoding="utf-8"
+            )
+            report = ui_consistency.audit(root)
+        self.assertEqual(report["screens"]["app/main_window"]["composite"], 1)
+        self.assertEqual(report["screens"]["app/main_window"]["unclassified"], 0)
+        self.assertEqual(report["violations"], [])
+
     def test_discovers_feature_composites_through_inheritance(self):
         temporary, root = self.fixture()
         with temporary:

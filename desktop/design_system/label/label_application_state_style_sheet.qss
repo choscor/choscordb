@@ -1,4 +1,5 @@
-QLabel[state="completed"], QLabel[state="success"] {
+QLabel[state="completed"], QLabel[state="success"], QLabel[state="loaded"],
+QLabel[state="ready"], QLabel[state="restored"] {
   color: %19;
 }
 

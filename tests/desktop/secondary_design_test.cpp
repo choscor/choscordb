@@ -269,9 +269,9 @@ class SecondaryDesignTest final : public QObject {
         driver->setCurrentIndex(driver->findData("postgres"));
         QCoreApplication::processEvents();
         QVERIFY(dialog.width() >= 560);
-        QVERIFY(dialog.width() <=
-                choscordb::design::dialogInitialSize(choscordb::design::DialogSize::Profiles)
-                    .width());
+        QVERIFY(
+            dialog.width() <=
+            choscordb::design::dialogInitialSize(choscordb::design::DialogSize::Profiles).width());
         QVERIFY(!dialog.findChild<QListWidget*>("profileList")->isVisible());
         auto* save = dialog.findChild<QPushButton*>("profileSaveConnect");
         QVERIFY(save->isVisible());

@@ -107,9 +107,8 @@ class PopupContentFitFilter final : public QObject {
                     if (auto* owner = popup_->parentWidget()) {
                         const int comboTop = combo_->mapTo(owner, QPoint()).y();
                         if (popup_->geometry().bottom() < comboTop)
-                            popup_->move(popup_->x(),
-                                         qMin(comboTop - popup_->height() + 1,
-                                              owner->height() - popup_->height()));
+                            popup_->move(popup_->x(), qMin(comboTop - popup_->height() + 1,
+                                                           owner->height() - popup_->height()));
                     }
                 }
             });

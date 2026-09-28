@@ -332,7 +332,6 @@ class NavigatorPinModelTest : public QObject {
         QVERIFY(unavailable && !unavailable->isEnabled());
         QVERIFY(unavailable->toolTip().contains("sav", Qt::CaseInsensitive));
     }
-
 };
 QTEST_MAIN(NavigatorPinModelTest)
 #include "navigator_pin_model_test.moc"

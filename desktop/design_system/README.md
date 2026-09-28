@@ -21,6 +21,7 @@ preserved by the component extraction.
 | Switch | `switch/`: existing `designRole="switch"` track and thumb painting |
 | Tool button | `tool_button/`: QToolButton states and menu-indicator rules |
 | Toolbar | `toolbar/`: toolbar geometry, separators, and muted workspace variant |
+| Status line | `status_line/`: shared workspace footer layout, 13 px Ui typography, and availability surface |
 | Tabs | `tabs/`: pane/document variants, left-aligned document labels, and tab-close painting |
 | Table | `table/`: table font, row styles, and interactive result headers |
 | Tree | `tree/`: navigation rows and branch painting |
@@ -38,7 +39,7 @@ preserved by the component extraction.
 | Dialog presentation | `dialog_presentation/`: owner-contained modal surfaces, shared backdrop, focus boundary and restoration |
 | Modal dialog | `modal_panel/`: `ModalDialog` surface; the dimmed overlay belongs to `dialog_presentation/` |
 | Right sheet | `right_sheet/`: right-aligned modal shell with header, scrolling body and fixed muted footer |
-| Quick search | `quick_search/`: compact top-center modal search field, result list, states and keyboard/pointer interaction |
+| Quick search | `quick_search/`: compact modal search field, reusable icon/title/detail result rows, states and keyboard/pointer interaction |
 | Dialog shell | `dialog_shell/`: reusable nonmodal `QDialog` shell and content/status styles |
 | Dialog sections | `dialog_sections/`: compact header, growing body, and muted padded footer for dialogs |
 | Confirmation dialog | `confirmation_dialog/`: reusable QMessageBox contract and presentation |
@@ -108,6 +109,7 @@ owning modules.
 | Dock panel | Dock |
 | Tabs with close and overflow | Tabs |
 | Workspace toolbar | Toolbar |
+| Result, object, and history status lines | Status line |
 | Scroll areas and scrollbars | Scrollbar |
 | Separators and splitters | Separator, splitter |
 | Table headers, cells and selection | Table, header, shared item view styles |

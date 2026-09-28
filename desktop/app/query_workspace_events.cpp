@@ -528,17 +528,16 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                                     : tr("Completed in %1 ms.").arg(e.duration_ms));
         completedDurationMs_ = e.duration_ms;
         const bool hasResultPage = currentPage_ && !columns_.empty();
-        QString rowMetric = e.has_affected_rows ? tr("%1 rows affected").arg(e.affected_rows)
-                                                : QString{};
+        QString rowMetric =
+            e.has_affected_rows ? tr("%1 rows affected").arg(e.affected_rows) : QString{};
         if (hasResultPage)
             rowMetric += (rowMetric.isEmpty() ? QString{} : QStringLiteral(" · ")) +
                          tr("%1 rows").arg(model_->rowCount());
-        setExecutionState(QStringLiteral("completed"), tr("✓ Completed"),
-                          {tr("%1 ms").arg(e.duration_ms),
-                           hasResultPage ? tr("Page %1").arg(*currentPage_ + 1) : QString{},
-                           rowMetric,
-                           hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024)
-                                        : QString{}});
+        setExecutionState(
+            QStringLiteral("completed"), tr("✓ Completed"),
+            {tr("%1 ms").arg(e.duration_ms),
+             hasResultPage ? tr("Page %1").arg(*currentPage_ + 1) : QString{}, rowMetric,
+             hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024) : QString{}});
         updateActions();
     } else if (kind == "query_failed") {
         if (preserveViewOnRefresh_ && viewRefreshQuery_ == query_) {

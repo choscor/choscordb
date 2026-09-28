@@ -38,7 +38,7 @@ void drawDocumentTabLabel(const QStyleOptionTab& tab, QPainter* painter, const Q
     if (const auto* leading = bar.tabButton(index, QTabBar::LeftSide))
         left += leading->width() + spacing(Spacing::One);
     if (!tab.icon.isNull()) {
-        const QRect iconRect(left, tab.rect.center().y() - iconSize / 2, iconSize, iconSize);
+        const QRect iconRect(left, tab.rect.center().y() - (iconSize - 1) / 2, iconSize, iconSize);
         tab.icon.paint(painter, iconRect, Qt::AlignCenter,
                        tab.state.testFlag(QStyle::State_Enabled) ? QIcon::Normal : QIcon::Disabled,
                        tab.state.testFlag(QStyle::State_Selected) ? QIcon::On : QIcon::Off);

@@ -18,9 +18,9 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QSignalSpy>
+#include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTest>
-#include <QTabWidget>
 #include <QTreeView>
 
 void ModernUiTest::sidebarConnectionDoesNotColorUnavailableSqlTargetFooter() {
@@ -37,7 +37,8 @@ void ModernUiTest::sidebarConnectionDoesNotColorUnavailableSqlTargetFooter() {
     auto* profiles = window.findChild<QListWidget*>("savedConnections");
     QVERIFY(editor && workspace && theme && footer && profiles);
     editor->setConnectionTarget(quint64{0xF00D}, "Unavailable target");
-    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.dangerSurface);
+    QCOMPARE(footer->palette().color(QPalette::Window),
+             theme->resolvedTheme().colors.dangerSurface);
 
     choscordb::SavedProfile profile;
     profile.id = "sidebar-only";
@@ -51,9 +52,10 @@ void ModernUiTest::sidebarConnectionDoesNotColorUnavailableSqlTargetFooter() {
     QTRY_COMPARE(opened.count(), 1);
     QTRY_VERIFY(window.browsingConnection().has_value());
     QVERIFY(editor->connectionTarget() == quint64{0xF00D});
-    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.dangerSurface);
-    for (const auto mode : {choscordb::design::ThemeMode::Light,
-                            choscordb::design::ThemeMode::Dark}) {
+    QCOMPARE(footer->palette().color(QPalette::Window),
+             theme->resolvedTheme().colors.dangerSurface);
+    for (const auto mode :
+         {choscordb::design::ThemeMode::Light, choscordb::design::ThemeMode::Dark}) {
         theme->setMode(mode);
         const auto colors = theme->resolvedTheme().colors;
         QCOMPARE(footer->palette().color(QPalette::Window), colors.dangerSurface);
@@ -65,16 +67,19 @@ void ModernUiTest::sidebarConnectionDoesNotColorUnavailableSqlTargetFooter() {
     }
     const auto browsingId = *window.browsingConnection();
     editor->setConnectionTarget(browsingId, "Sidebar Only");
-    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.successSurface);
+    QCOMPARE(footer->palette().color(QPalette::Window),
+             theme->resolvedTheme().colors.successSurface);
     QVERIFY(workspace->adapter()->disconnectConnection(browsingId));
     QTRY_COMPARE(footer->palette().color(QPalette::Window),
                  theme->resolvedTheme().colors.dangerSurface);
     QSignalSpy reconnected(workspace, &choscordb::QueryWorkspace::connectionReady);
     workspace->connectSqlite(":memory:");
     QTRY_COMPARE(reconnected.count(), 1);
-    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.dangerSurface);
+    QCOMPARE(footer->palette().color(QPalette::Window),
+             theme->resolvedTheme().colors.dangerSurface);
     editor->setConnectionTarget(reconnected.at(0).at(0).toULongLong(), "Reconnected");
-    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.successSurface);
+    QCOMPARE(footer->palette().color(QPalette::Window),
+             theme->resolvedTheme().colors.successSurface);
     editor->setConnectionTarget(quint64{0xF00D}, "Unavailable target");
     theme->setForcedContrast(true);
     QCOMPARE(footer->palette().color(QPalette::Window),
@@ -282,9 +287,8 @@ void ModernUiTest::failedSidebarOpenRestoresLastSuccessfulProfile() {
     click("Invalid Browse");
     QTRY_VERIFY(window.findChild<QMessageBox*>("sidebarConnectionFailure"));
     QCOMPARE(window.browsingConnection(), std::optional<quint64>(validId));
-    auto* validItem = profiles->item(0)->text().startsWith("Valid Browse")
-                          ? profiles->item(0)
-                          : profiles->item(1);
+    auto* validItem = profiles->item(0)->text().startsWith("Valid Browse") ? profiles->item(0)
+                                                                           : profiles->item(1);
     auto* invalidItem = validItem == profiles->item(0) ? profiles->item(1) : profiles->item(0);
     QVERIFY(validItem->isSelected());
     QVERIFY(!invalidItem->isSelected());

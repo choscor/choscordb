@@ -115,9 +115,11 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     QVERIFY(qAbs(serverY(user) - serverY(password)) <= 4);
     QVERIFY(port->width() < host->width());
     QVERIFY(port->width() < database->width());
-    for (const auto& expected : QList<QPair<QString, QWidget*>>{
-             {"&Host", host}, {"P&ort", port}, {"Data&base", database},
-             {"&Username", user}, {"&Password", password}}) {
+    for (const auto& expected : QList<QPair<QString, QWidget*>>{{"&Host", host},
+                                                                {"P&ort", port},
+                                                                {"Data&base", database},
+                                                                {"&Username", user},
+                                                                {"&Password", password}}) {
         bool hasBuddy = false;
         for (auto* label : dialog.findChildren<QLabel*>())
             hasBuddy |= label->text() == expected.first && label->buddy() == expected.second;
@@ -151,8 +153,8 @@ void WorkspaceTest::connectionFormHasNoTlsSettings() {
     QVERIFY(!dialog.findChild<QLineEdit*>("profileRootCertificate"));
     QVERIFY(!dialog.findChild<QLineEdit*>("profileTlsClientIdentity"));
     QVERIFY(!dialog.findChild<QLineEdit*>("profileTlsSecret")->isVisibleTo(&dialog));
-    QCOMPARE(dialog.findChild<QScrollArea*>("profileFormScroll")
-                 ->horizontalScrollBar()->maximum(), 0);
+    QCOMPARE(dialog.findChild<QScrollArea*>("profileFormScroll")->horizontalScrollBar()->maximum(),
+             0);
 }
 
 void WorkspaceTest::savedTlsVerificationSurvivesProfileEdit() {
@@ -306,13 +308,18 @@ void WorkspaceTest::connectionSshFormKeepsBasicFields() {
     QVERIFY(port->width() < host->width());
     QVERIFY(port->width() < user->width());
     QVERIFY(qAbs(y(source) - y(file)) <= 2);
-    QVERIFY(qAbs(y(file) - y(secret)) <= 2);
+    QVERIFY(qAbs(y(authentication) - y(secret)) <= 2);
+    QVERIFY(secret->mapTo(&dialog, QPoint()).x() >=
+            authentication->mapTo(&dialog, QPoint(authentication->width(), 0)).x());
     QVERIFY(y(host) < y(authentication));
     QVERIFY(y(authentication) < y(source));
-    for (const auto& expected : QList<QPair<QString, QWidget*>>{
-             {"SSH host", host}, {"SSH port", port}, {"SSH username", user},
-             {"Authentication", authentication}, {"Private key source", source},
-             {"SSH private key file", file}, {"SSH passphrase", secret}}) {
+    for (const auto& expected : QList<QPair<QString, QWidget*>>{{"SSH host", host},
+                                                                {"SSH port", port},
+                                                                {"SSH username", user},
+                                                                {"Authentication", authentication},
+                                                                {"Private key source", source},
+                                                                {"SSH private key file", file},
+                                                                {"SSH passphrase", secret}}) {
         bool hasBuddy = false;
         for (auto* label : dialog.findChildren<QLabel*>())
             hasBuddy |= label->text() == expected.first && label->buddy() == expected.second;
@@ -325,6 +332,7 @@ void WorkspaceTest::connectionSshFormKeepsBasicFields() {
     QVERIFY(!source->isVisibleTo(&dialog));
     QVERIFY(!file->isVisibleTo(&dialog));
     QVERIFY(secret->isVisibleTo(&dialog));
+    QVERIFY(qAbs(y(authentication) - y(secret)) <= 2);
     bool hasPasswordLabel = false;
     for (auto* label : dialog.findChildren<QLabel*>())
         hasPasswordLabel |= label->text() == "SSH password" && label->buddy() == secret;
@@ -495,12 +503,12 @@ void WorkspaceTest::connectionManualPasswordIsOptionalAndUsesOneCredentialChoice
     QVERIFY(credentials);
     QVERIFY(!credentials->isChecked());
     QVERIFY(!dialog.findChild<QComboBox*>("profileAuthentication"));
-    for (const auto* name : {"profileRememberPassword", "profileRememberSshSecret",
-                             "profileRememberTlsSecret", "profileRememberProxySecret",
-                             "profileSshPrivateKeyRemember", "profileSshHopRemember"})
+    for (const auto* name :
+         {"profileRememberPassword", "profileRememberSshSecret", "profileRememberTlsSecret",
+          "profileRememberProxySecret", "profileSshPrivateKeyRemember", "profileSshHopRemember"})
         QVERIFY2(!dialog.findChild<QCheckBox*>(name), name);
-    for (const auto* name : {"profilePgPassFile", "profilePgPassHostname",
-                             "profilePasswordCommandDirectory"})
+    for (const auto* name :
+         {"profilePgPassFile", "profilePgPassHostname", "profilePasswordCommandDirectory"})
         QVERIFY2(!dialog.findChild<QLineEdit*>(name), name);
     QVERIFY(!dialog.findChild<QPlainTextEdit*>("profilePasswordCommand"));
     QVERIFY(!dialog.findChild<QSpinBox*>("profilePasswordCommandTimeout"));
@@ -562,8 +570,9 @@ void WorkspaceTest::connectionEditedEmptyPasswordSuppressesSavedReference() {
     // fails while leaving this editable profile and its old reference in the draft.
     dialog->saveDraft(profile);
     QTRY_VERIFY(save->isEnabled());
-    QVERIFY(dialog->findChild<QLabel*>("profileStatus")->text().contains("unavailable",
-                                                                       Qt::CaseInsensitive));
+    QVERIFY(dialog->findChild<QLabel*>("profileStatus")
+                ->text()
+                .contains("unavailable", Qt::CaseInsensitive));
     password->clear();
     password->setModified(true);
     QSignalSpy submitted(dialog, &choscordb::ProfileDialog::connectionSubmitted);

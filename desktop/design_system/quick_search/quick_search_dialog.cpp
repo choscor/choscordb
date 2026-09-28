@@ -1,11 +1,13 @@
 #include "design_system/quick_search/quick_search_dialog.h"
 
 #include "design_system/fonts/fonts.h"
+#include "design_system/icons.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/style/style_resource.h"
 #include "design_system/theme.h"
 
 #include <QEvent>
+#include <QHBoxLayout>
 #include <QHideEvent>
 #include <QKeyEvent>
 #include <QLabel>
@@ -18,6 +20,78 @@
 #include <QVBoxLayout>
 
 namespace choscordb::design {
+QuickSearchResultRow::QuickSearchResultRow(const QuickSearchResult& result, QWidget* parent)
+    : QWidget(parent), iconRole_(result.icon) {
+    setObjectName("quickSearchResultRow");
+    setAttribute(Qt::WA_TransparentForMouseEvents);
+    setAccessibleName(QStringLiteral("%1. %2. %3").arg(result.type, result.title, result.context));
+
+    auto* layout = new QHBoxLayout(this);
+    layout->setContentsMargins(spacing(Spacing::Two), spacing(Spacing::One), spacing(Spacing::Two),
+                               spacing(Spacing::One));
+    layout->setSpacing(spacing(Spacing::Two));
+
+    iconLabel_ = new QLabel(this);
+    iconLabel_->setObjectName("quickSearchResultIcon");
+    iconLabel_->setFixedSize(dimension(Dimension::IconSmall), dimension(Dimension::IconSmall));
+    iconLabel_->setAccessibleName(result.type);
+    layout->addWidget(iconLabel_, 0, Qt::AlignVCenter);
+
+    auto* text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(0);
+    titleLabel_ = new QLabel(result.title, this);
+    titleLabel_->setObjectName("quickSearchResultTitle");
+    titleLabel_->setTextFormat(Qt::PlainText);
+    titleLabel_->setFont(resolveTypography(TypographyRole::Ui));
+    titleLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    text->addWidget(titleLabel_);
+    detailLabel_ = new QLabel(result.context, this);
+    detailLabel_->setObjectName("quickSearchResultDetail");
+    detailLabel_->setTextFormat(Qt::PlainText);
+    detailLabel_->setFont(resolveTypography(TypographyRole::NavigationDetail));
+    detailLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    text->addWidget(detailLabel_);
+    layout->addLayout(text, 1);
+    refreshAppearance();
+}
+
+void QuickSearchResultRow::setSelected(bool selected) {
+    if (selected_ == selected)
+        return;
+    selected_ = selected;
+    refreshAppearance();
+}
+
+void QuickSearchResultRow::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange ||
+        event->type() == QEvent::ParentChange)
+        refreshAppearance();
+}
+
+void QuickSearchResultRow::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    refreshAppearance();
+}
+
+void QuickSearchResultRow::refreshAppearance() {
+    if (refreshing_ || !iconLabel_)
+        return;
+    refreshing_ = true;
+    const auto colors = resolvedThemeForWidget(*this).colors;
+    auto titlePalette = titleLabel_->palette();
+    titlePalette.setColor(QPalette::WindowText,
+                          selected_ ? colors.accentForeground : colors.foreground);
+    titleLabel_->setPalette(titlePalette);
+    auto detailPalette = detailLabel_->palette();
+    detailPalette.setColor(QPalette::WindowText,
+                           selected_ ? colors.accentForeground : colors.mutedText);
+    detailLabel_->setPalette(detailPalette);
+    const int size = dimension(Dimension::IconSmall);
+    iconLabel_->setPixmap(themedIcon(iconRole_, colors.mutedText, size).pixmap(size, size));
+    refreshing_ = false;
+}
 
 QuickSearchDialog::QuickSearchDialog(QWidget* parent)
     : QDialog(parent), presentation_(*this, DialogPresentation::Placement::TopCenter) {
@@ -90,11 +164,13 @@ void QuickSearchDialog::setResults(const QList<QuickSearchResult>& results) {
     results_ = results;
     list_->clear();
     for (const auto& result : results_) {
-        auto* item = new QListWidgetItem(
-            QStringLiteral("%1    %2\n%3").arg(result.type, result.title, result.context), list_);
+        auto* item = new QListWidgetItem(list_);
+        item->setData(Qt::AccessibleTextRole,
+                      QStringLiteral("%1. %2. %3").arg(result.type, result.title, result.context));
         item->setData(Qt::UserRole, result.id);
         item->setSizeHint(QSize(0, dimension(Dimension::QuickSearchRow)));
         item->setToolTip(result.context);
+        list_->setItemWidget(item, new QuickSearchResultRow(result, list_));
     }
     int selectedRow = 0;
     if (!selectedId.isEmpty()) {
@@ -112,10 +188,17 @@ void QuickSearchDialog::setResults(const QList<QuickSearchResult>& results) {
 }
 
 void QuickSearchDialog::updateSelectedAccessibility() {
+    for (int row = 0; row < list_->count(); ++row) {
+        if (auto* resultRow =
+                static_cast<QuickSearchResultRow*>(list_->itemWidget(list_->item(row))))
+            resultRow->setSelected(row == list_->currentRow());
+    }
     list_->setAccessibleDescription(
         tr("%1 results. %2")
             .arg(results_.size())
-            .arg(list_->currentItem() ? list_->currentItem()->text() : QString{}));
+            .arg(list_->currentItem()
+                     ? list_->currentItem()->data(Qt::AccessibleTextRole).toString()
+                     : QString{}));
 }
 
 void QuickSearchDialog::setStatus(const QString& message) {
@@ -213,6 +296,17 @@ bool QuickSearchDialog::eventFilter(QObject* watched, QEvent* event) {
         }
     }
     return QDialog::eventFilter(watched, event);
+}
+
+void QuickSearchDialog::changeEvent(QEvent* event) {
+    QDialog::changeEvent(event);
+    if (!list_ || (event->type() != QEvent::PaletteChange && event->type() != QEvent::StyleChange))
+        return;
+    for (int row = 0; row < list_->count(); ++row) {
+        if (auto* resultRow =
+                static_cast<QuickSearchResultRow*>(list_->itemWidget(list_->item(row))))
+            resultRow->refreshAppearance();
+    }
 }
 
 void QuickSearchDialog::paintEvent(QPaintEvent*) {

@@ -6,6 +6,7 @@
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/field/field.h"
 #include "design_system/history_row/history_row.h"
+#include "design_system/icons.h"
 #include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/quick_search/quick_search_dialog.h"
@@ -91,7 +92,36 @@ void PreviewTest::quickSearchSpecimenUsesRealOverlayInBothThemes() {
         input->setText(QString(200, QChar('x')));
         QCOMPARE(input->text().size(), 128);
         input->clear();
-        QCOMPARE(list->count(), 3);
+        QCOMPARE(list->count(), 4);
+        for (int row = 0; row < list->count(); ++row) {
+            const auto* item = list->item(row);
+            QVERIFY(item->text().isEmpty());
+            const auto result = dialog->results().at(row);
+            QCOMPARE(item->data(Qt::AccessibleTextRole).toString(),
+                     QStringLiteral("%1. %2. %3").arg(result.type, result.title, result.context));
+            auto* resultRow = list->itemWidget(list->item(row));
+            QVERIFY(resultRow);
+            auto* icon = resultRow->findChild<QLabel*>("quickSearchResultIcon");
+            auto* title = resultRow->findChild<QLabel*>("quickSearchResultTitle");
+            auto* detail = resultRow->findChild<QLabel*>("quickSearchResultDetail");
+            QVERIFY(icon && title && detail);
+            QVERIFY(!icon->pixmap().isNull());
+            QCOMPARE(title->text(), dialog->results().at(row).title);
+            QCOMPARE(detail->text(), dialog->results().at(row).context);
+            QVERIFY(title->geometry().top() < detail->geometry().top());
+            QVERIFY(icon->geometry().right() < title->geometry().left());
+        }
+        const auto colors = choscordb::design::resolvedThemeForWidget(*host).colors;
+        auto* selectedDetail =
+            list->itemWidget(list->item(0))->findChild<QLabel*>("quickSearchResultDetail");
+        auto* unselectedDetail =
+            list->itemWidget(list->item(1))->findChild<QLabel*>("quickSearchResultDetail");
+        QCOMPARE(selectedDetail->palette().color(QPalette::WindowText), colors.accentForeground);
+        QCOMPARE(unselectedDetail->palette().color(QPalette::WindowText), colors.mutedText);
+        list->setCurrentRow(1);
+        QVERIFY(list->accessibleDescription().contains(dialog->results().at(1).title));
+        QCOMPARE(selectedDetail->palette().color(QPalette::WindowText), colors.mutedText);
+        QCOMPARE(unselectedDetail->palette().color(QPalette::WindowText), colors.accentForeground);
         QVERIFY(!input->accessibleName().isEmpty());
         QVERIFY(!list->accessibleName().isEmpty());
         QVERIFY(!status->accessibleName().isEmpty());
@@ -99,6 +129,39 @@ void PreviewTest::quickSearchSpecimenUsesRealOverlayInBothThemes() {
         QVERIFY(dialog->y() < window.height() / 3);
         dialog->reject();
     }
+}
+
+void PreviewTest::quickSearchRowsUseSuppliedIconAndRetintWhenThemeChanges() {
+    using namespace choscordb::design;
+    PreviewWindow window;
+    QVERIFY(window.selectSpecimen("quick-search"));
+    window.show();
+    auto* lightHost = window.findChild<QWidget*>("previewLight");
+    auto* darkHost = window.findChild<QWidget*>("previewDark");
+    QVERIFY(lightHost && darkHost);
+    auto* dialog = previewSurface<QuickSearchDialog>(lightHost, "previewOpenQuickSearch");
+    QVERIFY(dialog);
+    dialog->openSearch();
+    dialog->setResults({{"Object", "customers", "public · table", "tab:misleading", Icon::Table}});
+    auto* list = dialog->findChild<QListWidget*>("quickSearchResults");
+    QVERIFY(list);
+    auto* icon = list->itemWidget(list->item(0))->findChild<QLabel*>("quickSearchResultIcon");
+    QVERIFY(icon);
+    const auto iconSize = dimension(Dimension::IconSmall);
+    const auto light = resolvedThemeForWidget(*lightHost);
+    QCOMPARE(icon->pixmap().toImage(), themedIcon(Icon::Table, light.colors.mutedText, iconSize)
+                                           .pixmap(iconSize, iconSize)
+                                           .toImage());
+    const auto dark = resolvedThemeForWidget(*darkHost);
+    dialog->setProperty("designTheme", QVariant::fromValue(dark));
+    dialog->setPalette(applicationPalette(dark));
+    QCoreApplication::processEvents();
+    QCOMPARE(icon->pixmap().toImage(), themedIcon(Icon::Table, dark.colors.mutedText, iconSize)
+                                           .pixmap(iconSize, iconSize)
+                                           .toImage());
+    auto* detail = list->itemWidget(list->item(0))->findChild<QLabel*>("quickSearchResultDetail");
+    QCOMPARE(detail->palette().color(QPalette::WindowText), dark.colors.accentForeground);
+    dialog->reject();
 }
 
 void PreviewTest::quickSearchInteractionPreservesFocusAndSelection() {

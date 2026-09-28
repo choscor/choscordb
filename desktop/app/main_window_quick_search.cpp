@@ -85,7 +85,7 @@ void MainWindow::showQuickSearch() {
                                  .arg(entry.profileId.isEmpty() ? tr("Unsaved connection")
                                                                 : entry.profileId,
                                       when, entry.status, entry.id.left(8)),
-                             id});
+                             id, design::Icon::Refresh});
                         quickHistoryMatches_.insert(id, QVariant::fromValue(entry));
                     }
                     const bool progressed = nextOffset != 0 && nextOffset != quickHistoryCursor_;
@@ -239,9 +239,9 @@ void MainWindow::updateQuickSearch(const QString& query) {
             const auto score =
                 empty ? std::optional<int>{0} : quickSearchNameScore(needle, action->text());
             if (score)
-                ranked.append(
-                    {*score,
-                     {tr("Screen"), action->text(), tr("View"), QString::fromLatin1(name)}});
+                ranked.append({*score,
+                               {tr("Screen"), action->text(), tr("View"), QString::fromLatin1(name),
+                                design::Icon::Square}});
         }
     }
     for (int index = 0; editors_ && index < editors_->count(); ++index) {
@@ -257,7 +257,7 @@ void MainWindow::updateQuickSearch(const QString& query) {
             context += QStringLiteral(" · ") + editor->filePath();
         else if (auto* object = qobject_cast<ObjectExplorer*>(editors_->widget(index)))
             context += QStringLiteral(" · ") + object->property("objectProfileId").toString();
-        ranked.append({*score, {tr("Tab"), title, context, id}});
+        ranked.append({*score, {tr("Tab"), title, context, id, design::Icon::File}});
     }
     std::stable_sort(ranked.begin(), ranked.end(),
                      [](const auto& left, const auto& right) { return left.first < right.first; });
@@ -302,7 +302,7 @@ void MainWindow::updateQuickSearch(const QString& query) {
                      .arg(object.value(QStringLiteral("kind")).toString())
                      .arg(object.value(QStringLiteral("qualifiedName")).toString())
                      .arg(object.value(QStringLiteral("connection")).toULongLong()),
-                 id});
+                 id, design::Icon::Table});
             quickObjectMatches_.insert(id, object);
         }
     }
@@ -473,7 +473,8 @@ void MainWindow::updateQuickObjectRows() {
                                                              QByteArray::OmitTrailingEquals));
         quickObjectRows_.append(
             {tr("Object"), object.name,
-             tr("%1 · %2 · %3").arg(object.context, object.qualifiedName, object.kind), id});
+             tr("%1 · %2 · %3").arg(object.context, object.qualifiedName, object.kind), id,
+             design::Icon::Table});
         quickObjectMatches_.insert(
             id, {{QStringLiteral("connection"), QVariant::fromValue<qulonglong>(object.connection)},
                  {QStringLiteral("objectId"), object.objectId},
@@ -541,7 +542,8 @@ void MainWindow::scanQuickSearchEditors(quint64 generation, int tabIndex, int li
             quickEditorMatches_.insert(id, {editor, editor->revision(), line, column, bytes});
             quickEditorRows_.append(
                 {tr("SQL text"), matchSnippet(text, found, needle.size()),
-                 tr("%1 · line %2").arg(editors_->tabText(tabIndex)).arg(line + 1), id});
+                 tr("%1 · line %2").arg(editors_->tabText(tabIndex)).arg(line + 1), id,
+                 design::Icon::Code});
             if (quickEditorRows_.size() == 40) {
                 quickEditorIncomplete_ = true;
                 break;

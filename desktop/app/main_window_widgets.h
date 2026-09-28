@@ -5,16 +5,19 @@
 #include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
 #include <QApplication>
+#include <QCoreApplication>
 #include <QEvent>
 #include <QIcon>
 #include <QList>
 #include <QMouseEvent>
 #include <QPointer>
+#include <QScrollArea>
 #include <QStyleOptionViewItem>
 #include <QStyledItemDelegate>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
+#include <QWheelEvent>
 #include <functional>
 #include <utility>
 
@@ -86,6 +89,33 @@ class ContextualActionVisibility final : public QObject {
 
     QWidget* region_;
     QList<QWidget*> actions_;
+};
+
+class SidebarWheelForwarder final : public QObject {
+  public:
+    SidebarWheelForwarder(QScrollArea* scroll, QWidget* source) : QObject(scroll), scroll_(scroll) {
+        source->installEventFilter(this);
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() != QEvent::Wheel)
+            return QObject::eventFilter(watched, event);
+        auto* wheel = static_cast<QWheelEvent*>(event);
+        if (wheel->angleDelta().y() == 0 && wheel->pixelDelta().y() == 0)
+            return QObject::eventFilter(watched, event);
+        auto* viewport = scroll_->viewport();
+        QWheelEvent forwarded(viewport->mapFromGlobal(wheel->globalPosition().toPoint()),
+                              wheel->globalPosition(), wheel->pixelDelta(), wheel->angleDelta(),
+                              wheel->buttons(), wheel->modifiers(), wheel->phase(),
+                              wheel->inverted(), wheel->source(), wheel->pointingDevice());
+        QCoreApplication::sendEvent(viewport, &forwarded);
+        wheel->setAccepted(forwarded.isAccepted());
+        return true;
+    }
+
+  private:
+    QScrollArea* scroll_;
 };
 
 class HoveredTabCloseVisibility final : public QObject {
