@@ -112,6 +112,7 @@ class PreferencesWorkspaceTest : public QObject {
         window.activateWindow();
         editor->setFocus();
         QTRY_VERIFY(editor->hasFocus());
+        QCoreApplication::processEvents();
         auto* completion = window.findChild<EditorCompletionController*>();
         auto* completer = completion->findChild<QCompleter*>();
         window.findChild<QAction*>("completeSql")->trigger();

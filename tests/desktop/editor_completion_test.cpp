@@ -99,6 +99,7 @@ class EditorCompletionTest : public QObject {
         owner->activateWindow();
         editor->setFocus();
         QTRY_VERIFY(editor->hasFocus());
+        QCoreApplication::processEvents();
         controller.requestCompletion();
         QTRY_VERIFY2(
             popup->isVisible(),
