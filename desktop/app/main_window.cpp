@@ -407,8 +407,8 @@ void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
     explorer->setProperty("objectId", objectId);
     explorer->setProperty("objectType", QStringLiteral("table"));
     explorer->setProperty("objectLabel", label);
-    auto* data = explorer->findChild<ObjectDataWorkspace*>();
-    data->setInitialFilter(filter);
+    auto* objectData = explorer->findChild<ObjectDataWorkspace*>();
+    objectData->setInitialFilter(filter);
     explorer->openObject(connection, objectId, label, QStringLiteral("table"));
     const auto icon =
         design::themedIcon(design::Icon::Table, theme_->resolvedTheme().colors.mutedText, 16);
