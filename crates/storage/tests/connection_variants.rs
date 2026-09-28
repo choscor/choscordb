@@ -30,6 +30,14 @@ fn profile(driver: &str, host: &str, database: &str, user: &str) -> ConnectionPr
 }
 
 #[test]
+fn database_authentication_settings_are_not_part_of_profile_metadata() {
+    let mut value = serde_json::to_value(profile("postgres", "localhost", "db", "reader")).unwrap();
+    assert!(value.get("authentication").is_none());
+    value["authentication"] = json!({"method":"command","command":"printf secret"});
+    assert!(serde_json::from_value::<ConnectionProfile>(value).is_err());
+}
+
+#[test]
 fn native_defaults_and_unix_endpoints_survive_profile_storage() {
     for expected in [
         profile("postgres", "localhost", "", "reader"),

@@ -5,9 +5,7 @@ use choscordb_credentials::{CredentialStore, MAX_SECRET_BYTES};
 use choscordb_driver_api::{
     Connection, ConnectionId, ConnectionOptions, DatabaseDriver, DriverCapabilities,
 };
-use choscordb_driver_api::{
-    DatabaseAuthentication, DriverError, ErrorKind, Secret, resolve_database_authentication,
-};
+use choscordb_driver_api::{DriverError, ErrorKind, Secret};
 use choscordb_storage::{Storage, StorageError};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::oneshot;
@@ -495,9 +493,13 @@ impl Engine {
     pub fn profile_save_with_secrets(
         &self,
         mut profile: ConnectionProfile,
-        updates: CredentialUpdates,
+        mut updates: CredentialUpdates,
         token: u64,
     ) -> Result<(), SubmitError> {
+        if matches!(&updates.database, CredentialUpdate::Replace(secret) if secret.expose().is_empty())
+        {
+            updates.database = CredentialUpdate::Clear;
+        }
         // Submitted references are draft metadata. Keep only references owned by
         // the previously saved profile inside the metadata worker.
         profile.ssh_jump_credential_refs.clear();
@@ -576,6 +578,38 @@ impl Engine {
                 .map_err(|_| SubmitError::InvalidInput)?;
         }
         self.submit_profile(Command::Save(Box::new(profile), updates, token))
+    }
+    pub fn profile_save_with_credential_policy(
+        &self,
+        profile: ConnectionProfile,
+        updates: CredentialUpdates,
+        save_credentials: bool,
+        token: u64,
+    ) -> Result<(), SubmitError> {
+        if save_credentials {
+            return self.profile_save_with_secrets(profile, updates, token);
+        }
+        let clear_hops = credential_hop_ids(&profile)
+            .into_iter()
+            .map(|id| (id.to_owned(), CredentialUpdate::Clear))
+            .collect();
+        let clear_inline_hops = inline_hop_ids(&profile)
+            .into_iter()
+            .map(|id| (id.to_owned(), CredentialUpdate::Clear))
+            .collect();
+        self.profile_save_with_secrets(
+            profile,
+            CredentialUpdates {
+                database: CredentialUpdate::Clear,
+                ssh: CredentialUpdate::Clear,
+                ssh_private_key: CredentialUpdate::Clear,
+                tls: CredentialUpdate::Clear,
+                proxy: CredentialUpdate::Clear,
+                ssh_jumps: clear_hops,
+                ssh_jump_private_keys: clear_inline_hops,
+            },
+            token,
+        )
     }
     pub fn profile_duplicate(
         &self,
@@ -666,11 +700,7 @@ impl Engine {
         let events = self.events_tx.clone();
         let mut shutdown = self.shutdown.subscribe();
         let commands = self.profiles.clone();
-        let test_timeout = authentication_budget(
-            &profile.configuration.connection_options(None, None),
-            &profile.authentication,
-        );
-        let authentication = profile.authentication.clone();
+        let test_timeout = connection_budget(&profile.configuration.connection_options(None, None));
         let references = CredentialReferences::from_profile(&profile);
         self.runtime.as_ref().ok_or(SubmitError::ShuttingDown)?.spawn(async move {
             let _permit = permit;
@@ -682,7 +712,7 @@ impl Engine {
                     | ConnectionOptions::Mysql { ssh: Some(ssh), .. } = &mut options {
                         ssh.options.share_tunnels = false;
                     }
-                    resolve_options(&commands, references, &authentication, &mut options).await?;
+                    resolve_options(&commands, references, &mut options).await?;
                     let mut connection = driver.connect(options).await?;
                     connection.close().await
                 }) => result.unwrap_or_else(|_| Err(DriverError::new(ErrorKind::Timeout, "Connection test timed out"))),
@@ -948,10 +978,8 @@ impl CredentialReferences {
 async fn resolve_options(
     commands: &mpsc::Sender<Command>,
     references: CredentialReferences,
-    authentication: &DatabaseAuthentication,
     options: &mut ConnectionOptions,
 ) -> Result<(), DriverError> {
-    resolve_database_authentication(authentication, options).await?;
     if let ConnectionOptions::Postgres {
         password,
         ssh_secret,
@@ -979,9 +1007,17 @@ async fn resolve_options(
         ..
     } = options
     {
-        if authentication.is_password() {
-            *password = resolve(commands, references.database, password.take()).await?;
-        }
+        let transient_password = password.take();
+        *password = if transient_password
+            .as_ref()
+            .is_some_and(|secret| secret.expose().is_empty())
+        {
+            None
+        } else {
+            resolve(commands, references.database, transient_password)
+                .await?
+                .filter(|secret| !secret.expose().is_empty())
+        };
         *ssh_secret = if ssh.as_ref().is_some_and(|settings| {
             settings.authentication != choscordb_driver_api::SshAuthentication::Agent
         }) {
@@ -1063,10 +1099,7 @@ async fn resolve_options(
     Ok(())
 }
 
-fn authentication_budget(
-    options: &ConnectionOptions,
-    authentication: &DatabaseAuthentication,
-) -> Duration {
+fn connection_budget(options: &ConnectionOptions) -> Duration {
     let connection = match options {
         ConnectionOptions::Postgres { ssh, .. } | ConnectionOptions::Mysql { ssh, .. } => {
             ssh.as_ref().map_or(Duration::from_secs(15), |settings| {
@@ -1075,11 +1108,10 @@ fn authentication_budget(
         }
         _ => Duration::from_secs(15),
     };
-    connection + Duration::from_secs(5) + authentication.command_timeout()
+    connection + Duration::from_secs(5)
 }
 
 struct ProfileDriver {
-    authentication: DatabaseAuthentication,
     inner: Arc<dyn DatabaseDriver>,
     commands: mpsc::Sender<Command>,
     references: CredentialReferences,
@@ -1104,15 +1136,9 @@ impl ProfileDriver {
         &self,
         mut options: ConnectionOptions,
     ) -> choscordb_driver_api::Result<Box<dyn Connection>> {
-        let budget = authentication_budget(&options, &self.authentication);
+        let budget = connection_budget(&options);
         tokio::time::timeout(budget, async {
-            resolve_options(
-                &self.commands,
-                self.references.clone(),
-                &self.authentication,
-                &mut options,
-            )
-            .await?;
+            resolve_options(&self.commands, self.references.clone(), &mut options).await?;
             self.inner.connect(options).await
         })
         .await
@@ -1175,7 +1201,6 @@ impl Engine {
             .cloned()
             .ok_or(SubmitError::UnknownDriver)?;
         let driver = Arc::new(ProfileDriver {
-            authentication: profile.authentication.clone(),
             inner,
             commands: self.profiles.clone(),
             references: CredentialReferences::from_profile(&profile),
@@ -1183,9 +1208,8 @@ impl Engine {
         self.connect_driver_with_timeout(
             driver,
             profile_options(&profile, secrets),
-            Some(authentication_budget(
+            Some(connection_budget(
                 &profile.configuration.connection_options(None, None),
-                &profile.authentication,
             )),
         )
     }

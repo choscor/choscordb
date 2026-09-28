@@ -59,11 +59,6 @@ pub type Result<T> = std::result::Result<T, StorageError>;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConnectionProfile {
-    #[serde(
-        default,
-        skip_serializing_if = "choscordb_driver_api::DatabaseAuthentication::is_password"
-    )]
-    pub authentication: choscordb_driver_api::DatabaseAuthentication,
     pub id: String,
     pub name: String,
     pub group_id: Option<String>,
@@ -748,21 +743,6 @@ fn validate_server_endpoint(host: &str, tls: &TlsMode, ssh: Option<&SshTunnel>) 
 
 impl ConnectionProfile {
     pub fn validate(&self) -> Result<()> {
-        self.authentication
-            .validate()
-            .map_err(|_| StorageError::InvalidProfile)?;
-        if !self.authentication.is_password()
-            && matches!(self.configuration, ProfileConfiguration::Sqlite { .. })
-        {
-            return Err(StorageError::InvalidProfile);
-        }
-        if matches!(
-            self.authentication,
-            choscordb_driver_api::DatabaseAuthentication::PgPass { .. }
-        ) && !matches!(self.configuration, ProfileConfiguration::Postgres { .. })
-        {
-            return Err(StorageError::InvalidProfile);
-        }
         validate_field(&self.id, 256)?;
         validate_field(&self.name, 1024)?;
         if self.ssh_jump_credential_refs.len() > 5 {
@@ -922,14 +902,7 @@ impl ConnectionProfile {
                     return Err(StorageError::InvalidProfile);
                 }
                 validate_field(host, 16 * 1024)?;
-                if !user.is_empty()
-                    || !matches!(
-                        self.authentication,
-                        choscordb_driver_api::DatabaseAuthentication::PgPass { .. }
-                    )
-                {
-                    validate_field(user, 16 * 1024)?;
-                }
+                validate_field(user, 16 * 1024)?;
                 if !database.is_empty() {
                     validate_field(database, 16 * 1024)?;
                 }

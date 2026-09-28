@@ -2,7 +2,6 @@ use choscordb_storage::*;
 
 fn profile() -> ConnectionProfile {
     ConnectionProfile {
-        authentication: Default::default(),
         id: "p1".into(),
         name: "Local".into(),
         group_id: None,
@@ -183,7 +182,6 @@ fn postgres_profile_persists_only_credential_references() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("profiles.sqlite");
     let p = ConnectionProfile {
-        authentication: Default::default(),
         id: "pg".into(),
         name: "Postgres".into(),
         group_id: None,

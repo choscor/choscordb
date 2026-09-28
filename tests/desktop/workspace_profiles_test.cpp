@@ -181,9 +181,10 @@ void WorkspaceTest::passwordDraftSurvivesTestConnectAndFailedRemember() {
     QVERIFY(dialog);
     auto* save = dialog->findChild<QPushButton*>("profileSave");
     auto* password = dialog->findChild<QLineEdit*>("profilePassword");
-    auto* remember = dialog->findChild<QCheckBox*>("profileRememberPassword");
+    auto* saveCredentials = dialog->findChild<QCheckBox*>("profileSaveCredentials");
     auto* status = dialog->findChild<QLabel*>("profileStatus");
-    QVERIFY(save && password && remember && status);
+    QVERIFY(save && password && saveCredentials && status);
+    QVERIFY(!saveCredentials->isChecked());
     QTRY_VERIFY(save->isEnabled());
     choscordb::SavedProfile profile;
     profile.id = "password-draft";
@@ -208,7 +209,7 @@ void WorkspaceTest::passwordDraftSurvivesTestConnectAndFailedRemember() {
     dialog->saveDraft(profile);
     QTRY_VERIFY(save->isEnabled());
     QCOMPARE(password->text(), QString("draft-secret"));
-    remember->setChecked(true);
+    saveCredentials->setChecked(true);
     dialog->saveDraft(profile);
     QTRY_VERIFY(save->isEnabled());
     QVERIFY(status->text().contains("unavailable", Qt::CaseInsensitive));
@@ -225,9 +226,10 @@ void WorkspaceTest::sshSecretDraftSurvivesFailedSecureSave() {
     QVERIFY(dialog);
     auto* save = dialog->findChild<QPushButton*>("profileSave");
     auto* secret = dialog->findChild<QLineEdit*>("profileSshSecret");
-    auto* remember = dialog->findChild<QCheckBox*>("profileRememberSshSecret");
+    auto* saveCredentials = dialog->findChild<QCheckBox*>("profileSaveCredentials");
     auto* status = dialog->findChild<QLabel*>("profileStatus");
-    QVERIFY(save && secret && remember && status);
+    QVERIFY(save && secret && saveCredentials && status);
+    QVERIFY(!saveCredentials->isChecked());
     QTRY_VERIFY(save->isEnabled());
     choscordb::SavedProfile profile;
     profile.id = "ssh-secret-draft";
@@ -243,7 +245,7 @@ void WorkspaceTest::sshSecretDraftSurvivesFailedSecureSave() {
     profile.sshAuthentication = "password";
     secret->setText("ssh-private-marker");
     secret->setModified(true);
-    remember->setChecked(true);
+    saveCredentials->setChecked(true);
     dialog->saveDraft(profile);
     QTRY_VERIFY(save->isEnabled());
     QVERIFY(status->text().contains("unavailable", Qt::CaseInsensitive));

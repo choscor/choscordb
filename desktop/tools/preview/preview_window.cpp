@@ -269,7 +269,7 @@ void populateRightSheet(QWidget* host, QVBoxLayout* layout) {
 }
 
 void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
-    layout->addWidget(new QLabel("Open the real modal to inspect its compact action bars.", host));
+    layout->addWidget(new QLabel("Open the connection layout in either theme.", host));
     auto* open = new Button("Open sectioned modal", host);
     open->setObjectName("previewOpenDialogSections");
     layout->addWidget(open);
@@ -279,7 +279,7 @@ void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
     dialog->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
     dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
-    dialog->resize(560, 360);
+    dialog->resize(560, 440);
     auto* root = new QVBoxLayout(dialog);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
@@ -299,9 +299,48 @@ void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     sections->headerLayout()->addWidget(close);
     auto* description = new QLabel("Connect to a server or open a local database file.", sections);
     sections->bodyLayout()->addWidget(description);
-    auto* name = new QLineEdit(sections);
-    name->setPlaceholderText("Connection name");
-    sections->bodyLayout()->addWidget(name);
+    auto* fields = new QGridLayout;
+    fields->setColumnStretch(0, 5);
+    fields->setColumnStretch(1, 1);
+    fields->setColumnStretch(2, 5);
+    const auto field = [sections, fields](const QString& title, QWidget* control, int row,
+                                          int column, int span = 1) {
+        auto* group = new QVBoxLayout;
+        auto* label = new QLabel(title, sections);
+        label->setBuddy(control);
+        group->addWidget(label);
+        group->addWidget(control);
+        fields->addLayout(group, row, column, 1, span);
+    };
+    auto* hostField = new QLineEdit(sections);
+    hostField->setObjectName("previewProfileHost");
+    hostField->setText("db.example.com");
+    field("Host", hostField, 0, 0);
+    auto* port = new QSpinBox(sections);
+    port->setObjectName("previewProfilePort");
+    port->setRange(1, 65535);
+    port->setValue(5432);
+    field("Port", port, 0, 1);
+    auto* database = new QLineEdit(sections);
+    database->setObjectName("previewProfileDatabase");
+    database->setText("app");
+    field("Database", database, 0, 2);
+    auto* username = new QLineEdit(sections);
+    username->setObjectName("previewProfileUsername");
+    username->setText("operator");
+    field("Username", username, 1, 0);
+    auto* password = new QLineEdit(sections);
+    password->setObjectName("previewProfilePassword");
+    password->setEchoMode(QLineEdit::Password);
+    field("Password", password, 1, 1, 2);
+    sections->bodyLayout()->addLayout(fields);
+    auto* saveCredentials = new QCheckBox("Save credentials in OS credential store", sections);
+    saveCredentials->setObjectName("previewProfileSaveCredentials");
+    sections->bodyLayout()->addWidget(saveCredentials);
+    auto* useTls = new QCheckBox("Use TLS", sections);
+    useTls->setObjectName("previewProfileUseTls");
+    useTls->setProperty("designRole", "switch");
+    sections->bodyLayout()->addWidget(useTls);
     sections->bodyLayout()->addStretch();
     sections->footerLayout()->addStretch();
     auto* cancel = new Button("Cancel", sections);

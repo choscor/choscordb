@@ -20,6 +20,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSpinBox>
 #include <QTemporaryDir>
 #include <QToolButton>
@@ -87,12 +88,16 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
 void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     choscordb::EngineAdapter adapter;
     choscordb::ProfileDialog dialog(&adapter);
-    QCOMPARE(dialog.size(), QSize(560, 440));
+    QVERIFY(dialog.width() > 560);
+    QVERIFY(dialog.height() > 440);
     dialog.findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
     auto* tls = dialog.findChild<QComboBox*>("profileTls");
-    QCOMPARE(tls->currentData().toString(), QString("disable"));
-    QVERIFY(tls->isVisibleTo(&dialog));
-    QVERIFY(dialog.findChild<QLineEdit*>("profileRootCertificate")->isVisibleTo(&dialog));
+    QCOMPARE(tls->currentData().toString(), QString("verify_full"));
+    auto* useTls = dialog.findChild<QCheckBox*>("profileUseTls");
+    QVERIFY(useTls);
+    QVERIFY(!useTls->isChecked());
+    QVERIFY(!tls->isVisibleTo(&dialog));
+    QVERIFY(!dialog.findChild<QLineEdit*>("profileRootCertificate")->isVisibleTo(&dialog));
     QVERIFY(!dialog.findChild<QPushButton*>("profileSecurity"));
     auto* sections = dialog.findChild<choscordb::design::DialogSections*>("profileSections");
     QVERIFY(sections);
@@ -101,6 +106,29 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     auto* scroll = dialog.findChild<QScrollArea*>("profileFormScroll");
     dialog.show();
     QCoreApplication::processEvents();
+    auto* host = dialog.findChild<QLineEdit*>("profileHost");
+    auto* port = dialog.findChild<QSpinBox*>("profilePort");
+    auto* database = dialog.findChild<QLineEdit*>("profileDatabase");
+    auto* user = dialog.findChild<QLineEdit*>("profileUser");
+    auto* password = dialog.findChild<QLineEdit*>("profilePassword");
+    QCOMPARE(host->geometry().top(), port->geometry().top());
+    QCOMPARE(host->geometry().top(), database->geometry().top());
+    QCOMPARE(user->geometry().top(), password->geometry().top());
+    QVERIFY(port->width() < host->width());
+    QVERIFY(port->width() < database->width());
+    for (const auto& expected : QList<QPair<QString, QWidget*>>{
+             {"&Host", host}, {"P&ort", port}, {"Data&base", database},
+             {"&Username", user}, {"&Password", password}}) {
+        bool hasBuddy = false;
+        for (auto* label : dialog.findChildren<QLabel*>())
+            hasBuddy |= label->text() == expected.first && label->buddy() == expected.second;
+        QVERIFY(hasBuddy);
+    }
+    useTls->setChecked(true);
+    QVERIFY(tls->isVisibleTo(&dialog));
+    QVERIFY(dialog.findChild<QLineEdit*>("profileRootCertificate")->isVisibleTo(&dialog));
+    useTls->setChecked(false);
+    QVERIFY(!tls->isVisibleTo(&dialog));
     QCOMPARE(scroll->geometry().right(), sections->bodyLayout()->parentWidget()->rect().right());
     dialog.findChild<QCheckBox*>("profileSshEnabled")->setChecked(true);
     for (const char* name : {"profileSshHost", "profileSshUser"})
@@ -110,6 +138,12 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
         QVERIFY(!dialog.findChild<QLineEdit*>(name)->isVisibleTo(&dialog));
     QVERIFY(!dialog.findChild<QSpinBox*>("profileSshLocalPort")->isVisibleTo(&dialog));
     QVERIFY(!dialog.findChild<QCheckBox*>("profileProxyEnabled")->isVisibleTo(&dialog));
+    dialog.resize(560, 440);
+    QCoreApplication::processEvents();
+    QVERIFY(scroll->verticalScrollBar()->maximum() > 0);
+    QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+    QVERIFY(sections->headerLayout()->parentWidget()->isVisible());
+    QVERIFY(sections->footerLayout()->parentWidget()->isVisible());
 }
 
 void WorkspaceTest::connectionIdentityCredentialErrorsPreserveDraft() {
@@ -123,6 +157,7 @@ void WorkspaceTest::connectionIdentityCredentialErrorsPreserveDraft() {
     dialog->findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
     auto* tls = dialog->findChild<QComboBox*>("profileTls");
     tls->setCurrentIndex(tls->findData("verify_full"));
+    dialog->findChild<QCheckBox*>("profileUseTls")->setChecked(true);
     dialog->findChild<QLineEdit*>("profileUser")->setText("operator");
     auto* identity = dialog->findChild<QLineEdit*>("profileTlsClientIdentity");
     identity->setText("/missing/client.p12");
@@ -130,7 +165,7 @@ void WorkspaceTest::connectionIdentityCredentialErrorsPreserveDraft() {
     const auto oversized = QString(16384, QChar(0x00e9));
     secret->setText(oversized);
     secret->setModified(true);
-    dialog->findChild<QCheckBox*>("profileRememberTlsSecret")->setChecked(true);
+    dialog->findChild<QCheckBox*>("profileSaveCredentials")->setChecked(true);
     auto* validation = dynamic_cast<choscordb::design::FieldValidation*>(secret->parentWidget());
     QSignalSpy saved(f.workspace.adapter(), &choscordb::EngineAdapter::profileSaved);
     QSignalSpy submitted(dialog, &choscordb::ProfileDialog::connectionSubmitted);
@@ -172,16 +207,18 @@ void WorkspaceTest::connectionTransportValidationRejectsIncompatibleSettings() {
     host->setText("/tmp/postgres socket");
     dialog->findChild<QLineEdit*>("profileUser")->setText("operator");
     auto* tls = dialog->findChild<QComboBox*>("profileTls");
+    auto* useTls = dialog->findChild<QCheckBox*>("profileUseTls");
     const auto errorFor = [](QWidget* field) {
         return dynamic_cast<choscordb::design::FieldValidation*>(field->parentWidget())->error();
     };
     QSignalSpy saved(f.workspace.adapter(), &choscordb::EngineAdapter::profileSaved);
     QSignalSpy failed(f.workspace.adapter(), &choscordb::EngineAdapter::profileFailed);
+    useTls->setChecked(true);
     tls->setCurrentIndex(tls->findData("verify_full"));
     save->click();
     QVERIFY(errorFor(tls).contains("Unix"));
     QVERIFY(errorFor(tls).contains("TLS"));
-    tls->setCurrentIndex(tls->findData("disable"));
+    useTls->setChecked(false);
     auto* sshEnabled = dialog->findChild<QCheckBox*>("profileSshEnabled");
     sshEnabled->setChecked(true);
     save->click();
@@ -190,6 +227,7 @@ void WorkspaceTest::connectionTransportValidationRejectsIncompatibleSettings() {
     sshEnabled->setChecked(false);
     host->setText("localhost");
     driver->setCurrentIndex(2);
+    useTls->setChecked(true);
     tls->setCurrentIndex(tls->findData("prefer"));
     save->click();
     QVERIFY(errorFor(tls).contains("MySQL"));
@@ -312,105 +350,94 @@ void WorkspaceTest::mysqlConnectionFormExplainsOptionalDatabaseAndPreservesLiter
     QCOMPARE(profiles[0].user, QString(" operator "));
 }
 
-void WorkspaceTest::connectionAuthenticationProvidersRoundTripAndIgnoreManualPasswords() {
+void WorkspaceTest::connectionManualPasswordIsOptionalAndUsesOneCredentialChoice() {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     choscordb::EngineAdapter adapter(nullptr, directory.filePath("metadata.sqlite"));
     choscordb::ProfileDialog dialog(&adapter);
     auto* save = dialog.findChild<QPushButton*>("profileSave");
     QTRY_VERIFY(save->isEnabled());
-    auto* authentication = dialog.findChild<QComboBox*>("profileAuthentication");
-    QVERIFY(authentication);
-    auto* driver = dialog.findChild<QComboBox*>("profileDriver");
-    driver->setCurrentIndex(1);
-    dialog.findChild<QLineEdit*>("profileName")->setText("Provider profile");
-    auto* user = dialog.findChild<QLineEdit*>("profileUser");
-    user->setText("operator");
-    dialog.findChild<QSpinBox*>("profilePort")->setValue(1);
+    auto* credentials = dialog.findChild<QCheckBox*>("profileSaveCredentials");
+    QVERIFY(credentials);
+    QVERIFY(!credentials->isChecked());
+    QVERIFY(!dialog.findChild<QComboBox*>("profileAuthentication"));
+    for (const auto* name : {"profileRememberPassword", "profileRememberSshSecret",
+                             "profileRememberTlsSecret", "profileRememberProxySecret",
+                             "profileSshPrivateKeyRemember", "profileSshHopRemember"})
+        QVERIFY2(!dialog.findChild<QCheckBox*>(name), name);
+    for (const auto* name : {"profilePgPassFile", "profilePgPassHostname",
+                             "profilePasswordCommandDirectory"})
+        QVERIFY2(!dialog.findChild<QLineEdit*>(name), name);
+    QVERIFY(!dialog.findChild<QPlainTextEdit*>("profilePasswordCommand"));
+    QVERIFY(!dialog.findChild<QSpinBox*>("profilePasswordCommandTimeout"));
+    dialog.findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
+    dialog.findChild<QLineEdit*>("profileName")->setText("Passwordless PostgreSQL");
+    dialog.findChild<QLineEdit*>("profileUser")->setText("operator");
     auto* password = dialog.findChild<QLineEdit*>("profilePassword");
-    auto* remember = dialog.findChild<QCheckBox*>("profileRememberPassword");
-    password->setText("manual credential");
-    password->setModified(true);
-    remember->setChecked(true);
-    authentication->setCurrentIndex(authentication->findData("command"));
     QVERIFY(password->text().isEmpty());
-    QVERIFY(!password->isEnabled());
-    QVERIFY(!remember->isEnabled());
-    auto* command = dialog.findChild<QPlainTextEdit*>("profilePasswordCommand");
-    const auto commandText = QStringLiteral("printf '%s%s' private marker; exit 9");
-    command->setPlainText(commandText);
-    dialog.findChild<QLineEdit*>("profilePasswordCommandDirectory")->setText(directory.path());
-    dialog.findChild<QSpinBox*>("profilePasswordCommandTimeout")->setValue(7);
-    // Even stale values in disabled controls must never override the selected provider.
-    const auto stale = QString(16384, QChar(0x00e9));
-    password->setText(stale);
-    password->setModified(true);
-    remember->setChecked(true);
     QSignalSpy saved(&adapter, &choscordb::EngineAdapter::profileSaved);
     save->click();
     QTRY_COMPARE(saved.count(), 1);
-    QTRY_VERIFY(save->isEnabled());
     auto profile = qvariant_cast<choscordb::SavedProfile>(saved.at(0).at(1));
-    auto settings = QJsonDocument::fromJson(profile.authentication.toUtf8()).object();
-    QCOMPARE(settings["method"].toString(), QString("command"));
-    QCOMPARE(settings["command"].toString(), commandText);
-    QCOMPARE(settings["working_directory"].toString(), directory.path());
-    QCOMPARE(settings["timeout_seconds"].toInt(), 7);
+    QCOMPARE(profile.tls, QString("disable"));
     QVERIFY(profile.credentialRef.isEmpty());
-    auto* status = dialog.findChild<QLabel*>("profileStatus");
-    for (const auto* action : {"profileTest", "profileConnect"}) {
-        password->setText(stale);
-        password->setModified(true);
-        dialog.findChild<QPushButton*>(action)->click();
-        QTRY_VERIFY(save->isEnabled());
-        QVERIFY2(status->text().contains("Password command failed"), qPrintable(status->text()));
-        QVERIFY(!status->text().contains("privatemarker"));
-        QCOMPARE(command->toPlainText(), commandText);
-    }
-    for (const auto& name : QDir(directory.path()).entryList(QDir::Files)) {
-        QFile file(directory.filePath(name));
-        QVERIFY(file.open(QIODevice::ReadOnly));
-        QVERIFY(!file.readAll().contains("privatemarker"));
-    }
-    authentication->setCurrentIndex(authentication->findData("pg_pass"));
-    user->clear();
-    auto* passfileHost = dialog.findChild<QLineEdit*>("profilePgPassHostname");
-    QVERIFY(passfileHost);
-    passfileHost->setText("password-file.example");
-    const auto passfile = directory.filePath("missing.pass");
-    dialog.findChild<QLineEdit*>("profilePgPassFile")->setText(passfile);
+    password->setText("session-only-secret");
+    password->setModified(true);
     save->click();
     QTRY_COMPARE(saved.count(), 2);
-    QTRY_VERIFY(save->isEnabled());
     profile = qvariant_cast<choscordb::SavedProfile>(saved.at(1).at(1));
-    QVERIFY(profile.user.isEmpty());
-    settings = QJsonDocument::fromJson(profile.authentication.toUtf8()).object();
-    QCOMPARE(settings["method"].toString(), QString("pg_pass"));
-    QCOMPARE(settings["path"].toString(), passfile);
-    QCOMPARE(settings["hostname"].toString(), QString("password-file.example"));
-    dialog.findChild<QPushButton*>("profileTest")->click();
-    QTRY_VERIFY(save->isEnabled());
-    QVERIFY2(status->text().contains("passfile"), qPrintable(status->text()));
-    QCOMPARE(dialog.findChild<QLineEdit*>("profilePgPassFile")->text(), passfile);
-    driver->setCurrentIndex(2);
-    save->click();
-    QVERIFY(save->isEnabled());
-    QVERIFY(status->text().contains("connection options"));
-    QCOMPARE(saved.count(), 2);
-    authentication->setCurrentIndex(authentication->findData("password"));
-    QCOMPARE(authentication->currentData().toString(), QString("password"));
-    QVERIFY(password->isEnabled());
-    QVERIFY(remember->isEnabled());
-    authentication->setCurrentIndex(authentication->findData("command"));
-    driver->setCurrentIndex(0);
-    dialog.findChild<QLineEdit*>("profilePath")->setText(":memory:");
-    save->click();
+    QVERIFY(profile.credentialRef.isEmpty());
+    QCOMPARE(password->text(), QString("session-only-secret"));
+    QSignalSpy listed(&adapter, &choscordb::EngineAdapter::profilesReady);
+    adapter.listProfiles(413);
+    QTRY_COMPARE(listed.count(), 1);
+    const auto profiles = qvariant_cast<QList<choscordb::SavedProfile>>(listed.at(0).at(1));
+    QCOMPARE(profiles.size(), 1);
+    QVERIFY(profiles.front().credentialRef.isEmpty());
+    dialog.findChild<QSpinBox*>("profilePort")->setValue(1);
+    QSignalSpy submitted(&dialog, &choscordb::ProfileDialog::connectionSubmitted);
+    dialog.findChild<QPushButton*>("profileSaveConnect")->click();
     QTRY_COMPARE(saved.count(), 3);
+    QTRY_COMPARE(submitted.count(), 1);
+    QCOMPARE(password->text(), QString("session-only-secret"));
+}
+void WorkspaceTest::connectionEditedEmptyPasswordSuppressesSavedReference() {
+    WorkspaceFixture f;
+    QTRY_COMPARE(f.connections.count(), 1);
+    f.newConnection.trigger();
+    auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
+    QVERIFY(dialog);
+    auto* save = dialog->findChild<QPushButton*>("profileSave");
+    auto* password = dialog->findChild<QLineEdit*>("profilePassword");
+    auto* credentials = dialog->findChild<QCheckBox*>("profileSaveCredentials");
     QTRY_VERIFY(save->isEnabled());
-    profile = qvariant_cast<choscordb::SavedProfile>(saved.at(2).at(1));
-    QCOMPARE(profile.driver, QString("sqlite"));
-    QCOMPARE(QJsonDocument::fromJson(profile.authentication.toUtf8()).object()["method"].toString(),
-             QString("password"));
+    choscordb::SavedProfile profile;
+    profile.id = "edited-empty-password";
+    profile.name = "Edited password draft";
+    profile.driver = "postgres";
+    profile.host = "localhost";
+    profile.port = 1;
+    profile.database = "app";
+    profile.user = "operator";
+    profile.tls = "disable";
+    profile.credentialRef = "prior-secret-reference";
+    credentials->setChecked(true);
+    password->setText("replacement-secret");
+    password->setModified(true);
+    // The test workspace has no credential store, so the attempted replacement
+    // fails while leaving this editable profile and its old reference in the draft.
+    dialog->saveDraft(profile);
+    QTRY_VERIFY(save->isEnabled());
+    QVERIFY(dialog->findChild<QLabel*>("profileStatus")->text().contains("unavailable",
+                                                                       Qt::CaseInsensitive));
+    password->clear();
+    password->setModified(true);
+    QSignalSpy submitted(dialog, &choscordb::ProfileDialog::connectionSubmitted);
+    dialog->findChild<QPushButton*>("profileConnect")->click();
+    QTRY_COMPARE(submitted.count(), 1);
+    const auto transient = qvariant_cast<choscordb::SavedProfile>(submitted.at(0).at(0));
+    QVERIFY(transient.credentialRef.isEmpty());
+    QVERIFY(password->text().isEmpty());
 }
 void WorkspaceTest::connectionProxyControlsAreHidden() {
     choscordb::EngineAdapter adapter;

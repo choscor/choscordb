@@ -96,7 +96,6 @@ fn profile(driver: &str, authentication: Option<SshAuthentication>) -> Connectio
         },
     };
     ConnectionProfile {
-        authentication: Default::default(),
         id: "p".into(),
         name: "Profile".into(),
         group_id: None,

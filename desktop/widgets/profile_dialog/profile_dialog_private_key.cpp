@@ -54,7 +54,7 @@ SshPrivateKeyCredential ProfileDialog::privateKeyCredential(const SavedProfile& 
         return result;
     const auto value = sshPrivateKey_->draft();
     if (saving) {
-        if (value.remember) {
+        if (saveCredentials_->isChecked()) {
             if (value.modified || !value.secret.isEmpty()) {
                 result.action = value.secret.isEmpty() ? "clear" : "replace";
                 if (result.action == "replace")

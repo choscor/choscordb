@@ -54,7 +54,8 @@ class WorkspaceTest : public QObject {
     void sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint();
     void sshHostKeyStaleInspectionSuccessCannotOpenApproval();
     void inlineSshKeysStayMaskedAndOutsideProfileMetadata();
-    void connectionAuthenticationProvidersRoundTripAndIgnoreManualPasswords();
+    void connectionManualPasswordIsOptionalAndUsesOneCredentialChoice();
+    void connectionEditedEmptyPasswordSuppressesSavedReference();
     void connectionIdentityCredentialErrorsPreserveDraft();
     void connectionSshFormKeepsBasicFields();
     void connectionTransportValidationRejectsIncompatibleSettings();

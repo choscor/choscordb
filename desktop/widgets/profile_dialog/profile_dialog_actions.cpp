@@ -41,8 +41,7 @@ void ProfileDialog::connectDraft(bool openQuery) {
     connectionSubmissionError_.clear();
     connecting_ = true;
     const bool hasPassword = (value.driver == "postgres" || value.driver == "mysql") &&
-                             authenticationMethod(value) == "password" &&
-                             (password_->isModified() || !password_->text().isEmpty());
+                             !password_->text().isEmpty();
     const bool hasSshSecret = value.sshEnabled && value.sshAuthentication != "agent" &&
                               (sshSecret_->isModified() || !sshSecret_->text().isEmpty());
     const bool hasTlsSecret = value.driver != "sqlite" && value.tls != "disable" &&
@@ -82,7 +81,9 @@ SavedProfile ProfileDialog::draft() const {
     value.port = static_cast<quint16>(port_->value());
     value.database = database_->text();
     value.user = user_->text();
-    value.tls = tls_->currentData().toString();
+    if (password_->isModified() && password_->text().isEmpty())
+        value.credentialRef.clear();
+    value.tls = useTls_->isChecked() ? tls_->currentData().toString() : QStringLiteral("disable");
     value.rootCertificate = rootCertificate_->text();
     value.sshEnabled =
         (value.driver == "postgres" || value.driver == "mysql") && sshEnabled_->isChecked();
@@ -96,7 +97,6 @@ SavedProfile ProfileDialog::draft() const {
         value.sshCredentialRef.clear();
     value.sshIdentityFile =
         value.sshAuthentication == "public_key" ? sshIdentityFile_->text() : QString();
-    writeAuthenticationDraft(value);
     writeSecurityDraft(value);
     writeProxyDraft(value);
     return value;
@@ -118,7 +118,9 @@ void ProfileDialog::setDraft(const SavedProfile& value) {
     database_->setText(value.database);
     user_->setText(value.user);
     const auto tlsIndex = tls_->findData(value.tls);
-    tls_->setCurrentIndex(tlsIndex < 0 ? tls_->findData("disable") : tlsIndex);
+    tls_->setCurrentIndex(tlsIndex < 0 ? tls_->findData("verify_full") : tlsIndex);
+    useTls_->setChecked(value.tls != "disable" && !value.tls.isEmpty());
+    tlsFields_->setVisible(useTls_->isChecked());
     rootCertificate_->setText(value.rootCertificate);
     sshEnabled_->setChecked(value.sshEnabled);
     sshHost_->setText(value.sshHost);
@@ -137,14 +139,20 @@ void ProfileDialog::setDraft(const SavedProfile& value) {
                                               ? tr("Optional for an unencrypted key")
                                               : tr("SSH password"))
                                        : tr("Saved SSH credential — leave unchanged to keep"));
-    rememberSshSecret_->setChecked(!value.sshCredentialRef.isEmpty());
     password_->clear();
     password_->setModified(false);
     password_->setPlaceholderText(value.credentialRef.isEmpty()
                                       ? tr("Optional — leave blank for passwordless authentication")
                                       : tr("Saved password — leave unchanged to keep"));
-    rememberPassword_->setChecked(!value.credentialRef.isEmpty());
-    setAuthenticationDraft(value);
+    saveCredentials_->setChecked(!value.credentialRef.isEmpty() ||
+                                 !value.sshCredentialRef.isEmpty() ||
+                                 !value.sshPrivateKeyRef.isEmpty() ||
+                                 !value.tlsCredentialRef.isEmpty() ||
+                                 !value.proxyCredentialRef.isEmpty() ||
+                                 (value.sshJumpCredentialRefs != "{}" &&
+                                  !value.sshJumpCredentialRefs.isEmpty()) ||
+                                 (value.sshJumpPrivateKeyRefs != "{}" &&
+                                  !value.sshJumpPrivateKeyRefs.isEmpty()));
     setSecurityDraft(value);
     setProxyDraft(value);
     filling_ = false;
@@ -153,7 +161,9 @@ void ProfileDialog::setDraft(const SavedProfile& value) {
 }
 
 void ProfileDialog::updateDriver() {
-    updateAuthenticationControls();
+    user_->setPlaceholderText(driver_->currentData() == "mysql"
+                                  ? tr("Optional — anonymous authentication")
+                                  : tr("Database username"));
     updateProxyControls();
     updateTrustControls();
     const bool sqlite = driver_->currentData().toString() == "sqlite";
@@ -188,42 +198,38 @@ void ProfileDialog::saveDraft(const SavedProfile& profile) {
         return;
     const auto password = password_->text();
     const bool modified = password_->isModified();
-    const bool remember = rememberPassword_->isChecked();
+    const bool saveCredentials = saveCredentials_->isChecked();
     const auto sshSecret = sshSecret_->text();
     const bool sshSecretModified = sshSecret_->isModified();
-    const bool rememberSshSecret = rememberSshSecret_->isChecked();
     const auto tlsSecret = tlsSecret_->text();
     const bool tlsSecretModified = tlsSecret_->isModified();
-    const bool rememberTlsSecret = rememberTlsSecret_->isChecked();
     const auto privateKey = sshPrivateKey_->draft();
     const auto hopSecrets = sshHopEditor_->captureSecrets(false);
     const auto proxySecret = proxySecret_->text();
     const bool proxySecretModified = proxySecret_->isModified();
-    const bool rememberProxySecret = rememberProxySecret_->isChecked();
     setDraft(value);
     sshHopEditor_->restoreSecrets(hopSecrets);
     sshPrivateKey_->setDraft(privateKey, !value.sshPrivateKeyRef.isEmpty());
     proxySecret_->setText(proxySecret);
     proxySecret_->setModified(proxySecretModified);
-    rememberProxySecret_->setChecked(rememberProxySecret);
     password_->setText(password);
     password_->setModified(modified);
-    rememberPassword_->setChecked(remember);
+    saveCredentials_->setChecked(saveCredentials);
     sshSecret_->setText(sshSecret);
     sshSecret_->setModified(sshSecretModified);
-    rememberSshSecret_->setChecked(rememberSshSecret);
     tlsSecret_->setText(tlsSecret);
     tlsSecret_->setModified(tlsSecretModified);
-    rememberTlsSecret_->setChecked(rememberTlsSecret);
     dirty_ = true;
     ++revision_;
     QString action = "clear";
-    if ((value.driver == "postgres" || value.driver == "mysql") &&
-        authenticationMethod(value) == "password" && remember)
-        action =
-            modified || !password.isEmpty() || value.credentialRef.isEmpty() ? "replace" : "keep";
+    if ((value.driver == "postgres" || value.driver == "mysql") && saveCredentials) {
+        if (modified || !password.isEmpty())
+            action = password.isEmpty() ? "clear" : "replace";
+        else if (!value.credentialRef.isEmpty())
+            action = "keep";
+    }
     QString sshAction = "clear";
-    if (value.sshEnabled && value.sshAuthentication != "agent" && rememberSshSecret) {
+    if (value.sshEnabled && value.sshAuthentication != "agent" && saveCredentials) {
         if (sshSecretModified)
             sshAction = sshSecret.isEmpty() ? "clear" : "replace";
         else if (!sshSecret.isEmpty())
@@ -233,12 +239,14 @@ void ProfileDialog::saveDraft(const SavedProfile& profile) {
     }
     QString tlsAction = "clear";
     if (value.driver != "sqlite" && value.tls != "disable" && !value.tlsClientIdentity.isEmpty() &&
-        rememberTlsSecret)
-        tlsAction = tlsSecretModified || !tlsSecret.isEmpty() || value.tlsCredentialRef.isEmpty()
-                        ? "replace"
-                        : "keep";
+        saveCredentials) {
+        if (tlsSecretModified || !tlsSecret.isEmpty())
+            tlsAction = tlsSecret.isEmpty() ? "clear" : "replace";
+        else if (!value.tlsCredentialRef.isEmpty())
+            tlsAction = "keep";
+    }
     QString proxyAction = "clear";
-    if (proxyNeedsPassword(value) && rememberProxySecret) {
+    if (proxyNeedsPassword(value) && saveCredentials) {
         if (proxySecretModified || !proxySecret.isEmpty())
             proxyAction = proxySecret.isEmpty() ? "clear" : "replace";
         else if (!value.proxyCredentialRef.isEmpty())
@@ -252,7 +260,7 @@ void ProfileDialog::saveDraft(const SavedProfile& profile) {
         tlsAction == "replace" ? tlsSecret : QString(), tlsAction,
         proxyAction == "replace" ? proxySecret : QString(), proxyAction,
         value.sshEnabled ? sshHopEditor_->credentials(true) : QList<SshHopCredential>{},
-        privateKeyCredential(value, true));
+        privateKeyCredential(value, true), saveCredentials);
 }
 
 void ProfileDialog::testDraft(const SavedProfile& profile) {
@@ -270,8 +278,7 @@ void ProfileDialog::testDraft(const SavedProfile& profile) {
         return;
     setBusy(true, tr("Testing connection…"));
     const bool hasPassword = (value.driver == "postgres" || value.driver == "mysql") &&
-                             authenticationMethod(value) == "password" &&
-                             (password_->isModified() || !password_->text().isEmpty());
+                             !password_->text().isEmpty();
     const bool hasSshSecret = value.sshEnabled && value.sshAuthentication != "agent" &&
                               (sshSecret_->isModified() || !sshSecret_->text().isEmpty());
     const bool hasTlsSecret = value.driver != "sqlite" && value.tls != "disable" &&
@@ -314,7 +321,7 @@ bool ProfileDialog::validateConnectionDraft(const SavedProfile& profile) {
             return true;
         };
         if (((profile.driver == "postgres" || profile.driver == "mysql") &&
-             authenticationMethod(profile) == "password" && oversized(password_)) ||
+             oversized(password_)) ||
             (profile.sshEnabled && profile.sshAuthentication != "agent" && oversized(sshSecret_)) ||
             (profile.driver != "sqlite" && profile.tls != "disable" &&
              !profile.tlsClientIdentity.isEmpty() && oversized(tlsSecret_)) ||
@@ -324,7 +331,7 @@ bool ProfileDialog::validateConnectionDraft(const SavedProfile& profile) {
         if (adapter_->validateConnectionProperties(profile, error))
             return true;
         if (profile.driver == "sqlite" && profile.path.startsWith("file:") &&
-            authenticationMethod(profile) == "password" && error == "Invalid profile") {
+            error == "Invalid profile") {
             setBusy(false);
             showFieldError(path_, tr("Enter a valid SQLite file URI."));
             return false;
@@ -351,8 +358,7 @@ bool ProfileDialog::validateConnectionDraft(const SavedProfile& profile) {
     if (!socket && !validServerHost(profile.host))
         return invalid(host_, tr("Host must be a hostname or IPv4/IPv6 address. "
                                  "Enter the port separately; omit URLs and usernames."));
-    if (profile.driver == "postgres" && profile.user.isEmpty() &&
-        authenticationMethod(profile) != "pg_pass")
+    if (profile.driver == "postgres" && profile.user.isEmpty())
         return invalid(user_, tr("Enter the database username."));
     if (!profile.sshEnabled)
         return validate();

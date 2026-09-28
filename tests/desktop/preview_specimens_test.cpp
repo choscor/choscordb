@@ -520,6 +520,21 @@ void PreviewTest::dialogSectionsPreviewUsesRealComponentInBothThemes() {
         QVERIFY(sections->headerLayout()->parentWidget()->height() < 66);
         QVERIFY(sections->footerLayout()->parentWidget()->height() < 70);
         QVERIFY(sections->bodyLayout()->parentWidget()->height() > 0);
+        auto* hostField = dialog->findChild<QLineEdit*>("previewProfileHost");
+        auto* port = dialog->findChild<QSpinBox*>("previewProfilePort");
+        auto* database = dialog->findChild<QLineEdit*>("previewProfileDatabase");
+        auto* username = dialog->findChild<QLineEdit*>("previewProfileUsername");
+        auto* password = dialog->findChild<QLineEdit*>("previewProfilePassword");
+        QVERIFY(hostField && port && database && username && password);
+        QCOMPARE(hostField->geometry().top(), port->geometry().top());
+        QCOMPARE(hostField->geometry().top(), database->geometry().top());
+        QCOMPARE(username->geometry().top(), password->geometry().top());
+        QVERIFY(port->width() < hostField->width());
+        QCOMPARE(password->echoMode(), QLineEdit::Password);
+        auto* saveCredentials = dialog->findChild<QCheckBox*>("previewProfileSaveCredentials");
+        auto* useTls = dialog->findChild<QCheckBox*>("previewProfileUseTls");
+        QVERIFY(saveCredentials && useTls);
+        QCOMPARE(useTls->property("designRole").toString(), QString("switch"));
         dialog->reject();
     }
 }

@@ -373,7 +373,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "uuid",
- "whoami",
  "zeroize",
 ]
 

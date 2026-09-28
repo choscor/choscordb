@@ -140,7 +140,6 @@ pub mod ffi {
         ssh_private_key_ref: String,
         ssh_jump_private_key_refs: String,
         ssh_options: String,
-        authentication: String,
         credential_ref: String,
         ssh_credential_ref: String,
         ssh_enabled: bool,
@@ -163,6 +162,7 @@ pub mod ffi {
     }
     #[derive(Default)]
     struct ProfileCredentialsDto {
+        save_credentials: bool,
         ssh_hops: Vec<SshHopCredentialDto>,
         ssh_private_key: String,
         ssh_private_key_action: String,
@@ -1417,17 +1417,6 @@ fn proxy_options(
     Err("SOCKS proxy connections are no longer supported".into())
 }
 
-fn database_authentication(
-    value: &str,
-) -> std::result::Result<choscordb_driver_api::DatabaseAuthentication, String> {
-    if value.is_empty() {
-        return Ok(Default::default());
-    }
-    if value.len() > 64 * 1024 {
-        return Err("Authentication settings exceed limit".into());
-    }
-    serde_json::from_str(value).map_err(|_| "Invalid database authentication settings".into())
-}
 pub fn validate_connection_profile(dto: ffi::ProfileDto) -> String {
     profile(dto).err().unwrap_or_default()
 }
@@ -1533,7 +1522,6 @@ fn profile(dto: ffi::ProfileDto) -> std::result::Result<choscordb_core::Connecti
         _ => return Err("Unknown profile driver".into()),
     };
     let mut profile = ConnectionProfile {
-        authentication: database_authentication(&dto.authentication)?,
         id: dto.id,
         name: dto.name,
         group_id: (!dto.group_id.is_empty()).then_some(dto.group_id),
@@ -2035,6 +2023,7 @@ pub fn refresh_sql_mode(
 // Own each incoming secret immediately, including paths where engine/profile
 // validation fails before a credential is consumed by the core.
 struct ProtectedCredentials {
+    save_credentials: bool,
     ssh_hops: Vec<ProtectedSshHop>,
     ssh_private_key: zeroize::Zeroizing<String>,
     ssh_private_key_action: String,
@@ -2064,6 +2053,7 @@ struct ProtectedSshHop {
 impl From<ffi::ProfileCredentialsDto> for ProtectedCredentials {
     fn from(value: ffi::ProfileCredentialsDto) -> Self {
         Self {
+            save_credentials: value.save_credentials,
             ssh_hops: value
                 .ssh_hops
                 .into_iter()
@@ -2213,9 +2203,14 @@ pub fn profile_save_credentials(
             tls: owned_update(&credentials.tls_action, credentials.tls)?,
             proxy: owned_update(&credentials.proxy_action, credentials.proxy)?,
         };
-        e.profile_save_with_secrets(profile(dto)?, updates, token)
-            .map(|()| token)
-            .map_err(|e| e.to_string())
+        e.profile_save_with_credential_policy(
+            profile(dto)?,
+            updates,
+            credentials.save_credentials,
+            token,
+        )
+        .map(|()| token)
+        .map_err(|e| e.to_string())
     })
 }
 pub fn profile_test_credentials(

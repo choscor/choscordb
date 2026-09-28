@@ -36,7 +36,6 @@ SavedProfile savedProfile(const ProfileDto& dto) {
     value.sshPrivateKeyRef = string(dto.ssh_private_key_ref);
     value.sshJumpPrivateKeyRefs = string(dto.ssh_jump_private_key_refs);
     value.sshOptions = string(dto.ssh_options);
-    value.authentication = string(dto.authentication);
     value.credentialRef = string(dto.credential_ref);
     value.sshCredentialRef = string(dto.ssh_credential_ref);
     value.sshEnabled = dto.ssh_enabled;
@@ -516,12 +515,14 @@ void EngineAdapter::saveProfileWithSecrets(
     const SavedProfile& profile, const QString& databaseSecret, const QString& databaseAction,
     const QString& sshSecret, const QString& sshAction, quint64 token, const QString& tlsSecret,
     const QString& tlsAction, const QString& proxySecret, const QString& proxyAction,
-    const QList<SshHopCredential>& sshHops, const SshPrivateKeyCredential& sshPrivateKey) {
+    const QList<SshHopCredential>& sshHops, const SshPrivateKeyCredential& sshPrivateKey,
+    bool saveCredentials) {
     if (d_->closing || d_->stopping) {
         emit profileFailed(token, tr("Workspace is closing."));
         return;
     }
     ProfileCredentialsDto credentials;
+    credentials.save_credentials = saveCredentials;
     addHopCredentials(credentials, sshHops);
     credentials.database = rustString(databaseSecret);
     credentials.ssh = rustString(sshSecret);

@@ -40,7 +40,7 @@ struct SshHostKeyCandidate {
 struct SavedProfile {
     QString id, name, groupId, driver = "sqlite", path, host, database, user;
     QString tls = "disable", rootCertificate, credentialRef, sshCredentialRef;
-    QString tlsClientIdentity, tlsCredentialRef, sshOptions, authentication;
+    QString tlsClientIdentity, tlsCredentialRef, sshOptions;
     QString proxyOptions, proxyCredentialRef;
     QString sshJumpCredentialRefs;
     QString sshPrivateKeyRef, sshJumpPrivateKeyRefs;
@@ -220,7 +220,8 @@ class EngineAdapter final : public QObject {
                                 const QString& proxySecret = {},
                                 const QString& proxyAction = "keep",
                                 const QList<SshHopCredential>& sshHops = {},
-                                const SshPrivateKeyCredential& sshPrivateKey = {});
+                                const SshPrivateKeyCredential& sshPrivateKey = {},
+                                bool saveCredentials = true);
     void testProfileWithPassword(const SavedProfile& profile, const QString& password,
                                  bool hasPassword, quint64 token);
     void testProfileWithSecrets(const SavedProfile& profile, const QString& databaseSecret,

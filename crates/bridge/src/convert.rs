@@ -734,8 +734,6 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
 
 pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileDto {
     let mut dto = ffi::ProfileDto {
-        authentication: serde_json::to_string(&value.authentication)
-            .expect("authentication settings serialize"),
         id: value.id,
         name: value.name,
         group_id: value.group_id.unwrap_or_default(),

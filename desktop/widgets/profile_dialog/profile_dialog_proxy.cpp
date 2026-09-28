@@ -47,10 +47,6 @@ void ProfileDialog::createProxyControls(QFormLayout* form) {
     proxySecret_ = line("profileProxySecret", 256);
     proxySecret_->setEchoMode(QLineEdit::Password);
     fields->addRow(tr("Proxy password"), validated(proxySecret_));
-    rememberProxySecret_ =
-        new QCheckBox(tr("Save proxy password in OS credential store"), proxyFields_);
-    rememberProxySecret_->setObjectName("profileRememberProxySecret");
-    fields->addRow(rememberProxySecret_);
     auto* help =
         new QLabel(tr("SOCKS5 can use a username and password. SOCKS4 uses only a user ID. "
                       "Passwords are never stored in the profile."),
@@ -63,17 +59,15 @@ void ProfileDialog::createProxyControls(QFormLayout* form) {
     connect(proxyEnabled_, &QCheckBox::toggled, this, changed);
     connect(proxyProtocol_, &QComboBox::currentIndexChanged, this, changed);
     connect(proxyPort_, &QSpinBox::valueChanged, this, changed);
-    connect(rememberProxySecret_, &QCheckBox::toggled, this, changed);
 }
 void ProfileDialog::updateProxyControls() {
-    if (!proxySecret_ || !rememberProxySecret_)
+    if (!proxySecret_)
         return;
     const bool enabled = driver_->currentData() != "sqlite" && proxyEnabled_->isChecked();
     proxyFields_->setVisible(false);
     const bool password =
         enabled && proxyProtocol_->currentData() == "socks5" && !proxyUser_->text().isEmpty();
     proxySecret_->setEnabled(password);
-    rememberProxySecret_->setEnabled(password);
 }
 bool ProfileDialog::proxyNeedsPassword(const SavedProfile& profile) {
     const auto options = QJsonDocument::fromJson(profile.proxyOptions.toUtf8()).object();
@@ -91,7 +85,6 @@ void ProfileDialog::setProxyDraft(const SavedProfile& profile) {
     proxyUser_->clear();
     proxySecret_->clear();
     proxySecret_->setModified(false);
-    rememberProxySecret_->setChecked(false);
     updateProxyControls();
 }
 } // namespace choscordb
