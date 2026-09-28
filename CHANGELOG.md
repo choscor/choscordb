@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.7]
+
+- Added quick search for connections, database objects, and open workspaces with Cmd/Ctrl+P.
+- Added sidebar pins for database and schema objects, and support for showing multiple saved connections.
+- Added table and view rename and drop actions from the navigator, and hide PostgreSQL system schemas by default.
+- Simplified new connection setup and TLS options, with clearer connection timeout handling.
+- Added SQL target status in the result footer and refined navigation and workspace controls.
+- Prepared native Windows and Linux release packages alongside the macOS release workflow.
+
 ## [0.1.6]
 
 - Added a JSON row inspector for query results and one-hop relationship diagrams
