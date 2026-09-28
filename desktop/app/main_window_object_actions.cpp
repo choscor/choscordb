@@ -68,8 +68,8 @@ bool MainWindow::objectActionReady(quint64 connection, const QString& objectId, 
                       ToastVariant::Warning);
             return false;
         }
-        if (auto* data = object->findChild<ObjectDataWorkspace*>())
-            for (auto* result : data->findChildren<QueryWorkspace*>())
+        if (auto* objectData = object->findChild<ObjectDataWorkspace*>())
+            for (auto* result : objectData->findChildren<QueryWorkspace*>())
                 if (!result->navigationAllowed() || result->hasPendingEdits()) {
                     showToast(tr("Finish or cancel active object data work and pending edits "
                                  "before changing this object."),

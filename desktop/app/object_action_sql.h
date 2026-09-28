@@ -6,10 +6,10 @@ namespace choscordb {
 
 struct ObjectActionStatement {
     bool valid = false;
-    QString sql;
-    QString error;
-    QString newObjectId;
-    QString newQualifiedName;
+    QString sql{};
+    QString error{};
+    QString newObjectId{};
+    QString newQualifiedName{};
 };
 
 class ObjectActionSql {
