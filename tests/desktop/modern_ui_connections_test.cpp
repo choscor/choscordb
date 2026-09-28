@@ -2,8 +2,10 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "design_system/menu/menu.h"
+#include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
 #include "modern_ui_test.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
@@ -18,7 +20,73 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTabWidget>
 #include <QTreeView>
+
+void ModernUiTest::sidebarConnectionDoesNotColorUnavailableSqlTargetFooter() {
+    choscordb::MainWindow window;
+    window.show();
+    auto* newQuery = window.findChild<QAction*>("newQuery");
+    QTRY_VERIFY(newQuery->isEnabled());
+    newQuery->trigger();
+    auto* editor = qobject_cast<choscordb::SqlEditor*>(
+        window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+    auto* theme = window.findChild<choscordb::design::ThemeManager*>();
+    auto* footer = window.findChild<QWidget*>("sqlResultFooter");
+    auto* profiles = window.findChild<QListWidget*>("savedConnections");
+    QVERIFY(editor && workspace && theme && footer && profiles);
+    editor->setConnectionTarget(quint64{0xF00D}, "Unavailable target");
+    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.dangerSurface);
+
+    choscordb::SavedProfile profile;
+    profile.id = "sidebar-only";
+    profile.name = "Sidebar Only";
+    profile.path = ":memory:";
+    workspace->adapter()->saveProfile(profile, 8200);
+    QTRY_COMPARE(profiles->count(), 1);
+    QSignalSpy opened(workspace, &choscordb::QueryWorkspace::connectionReady);
+    QTest::mouseClick(profiles->viewport(), Qt::LeftButton, Qt::NoModifier,
+                      profiles->visualItemRect(profiles->item(0)).center());
+    QTRY_COMPARE(opened.count(), 1);
+    QTRY_VERIFY(window.browsingConnection().has_value());
+    QVERIFY(editor->connectionTarget() == quint64{0xF00D});
+    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.dangerSurface);
+    for (const auto mode : {choscordb::design::ThemeMode::Light,
+                            choscordb::design::ThemeMode::Dark}) {
+        theme->setMode(mode);
+        const auto colors = theme->resolvedTheme().colors;
+        QCOMPARE(footer->palette().color(QPalette::Window), colors.dangerSurface);
+        QVERIFY(choscordb::design::contrastRatio(colors.text, colors.dangerSurface) >= 4.5);
+        editor->setConnectionTarget(*window.browsingConnection(), "Sidebar Only");
+        QCOMPARE(footer->palette().color(QPalette::Window), colors.successSurface);
+        QVERIFY(choscordb::design::contrastRatio(colors.text, colors.successSurface) >= 4.5);
+        editor->setConnectionTarget(quint64{0xF00D}, "Unavailable target");
+    }
+    const auto browsingId = *window.browsingConnection();
+    editor->setConnectionTarget(browsingId, "Sidebar Only");
+    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.successSurface);
+    QVERIFY(workspace->adapter()->disconnectConnection(browsingId));
+    QTRY_COMPARE(footer->palette().color(QPalette::Window),
+                 theme->resolvedTheme().colors.dangerSurface);
+    QSignalSpy reconnected(workspace, &choscordb::QueryWorkspace::connectionReady);
+    workspace->connectSqlite(":memory:");
+    QTRY_COMPARE(reconnected.count(), 1);
+    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.dangerSurface);
+    editor->setConnectionTarget(reconnected.at(0).at(0).toULongLong(), "Reconnected");
+    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.successSurface);
+    editor->setConnectionTarget(quint64{0xF00D}, "Unavailable target");
+    theme->setForcedContrast(true);
+    QCOMPARE(footer->palette().color(QPalette::Window),
+             theme->resolvedTheme().colors.dangerSurface);
+    QVERIFY(footer->accessibleName().contains("unavailable", Qt::CaseInsensitive));
+    QVERIFY(choscordb::design::contrastRatio(theme->resolvedTheme().colors.text,
+                                             footer->palette().color(QPalette::Window)) >= 4.5);
+    editor->setConnectionTarget(reconnected.at(0).at(0).toULongLong(), "Reconnected");
+    QCOMPARE(footer->palette().color(QPalette::Window),
+             theme->resolvedTheme().colors.successSurface);
+    QCOMPARE(footer->accessibleName(), QString("SQL target available"));
+}
 
 void ModernUiTest::savedProfileSelectionKeepsEditorTargetAndShowsMultipleTrees() {
     choscordb::MainWindow window;
@@ -281,6 +349,8 @@ void ModernUiTest::removedPendingSidebarOpenCannotRestoreItsRoot() {
     auto* filter = window.findChild<QLineEdit*>("navigatorFilter");
     auto* status = window.findChild<QLabel*>("navigatorStatus");
     QVERIFY(workspace && profiles && tree && filter && status);
+    QVERIFY(status->isHidden());
+    QVERIFY(status->text().isEmpty());
     choscordb::SavedProfile alpha;
     alpha.id = "visible-session";
     alpha.name = "Alpha Visible Session";
@@ -298,19 +368,28 @@ void ModernUiTest::removedPendingSidebarOpenCannotRestoreItsRoot() {
     };
     click(0);
     QTRY_COMPARE(opened.count(), 1);
+    QVERIFY(status->isHidden());
+    QVERIFY(status->text().isEmpty());
     click(1);
     QCOMPARE(tree->model()->rowCount(), 2);
     QCOMPARE(tree->model()->index(1, 0).data(choscordb::NavigatorModel::KindRole).toString(),
              QString("loading"));
     filter->setText("needle");
     QVERIFY(status->text().contains("Search", Qt::CaseInsensitive));
+    QVERIFY(!status->isHidden());
+    QVERIFY(status->accessibleName().contains(status->text()));
     filter->clear();
+    QVERIFY(status->isHidden());
+    QVERIFY(status->text().isEmpty());
+    QVERIFY(status->accessibleName().isEmpty());
     click(1);
     QCOMPARE(tree->model()->rowCount(), 1);
     QVERIFY(!profiles->item(1)->isSelected());
     QTRY_COMPARE(opened.count(), 2);
     QCOMPARE(tree->model()->rowCount(), 1);
     QVERIFY(!profiles->item(1)->isSelected());
+    QVERIFY(status->isHidden());
+    QVERIFY(status->text().isEmpty());
     click(1);
     QTRY_COMPARE(tree->model()->rowCount(), 2);
     QCOMPARE(opened.count(), 2);

@@ -87,23 +87,14 @@ void MainWindow::connectNavigator(const Ui& ui) {
                 openObjectTab(connection, objectId, label, kind, properties, 3);
             });
     connect(navigatorController, &NavigatorController::searchStatusChanged, navigatorStatus,
-            [this, navigatorStatus](const QString& status) {
-                navigatorSearchStatus_ = status;
-                navigatorStatus->setText(
-                    status.isEmpty() ? browsingConnection_ ? tr("● Connected")
-                                       : selectedProfileIds_.isEmpty() ? tr("○ Disconnected")
-                                                                       : tr("Loading connections…")
-                                     : status);
-                navigatorStatus->setProperty("state", status.isEmpty()
-                                                          ? browsingConnection_ ? "success"
-                                                            : selectedProfileIds_.isEmpty()
-                                                                ? "disconnected"
-                                                                : "loading"
-                                                          : "search");
+            [navigatorStatus](const QString& status) {
+                navigatorStatus->setText(status);
+                navigatorStatus->setProperty("state", status.isEmpty() ? "" : "search");
                 navigatorStatus->setAccessibleName(
-                    tr("Navigator connection status: %1").arg(navigatorStatus->text()));
+                    status.isEmpty() ? QString() : tr("Navigator search status: %1").arg(status));
                 navigatorStatus->style()->unpolish(navigatorStatus);
                 navigatorStatus->style()->polish(navigatorStatus);
+                navigatorStatus->setVisible(!status.isEmpty());
             });
     auto* refreshNavigatorAction = new QAction(tr("Refresh selected object"), tree);
     refreshNavigatorAction->setObjectName("navigatorRefreshAction");

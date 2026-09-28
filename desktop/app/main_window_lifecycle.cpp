@@ -167,7 +167,6 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     const auto navigator = ui.navigator;
     const auto sidebarPanels = ui.sidebarPanels;
     const auto savedConnections = ui.savedConnections;
-    const auto navigatorStatus = ui.navigatorStatus;
     const auto historySearch = ui.historySearch;
     const auto historyStatus = ui.historyStatus;
     const auto historyItems = ui.historyItems;
@@ -178,29 +177,6 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     const auto toolbarHost = ui.toolbarHost;
     const auto searchActions = ui.searchActions;
     const auto toast = ui.toast;
-    connect(
-        workspace_->adapter(), &EngineAdapter::eventReady, this,
-        [this, navigatorStatus](const BridgeEvent& event) {
-            const auto kind =
-                QString::fromUtf8(event.kind.data(), static_cast<qsizetype>(event.kind.size()));
-            if (kind != "connected" && kind != "disconnected" && kind != "connection_failed")
-                return;
-            navigatorStatus->setText(!navigatorSearchStatus_.isEmpty()
-                                         ? navigatorSearchStatus_
-                                         : browsingConnection_ ? tr("● Connected")
-                                         : selectedProfileIds_.isEmpty() ? tr("○ Disconnected")
-                                                                         : tr("Loading connections…"));
-            navigatorStatus->setProperty("state", !navigatorSearchStatus_.isEmpty()
-                                                      ? "search"
-                                                      : browsingConnection_ ? "success"
-                                                      : selectedProfileIds_.isEmpty() ? "disconnected"
-                                                                                      : "loading");
-            navigatorStatus->setAccessibleName(
-                tr("Navigator connection status: %1").arg(navigatorStatus->text()));
-            navigatorStatus->style()->unpolish(navigatorStatus);
-            navigatorStatus->style()->polish(navigatorStatus);
-        },
-        Qt::DirectConnection);
     if (!storagePath.isEmpty()) {
         recovery_ = new WorkspaceRecoveryController(editors_, [this] { return addEditor(); }, this);
         recovery_->setObjectFactory([this](const SavedWorkspaceTab& tab) -> QWidget* {
