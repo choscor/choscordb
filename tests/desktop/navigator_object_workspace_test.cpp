@@ -451,7 +451,8 @@ void NavigatorSqlWorkspaceTest::searchFailureKeepsRefineMessage() {
     QCOMPARE(tree.model()->rowCount(), 1);
     QCOMPARE(tree.model()->index(0, 0).data().toString(), QString("First"));
     QCoreApplication::processEvents();
-    QVERIFY(status.last().first().toString().contains("Metadata limit exceeded"));
+    QVERIFY2(status.last().first().toString().contains("Metadata limit exceeded"),
+             qPrintable(status.last().first().toString()));
 }
 
 void NavigatorSqlWorkspaceTest::selectingObjectLoadsMetadataAndSeparateDataThenReturnsToSql() {
