@@ -100,7 +100,15 @@ class EditorCompletionTest : public QObject {
         editor->setFocus();
         QTRY_VERIFY(editor->hasFocus());
         controller.requestCompletion();
-        QTRY_VERIFY(popup->isVisible());
+        QTRY_VERIFY2(
+            popup->isVisible(),
+            qPrintable(QString("focus=%1 editorVisible=%2 target=%3 cursor=%4 anchor=%5 rows=%6")
+                           .arg(editor->hasFocus())
+                           .arg(editor->isVisible())
+                           .arg(completer->widget() == editor)
+                           .arg(editor->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS))
+                           .arg(editor->SendScintilla(QsciScintilla::SCI_GETANCHOR))
+                           .arg(popup->model()->rowCount())));
         owner->resize(500, 300);
         QVERIFY(!popup->isVisible());
         controller.requestCompletion();

@@ -115,7 +115,13 @@ class PreferencesWorkspaceTest : public QObject {
         auto* completion = window.findChild<EditorCompletionController*>();
         auto* completer = completion->findChild<QCompleter*>();
         window.findChild<QAction*>("completeSql")->trigger();
-        QTRY_VERIFY(completer->popup()->isVisible());
+        QTRY_VERIFY2(completer->popup()->isVisible(),
+                     qPrintable(QString("focus=%1 editorVisible=%2 target=%3 cursor=%4 rows=%5")
+                                    .arg(editor->hasFocus())
+                                    .arg(editor->isVisible())
+                                    .arg(completer->widget() == editor)
+                                    .arg(editor->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS))
+                                    .arg(completer->popup()->model()->rowCount())));
         QVERIFY(completer->completionModel()->index(0, 0).data().toString().contains("pg_catalog"));
         window.findChild<QAction*>("preferences")->trigger();
         dialog = window.findChild<QDialog*>("preferencesDialog");
