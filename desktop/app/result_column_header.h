@@ -112,7 +112,7 @@ class ResultColumnHeader final : public QHeaderView {
             QTextCharFormat secondaryFormat;
             secondaryFormat.setFont(small);
             QColor secondary = text;
-            secondary.setAlphaF(0.65);
+            secondary.setAlphaF(0.65f);
             secondaryFormat.setForeground(secondary);
             layout.setFormats(
                 {{int(name.size()), int(shown.size() - name.size()), secondaryFormat}});
