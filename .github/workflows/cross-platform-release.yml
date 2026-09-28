@@ -55,6 +55,9 @@ jobs:
         run: |
           python scripts/ci/desktop.py build
           python scripts/ci/desktop.py test
+      - name: Capture Windows workspace test output after a native failure
+        if: failure()
+        run: python scripts/ci/qt_test_output.py build/ci/native/choscordb-workspace-tests.exe
       - name: Prepare Qt source notices
         run: python scripts/release/prepare_qt_notices.py --output build/ci/qt-notices
       - name: Build Release without developer tools
