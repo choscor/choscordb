@@ -96,6 +96,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
                                  ? tr("foreign table")
                                  : kind;
     ObjectActionStatement statement;
+    QString newShortName;
     if (action == QStringLiteral("drop")) {
         statement = ObjectActionSql::drop(driver, kind, objectId, qualifiedName,
                                           relationSubtype);
@@ -167,6 +168,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
             return;
         statement = ObjectActionSql::rename(driver, kind, objectId, qualifiedName, name->text(),
                                             relationSubtype);
+        newShortName = name->text();
     } else {
         return;
     }
@@ -186,16 +188,17 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         return;
     }
     pendingObjectAction_ = PendingObjectAction{action,
-                                                objectId,
-                                                kind,
-                                                displayKind,
-                                                parentObjectId,
-                                                qualifiedName,
-                                                statement.newObjectId,
-                                                statement.newQualifiedName,
-                                                context,
-                                                connection,
-                                                *query};
+                                               objectId,
+                                               kind,
+                                               displayKind,
+                                               parentObjectId,
+                                               qualifiedName,
+                                               statement.newObjectId,
+                                               statement.newQualifiedName,
+                                               newShortName,
+                                               context,
+                                               connection,
+                                               *query};
     workspace_->setExternalWork(true);
     const auto fetchFailure = connect(workspace_->adapter(), &EngineAdapter::commandFailed, this,
                                       [this, query](const QString& error) {
@@ -262,6 +265,7 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
     }
     if (workspace_->driverForConnection(action.connection).isEmpty())
         return;
+    updatePinsForObjectAction(action);
     for (int i = editors_->count() - 1; i >= 0; --i) {
         auto* object = qobject_cast<ObjectExplorer*>(editors_->widget(i));
         if (!object || object->property("objectProfileId").toString() != action.context ||

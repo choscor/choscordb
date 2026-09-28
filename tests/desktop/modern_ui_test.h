@@ -64,4 +64,8 @@ class ModernUiTest final : public QObject {
     void appearancePreviewsPersistAndRestoreAcrossRestart();
     void preferencesUseSectionNavigationAndCancelableLivePreview();
     void executionStripKeepsVisibleAndAccessibleTerminalState();
+    void resultFooterTracksActiveSqlTargetIndependentlyOfExecution();
+    void sidebarConnectionDoesNotColorUnavailableSqlTargetFooter();
+    void completedResultFooterSeparatesAndClearsMetrics();
+    void narrowResultFooterPreservesOutcomeNavigationAndDetails();
 };

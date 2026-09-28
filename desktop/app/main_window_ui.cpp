@@ -2,6 +2,7 @@
 
 #include "app/editor_preferences.h"
 #include "app/main_window_ui.h"
+#include "app/main_window_ui_pins.h"
 #include "app/main_window_widgets.h"
 #include "app/object_explorer.h"
 #include "app/query_workspace.h"
@@ -51,6 +52,7 @@
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <algorithm>
 #ifdef CHOSCORDB_DEVELOPMENT_PREVIEW
 #include "tools/preview/preview_window.h"
 #endif
@@ -308,6 +310,10 @@ MainWindow::Ui MainWindow::buildUi() {
     connect(savedConnections->model(), &QAbstractItemModel::modelReset, connectionsEmpty,
             updateConnectionsEmpty);
     connectionSection->contentLayout()->addWidget(savedConnections);
+    const auto pinned = buildPinnedSidebar(navBody, connectionsLayout, theme_);
+    auto* pinnedSection = pinned.section;
+    auto* pinnedList = pinned.list;
+    auto* pinnedEmpty = pinned.empty;
     auto* objectSection = new SidebarSection(tr("Schema & objects"), navBody);
     connectionsLayout->addWidget(objectSection, 1);
     auto* filter = new QLineEdit;
@@ -337,9 +343,9 @@ MainWindow::Ui MainWindow::buildUi() {
     objectsEmpty->setTextFormat(Qt::PlainText);
     objectSection->contentLayout()->addWidget(objectsEmpty);
     objectSection->contentLayout()->addWidget(tree, 3);
-    auto* navigatorStatus = new QLabel(tr("Disconnected"), navBody);
+    auto* navigatorStatus = new QLabel(navBody);
     navigatorStatus->setObjectName("navigatorStatus");
-    navigatorStatus->setAccessibleName(tr("Navigator connection status: Disconnected"));
+    navigatorStatus->hide();
     objectSection->contentLayout()->addWidget(navigatorStatus);
     sidebarPanels->addWidget(connectionsPanel);
     auto* savedPanel = new QWidget(sidebarPanels);
@@ -375,9 +381,9 @@ MainWindow::Ui MainWindow::buildUi() {
     historyLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     auto* historySection = new SidebarSection(tr("Recent history"), historyPanel);
     historyLayout->addWidget(historySection);
-    const auto alignSidebarHeadings = [connectionSection, savedSection, historySection,
-                                       addConnection] {
-        for (auto* section : {connectionSection, savedSection, historySection})
+    const auto alignSidebarHeadings = [connectionSection, pinnedSection, savedSection,
+                                       historySection, addConnection] {
+        for (auto* section : {connectionSection, pinnedSection, savedSection, historySection})
             section->titleLabel()->setMinimumHeight(addConnection->sizeHint().height());
     };
     connect(theme_, &design::ThemeManager::metricsChanged, this, alignSidebarHeadings);
@@ -700,12 +706,23 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* pager = new QHBoxLayout(resultFooter);
     pager->setContentsMargins(initialMetrics.spacingMedium, initialMetrics.spacingSmall,
                               initialMetrics.spacingMedium, initialMetrics.spacingSmall);
-    pager->addWidget(empty);
+    pager->addWidget(empty, 1);
     auto* compactState = new design::Text(tr("Disconnected"), resultFooter);
     compactState->setObjectName("executionStateCompact");
     compactState->setTypographyRole(design::TypographyRole::Small);
     pager->addWidget(compactState);
     pager->addStretch(1);
+    const auto addMetric = [pager](const char* name) {
+        auto* label = new design::Text;
+        label->setObjectName(QString::fromLatin1(name));
+        label->setTypographyRole(design::TypographyRole::Small);
+        pager->addWidget(label);
+        return label;
+    };
+    auto* durationMetric = addMetric("executionDuration");
+    auto* pageMetric = addMetric("executionPage");
+    auto* rowsMetric = addMetric("executionRows");
+    auto* visibleSizeMetric = addMetric("executionVisibleSize");
     auto* previousPage = new design::Button({});
     previousPage->setAccessibleName(tr("Previous page"));
     previousPage->setToolTip(tr("Previous page"));
@@ -763,14 +780,8 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* applyResultEdits =
         addGridAction(tr("Apply"), "queryResultApplyEdits", design::Icon::Check, false);
     toolbar->addWidget(exportResult);
-    const auto colorResultFooter = [this, resultFooter] {
-        auto palette = resultFooter->palette();
-        palette.setColor(QPalette::Window, theme_->resolvedTheme().colors.subtleAccent);
-        resultFooter->setAutoFillBackground(true);
-        resultFooter->setPalette(palette);
-    };
-    connect(theme_, &design::ThemeManager::themeChanged, this, colorResultFooter);
-    colorResultFooter();
+    connect(theme_, &design::ThemeManager::themeChanged, this,
+            &MainWindow::refreshResultFooterColor);
     auto* messages = new QPlainTextEdit;
     messages->setObjectName("queryMessages");
     messages->setReadOnly(true);
@@ -907,6 +918,9 @@ MainWindow::Ui MainWindow::buildUi() {
         .refreshNavigator = refreshNavigator,
         .sidebarPanels = sidebarPanels,
         .savedConnections = savedConnections,
+        .pinnedSection = pinnedSection,
+        .pinnedList = pinnedList,
+        .pinnedEmpty = pinnedEmpty,
         .filter = filter,
         .tree = tree,
         .objectsEmpty = objectsEmpty,
@@ -934,6 +948,10 @@ MainWindow::Ui MainWindow::buildUi() {
         .empty = empty,
         .grid = grid,
         .compactState = compactState,
+        .durationMetric = durationMetric,
+        .pageMetric = pageMetric,
+        .rowsMetric = rowsMetric,
+        .visibleSizeMetric = visibleSizeMetric,
         .previousPage = previousPage,
         .nextPage = nextPage,
         .exportResult = exportResult,

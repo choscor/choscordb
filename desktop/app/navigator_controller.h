@@ -5,6 +5,7 @@
 #include <QPersistentModelIndex>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
 #include <QVariant>
 #include <functional>
 #include <optional>
@@ -35,6 +36,7 @@ struct QuickObjectResult {
 class NavigatorController final : public QObject {
     Q_OBJECT
   public:
+    enum class RevealResult { Found, Unavailable, Retry };
     NavigatorController(EngineAdapter* engine, QTreeView* tree, QLineEdit* filter,
                         QWidget* dialogParent);
     NavigatorModel* model() const { return model_; }
@@ -57,8 +59,14 @@ class NavigatorController final : public QObject {
     bool quickObjectSearchIncomplete() const { return quickObjectIncomplete_; }
     quint64 quickObjectSearchGeneration() const { return quickObjectGeneration_; }
     void setDriverResolver(std::function<QString(quint64)> resolver);
+    void setPinStateResolver(std::function<std::optional<bool>(const QModelIndex&)> resolver);
     void setShowSystemSchemas(bool show);
     void populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex);
+    bool revealObject(quint64 connection, const QStringList& ancestryIds, const QString& objectId,
+                      const QString& kind, const QString& qualifiedName,
+                      const QString& relationSubtype,
+                      std::function<void(RevealResult, const QString&)> finished,
+                      std::function<bool()> stillCurrent = {});
     void refreshCurrent();
     void disconnectCurrent();
   signals:
@@ -75,6 +83,7 @@ class NavigatorController final : public QObject {
                                const QString& shortName, const QString& kind,
                                const QString& parentObjectId, const QString& qualifiedName,
                                const QString& relationSubtype);
+    void pinRequested(const QModelIndex& sourceIndex, bool unpin);
 
   private:
     NavigatorModel* model_;
@@ -83,6 +92,7 @@ class NavigatorController final : public QObject {
     QSortFilterProxyModel* proxy_;
     QLineEdit* filter_;
     std::function<QString(quint64)> driverResolver_;
+    std::function<std::optional<bool>(const QModelIndex&)> pinStateResolver_;
     quint64 searchGeneration_ = 0;
     int searchRequests_ = 0;
     bool searchPending_ = false;

@@ -18,6 +18,7 @@ class QTreeView;
 class QTreeWidget;
 class QWidget;
 namespace choscordb {
+class SidebarSection;
 namespace main_window_detail {
 class WorkspaceTabs;
 }
@@ -42,6 +43,9 @@ struct MainWindow::Ui {
     design::Button* refreshNavigator{};
     QStackedWidget* sidebarPanels{};
     QListWidget* savedConnections{};
+    SidebarSection* pinnedSection{};
+    QListWidget* pinnedList{};
+    design::Text* pinnedEmpty{};
     QLineEdit* filter{};
     QTreeView* tree{};
     design::Text* objectsEmpty{};
@@ -69,6 +73,10 @@ struct MainWindow::Ui {
     design::Text* empty{};
     QTableView* grid{};
     design::Text* compactState{};
+    design::Text* durationMetric{};
+    design::Text* pageMetric{};
+    design::Text* rowsMetric{};
+    design::Text* visibleSizeMetric{};
     design::Button* previousPage{};
     design::Button* nextPage{};
     design::Button* exportResult{};

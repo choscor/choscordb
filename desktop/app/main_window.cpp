@@ -22,6 +22,7 @@
 #include <QComboBox>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QPalette>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStyleHints>
@@ -33,6 +34,22 @@ int qInitResources_resources();
 
 namespace choscordb {
 
+void MainWindow::refreshResultFooterColor() {
+    auto* footer = findChild<QWidget*>("sqlResultFooter");
+    if (!footer)
+        return;
+    const bool available = workspace_ && workspace_->selectedTargetAvailable();
+    const auto& colors = theme_->resolvedTheme().colors;
+    auto palette = footer->palette();
+    palette.setColor(QPalette::Window,
+                     available ? colors.successSurface : colors.dangerSurface);
+    palette.setColor(QPalette::WindowText, colors.text);
+    footer->setAutoFillBackground(true);
+    footer->setPalette(palette);
+    footer->setAccessibleName(available ? tr("SQL target available")
+                                        : tr("SQL target unavailable"));
+}
+
 void MainWindow::showToast(const QString& message, ToastVariant variant) {
     if (toast_) {
         const auto title = variant == ToastVariant::Success   ? tr("Success")
@@ -42,7 +59,8 @@ void MainWindow::showToast(const QString& message, ToastVariant variant) {
     }
 }
 
-MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindow(parent) {
+MainWindow::MainWindow(QWidget* parent, const QString& storagePath)
+    : QMainWindow(parent), pinStore_(storagePath) {
     ::qInitResources_resources();
     theme_ = new design::ThemeManager(this);
     theme_->setSystemPalette(qApp->palette());
@@ -69,6 +87,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath) : QMainWindo
     connectWorkspace(ui, storagePath);
     connectLifecycle(ui, storagePath);
     connectNavigator(ui);
+    initializePins(ui);
     constructing_ = false;
     showScreen(Screen::Start);
 }
