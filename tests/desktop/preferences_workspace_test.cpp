@@ -1,11 +1,18 @@
 #include "app/appearance_controller.h"
 #include "app/main_window.h"
+#include "app/navigator_controller.h"
+#include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/theme_manager.h"
+#include "models/navigator_model.h"
+#include "widgets/editor_completion/editor_completion.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include <QAbstractItemView>
 #include <QAction>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QCompleter>
 #include <QDialog>
 #include <QKeySequenceEdit>
 #include <QLabel>
@@ -13,11 +20,183 @@
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTemporaryDir>
+#include <QTreeView>
 #include <Qsci/qscilexer.h>
 #include <QtTest>
 class PreferencesWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void savedVisibilityUpdatesTwoRootsAndTheEditorsConnectionTarget() {
+        using namespace choscordb;
+        QTemporaryDir directory;
+        MainWindow window(nullptr, directory.filePath("integration.sqlite"));
+        window.show();
+        auto* workspace = window.findChild<QueryWorkspace*>();
+        auto* controller = window.findChild<NavigatorController*>();
+        auto* tree = window.findChild<QTreeView*>("databaseNavigator");
+        QVERIFY(workspace && controller && tree);
+        auto* model = controller->model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, workspace->adapter(),
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy ready(workspace, &QueryWorkspace::connectionReady);
+        workspace->connectSqlite(":memory:");
+        QTRY_COMPARE(ready.count(), 1);
+        workspace->connectSqlite(":memory:");
+        QTRY_COMPARE(ready.count(), 2);
+        const auto first = ready.at(0).at(0).toULongLong();
+        const auto second = ready.at(1).at(0).toULongLong();
+        controller->setDriverResolver([first, second](quint64 connection) {
+            return connection == first || connection == second ? QStringLiteral("postgres")
+                                                               : QStringLiteral("sqlite");
+        });
+        QSignalSpy requests(model, &NavigatorModel::childrenRequested);
+        int expectedRequests = 0;
+        for (const auto connection : {first, second}) {
+            QModelIndex root;
+            for (int row = 0; row < model->rowCount(); ++row) {
+                const auto candidate = model->index(row, 0);
+                if (candidate.data(NavigatorModel::ConnectionRole).toULongLong() == connection)
+                    root = candidate;
+            }
+            QVERIFY(root.isValid());
+            model->refresh(root);
+            ++expectedRequests;
+            QTRY_COMPARE(requests.count(), expectedRequests);
+            const auto databaseId = QStringLiteral("db-%1").arg(connection);
+            QVERIFY(model->applyChildren(connection, {}, requests.last().at(2).toULongLong(),
+                                         {{databaseId, "database", "database", "database", true}}));
+            const auto database = model->index(0, 0, root);
+            model->fetchMore(database);
+            ++expectedRequests;
+            QTRY_COMPARE(requests.count(), expectedRequests);
+            const auto system =
+                connection == first ? QStringLiteral("pg_catalog") : QStringLiteral("pg_temp_7");
+            const auto ordinary =
+                connection == first ? QStringLiteral("app_one") : QStringLiteral("app_two");
+            QVERIFY(model->applyChildren(
+                connection, databaseId, requests.last().at(2).toULongLong(),
+                {{QStringLiteral("system-%1").arg(connection), system, system, "schema", false},
+                 {QStringLiteral("app-%1").arg(connection), ordinary, ordinary, "schema", false}}));
+        }
+        controller->setVisibleConnections({first, second});
+        auto* visible = tree->model();
+        for (int row = 0; row < 2; ++row) {
+            const auto database = visible->index(0, 0, visible->index(row, 0));
+            QCOMPARE(visible->rowCount(database), 1);
+        }
+        window.findChild<QAction*>("preferences")->trigger();
+        auto* dialog = window.findChild<QDialog*>("preferencesDialog");
+        QVERIFY(dialog);
+        auto* checkbox = dialog->findChild<QCheckBox*>("preferencesShowSystemSchemas");
+        QTRY_VERIFY(checkbox->isEnabled());
+        checkbox->setChecked(true);
+        dialog->findChild<QPushButton*>("preferencesApply")->click();
+        QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
+        for (int row = 0; row < 2; ++row) {
+            const auto database = visible->index(0, 0, visible->index(row, 0));
+            QCOMPARE(visible->rowCount(database), 2);
+        }
+        auto* newQuery = window.findChild<QAction*>("newQuery");
+        QTRY_VERIFY(newQuery->isEnabled());
+        newQuery->trigger();
+        auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        auto* editor = qobject_cast<SqlEditor*>(tabs->currentWidget());
+        QVERIFY(editor);
+        editor->setConnectionTarget(first, "First");
+        workspace->documentChanged();
+        QCOMPARE(window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong(),
+                 first);
+        controller->setVisibleConnections({second});
+        editor->setText("pg_cat");
+        editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 6);
+        auto* completion = window.findChild<EditorCompletionController*>();
+        auto* completer = completion->findChild<QCompleter*>();
+        window.findChild<QAction*>("completeSql")->trigger();
+        QTRY_VERIFY(completer->popup()->isVisible());
+        QVERIFY(completer->completionModel()->index(0, 0).data().toString().contains("pg_catalog"));
+        window.findChild<QAction*>("preferences")->trigger();
+        dialog = window.findChild<QDialog*>("preferencesDialog");
+        QVERIFY(dialog);
+        checkbox = dialog->findChild<QCheckBox*>("preferencesShowSystemSchemas");
+        QTRY_VERIFY(checkbox->isEnabled());
+        checkbox->setChecked(false);
+        dialog->findChild<QPushButton*>("preferencesApply")->click();
+        QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
+        controller->setVisibleConnections({first, second});
+        for (int row = 0; row < 2; ++row) {
+            const auto database = visible->index(0, 0, visible->index(row, 0));
+            QCOMPARE(visible->rowCount(database), 1);
+        }
+        window.findChild<QAction*>("completeSql")->trigger();
+        QTRY_COMPARE(completer->completionModel()->rowCount(), 0);
+        QVERIFY(!completer->popup()->isVisible());
+        window.findChild<QAction*>("preferences")->trigger();
+        dialog = window.findChild<QDialog*>("preferencesDialog");
+        QVERIFY(dialog);
+        checkbox = dialog->findChild<QCheckBox*>("preferencesShowSystemSchemas");
+        QTRY_VERIFY(checkbox->isEnabled());
+        checkbox->setChecked(true);
+        workspace->adapter()->shutdown();
+        dialog->findChild<QPushButton*>("preferencesApply")->click();
+        QTRY_VERIFY(dialog->findChild<QPushButton*>("preferencesApply")->isEnabled());
+        QVERIFY(dialog->isVisible());
+        QVERIFY(!model->showSystemSchemas());
+        for (int row = 0; row < 2; ++row) {
+            const auto database = visible->index(0, 0, visible->index(row, 0));
+            QCOMPARE(visible->rowCount(database), 1);
+        }
+        window.findChild<QAction*>("completeSql")->trigger();
+        QTRY_COMPARE(completer->completionModel()->rowCount(), 0);
+    }
+    void systemSchemaVisibilityAppliesOnlyAfterSaveAndSurvivesRestart() {
+        using namespace choscordb;
+        QTemporaryDir directory;
+        const auto path = directory.filePath("system-schema-visibility.sqlite");
+        {
+            MainWindow window(nullptr, path);
+            window.show();
+            auto* model = window.findChild<NavigatorModel*>();
+            QVERIFY(model);
+            QVERIFY(!model->showSystemSchemas());
+            window.findChild<QAction*>("preferences")->trigger();
+            auto* dialog = window.findChild<QDialog*>("preferencesDialog");
+            QVERIFY(dialog);
+            auto* checkbox = dialog->findChild<QCheckBox*>("preferencesShowSystemSchemas");
+            QVERIFY(checkbox);
+            QTRY_VERIFY(checkbox->isEnabled());
+            QVERIFY(!checkbox->isChecked());
+            checkbox->setChecked(true);
+            dialog->findChild<QPushButton*>("preferencesClose")->click();
+            QVERIFY(!model->showSystemSchemas());
+            QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
+            window.findChild<QAction*>("preferences")->trigger();
+            dialog = window.findChild<QDialog*>("preferencesDialog");
+            QVERIFY(dialog);
+            checkbox = dialog->findChild<QCheckBox*>("preferencesShowSystemSchemas");
+            QTRY_VERIFY(checkbox->isEnabled());
+            QVERIFY(!checkbox->isChecked());
+            checkbox->setChecked(true);
+            dialog->findChild<QPushButton*>("preferencesApply")->click();
+            QTRY_VERIFY(model->showSystemSchemas());
+            QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
+            window.close();
+        }
+        MainWindow restarted(nullptr, path);
+        restarted.show();
+        auto* model = restarted.findChild<NavigatorModel*>();
+        QVERIFY(model);
+        QTRY_VERIFY(model->showSystemSchemas());
+        restarted.findChild<QAction*>("preferences")->trigger();
+        auto* dialog = restarted.findChild<QDialog*>("preferencesDialog");
+        QVERIFY(dialog);
+        auto* checkbox = dialog->findChild<QCheckBox*>("preferencesShowSystemSchemas");
+        QTRY_VERIFY(checkbox->isEnabled());
+        QVERIFY(checkbox->isChecked());
+        dialog->findChild<QPushButton*>("preferencesReset")->click();
+        QVERIFY(!checkbox->isChecked());
+        dialog->findChild<QPushButton*>("preferencesApply")->click();
+        QTRY_VERIFY(!model->showSystemSchemas());
+    }
     void connectionTimeoutPreferencePersistsAcrossRestart() {
         using namespace choscordb;
         QTemporaryDir directory;

@@ -7,6 +7,18 @@
 class QuerySettingsControllerTest : public QObject {
     Q_OBJECT
   private slots:
+    void visibilityOnlyPreferenceChangeUpdatesCurrentSettings() {
+        QWidget window;
+        choscordb::EngineAdapter adapter;
+        choscordb::QuerySettingsController controller(&adapter, &window);
+        QTRY_VERIFY(controller.isReady());
+        QSignalSpy changed(&controller, &choscordb::QuerySettingsController::preferencesChanged);
+        auto value = controller.preferences();
+        value.showSystemSchemas = true;
+        controller.applyConfirmed(value);
+        QCOMPARE(changed.count(), 1);
+        QVERIFY(controller.preferences().showSystemSchemas);
+    }
     void initialLoadGatesAndUsesPersistedPreferences() {
         QTemporaryDir directory;
         const auto path = directory.filePath("metadata.sqlite");

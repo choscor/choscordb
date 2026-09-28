@@ -2,6 +2,7 @@
 #include <QAbstractItemModel>
 #include <QString>
 #include <QVariantList>
+#include <functional>
 #include <memory>
 #include <vector>
 namespace choscordb {
@@ -64,6 +65,11 @@ class NavigatorModel final : public QAbstractItemModel {
     bool matchesObject(quint64 connection, const QString& objectId, const QString& kind,
                        const QString& qualifiedName, const QString& parentObjectId,
                        const QString& relationSubtype = {}) const;
+    void setDriverResolver(std::function<QString(quint64)> resolver);
+    void setShowSystemSchemas(bool show);
+    bool showSystemSchemas() const { return showSystemSchemas_; }
+    bool isBrowsable(const QModelIndex& index) const;
+    quint64 pendingRequestToken(const QModelIndex& index) const;
     // Accepted loaded metadata only. partial marks omitted or still-unloaded data;
     // maxUtf8Bytes charges all copied strings, including object IDs.
     CompletionSnapshot completionSnapshot(quint64 connection, quint64 maxEntries,
@@ -82,8 +88,11 @@ class NavigatorModel final : public QAbstractItemModel {
     Node* node(const QModelIndex& index) const;
     Node* find(quint64 connection, const QString& id) const;
     QModelIndex indexFor(Node* node) const;
+    bool isBrowsable(const Node* node) const;
     void clearChildren(Node* node);
     std::vector<std::unique_ptr<Node>> roots_;
+    std::function<QString(quint64)> driverResolver_;
+    bool showSystemSchemas_ = false;
     quint64 nextToken_ = 0;
 };
 } // namespace choscordb

@@ -23,6 +23,7 @@ class QuerySettingsDialog final : public DialogShell {
     QPointer<EngineAdapter> adapter_;
     QSpinBox *pageSize_, *timeout_;
     quint32 connectionTimeoutSeconds_;
+    bool showSystemSchemas_ = false;
     design::FieldValidation *pageSizeValidation_, *timeoutValidation_;
     design::Button *apply_, *reset_;
     quint64 token_ = 0;
