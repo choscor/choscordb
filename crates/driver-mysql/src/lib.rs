@@ -407,15 +407,18 @@ impl Connection for MysqlConnection {
     fn cancellation_handle(&self) -> Arc<dyn CancelHandle> {
         self.next.clone()
     }
-    async fn execute(&mut self, sql: &str, options: QueryOptions) -> Result<Box<dyn ResultCursor>> {
-        self.execute_bounded(sql, options, 4 * 1024 * 1024).await
-    }
     async fn execute_bounded(
         &mut self,
         sql: &str,
         options: QueryOptions,
         max: usize,
     ) -> Result<Box<dyn ResultCursor>> {
+        if max < std::mem::size_of::<Vec<Column>>() {
+            return Err(error(
+                ErrorKind::ResourceLimit,
+                "Result schema exceeds memory budget",
+            ));
+        }
         let cancel = std::mem::replace(&mut self.next, Cancellation::new());
         if cancel.cancelled.load(Ordering::Acquire) {
             return Err(error(ErrorKind::Cancelled, "MySQL query cancelled"));
@@ -634,9 +637,6 @@ impl ResultCursor for ObjectCursor {
     }
     fn columns(&self) -> &[Column] {
         &self.columns
-    }
-    async fn fetch_page(&mut self, size: PageSize) -> Result<ResultPage> {
-        self.fetch_page_bounded(size, 4 * 1024 * 1024).await
     }
     async fn fetch_page_bounded(&mut self, size: PageSize, max: usize) -> Result<ResultPage> {
         if self.cancel.cancelled.load(Ordering::Acquire) {

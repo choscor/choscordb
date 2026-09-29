@@ -2,6 +2,10 @@ use crate::*;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+
+/// Default owned-memory budget for convenience execution and paging calls.
+pub const DEFAULT_RESULT_MEMORY_BUDGET: usize = 4 * 1024 * 1024;
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct DriverCapabilities {
     pub schemas: bool,
@@ -198,6 +202,28 @@ pub struct IdleTransactionState {
     pub write_pending: bool,
     pub started_at: Option<std::time::Instant>,
 }
+/// Connections must supply schema-budget enforcement before query execution.
+/// An implementation with only unbounded execution is incomplete:
+///
+/// ```compile_fail,E0046
+/// use async_trait::async_trait;
+/// use choscordb_driver_api::*;
+/// use std::sync::Arc;
+/// struct UnboundedConnection;
+/// #[async_trait]
+/// impl Connection for UnboundedConnection {
+///     fn cancellation_handle(&self) -> Arc<dyn CancelHandle> { unimplemented!() }
+///     async fn execute(&mut self, _: &str, _: QueryOptions) -> Result<Box<dyn ResultCursor>> {
+///         unimplemented!()
+///     }
+///     async fn load_metadata(&mut self, _: Option<ObjectId>) -> Result<Vec<SchemaObject>> {
+///         Ok(vec![])
+///     }
+///     async fn commit(&mut self) -> Result<()> { Ok(()) }
+///     async fn rollback(&mut self) -> Result<()> { Ok(()) }
+///     async fn close(&mut self) -> Result<()> { Ok(()) }
+/// }
+/// ```
 #[async_trait]
 pub trait Connection: Send {
     /// Does not issue SQL or change transaction state.
@@ -301,37 +327,21 @@ pub trait Connection: Send {
             "Editable results are unavailable",
         ))
     }
-    async fn execute(&mut self, sql: &str, options: QueryOptions) -> Result<Box<dyn ResultCursor>>;
-    /// Limit owned result schema storage. Adapters MUST override this to check
-    /// borrowed metadata before allocating or executing writes; this compatibility
-    /// default validates only after execution and allocation.
+    /// Execute using the default schema budget. Adapters implement `execute_bounded`.
+    async fn execute(&mut self, sql: &str, options: QueryOptions) -> Result<Box<dyn ResultCursor>> {
+        self.execute_bounded(sql, options, DEFAULT_RESULT_MEMORY_BUDGET)
+            .await
+    }
+    /// Limit owned result schema storage. Inspect borrowed metadata before
+    /// allocating owned schema or executing writes. A budget smaller than the
+    /// empty schema container must be rejected before dispatch, keeping the
+    /// connection usable. Other resource-limit failures may invalidate a session.
     async fn execute_bounded(
         &mut self,
         sql: &str,
         options: QueryOptions,
         max_schema_bytes: usize,
-    ) -> Result<Box<dyn ResultCursor>> {
-        let mut cursor = self.execute(sql, options).await?;
-        let bytes =
-            cursor
-                .columns()
-                .iter()
-                .fold(std::mem::size_of::<Vec<Column>>(), |total, column| {
-                    total
-                        .saturating_add(std::mem::size_of::<Column>())
-                        .saturating_add(column.name.capacity())
-                        .saturating_add(column.database_type.capacity())
-                        .saturating_add(column.timezone.as_ref().map_or(0, String::capacity))
-                });
-        if bytes > max_schema_bytes {
-            cursor.close().await?;
-            return Err(DriverError::new(
-                ErrorKind::ResourceLimit,
-                "Result schema exceeds memory budget",
-            ));
-        }
-        Ok(cursor)
-    }
+    ) -> Result<Box<dyn ResultCursor>>;
     /// Opens a bounded read-only object source alongside the existing SQL cursor.
     /// Must neither release that cursor nor begin, commit, or roll back a transaction.
     async fn open_object(
@@ -406,6 +416,23 @@ pub trait DeferredReader: Send + Sync {
     /// a non-EOF successful read must return at least one byte.
     fn read_chunk(&self, handle: Handle, offset: u64, max_bytes: usize) -> Result<ValueChunk>;
 }
+/// Every cursor must implement allocation-aware bounded paging explicitly.
+/// A cursor implementing only the convenience method is incomplete:
+///
+/// ```compile_fail,E0046
+/// use async_trait::async_trait;
+/// use choscordb_driver_api::*;
+/// struct UnboundedCursor;
+/// #[async_trait]
+/// impl ResultCursor for UnboundedCursor {
+///     fn columns(&self) -> &[Column] { &[] }
+///     async fn fetch_page(&mut self, _: PageSize) -> Result<ResultPage> {
+///         Ok(ResultPage { index: 0, rows: vec![], has_more: false })
+///     }
+///     fn summary(&self) -> QuerySummary { QuerySummary::default() }
+///     async fn close(&mut self) -> Result<()> { Ok(()) }
+/// }
+/// ```
 #[async_trait]
 pub trait ResultCursor: Send {
     async fn next_result_set(&mut self) -> Result<bool> {
@@ -420,21 +447,17 @@ pub trait ResultCursor: Send {
         None
     }
     fn columns(&self) -> &[Column];
-    async fn fetch_page(&mut self, size: PageSize) -> Result<ResultPage>;
-    /// Return a page whose owned allocations fit `max_bytes`, including vector
-    /// capacities. Adapters MUST enforce this before allocation for strong bounds;
-    /// this compatibility default can only check after producing a page. One
-    /// retained lookahead row must independently fit the same budget.
-    async fn fetch_page_bounded(&mut self, size: PageSize, max_bytes: usize) -> Result<ResultPage> {
-        let page = self.fetch_page(size).await?;
-        if page.estimated_bytes() > max_bytes {
-            return Err(DriverError::new(
-                ErrorKind::ResourceLimit,
-                "Result page exceeds memory budget",
-            ));
-        }
-        Ok(page)
+    /// Fetch using the default page budget. Adapters implement `fetch_page_bounded`.
+    async fn fetch_page(&mut self, size: PageSize) -> Result<ResultPage> {
+        self.fetch_page_bounded(size, DEFAULT_RESULT_MEMORY_BUDGET)
+            .await
     }
+    /// Return a page whose owned allocations fit `max_bytes`, including vector
+    /// capacities. Enforce the budget before allocation; one retained lookahead
+    /// row must independently fit it. A budget smaller than an empty page must
+    /// be rejected before fetching, allowing a retry with a larger budget. Other
+    /// resource-limit failures may terminate the cursor.
+    async fn fetch_page_bounded(&mut self, size: PageSize, max_bytes: usize) -> Result<ResultPage>;
     async fn load_value(&mut self, _handle: Handle) -> Result<Value> {
         Err(DriverError::new(
             ErrorKind::Unsupported,

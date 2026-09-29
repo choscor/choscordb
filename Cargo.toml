@@ -1,9 +1,10 @@
 [workspace]
 members = ["crates/*"]
+exclude = ["crates/driver-postgres/third_party/tokio-postgres"]
 resolver = "3"
 
 [patch.crates-io]
-tokio-postgres = { path = "vendor/tokio-postgres" }
+tokio-postgres = { path = "crates/driver-postgres/third_party/tokio-postgres" }
 
 [workspace.package]
 version = "0.1.7"

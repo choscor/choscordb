@@ -82,7 +82,13 @@ impl ResultCursor for Completed {
     fn columns(&self) -> &[Column] {
         &[]
     }
-    async fn fetch_page(&mut self, _: PageSize) -> Result<ResultPage> {
+    async fn fetch_page_bounded(&mut self, _: PageSize, max_bytes: usize) -> Result<ResultPage> {
+        if max_bytes < std::mem::size_of::<ResultPage>() {
+            return Err(DriverError::new(
+                ErrorKind::ResourceLimit,
+                "Result page exceeds memory budget",
+            ));
+        }
         Ok(ResultPage {
             index: 0,
             rows: vec![],

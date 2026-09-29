@@ -43,7 +43,15 @@ impl Connection for Conn {
             log: self.log.clone(),
         })
     }
-    async fn execute(&mut self, sql: &str, _: QueryOptions) -> Result<Box<dyn ResultCursor>> {
+    async fn execute_bounded(
+        &mut self,
+        sql: &str,
+        _: QueryOptions,
+        max: usize,
+    ) -> Result<Box<dyn ResultCursor>> {
+        if max < std::mem::size_of::<Vec<Column>>() {
+            return Err(DriverError::new(ErrorKind::ResourceLimit, "Schema budget"));
+        }
         self.log.lock().unwrap().push(sql.into());
         if sql == "slow" {
             tokio::time::sleep(Duration::from_millis(80)).await;
@@ -73,7 +81,10 @@ impl ResultCursor for Cursor {
     fn columns(&self) -> &[Column] {
         &[]
     }
-    async fn fetch_page(&mut self, _: PageSize) -> Result<ResultPage> {
+    async fn fetch_page_bounded(&mut self, _: PageSize, max: usize) -> Result<ResultPage> {
+        if max < std::mem::size_of::<ResultPage>() {
+            return Err(DriverError::new(ErrorKind::ResourceLimit, "Page budget"));
+        }
         Ok(ResultPage {
             index: 0,
             rows: vec![],

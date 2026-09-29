@@ -50,11 +50,19 @@ impl Connection for SlowConnection {
     fn cancellation_handle(&self) -> Arc<dyn CancelHandle> {
         Arc::new(NoopCancel)
     }
-    async fn execute(
+    async fn execute_bounded(
         &mut self,
         sql: &str,
         _: QueryOptions,
+        max: usize,
     ) -> choscordb_driver_api::Result<Box<dyn ResultCursor>> {
+        // Conservative bound for the fixture's one-column schema, including names.
+        if max < std::mem::size_of::<Vec<Column>>() + std::mem::size_of::<Column>() + 64 {
+            return Err(choscordb_driver_api::DriverError::new(
+                choscordb_driver_api::ErrorKind::ResourceLimit,
+                "Schema budget",
+            ));
+        }
         Ok(Box::new(SlowCursor {
             next: 1,
             started: self.0.clone(),
@@ -106,7 +114,25 @@ impl ResultCursor for SlowCursor {
         });
         &COLUMNS
     }
-    async fn fetch_page(&mut self, _: PageSize) -> choscordb_driver_api::Result<ResultPage> {
+    async fn fetch_page_bounded(
+        &mut self,
+        size: PageSize,
+        max: usize,
+    ) -> choscordb_driver_api::Result<ResultPage> {
+        let count = if self.fallback {
+            usize::from(self.next == 1)
+        } else {
+            (301 - self.next).min(i64::from(size.get())).max(0) as usize
+        };
+        // Each fixture row has one value; fallback strings have at most 32 bytes.
+        let bytes = std::mem::size_of::<ResultPage>()
+            + count * (std::mem::size_of::<Vec<Value>>() + std::mem::size_of::<Value>() + 32);
+        if bytes > max {
+            return Err(choscordb_driver_api::DriverError::new(
+                choscordb_driver_api::ErrorKind::ResourceLimit,
+                "Page budget",
+            ));
+        }
         self.started.store(true, Ordering::Release);
         if self.fallback {
             let rows = if self.next == 1 {
@@ -126,7 +152,7 @@ impl ResultCursor for SlowCursor {
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
         let first = self.next;
-        let end = (first + 100).min(301);
+        let end = (first + i64::from(size.get())).min(301);
         self.next = end;
         Ok(ResultPage {
             index: ((first - 1) / 100) as u64,

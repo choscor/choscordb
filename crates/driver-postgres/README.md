@@ -1,5 +1,17 @@
 # PostgreSQL adapter
 
+This crate implements the shared contracts in `choscordb-driver-api`. Bounded
+execution and page fetching are required implementations; the shared convenience
+methods use `DEFAULT_RESULT_MEMORY_BUDGET`. Protocol types stay inside the adapter.
+
+The patched upstream client lives in `third_party/tokio-postgres`, with its
+original MIT/Apache licenses and `CHOSCORDB_PATCH.md`. The workspace root patches
+`tokio-postgres` for the entire dependency graph, including `postgres-native-tls`,
+and excludes it from workspace membership so it retains third-party license
+handling. Keep upstream changes separate from ChoscorDB behavior and record any
+local protocol changes in the patch notes. Release source archives include this
+directory alongside the driver.
+
 `PostgresDriver` implements the shared driver contracts. A bounded command worker
 owns the client. A local transaction scope owns each server portal, fetching at
 most one wire row per Execute message. Decoding and temporary-file I/O run on

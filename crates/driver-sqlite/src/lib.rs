@@ -211,15 +211,18 @@ impl Connection for SqliteConnection {
                 .unwrap_or(u64::MAX),
         })
     }
-    async fn execute(&mut self, sql: &str, options: QueryOptions) -> Result<Box<dyn ResultCursor>> {
-        self.execute_bounded(sql, options, 4 * 1024 * 1024).await
-    }
     async fn execute_bounded(
         &mut self,
         sql: &str,
         options: QueryOptions,
         max_schema_bytes: usize,
     ) -> Result<Box<dyn ResultCursor>> {
+        if max_schema_bytes < std::mem::size_of::<Vec<Column>>() {
+            return Err(DriverError::new(
+                ErrorKind::ResourceLimit,
+                "Result schema exceeds memory budget",
+            ));
+        }
         let start = self
             .client
             .request(|r| Command::Execute(sql.into(), options, max_schema_bytes, r))
@@ -273,9 +276,6 @@ impl ResultCursor for Cursor {
     }
     fn columns(&self) -> &[Column] {
         &self.columns
-    }
-    async fn fetch_page(&mut self, size: PageSize) -> Result<ResultPage> {
-        self.fetch_page_bounded(size, 4 * 1024 * 1024).await
     }
     async fn fetch_page_bounded(&mut self, size: PageSize, max_bytes: usize) -> Result<ResultPage> {
         self.client

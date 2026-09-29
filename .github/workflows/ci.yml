@@ -158,7 +158,7 @@ jobs:
           brew install mysql@8.4
           python scripts/integration/mysql_ci_fixture.py start --bin-dir "$(brew --prefix mysql@8.4)/bin"
       - name: Run MySQL driver integration tests
-        run: cargo test -p choscordb-driver-mysql --lib --test live --test editing --locked -- --include-ignored --test-threads=1
+        run: cargo test -p choscordb-driver-mysql --lib --test live --test editing --test driver_contract --locked -- --include-ignored --test-threads=1
       - name: Run MySQL core integration tests
         run: cargo test -p choscordb-core --test mysql --locked -- --include-ignored --test-threads=1
       - name: Preserve MySQL failure logs

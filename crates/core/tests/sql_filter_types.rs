@@ -32,11 +32,24 @@ impl Connection for TypedConnection {
     fn cancellation_handle(&self) -> Arc<dyn CancelHandle> {
         Arc::new(NoopCancel)
     }
-    async fn execute(
+    async fn execute_bounded(
         &mut self,
         _: &str,
         _: QueryOptions,
+        max: usize,
     ) -> choscordb_driver_api::Result<Box<dyn ResultCursor>> {
+        let columns = TypedCursor(Vec::new());
+        let bytes = std::mem::size_of::<Vec<Column>>()
+            + columns
+                .columns()
+                .iter()
+                .map(|c| {
+                    std::mem::size_of::<Column>() + c.name.capacity() + c.database_type.capacity()
+                })
+                .sum::<usize>();
+        if bytes > max {
+            return Err(DriverError::new(ErrorKind::ResourceLimit, "Schema budget"));
+        }
         Ok(Box::new(TypedCursor(self.0.clone())))
     }
     async fn load_metadata(
@@ -80,7 +93,24 @@ impl ResultCursor for TypedCursor {
         });
         &COLUMNS
     }
-    async fn fetch_page(&mut self, _: PageSize) -> choscordb_driver_api::Result<ResultPage> {
+    async fn fetch_page_bounded(
+        &mut self,
+        _: PageSize,
+        max: usize,
+    ) -> choscordb_driver_api::Result<ResultPage> {
+        let bytes = std::mem::size_of::<ResultPage>()
+            + self.0.capacity() * std::mem::size_of::<Vec<Value>>()
+            + self
+                .0
+                .iter()
+                .map(|r| {
+                    (r.capacity() - r.len()) * std::mem::size_of::<Value>()
+                        + r.iter().map(Value::estimated_bytes).sum::<usize>()
+                })
+                .sum::<usize>();
+        if bytes > max {
+            return Err(DriverError::new(ErrorKind::ResourceLimit, "Page budget"));
+        }
         Ok(ResultPage {
             index: 0,
             rows: std::mem::take(&mut self.0),

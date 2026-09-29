@@ -631,9 +631,6 @@ impl ResultCursor for StreamCursor {
     fn columns(&self) -> &[Column] {
         &self.columns
     }
-    async fn fetch_page(&mut self, size: PageSize) -> Result<ResultPage> {
-        self.fetch_page_bounded(size, 4 * 1024 * 1024).await
-    }
     async fn fetch_page_bounded(&mut self, size: PageSize, max: usize) -> Result<ResultPage> {
         if self.closed {
             return Err(closed());

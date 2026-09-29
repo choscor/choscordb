@@ -51,7 +51,12 @@ impl Connection for Session {
     fn cancellation_handle(&self) -> Arc<dyn CancelHandle> {
         Arc::new(QueryCancel(self.0.clone()))
     }
-    async fn execute(&mut self, _: &str, _: QueryOptions) -> Result<Box<dyn ResultCursor>> {
+    async fn execute_bounded(
+        &mut self,
+        _: &str,
+        _: QueryOptions,
+        _: usize,
+    ) -> Result<Box<dyn ResultCursor>> {
         panic!("metadata disconnect must not execute SQL")
     }
     async fn load_metadata(&mut self, _: Option<ObjectId>) -> Result<Vec<SchemaObject>> {

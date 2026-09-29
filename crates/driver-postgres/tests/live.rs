@@ -1574,3 +1574,31 @@ async fn cancelling_object_read_keeps_user_savepoint_transaction_and_sql_portal(
     );
     c.rollback().await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL fixture"]
+async fn transaction_control_empty_pages_enforce_budget_and_allow_retry() {
+    let mut connection = PostgresDriver.connect(settings()).await.unwrap();
+    let mut cursor = connection
+        .execute("BEGIN", QueryOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        cursor
+            .fetch_page_bounded(PageSize::default(), 1)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::ResourceLimit
+    );
+    let page = cursor
+        .fetch_page_bounded(PageSize::default(), std::mem::size_of::<ResultPage>())
+        .await
+        .unwrap();
+    assert!(page.rows.is_empty());
+    assert!(!page.has_more);
+    assert_eq!(page.estimated_bytes(), std::mem::size_of::<ResultPage>());
+    cursor.close().await.unwrap();
+    connection.rollback().await.unwrap();
+    connection.close().await.unwrap();
+}

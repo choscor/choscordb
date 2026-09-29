@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 import tarfile
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -30,6 +31,28 @@ class SourceArchiveTest(unittest.TestCase):
         output = self.generate()
         with tarfile.open(output / "choscordb-source.tar.gz") as archive:
             self.assertIn("choscordb-source/desktop/app/icon.png", archive.getnames())
+
+    def test_repository_postgres_patch_is_shipped_with_sources_and_licenses(self):
+        repository = Path(__file__).resolve().parents[2]
+        manifest = tomllib.loads((repository / "Cargo.toml").read_text())
+        dependency = manifest["patch"]["crates-io"]["tokio-postgres"]["path"]
+        output = Path(self.temporary.name) / "repository-output"
+        source_archive.create_candidate(repository, output)
+        with tarfile.open(output / "choscordb-source.tar.gz") as archive:
+            for relative in [
+                "Cargo.toml",
+                "src/client.rs",
+                "src/transaction.rs",
+                "LICENSE-MIT",
+                "LICENSE-APACHE",
+                "CHOSCORDB_PATCH.md",
+            ]:
+                name = f"choscordb-source/{dependency}/{relative}"
+                self.assertIn(name, archive.getnames())
+                self.assertEqual(
+                    archive.extractfile(name).read(),
+                    (repository / dependency / relative).read_bytes(),
+                )
 
     def generate(self, name="output"):
         output = Path(self.temporary.name) / name

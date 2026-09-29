@@ -615,15 +615,18 @@ impl Connection for PostgresConnection {
             generation: self.cancel.next.load(std::sync::atomic::Ordering::Acquire),
         })
     }
-    async fn execute(&mut self, sql: &str, options: QueryOptions) -> Result<Box<dyn ResultCursor>> {
-        self.execute_bounded(sql, options, 4 * 1024 * 1024).await
-    }
     async fn execute_bounded(
         &mut self,
         sql: &str,
         options: QueryOptions,
         max: usize,
     ) -> Result<Box<dyn ResultCursor>> {
+        if max < std::mem::size_of::<Vec<Column>>() {
+            return Err(DriverError::new(
+                ErrorKind::ResourceLimit,
+                "Result schema exceeds memory budget",
+            ));
+        }
         if let Some(cursor) = transaction_control::execute(self, sql, &options, max).await? {
             return Ok(cursor);
         }
@@ -692,10 +695,13 @@ impl ResultCursor for Cursor {
     fn columns(&self) -> &[Column] {
         &self.columns
     }
-    async fn fetch_page(&mut self, size: PageSize) -> Result<ResultPage> {
-        self.fetch_page_bounded(size, 4 * 1024 * 1024).await
-    }
     async fn fetch_page_bounded(&mut self, size: PageSize, max: usize) -> Result<ResultPage> {
+        if max < std::mem::size_of::<ResultPage>() {
+            return Err(DriverError::new(
+                ErrorKind::ResourceLimit,
+                "Result page exceeds memory budget",
+            ));
+        }
         let fetched = self
             .client
             .request(|r| Command::Fetch(self.id, size, max, r))
