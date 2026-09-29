@@ -313,7 +313,7 @@ MainWindow::Ui MainWindow::buildUi() {
     connect(savedConnections->model(), &QAbstractItemModel::modelReset, connectionsEmpty,
             updateConnectionsEmpty);
     connectionSection->contentLayout()->addWidget(savedConnections);
-    const auto pinned = buildPinnedSidebar(navBody, connectionsLayout, theme_);
+    const auto pinned = buildPinnedSidebar(navBody, connectionsLayout);
     auto* pinnedSection = pinned.section;
     auto* pinnedList = pinned.list;
     auto* pinnedEmpty = pinned.empty;

@@ -2,21 +2,26 @@
 
 #include "app/main_window_ui.h"
 #include "app/navigator_controller.h"
+#include "app/pinned_tree_model.h"
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/menu/menu.h"
+#include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
+#include <QAbstractItemModel>
 #include <QAction>
 #include <QComboBox>
 #include <QItemSelectionModel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QSignalBlocker>
 #include <QTimer>
 #include <QTreeView>
 #include <QVariantMap>
 #include <algorithm>
+#include <utility>
 
 namespace choscordb {
 namespace {
@@ -50,6 +55,92 @@ PinRecord recordFor(const QModelIndex& index, const QString& profileId,
 
 void MainWindow::initializePins(const Ui& ui) {
     pinnedList_ = ui.pinnedList;
+    pinnedModel_ = new PinnedTreeModel(navigatorController_->model(), pinnedList_);
+    pinnedList_->setModel(pinnedModel_);
+    const auto updatePinnedGeometry = [this] {
+        if (!pinnedList_ || !pinnedModel_)
+            return;
+        const bool hasPins = pinnedModel_->rowCount() > 0;
+        auto* section = findChild<QWidget*>("pinnedSection");
+        if (section)
+            section->setVisible(hasPins);
+        pinnedList_->setVisible(hasPins);
+        if (!hasPins)
+            return;
+        const auto countVisible = [this](auto&& self, const QModelIndex& parent) -> int {
+            int count = 0;
+            for (int row = 0; row < pinnedModel_->rowCount(parent); ++row) {
+                const auto child = pinnedModel_->index(row, 0, parent);
+                ++count;
+                if (pinnedList_->isExpanded(child))
+                    count += self(self, child);
+            }
+            return count;
+        };
+        const int rowHeight =
+            std::max(theme_->metrics().navigationRowHeight, pinnedList_->sizeHintForRow(0));
+        pinnedList_->setFixedHeight(countVisible(countVisible, {}) * rowHeight +
+                                    2 * pinnedList_->frameWidth());
+    };
+    const auto schedulePinnedGeometry = [this, updatePinnedGeometry] {
+        QTimer::singleShot(0, pinnedList_, updatePinnedGeometry);
+    };
+    connect(pinnedModel_, &QAbstractItemModel::rowsInserted, pinnedList_, schedulePinnedGeometry);
+    connect(pinnedModel_, &QAbstractItemModel::rowsRemoved, pinnedList_, schedulePinnedGeometry);
+    connect(pinnedModel_, &QAbstractItemModel::modelReset, pinnedList_, schedulePinnedGeometry);
+    connect(pinnedModel_, &QAbstractItemModel::dataChanged, pinnedList_, schedulePinnedGeometry);
+    connect(pinnedModel_, &QAbstractItemModel::dataChanged, this,
+            [this](const QModelIndex&, const QModelIndex&) {
+                QTimer::singleShot(0, this, [this] {
+                    for (int row = 0; row < pinnedModel_->rowCount(); ++row) {
+                        const auto root = pinnedModel_->index(row, 0);
+                        const auto key = pinnedModel_->pinKey(root);
+                        if (!pinnedList_->isExpanded(root) ||
+                            pinnedModel_->sourceIndex(root).isValid() ||
+                            pendingExpansionKeys_.contains(key) ||
+                            pinExpansionErrors_.contains(key))
+                            continue;
+                        const auto pin =
+                            std::find_if(pins_.cbegin(), pins_.cend(), [&](const PinRecord& entry) {
+                                return PinStore::identityKey(entry) == key;
+                            });
+                        if (pin == pins_.cend() || pin->unavailable ||
+                            !selectedProfileIds_.contains(pin->profileId) ||
+                            !selectedSessionIds_.contains(pin->profileId))
+                            continue;
+                        pendingExpansionKeys_.insert(key);
+                        pinExpansionRebinding_.insert(key);
+                        pinExpansionConnectionIds_.insert(
+                            key, selectedSessionIds_.value(pin->profileId));
+                        ++pinExpansionGenerations_[key];
+                        pinnedModel_->setStatus(key, tr("Loading children…"));
+                    }
+                    tryExpandPendingPins();
+                });
+            });
+    connect(pinnedList_, &QTreeView::expanded, this,
+            [this, updatePinnedGeometry](const QModelIndex& index) {
+                updatePinnedGeometry();
+                if (pinnedModel_->isPinnedRoot(index))
+                    expandPin(pinnedModel_->pinKey(index));
+            });
+    connect(pinnedList_, &QTreeView::collapsed, this,
+            [this, updatePinnedGeometry](const QModelIndex& index) {
+                updatePinnedGeometry();
+                if (!pinnedModel_->isPinnedRoot(index))
+                    return;
+                const auto key = pinnedModel_->pinKey(index);
+                pendingExpansionKeys_.remove(key);
+                pinExpansionInFlight_.remove(key);
+                pinExpansionRebinding_.remove(key);
+                pinExpansionErrors_.remove(key);
+                pinExpansionConnectionIds_.remove(key);
+                ++pinExpansionGenerations_[key];
+                pinnedModel_->setResolved(key, {});
+                renderPins();
+            });
+    connect(theme_, &design::ThemeManager::metricsChanged, pinnedList_, schedulePinnedGeometry);
+    schedulePinnedGeometry();
     QString error;
     pins_ = pinStore_.load(&error);
     if (!error.isEmpty())
@@ -113,15 +204,47 @@ void MainWindow::initializePins(const Ui& ui) {
                 pins_ = std::move(updated);
                 renderPins();
             });
-    connect(ui.pinnedList, &QListWidget::itemClicked, this,
-            [this](QListWidgetItem* item) { activatePin(item->data(Qt::UserRole).toString()); });
-    connect(ui.pinnedList, &QListWidget::itemActivated, this,
-            [this](QListWidgetItem* item) { activatePin(item->data(Qt::UserRole).toString()); });
+    connect(ui.pinnedList, &QTreeView::clicked, this, [this](const QModelIndex& index) {
+        if (pinnedModel_->isPinnedRoot(index))
+            activatePin(pinnedModel_->pinKey(index));
+    });
+    connect(ui.pinnedList, &QTreeView::activated, this, [this](const QModelIndex& index) {
+        if (pinnedModel_->isPinnedRoot(index))
+            activatePin(pinnedModel_->pinKey(index));
+        else {
+            const auto source = pinnedModel_->sourceIndex(index);
+            if (source.data(NavigatorModel::KindRole).toString() == QStringLiteral("load_more"))
+                navigatorController_->model()->requestNextPage(source);
+        }
+    });
+    connect(ui.pinnedList->selectionModel(), &QItemSelectionModel::currentChanged, this,
+            [this](const QModelIndex& current, const QModelIndex& previous) {
+                if (pinnedModel_->isPinnedRoot(current) || !current.isValid())
+                    return;
+                if (!allowDocumentChange()) {
+                    const QSignalBlocker blocker(pinnedList_->selectionModel());
+                    pinnedList_->selectionModel()->setCurrentIndex(
+                        previous, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+                    return;
+                }
+                activateNavigatorObject(pinnedModel_->sourceIndex(current));
+            });
     connect(ui.pinnedList, &QWidget::customContextMenuRequested, this, [this](const QPoint& point) {
-        auto* item = pinnedList_->itemAt(point);
-        if (!item)
+        auto index = pinnedList_->indexAt(point);
+        auto menuPoint = point;
+        if (!index.isValid() && point.x() < 0 && point.y() < 0) {
+            index = pinnedList_->currentIndex();
+            menuPoint = pinnedList_->visualRect(index).center();
+        }
+        if (!index.isValid())
             return;
-        const auto key = item->data(Qt::UserRole).toString();
+        if (!pinnedModel_->isPinnedRoot(index)) {
+            QMenu menu(pinnedList_);
+            navigatorController_->populateContextMenu(&menu, pinnedModel_->sourceIndex(index));
+            design::execContextMenu(menu, pinnedList_->viewport()->mapToGlobal(menuPoint));
+            return;
+        }
+        const auto key = pinnedModel_->pinKey(index);
         auto* menu = new QMenu(pinnedList_);
         menu->setObjectName("pinnedMenu");
         menu->setAttribute(Qt::WA_DeleteOnClose);
@@ -142,7 +265,7 @@ void MainWindow::initializePins(const Ui& ui) {
                     return;
                 }
         });
-        design::popupContextMenu(*menu, pinnedList_->viewport()->mapToGlobal(point));
+        design::popupContextMenu(*menu, pinnedList_->viewport()->mapToGlobal(menuPoint));
     });
     connect(workspace_->adapter(), &EngineAdapter::profilesReady, this,
             [this](quint64 token, const QList<SavedProfile>&) {
@@ -168,6 +291,7 @@ void MainWindow::initializePins(const Ui& ui) {
         QTimer::singleShot(0, this, [this] {
             renderPins();
             tryRevealPendingPin();
+            tryExpandPendingPins();
         });
     });
     connect(savedConnectionsList_, &QListWidget::itemClicked, this,
@@ -176,6 +300,19 @@ void MainWindow::initializePins(const Ui& ui) {
             [this](QListWidgetItem*) { renderPins(); });
     connect(workspace_->adapter(), &EngineAdapter::eventReady, this,
             [this](const BridgeEvent& event) {
+                if (event.kind == "connection_failed") {
+                    for (const auto& key : pendingExpansionKeys_.values()) {
+                        if (!pinExpansionConnectionIds_.contains(key) ||
+                            pinExpansionConnectionIds_.value(key) != event.id)
+                            continue;
+                        const auto reason = tr("Connection failed. Collapse and expand to retry.");
+                        pinExpansionErrors_.insert(key, reason);
+                        pinnedModel_->setStatus(key, reason);
+                        pendingExpansionKeys_.remove(key);
+                        pinExpansionInFlight_.remove(key);
+                        pinExpansionRebinding_.remove(key);
+                    }
+                }
                 if (event.kind == "connection_failed" || event.kind == "disconnected")
                     renderPins();
                 if (!pendingPinKey_.isEmpty() && event.kind == "connection_failed") {
@@ -194,16 +331,37 @@ void MainWindow::initializePins(const Ui& ui) {
 }
 
 void MainWindow::renderPins() {
-    if (!pinnedList_)
+    if (!pinnedModel_)
         return;
+    for (auto it = pinExpansionErrors_.begin(); it != pinExpansionErrors_.end();) {
+        const auto found = std::find_if(pins_.cbegin(), pins_.cend(), [&](const PinRecord& pin) {
+            return PinStore::identityKey(pin) == it.key();
+        });
+        it = found == pins_.cend() ? pinExpansionErrors_.erase(it) : ++it;
+    }
     if (!pendingPinKey_.isEmpty() &&
         std::none_of(pins_.cbegin(), pins_.cend(), [this](const PinRecord& pin) {
             return PinStore::identityKey(pin) == pendingPinKey_;
         }))
         pendingPinKey_.clear();
-    pinnedList_->clear();
+    for (const auto& key : pendingExpansionKeys_.values()) {
+        const auto found = std::find_if(pins_.cbegin(), pins_.cend(), [&](const PinRecord& pin) {
+            return PinStore::identityKey(pin) == key;
+        });
+        if (found != pins_.cend() && (selectedProfileIds_.contains(found->profileId) ||
+                                      pendingBrowseProfiles_.contains(found->profileId)))
+            continue;
+        pendingExpansionKeys_.remove(key);
+        pinExpansionInFlight_.remove(key);
+        pinExpansionRebinding_.remove(key);
+        pinExpansionConnectionIds_.remove(key);
+        ++pinExpansionGenerations_[key];
+        pinExpansionErrors_.insert(
+            key, tr("Connection no longer selected. Collapse and expand to retry."));
+    }
+    QList<PinRecord> displayPins;
     auto* connections = findChild<QComboBox*>("connectionSelector");
-    for (const auto& pin : pins_) {
+    for (auto pin : pins_) {
         auto profileName = pin.profileName.isEmpty() ? pin.profileId : pin.profileName;
         if (savedConnectionsList_)
             for (int row = 0; row < savedConnectionsList_->count(); ++row) {
@@ -214,14 +372,11 @@ void MainWindow::renderPins() {
                     break;
                 }
             }
-        QString context = profileName;
-        for (const auto& ancestor : pin.ancestryNames)
-            if (!ancestor.isEmpty() && ancestor != profileName)
-                context += QStringLiteral(" / ") + ancestor;
-        if (!pin.qualifiedName.isEmpty())
-            context += QStringLiteral(" · ") + pin.qualifiedName;
-        if (!pin.relationSubtype.isEmpty())
-            context += QStringLiteral(" · ") + pin.relationSubtype;
+        pin.profileName = profileName;
+        displayPins.append(pin);
+    }
+    pinnedModel_->setPins(displayPins);
+    for (const auto& pin : displayPins) {
         bool liveHidden = false;
         if (connections && !selectedSessionIds_.contains(pin.profileId))
             for (int row = 0; row < connections->count(); ++row)
@@ -236,13 +391,137 @@ void MainWindow::renderPins() {
                             : selectedSessionIds_.contains(pin.profileId)    ? tr("Connected")
                             : liveHidden                                     ? tr("Hidden")
                                                                              : tr("Disconnected");
-        auto* item = new QListWidgetItem(pin.name, pinnedList_);
-        item->setData(Qt::UserRole, PinStore::identityKey(pin));
-        item->setData(NavigatorModel::KindRole, pin.kind);
-        item->setData(Qt::AccessibleDescriptionRole,
-                      tr("%1 %2 in %3. %4. Activate to reveal the original object.")
-                          .arg(pin.kind, pin.name, context, status));
-        item->setToolTip(tr("%1 · %2\n%3 · %4").arg(pin.name, pin.kind, context, status));
+        const auto key = PinStore::identityKey(pin);
+        if (!pendingExpansionKeys_.contains(key))
+            pinnedModel_->setStatus(key, pinExpansionErrors_.value(key, status));
+        if (!selectedSessionIds_.contains(pin.profileId))
+            pinnedModel_->setResolved(key, {});
+    }
+}
+
+void MainWindow::expandPin(const QString& key) {
+    const auto found = std::find_if(pins_.cbegin(), pins_.cend(), [&](const PinRecord& pin) {
+        return PinStore::identityKey(pin) == key;
+    });
+    if (found == pins_.cend() || found->unavailable)
+        return;
+    pendingExpansionKeys_.insert(key);
+    pinExpansionErrors_.remove(key);
+    pinExpansionConnectionIds_.remove(key);
+    pinExpansionRebinding_.remove(key);
+    ++pinExpansionGenerations_[key];
+    pinExpansionAttempts_.remove(key);
+    pinnedModel_->setResolved(key, {});
+    pinnedModel_->setStatus(key, tr("Loading children…"));
+    if (databaseClosePending_ || !workspace_->navigationAllowed() ||
+        workspace_->hasPendingEdits() || !reconnectProfile_ ||
+        !reconnectProfile_(found->profileId)) {
+        pendingExpansionKeys_.remove(key);
+        const auto reason = tr("Connection unavailable. Collapse and expand to retry.");
+        pinExpansionErrors_.insert(key, reason);
+        pinnedModel_->setStatus(key, reason);
+        showToast(reason, ToastVariant::Warning);
+        return;
+    }
+    if (pendingBrowseProfiles_.contains(found->profileId) &&
+        pendingBrowseProfiles_.value(found->profileId).connection)
+        pinExpansionConnectionIds_.insert(
+            key, *pendingBrowseProfiles_.value(found->profileId).connection);
+    else if (selectedSessionIds_.contains(found->profileId))
+        pinExpansionConnectionIds_.insert(key, selectedSessionIds_.value(found->profileId));
+    tryExpandPendingPins();
+}
+
+void MainWindow::tryExpandPendingPins() {
+    if (!pinnedModel_ || !navigatorController_)
+        return;
+    const auto keys = pendingExpansionKeys_.values();
+    for (const auto& key : keys) {
+        if (pinExpansionInFlight_.contains(key))
+            continue;
+        const auto found = std::find_if(pins_.cbegin(), pins_.cend(), [&](const PinRecord& pin) {
+            return PinStore::identityKey(pin) == key;
+        });
+        if (found == pins_.cend()) {
+            pendingExpansionKeys_.remove(key);
+            continue;
+        }
+        if (!selectedSessionIds_.contains(found->profileId))
+            continue;
+        const auto connection = selectedSessionIds_.value(found->profileId);
+        const auto generation = pinExpansionGenerations_.value(key);
+        const auto pin = *found;
+        pinExpansionInFlight_.insert(key);
+        if (navigatorController_->resolveObject(
+                connection, pin.ancestryIds, pin.objectId, pin.kind, pin.qualifiedName,
+                pin.relationSubtype,
+                [this, key, generation, profileId = pin.profileId,
+                 connection](NavigatorController::RevealResult result, const QString& reason,
+                             const QModelIndex& source) {
+                    if (generation != pinExpansionGenerations_.value(key) ||
+                        !pendingExpansionKeys_.contains(key) ||
+                        !selectedProfileIds_.contains(profileId) ||
+                        selectedSessionIds_.value(profileId) != connection)
+                        return;
+                    pinExpansionInFlight_.remove(key);
+                    pendingExpansionKeys_.remove(key);
+                    pinExpansionRebinding_.remove(key);
+                    pinExpansionAttempts_.remove(key);
+                    if (result == NavigatorController::RevealResult::Found &&
+                        pinnedModel_->setResolved(key, source)) {
+                        pinnedModel_->setStatus(key, tr("Connected"));
+                        for (int row = 0; row < pinnedModel_->rowCount(); ++row) {
+                            const auto root = pinnedModel_->index(row, 0);
+                            if (pinnedModel_->pinKey(root) == key &&
+                                pinnedModel_->canFetchMore(root))
+                                pinnedModel_->fetchMore(root);
+                        }
+                        return;
+                    }
+                    if (result == NavigatorController::RevealResult::Unavailable) {
+                        auto updated = pins_;
+                        for (auto& entry : updated)
+                            if (PinStore::identityKey(entry) == key)
+                                entry.unavailable = true;
+                        QString error;
+                        if (pinStore_.save(updated, &error)) {
+                            pins_ = std::move(updated);
+                            renderPins();
+                        } else
+                            showToast(tr("Could not save unavailable pin state: %1").arg(error),
+                                      ToastVariant::Danger);
+                    }
+                    auto visibleReason = reason;
+                    visibleReason.replace(tr("Activate the pin to retry."),
+                                          tr("Collapse and expand to retry."));
+                    if (visibleReason.isEmpty())
+                        visibleReason =
+                            tr("Could not load children. Collapse and expand to retry.");
+                    pinExpansionErrors_.insert(key, visibleReason);
+                    pinnedModel_->setStatus(key, visibleReason);
+                    showToast(reason, ToastVariant::Warning);
+                },
+                [this, key, generation, profileId = pin.profileId, connection] {
+                    return generation == pinExpansionGenerations_.value(key) &&
+                           pendingExpansionKeys_.contains(key) &&
+                           selectedProfileIds_.contains(profileId) &&
+                           selectedSessionIds_.value(profileId) == connection;
+                },
+                !pinExpansionRebinding_.contains(key)))
+            continue;
+        pinExpansionInFlight_.remove(key);
+        if (++pinExpansionAttempts_[key] >= 20) {
+            pendingExpansionKeys_.remove(key);
+            const auto reason = tr("Connection not ready. Collapse and expand to retry.");
+            pinExpansionErrors_.insert(key, reason);
+            pinnedModel_->setStatus(key, reason);
+            continue;
+        }
+        QTimer::singleShot(50, this, [this, key, generation] {
+            if (pendingExpansionKeys_.contains(key) &&
+                pinExpansionGenerations_.value(key) == generation)
+                tryExpandPendingPins();
+        });
     }
 }
 

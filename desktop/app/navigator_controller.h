@@ -67,6 +67,13 @@ class NavigatorController final : public QObject {
                       const QString& relationSubtype,
                       std::function<void(RevealResult, const QString&)> finished,
                       std::function<bool()> stillCurrent = {});
+    // Finds the exact live source row without changing explorer visibility, filter, or selection.
+    // A failed lookup supplies an invalid index; false means the connection is not live in model().
+    bool
+    resolveObject(quint64 connection, const QStringList& ancestryIds, const QString& objectId,
+                  const QString& kind, const QString& qualifiedName, const QString& relationSubtype,
+                  std::function<void(RevealResult, const QString&, const QModelIndex&)> finished,
+                  std::function<bool()> stillCurrent = {}, bool refreshFinalParent = true);
     void refreshCurrent();
     void disconnectCurrent();
   signals:
@@ -111,5 +118,11 @@ class NavigatorController final : public QObject {
     bool quickObjectIncomplete_ = false;
     void advanceSearch(quint64 generation);
     void advanceQuickObjectSearch(quint64 generation);
+    bool
+    lookupObject(quint64 connection, const QStringList& ancestryIds, const QString& objectId,
+                 const QString& kind, const QString& qualifiedName, const QString& relationSubtype,
+                 std::function<void(RevealResult, const QString&, const QModelIndex&)> finished,
+                 std::function<bool()> stillCurrent, bool requireVisibleConnection,
+                 bool refreshFinalParent);
 };
 } // namespace choscordb
