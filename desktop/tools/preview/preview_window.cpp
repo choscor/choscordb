@@ -11,6 +11,7 @@
 #include "design_system/field/field.h"
 #include "design_system/history_row/history_row.h"
 #include "design_system/icons.h"
+#include "design_system/json_text_view/json_text_view.h"
 #include "design_system/menu/menu.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/modal_panel/modal_panel.h"
@@ -259,12 +260,14 @@ void populateRightSheet(QWidget* host, QVBoxLayout* layout) {
     layout->addWidget(open);
     auto* sheet = new RightSheet(host);
     sheet->setObjectName("previewRightSheet");
+    sheet->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
+    sheet->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
     sheet->setTitle("Example details");
-    auto* body = new QPlainTextEdit(sheet);
+    auto* body = new JsonTextView(sheet);
     body->setObjectName("previewRightSheetContent");
     body->setAccessibleName("Example details");
-    body->setReadOnly(true);
-    body->setPlainText("{\n  \"id\": 42,\n  \"state\": \"ready\"\n}");
+    body->setPlainText(
+        "{\n  \"key\": \"value\",\n  \"count\": 42,\n  \"active\": true,\n  \"missing\": null\n}");
     sheet->setBody(body);
     auto* done = new Button("Done", sheet);
     done->setObjectName("previewRightSheetDone");

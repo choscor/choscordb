@@ -51,6 +51,7 @@ class ResultTableModel final : public QAbstractTableModel {
     Q_OBJECT
   public:
     enum class RowJsonReadiness { Ready, NeedsDeferred, Invalid };
+    enum class CellJsonReadiness { Unavailable, Ready, NeedsDeferred, Invalid };
     static constexpr int HeaderTypeRole = Qt::UserRole + 1;
     static constexpr int HeaderKeyRole = Qt::UserRole + 2;
     static constexpr int HeaderNameRole = Qt::UserRole + 3;
@@ -116,6 +117,12 @@ class ResultTableModel final : public QAbstractTableModel {
     bool rowJson(int row, QString* json, QString* error = nullptr,
                  const std::map<int, Cell>& resolved = {}) const;
     RowJsonReadiness rowJsonReadiness(int row, QString* error = nullptr) const;
+    CellJsonReadiness cellJsonReadiness(const QModelIndex& index, QString* error = nullptr) const;
+    bool cellJson(const QModelIndex& index, QString* json, QString* error = nullptr,
+                  const std::optional<Cell>& resolved = {}) const;
+    bool pageJson(QString* json, QString* error = nullptr,
+                  const std::map<std::pair<int, int>, Cell>& resolved = {}) const;
+    RowJsonReadiness pageJsonReadiness(QString* error = nullptr) const;
 
   signals:
     void pendingEditsChanged(bool pending);

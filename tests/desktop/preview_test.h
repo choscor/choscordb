@@ -45,6 +45,7 @@ class PreviewTest final : public QObject {
     void standaloneCapturesRequestedThemeAndViewport();
     void confirmationSpecimenUsesProductionCancellationBoundary();
     void rightSheetSpecimenUsesModalBoundaryInBothThemes();
+    void jsonTextViewSpecimenColorsSyntaxInBothThemes();
     void quickSearchSpecimenUsesRealOverlayInBothThemes();
     void quickSearchRowsUseSuppliedIconAndRetintWhenThemeChanges();
     void quickSearchInteractionPreservesFocusAndSelection();

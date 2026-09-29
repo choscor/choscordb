@@ -247,6 +247,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         }
         documentChanged();
         if (queryConnection_ == e.id) {
+            clearRowJson();
+            jsonResultInvalidated_ = true;
             if (detail_)
                 detail_->clearValue();
             if (export_)
@@ -456,6 +458,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             }
             visibleLease_ = e.lease_id;
             currentPage_ = e.page_index;
+            jsonResultInvalidated_ = false;
             hasMore_ = e.has_more;
             const bool hasResultPage = !columns_.empty();
             setExecutionState(

@@ -28,6 +28,7 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/history_row/history_row.cpp
   desktop/design_system/icons.cpp
   desktop/design_system/item_view/item_view_style.cpp
+  desktop/design_system/json_text_view/json_text_view.cpp
   desktop/design_system/navigation_profile_row/navigation_profile_row.cpp
   desktop/design_system/kbd/kbd_style.cpp
   desktop/design_system/label/label_style.cpp
@@ -104,6 +105,7 @@ choscordb_add_library(choscordb-desktop-services
   desktop/models/shortcut_catalog.cpp
   desktop/models/history_model.cpp
   desktop/models/result_table_model.cpp
+  desktop/models/result_table_model_json.cpp
   desktop/models/navigator_model.cpp
   desktop/models/value_preview_model.cpp
 )

@@ -28,6 +28,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
@@ -305,9 +306,17 @@ void NavigatorSqlWorkspaceTest::sqlRowJsonLoadsFullDeferredBinaryAndRejectsOvers
         auto* action = menu->findChild<QAction*>("viewRowJson");
         const bool enabled = action && action->isEnabled();
         menu->close();
-        QVERIFY(!enabled);
+        QVERIFY(enabled);
+        action->trigger();
     });
     grid->customContextMenuRequested(grid->visualRect(model->index(0, 0)).center());
+    QTRY_VERIFY(sheet->isVisible());
+    QVERIFY(!copy->isEnabled());
+    QVERIFY(text->toPlainText().isEmpty());
+    QVERIFY(sheet->findChild<QLabel*>("rowJsonStatus")
+                ->text()
+                .contains("invalid", Qt::CaseInsensitive));
+    sheet->reject();
 }
 
 void NavigatorSqlWorkspaceTest::sqlOpensWithEqualEditorAndResults() {

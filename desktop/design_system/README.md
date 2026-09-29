@@ -15,6 +15,7 @@ preserved by the component extraction.
 | Label, badge, keyboard hint | `label/`, `badge/`, `kbd/`: QLabel role/state styles |
 | Fields | `field/`: shared single-line input, key-sequence and field-state rules; keyboard focus frame and focus painting |
 | Text area | `text_area/`: QPlainTextEdit/QTextEdit rules |
+| JSON text view | `json_text_view/`: selectable read-only JSON text with theme-aware syntax coloring |
 | Select | `select/`: QComboBox rules and owner-contained Qt popup preparation |
 | Spin box | `spin_box/`: QSpinBox/QDoubleSpinBox rules |
 | Checkbox | `checkbox/`: checkbox painting and disabled-state handling |
@@ -118,7 +119,7 @@ owning modules.
 | Tooltips and popovers | Tooltip |
 | Dialog header, body and footer | Dialog sections |
 | Modal dialog, Nonmodal content, Destructive confirmations | Modal dialog, dialog shell, confirmation dialog, shared dialog presentation |
-| Right sheet | Right sheet and shared dialog presentation |
+| Right sheet | Right sheet, JSON text view, and shared dialog presentation |
 | Quick search overlay | Quick search and shared dialog presentation |
 | Menus and submenus | Menu |
 | Feedback and toast states | Badge, progress, toast region |
