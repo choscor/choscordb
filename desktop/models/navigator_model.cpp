@@ -224,6 +224,14 @@ QVariant NavigatorModel::data(const QModelIndex& index, int role) const {
     switch (role) {
     case Qt::DisplayRole:
         return value->object.name;
+    case Qt::ToolTipRole:
+    case Qt::AccessibleDescriptionRole:
+        if (value->object.kind == QLatin1String("column"))
+            return value->object.databaseType.isEmpty()
+                       ? value->object.name
+                       : QStringLiteral("%1 — %2").arg(value->object.name,
+                                                       value->object.databaseType);
+        return {};
     case ConnectionRole:
         return QVariant::fromValue(value->connection);
     case ObjectIdRole:
@@ -238,6 +246,9 @@ QVariant NavigatorModel::data(const QModelIndex& index, int role) const {
         return !value->placeholder && value->hasMore && value->state == Node::Loaded;
     case PropertiesRole:
         return value->object.properties;
+    case DatabaseTypeRole:
+        return value->object.kind == QLatin1String("column") ? value->object.databaseType
+                                                             : QString();
     case ErrorRole:
         return value->error;
     default:

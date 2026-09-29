@@ -1,6 +1,7 @@
 #include "app/main_window.h"
 #include "app/navigator_controller.h"
 #include "app/pin_store.h"
+#include "app/pinned_tree_model.h"
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
@@ -16,11 +17,13 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
 #include <QTreeView>
+#include <algorithm>
 
 namespace {
 QModelIndex pinRoot(QTreeView* pins) {
@@ -28,6 +31,15 @@ QModelIndex pinRoot(QTreeView* pins) {
 }
 int pinCount(QTreeView* pins) {
     return pins->model()->rowCount();
+}
+int pinRow(QTreeView* pins, const QString& key) {
+    auto* model = qobject_cast<choscordb::PinnedTreeModel*>(pins->model());
+    if (!model)
+        return -1;
+    for (int row = 0; row < model->rowCount(); ++row)
+        if (model->pinKey(model->index(row, 0)) == key)
+            return row;
+    return -1;
 }
 void clickArrow(QTreeView* pins, const QModelIndex& index) {
     const auto rect = pins->visualRect(index);
@@ -233,6 +245,158 @@ class PinningFlowTest : public QObject {
         QTRY_COMPARE(completed, 3);
         QTRY_VERIFY(pinRoot(pins).data(Qt::ToolTipRole).toString().contains("Unavailable"));
         QCOMPARE(pinCount(pins), 1);
+    }
+
+    void restoredHiddenIndexAndKeyPinsOpenTheirTableDetailPanes() {
+        using namespace choscordb;
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto storePath = directory.filePath("profiles.sqlite");
+        const auto profileId = QStringLiteral("hidden-detail-profile");
+        QList<PinRecord> saved;
+        PinRecord mismatched;
+        {
+            MainWindow setup(nullptr, storePath);
+            setup.show();
+            auto* workspace = setup.findChild<QueryWorkspace*>();
+            auto* profiles = setup.findChild<QListWidget*>("savedConnections");
+            auto* navigator = setup.findChild<NavigatorController*>();
+            QVERIFY(workspace && profiles && navigator);
+            SavedProfile profile;
+            profile.id = profileId;
+            profile.name = "Hidden detail";
+            profile.path = directory.filePath("database.sqlite");
+            workspace->adapter()->saveProfile(profile, 6801);
+            QTRY_COMPARE(profiles->count(), 1);
+            QSignalSpy connected(workspace, &QueryWorkspace::connectionReady);
+            QTest::mouseClick(profiles->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              profiles->visualItemRect(profiles->item(0)).center());
+            QTRY_COMPARE(connected.count(), 1);
+            const auto connection = connected.first().at(0).toULongLong();
+            auto* adapter = workspace->adapter();
+            int finished = 0;
+            connect(adapter, &EngineAdapter::eventReady, &setup, [&](const BridgeEvent& event) {
+                if (event.kind == "query_finished")
+                    ++finished;
+            });
+            for (const auto& statement :
+                 {"CREATE TABLE orders(id INTEGER PRIMARY KEY, note TEXT UNIQUE)",
+                  "CREATE INDEX orders_note_ix ON orders(note)"}) {
+                const auto query = adapter->execute(connection, statement);
+                QVERIFY(query);
+                adapter->fetchPage(*query);
+                QTRY_COMPARE(
+                    finished,
+                    statement ==
+                            QStringLiteral(
+                                "CREATE TABLE orders(id INTEGER PRIMARY KEY, note TEXT UNIQUE)")
+                        ? 1
+                        : 2);
+                adapter->releaseQuery(*query);
+            }
+            auto* model = navigator->model();
+            const auto root = model->index(0, 0);
+            model->fetchMore(root);
+            QTRY_VERIFY(root.data(NavigatorModel::ChildrenLoadedRole).toBool());
+            const auto database = model->index(0, 0, root);
+            model->fetchMore(database);
+            QTRY_VERIFY(database.data(NavigatorModel::ChildrenLoadedRole).toBool());
+            const auto group = model->index(0, 0, database);
+            model->fetchMore(group);
+            QTRY_VERIFY(group.data(NavigatorModel::ChildrenLoadedRole).toBool());
+            const auto table = model->index(0, 0, group);
+            QCOMPARE(table.data(NavigatorModel::KindRole).toString(), QString("table"));
+            model->fetchMore(table);
+            QTRY_VERIFY(table.data(NavigatorModel::ChildrenLoadedRole).toBool());
+            for (int row = 0; row < model->rowCount(table); ++row) {
+                const auto child = model->index(row, 0, table);
+                const auto kind = child.data(NavigatorModel::KindRole).toString();
+                if (!((kind == "index" &&
+                       child.data(Qt::DisplayRole).toString() == "orders_note_ix") ||
+                      kind == "primarykey"))
+                    continue;
+                PinRecord pin;
+                pin.profileId = profileId;
+                pin.profileName = profile.name;
+                pin.objectId = child.data(NavigatorModel::ObjectIdRole).toString();
+                pin.name = child.data(Qt::DisplayRole).toString();
+                pin.qualifiedName = child.data(NavigatorModel::QualifiedNameRole).toString();
+                pin.kind = kind;
+                pin.parentObjectId = table.data(NavigatorModel::ObjectIdRole).toString();
+                for (auto parent = child.parent(); parent.isValid(); parent = parent.parent())
+                    if (parent.data(NavigatorModel::KindRole).toString() != "connection") {
+                        pin.ancestryIds.prepend(
+                            parent.data(NavigatorModel::ObjectIdRole).toString());
+                        pin.ancestryNames.prepend(parent.data(Qt::DisplayRole).toString());
+                    }
+                saved.append(pin);
+            }
+            QCOMPARE(saved.size(), 2);
+            std::sort(saved.begin(), saved.end(),
+                      [](const PinRecord& left, const PinRecord& right) {
+                          return left.kind == QLatin1String("index") &&
+                                 right.kind != QLatin1String("index");
+                      });
+            mismatched = saved.first();
+            mismatched.qualifiedName = QStringLiteral("main.replaced_ix");
+            QString error;
+            auto stored = saved;
+            stored.append(mismatched);
+            QVERIFY2(PinStore(storePath).save(stored, &error), qPrintable(error));
+        }
+        MainWindow restored(nullptr, storePath);
+        restored.show();
+        auto* pins = restored.findChild<QTreeView*>("pinnedList");
+        auto* tree = restored.findChild<QTreeView*>("databaseNavigator");
+        auto* tabs = restored.findChild<QTabWidget*>("editorTabs");
+        auto* profiles = restored.findChild<QListWidget*>("savedConnections");
+        QVERIFY(pins && tree && tabs && profiles);
+        QTRY_COMPARE(pinCount(pins), 3);
+        QTRY_COMPARE(profiles->count(), 1);
+        for (const auto& pin : saved) {
+            const auto row = pinRow(pins, PinStore::identityKey(pin));
+            QVERIFY(row >= 0);
+            const auto pinIndex = pins->model()->index(row, 0);
+            const auto rect = pins->visualRect(pinIndex);
+            QTest::mouseClick(pins->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              QPoint(rect.right() - 4, rect.center().y()));
+            QTRY_COMPARE(tree->currentIndex().data(NavigatorModel::ObjectIdRole).toString(),
+                         pin.parentObjectId);
+            QTRY_VERIFY(tabs->currentWidget());
+            QCOMPARE(tabs->currentWidget()->property("objectId").toString(), pin.parentObjectId);
+            auto* panes = tabs->currentWidget()->findChild<QTabBar*>("objectTabs");
+            QVERIFY(panes);
+            QTRY_VERIFY2(panes->currentIndex() == (pin.kind == "index" ? 1 : 2),
+                         qPrintable(QStringLiteral("kind=%1 pane=%2 status=%3")
+                                        .arg(pin.kind)
+                                        .arg(panes->currentIndex())
+                                        .arg(pinIndex.data(Qt::ToolTipRole).toString())));
+            QVERIFY(!pins->model()
+                         ->index(pinRow(pins, PinStore::identityKey(pin)), 0)
+                         .data(Qt::ToolTipRole)
+                         .toString()
+                         .contains("Unavailable"));
+        }
+        const auto mismatchedRow = pinRow(pins, PinStore::identityKey(mismatched));
+        QVERIFY(mismatchedRow >= 0);
+        const auto mismatchedIndex = pins->model()->index(mismatchedRow, 0);
+        const auto mismatchedRect = pins->visualRect(mismatchedIndex);
+        QTest::mouseClick(pins->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          QPoint(mismatchedRect.right() - 4, mismatchedRect.center().y()));
+        QTRY_VERIFY(pins->model()
+                        ->index(pinRow(pins, PinStore::identityKey(mismatched)), 0)
+                        .data(Qt::ToolTipRole)
+                        .toString()
+                        .contains("Unavailable"));
+        QCOMPARE(pinCount(pins), 3);
+        PinnedMenuProbe probe;
+        qApp->installEventFilter(&probe);
+        QVERIFY(QMetaObject::invokeMethod(
+            pins, "customContextMenuRequested",
+            Q_ARG(QPoint, pins->visualRect(pins->model()->index(mismatchedRow, 0)).center())));
+        qApp->removeEventFilter(&probe);
+        QVERIFY(probe.sawUnpin);
+        QTRY_COMPARE(pinCount(pins), 2);
     }
 
     void savedObjectPinPersistsWithoutConnectingAtStartup() {

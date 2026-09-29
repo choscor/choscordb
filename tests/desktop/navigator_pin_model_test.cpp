@@ -270,6 +270,113 @@ class NavigatorPinModelTest : public QObject {
                  QString("target"));
     }
 
+    void hiddenTableIndexPinVerifiesFreshIdentityThenRevealsTable() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        QVERIFY(model->addConnection(31, "Saved"));
+        controller.setVisibleConnections({31});
+        const auto root = model->index(0, 0);
+        model->fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(model->applyChildren(31, {}, requested.last().at(2).toULongLong(),
+                                     {{"table", "orders", "main.orders", "table", true}}));
+        const auto table = model->index(0, 0, root);
+        model->fetchMore(table);
+        QTRY_COMPARE(requested.count(), 2);
+        QVERIFY(model->applyChildren(31, "table", requested.last().at(2).toULongLong(),
+                                     {{"index", "orders_ix", "main.orders_ix", "index", false}}));
+        QCOMPARE(tree.model()->rowCount(tree.model()->index(0, 0, tree.model()->index(0, 0))),
+                 0); // Hidden from the sidebar, still present in source metadata.
+        QList<NavigatorController::RevealResult> outcomes;
+        QVERIFY(controller.revealObject(31, {"table"}, "index", "index", "main.orders_ix", {},
+                                        [&](NavigatorController::RevealResult result,
+                                            const QString&) { outcomes.append(result); }));
+        QTRY_COMPARE(requested.count(), 3);
+        QVERIFY(!tree.currentIndex().isValid());
+        QVERIFY(model->applyChildren(31, "table", requested.last().at(2).toULongLong(),
+                                     {{"index", "orders_ix", "main.orders_ix", "index", false}}));
+        QTRY_COMPARE(outcomes.size(), 1);
+        QCOMPARE(outcomes.first(), NavigatorController::RevealResult::Found);
+        QCOMPARE(tree.currentIndex().data(NavigatorModel::ObjectIdRole).toString(),
+                 QString("table"));
+        QCOMPARE(tree.currentIndex().data(NavigatorModel::KindRole).toString(), QString("table"));
+
+        tree.setCurrentIndex({});
+        outcomes.clear();
+        QVERIFY(controller.revealObject(31, {"table"}, "index", "index", "main.orders_ix", {},
+                                        [&](NavigatorController::RevealResult result,
+                                            const QString&) { outcomes.append(result); }));
+        QTRY_COMPARE(requested.count(), 4);
+        QVERIFY(model->applyChildren(31, "table", requested.last().at(2).toULongLong(),
+                                     {{"index", "orders_ix", "main.replaced_ix", "index", false}}));
+        QTRY_COMPARE(outcomes.size(), 1);
+        QCOMPARE(outcomes.first(), NavigatorController::RevealResult::Unavailable);
+        QVERIFY(!tree.currentIndex().isValid());
+
+        outcomes.clear();
+        QVERIFY(controller.revealObject(31, {"table"}, "index", "index", "main.orders_ix", {},
+                                        [&](NavigatorController::RevealResult result,
+                                            const QString&) { outcomes.append(result); }));
+        QTRY_COMPARE(requested.count(), 5);
+        QVERIFY(outcomes.isEmpty()); // Loading is not confirmed absence.
+        QVERIFY(model->failChildren(31, "table", requested.last().at(2).toULongLong(),
+                                    "temporary catalog failure"));
+        QTRY_COMPARE(outcomes.size(), 1);
+        QCOMPARE(outcomes.first(), NavigatorController::RevealResult::Retry);
+        QVERIFY(!tree.currentIndex().isValid());
+
+        outcomes.clear();
+        QVERIFY(controller.revealObject(31, {"table"}, "index", "index", "main.orders_ix", {},
+                                        [&](NavigatorController::RevealResult result,
+                                            const QString&) { outcomes.append(result); }));
+        QTRY_COMPARE(requested.count(), 6);
+        QVERIFY(model->applyChildren(31, "table", requested.last().at(2).toULongLong(), {}));
+        QTRY_COMPARE(outcomes.size(), 1);
+        QCOMPARE(outcomes.first(), NavigatorController::RevealResult::Unavailable);
+        QVERIFY(!tree.currentIndex().isValid());
+    }
+
+    void schemaLevelIndexPinStillSelectsItsOwnRow() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter, &tree);
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        QVERIFY(model->addConnection(32, "Saved"));
+        controller.setVisibleConnections({32});
+        const auto root = model->index(0, 0);
+        model->fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(model->applyChildren(32, {}, requested.last().at(2).toULongLong(),
+                                     {{"group", "Indexes", {}, "group", true}}));
+        const auto group = model->index(0, 0, root);
+        model->fetchMore(group);
+        QTRY_COMPARE(requested.count(), 2);
+        QVERIFY(model->applyChildren(32, "group", requested.last().at(2).toULongLong(),
+                                     {{"index", "global_ix", "main.global_ix", "index", false}}));
+        QList<NavigatorController::RevealResult> outcomes;
+        QVERIFY(controller.revealObject(32, {"group"}, "index", "index", "main.global_ix", {},
+                                        [&](NavigatorController::RevealResult result,
+                                            const QString&) { outcomes.append(result); }));
+        QTRY_COMPARE(requested.count(), 3);
+        QVERIFY(model->applyChildren(32, "group", requested.last().at(2).toULongLong(),
+                                     {{"index", "global_ix", "main.global_ix", "index", false}}));
+        QTRY_COMPARE(outcomes.size(), 1);
+        QCOMPARE(outcomes.first(), NavigatorController::RevealResult::Found);
+        QCOMPARE(tree.currentIndex().data(NavigatorModel::ObjectIdRole).toString(),
+                 QString("index"));
+        QCOMPARE(tree.currentIndex().data(NavigatorModel::KindRole).toString(), QString("index"));
+    }
+
     void pinMenuUsesSavedProfileAndExcludesNavigationRows() {
         EngineAdapter engine;
         QTreeView tree;

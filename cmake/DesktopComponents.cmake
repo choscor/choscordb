@@ -9,6 +9,7 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/button/button_style.cpp
   desktop/design_system/button_group/button_group.cpp
   desktop/design_system/checkbox/checkbox_indicator.cpp
+  desktop/design_system/column_row/column_row.cpp
   desktop/design_system/colors/colors.cpp
   desktop/design_system/confirmation_dialog/confirmation_dialog.cpp
   desktop/design_system/control_glyphs/arrow_indicator.cpp

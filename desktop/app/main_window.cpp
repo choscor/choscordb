@@ -383,8 +383,9 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
     explorer->setProperty("objectType", kind);
     explorer->setProperty("objectLabel", label);
     explorer->openObject(connection, objectId, label, kind, properties);
-    const auto icon =
-        design::themedIcon(design::Icon::Table, theme_->resolvedTheme().colors.mutedText, 16);
+    const auto icon = design::themedIcon(kind == "table" || kind == "view" ? design::Icon::Grid2x2
+                                                                           : design::Icon::Table,
+                                         theme_->resolvedTheme().colors.mutedText, 16);
     const int index = editors_->addTab(explorer, icon, objectTabTitle(objectId, label));
     editors_->setCurrentIndex(index);
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
@@ -411,7 +412,7 @@ void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
     objectData->setInitialFilter(filter);
     explorer->openObject(connection, objectId, label, QStringLiteral("table"));
     const auto icon =
-        design::themedIcon(design::Icon::Table, theme_->resolvedTheme().colors.mutedText, 16);
+        design::themedIcon(design::Icon::Grid2x2, theme_->resolvedTheme().colors.mutedText, 16);
     editors_->setCurrentIndex(editors_->addTab(explorer, icon, objectTabTitle(objectId, label)));
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
     explorer->selectPane(5);

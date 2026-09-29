@@ -331,7 +331,14 @@ void MainWindow::activateNavigatorObject(const QModelIndex& current) {
     emit browsingConnectionChanged(*browsingConnection_);
     if (kind == "table" || kind == "view" || kind == "index" || kind == "sequence" ||
         kind == "function") {
-        const auto pane = selectedKind == "column"       ? 0
+        auto* tree = findChild<QTreeView*>("databaseNavigator");
+        const auto verifiedPinPane = tree ? tree->property("verifiedPinPane") : QVariant{};
+        const bool verifiedPinTarget = verifiedPinPane.isValid() &&
+                                       (selectedKind == "table" || selectedKind == "view") &&
+                                       tree->property("verifiedPinParentId").toString() ==
+                                           object.data(NavigatorModel::ObjectIdRole).toString();
+        const auto pane = verifiedPinTarget              ? verifiedPinPane.toInt()
+                          : selectedKind == "column"     ? 0
                           : selectedKind == "index"      ? 1
                           : selectedKind.contains("key") ? 2
                           : selectedKind == "ddl"        ? 3

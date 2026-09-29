@@ -33,6 +33,14 @@ QString relationSubtype(const QVariantList& properties) {
     }
     return {};
 }
+bool showsSidebarChild(const QModelIndex& index) {
+    const auto parentKind = index.parent().data(NavigatorModel::KindRole).toString();
+    if (parentKind != QLatin1String("table") && parentKind != QLatin1String("view"))
+        return true;
+    const auto kind = index.data(NavigatorModel::KindRole).toString();
+    return kind == QLatin1String("column") || kind == QLatin1String("loading") ||
+           kind == QLatin1String("error") || kind == QLatin1String("load_more");
+}
 class SelectedConnectionProxy final : public QSortFilterProxyModel {
   public:
     using QSortFilterProxyModel::QSortFilterProxyModel;
@@ -49,7 +57,8 @@ class SelectedConnectionProxy final : public QSortFilterProxyModel {
   protected:
     bool filterAcceptsRow(int row, const QModelIndex& parent) const override {
         const auto index = sourceModel()->index(row, 0, parent);
-        if (!static_cast<const NavigatorModel*>(sourceModel())->isBrowsable(index))
+        if (!static_cast<const NavigatorModel*>(sourceModel())->isBrowsable(index) ||
+            !showsSidebarChild(index))
             return false;
         auto root = sourceModel()->index(row, 0, parent);
         while (root.parent().isValid())
@@ -170,9 +179,13 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
                                                       {"value", text(property.value)},
                                                       {"availability", text(property.availability)},
                                                       {"reason", text(property.reason)}});
-                    objects.push_back({text(object.id), text(object.name),
-                                       text(object.qualified_name), text(object.kind),
-                                       object.has_children, std::move(properties)});
+                    const auto objectKind = text(object.kind);
+                    NavigatorObject entry{
+                        text(object.id), text(object.name),   text(object.qualified_name),
+                        objectKind,      object.has_children, std::move(properties)};
+                    if (object.has_column && objectKind == QLatin1String("column"))
+                        entry.databaseType = text(object.column.database_type);
+                    objects.push_back(std::move(entry));
                 }
                 const bool accepted = model_->applyChildrenPage(
                     e.id, text(e.parent), e.request_token, std::move(objects), e.metadata_offset,
@@ -279,21 +292,37 @@ bool NavigatorController::revealObject(quint64 connection, const QStringList& an
                     finished(result, reason);
                 return;
             }
+            const auto parent = source.parent();
+            const auto parentKind = parent.data(NavigatorModel::KindRole).toString();
+            const auto sourceKind = source.data(NavigatorModel::KindRole).toString();
+            const bool hiddenTableDetail =
+                (parentKind == QLatin1String("table") || parentKind == QLatin1String("view")) &&
+                (sourceKind == QLatin1String("index") || sourceKind.contains("key"));
+            const auto target = hiddenTableDetail ? parent : source;
             filter_->clear();
-            for (auto ancestor = source.parent(); ancestor.isValid();
+            for (auto ancestor = target.parent(); ancestor.isValid();
                  ancestor = ancestor.parent()) {
                 const auto visible = proxy_->mapFromSource(ancestor);
                 if (visible.isValid())
                     tree_->expand(visible);
             }
-            const auto visible = proxy_->mapFromSource(source);
+            const auto visible = proxy_->mapFromSource(target);
             if (!visible.isValid()) {
                 if (finished)
                     finished(RevealResult::Retry,
                              tr("The object could not be shown. Activate the pin to retry."));
                 return;
             }
+            if (hiddenTableDetail) {
+                tree_->setProperty("verifiedPinPane", sourceKind == QLatin1String("index") ? 1 : 2);
+                tree_->setProperty("verifiedPinParentId",
+                                   parent.data(NavigatorModel::ObjectIdRole));
+            }
             tree_->setCurrentIndex(visible);
+            if (hiddenTableDetail) {
+                tree_->setProperty("verifiedPinPane", {});
+                tree_->setProperty("verifiedPinParentId", {});
+            }
             if (tree_->currentIndex() != visible) {
                 if (finished)
                     finished(RevealResult::Retry, tr("Finish active database work before opening "
@@ -906,7 +935,7 @@ void NavigatorController::advanceSearch(quint64 generation) {
     while (!stack.empty()) {
         auto current = stack.back();
         stack.pop_back();
-        if (!model_->isBrowsable(current))
+        if (!model_->isBrowsable(current) || !showsSidebarChild(current))
             continue;
         if (++visited > 20000) {
             emit searchStatusChanged(tr("Search incomplete: limit reached. Refine the text."));
@@ -917,7 +946,8 @@ void NavigatorController::advanceSearch(quint64 generation) {
             incomplete = true;
         if (current.data(Qt::DisplayRole).toString().contains(filter_->text(), Qt::CaseInsensitive))
             matches.push_back(current);
-        if (kind != "connection" && kind != "database" && kind != "schema" && kind != "group")
+        if (kind != "connection" && kind != "database" && kind != "schema" && kind != "group" &&
+            kind != "table" && kind != "view")
             continue;
         if (!current.data(NavigatorModel::ErrorRole).toString().isEmpty())
             incomplete = true;
