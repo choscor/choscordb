@@ -166,6 +166,14 @@ void ModernUiTest::recoveryKeepsUnavailableToolbarActionsDisabled() {
                                       Q_ARG(QString, QStringLiteral("Save failed")),
                                       Q_ARG(bool, true)));
     QVERIFY(!save->isEnabled());
+    auto* toast =
+        window.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
+    QVERIFY(toast && toast->isVisible());
+    auto* dismiss = toast->findChild<QToolButton*>("toastDismiss");
+    QVERIFY(dismiss);
+    dismiss->click();
+    QVERIFY(!save->isEnabled());
+    QVERIFY(window.findChild<QAction*>("closeWithoutRecovery")->isEnabled());
     window.findChild<QAction*>("cancelRecoveryClose")->trigger();
     QVERIFY(save->isEnabled());
     for (const char* name : {"runStatementButton", "cancelQueryButton", "queryResultAddRow",

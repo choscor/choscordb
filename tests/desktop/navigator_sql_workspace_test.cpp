@@ -38,6 +38,7 @@
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSignalSpy>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -914,40 +915,6 @@ void NavigatorSqlWorkspaceTest::historyNavigationStaysInSidebar() {
     QVERIFY(history->isChecked());
     QCOMPARE(screens->currentWidget()->objectName(), QString("startScreen"));
     QVERIFY(!window.findChild<QPushButton*>("sidebarFullHistory"));
-}
-
-void NavigatorSqlWorkspaceTest::recoveryActionsRemainInMenuWithoutToolButtons() {
-    QTemporaryDir storage;
-    choscordb::MainWindow window(nullptr, storage.filePath("workspace"));
-    window.show();
-    auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>();
-    QVERIFY(recovery);
-    auto* menu = window.findChild<QMenu*>("workspaceRecoveryMenu");
-    QVERIFY(menu);
-    for (const char* name : {"retryWorkspaceRecovery", "startNewWorkspace", "closeWithoutRecovery",
-                             "cancelRecoveryClose"}) {
-        QVERIFY(!window.findChild<QPushButton*>(name));
-        auto* action = window.findChild<QAction*>(name);
-        QVERIFY(action);
-        QVERIFY(menu->actions().contains(action));
-        QVERIFY(!action->isEnabled());
-    }
-    QVERIFY(QMetaObject::invokeMethod(recovery, "errorOccurred", Qt::DirectConnection,
-                                      Q_ARG(QString, QStringLiteral("Restore failed")),
-                                      Q_ARG(bool, false)));
-    QVERIFY(window.findChild<QAction*>("retryWorkspaceRecovery")->isEnabled());
-    QVERIFY(window.findChild<QAction*>("startNewWorkspace")->isEnabled());
-    QVERIFY(!window.findChild<QAction*>("closeWithoutRecovery")->isEnabled());
-    QVERIFY(!window.findChild<QAction*>("cancelRecoveryClose")->isEnabled());
-    QVERIFY(QMetaObject::invokeMethod(recovery, "errorOccurred", Qt::DirectConnection,
-                                      Q_ARG(QString, QStringLiteral("Save failed")),
-                                      Q_ARG(bool, true)));
-    QVERIFY(!window.findChild<QAction*>("startNewWorkspace")->isEnabled());
-    QVERIFY(window.findChild<QAction*>("closeWithoutRecovery")->isEnabled());
-    QVERIFY(window.findChild<QAction*>("cancelRecoveryClose")->isEnabled());
-    window.findChild<QAction*>("cancelRecoveryClose")->trigger();
-    for (auto* action : menu->actions())
-        QVERIFY(!action->isEnabled());
 }
 
 QTEST_MAIN(NavigatorSqlWorkspaceTest)

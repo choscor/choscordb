@@ -26,6 +26,9 @@ class PreviewTest final : public QObject {
     void toastCanAttachAcrossWidgetTrees();
     void windowToastClearsDestroyedModalOwner();
     void toastVariantsShowTitleBodyAndUseConfiguredTimeout();
+    void pinnedToastKeepsPriorityAndRestoresLatestNotice();
+    void dismissingPinnedToastPreservesLaterOrdinaryNotice();
+    void pinnedToastSpecimenIsPresentInBothThemes();
     void nonmodalDialogSurfaceHasNoOutline();
     void nonmodalDialogGrowsWhenDescriptionWraps();
     void galleryOpenKeepsOverlayInsideWindow_data();

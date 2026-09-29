@@ -424,6 +424,23 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         actions->addWidget(finish);
         actions->addStretch();
         layout->addLayout(actions);
+        layout->addWidget(new QLabel(
+            "A pinned recovery failure stays visible while ordinary notifications wait.", host));
+        auto* pinnedActions = new QHBoxLayout;
+        auto* showPinned = new Button("Show pinned recovery failure", host);
+        showPinned->setObjectName("previewToast_pinned");
+        QObject::connect(showPinned, &QPushButton::clicked, toast, [toast] {
+            toast->showPinnedToast("Workspace recovery failed", "invalid command input",
+                                   choscordb::ToastVariant::Danger);
+        });
+        pinnedActions->addWidget(showPinned);
+        auto* resolvePinned = new Button("Resolve recovery failure", host);
+        resolvePinned->setObjectName("previewToast_resolvePinned");
+        QObject::connect(resolvePinned, &QPushButton::clicked, toast,
+                         [toast] { toast->clearPinnedToast(); });
+        pinnedActions->addWidget(resolvePinned);
+        pinnedActions->addStretch();
+        layout->addLayout(pinnedActions);
     } else if (id == "tooltip-popover") {
         layout->addWidget(
             new QLabel("Tooltips stay inside this window without taking focus.", host));

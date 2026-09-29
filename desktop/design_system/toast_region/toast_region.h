@@ -1,6 +1,7 @@
 #pragma once
 #include <QLabel>
 #include <QPointer>
+#include <optional>
 class QTimer;
 class QToolButton;
 class QProgressBar;
@@ -17,6 +18,9 @@ class ToastRegion final : public QLabel {
     // A nonpositive duration keeps the toast visible until clearNotice().
     void showToast(const QString& title, const QString& body, ToastVariant variant,
                    int durationMs = 5000);
+    // An important notice stays in front of ordinary notifications until resolved or dismissed.
+    void showPinnedToast(const QString& title, const QString& body, ToastVariant variant);
+    void clearPinnedToast();
     // Keep a progress notice visible until a terminal toast or clearNotice().
     void showProgress(const QString& title, const QString& detail = {});
     void clearNotice();
@@ -26,7 +30,19 @@ class ToastRegion final : public QLabel {
     bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
+    struct Notice {
+        QString title;
+        QString detail;
+        ToastVariant variant = ToastVariant::Success;
+        int durationMs = 0;
+        bool progress = false;
+    };
     void display(const QString& text);
+    void renderToast(const QString& title, const QString& body, ToastVariant variant,
+                     int durationMs);
+    void renderProgress(const QString& title, const QString& detail);
+    void clearVisibleNotice();
+    void dismissNotice();
     void placeOverlay();
     QPointer<QWidget> overlayHost_;
     QTimer* timer_;
@@ -35,6 +51,9 @@ class ToastRegion final : public QLabel {
     QGraphicsOpacityEffect* opacity_;
     QPropertyAnimation* fade_;
     bool dismissing_ = false;
+    bool pinned_ = false;
+    std::optional<Notice> currentNotice_;
+    std::optional<Notice> queuedNotice_;
 };
 // Shared window-level notification surface, including while an embedded modal is open.
 ToastRegion* windowToast(QWidget* context);
