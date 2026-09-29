@@ -520,6 +520,7 @@ void WorkspaceTest::connectionManualPasswordIsOptionalAndUsesOneCredentialChoice
     QSignalSpy saved(&adapter, &choscordb::EngineAdapter::profileSaved);
     save->click();
     QTRY_COMPARE(saved.count(), 1);
+    QTRY_VERIFY(save->isEnabled());
     auto profile = qvariant_cast<choscordb::SavedProfile>(saved.at(0).at(1));
     QCOMPARE(profile.tls, QString("prefer"));
     QVERIFY(profile.credentialRef.isEmpty());
@@ -527,6 +528,7 @@ void WorkspaceTest::connectionManualPasswordIsOptionalAndUsesOneCredentialChoice
     password->setModified(true);
     save->click();
     QTRY_COMPARE(saved.count(), 2);
+    QTRY_VERIFY(save->isEnabled());
     profile = qvariant_cast<choscordb::SavedProfile>(saved.at(1).at(1));
     QVERIFY(profile.credentialRef.isEmpty());
     QCOMPARE(password->text(), QString("session-only-secret"));
@@ -549,7 +551,9 @@ void WorkspaceTest::connectionManualPasswordIsOptionalAndUsesOneCredentialChoice
     QVERIFY(profiles.front().credentialRef.isEmpty());
     dialog.findChild<QSpinBox*>("profilePort")->setValue(1);
     QSignalSpy submitted(&dialog, &choscordb::ProfileDialog::connectionSubmitted);
-    dialog.findChild<QPushButton*>("profileSaveConnect")->click();
+    auto* saveConnect = dialog.findChild<QPushButton*>("profileSaveConnect");
+    QTRY_VERIFY(saveConnect->isEnabled());
+    saveConnect->click();
     QTRY_COMPARE(saved.count(), 3);
     QTRY_COMPARE(submitted.count(), 1);
     QCOMPARE(password->text(), QString("session-only-secret"));

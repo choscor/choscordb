@@ -96,7 +96,22 @@ int main(void) {
 }
 """,
             )
-            exits = compile_exe("exits", "int main(void) { return 7; }\n")
+            exits = compile_exe(
+                "exits",
+                r"""
+int main(void) {
+  wchar_t path[MAX_PATH]; DWORD n;
+  HANDLE h;
+  n = GetEnvironmentVariableW(L"CHOSCORDB_TEST_NEW_LAUNCHED", path, MAX_PATH);
+  if (n == 0 || n >= MAX_PATH) return 8;
+  h = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                  FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE) return 9;
+  CloseHandle(h);
+  return 7;
+}
+""",
+            )
             ready = compile_exe(
                 "ready",
                 r"""
@@ -137,9 +152,11 @@ int main(void) {
             good_setup = installer(ready, "ChoscorDB-test-good-setup.exe")
             old_bytes = old.read_bytes()
             old_launched = work / "old-launched"
+            new_launched = work / "new-launched"
             installer_env = {
                 **os.environ,
                 "CHOSCORDB_TEST_OLD_LAUNCHED": str(old_launched),
+                "CHOSCORDB_TEST_NEW_LAUNCHED": str(new_launched),
             }
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, registration):
                 pass
@@ -147,13 +164,18 @@ int main(void) {
             self.assertNotEqual(blocked.returncode, 0)
             self.assertTrue(registered())
             self.assertFalse(root.exists())
+            self.assertFalse(new_launched.exists())
             winreg.DeleteKey(winreg.HKEY_CURRENT_USER, registration)
             marker.unlink(missing_ok=True)
-            # A clean account must pass uninstall-key enumeration promptly.
+            # Prove a clean account reaches startup verification rather than
+            # accepting a registration-enumeration failure as a startup failure.
+            # The helper has a 60-second readiness window; use the same bounded
+            # launch/rollback budget as the upgrade cases below.
             first_failed = subprocess.run(
-                [bad_setup, "/S"], env=installer_env, timeout=30
+                [bad_setup, "/S"], env=installer_env, timeout=90
             )
             self.assertNotEqual(first_failed.returncode, 0)
+            self.assertTrue(new_launched.exists())
             self.assertFalse(root.exists())
             self.assertFalse(registered())
             self.assertFalse(shortcut.exists())
