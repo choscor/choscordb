@@ -16,45 +16,45 @@ inline CellDto cellDto(const Cell& value, bool eligibilityOnly = false,
     };
     if (std::holds_alternative<std::monostate>(value))
         result.kind = "null";
-    else if (const auto* typed = std::get_if<bool>(&value)) {
+    else if (const auto* booleanValue = std::get_if<bool>(&value)) {
         result.kind = "boolean";
-        result.boolean = *typed;
-    } else if (const auto* typed = std::get_if<qint64>(&value)) {
+        result.boolean = *booleanValue;
+    } else if (const auto* integerValue = std::get_if<qint64>(&value)) {
         result.kind = "integer";
-        result.integer = *typed;
-    } else if (const auto* typed = std::get_if<double>(&value)) {
+        result.integer = *integerValue;
+    } else if (const auto* realValue = std::get_if<double>(&value)) {
         result.kind = "real";
-        result.real = *typed;
-    } else if (const auto* typed = std::get_if<DecimalValue>(&value)) {
+        result.real = *realValue;
+    } else if (const auto* decimalValue = std::get_if<DecimalValue>(&value)) {
         result.kind = "decimal";
         if (!eligibilityOnly)
-            result.text = string(typed->text);
-    } else if (const auto* typed = std::get_if<QString>(&value)) {
+            result.text = string(decimalValue->text);
+    } else if (const auto* textValue = std::get_if<QString>(&value)) {
         result.kind = "text";
         if (!eligibilityOnly)
-            result.text = string(*typed);
-    } else if (const auto* typed = std::get_if<QByteArray>(&value)) {
+            result.text = string(*textValue);
+    } else if (const auto* binaryValue = std::get_if<QByteArray>(&value)) {
         result.kind = "binary";
         if (!eligibilityOnly)
-            for (const auto byte : *typed)
+            for (const auto byte : *binaryValue)
                 result.bytes.push_back(static_cast<uint8_t>(byte));
-    } else if (const auto* typed = std::get_if<DeferredValue>(&value)) {
-        result.kind = typed->fallback ? "deferred_fallback" : "deferred";
-        result.handle = typed->handle;
-        result.byte_length = typed->bytes;
+    } else if (const auto* deferredValue = std::get_if<DeferredValue>(&value)) {
+        result.kind = deferredValue->fallback ? "deferred_fallback" : "deferred";
+        result.handle = deferredValue->handle;
+        result.byte_length = deferredValue->bytes;
         if (!eligibilityOnly)
-            result.database_type = string(typed->type);
-    } else if (const auto* typed = std::get_if<FallbackText>(&value)) {
+            result.database_type = string(deferredValue->type);
+    } else if (const auto* fallbackValue = std::get_if<FallbackText>(&value)) {
         result.kind = "fallback_text";
         if (!eligibilityOnly) {
-            result.text = string(typed->text);
-            result.database_type = string(typed->databaseType);
+            result.text = string(fallbackValue->text);
+            result.database_type = string(fallbackValue->databaseType);
         }
-    } else if (const auto* typed = std::get_if<UnavailableValue>(&value)) {
+    } else if (const auto* unavailableValue = std::get_if<UnavailableValue>(&value)) {
         result.kind = "unavailable";
         if (!eligibilityOnly) {
-            result.text = string(typed->reason);
-            result.database_type = string(typed->databaseType);
+            result.text = string(unavailableValue->reason);
+            result.database_type = string(unavailableValue->databaseType);
         }
     }
     if (validUnicode)

@@ -532,8 +532,19 @@ void WorkspaceTest::connectionManualPasswordIsOptionalAndUsesOneCredentialChoice
     QCOMPARE(password->text(), QString("session-only-secret"));
     QSignalSpy listed(&adapter, &choscordb::EngineAdapter::profilesReady);
     adapter.listProfiles(413);
-    QTRY_COMPARE(listed.count(), 1);
-    const auto profiles = qvariant_cast<QList<choscordb::SavedProfile>>(listed.at(0).at(1));
+    QList<QVariant> requestedReply;
+    QTRY_VERIFY([&] {
+        int matches = 0;
+        for (const auto& reply : listed)
+            if (reply.at(0).toULongLong() == 413) {
+                requestedReply = reply;
+                ++matches;
+            }
+        return matches == 1;
+    }());
+    // The dialog also refreshes profiles after saving. Assert our request's
+    // response rather than counting unrelated asynchronous refresh replies.
+    const auto profiles = qvariant_cast<QList<choscordb::SavedProfile>>(requestedReply.at(1));
     QCOMPARE(profiles.size(), 1);
     QVERIFY(profiles.front().credentialRef.isEmpty());
     dialog.findChild<QSpinBox*>("profilePort")->setValue(1);

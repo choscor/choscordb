@@ -12,6 +12,7 @@
 #include <QCoreApplication>
 #include <QFontMetrics>
 #include <QMenu>
+#include <QPainter>
 #include <QPersistentModelIndex>
 #include <QScrollBar>
 #include <QSortFilterProxyModel>
@@ -167,7 +168,6 @@ void SchemaSidebarWorkspaceTest::columnRowsShowDeclaredTypesWithoutLosingTheirNa
         tree->setFixedWidth(220);
         QCoreApplication::processEvents();
         QTRY_COMPARE(tree->verticalScrollBar()->maximum(), 0);
-        const auto image = tree->viewport()->grab().toImage();
         const auto shortRect = tree->visualRect(shortRow);
         const auto longRect = tree->visualRect(longRow);
         const auto longTypeRect = tree->visualRect(longTypeRow);
@@ -180,7 +180,18 @@ void SchemaSidebarWorkspaceTest::columnRowsShowDeclaredTypesWithoutLosingTheirNa
         const QFontMetrics detailMetrics(
             design::resolveTypography(design::TypographyRole::NavigationDetail));
         QVERIFY(detailMetrics.horizontalAdvance(longType.databaseType) > longTypeRect.width());
-        const auto detailStrip = image.copy(longTypeRect);
+        // Paint the same delegate at high resolution so small antialiased
+        // glyphs have interior pixels for the exact semantic-color assertion.
+        // Cropping a logical viewport rectangle also mismatches high-DPI grabs.
+        QImage detailStrip(longTypeRect.size() * 4, QImage::Format_ARGB32_Premultiplied);
+        detailStrip.setDevicePixelRatio(4);
+        detailStrip.fill(Qt::transparent);
+        QStyleOptionViewItem paintOption;
+        paintOption.widget = tree;
+        paintOption.rect = QRect(QPoint{}, longTypeRect.size());
+        QPainter painter(&detailStrip);
+        tree->itemDelegate()->paint(&painter, paintOption, longTypeRow);
+        painter.end();
         const auto muted = theme->resolvedTheme().colors.mutedText;
         int mutedPixels = 0;
         for (int y = 0; y < detailStrip.height(); ++y)
