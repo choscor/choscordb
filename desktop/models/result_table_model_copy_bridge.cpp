@@ -62,7 +62,7 @@ ResultTableModel::CopyEvaluation ResultTableModel::evaluateCopy(CopySnapshot sna
     }
     const auto result = render_copy_tsv_policy(std::move(request));
     if (!result.error.empty())
-        return {.error = copyError(result)};
-    return {.text = text(result.text)};
+        return {.text = {}, .error = copyError(result)};
+    return {.text = text(result.text), .error = {}};
 }
 } // namespace choscordb
