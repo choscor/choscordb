@@ -532,9 +532,20 @@ class DiagnosticsServiceTest : public QObject {
         QVERIFY(service.start());
         service.sampleMemory(1);
         service.flush();
-        QByteArray allocation(32 * 1024 * 1024, char(0x5a));
-        QVERIFY(allocation.size() == 32 * 1024 * 1024);
         QTest::qSleep(5200);
+        QByteArray allocation(32 * 1024 * 1024, Qt::Uninitialized);
+        // Touch every byte immediately before sampling. A repeated-byte buffer
+        // left idle during the rate-limit wait can be compressed by macOS and
+        // no longer represents the resident growth this test measures.
+        quint32 state = 0x9e3779b9;
+        volatile char* bytes = allocation.data();
+        for (qsizetype i = 0; i < allocation.size(); ++i) {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            bytes[i] = char(state & 0xff);
+        }
+        QVERIFY(allocation.size() == 32 * 1024 * 1024);
         service.sampleMemory(2, true);
         service.sampleMemory(3, true);
         service.flush();

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## [0.1.8]
+
+- Added signed update checks and installation for Windows and Linux, with a per-user Windows installer.
+- Added syntax-colored JSON views for cells, rows, and result pages.
+- Improved viewing, copying, and exporting binary and unfamiliar database values, including PostgreSQL text fallbacks.
+- Added expandable sidebar pins and more compact schema object columns.
+- Improved relationship diagram navigation and layout for dense schemas.
+- Show workspace recovery failures in window notifications.
+- Fixed recent-object navigation when quick search reopens immediately after closing tabs.
+
 - Added local diagnostics with a Help action to review and export a privacy-safe ZIP manually.
   Reports include bounded typed events, UI stalls, memory trends, and unclean-exit evidence.
   They do not include SQL, result data, raw crash reports, or stack traces. A stale run

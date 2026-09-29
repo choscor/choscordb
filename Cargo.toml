@@ -7,7 +7,7 @@ resolver = "3"
 tokio-postgres = { path = "crates/driver-postgres/third_party/tokio-postgres" }
 
 [workspace.package]
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 license = "GPL-3.0-or-later"
 

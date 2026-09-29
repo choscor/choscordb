@@ -52,8 +52,10 @@ void MainWindow::showQuickSearch() {
                 &MainWindow::updateQuickSearch);
         connect(quickSearch_, &design::QuickSearchDialog::activated, this,
                 &MainWindow::activateQuickSearch);
-        connect(editors_, &QTabWidget::tabCloseRequested, this,
-                [this] { QTimer::singleShot(0, this, &MainWindow::refreshQuickSearchIfOpen); });
+        connect(editors_, &QTabWidget::tabCloseRequested, this, [this] {
+            if (quickSearch_->isVisible())
+                QTimer::singleShot(0, this, &MainWindow::refreshQuickSearchIfOpen);
+        });
         connect(quickSearch_, &QDialog::finished, this, [this] {
             ++quickSearchGeneration_;
             quickHistoryToken_ = 0;
