@@ -57,7 +57,7 @@ Function .onInit
   ${If} $WaitPid != ""
     IntCmp $WaitPid 1 bad_pid valid_pid valid_pid
     bad_pid:
-      MessageBox MB_ICONSTOP "The updater process identifier is invalid."
+      MessageBox MB_ICONSTOP "The updater process identifier is invalid." /SD IDOK
       Abort
     valid_pid:
   ${EndIf}
@@ -125,7 +125,7 @@ Section "Install"
   IfFileExists "$PendingDir" pending_conflict previous_check
   pending_conflict:
     StrCpy $OldRestored "0"
-    MessageBox MB_ICONSTOP "An incomplete ChoscorDB staging directory needs manual review."
+    MessageBox MB_ICONSTOP "An incomplete ChoscorDB staging directory needs manual review." /SD IDOK
     Call FailInstall
     Abort
   previous_check:
@@ -147,7 +147,7 @@ Section "Install"
     Goto registration_check
   manual_previous:
     StrCpy $OldRestored "0"
-    MessageBox MB_ICONSTOP "A previous ChoscorDB backup needs manual review."
+    MessageBox MB_ICONSTOP "A previous ChoscorDB backup needs manual review." /SD IDOK
     Call FailInstall
     Abort
   registration_check:
@@ -162,7 +162,7 @@ Section "Install"
     IntOp $R2 $R2 + 1
     Goto find_registration
   registration_failed:
-    MessageBox MB_ICONSTOP "ChoscorDB installation registration could not be checked."
+    MessageBox MB_ICONSTOP "ChoscorDB installation registration could not be checked." /SD IDOK
     Call FailInstall
     Abort
   registration_absent:
@@ -170,13 +170,13 @@ Section "Install"
   ${EndIf}
   Goto no_restart_check
   unknown_registration:
-    MessageBox MB_ICONSTOP "ChoscorDB registration exists without an installation; review it manually."
+    MessageBox MB_ICONSTOP "ChoscorDB registration exists without an installation; review it manually." /SD IDOK
     Call FailInstall
     Abort
   no_restart_check:
   ${If} $NoRestart == "1"
     ${If} $OldRestored == "1"
-      MessageBox MB_ICONSTOP "An upgrade must restart ChoscorDB to verify it."
+      MessageBox MB_ICONSTOP "An upgrade must restart ChoscorDB to verify it." /SD IDOK
       Call FailInstall
       Abort
     ${EndIf}
@@ -191,7 +191,7 @@ Section "Install"
   IfErrors incomplete_payload
   IfFileExists "$PendingDir\choscordb.exe" wait_for_close incomplete_payload
   incomplete_payload:
-    MessageBox MB_ICONSTOP "The installer payload is incomplete."
+    MessageBox MB_ICONSTOP "The installer payload is incomplete." /SD IDOK
     Call FailInstall
     Abort
   wait_for_close:
@@ -202,13 +202,13 @@ Section "Install"
       System::Call 'kernel32::WaitForSingleObject(p r1, i 300000) i .r2'
       System::Call 'kernel32::CloseHandle(p r1)'
       ${If} $2 != 0
-        MessageBox MB_ICONSTOP "ChoscorDB did not close in time. Retry the update."
+        MessageBox MB_ICONSTOP "ChoscorDB did not close in time. Retry the update." /SD IDOK
         Call FailInstall
         Abort
       ${EndIf}
     ${Else}
       ${If} $3 != 87
-        MessageBox MB_ICONSTOP "ChoscorDB process state could not be checked."
+        MessageBox MB_ICONSTOP "ChoscorDB process state could not be checked." /SD IDOK
         Call FailInstall
         Abort
       ${EndIf}
@@ -219,7 +219,7 @@ Section "Install"
   existing_path:
     IfFileExists "$INSTDIR\choscordb.exe" move_old occupied_path
   occupied_path:
-    MessageBox MB_ICONSTOP "The installation location contains unknown files."
+    MessageBox MB_ICONSTOP "The installation location contains unknown files." /SD IDOK
     Call FailInstall
     Abort
   move_old:
@@ -229,7 +229,7 @@ Section "Install"
     StrCpy $OldRestored "0"
     Goto new_install
   cannot_move_old:
-    MessageBox MB_ICONSTOP "The current installation could not be replaced."
+    MessageBox MB_ICONSTOP "The current installation could not be replaced." /SD IDOK
     Call FailInstall
     Abort
   new_install:
@@ -280,7 +280,7 @@ Section "Install"
     FileOpen $R1 "$LOCALAPPDATA\ChoscorDB\update-install-failure.txt" w
     FileWrite $R1 "ChoscorDB updated, but old backup cleanup is pending. Retry the installer or review manually.$\r$\n"
     FileClose $R1
-    MessageBox MB_ICONEXCLAMATION "ChoscorDB updated, but old backup cleanup is pending."
+    MessageBox MB_ICONEXCLAMATION "ChoscorDB updated, but old backup cleanup is pending." /SD IDOK
     SetErrorLevel 2
     Goto done_install
   clean_success:
@@ -290,7 +290,7 @@ Section "Install"
   failed_install:
     Call RestorePrevious
     Call CleanupOwnedFirstInstall
-    MessageBox MB_ICONSTOP "ChoscorDB could not be installed and started. Retry or install manually."
+    MessageBox MB_ICONSTOP "ChoscorDB could not be installed and started. Retry or install manually." /SD IDOK
     Call FailInstall
     Abort
   done_install:
