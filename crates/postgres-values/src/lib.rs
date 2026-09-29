@@ -18,6 +18,34 @@ fn bound(n: usize, max: usize) -> Result<()> {
 fn array<const N: usize>(b: &[u8]) -> Result<[u8; N]> {
     b.try_into().map_err(|_| malformed())
 }
+/// Whether this crate has a native decoder for the PostgreSQL binary result format.
+/// Other OIDs must be requested in server text format at Bind time.
+pub fn supports_binary_oid(oid: u32) -> bool {
+    matches!(
+        oid,
+        16 | 17
+            | 18
+            | 19
+            | 20
+            | 21
+            | 23
+            | 25
+            | 114
+            | 142
+            | 700
+            | 701
+            | 1042
+            | 1043
+            | 1082
+            | 1083
+            | 1114
+            | 1184
+            | 1266
+            | 1700
+            | 2950
+            | 3802
+    )
+}
 /// Decode without an allocation budget. Prefer `decode_bounded` in result pipelines.
 pub fn decode(oid: u32, bytes: Option<&[u8]>) -> Result<Value> {
     decode_bounded(oid, bytes, usize::MAX)

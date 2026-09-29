@@ -337,6 +337,12 @@ fn bound_value(value: Value) -> Result<mysql_async::Value> {
                 "Deferred or nonfinite values cannot be edited",
             ));
         }
+        Value::DeferredFallback { .. } | Value::FallbackText { .. } | Value::Unavailable { .. } => {
+            return Err(error(
+                ErrorKind::InvalidInput,
+                "Fallback or unavailable values cannot be edited",
+            ));
+        }
         Value::Binary(value) => M::Bytes(value),
         Value::Text(value)
         | Value::Decimal(value)

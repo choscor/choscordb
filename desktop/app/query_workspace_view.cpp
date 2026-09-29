@@ -90,29 +90,40 @@ void QueryWorkspace::setupResultViewControls() {
                 });
         connect(filterBar_, &ResultFilterBar::clearRequested, this,
                 [this] { requestResultView({}, viewSortColumn_, viewSortDirection_); });
-        connect(widgets_.grid->horizontalHeader(), &QHeaderView::sectionClicked, this,
-                [this](int column) {
-                    if (referenceFilterFailed_)
-                        return;
-                    if (std::any_of(model_->rows().begin(), model_->rows().end(),
-                                    [column](const auto& row) {
-                                        return column >= 0 &&
-                                               column < static_cast<int>(row.size()) &&
-                                               std::holds_alternative<DeferredValue>(row[column]);
-                                    })) {
-                        message(tr("Large deferred values cannot be sorted."));
-                        return;
-                    }
-                    QString direction = QStringLiteral("ascending");
-                    qint32 nextColumn = column;
-                    if (viewSortColumn_ == column && viewSortDirection_ == "ascending")
-                        direction = QStringLiteral("descending");
-                    else if (viewSortColumn_ == column && viewSortDirection_ == "descending") {
-                        nextColumn = -1;
-                        direction.clear();
-                    }
-                    requestResultView(viewFilters_, nextColumn, direction);
-                });
+        connect(
+            widgets_.grid->horizontalHeader(), &QHeaderView::sectionClicked, this,
+            [this](int column) {
+                if (referenceFilterFailed_)
+                    return;
+                if (std::any_of(model_->rows().begin(), model_->rows().end(),
+                                [column](const auto& row) {
+                                    return column >= 0 && column < static_cast<int>(row.size()) &&
+                                           (std::holds_alternative<FallbackText>(row[column]) ||
+                                            std::holds_alternative<UnavailableValue>(row[column]) ||
+                                            (std::holds_alternative<DeferredValue>(row[column]) &&
+                                             std::get<DeferredValue>(row[column]).fallback));
+                                })) {
+                    message(tr("Fallback or unavailable values cannot be sorted safely."));
+                    return;
+                }
+                if (std::any_of(model_->rows().begin(), model_->rows().end(),
+                                [column](const auto& row) {
+                                    return column >= 0 && column < static_cast<int>(row.size()) &&
+                                           std::holds_alternative<DeferredValue>(row[column]);
+                                })) {
+                    message(tr("Large deferred values cannot be sorted."));
+                    return;
+                }
+                QString direction = QStringLiteral("ascending");
+                qint32 nextColumn = column;
+                if (viewSortColumn_ == column && viewSortDirection_ == "ascending")
+                    direction = QStringLiteral("descending");
+                else if (viewSortColumn_ == column && viewSortDirection_ == "descending") {
+                    nextColumn = -1;
+                    direction.clear();
+                }
+                requestResultView(viewFilters_, nextColumn, direction);
+            });
     }
 }
 

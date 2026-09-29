@@ -15,6 +15,23 @@ pub enum Value {
     Uuid(String),
     Json(String),
     Binary(Vec<u8>),
+    /// PostgreSQL or another server's text output for a type without a native decoder.
+    /// This is presentation data, not a native text value suitable for predicates or edits.
+    FallbackText {
+        text: String,
+        database_type: String,
+    },
+    /// A chunk-readable server text representation of an unfamiliar type.
+    DeferredFallback {
+        handle: Handle,
+        byte_length: u64,
+        database_type: String,
+    },
+    /// Only a value conversion failed; the surrounding result remains readable.
+    Unavailable {
+        database_type: String,
+        reason: String,
+    },
     Deferred {
         handle: Handle,
         byte_length: u64,
@@ -33,6 +50,15 @@ impl Value {
                 | Self::Uuid(s)
                 | Self::Json(s) => s.capacity(),
                 Self::Binary(b) => b.capacity(),
+                Self::FallbackText {
+                    text,
+                    database_type,
+                } => text.capacity() + database_type.capacity(),
+                Self::Unavailable {
+                    database_type,
+                    reason,
+                } => database_type.capacity() + reason.capacity(),
+                Self::DeferredFallback { database_type, .. } => database_type.capacity(),
                 Self::Deferred { database_type, .. } => database_type.capacity(),
                 _ => 0,
             }

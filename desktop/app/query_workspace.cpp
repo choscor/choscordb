@@ -14,8 +14,6 @@
 #include "widgets/sql_editor/sql_editor.h"
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
 #include <QAction>
-#include <QApplication>
-#include <QClipboard>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -81,6 +79,30 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             export_->raise();
         });
     const auto openDetail = [this](const QModelIndex& index) {
+        if (index.model() != model_ || widgets_.grid->model() != model_)
+            return;
+        const auto cell = model_->cellValue(index);
+        if (!cell)
+            return;
+        if (const auto* fallback = std::get_if<FallbackText>(&*cell)) {
+            if (!detail_)
+                detail_ = new ValueDetailDialog(adapter_, widgets_.dialogParent);
+            if (!detail_->openInlineValue(
+                    fallback->text.toUtf8(),
+                    tr("Server text fallback · %1").arg(fallback->databaseType), false))
+                message(tr("The inline value exceeds the 8 MiB detail limit."));
+            return;
+        }
+        if (const auto* binary = std::get_if<QByteArray>(&*cell)) {
+            if (!detail_)
+                detail_ = new ValueDetailDialog(adapter_, widgets_.dialogParent);
+            const auto type =
+                model_->headerData(index.column(), Qt::Horizontal, ResultTableModel::HeaderTypeRole)
+                    .toString();
+            if (!detail_->openInlineValue(*binary, tr("Binary · %1").arg(type), true))
+                message(tr("The inline value exceeds the 8 MiB detail limit."));
+            return;
+        }
         if (!query_ || !queryAvailable())
             return;
         const auto value = model_->deferredValue(index);
@@ -88,7 +110,10 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             return;
         if (!detail_)
             detail_ = new ValueDetailDialog(adapter_, widgets_.dialogParent);
-        detail_->openValue(*query_, value->handle, value->type, value->bytes);
+        detail_->openValue(*query_, value->handle,
+                           value->fallback ? tr("Server text fallback · %1").arg(value->type)
+                                           : value->type,
+                           value->bytes);
     };
     connect(widgets_.grid, &QTableView::doubleClicked, this, openDetail);
     connect(widgets_.grid, &QTableView::activated, this, openDetail);
@@ -98,8 +123,21 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         connect(widgets_.addRow, &QPushButton::clicked, model_, &ResultTableModel::addRow);
     if (widgets_.deleteRows)
         connect(widgets_.deleteRows, &QPushButton::clicked, this, [this] {
-            if (widgets_.grid->selectionModel())
-                model_->markDeleted(widgets_.grid->selectionModel()->selectedIndexes(), true);
+            if (!widgets_.grid->selectionModel())
+                return;
+            const auto selection = widgets_.grid->selectionModel()->selectedIndexes();
+            for (const auto& index : selection)
+                if (index.isValid() && index.model() == model_ && index.row() >= 0 &&
+                    index.row() < model_->rowCount() &&
+                    std::any_of(model_->rows()[index.row()].begin(),
+                                model_->rows()[index.row()].end(), [](const Cell& value) {
+                                    return std::holds_alternative<FallbackText>(value) ||
+                                           std::holds_alternative<UnavailableValue>(value);
+                                })) {
+                    message(tr("Rows with fallback or unavailable values cannot be deleted."));
+                    break;
+                }
+            model_->markDeleted(selection, true);
         });
     if (widgets_.restoreRows)
         connect(widgets_.restoreRows, &QPushButton::clicked, this, [this] {
@@ -120,13 +158,26 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 &QueryWorkspace::applyStagedEdits);
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleEvent);
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleRowJsonEvent);
+    connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleCopyEvent);
     connect(adapter_, &EngineAdapter::valueChunkSubmissionFailed, this,
             [this](quint64 query, quint64 handle, quint64 offset, const QString& error) {
                 if (rowJsonQuery_ == query && rowJsonLoadingColumn_ >= 0 &&
                     rowJsonLoadingHandle_ == handle && rowJsonLoadingOffset_ == offset)
                     failRowJson(error);
+                if (pendingCopy_ && pendingCopy_->query == query &&
+                    pendingCopy_->next < pendingCopy_->deferred.size()) {
+                    const auto [row, column] = pendingCopy_->deferred[pendingCopy_->next];
+                    const auto value = model_->deferredValue(model_->index(row, column));
+                    if (value && value->handle == handle && pendingCopy_->offset == offset)
+                        failCopy(error);
+                }
             });
-    connect(model_, &QAbstractItemModel::modelReset, this, [this] { clearRowJson(); });
+    connect(model_, &QAbstractItemModel::modelReset, this, [this] {
+        clearRowJson();
+        pendingCopy_.reset();
+    });
+    connect(model_, &QAbstractItemModel::rowsInserted, this, [this] { pendingCopy_.reset(); });
+    connect(model_, &QAbstractItemModel::rowsRemoved, this, [this] { pendingCopy_.reset(); });
     connect(model_, &QAbstractItemModel::dataChanged, this,
             [this](const QModelIndex& first, const QModelIndex& last) {
                 if (rowJsonIndex_.isValid() && first.row() <= rowJsonIndex_.row() &&
@@ -236,32 +287,12 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 adapter_->fetchPageAt(*query_, *currentPage_ - 1);
             }
         });
-    const auto copyScope = [this](int scope) {
-        if (widgets_.grid->model() != model_ || !widgets_.grid->selectionModel() ||
-            widgets_.grid->selectionModel()->model() != model_) {
-            message(tr("The result page is no longer available."));
-            return;
-        }
-        const auto selection =
-            scope == 2 ? QModelIndexList{} : widgets_.grid->selectionModel()->selectedIndexes();
-        if ((scope != 2 && selection.isEmpty()) || !model_->rowCount() || !model_->columnCount())
-            return;
-        QString error;
-        const auto copied = scope == 0   ? model_->copyCells(selection, &error)
-                            : scope == 1 ? model_->copyRows(selection, &error)
-                                         : model_->copyPage(&error);
-        if (!error.isEmpty())
-            message(error);
-        else
-            QApplication::clipboard()->setText(copied);
-    };
     auto* copy = new QShortcut(QKeySequence::Copy, widgets_.grid);
     copy->setContext(Qt::WidgetWithChildrenShortcut);
-    connect(copy, &QShortcut::activated, this, [copyScope] { copyScope(0); });
+    connect(copy, &QShortcut::activated, this, [this] { copyResult(0); });
     widgets_.grid->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(
-        widgets_.grid, &QTableView::customContextMenuRequested, this,
-        [this, copyScope](const QPoint& point) {
+        widgets_.grid, &QTableView::customContextMenuRequested, this, [this](const QPoint& point) {
             QMenu menu(widgets_.grid);
             menu.setToolTipsVisible(true);
             const bool current = widgets_.grid->model() == model_ &&
@@ -274,10 +305,13 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             bool jsonAvailable = current && clicked.isValid() && clicked.model() == model_ &&
                                  clicked.row() >= 0 && clicked.row() < model_->rowCount();
             if (jsonAvailable) {
-                const auto readiness = model_->rowJsonReadiness(clicked.row());
+                QString jsonError;
+                const auto readiness = model_->rowJsonReadiness(clicked.row(), &jsonError);
                 jsonAvailable = readiness == ResultTableModel::RowJsonReadiness::Ready ||
                                 (readiness == ResultTableModel::RowJsonReadiness::NeedsDeferred &&
                                  query_ && queryAvailable());
+                if (!jsonAvailable && !jsonError.isEmpty())
+                    viewJson->setToolTip(jsonError);
             }
             viewJson->setEnabled(jsonAvailable);
             connect(viewJson, &QAction::triggered, this, [this, clicked] {
@@ -296,8 +330,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 action->setEnabled(scope == 2 ? current && model_->rowCount() > 0 &&
                                                     model_->columnCount() > 0
                                               : selected);
-                connect(action, &QAction::triggered, this,
-                        [copyScope, scope] { copyScope(scope); });
+                connect(action, &QAction::triggered, this, [this, scope] { copyResult(scope); });
             }
             if (widgets_.addRow || widgets_.deleteRows || widgets_.restoreRows ||
                 widgets_.setNull) {
@@ -375,219 +408,6 @@ bool QueryWorkspace::resolvePendingEdits() {
         return applyStagedEdits();
     }
     return false;
-}
-void QueryWorkspace::configureEditability() {
-    if (widgets_.objectReadOnly && model_->columnCount() == static_cast<int>(editKey_.size()))
-        model_->setKeyColumns(editKey_);
-    if (editQualifiedName_.isEmpty() ||
-        (!editReason_.isEmpty() &&
-         !(widgets_.objectReadOnly && editReason_.contains("inserts only", Qt::CaseInsensitive))) ||
-        model_->columnCount() != static_cast<int>(editColumnNames_.size()))
-        return;
-    std::vector<bool> editable(editColumnNames_.size()), insertEditable(editColumnNames_.size());
-    bool aligned = true, keyed = false;
-    for (size_t i = 0; i < editable.size(); ++i) {
-        aligned &= !widgets_.objectReadOnly || columns_[i].name == editColumnNames_[i];
-        keyed |= editKey_[i];
-        editable[i] = !editColumnNames_[i].isEmpty() && !editKey_[i] && !editGenerated_[i];
-        insertEditable[i] = !editColumnNames_[i].isEmpty() && !editGenerated_[i];
-    }
-    if (!aligned) {
-        editReason_ = tr("Result columns do not match table metadata.");
-        return;
-    }
-    if (!keyed)
-        std::fill(editable.begin(), editable.end(), false);
-    const auto comparableType = [](QString type) {
-        type = type.toLower();
-        return type == "integer" || type == "bigint" || type == "smallint" || type == "boolean" ||
-               type == "text" || type == "uuid" || type == "date" ||
-               type == "time without time zone" || type == "time with time zone" ||
-               type.startsWith("timestamp") || type.startsWith("character") ||
-               type.startsWith("varchar") || type.startsWith("numeric") ||
-               type.startsWith("decimal") || type == "real" || type == "double precision" ||
-               type == "jsonb";
-    };
-    if (editParameterStyle_ == "$")
-        for (size_t i = 0; i < columns_.size(); ++i)
-            if (!editColumnNames_[i].isEmpty() && !comparableType(columns_[i].databaseType) &&
-                !(i < cellMetadata_.size() && !cellMetadata_[i].enumChoices.isEmpty() &&
-                  cellMetadata_[i].sourceColumn == editColumnNames_[i])) {
-                keyed = false;
-                std::fill(editable.begin(), editable.end(), false);
-                break;
-            }
-    for (const auto& row : model_->rows())
-        if (std::any_of(row.begin(), row.end(), [](const Cell& value) {
-                return std::holds_alternative<DeferredValue>(value) ||
-                       std::holds_alternative<QByteArray>(value);
-            })) {
-            keyed = false;
-            std::fill(editable.begin(), editable.end(), false);
-            editReason_ = tr("Binary or deferred original values prevent safe conflict checks; "
-                             "inserts remain available.");
-            break;
-        }
-    model_->setEditableColumns(std::move(editable), true, keyed, std::move(insertEditable));
-    updateActions();
-}
-bool QueryWorkspace::applyStagedEdits() {
-    if (!model_->hasPendingEdits())
-        return true;
-    if (!queryConnection_ || workInFlight() || editApplying_ || editQualifiedName_.isEmpty())
-        return false;
-    if (pendingTransactions_.contains(*queryConnection_) ||
-        (widgets_.transactionActive && widgets_.transactionActive(*queryConnection_))) {
-        message(tr("Commit or roll back the manual transaction before applying grid changes."));
-        return false;
-    }
-    const bool mysql = driverForConnection(*queryConnection_) == QStringLiteral("mysql");
-    const auto quoted = [mysql](QString name) {
-        if (mysql) {
-            name.replace('`', QStringLiteral("``"));
-            return QStringLiteral("`") + name + QStringLiteral("`");
-        }
-        name.replace('"', QStringLiteral("\"\""));
-        return QStringLiteral("\"") + name + QStringLiteral("\"");
-    };
-    const bool postgres = editParameterStyle_ == QStringLiteral("$");
-    std::vector<ReviewedEditStatement> batch;
-    QString review;
-    const auto& rows = model_->rows();
-    const auto& originals = model_->originalRows();
-    const auto& touched = model_->touched();
-    const auto& inserted = model_->inserted();
-    const auto& deleted = model_->deleted();
-    for (size_t r = 0; r < rows.size(); ++r) {
-        if (!inserted[r] && !deleted[r] &&
-            std::none_of(touched[r].begin(), touched[r].end(), [](bool v) { return v; }))
-            continue;
-        ReviewedEditStatement statement;
-        const auto bind = [&](const Cell& value, size_t column) {
-            statement.params.push_back(value);
-            statement.paramTypes.push_back(columns_[column].databaseType);
-            return postgres ? QStringLiteral("$") + QString::number(statement.params.size())
-                            : QStringLiteral("?");
-        };
-        if (inserted[r] && deleted[r])
-            continue;
-        if (inserted[r]) {
-            QStringList names, values;
-            for (size_t c = 0; c < editColumnNames_.size(); ++c)
-                if (touched[r][c] && !editGenerated_[c]) {
-                    names << quoted(editColumnNames_[c]);
-                    values << bind(rows[r][c], c);
-                }
-            statement.sql = names.isEmpty()
-                                ? (mysql ? QStringLiteral("INSERT INTO %1 () VALUES ()")
-                                         : QStringLiteral("INSERT INTO %1 DEFAULT VALUES"))
-                                      .arg(editQualifiedName_)
-                                : QStringLiteral("INSERT INTO %1 (%2) VALUES (%3)")
-                                      .arg(editQualifiedName_, names.join(", "), values.join(", "));
-        } else {
-            QStringList assignments, predicates;
-            if (!deleted[r])
-                for (size_t c = 0; c < editColumnNames_.size(); ++c)
-                    if (touched[r][c] && !editKey_[c] && !editGenerated_[c])
-                        assignments << quoted(editColumnNames_[c]) + " = " + bind(rows[r][c], c);
-            if (assignments.isEmpty() && !deleted[r])
-                continue;
-            for (size_t c = 0; c < editColumnNames_.size(); ++c) {
-                if (editColumnNames_[c].isEmpty())
-                    continue;
-                if (std::holds_alternative<DeferredValue>(originals[r][c])) {
-                    message(tr("Cannot safely compare a deferred original value. Load a narrower "
-                               "result."));
-                    return false;
-                }
-                predicates << quoted(editColumnNames_[c]) +
-                                  (postgres ? QStringLiteral(" IS NOT DISTINCT FROM ")
-                                   : mysql  ? QStringLiteral(" <=> ")
-                                            : QStringLiteral(" IS ")) +
-                                  bind(originals[r][c], c);
-            }
-            statement.sql = deleted[r] ? QStringLiteral("DELETE FROM %1 WHERE %2")
-                                             .arg(editQualifiedName_, predicates.join(" AND "))
-                                       : QStringLiteral("UPDATE %1 SET %2 WHERE %3")
-                                             .arg(editQualifiedName_, assignments.join(", "),
-                                                  predicates.join(" AND "));
-            statement.expectedRows = 1;
-        }
-        review += statement.sql + "\n";
-        for (size_t i = 0; i < statement.params.size(); ++i) {
-            const auto& value = statement.params[i];
-            if (const auto* binary = std::get_if<QByteArray>(&value);
-                binary && binary->size() > 65536) {
-                message(tr("Binary parameter exceeds the 64 KiB review limit; narrow the edit."));
-                return false;
-            }
-            QString shown = std::holds_alternative<std::monostate>(value) ? QStringLiteral("NULL")
-                            : std::holds_alternative<QByteArray>(value)
-                                ? QStringLiteral("binary 0x%1 (%2 bytes)")
-                                      .arg(QString::fromLatin1(std::get<QByteArray>(value).toHex()))
-                                      .arg(std::get<QByteArray>(value).size())
-                                : std::visit(
-                                      [](const auto& v) -> QString {
-                                          using T = std::decay_t<decltype(v)>;
-                                          if constexpr (std::is_same_v<T, QString>) {
-                                              QString escaped = v;
-                                              escaped.replace('\\', "\\\\");
-                                              escaped.replace('"', "\\\"");
-                                              escaped.replace('\n', "\\n");
-                                              return QStringLiteral("text \"") + escaped + '"';
-                                          } else if constexpr (std::is_same_v<T, bool>)
-                                              return v ? "true" : "false";
-                                          else if constexpr (std::is_same_v<T, DecimalValue>)
-                                              return v.text;
-                                          else if constexpr (std::is_arithmetic_v<T>)
-                                              return QString::number(v);
-                                          else
-                                              return QString{};
-                                      },
-                                      value);
-            review += tr("  Parameter %1: %2\n").arg(i + 1).arg(shown);
-        }
-        review += "\n";
-        batch.push_back(std::move(statement));
-    }
-    if (batch.empty())
-        return false;
-    design::ModalDialog box(widgets_.dialogParent);
-    box.setWindowTitle(tr("Review grid changes"));
-    auto* layout = new QVBoxLayout(&box);
-    layout->addWidget(new QLabel(tr("Statements and bound parameter values"), &box));
-    auto* preview = new QPlainTextEdit(review, &box);
-    preview->setObjectName("gridEditReview");
-    preview->setReadOnly(true);
-    layout->addWidget(preview);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &box);
-    buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));
-    connect(buttons, &QDialogButtonBox::accepted, &box, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, &box, &QDialog::reject);
-    layout->addWidget(buttons);
-    if (widgets_.dialogParent)
-        box.resize(widgets_.dialogParent->size() * (2.0 / 3.0));
-    if (box.exec() != QDialog::Accepted || !queryConnection_ ||
-        !connectionAvailable(*queryConnection_))
-        return false;
-    editApplyToken_ = nextEditRequestToken();
-    editApplying_ = true;
-    editApplied_ = false;
-    if (!adapter_->applyEditBatch(*queryConnection_, batch, editApplyToken_)) {
-        editApplying_ = false;
-        return false;
-    }
-    QEventLoop loop;
-    const auto connection =
-        connect(adapter_, &EngineAdapter::eventReady, &loop, [this, &loop](const BridgeEvent& e) {
-            if (e.request_token == editApplyToken_ &&
-                (text(e.kind) == "edit_applied" || text(e.kind) == "edit_failed"))
-                loop.quit();
-        });
-    if (editApplying_)
-        loop.exec();
-    disconnect(connection);
-    return editApplied_;
 }
 bool QueryWorkspace::connectionAvailable(quint64 connection) const {
     return connectionCanDisconnect(connection);

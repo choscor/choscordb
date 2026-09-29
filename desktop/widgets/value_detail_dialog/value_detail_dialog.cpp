@@ -23,6 +23,7 @@ QString text(const rust::String& value) {
     return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
 }
 constexpr quint32 ChunkBytes = 65536;
+constexpr qsizetype InlineLimit = 8 * 1024 * 1024;
 } // namespace
 ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter), model_(new ValuePreviewModel(this)),
@@ -98,6 +99,20 @@ void ValueDetailDialog::openValue(quint64 query, quint64 handle, const QString& 
     show();
     request(0);
 }
+bool ValueDetailDialog::openInlineValue(QByteArray bytes, const QString& type, bool binary) {
+    clearValue();
+    if (bytes.size() > InlineLimit)
+        return false;
+    inlineBytes_ = std::move(bytes);
+    inlineMode_ = true;
+    inlineBinary_ = binary;
+    total_ = static_cast<quint64>(inlineBytes_.size());
+    setWindowTitle(type.isEmpty() ? tr("Value detail")
+                                  : tr("Value detail — %1").arg(type.left(128)));
+    show();
+    request(0);
+    return true;
+}
 void ValueDetailDialog::dropChunk() {
     model_->clear();
     hasChunk_ = false;
@@ -110,6 +125,9 @@ void ValueDetailDialog::dropChunk() {
 }
 void ValueDetailDialog::clearValue() {
     query_.reset();
+    inlineMode_ = false;
+    inlineBinary_ = false;
+    inlineBytes_.clear();
     alignmentTarget_.reset();
     loading_ = false;
     dropChunk();
@@ -137,9 +155,18 @@ void ValueDetailDialog::sizeVisibleColumns() {
     table_->setColumnWidth(1, width);
 }
 void ValueDetailDialog::previousChunk() {
-    if (!query_ || loading_)
+    if ((!query_ && !inlineMode_) || loading_)
         return;
-    const auto target = offset_ > windowBytes_ ? offset_ - windowBytes_ : 0;
+    auto target = offset_ > windowBytes_ ? offset_ - windowBytes_ : 0;
+    if (inlineMode_) {
+        if (!inlineBinary_)
+            while (target > 0 &&
+                   (static_cast<unsigned char>(inlineBytes_.at(static_cast<qsizetype>(target))) &
+                    0xc0) == 0x80)
+                --target;
+        request(target);
+        return;
+    }
     if (target == 0) {
         request(0);
         return;
@@ -149,11 +176,37 @@ void ValueDetailDialog::previousChunk() {
     request(target > 3 ? target - 3 : 0, 7);
 }
 void ValueDetailDialog::request(quint64 offset, quint32 maxBytes) {
-    if (!query_ || loading_)
+    if ((!query_ && !inlineMode_) || loading_)
         return;
     // Release the displayed allocation before waiting for another transfer reservation.
     dropChunk();
     offset_ = offset;
+    if (inlineMode_) {
+        if (offset > total_) {
+            fail(tr("The inline value window is invalid."));
+            return;
+        }
+        const auto length = static_cast<qsizetype>(
+            std::min<quint64>(std::min<quint32>(maxBytes, ChunkBytes), total_ - offset));
+        if (!model_->setChunk(inlineBytes_.mid(static_cast<qsizetype>(offset), length), offset,
+                              total_, inlineBinary_)) {
+            fail(tr("The inline value window is invalid."));
+            return;
+        }
+        hasChunk_ = true;
+        nextOffset_ = model_->nextOffset();
+        windowBytes_ = ChunkBytes;
+        status_->setText(tr("Bytes %1–%2 of %3 · %4")
+                             .arg(offset_)
+                             .arg(nextOffset_)
+                             .arg(total_)
+                             .arg(inlineBinary_ ? tr("Hexadecimal") : tr("Escaped UTF-8 text")));
+        table_->scrollToTop();
+        table_->setColumnWidth(1, 500);
+        sizeVisibleColumns();
+        updateActions();
+        return;
+    }
     loading_ = true;
     status_->clear();
     progressToast(this)->showProgress(tr("Value"), tr("Loading bytes at offset %1…").arg(offset));
@@ -246,8 +299,9 @@ void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
     updateActions();
 }
 void ValueDetailDialog::updateActions() {
-    previous_->setEnabled(query_.has_value() && !loading_ && offset_ > 0);
-    next_->setEnabled(query_.has_value() && !loading_ && hasChunk_ && nextOffset_ > offset_ &&
+    const bool available = query_.has_value() || inlineMode_;
+    previous_->setEnabled(available && !loading_ && offset_ > 0);
+    next_->setEnabled(available && !loading_ && hasChunk_ && nextOffset_ > offset_ &&
                       nextOffset_ < total_);
 }
 } // namespace choscordb

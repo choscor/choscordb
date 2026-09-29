@@ -11,6 +11,71 @@ struct Active {
     summary: QuerySummary,
     completed: bool,
     lookahead: Option<Row>,
+    text_overrides: Arc<Vec<Option<String>>>,
+}
+/// PostgreSQL describes a selected domain column with its base type OID.
+/// Recover the declared domain from the source-column identity before Bind.
+pub(super) async fn text_overrides<C: tokio_postgres::GenericClient + Sync>(
+    client: &C,
+    statement: &tokio_postgres::Statement,
+    max: usize,
+) -> Result<Vec<Option<String>>> {
+    let mut origins: Vec<(u32, i16)> = statement
+        .columns()
+        .iter()
+        .filter_map(|column| column.table_oid().zip(column.column_id()))
+        .collect();
+    origins.sort_unstable();
+    origins.dedup();
+    if origins.is_empty() {
+        return Ok(vec![None; statement.columns().len()]);
+    }
+    let ids = origins
+        .iter()
+        .map(|(relation, attribute)| format!("({relation},{attribute})"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT a.attrelid, a.attnum, pg_catalog.format_type(a.atttypid, NULL) \
+         FROM pg_catalog.pg_attribute a \
+         JOIN pg_catalog.pg_type t ON t.oid = a.atttypid \
+         WHERE t.typtype = 'd' AND (a.attrelid, a.attnum) IN ({ids})"
+    );
+    // PostgreSQL identifiers are at most 63 bytes each, but quoting can
+    // double them. Reserve room for a qualified name and mapping per origin.
+    if sql
+        .len()
+        .checked_add(origins.len().checked_mul(512).ok_or_else(resource)?)
+        .is_none_or(|needed| needed > max)
+    {
+        return Err(resource());
+    }
+    let stream = client
+        .query_raw(
+            &sql,
+            std::iter::empty::<&(dyn tokio_postgres::types::ToSql + Sync)>(),
+        )
+        .await
+        .map_err(normalize)?;
+    futures_util::pin_mut!(stream);
+    let mut by_origin = std::collections::HashMap::with_capacity(origins.len());
+    while let Some(row) = stream.try_next().await.map_err(normalize)? {
+        let name: &str = row.get(2);
+        if name.len() > 320 {
+            return Err(resource());
+        }
+        by_origin.insert((row.get(0), row.get(1)), name.to_owned());
+    }
+    Ok(statement
+        .columns()
+        .iter()
+        .map(|column| {
+            column
+                .table_oid()
+                .zip(column.column_id())
+                .and_then(|origin| by_origin.get(&origin).cloned())
+        })
+        .collect())
 }
 fn stale() -> DriverError {
     DriverError::new(
@@ -176,7 +241,7 @@ async fn start(
         if needed > max {
             return Err(resource());
         }
-        let columns: Vec<Column> = statement
+        let mut columns: Vec<Column> = statement
             .columns()
             .iter()
             .map(|c| {
@@ -203,7 +268,42 @@ async fn start(
                 }
             })
             .collect();
-        let portal = tx.bind(&statement, &[]).await.map_err(normalize)?;
+        let text_overrides = text_overrides(tx, &statement, max).await?;
+        for (column, override_type) in columns.iter_mut().zip(&text_overrides) {
+            if let Some(declared_type) = override_type {
+                column.database_type = declared_type.clone();
+            }
+        }
+        let schema_bytes = columns
+            .iter()
+            .try_fold(std::mem::size_of::<Vec<Column>>(), |n, column| {
+                n.checked_add(std::mem::size_of::<Column>())?
+                    .checked_add(column.name.capacity())?
+                    .checked_add(column.database_type.capacity())?
+                    .checked_add(column.timezone.as_ref().map_or(0, String::capacity))
+            })
+            .ok_or_else(resource)?;
+        if schema_bytes > max {
+            return Err(resource());
+        }
+        let result_formats: Vec<i16> = statement
+            .columns()
+            .iter()
+            .zip(&text_overrides)
+            .map(|(column, override_type)| {
+                if override_type.is_none()
+                    && choscordb_postgres_values::supports_binary_oid(column.type_().oid())
+                {
+                    1
+                } else {
+                    0
+                }
+            })
+            .collect();
+        let portal = tx
+            .bind_with_result_formats(&statement, &[], &result_formats)
+            .await
+            .map_err(normalize)?;
         let spool = tokio::task::spawn_blocking(move || spool::Spool::new(id))
             .await
             .map_err(|_| DriverError::new(ErrorKind::Internal, "Spool worker failed"))??;
@@ -217,6 +317,7 @@ async fn start(
             summary: QuerySummary::default(),
             completed: false,
             lookahead: None,
+            text_overrides: Arc::new(text_overrides),
         };
         // Execute a bounded first row (or the complete zero-column command) before
         // returning. Merely binding would silently lose writes committed without fetch.
@@ -368,6 +469,7 @@ pub(super) fn decode(
     row: tokio_postgres::Row,
     spool: &mut spool::Spool,
     max: usize,
+    text_overrides: &[Option<String>],
 ) -> Result<Row> {
     let base = row
         .len()
@@ -382,27 +484,84 @@ pub(super) fn decode(
     for (index, column) in row.columns().iter().enumerate() {
         let raw: Raw<'_> = row.try_get(index).map_err(normalize)?;
         let oid = column.type_().oid();
+        let native =
+            text_overrides[index].is_none() && choscordb_postgres_values::supports_binary_oid(oid);
+        let database_type = text_overrides[index]
+            .as_deref()
+            .unwrap_or_else(|| column.type_().name());
         let value = if let Some(bytes) = raw.0.filter(|b| b.len() > remaining.min(64 * 1024)) {
-            let (payload, text) = match oid {
-                17 => (bytes, false),
-                25 | 1042 | 1043 | 19 | 18 | 114 | 142 => (bytes, true),
-                3802 if bytes.first() == Some(&1) => (&bytes[1..], true),
-                _ => return Err(resource()),
+            let (payload, text) = if !native {
+                (bytes, true)
+            } else {
+                match oid {
+                    17 => (bytes, false),
+                    25 | 1042 | 1043 | 19 | 18 | 114 | 142 => (bytes, true),
+                    3802 if bytes.first() == Some(&1) => (&bytes[1..], true),
+                    _ => return Err(resource()),
+                }
             };
             if text && std::str::from_utf8(payload).is_err() {
-                return Err(DriverError::new(
-                    ErrorKind::Query,
-                    "Invalid PostgreSQL UTF-8 value",
-                ));
+                if !native {
+                    Value::Unavailable {
+                        database_type: database_type.into(),
+                        reason: "Invalid server text encoding".into(),
+                    }
+                } else {
+                    return Err(DriverError::new(
+                        ErrorKind::Query,
+                        "Invalid PostgreSQL UTF-8 value",
+                    ));
+                }
+            } else {
+                if database_type.len() > remaining {
+                    return Err(resource());
+                }
+                let stored = spool.store(payload, text)?;
+                if !native {
+                    let Value::Deferred {
+                        handle,
+                        byte_length,
+                        ..
+                    } = stored
+                    else {
+                        unreachable!()
+                    };
+                    Value::DeferredFallback {
+                        handle,
+                        byte_length,
+                        database_type: database_type.into(),
+                    }
+                } else {
+                    let mut stored = stored;
+                    if let Value::Deferred { database_type, .. } = &mut stored {
+                        *database_type = column.type_().name().into();
+                    }
+                    stored
+                }
             }
-            if column.type_().name().len() > remaining {
-                return Err(resource());
+        } else if !native {
+            match raw.0 {
+                None => Value::Null,
+                Some(bytes) => match std::str::from_utf8(bytes) {
+                    Ok(text) => {
+                        if bytes
+                            .len()
+                            .checked_add(database_type.len())
+                            .is_none_or(|n| n > remaining)
+                        {
+                            return Err(resource());
+                        }
+                        Value::FallbackText {
+                            text: text.into(),
+                            database_type: database_type.into(),
+                        }
+                    }
+                    Err(_) => Value::Unavailable {
+                        database_type: database_type.into(),
+                        reason: "Invalid server text encoding".into(),
+                    },
+                },
             }
-            let mut value = spool.store(payload, text)?;
-            if let Value::Deferred { database_type, .. } = &mut value {
-                *database_type = column.type_().name().into();
-            }
-            value
         } else {
             choscordb_postgres_values::decode_bounded(oid, raw.0, remaining)?
         };
@@ -447,8 +606,9 @@ async fn next(
         }
         let Some(row) = row else { return Ok(None) };
         let mut spool = active.spool.take().ok_or_else(stale)?;
+        let text_overrides = active.text_overrides.clone();
         let (returned, value) = tokio::task::spawn_blocking(move || {
-            let result = decode(row, &mut spool, max);
+            let result = decode(row, &mut spool, max, &text_overrides);
             (spool, result)
         })
         .await
@@ -562,6 +722,11 @@ impl tokio_postgres::types::ToSql for EditParam {
             | Value::Json(v) => v.clone(),
             Value::Binary(_) | Value::Deferred { .. } => {
                 return Err("Binary and deferred values are not editable".into());
+            }
+            Value::FallbackText { .. }
+            | Value::DeferredFallback { .. }
+            | Value::Unavailable { .. } => {
+                return Err("Fallback and unavailable values are read-only".into());
             }
         };
         out.extend_from_slice(value.as_bytes());

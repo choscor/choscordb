@@ -21,6 +21,7 @@ namespace choscordb {
 using query_workspace_detail::text;
 void QueryWorkspace::clearResult() {
     clearRowJson();
+    pendingCopy_.reset();
     if (export_)
         export_->clearQuery();
     if (detail_)
@@ -154,7 +155,8 @@ void QueryWorkspace::requestRowJsonChunk() {
             rowJsonLoadingKind_.clear();
             const auto type = value->type.toLower();
             rowJsonExpectedKind_ =
-                (type == "binary" || type == "blob" || type == "bytea" || type == "varbinary")
+                value->fallback ? QStringLiteral("text")
+                : (type == "binary" || type == "blob" || type == "bytea" || type == "varbinary")
                     ? QStringLiteral("binary")
                 : (type == "text" || type == "string") ? QStringLiteral("text")
                                                        : QString{};
@@ -240,7 +242,11 @@ void QueryWorkspace::handleRowJsonEvent(const BridgeEvent& event) {
                 failRowJson(tr("The complete text value is not valid UTF-8."));
                 return;
             }
-            rowJsonResolved_[rowJsonLoadingColumn_] = decoded;
+            const auto deferred =
+                model_->deferredValue(model_->index(rowJsonIndex_.row(), rowJsonLoadingColumn_));
+            rowJsonResolved_[rowJsonLoadingColumn_] =
+                deferred && deferred->fallback ? Cell{FallbackText{decoded, deferred->type}}
+                                               : Cell{decoded};
         } else {
             rowJsonResolved_[rowJsonLoadingColumn_] = std::move(rowJsonLoadingBytes_);
         }

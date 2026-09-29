@@ -199,6 +199,14 @@ fn apply_edit_batch(db: &Db, batch: EditBatch) -> Result<EditBatchSummary> {
                                 "Deferred values cannot be edited",
                             ));
                         }
+                        Value::DeferredFallback { .. }
+                        | Value::FallbackText { .. }
+                        | Value::Unavailable { .. } => {
+                            return Err(DriverError::new(
+                                ErrorKind::InvalidInput,
+                                "Fallback or unavailable values cannot be edited",
+                            ));
+                        }
                     })
                 })
                 .collect();

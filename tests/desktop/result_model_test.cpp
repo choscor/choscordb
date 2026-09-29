@@ -415,6 +415,141 @@ class ResultModelTest : public QObject {
         QVERIFY(model.copyCells({model.index(0, 0)}, &error).isEmpty());
         QVERIFY(!error.isEmpty());
     }
+    void fallbackTextIsDistinctReadOnlyAndCopiesCompleteServerText() {
+        ResultTableModel model;
+        const QString complete = QString(180, QChar('a')) + QStringLiteral("\tend");
+        QVERIFY(model.setPage({column("native", "text"), column("unknown", "custom_type"),
+                               column("empty", "custom_type")},
+                              {{QString("native"), FallbackText{complete, "custom_type"},
+                                FallbackText{QString(), "custom_type"}}},
+                              0));
+        model.setEditableColumns({true, true, true}, false, false);
+        const auto fallback = model.index(0, 1);
+        QCOMPARE(fallback.data(ResultTableModel::ResultValueKindRole).toString(),
+                 QString("fallback_text"));
+        QCOMPARE(fallback.data(ResultTableModel::ResultDatabaseTypeRole).toString(),
+                 QString("custom_type"));
+        QVERIFY(fallback.data().toString().contains("fallback", Qt::CaseInsensitive));
+        QVERIFY(fallback.data().toString().size() < complete.size());
+        QVERIFY(fallback.data(Qt::ToolTipRole).toString().contains("custom_type"));
+        QVERIFY(!(model.flags(fallback) & Qt::ItemIsEditable));
+        QVERIFY(!model.setData(fallback, "changed"));
+        QVERIFY(!model.setNull(fallback));
+        QCOMPARE(model.copyCells({fallback}), QStringLiteral("\"") + complete + '"');
+        QCOMPARE(model.index(0, 2).data(ResultTableModel::ResultValueKindRole).toString(),
+                 QString("fallback_text"));
+        QVERIFY(model.index(0, 2).data().toString() != QString());
+        QCOMPARE(model.copyCells({model.index(0, 2)}), QString());
+    }
+    void unavailableCellPreservesOtherCellsAndBlocksCopyAndUnsafeActions() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("normal", "text"), column("unreadable", "odd_type")},
+                              {{QString("ok"), UnavailableValue{"odd_type", "text output failed"}}},
+                              0));
+        model.setEditableColumns({true, true}, true, true);
+        const auto unavailable = model.index(0, 1);
+        QCOMPARE(model.index(0, 0).data().toString(), QString("ok"));
+        QCOMPARE(unavailable.data(ResultTableModel::ResultValueKindRole).toString(),
+                 QString("unavailable"));
+        QCOMPARE(unavailable.data(ResultTableModel::ResultUnavailableReasonRole).toString(),
+                 QString("text output failed"));
+        QVERIFY(unavailable.data().toString().contains("unavailable", Qt::CaseInsensitive));
+        QVERIFY(unavailable.data(Qt::ToolTipRole).toString().contains("odd_type"));
+        QVERIFY(!(model.flags(unavailable) & Qt::ItemIsEditable));
+        QVERIFY(!model.setNull(unavailable));
+        QString error;
+        QVERIFY(model.copyCells({unavailable}, &error).isEmpty());
+        QVERIFY(error.contains("odd_type"));
+        QCOMPARE(model.copyCells({model.index(0, 0)}, &error), QString("ok"));
+        QVERIFY(error.isEmpty());
+        QVERIFY(model.copyRows({model.index(0, 0)}, &error).isEmpty());
+        QVERIFY(!error.isEmpty());
+        QVERIFY(model.copyPage(&error).isEmpty());
+        QVERIFY(!error.isEmpty());
+        QVERIFY(!model.duplicateRow(0, &error));
+        QVERIFY(!error.isEmpty());
+        QVERIFY(!model.duplicateRow(0, {false, false}, &error));
+        QVERIFY(error.contains("unavailable", Qt::CaseInsensitive));
+    }
+    void supportedCellsRemainEditableBesideFallbackAndOpaqueRowsCannotBeDeleted() {
+        ResultTableModel model;
+        QVERIFY(model.setPage(
+            {column("id", "integer"), column("name", "text"), column("custom", "odd_type")},
+            {{qint64(1), QString("before"), FallbackText{"(2,3)", "odd_type"}},
+             {qint64(2), QString("plain"), std::monostate{}}},
+            0));
+        model.setEditableColumns({false, true, true}, false, true);
+        QVERIFY(model.flags(model.index(0, 1)) & Qt::ItemIsEditable);
+        QVERIFY(!(model.flags(model.index(0, 2)) & Qt::ItemIsEditable));
+        QVERIFY(model.setData(model.index(0, 1), "after"));
+        model.markDeleted({model.index(0, 0), model.index(1, 0)}, true);
+        QVERIFY(!model.deleted()[0]);
+        QVERIFY(model.deleted()[1]);
+    }
+    void rowJsonPreservesFallbackTypeAndRejectsUnavailable() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("ordinary", "text"), column("unfamiliar", "range_type")},
+                              {{QString("ordinary"), FallbackText{"[1,9)", "range_type"}}}, 0));
+        QString json, error;
+        QCOMPARE(model.rowJsonReadiness(0, &error), ResultTableModel::RowJsonReadiness::Ready);
+        QVERIFY(model.rowJson(0, &json, &error));
+        const auto fallback =
+            QJsonDocument::fromJson(json.toUtf8()).object().value("unfamiliar").toObject();
+        QCOMPARE(fallback.value("fallback_text").toString(), QString("[1,9)"));
+        QCOMPARE(fallback.value("database_type").toString(), QString("range_type"));
+        QVERIFY(model.setPage({column("ordinary", "text"), column("unfamiliar", "range_type")},
+                              {{QString("ordinary"), UnavailableValue{"range_type", "failed"}}},
+                              0));
+        QCOMPARE(model.rowJsonReadiness(0, &error), ResultTableModel::RowJsonReadiness::Invalid);
+        QVERIFY(error.contains("range_type"));
+        QVERIFY(!model.rowJson(0, &json, &error));
+        QVERIFY(json.isEmpty());
+    }
+    void deferredFallbackRetainsKindAndRequiresCompleteTextForRowJson() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("unfamiliar", "range_type")},
+                              {{DeferredValue{91, 5, "range_type", true}}}, 0));
+        const auto index = model.index(0, 0);
+        QCOMPARE(index.data(ResultTableModel::ResultValueKindRole).toString(),
+                 QString("deferred_fallback"));
+        QVERIFY(index.data().toString().contains("fallback", Qt::CaseInsensitive));
+        QCOMPARE(model.deferredValue(index)->handle, quint64(91));
+        QCOMPARE(model.rowJsonReadiness(0), ResultTableModel::RowJsonReadiness::NeedsDeferred);
+        QString json, error;
+        QVERIFY(!model.rowJson(0, &json, &error, {{0, QString("[1,9)")}}));
+        QVERIFY(!error.isEmpty());
+        QVERIFY(model.rowJson(0, &json, &error, {{0, FallbackText{"[1,9)", "range_type"}}}));
+        const auto fallback =
+            QJsonDocument::fromJson(json.toUtf8()).object().value("unfamiliar").toObject();
+        QCOMPARE(fallback.value("fallback_text").toString(), QString("[1,9)"));
+        QCOMPARE(fallback.value("database_type").toString(), QString("range_type"));
+    }
+    void loadedDeferredCopyUsesExactTypedValueAcrossScopes() {
+        ResultTableModel model;
+        QVERIFY(model.setPage(
+            {column("fallback", "range_type"), column("binary", "blob"), column("text", "text")},
+            {{DeferredValue{11, 5, "range_type", true}, DeferredValue{12, 3, "blob"},
+              DeferredValue{13, 4, "text"}}},
+            0));
+        QString error;
+        const ResultTableModel::ResolvedCells loaded = {
+            {{0, 0}, FallbackText{"[1,9)", "range_type"}},
+            {{0, 1}, QByteArray::fromHex("00ff7f")},
+            {{0, 2}, QString("full")}};
+        QCOMPARE(model.copyCells({model.index(0, 0)}, &error, loaded), QString("[1,9)"));
+        QVERIFY(error.isEmpty());
+        QCOMPARE(model.copyRows({model.index(0, 1)}, &error, loaded),
+                 QString("[1,9)\t0x00ff7f\tfull"));
+        QCOMPARE(model.copyPage(&error, loaded), QString("[1,9)\t0x00ff7f\tfull"));
+        QVERIFY(model
+                    .copyPage(&error, {{{0, 0}, FallbackText{"[1,9)", "wrong"}},
+                                       {{0, 1}, QByteArray::fromHex("00ff7f")},
+                                       {{0, 2}, QString("full")}})
+                    .isEmpty());
+        QVERIFY(!error.isEmpty());
+        QVERIFY(model.copyPage(&error, {{{0, 0}, FallbackText{"[1,9)", "range_type"}}}).isEmpty());
+        QVERIFY(!error.isEmpty());
+    }
     void allocationBudgetIncludesCapacityAndRejectsAtomically() {
         ResultTableModel model(nullptr, 4096);
         QVERIFY(model.setPage({column("a", "text")}, {{QString("kept")}}, 0));

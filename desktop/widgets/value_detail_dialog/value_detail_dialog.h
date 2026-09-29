@@ -1,5 +1,6 @@
 #pragma once
 #include "design_system/dialog_shell/dialog_shell.h"
+#include <QByteArray>
 #include <QPointer>
 #include <optional>
 
@@ -19,6 +20,7 @@ class ValueDetailDialog final : public DialogShell {
     ~ValueDetailDialog() override;
     void openValue(quint64 query, quint64 handle, const QString& type = {},
                    std::optional<quint64> length = std::nullopt);
+    bool openInlineValue(QByteArray bytes, const QString& type, bool binary);
     void clearValue();
 
   protected:
@@ -40,6 +42,9 @@ class ValueDetailDialog final : public DialogShell {
     design::Button* previous_;
     design::Button* next_;
     std::optional<quint64> query_;
+    QByteArray inlineBytes_;
+    bool inlineMode_ = false;
+    bool inlineBinary_ = false;
     quint64 handle_ = 0;
     quint64 offset_ = 0;
     quint64 total_ = 0;

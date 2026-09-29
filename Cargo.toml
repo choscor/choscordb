@@ -2,6 +2,9 @@
 members = ["crates/*"]
 resolver = "3"
 
+[patch.crates-io]
+tokio-postgres = { path = "vendor/tokio-postgres" }
+
 [workspace.package]
 version = "0.1.7"
 edition = "2024"
