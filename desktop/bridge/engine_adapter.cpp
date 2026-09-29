@@ -1,9 +1,6 @@
 #include "bridge/engine_adapter_p.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include <QHash>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonParseError>
 #include <QQueue>
 #include <QSet>
 #include <QTimer>
@@ -17,19 +14,10 @@ using engine_adapter_detail::rustString;
 using engine_adapter_detail::string;
 using engine_adapter_detail::utf8View;
 namespace {
-SavedProfile withConnectionTimeout(const SavedProfile& profile, quint32 timeout) {
-    if (!profile.sshEnabled)
-        return profile;
-    QJsonParseError error;
-    const auto document = QJsonDocument::fromJson(profile.sshOptions.toUtf8(), &error);
-    if (!profile.sshOptions.isEmpty() &&
-        (error.error != QJsonParseError::NoError || !document.isObject()))
-        return profile;
-    auto effective = profile;
-    auto options = document.object();
-    options["connect_timeout_seconds"] = int(timeout);
-    effective.sshOptions = QString::fromUtf8(QJsonDocument(options).toJson(QJsonDocument::Compact));
-    return effective;
+ProfileDto withConnectionTimeout(const SavedProfile& profile, quint32 timeout) {
+    auto dto = profileDto(profile);
+    dto.session_connection_timeout_seconds = timeout;
+    return dto;
 }
 SavedProfile savedProfile(const ProfileDto& dto) {
     SavedProfile value;
@@ -410,6 +398,9 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
 EngineAdapter::~EngineAdapter() {
     choscordb::shutdown(*d_->engine);
 }
+void EngineAdapter::attachDiagnostics(const RustDiagnostics& service) {
+    diagnostics_attach_engine(*d_->engine, service);
+}
 std::optional<quint64> EngineAdapter::connectSqlite(const QString& path, bool readOnly) {
     if (d_->closing || d_->stopping) {
         emit commandFailed(tr("Workspace is closing."));
@@ -605,7 +596,7 @@ void EngineAdapter::testProfileWithSecrets(
     credentials.has_tls = hasTlsSecret;
     credentials.has_proxy = hasProxySecret;
     auto result = profile_test_credentials(
-        *d_->engine, profileDto(withConnectionTimeout(profile, d_->connectionTimeoutSeconds)),
+        *d_->engine, withConnectionTimeout(profile, d_->connectionTimeoutSeconds),
         std::move(credentials), token);
     if (!result.accepted)
         emit profileFailed(token, string(result.error));
@@ -640,7 +631,7 @@ std::optional<quint64> EngineAdapter::connectProfileWithSecrets(
     credentials.has_tls = hasTlsSecret;
     credentials.has_proxy = hasProxySecret;
     auto result = profile_connect_credentials(
-        *d_->engine, profileDto(withConnectionTimeout(profile, d_->connectionTimeoutSeconds)),
+        *d_->engine, withConnectionTimeout(profile, d_->connectionTimeoutSeconds),
         std::move(credentials));
     if (!result.accepted) {
         emit profileConnectFailed(string(result.error));
@@ -817,60 +808,6 @@ bool EngineAdapter::inspectResultCells(quint64 connection, const QString& object
     const auto sqlBytes = sql.toUtf8();
     auto reply = result_cells_request(*d_->engine, connection, utf8View(objectBytes),
                                       utf8View(sqlBytes), std::move(names), token);
-    if (!reply.accepted)
-        emit commandFailed(string(reply.error));
-    return reply.accepted;
-}
-bool EngineAdapter::applyEditBatch(quint64 connection,
-                                   const std::vector<ReviewedEditStatement>& statements,
-                                   quint64 token) {
-    rust::Vec<EditStatementDto> batch;
-    for (const auto& statement : statements) {
-        EditStatementDto dto;
-        dto.sql = rustString(statement.sql);
-        dto.has_expected_rows = statement.expectedRows.has_value();
-        dto.expected_rows = statement.expectedRows.value_or(0);
-        for (size_t i = 0; i < statement.params.size(); ++i) {
-            const auto& value = statement.params[i];
-            const auto type =
-                i < statement.paramTypes.size() ? statement.paramTypes[i].toLower() : QString{};
-            CellDto cell;
-            if (std::holds_alternative<std::monostate>(value))
-                cell.kind = "null";
-            else if (const auto* booleanValue = std::get_if<bool>(&value)) {
-                cell.kind = "boolean";
-                cell.boolean = *booleanValue;
-            } else if (const auto* integerValue = std::get_if<qint64>(&value)) {
-                cell.kind = "integer";
-                cell.integer = *integerValue;
-            } else if (const auto* realValue = std::get_if<double>(&value)) {
-                cell.kind = "real";
-                cell.real = *realValue;
-            } else if (const auto* decimalValue = std::get_if<DecimalValue>(&value)) {
-                cell.kind = "decimal";
-                cell.text = rustString(decimalValue->text);
-            } else if (const auto* textValue = std::get_if<QString>(&value)) {
-                cell.kind = type.startsWith("numeric") || type.startsWith("decimal") ? "decimal"
-                            : type == "date"                                         ? "date"
-                            : type == "time" || type.startsWith("time ")             ? "time"
-                            : type.startsWith("timestamp")                           ? "timestamp"
-                            : type == "uuid"                                         ? "uuid"
-                            : type == "json" || type == "jsonb"                      ? "json"
-                                                                                     : "text";
-                cell.text = rustString(*textValue);
-            } else if (const auto* binaryValue = std::get_if<QByteArray>(&value)) {
-                cell.kind = "binary";
-                for (char byte : *binaryValue)
-                    cell.bytes.push_back(static_cast<uint8_t>(byte));
-            } else {
-                emit commandFailed(tr("Deferred values cannot be bound to grid edits."));
-                return false;
-            }
-            dto.params.push_back(std::move(cell));
-        }
-        batch.push_back(std::move(dto));
-    }
-    auto reply = apply_edit_batch(*d_->engine, connection, std::move(batch), token);
     if (!reply.accepted)
         emit commandFailed(string(reply.error));
     return reply.accepted;

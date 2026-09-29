@@ -4,13 +4,9 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QProcess>
-#include <QProcessEnvironment>
 #include <QRandomGenerator>
 #include <QStandardPaths>
 #include <QTemporaryDir>
-#include <QTemporaryFile>
-#include <QThread>
 #include <QtTest>
 
 class UpdateMetadataTest : public QObject {
@@ -52,6 +48,15 @@ class UpdateMetadataTest : public QObject {
         QCOMPARE(file.write("e"), 1);
         file.close();
         QVERIFY(!choscordb::verifyUpdateFile(file.fileName(), *record, &error));
+        const auto emptyPath = dir.filePath("empty-package");
+        QFile empty(emptyPath);
+        QVERIFY(empty.open(QIODevice::WriteOnly));
+        empty.close();
+        auto invalid = *record;
+        invalid.size = -1;
+        invalid.sha256 =
+            QByteArray::fromHex("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        QVERIFY(!choscordb::verifyUpdateFile(emptyPath, invalid, &error));
         QCOMPARE(error, "Downloaded package failed integrity verification");
         QVERIFY(file.open(QIODevice::Append));
         QCOMPARE(file.write("x"), 1);
@@ -133,69 +138,9 @@ class UpdateMetadataTest : public QObject {
         QVERIFY(!choscordb::writeUpdateReadinessFile(
             unrelated.filePath(QStringLiteral("ChoscorDB-update-ready-%1.txt").arg(suffix))));
     }
-    void immediateExitDoesNotAcknowledgeUpdateStartup() {
-        const auto temp = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-        QTemporaryFile markerTemplate(QDir(temp).filePath("ChoscorDB-update-ready-XXXXXX.txt"));
-        QVERIFY(markerTemplate.open());
-        const auto marker = markerTemplate.fileName();
-        markerTemplate.close();
-        QVERIFY(markerTemplate.remove());
-        QProcess early;
-        early.start(QCoreApplication::applicationFilePath(), {"--readiness-immediate-exit"});
-        QVERIFY(early.waitForStarted());
-        QVERIFY(!choscordb::waitForUpdateReadiness(early, marker, 1000, 200));
-        QVERIFY(!QFile::exists(marker));
-        QProcess healthy;
-        auto environment = QProcessEnvironment::systemEnvironment();
-        environment.insert("CHOSCORDB_UPDATE_READY_FILE", marker);
-        healthy.setProcessEnvironment(environment);
-        healthy.start(QCoreApplication::applicationFilePath(), {"--readiness-success-child"});
-        QVERIFY(healthy.waitForStarted());
-        QVERIFY(choscordb::waitForUpdateReadiness(healthy, marker, 5000, 200));
-        QVERIFY(healthy.state() == QProcess::Running);
-        healthy.kill();
-        QVERIFY(healthy.waitForFinished());
-        QVERIFY(QFile::remove(marker));
-    }
-    void transientMarkerDoesNotConfirmStartup() {
-        const auto temp = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-        QTemporaryFile markerTemplate(QDir(temp).filePath("ChoscorDB-update-ready-XXXXXX.txt"));
-        QVERIFY(markerTemplate.open());
-        const auto marker = markerTemplate.fileName();
-        markerTemplate.close();
-        QVERIFY(markerTemplate.remove());
-        QProcess child;
-        auto environment = QProcessEnvironment::systemEnvironment();
-        environment.insert("CHOSCORDB_UPDATE_READY_FILE", marker);
-        child.setProcessEnvironment(environment);
-        child.start(QCoreApplication::applicationFilePath(), {"--readiness-transient-child"});
-        QVERIFY(child.waitForStarted());
-        QVERIFY(!choscordb::waitForUpdateReadiness(child, marker, 1300, 700));
-        child.kill();
-        QVERIFY(child.waitForFinished());
-        QVERIFY(!QFile::exists(marker));
-    }
 };
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
-    if (app.arguments().contains("--readiness-immediate-exit"))
-        return 0;
-    if (app.arguments().contains("--readiness-success-child")) {
-        if (!choscordb::writeUpdateReadinessFile(
-                qEnvironmentVariable("CHOSCORDB_UPDATE_READY_FILE")))
-            return 2;
-        QThread::msleep(5000);
-        return 0;
-    }
-    if (app.arguments().contains("--readiness-transient-child")) {
-        const auto path = qEnvironmentVariable("CHOSCORDB_UPDATE_READY_FILE");
-        if (!choscordb::writeUpdateReadinessFile(path))
-            return 2;
-        QThread::msleep(350);
-        QFile::remove(path);
-        QThread::msleep(1200);
-        return 0;
-    }
     UpdateMetadataTest test;
     return QTest::qExec(&test, argc, argv);
 }

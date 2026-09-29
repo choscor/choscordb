@@ -206,6 +206,7 @@ void ObjectDataWorkspace::openObject(quint64 connection, const QString& object,
     if (!sql_ || !sql_->navigationAllowed() || !result_->navigationAllowed() || object.isEmpty())
         return;
     const auto filter = std::exchange(initialFilter_, {});
+    result_->setDriverForConnection(connection, sql_->driverForConnection(connection));
     result_->openObjectData(connection, object, label, sql_->queryPreferences(), kind, false,
                             filter);
 }

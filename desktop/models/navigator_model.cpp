@@ -1,4 +1,5 @@
 #include "models/navigator_model.h"
+#include "bridge/engine_adapter.h"
 #include <QSet>
 #include <QTimer>
 #include <algorithm>
@@ -38,39 +39,9 @@ bool NavigatorModel::isBrowsable(const QModelIndex& index) const {
 }
 bool NavigatorModel::canShowUnverifiedObject(quint64 connection,
                                              const QString& qualifiedName) const {
-    if (showSystemSchemas_ || !driverResolver_ ||
-        driverResolver_(connection).compare(QLatin1String("postgres"), Qt::CaseInsensitive) != 0)
-        return true;
-    QString schema;
-    if (qualifiedName.startsWith(QLatin1Char('"'))) {
-        bool closed = false;
-        for (qsizetype index = 1; index < qualifiedName.size(); ++index) {
-            if (qualifiedName[index] != QLatin1Char('"')) {
-                schema += qualifiedName[index];
-                continue;
-            }
-            if (index + 1 < qualifiedName.size() && qualifiedName[index + 1] == QLatin1Char('"')) {
-                schema += QLatin1Char('"');
-                ++index;
-                continue;
-            }
-            if (index + 1 >= qualifiedName.size() || qualifiedName[index + 1] != QLatin1Char('.'))
-                return false;
-            closed = true;
-            break;
-        }
-        if (!closed)
-            return false;
-    } else {
-        const auto separator = qualifiedName.indexOf(QLatin1Char('.'));
-        if (separator <= 0)
-            return false;
-        schema = qualifiedName.left(separator);
-        if (schema.contains(QLatin1Char('"')))
-            return false;
-    }
-    return !schema.isEmpty() && schema != QLatin1String("information_schema") &&
-           !schema.startsWith(QLatin1String("pg_"));
+    return EngineAdapter::navigatorObjectVisible(driverResolver_ ? driverResolver_(connection)
+                                                                 : QString{},
+                                                 showSystemSchemas_, qualifiedName);
 }
 quint64 NavigatorModel::pendingRequestToken(const QModelIndex& index) const {
     const auto* value = node(index);
@@ -83,8 +54,7 @@ bool NavigatorModel::isBrowsable(const Node* value) const {
         if (ancestor->object.kind != QLatin1String("schema"))
             continue;
         const auto& name = ancestor->object.name;
-        // PostgreSQL reserves the pg_ prefix for system namespaces.
-        if (name == QLatin1String("information_schema") || name.startsWith(QLatin1String("pg_")))
+        if (EngineAdapter::postgresSystemSchema(name))
             return false;
     }
     return true;

@@ -60,6 +60,41 @@ class ResultTableModel final : public QAbstractTableModel {
     static constexpr int ResultUnavailableReasonRole = Qt::UserRole + 6;
     using Row = std::vector<Cell>;
     using ResolvedCells = std::map<std::pair<int, int>, Cell>;
+    enum class JsonViewScope { Cell, Row, Page };
+    enum class JsonViewState { Ready, NeedsDeferred, Invalid, Unavailable };
+    struct JsonViewSnapshot {
+        JsonViewScope scope = JsonViewScope::Row;
+        std::vector<ResultColumn> columns;
+        std::vector<Row> rows;
+        std::vector<std::vector<bool>> touched;
+        std::vector<bool> inserted;
+        ResolvedCells resolved;
+        std::size_t byteBudget = 0;
+        int column = 0;
+    };
+    struct JsonViewEvaluation {
+        JsonViewState state = JsonViewState::Invalid;
+        QString json;
+        QString error;
+    };
+    struct CopyCellSnapshot {
+        Cell original;
+        std::optional<Cell> resolved;
+        bool insertedOmitted = false;
+    };
+    struct CopyResolutionSnapshot {
+        std::optional<Cell> original;
+        Cell resolved;
+    };
+    struct CopySnapshot {
+        std::vector<std::vector<std::optional<CopyCellSnapshot>>> rows;
+        std::vector<CopyResolutionSnapshot> resolutions;
+        std::size_t byteBudget = 0;
+    };
+    struct CopyEvaluation {
+        QString text;
+        QString error;
+    };
     static constexpr std::size_t DefaultBytes = 64 * 1024 * 1024;
     // Budget includes owned page allocations, excluding this fixed QObject and
     // caller-owned in-flight transfers. Shared Qt buffers are charged in full.
@@ -112,6 +147,9 @@ class ResultTableModel final : public QAbstractTableModel {
     QString copyRows(QModelIndexList selection, QString* error,
                      const ResolvedCells& resolved) const;
     QString copyPage(QString* error, const ResolvedCells& resolved) const;
+    std::optional<CopySnapshot> copySnapshot(QModelIndexList selection, int scope,
+                                             const ResolvedCells& resolved = {}) const;
+    static CopyEvaluation evaluateCopy(CopySnapshot snapshot);
     // Returns a complete typed JSON object. Deferred cells require full values
     // keyed by column index; failure clears json and sets error.
     bool rowJson(int row, QString* json, QString* error = nullptr,
@@ -123,6 +161,11 @@ class ResultTableModel final : public QAbstractTableModel {
     bool pageJson(QString* json, QString* error = nullptr,
                   const std::map<std::pair<int, int>, Cell>& resolved = {}) const;
     RowJsonReadiness pageJsonReadiness(QString* error = nullptr) const;
+    // Capture Qt model state on its owning thread. The returned value has no QObject references
+    // and can be evaluated on a worker thread.
+    std::optional<JsonViewSnapshot> jsonViewSnapshot(JsonViewScope scope, int row, int column,
+                                                     const ResolvedCells& resolved = {}) const;
+    static JsonViewEvaluation evaluateJsonView(JsonViewSnapshot snapshot);
 
   signals:
     void pendingEditsChanged(bool pending);

@@ -3,3 +3,9 @@ QTreeView::item {
   padding: 3px 3px;
   border-radius: 0px;
 }
+
+QTreeView[designNavigationTree="true"]::item {
+  min-height: @navigationItemMinHeight;
+  padding: @navigationItemPadding 3px;
+  margin: 0px;
+}

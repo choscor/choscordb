@@ -172,7 +172,7 @@ AppearanceLayout AppearanceController::current() const {
     return result;
 }
 bool AppearanceController::preview(const QString& mode) {
-    if (mode != "system" && mode != "light" && mode != "dark") {
+    if (!EngineAdapter::appearanceThemeValid(mode)) {
         emit warningChanged(tr("Choose System, Light, or Dark."));
         return false;
     }

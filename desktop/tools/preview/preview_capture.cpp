@@ -1,28 +1,30 @@
 #include "tools/preview/preview_window.h"
 
+#include "choscordb-bridge/src/lib.rs.h"
+
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
 
+#include <QBuffer>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QFutureWatcher>
 #include <QGuiApplication>
 #include <QHeaderView>
 #include <QImage>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QLabel>
 #include <QListWidget>
 #include <QMenu>
 #include <QPainter>
+#include <QPointer>
 #include <QPushButton>
-#include <QSaveFile>
 #include <QScopeGuard>
 #include <QScrollArea>
 #include <QSysInfo>
 #include <QTableView>
 #include <QVBoxLayout>
+#include <QtConcurrentRun>
 
 namespace choscordb::design {
 void applySpecimenTheme(QWidget& host) {
@@ -38,10 +40,23 @@ void applySpecimenTheme(QWidget& host) {
 }
 bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize logicalSize,
                                   ResolvedAppearance appearance) {
-    const auto fail = [this](const QString& reason) {
-        status_->setText(tr("Capture failed: %1").arg(reason));
+    const QPointer<PreviewWindow> owner(this);
+    const auto fail = [owner](const QString& reason) {
+        if (owner)
+            owner->status_->setText(tr("Capture failed: %1").arg(reason));
         return false;
     };
+    if (captureInProgress_)
+        return fail(tr("A capture is already in progress."));
+    captureInProgress_ = true;
+    const auto resetBusy = qScopeGuard([owner] {
+        if (owner)
+            owner->captureInProgress_ = false;
+    });
+    // Snapshot UI values before processing queued events, which can destroy the owner.
+    const auto section = navigation_->currentItem()->text();
+    const auto id = specimen_->currentData().toString();
+    const auto source = source_->text();
 
     if (logicalSize.isEmpty())
         logicalSize = QSize(comparison ? 1280 : 640, 900);
@@ -55,7 +70,7 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
     // Recreate fixtures so editing, focus/caret blink, scroll position and pointer
     // location in the interactive preview cannot alter a reference capture.
     PreviewWindow fixture;
-    (void)fixture.selectSpecimen(specimen_->currentData().toString());
+    (void)fixture.selectSpecimen(id);
     fixture.resize(1440, 1100);
     fixture.ensurePolished();
     fixture.layout()->activate();
@@ -67,7 +82,6 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
     // Scroll areas settle viewport/scrollbar geometry on show and the queued
     // layout pass. Rendering a hidden fixture immediately can clip the final
     // field edge or active tab indicator beneath stale scrollbars.
-    const auto id = specimen_->currentData().toString();
     // These native popups require an active, focusable owner on Cocoa.
     fixture.setAttribute(Qt::WA_DontShowOnScreen, id != "selects");
     fixture.show();
@@ -193,57 +207,72 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
             tooltip->hide();
         }
     }
-    QSaveFile output(path);
-    if (!output.open(QIODevice::WriteOnly)) {
-        return fail(output.errorString());
-    }
-    if (!image.save(&output, "PNG") || !output.commit()) {
-        return fail(output.errorString());
-    }
-    QJsonObject metadata{
-        {"section", navigation_->currentItem()->text()},
-        {"specimen", specimen_->currentData().toString()},
-        {"source", source_->text()},
-        {"surface", surface},
-        {"logicalWidth", logicalSize.width()},
-        {"logicalHeight", logicalSize.height()},
-        {"scale", 1},
-        {"sourceDeviceScale", target->devicePixelRatioF()},
-        {"rendering", "QWidget logical-pixel render; native popup content; excludes OS shell"},
-        {"themes", comparison                               ? "Light / Dark"
-                   : appearance == ResolvedAppearance::Dark ? "Dark"
-                                                            : "Light"},
-        {"font", resolveTypography(TypographyRole::Ui).family()},
-        {"qt", QT_VERSION_STR},
-        {"platform", QGuiApplication::platformName()},
-        {"os", QSysInfo::prettyProductName()},
-        {"fixture", surface == "inline"
-                        ? "synthetic; initial state; no focus; reduced motion"
-                        : "synthetic; open real surface; no action dispatched; reduced motion"}};
-    QJsonArray controls;
+    QByteArray png;
+    QBuffer buffer(&png);
+    if (!buffer.open(QIODevice::WriteOnly) || !image.save(&buffer, "PNG"))
+        return fail(tr("The capture could not be encoded as PNG."));
+    PreviewCaptureDto metadata;
+    metadata.section = section.toStdString();
+    metadata.specimen = id.toStdString();
+    metadata.source = source.toStdString();
+    metadata.surface = surface.toStdString();
+    metadata.logical_width = uint32_t(logicalSize.width());
+    metadata.logical_height = uint32_t(logicalSize.height());
+    metadata.source_device_scale = target->devicePixelRatioF();
+    metadata.themes = comparison                               ? "Light / Dark"
+                      : appearance == ResolvedAppearance::Dark ? "Dark"
+                                                               : "Light";
+    metadata.font = resolveTypography(TypographyRole::Ui).family().toStdString();
+    metadata.qt = QT_VERSION_STR;
+    metadata.platform = QGuiApplication::platformName().toStdString();
+    metadata.os = QSysInfo::prettyProductName().toStdString();
     for (auto* host : (comparison ? QList<QWidget*>{fixture.light_, fixture.dark_}
                                   : QList<QWidget*>{singleHost})) {
         for (auto* control : host->findChildren<QWidget*>()) {
             if (control->objectName().isEmpty() || control->isWindow())
                 continue;
             const auto point = control->mapTo(target, QPoint());
-            controls.append(QJsonObject{{"name", control->objectName()},
-                                        {"theme", host == fixture.dark_ ? "Dark" : "Light"},
-                                        {"x", point.x()},
-                                        {"y", point.y()},
-                                        {"width", control->width()},
-                                        {"height", control->height()}});
+            PreviewControlDto value;
+            value.name = control->objectName().toStdString();
+            value.theme = host == fixture.dark_ ? "Dark" : "Light";
+            value.x = point.x();
+            value.y = point.y();
+            value.width = control->width();
+            value.height = control->height();
+            metadata.controls.push_back(std::move(value));
         }
     }
-    metadata.insert("controls", controls);
-    QSaveFile manifest(path + ".json");
-    const auto bytes = QJsonDocument(metadata).toJson();
-    if (!manifest.open(QIODevice::WriteOnly) || manifest.write(bytes) != bytes.size() ||
-        !manifest.commit()) {
-        return fail(
-            tr("PNG written, but metadata could not be saved: %1").arg(manifest.errorString()));
+    if (!owner)
+        return false;
+    // The synchronous CLI/test API pumps a controlled Qt loop while Rust writes
+    // on a worker. User input is excluded and the busy flag rejects queued reentry.
+    QEventLoop loop;
+    QFutureWatcher<std::pair<bool, QString>> watcher;
+    QObject::connect(&watcher, &QFutureWatcher<std::pair<bool, QString>>::finished, &loop,
+                     &QEventLoop::quit);
+    QObject::connect(owner.data(), &QObject::destroyed, &loop, &QEventLoop::quit);
+    watcher.setFuture(
+        QtConcurrent::run([path, png = std::move(png), metadata = std::move(metadata)]() mutable {
+            const auto utf8 = path.toUtf8();
+            const auto result = write_preview_capture_file(
+                rust::Str(utf8.constData(), size_t(utf8.size())),
+                rust::Slice<const uint8_t>(reinterpret_cast<const uint8_t*>(png.constData()),
+                                           size_t(png.size())),
+                std::move(metadata));
+            return std::pair<bool, QString>{
+                result.png_written,
+                QString::fromUtf8(result.error.data(), qsizetype(result.error.size()))};
+        }));
+    if (!watcher.isFinished())
+        loop.exec(QEventLoop::ExcludeUserInputEvents);
+    if (!owner)
+        return false;
+    const auto [pngWritten, error] = watcher.result();
+    if (!error.isEmpty()) {
+        return fail(pngWritten ? tr("PNG written, but metadata could not be saved: %1").arg(error)
+                               : error);
     }
-    status_->setText(tr("Capture saved: %1").arg(path));
+    owner->status_->setText(tr("Capture saved: %1").arg(path));
     return true;
 }
 } // namespace choscordb::design

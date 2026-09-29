@@ -117,8 +117,13 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     };
     connect(widgets_.grid, &QTableView::doubleClicked, this, openDetail);
     connect(widgets_.grid, &QTableView::activated, this, openDetail);
-    connect(model_, &ResultTableModel::pendingEditsChanged, this,
-            [this](bool) { updateActions(); });
+    connect(model_, &ResultTableModel::pendingEditsChanged, this, [this](bool) {
+        ++editPolicyGeneration_;
+        if (editabilityPlanning_)
+            configureEditability();
+        else
+            updateActions();
+    });
     if (widgets_.addRow)
         connect(widgets_.addRow, &QPushButton::clicked, model_, &ResultTableModel::addRow);
     if (widgets_.deleteRows)
@@ -206,6 +211,8 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     });
     connect(widgets_.run, &QAction::triggered, this, &QueryWorkspace::execute);
     connect(widgets_.cancel, &QAction::triggered, this, [this] {
+        if (editPlanRunning_)
+            return;
         if (query_ && viewBusy_) {
             if (adapter_->cancelResultView(*query_)) {
                 setExecutionState(QStringLiteral("cancelling"), tr("◷ Cancelling result view…"));
@@ -383,6 +390,8 @@ QueryWorkspace::~QueryWorkspace() {
     delete profiles_;
 }
 bool QueryWorkspace::resolvePendingEdits() {
+    if (editPlanRunning_ || editApplying_)
+        return false;
     if (!model_->hasPendingEdits())
         return true;
     ConfirmationDialog box(QMessageBox::Warning, tr("Pending grid changes"),
@@ -413,7 +422,8 @@ bool QueryWorkspace::queryAvailable() const {
     return queryConnection_ && connectionAvailable(*queryConnection_);
 }
 bool QueryWorkspace::workInFlight() const {
-    return externalWork_ || executionModeToken_ != 0 || viewBusy_ ||
+    return externalWork_ || executionModeToken_ != 0 || viewBusy_ || editPlanRunning_ ||
+           editApplying_ ||
            ((cancellationPending_ || busy_ || fetching_ || exporting_) &&
             !(queryConnection_ && disconnecting_.contains(*queryConnection_)));
 }
@@ -424,7 +434,8 @@ void QueryWorkspace::setExternalWork(bool busy) {
     updateActions();
 }
 void QueryWorkspace::disconnectConnection(quint64 connection) {
-    if (!connectionCanDisconnect(connection) || confirmingDisconnects_.contains(connection))
+    if (editPlanRunning_ || !connectionCanDisconnect(connection) ||
+        confirmingDisconnects_.contains(connection))
         return;
     const auto index = widgets_.connections->findData(QVariant::fromValue<qulonglong>(connection));
     const auto label = widgets_.connections->itemText(index);
@@ -680,7 +691,7 @@ void QueryWorkspace::updateActions() {
         widgets_.previousPage->setEnabled(query_ && currentPage_ && *currentPage_ > 0 &&
                                           !inFlight && queryAvailable());
     if (widgets_.addRow)
-        widgets_.addRow->setEnabled(model_->canInsert() && !inFlight);
+        widgets_.addRow->setEnabled(model_->canInsert() && !inFlight && !editabilityPlanning_);
     if (widgets_.addRow)
         widgets_.addRow->setToolTip(
             model_->canInsert()
@@ -690,25 +701,28 @@ void QueryWorkspace::updateActions() {
         model_->canDelete() || std::any_of(model_->inserted().begin(), model_->inserted().end(),
                                            [](bool inserted) { return inserted; });
     if (widgets_.deleteRows)
-        widgets_.deleteRows->setEnabled(canRemoveRows && model_->rowCount() && !inFlight);
+        widgets_.deleteRows->setEnabled(canRemoveRows && model_->rowCount() && !inFlight &&
+                                        !editabilityPlanning_);
     if (widgets_.deleteRows)
         widgets_.deleteRows->setToolTip(canRemoveRows || editReason_.isEmpty()
                                             ? widgets_.deleteRows->accessibleName()
                                             : editReason_);
     if (widgets_.restoreRows)
-        widgets_.restoreRows->setEnabled(
-            !inFlight && std::any_of(model_->deleted().begin(), model_->deleted().end(),
-                                     [](bool deleted) { return deleted; }));
+        widgets_.restoreRows->setEnabled(!inFlight && !editabilityPlanning_ &&
+                                         std::any_of(model_->deleted().begin(),
+                                                     model_->deleted().end(),
+                                                     [](bool deleted) { return deleted; }));
     if (widgets_.setNull) {
         const auto selection = widgets_.grid->selectionModel()->selectedIndexes();
         widgets_.setNull->setEnabled(
-            !inFlight && std::any_of(selection.begin(), selection.end(), [this](const auto& index) {
+            !inFlight && !editabilityPlanning_ &&
+            std::any_of(selection.begin(), selection.end(), [this](const auto& index) {
                 return model_->flags(index) & Qt::ItemIsEditable;
             }));
     }
     if (widgets_.applyEdits)
         widgets_.applyEdits->setEnabled(
-            model_->hasPendingEdits() && !inFlight &&
+            model_->hasPendingEdits() && !inFlight && !editabilityPlanning_ &&
             !(queryConnection_ &&
               (pendingTransactions_.contains(*queryConnection_) ||
                (widgets_.transactionActive && widgets_.transactionActive(*queryConnection_)))));
@@ -720,7 +734,8 @@ void QueryWorkspace::updateActions() {
                 ? tr("Commit or roll back the manual transaction before applying grid changes.")
                 : widgets_.applyEdits->accessibleName());
     if (widgets_.discardEdits)
-        widgets_.discardEdits->setEnabled(model_->hasPendingEdits() && !inFlight);
+        widgets_.discardEdits->setEnabled(model_->hasPendingEdits() && !inFlight &&
+                                          !editabilityPlanning_);
     emit activityChanged(inFlight);
 }
 void QueryWorkspace::execute() {

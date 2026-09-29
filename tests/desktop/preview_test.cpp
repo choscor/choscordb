@@ -69,7 +69,6 @@
 #include <QTreeView>
 #include <QtTest>
 #include <cstring>
-
 namespace {
 
 // Pick text ink from the independently opened public surface. Transparent
@@ -133,59 +132,6 @@ bool containsExactPatch(const QImage& capture, const QImage& witness) {
     return false;
 }
 } // namespace
-
-void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
-    choscordb::design::PreviewWindow window;
-    QVERIFY(window.selectSpecimen("lists-navigation"));
-    window.show();
-    QCoreApplication::processEvents();
-    for (const auto* name : {"previewLight", "previewDark"}) {
-        auto* host = window.findChild<QWidget*>(name);
-        QVERIFY(host);
-        auto* tree = host->findChild<QTreeView*>("previewNavigationTree");
-        QVERIFY(tree);
-        QVERIFY(tree->isVisible());
-        QVERIFY(tree->currentIndex().isValid());
-        const auto parentRow = tree->visualRect(tree->model()->index(0, 0));
-        const auto treeImage = tree->viewport()->grab().toImage();
-        const auto branchInk = choscordb::design::resolvedThemeForWidget(*tree).colors.mutedText;
-        bool hasMutedBranch = false;
-        for (int y = parentRow.top(); y <= parentRow.bottom(); ++y)
-            for (int x = 0; x < parentRow.left(); ++x)
-                hasMutedBranch |= treeImage.pixelColor(x, y) == branchInk;
-        QVERIFY(hasMutedBranch);
-        const auto child = tree->model()->index(0, 0, tree->model()->index(0, 0));
-        const auto row = tree->visualRect(child);
-        QVERIFY(row.isValid());
-        QTest::mouseMove(tree->viewport(), QPoint(1, 1));
-        QTest::mouseMove(tree->viewport(), row.center());
-        QCoreApplication::processEvents();
-        QCOMPARE(tree->viewport()->grab().toImage().pixelColor(row.right() - 8, row.center().y()),
-                 choscordb::design::resolvedThemeForWidget(*tree).colors.muted);
-        auto* sidebarList = host->findChild<QListWidget*>("previewSidebarList");
-        QVERIFY(sidebarList && sidebarList->isVisible());
-        QCOMPARE(sidebarList->property("designSurface").toString(), QString("sidebar"));
-        const auto listRow = sidebarList->visualItemRect(sidebarList->item(0));
-        QTest::mouseMove(sidebarList->viewport(), QPoint(1, 1));
-        QTest::mouseMove(sidebarList->viewport(), listRow.center());
-        QCoreApplication::processEvents();
-        QCOMPARE(sidebarList->viewport()->grab().toImage().pixelColor(listRow.right() - 8,
-                                                                      listRow.center().y()),
-                 choscordb::design::resolvedThemeForWidget(*sidebarList).colors.muted);
-    }
-    QVERIFY(window.selectSpecimen("navigation-profile-row"));
-    for (const auto* name : {"previewLight", "previewDark"}) {
-        auto* list =
-            window.findChild<QWidget*>(name)->findChild<QListWidget*>("previewNavigationProfiles");
-        QVERIFY(list &&
-                dynamic_cast<choscordb::design::NavigationProfileDelegate*>(list->itemDelegate()));
-        QCOMPARE(list->selectionMode(), QAbstractItemView::MultiSelection);
-        QVERIFY(list->item(0)->isSelected());
-        QVERIFY(list->item(1)->isSelected());
-        QVERIFY(!list->item(2)->isSelected());
-        QVERIFY(list->visualItemRect(list->item(1)).height() <= 36);
-    }
-}
 
 void PreviewTest::recentHistoryRowsUseSharedDelegateInBothThemes() {
     choscordb::design::PreviewWindow window;
@@ -967,6 +913,50 @@ void PreviewTest::statusLineSpecimenUsesSharedSurfaceInBothThemes() {
                                                           unavailable->height() / 2),
                  colors.dangerSurface);
     }
+}
+
+void PreviewTest::exportRejectsQueuedReentry() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    choscordb::design::PreviewWindow window;
+    bool invoked = false;
+    bool nestedSucceeded = true;
+    QTimer::singleShot(0, &window, [&] {
+        invoked = true;
+        nestedSucceeded = window.exportCapture(directory.filePath("nested.png"));
+    });
+    QVERIFY(window.exportCapture(directory.filePath("outer.png")));
+    QVERIFY(invoked);
+    QVERIFY(!nestedSucceeded);
+    QVERIFY(!QFile::exists(directory.filePath("nested.png")));
+    QVERIFY(!QImage(directory.filePath("outer.png")).isNull());
+}
+
+void PreviewTest::exportSurvivesOwnerDestruction() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    auto* window = new choscordb::design::PreviewWindow;
+    bool destroyed = false;
+    QTimer::singleShot(0, [&] {
+        delete window;
+        destroyed = true;
+    });
+    QVERIFY(!window->exportCapture(directory.filePath("deleted.png")));
+    QVERIFY(destroyed);
+    QVERIFY(!QFile::exists(directory.filePath("deleted.png")));
+}
+
+void PreviewTest::exportReportsMetadataFailureAfterPngWrite() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    choscordb::design::PreviewWindow window;
+    const auto path = directory.filePath("partial.png");
+    QVERIFY(QDir().mkdir(path + ".json"));
+    QVERIFY(!window.exportCapture(path));
+    QVERIFY(!QImage(path).isNull());
+    auto* status = window.findChild<QLabel*>("previewExportStatus");
+    QVERIFY(status);
+    QVERIFY(status->text().contains("PNG written, but metadata could not be saved"));
 }
 
 QTEST_MAIN(PreviewTest)

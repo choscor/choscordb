@@ -171,7 +171,7 @@ class ObjectExplorerTest final : public QObject {
                           view->viewport()->mapToGlobal(view->viewport()->rect().center()), {},
                           {0, 120}, Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
         QCoreApplication::sendEvent(view->viewport(), &wheel);
-        QCOMPARE(erd.zoomFactor(), beforeWheel);
+        QVERIFY(erd.zoomFactor() > beforeWheel);
         const auto beforeHorizontal = erd.zoomFactor();
         QWheelEvent horizontal(view->viewport()->rect().center(),
                                view->viewport()->mapToGlobal(view->viewport()->rect().center()), {},
@@ -183,7 +183,7 @@ class ObjectExplorerTest final : public QObject {
                                   {0, -40}, {}, Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase,
                                   false);
         QCoreApplication::sendEvent(view->viewport(), &pixelVertical);
-        QCOMPARE(erd.zoomFactor(), beforeHorizontal);
+        QVERIFY(erd.zoomFactor() < beforeHorizontal);
         for (int i = 0; i < 7; ++i)
             QTest::keyClick(view, Qt::Key_Plus);
         QVERIFY(view->horizontalScrollBar()->maximum() > 0);

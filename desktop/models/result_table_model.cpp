@@ -1,82 +1,14 @@
 #include "models/result_table_model.h"
+#include "bridge/engine_adapter.h"
 #include "design_system/table/table_style.h"
 #include <QArrayData>
 #include <QBrush>
 #include <QColor>
 #include <QFont>
 #include <algorithm>
-#include <charconv>
-#include <cmath>
 #include <limits>
 #include <numeric>
 namespace choscordb {
-namespace {
-std::optional<std::pair<QString, int>> normalizedDecimal(const QString& text) {
-    int position = 0;
-    const bool negative = text.startsWith('-');
-    if (negative || text.startsWith('+'))
-        ++position;
-    QString digits;
-    digits.reserve(text.size());
-    int fractional = 0;
-    bool dot = false;
-    while (position < text.size()) {
-        const auto character = text.at(position);
-        if (character == '.' && !dot) {
-            dot = true;
-            ++position;
-            continue;
-        }
-        if (character < '0' || character > '9')
-            break;
-        digits += character;
-        fractional += dot;
-        ++position;
-    }
-    if (digits.isEmpty())
-        return std::nullopt;
-    int exponent = -fractional;
-    if (position < text.size() && (text.at(position) == 'e' || text.at(position) == 'E')) {
-        bool valid = false;
-        const auto parsed = text.mid(position + 1).toInt(&valid);
-        if (!valid || parsed < -10000 || parsed > 10000)
-            return std::nullopt;
-        exponent += parsed;
-        position = text.size();
-    }
-    if (position != text.size())
-        return std::nullopt;
-    qsizetype first = 0;
-    while (first + 1 < digits.size() && digits.at(first) == '0')
-        ++first;
-    digits = digits.mid(first);
-    if (digits == "0")
-        return std::pair{QStringLiteral("0"), 0};
-    while (digits.size() > 1 && digits.back() == '0') {
-        digits.chop(1);
-        ++exponent;
-    }
-    return std::pair{negative ? '-' + digits : digits, exponent};
-}
-
-bool filterableDecimal(const DecimalValue& value) {
-    bool integerOk = false;
-    const auto integer = value.text.toLongLong(&integerOk);
-    const auto normalized = normalizedDecimal(value.text);
-    if (!normalized)
-        return false;
-    if (integerOk && normalized == normalizedDecimal(QString::number(integer)))
-        return true;
-    bool realOk = false;
-    const auto real = value.text.toDouble(&realOk);
-    if (!realOk || !std::isfinite(real))
-        return false;
-    char encoded[64];
-    const auto result = std::to_chars(encoded, encoded + sizeof(encoded), real);
-    return result.ec == std::errc{} &&
-           normalized == normalizedDecimal(QString::fromLatin1(encoded, result.ptr - encoded));
-}
-} // namespace
 std::optional<DeferredValue> ResultTableModel::deferredValue(const QModelIndex& index) const {
     if (!index.isValid() || index.model() != this || index.row() < 0 || index.column() < 0 ||
         static_cast<size_t>(index.row()) >= rows_.size() ||
@@ -100,16 +32,10 @@ std::optional<ResultCellMetadata> ResultTableModel::linkedColumn(const QModelInd
     const auto& value = rows_[index.row()][index.column()];
     if (metadata.sourceColumn.isEmpty() || metadata.sourceObject.isEmpty() ||
         metadata.targetObject.isEmpty() || metadata.targetQualifiedName.isEmpty() ||
-        metadata.targetColumn.isEmpty() || std::holds_alternative<std::monostate>(value) ||
-        std::holds_alternative<DeferredValue>(value) || std::holds_alternative<QByteArray>(value) ||
-        std::holds_alternative<FallbackText>(value) ||
-        std::holds_alternative<UnavailableValue>(value) ||
+        metadata.targetColumn.isEmpty() ||
         (inserted_[index.row()] && !touched_[index.row()][index.column()]))
         return std::nullopt;
-    if (const auto* decimal = std::get_if<DecimalValue>(&value);
-        decimal && !filterableDecimal(*decimal))
-        return std::nullopt;
-    if (const auto* real = std::get_if<double>(&value); real && !std::isfinite(*real))
+    if (!EngineAdapter::foreignKeyValueFilterable(value))
         return std::nullopt;
     return metadata;
 }
@@ -460,33 +386,10 @@ bool ResultTableModel::setData(const QModelIndex& index, const QVariant& value, 
     const auto oldBytes = editBytes_[index.row()][index.column()];
     if (bytes > byteBudget_ - residentBytes_ - (stagedBytes_ - oldBytes))
         return false;
-    const auto type = columns_[index.column()].databaseType.toLower();
-    Cell converted = text;
-    if (type == "integer" || type == "int" || type == "bigint" || type == "smallint" ||
-        type == "int2" || type == "int4" || type == "int8") {
-        bool valid = false;
-        const auto integer = text.toLongLong(&valid);
-        if (!valid)
-            return false;
-        converted = static_cast<qint64>(integer);
-    } else if (type == "boolean" || type == "bool") {
-        if (text.compare("true", Qt::CaseInsensitive) == 0 || text == "1")
-            converted = true;
-        else if (text.compare("false", Qt::CaseInsensitive) == 0 || text == "0")
-            converted = false;
-        else
-            return false;
-    } else if (type.startsWith("numeric") || type.startsWith("decimal")) {
-        converted = DecimalValue{text};
-    } else if (type == "real" || type == "double precision" || type == "float4" ||
-               type == "float8") {
-        bool valid = false;
-        const auto number = text.toDouble(&valid);
-        if (!valid)
-            return false;
-        converted = number;
-    }
-    rows_[index.row()][index.column()] = std::move(converted);
+    auto converted = EngineAdapter::parseGridEditValue(columns_[index.column()].databaseType, text);
+    if (!converted)
+        return false;
+    rows_[index.row()][index.column()] = std::move(*converted);
     touched_[index.row()][index.column()] = true;
     stagedBytes_ = stagedBytes_ - oldBytes + bytes;
     editBytes_[index.row()][index.column()] = bytes;
@@ -650,31 +553,28 @@ QString ResultTableModel::copyScope(QModelIndexList selection, int scope, QStrin
                                     const ResolvedCells& resolved) const {
     if (error)
         error->clear();
-    auto fail = [error](const QString& message) {
-        if (error)
-            *error = message;
-        return QString{};
-    };
-    if (rows_.empty() || columns_.empty())
+    auto snapshot = copySnapshot(std::move(selection), scope, resolved);
+    if (!snapshot)
         return {};
+    auto evaluated = evaluateCopy(std::move(*snapshot));
+    if (error)
+        *error = std::move(evaluated.error);
+    return evaluated.text;
+}
+
+std::optional<ResultTableModel::CopySnapshot>
+ResultTableModel::copySnapshot(QModelIndexList selection, int scope,
+                               const ResolvedCells& resolved) const {
+    if (rows_.empty() || columns_.empty())
+        return std::nullopt;
+    CopySnapshot snapshot;
+    snapshot.byteBudget = byteBudget_;
     for (const auto& [position, value] : resolved) {
         const auto [row, column] = position;
-        if (row < 0 || row >= rowCount() || column < 0 || column >= columnCount() ||
-            !std::holds_alternative<DeferredValue>(rows_[row][column]))
-            return fail(tr("A loaded copy value is invalid."));
-        const auto& deferred = std::get<DeferredValue>(rows_[row][column]);
-        if (deferred.fallback != std::holds_alternative<FallbackText>(value) ||
-            (deferred.fallback && std::get<FallbackText>(value).databaseType != deferred.type) ||
-            (!deferred.fallback && !std::holds_alternative<QString>(value) &&
-             !std::holds_alternative<QByteArray>(value)))
-            return fail(tr("A loaded copy value has the wrong type."));
-        const auto actual = std::holds_alternative<FallbackText>(value)
-                                ? std::get<FallbackText>(value).text.toUtf8().size()
-                            : std::holds_alternative<QString>(value)
-                                ? std::get<QString>(value).toUtf8().size()
-                                : std::get<QByteArray>(value).size();
-        if (actual < 0 || static_cast<quint64>(actual) != deferred.bytes)
-            return fail(tr("A loaded copy value is incomplete."));
+        std::optional<Cell> original;
+        if (row >= 0 && row < rowCount() && column >= 0 && column < columnCount())
+            original = rows_[row][column];
+        snapshot.resolutions.push_back({std::move(original), value});
     }
     selection.erase(std::remove_if(selection.begin(), selection.end(),
                                    [this](const auto& i) {
@@ -683,7 +583,7 @@ QString ResultTableModel::copyScope(QModelIndexList selection, int scope, QStrin
                                    }),
                     selection.end());
     if (scope != 2 && selection.isEmpty())
-        return {};
+        return std::nullopt;
     std::sort(selection.begin(), selection.end(), [](const auto& a, const auto& b) {
         return a.row() == b.row() ? a.column() < b.column() : a.row() < b.row();
     });
@@ -704,87 +604,27 @@ QString ResultTableModel::copyScope(QModelIndexList selection, int scope, QStrin
             maxColumn = std::max(maxColumn, i.column());
         }
     }
-    const auto limit =
-        std::min<std::size_t>(byteBudget_ / sizeof(QChar), std::numeric_limits<qsizetype>::max());
-    if (std::size_t(lines) > limit / std::size_t(maxColumn - minColumn + 1))
-        return fail(tr("Copied selection exceeds the clipboard size limit."));
-    QString output;
-    std::size_t count = 0;
-    // Count exact escaped output first, then reserve once. Neither row nor page
-    // scope constructs a QModelIndex for every cell in advance.
-    for (bool write : {false, true}) {
-        auto selected = selection.cbegin();
-        auto append = [&](QChar character) {
-            if (write)
-                output += character;
-            else
-                ++count;
-        };
-        for (int line = 0; line < lines; ++line) {
-            const int row = scope == 1 ? selectedRows[line] : first + line;
-            if (line)
-                append('\n');
-            for (int column = minColumn; column <= maxColumn; ++column) {
-                if (column != minColumn)
-                    append('\t');
-                if (count > limit)
-                    return fail(tr("Copied selection exceeds the clipboard size limit."));
-                if (scope == 0 && (selected == selection.cend() || selected->row() != row ||
-                                   selected->column() != column))
-                    continue;
-                if (scope == 0)
-                    ++selected;
-                const auto found = resolved.find({row, column});
-                const auto& value = found == resolved.end() ? rows_[row][column] : found->second;
-                if (const auto* unavailable = std::get_if<UnavailableValue>(&value))
-                    return fail(tr("Cannot copy unavailable %1 value: %2")
-                                    .arg(unavailable->databaseType, unavailable->reason));
-                if (std::holds_alternative<DeferredValue>(value))
-                    return fail(tr("Large values cannot be copied from the grid. Export the "
-                                   "result to copy the complete value."));
-                if (const auto* binary = std::get_if<QByteArray>(&value)) {
-                    if (limit < 2 || std::size_t(binary->size()) > (limit - 2) / 2)
-                        return fail(tr("Copied selection exceeds the clipboard size limit."));
-                    const auto length = 2 + std::size_t(binary->size()) * 2;
-                    if (!write) {
-                        if (length > limit - count)
-                            return fail(tr("Copied selection exceeds the clipboard size limit."));
-                        count += length;
-                    } else
-                        output += QStringLiteral("0x") + QString::fromLatin1(binary->toHex());
-                    continue;
-                }
-                const auto text =
-                    std::holds_alternative<FallbackText>(value) ? std::get<FallbackText>(value).text
-                    : std::holds_alternative<QString>(value) ? std::get<QString>(value)
-                                                             : data(index(row, column)).toString();
-                const bool quote = text.contains('\t') || text.contains('\n') ||
-                                   text.contains('\r') || text.contains('"');
-                if (!write) {
-                    const auto length =
-                        std::size_t(text.size()) + std::size_t(text.count('"')) + (quote ? 2 : 0);
-                    if (length > limit - count)
-                        return fail(tr("Copied selection exceeds the clipboard size limit."));
-                    count += length;
-                } else {
-                    if (quote)
-                        output += '"';
-                    for (const auto character : text) {
-                        if (character == '"')
-                            output += '"';
-                        output += character;
-                    }
-                    if (quote)
-                        output += '"';
-                }
+    auto selected = selection.cbegin();
+    snapshot.rows.reserve(static_cast<std::size_t>(lines));
+    for (int line = 0; line < lines; ++line) {
+        const int row = scope == 1 ? selectedRows[line] : first + line;
+        auto& output = snapshot.rows.emplace_back();
+        output.reserve(static_cast<std::size_t>(maxColumn - minColumn + 1));
+        for (int column = minColumn; column <= maxColumn; ++column) {
+            if (scope == 0 && (selected == selection.cend() || selected->row() != row ||
+                               selected->column() != column)) {
+                output.emplace_back(std::nullopt);
+                continue;
             }
-        }
-        if (!write) {
-            if (count > limit)
-                return fail(tr("Copied selection exceeds the clipboard size limit."));
-            output.reserve(qsizetype(count));
+            if (scope == 0)
+                ++selected;
+            const auto found = resolved.find({row, column});
+            output.emplace_back(CopyCellSnapshot{
+                rows_[row][column],
+                found == resolved.end() ? std::nullopt : std::optional<Cell>(found->second),
+                inserted_[row] && !touched_[row][column]});
         }
     }
-    return output;
+    return snapshot;
 }
 } // namespace choscordb

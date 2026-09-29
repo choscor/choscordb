@@ -91,6 +91,8 @@ void NavigatorSqlWorkspaceTest::sqlCellJsonUsesClickedCellAndValidatesEligibilit
             }
             auto* action = menu->findChild<QAction*>("viewCellJson");
             found = action != nullptr;
+            if (trigger && action)
+                QTRY_VERIFY(action->isEnabled());
             enabled = action && action->isEnabled();
             menu->close();
             if (trigger && enabled)
@@ -102,11 +104,15 @@ void NavigatorSqlWorkspaceTest::sqlCellJsonUsesClickedCellAndValidatesEligibilit
     QVERIFY(inspect(1, true));
     auto* sheet = window.findChild<QDialog*>("rowJsonSheet");
     QVERIFY(sheet);
-    QTRY_VERIFY(sheet->isVisible());
-    QCOMPARE(sheet->findChild<QLabel*>("rowJsonStatus")->text(), QString());
-    auto* text = sheet->findChild<QPlainTextEdit*>("rowJsonText");
     auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
-    QVERIFY(text && copy);
+    QVERIFY(copy);
+    QVERIFY(!copy->isEnabled()); // Rendering completes after the UI event returns.
+    QTRY_VERIFY(sheet->isVisible());
+    QTRY_COMPARE(sheet->findChild<QLabel*>("rowJsonStatus")->text(), QString());
+    QVERIFY(!sheet->findChild<QLabel*>("rowJsonStatus")->isVisible());
+    auto* text = sheet->findChild<QPlainTextEdit*>("rowJsonText");
+    QVERIFY(text);
+    QTRY_VERIFY(copy->isEnabled());
     QCOMPARE(QJsonDocument::fromJson(text->toPlainText().toUtf8())
                  .object()
                  .value("items")
@@ -125,13 +131,15 @@ void NavigatorSqlWorkspaceTest::sqlCellJsonUsesClickedCellAndValidatesEligibilit
     QTRY_VERIFY(sheet->isVisible());
     QVERIFY(text->toPlainText().isEmpty());
     QVERIFY(!copy->isEnabled());
-    QVERIFY(!sheet->findChild<QLabel*>("rowJsonStatus")->text().isEmpty());
+    QTRY_VERIFY(sheet->findChild<QLabel*>("rowJsonStatus")
+                    ->text()
+                    .contains("invalid", Qt::CaseInsensitive));
     sheet->reject();
 
     QVERIFY(model->setPage({column("value", "text")}, {{QString("42")}}, 0));
     QVERIFY(inspect(0, true));
     QTRY_VERIFY(sheet->isVisible());
-    QCOMPARE(text->toPlainText().trimmed(), QString("42"));
+    QTRY_COMPARE(text->toPlainText().trimmed(), QString("42"));
     sheet->reject();
     QVERIFY(model->setPage({column("value", "text")}, {{QString("{broken")}}, 0));
     QVERIFY(!inspect(0, false));
@@ -150,15 +158,19 @@ void NavigatorSqlWorkspaceTest::sqlTableJsonIncludesLoadedPageFromBlankSpace() {
     auto* grid = window.findChild<QTableView*>("queryResults");
     auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
     QVERIFY(model);
-    choscordb::ResultColumn id{}, payload{};
+    choscordb::ResultColumn id{}, payload{}, total{};
     id.name = "id";
     id.databaseType = "integer";
     payload.name = "payload";
     payload.databaseType = "jsonb";
+    total.name = "total";
+    total.databaseType = "numeric";
     QVERIFY(model->setPage(
-        {id, payload}, {{qint64(7), QString("{\"nested\":true}")}, {qint64(8), QString("[1,2]")}},
+        {id, payload, total},
+        {{qint64(7), QString("{\"nested\":true}"), choscordb::DecimalValue{"377.00"}},
+         {qint64(8), QString("[1,2]"), choscordb::DecimalValue{"12345678901234567890.123456789"}}},
         200));
-    model->setEditableColumns({true, true}, true, true);
+    model->setEditableColumns({true, true, true}, true, true);
     QVERIFY(model->setData(model->index(1, 0), QString("9")));
     grid->selectRow(0);
     const auto selected = grid->selectionModel()->selectedIndexes();
@@ -186,6 +198,7 @@ void NavigatorSqlWorkspaceTest::sqlTableJsonIncludesLoadedPageFromBlankSpace() {
     auto* text = sheet->findChild<QPlainTextEdit*>("rowJsonText");
     auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
     QVERIFY(text && copy);
+    QTRY_VERIFY(copy->isEnabled());
     const auto parsed = QJsonDocument::fromJson(text->toPlainText().toUtf8());
     QVERIFY(parsed.isArray());
     QCOMPARE(parsed.array().size(), 2);
@@ -194,7 +207,13 @@ void NavigatorSqlWorkspaceTest::sqlTableJsonIncludesLoadedPageFromBlankSpace() {
              true);
     QCOMPARE(parsed.array().at(1).toObject().value("id").toInt(), 9);
     QCOMPARE(parsed.array().at(1).toObject().value("payload").toArray().at(1).toInt(), 2);
-    QVERIFY(sheet->findChild<QLabel*>("rowJsonPageNote")->text().contains("page"));
+    QCOMPARE(parsed.array().at(0).toObject().value("total").toString(), QString("377.00"));
+    QCOMPARE(parsed.array().at(1).toObject().value("total").toString(),
+             QString("12345678901234567890.123456789"));
+    QVERIFY(!sheet->findChild<QLabel*>("rowJsonPageNote"));
+    for (auto* label : sheet->findChildren<QLabel*>())
+        QVERIFY(label->accessibleName() != QString("Omitted field explanation"));
+    QVERIFY(!sheet->findChild<QLabel*>("rowJsonStatus")->isVisible());
     QCOMPARE(grid->selectionModel()->selectedIndexes(), selected);
     QVERIFY(model->hasPendingEdits());
     copy->click();
@@ -226,6 +245,8 @@ void NavigatorSqlWorkspaceTest::sqlCellAndTableJsonLoadFullDeferredText() {
                 return;
             }
             auto* action = menu->findChild<QAction*>(actionName);
+            if (action)
+                QTRY_VERIFY(action->isEnabled());
             enabled = action && action->isEnabled();
             menu->close();
             if (enabled)
@@ -305,6 +326,8 @@ void NavigatorSqlWorkspaceTest::sqlMalformedRowJsonShowsErrorWithoutCopy() {
             return;
         }
         auto* action = menu->findChild<QAction*>("viewRowJson");
+        if (action)
+            QTRY_VERIFY(action->isEnabled());
         enabled = action && action->isEnabled();
         menu->close();
         if (enabled)
@@ -315,9 +338,9 @@ void NavigatorSqlWorkspaceTest::sqlMalformedRowJsonShowsErrorWithoutCopy() {
     auto* sheet = window.findChild<QDialog*>("rowJsonSheet");
     QVERIFY(sheet);
     QTRY_VERIFY(sheet->isVisible());
-    QVERIFY(sheet->findChild<QLabel*>("rowJsonStatus")
-                ->text()
-                .contains("invalid", Qt::CaseInsensitive));
+    QTRY_VERIFY(sheet->findChild<QLabel*>("rowJsonStatus")
+                    ->text()
+                    .contains("invalid", Qt::CaseInsensitive));
     QVERIFY(sheet->findChild<QPlainTextEdit*>("rowJsonText")->toPlainText().isEmpty());
     QVERIFY(!sheet->findChild<QPushButton*>("rowJsonCopy")->isEnabled());
     QVERIFY(model->hasPendingEdits());
@@ -352,6 +375,8 @@ void NavigatorSqlWorkspaceTest::sqlJsonViewsCloseAndDisableAfterDisconnect() {
         auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
         QVERIFY(menu);
         auto* action = menu->findChild<QAction*>("viewCellJson");
+        if (action)
+            QTRY_VERIFY(action->isEnabled());
         const bool enabled = action && action->isEnabled();
         menu->close();
         QVERIFY(enabled);
@@ -361,7 +386,7 @@ void NavigatorSqlWorkspaceTest::sqlJsonViewsCloseAndDisableAfterDisconnect() {
     auto* sheet = window.findChild<QDialog*>("rowJsonSheet");
     QVERIFY(sheet);
     QTRY_VERIFY(sheet->isVisible());
-    QVERIFY(sheet->findChild<QPushButton*>("rowJsonCopy")->isEnabled());
+    QTRY_VERIFY(sheet->findChild<QPushButton*>("rowJsonCopy")->isEnabled());
     QVERIFY(workspace->adapter()->disconnectConnection(connection));
     QTRY_VERIFY(!sheet->isVisible());
     QCOMPARE(model->rowCount(), 1); // The existing grid still displays its last page.
@@ -439,6 +464,7 @@ void NavigatorSqlWorkspaceTest::sqlTableJsonTracksRealPageControls() {
     QTRY_VERIFY(sheet->isVisible());
     auto* text = sheet->findChild<QPlainTextEdit*>("rowJsonText");
     QVERIFY(text);
+    QTRY_VERIFY(sheet->findChild<QPushButton*>("rowJsonCopy")->isEnabled());
     auto page = QJsonDocument::fromJson(text->toPlainText().toUtf8());
     QVERIFY(page.isArray());
     QCOMPARE(page.array().size(), 1000);
@@ -451,11 +477,13 @@ void NavigatorSqlWorkspaceTest::sqlTableJsonTracksRealPageControls() {
     QVERIFY(!grid->indexAt(blank).isValid());
     QVERIFY(viewPage(blank));
     QTRY_VERIFY(sheet->isVisible());
+    QTRY_VERIFY(sheet->findChild<QPushButton*>("rowJsonCopy")->isEnabled());
     page = QJsonDocument::fromJson(text->toPlainText().toUtf8());
     QVERIFY(page.isArray());
     QCOMPARE(page.array().size(), 1);
     QCOMPARE(page.array().first().toObject().value("id").toInt(), 1001);
-    QVERIFY(sheet->findChild<QLabel*>("rowJsonPageNote")->text().contains("other pages"));
+    QVERIFY(!sheet->findChild<QLabel*>("rowJsonPageNote"));
+    QVERIFY(!sheet->findChild<QLabel*>("rowJsonStatus")->isVisible());
     sheet->reject();
 }
 
@@ -491,6 +519,8 @@ void NavigatorSqlWorkspaceTest::sqlJsonActionsColorAndCopyInBothThemes() {
                     return;
                 }
                 auto* action = menu->findChild<QAction*>(actionName);
+                if (action)
+                    QTRY_VERIFY(action->isEnabled());
                 enabled = action && action->isEnabled();
                 menu->close();
                 if (enabled)
@@ -503,7 +533,8 @@ void NavigatorSqlWorkspaceTest::sqlJsonActionsColorAndCopyInBothThemes() {
             QTRY_VERIFY(sheet->isVisible());
             auto* text = sheet->findChild<choscordb::design::JsonTextView*>("rowJsonText");
             auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
-            QVERIFY(text && copy && copy->isEnabled());
+            QVERIFY(text && copy);
+            QTRY_VERIFY(copy->isEnabled());
             const auto plain = text->toPlainText();
             const auto colorAt = [&](qsizetype position) {
                 const auto block = text->document()->findBlock(position);
@@ -577,6 +608,8 @@ void NavigatorSqlWorkspaceTest::sqlJsonActionsLeaveDatabaseAndSelectionIntact() 
                 return;
             }
             auto* action = menu->findChild<QAction*>(actions[i]);
+            if (action)
+                QTRY_VERIFY(action->isEnabled());
             enabled = action && action->isEnabled();
             menu->close();
             if (enabled)
@@ -589,7 +622,8 @@ void NavigatorSqlWorkspaceTest::sqlJsonActionsLeaveDatabaseAndSelectionIntact() 
         QTRY_VERIFY(sheet->isVisible());
         auto* text = sheet->findChild<QPlainTextEdit*>("rowJsonText");
         auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
-        QVERIFY(text && copy && copy->isEnabled());
+        QVERIFY(text && copy);
+        QTRY_VERIFY(copy->isEnabled());
         const auto shown = text->toPlainText();
         copy->click();
         QCOMPARE(QApplication::clipboard()->text(), shown);

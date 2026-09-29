@@ -28,6 +28,7 @@ class PreviewWindow final : public QMainWindow {
 
   private:
     void rebuildSpecimens();
+    bool captureInProgress_ = false;
     QComboBox* specimen_ = nullptr;
     QLineEdit* search_ = nullptr;
     QListWidget* navigation_ = nullptr;

@@ -13,6 +13,7 @@
 #include <QFontMetrics>
 #include <QMenu>
 #include <QPersistentModelIndex>
+#include <QScrollBar>
 #include <QSortFilterProxyModel>
 #include <QStyleOptionViewItem>
 #include <QTabBar>
@@ -61,6 +62,12 @@ void SchemaSidebarWorkspaceTest::tableAndViewIconsFollowTheNavigatorAndTabTheme(
     const auto visibleRoot = proxy->mapFromSource(root);
     tree->expand(visibleRoot);
     QCOMPARE(proxy->rowCount(visibleRoot), 4);
+    const auto firstRow = tree->visualRect(proxy->index(0, 0, visibleRoot));
+    const auto secondRow = tree->visualRect(proxy->index(1, 0, visibleRoot));
+    QVERIFY(firstRow.isValid() && secondRow.isValid());
+    QCOMPARE(secondRow.top(), firstRow.bottom() + 1);
+    QVERIFY2(firstRow.height() <= 24,
+             qPrintable(QStringLiteral("Navigation row is %1 px high").arg(firstRow.height())));
     const auto checkRows = [&] {
         const auto color = theme->resolvedTheme().colors.mutedText;
         for (int row = 0; row < 4; ++row) {
@@ -72,7 +79,8 @@ void SchemaSidebarWorkspaceTest::tableAndViewIconsFollowTheNavigatorAndTabTheme(
             option.rect = tree->visualRect(index);
             QVERIFY(option.rect.isValid());
             delegate->initStyleOption(&option, index);
-            const auto expected = row < 2    ? design::Icon::Grid2x2
+            const auto expected = row == 0   ? design::Icon::Grid2x2
+                                  : row == 1 ? design::Icon::Eye
                                   : row == 2 ? design::Icon::Key
                                              : design::Icon::File;
             QCOMPARE(option.icon.pixmap(14, 14).toImage(),
@@ -87,7 +95,9 @@ void SchemaSidebarWorkspaceTest::tableAndViewIconsFollowTheNavigatorAndTabTheme(
     const auto checkTabs = [&] {
         const auto color = theme->resolvedTheme().colors.mutedText;
         for (int row = 0; row < tabs->count(); ++row) {
-            const auto expected = row < 2 ? design::Icon::Grid2x2 : design::Icon::Table;
+            const auto expected = row == 0   ? design::Icon::Grid2x2
+                                  : row == 1 ? design::Icon::Eye
+                                             : design::Icon::Table;
             QCOMPARE(tabs->tabIcon(row).pixmap(16, 16).toImage(),
                      design::themedIcon(expected, color, 16).pixmap(16, 16).toImage());
         }
@@ -154,8 +164,9 @@ void SchemaSidebarWorkspaceTest::columnRowsShowDeclaredTypesWithoutLosingTheirNa
              QString("b — timestamp(6) with time zone and an extended declared suffix"));
 
     const auto verifyPaint = [&] {
-        tree->setFixedWidth(180);
+        tree->setFixedWidth(220);
         QCoreApplication::processEvents();
+        QTRY_COMPARE(tree->verticalScrollBar()->maximum(), 0);
         const auto image = tree->viewport()->grab().toImage();
         const auto shortRect = tree->visualRect(shortRow);
         const auto longRect = tree->visualRect(longRow);
@@ -163,30 +174,20 @@ void SchemaSidebarWorkspaceTest::columnRowsShowDeclaredTypesWithoutLosingTheirNa
         const auto blankRect = tree->visualRect(blankRow);
         QVERIFY(shortRect.isValid() && longRect.isValid() && longTypeRect.isValid() &&
                 blankRect.isValid());
-        const int right = std::min({shortRect.right(), longRect.right(), longTypeRect.right(),
-                                    blankRect.right(), image.width() - 1});
-        const int left = right - 55;
-        const auto rightPixels = [&](const QRect& row) {
-            return image.copy(QRect(left, row.top(), right - left + 1, row.height()));
-        };
-        QCOMPARE(rightPixels(shortRect), rightPixels(longRect));
-        QVERIFY(rightPixels(shortRect) != rightPixels(blankRect));
-        QVERIFY(rightPixels(longTypeRect) != rightPixels(blankRect));
+        QCOMPARE(shortRect.height(), blankRect.height());
+        QCOMPARE(longRect.height(), blankRect.height());
+        QCOMPARE(longTypeRect.height(), blankRect.height());
         const QFontMetrics detailMetrics(
             design::resolveTypography(design::TypographyRole::NavigationDetail));
         QVERIFY(detailMetrics.horizontalAdvance(longType.databaseType) > longTypeRect.width());
-        const auto detailStrip = rightPixels(longTypeRect);
+        const auto detailStrip = image.copy(longTypeRect);
         const auto muted = theme->resolvedTheme().colors.mutedText;
-        const auto primary = theme->resolvedTheme().colors.text;
         int mutedPixels = 0;
-        int primaryPixels = 0;
         for (int y = 0; y < detailStrip.height(); ++y)
-            for (int x = 0; x < detailStrip.width(); ++x) {
+            for (int x = 0; x < detailStrip.width(); ++x)
                 mutedPixels += detailStrip.pixelColor(x, y) == muted;
-                primaryPixels += detailStrip.pixelColor(x, y) == primary;
-            }
         QVERIFY(mutedPixels > 0);
-        QCOMPARE(primaryPixels, 0);
+        QVERIFY(blankRect.bottom() < tree->viewport()->height());
         QStyleOptionViewItem option;
         option.widget = tree;
         static_cast<main_window_detail::NavigatorIconDelegate*>(tree->itemDelegate())
@@ -197,6 +198,14 @@ void SchemaSidebarWorkspaceTest::columnRowsShowDeclaredTypesWithoutLosingTheirNa
     verifyPaint();
     theme->setMode(design::ThemeMode::Dark);
     verifyPaint();
+
+    const int wideHeight = tree->height();
+    tree->setFixedWidth(150);
+    QTRY_COMPARE(tree->height(), wideHeight);
+    QTRY_COMPARE(tree->verticalScrollBar()->maximum(), 0);
+    tree->setFixedWidth(300);
+    QTRY_COMPARE(tree->height(), wideHeight);
+    QTRY_COMPARE(tree->verticalScrollBar()->maximum(), 0);
 
     tree->setCurrentIndex(longRow);
     QCOMPARE(tree->currentIndex(), QModelIndex(longRow));

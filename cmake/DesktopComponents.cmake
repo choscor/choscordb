@@ -83,15 +83,10 @@ endif()
 
 choscordb_add_library(choscordb-diagnostics
   desktop/app/diagnostics_service.cpp
-  desktop/app/diagnostics_file_lock.cpp
   desktop/app/diagnostics_watchdog.cpp
-  desktop/app/diagnostics_memory.cpp
 )
 target_include_directories(choscordb-diagnostics PUBLIC desktop)
-target_link_libraries(choscordb-diagnostics PUBLIC Qt6::Core)
-if(WIN32)
-  target_link_libraries(choscordb-diagnostics PRIVATE psapi)
-endif()
+target_link_libraries(choscordb-diagnostics PUBLIC choscordb-rust Qt6::Core)
 
 choscordb_add_library(choscordb-desktop-services
   desktop/app/appearance_controller.cpp
@@ -99,13 +94,15 @@ choscordb_add_library(choscordb-desktop-services
   desktop/bridge/completion_service.cpp
   desktop/bridge/result_column_adapter.cpp
   desktop/bridge/engine_adapter.cpp
+  desktop/bridge/engine_adapter_values.cpp
   desktop/bridge/engine_adapter_graph.cpp
   desktop/bridge/engine_adapter_ssh_trust.cpp
   desktop/bridge/engine_adapter_storage.cpp
   desktop/models/shortcut_catalog.cpp
   desktop/models/history_model.cpp
   desktop/models/result_table_model.cpp
-  desktop/models/result_table_model_json.cpp
+  desktop/models/result_table_model_copy_bridge.cpp
+  desktop/models/result_table_model_json_bridge.cpp
   desktop/models/navigator_model.cpp
   desktop/models/value_preview_model.cpp
 )
@@ -187,7 +184,7 @@ if(BUILD_TESTING)
     desktop/tools/preview/preview_capture.cpp
     desktop/tools/preview/preview_standard.cpp
   )
-  target_link_libraries(choscordb-preview PUBLIC choscordb-design-system)
+  target_link_libraries(choscordb-preview PUBLIC choscordb-design-system PRIVATE choscordb-rust Qt6::Concurrent)
   target_link_libraries(choscordb-desktop PUBLIC choscordb-preview)
   target_compile_definitions(choscordb-desktop PRIVATE CHOSCORDB_DEVELOPMENT_PREVIEW)
 endif()

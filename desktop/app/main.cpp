@@ -14,6 +14,11 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QtGlobal>
+#ifdef CHOSCORDB_CROSS_PLATFORM_UPDATER
+#include <QtConcurrentRun>
+#endif
+#include <chrono>
+#include <future>
 int main(int argc, char** argv) {
     const auto askpass = choscordb::ssh_askpass_exit_code();
     if (askpass >= 0)
@@ -40,17 +45,20 @@ int main(int argc, char** argv) {
         args.isSet("smoke-test") ? qEnvironmentVariable("CHOSCORDB_TEST_DATA_DIR") : QString{};
     const auto dataDirectory =
         testDataDirectory.isEmpty() ? choscordb::applicationDataDirectory() : testDataDirectory;
-    choscordb::DiagnosticsService diagnostics(dataDirectory, app.applicationVersion(),
-                                              app.applicationVersion());
-    const bool diagnosticsStarted = diagnostics.start();
+    // The application has a release version but no distinct build identifier.
+    choscordb::DiagnosticsService diagnostics(dataDirectory, app.applicationVersion());
+    // Filesystem initialization may wait on another process's diagnostics lock.
+    // Keep that work off the Qt event loop while early typed records queue in Rust.
+    std::future<bool> diagnosticsStartup;
+    try {
+        diagnosticsStartup =
+            std::async(std::launch::async, [&diagnostics] { return diagnostics.start(); });
+    } catch (...) {
+        // Report the startup failure after the window is constructed.
+    }
     choscordb::DiagnosticsWatchdog watchdog(&app, &diagnostics);
-    if (diagnosticsStarted)
-        watchdog.start();
     const auto storagePath = QDir(dataDirectory).filePath("choscordb.sqlite");
-    choscordb::MainWindow window(nullptr, storagePath, diagnosticsStarted ? &diagnostics : nullptr);
-    if (!diagnosticsStarted)
-        window.showToast(QObject::tr("Local diagnostics could not be started."),
-                         choscordb::ToastVariant::Warning);
+    choscordb::MainWindow window(nullptr, storagePath, &diagnostics);
     const auto applyScreenshotOptions = [&] {
         const auto requestedTheme = args.value("screenshot-theme");
         if (auto* appearance = window.findChild<choscordb::AppearanceController*>())
@@ -65,6 +73,33 @@ int main(int argc, char** argv) {
         }
     };
     window.show();
+    if (!diagnosticsStartup.valid()) {
+        window.disableDiagnostics();
+        window.showToast(QObject::tr("Local diagnostics could not be started."),
+                         choscordb::ToastVariant::Warning);
+    }
+    bool diagnosticsStarted = false;
+    QTimer startupPoll;
+    QObject::connect(&startupPoll, &QTimer::timeout, &window, [&] {
+        if (!diagnosticsStartup.valid() ||
+            diagnosticsStartup.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+            return;
+        try {
+            diagnosticsStarted = diagnosticsStartup.get();
+        } catch (...) {
+            diagnosticsStarted = false;
+        }
+        startupPoll.stop();
+        if (diagnosticsStarted) {
+            watchdog.start();
+        } else {
+            window.disableDiagnostics();
+            window.showToast(QObject::tr("Local diagnostics could not be started."),
+                             choscordb::ToastVariant::Warning);
+        }
+    });
+    if (diagnosticsStartup.valid())
+        startupPoll.start(10);
     choscordb::installNativeUpdater(window, args.isSet("smoke-test") || args.isSet("screenshot"));
 #ifdef CHOSCORDB_CROSS_PLATFORM_UPDATER
     const auto readyPath = qEnvironmentVariable("CHOSCORDB_UPDATE_READY_FILE");
@@ -72,7 +107,8 @@ int main(int argc, char** argv) {
         if (auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>()) {
             const auto acknowledge = [&window, recovery, readyPath] {
                 if (window.isVisible() && recovery->isReady())
-                    (void)choscordb::writeUpdateReadinessFile(readyPath);
+                    (void)QtConcurrent::run(
+                        [readyPath] { (void)choscordb::writeUpdateReadinessFile(readyPath); });
             };
             QObject::connect(
                 recovery, &choscordb::WorkspaceRecoveryController::restoreCompleted, &window,
@@ -93,11 +129,20 @@ int main(int argc, char** argv) {
                            &QApplication::quit);
     }
     const int result = app.exec();
+    startupPoll.stop();
+    if (diagnosticsStartup.valid()) {
+        try {
+            diagnosticsStarted = diagnosticsStartup.get();
+        } catch (...) {
+            diagnosticsStarted = false;
+        }
+    }
     watchdog.stop();
     diagnostics.stop();
     if (args.isSet("smoke-test")) {
         const auto exportPath = qEnvironmentVariable("CHOSCORDB_TEST_EXPORT_PATH");
-        if (!exportPath.isEmpty() && !diagnostics.exportZip(exportPath).success)
+        if (!exportPath.isEmpty() &&
+            (!diagnosticsStarted || !diagnostics.exportZip(exportPath).success))
             return result == 0 ? 2 : result;
     }
     return result;

@@ -318,7 +318,7 @@ class EditorTest : public QObject {
         QTemporaryDir dir;
         QFile file(dir.filePath("large.sql"));
         QVERIFY(file.open(QIODevice::WriteOnly));
-        QVERIFY(file.resize(choscordb::DocumentIo::MaximumBytes + 1));
+        QVERIFY(file.resize(16 * 1024 * 1024 + 1));
         file.close();
         choscordb::SqlEditor editor;
         editor.setText("SELECT 42;");

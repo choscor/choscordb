@@ -20,6 +20,14 @@
 #include <memory>
 #include <utility>
 namespace choscordb {
+bool showsSidebarChild(const QModelIndex& index) {
+    const auto parentKind = index.parent().data(NavigatorModel::KindRole).toString();
+    if (parentKind != QLatin1String("table") && parentKind != QLatin1String("view"))
+        return true;
+    const auto kind = index.data(NavigatorModel::KindRole).toString();
+    return kind == QLatin1String("column") || kind == QLatin1String("loading") ||
+           kind == QLatin1String("error") || kind == QLatin1String("load_more");
+}
 namespace {
 QString text(const rust::String& s) {
     return QString::fromUtf8(s.data(), static_cast<qsizetype>(s.size()));
@@ -32,14 +40,6 @@ QString relationSubtype(const QVariantList& properties) {
         return property.value(QStringLiteral("value")).toString();
     }
     return {};
-}
-bool showsSidebarChild(const QModelIndex& index) {
-    const auto parentKind = index.parent().data(NavigatorModel::KindRole).toString();
-    if (parentKind != QLatin1String("table") && parentKind != QLatin1String("view"))
-        return true;
-    const auto kind = index.data(NavigatorModel::KindRole).toString();
-    return kind == QLatin1String("column") || kind == QLatin1String("loading") ||
-           kind == QLatin1String("error") || kind == QLatin1String("load_more");
 }
 class SelectedConnectionProxy final : public QSortFilterProxyModel {
   public:

@@ -5,6 +5,7 @@
 #include <QGraphicsScene>
 #include <QGraphicsSimpleTextItem>
 #include <QGraphicsView>
+#include <QInputDevice>
 #include <QMap>
 #include <QNativeGestureEvent>
 #include <QPainterPath>
@@ -62,6 +63,45 @@ class ObjectErdNavigationTest final : public QObject {
         QCoreApplication::processEvents();
         QVERIFY(erd.zoomFactor() >= 0.85);
     }
+    void mouseWheelZoomsAtCursorWithoutModifier() {
+        ObjectErdWidget erd;
+        erd.resize(440, 300);
+        erd.show();
+        ObjectGraph graph;
+        graph.tables.append({"center", "main.center", {{"id", "INTEGER", true, false}}});
+        for (int i = 0; i < 12; ++i) {
+            const QString id = QString("neighbor_%1").arg(i);
+            ObjectGraphTable table{id, QString("main.%1").arg(id), {}};
+            for (int column = 0; column < 10; ++column)
+                table.columns.append({QString("column_%1").arg(column), "INTEGER", false, false});
+            graph.tables.append(table);
+            graph.edges.append({QString("fk_%1").arg(i), "center", id, {"id"}, {"column_0"}});
+        }
+        erd.setGraph(graph, "center");
+        QCoreApplication::processEvents();
+        auto* view = erd.findChild<QGraphicsView*>("objectErdView");
+        QVERIFY(view);
+        view->centerOn(view->scene()->sceneRect().center());
+        const QPoint anchor(130, 90);
+        const auto sceneAtAnchor = view->mapToScene(anchor);
+        const auto initialScale = erd.zoomFactor();
+        QPointingDevice mouse("test wheel mouse", 1, QInputDevice::DeviceType::Mouse,
+                              QPointingDevice::PointerType::Generic,
+                              QInputDevice::Capability::Scroll, 1, 3);
+        QWheelEvent zoomIn(anchor, view->viewport()->mapToGlobal(anchor), {0, 40}, {0, 120},
+                           Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false,
+                           Qt::MouseEventNotSynthesized, &mouse);
+        QCoreApplication::sendEvent(view->viewport(), &zoomIn);
+        QVERIFY(erd.zoomFactor() > initialScale);
+        QVERIFY(QLineF(sceneAtAnchor, view->mapToScene(anchor)).length() < 3);
+
+        QWheelEvent zoomOut(anchor, view->viewport()->mapToGlobal(anchor), {0, -40}, {0, -120},
+                            Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false,
+                            Qt::MouseEventNotSynthesized, &mouse);
+        QCoreApplication::sendEvent(view->viewport(), &zoomOut);
+        QVERIFY(qAbs(erd.zoomFactor() - initialScale) < 0.001);
+        QVERIFY(QLineF(sceneAtAnchor, view->mapToScene(anchor)).length() < 3);
+    }
     void erdHasNoControlRowAndTrackpadGesturesPanOrZoom() {
         ObjectErdWidget erd;
         erd.resize(440, 300);
@@ -104,18 +144,25 @@ class ObjectErdNavigationTest final : public QObject {
         QVERIFY(erd.zoomFactor() <= 4.0);
         view->centerOn(view->scene()->sceneRect().center());
         const QPoint center = view->viewport()->rect().center();
-        const auto beforePan = view->mapToScene(center);
-        QWheelEvent vertical(center, view->viewport()->mapToGlobal(center), {0, -80}, {},
-                             Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false);
+        const auto beforeWheelZoom = view->mapToScene(center);
+        QPointingDevice touchpad(
+            "test touchpad", 2, QInputDevice::DeviceType::TouchPad,
+            QPointingDevice::PointerType::Finger,
+            QInputDevice::Capability::PixelScroll | QInputDevice::Capability::Scroll, 1, 0);
+        QWheelEvent vertical(center, view->viewport()->mapToGlobal(center), {0, -80}, {0, -120},
+                             Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false,
+                             Qt::MouseEventNotSynthesized, &touchpad);
         const auto beforeScrollScale = erd.zoomFactor();
         QCoreApplication::sendEvent(view->viewport(), &vertical);
-        QCOMPARE(erd.zoomFactor(), beforeScrollScale);
-        QVERIFY(qAbs(view->mapToScene(center).y() - beforePan.y()) > 1);
+        QVERIFY(erd.zoomFactor() < beforeScrollScale);
+        QVERIFY(QLineF(beforeWheelZoom, view->mapToScene(center)).length() < 3);
+        const auto afterScrollScale = erd.zoomFactor();
         const auto beforeHorizontal = view->mapToScene(center);
         QWheelEvent horizontal(center, view->viewport()->mapToGlobal(center), {-80, 0}, {},
-                               Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false);
+                               Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false,
+                               Qt::MouseEventNotSynthesized, &touchpad);
         QCoreApplication::sendEvent(view->viewport(), &horizontal);
-        QCOMPARE(erd.zoomFactor(), beforeScrollScale);
+        QCOMPARE(erd.zoomFactor(), afterScrollScale);
         QVERIFY(qAbs(view->mapToScene(center).x() - beforeHorizontal.x()) > 1);
         erd.resize(120, 200);
         QCoreApplication::processEvents();

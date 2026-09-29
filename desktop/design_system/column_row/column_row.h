@@ -3,7 +3,7 @@
 #include <QStyledItemDelegate>
 
 namespace choscordb::design {
-// A single-line navigation row with an independent, right-aligned detail value.
+// A single-line navigation row with an independent, right-aligned database type.
 class ColumnRowDelegate : public QStyledItemDelegate {
   public:
     explicit ColumnRowDelegate(int detailRole, QObject* parent = nullptr);

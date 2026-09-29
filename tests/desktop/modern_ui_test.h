@@ -20,6 +20,10 @@ class ModernUiTest final : public QObject {
     void diagnosticsSaveFailureLeavesNoZip();
     void diagnosticsCancelDuringExportLeavesNoZip();
     void diagnosticsPreviewAndClearKeepDialogResponsiveDuringStorageWait();
+    void diagnosticsWindowDestructionDoesNotWaitForBlockedPreview();
+    void diagnosticsWindowDestructionCancelsBlockedExport();
+    void diagnosticsFailureDuringPreviewDisablesOpenDialog();
+    void diagnosticsFailureDuringReplaceConfirmationDoesNotStartExport();
     void diagnosticsFolderOpened(const QUrl& url);
     void applicationMenusProvideWindowControlsWithoutConnectionMenu();
     void quickSwitchOpensOneSearchOverlayFromViewAction();

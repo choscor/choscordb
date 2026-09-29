@@ -351,7 +351,7 @@ class ResultViewWorkspaceTest : public QObject {
         grid->selectionModel()->select(grid->model()->index(0, 0),
                                        QItemSelectionModel::ClearAndSelect);
         triggerTableAction(grid, "Copy selected rows");
-        QCOMPARE(QApplication::clipboard()->text(), QString("4\tALPHA"));
+        QTRY_COMPARE(QApplication::clipboard()->text(), QString("4\tALPHA"));
         QTRY_VERIFY(next->isEnabled());
         next->click();
         QTRY_COMPARE(grid->model()->rowCount(), 2);

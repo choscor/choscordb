@@ -17,6 +17,7 @@ class QSortFilterProxyModel;
 namespace choscordb {
 class EngineAdapter;
 class NavigatorModel;
+bool showsSidebarChild(const QModelIndex& index);
 struct QuickObjectResult {
     quint64 connection = 0;
     QString objectId;

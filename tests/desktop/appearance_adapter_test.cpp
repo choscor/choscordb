@@ -8,6 +8,13 @@ class AppearanceAdapterTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void themeChoicesMatchPersistedPolicy() {
+        for (const auto& theme :
+             {QStringLiteral("system"), QStringLiteral("light"), QStringLiteral("dark")})
+            QVERIFY(choscordb::EngineAdapter::appearanceThemeValid(theme));
+        for (const auto& theme : {QStringLiteral("sepia"), QStringLiteral("Dark"), QString()})
+            QVERIFY(!choscordb::EngineAdapter::appearanceThemeValid(theme));
+    }
     void exposesCorrelatedAppearanceResult() {
         choscordb::EngineAdapter adapter;
         QVERIFY(adapter.metaObject()->indexOfSignal(
@@ -72,6 +79,43 @@ class AppearanceAdapterTest final : public QObject {
         QVERIFY(!adapter.setAppearanceLayout(value, 99));
         QCOMPARE(failed.count(), 1);
         QCOMPARE(failed.at(0).at(0).toULongLong(), quint64(99));
+    }
+
+    void invalidAppearancePolicyIsRejectedByRustWithoutReplacingSavedLayout() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        choscordb::EngineAdapter adapter(nullptr, directory.filePath("appearance.sqlite"));
+        QSignalSpy ready(&adapter, &choscordb::EngineAdapter::appearanceLayoutReady);
+        QSignalSpy failed(&adapter, &choscordb::EngineAdapter::recoveryFailed);
+        choscordb::AppearanceLayout valid;
+        valid.theme = "dark";
+        QVERIFY(adapter.setAppearanceLayout(valid, 201));
+        QTRY_COMPARE(ready.size(), 1);
+        ready.clear();
+
+        auto invalid = valid;
+        invalid.theme = "sepia";
+        QVERIFY(adapter.setAppearanceLayout(invalid, 202));
+        QTRY_COMPARE(failed.size(), 1);
+        QCOMPARE(failed.at(0).at(0).toULongLong(), quint64(202));
+        QVERIFY(!failed.at(0).at(1).toString().isEmpty());
+
+        invalid = valid;
+        invalid.accentKind = "custom";
+        invalid.accent = "#nothex";
+        QVERIFY(adapter.setAppearanceLayout(invalid, 203));
+        QTRY_COMPARE(failed.size(), 2);
+
+        invalid = valid;
+        invalid.width = 100;
+        QVERIFY(adapter.setAppearanceLayout(invalid, 204));
+        QTRY_COMPARE(failed.size(), 3);
+
+        QVERIFY(adapter.getAppearanceLayout(205));
+        QTRY_COMPARE(ready.size(), 1);
+        QCOMPARE(ready.at(0).at(0).toULongLong(), quint64(205));
+        QCOMPARE(qvariant_cast<choscordb::AppearanceLayout>(ready.at(0).at(2)).theme,
+                 QString("dark"));
     }
 };
 

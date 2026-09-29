@@ -1,6 +1,4 @@
 #include "bridge/engine_adapter_p.h"
-#include <algorithm>
-#include <initializer_list>
 #include <utility>
 
 namespace choscordb {
@@ -156,45 +154,19 @@ bool EngineAdapter::getAppearanceLayout(quint64 token) {
                          [this, token] { return appearance_layout_get(*d_->engine, token); });
 }
 bool EngineAdapter::setAppearanceLayout(const AppearanceLayout& appearance, quint64 token) {
-    const auto member = [](const QString& value, std::initializer_list<QStringView> choices) {
-        return std::ranges::any_of(choices,
-                                   [&value](QStringView choice) { return value == choice; });
-    };
     if (!appearance.theme.isValidUtf16() || !appearance.density.isValidUtf16() ||
         !appearance.accentKind.isValidUtf16() || !appearance.accent.isValidUtf16() ||
-        !appearance.screenName.isValidUtf16() || appearance.theme.size() > 16 ||
-        appearance.density.size() > 16 || appearance.accentKind.size() > 16 ||
-        appearance.accent.size() > 16 || appearance.screenName.size() > 256) {
+        !appearance.screenName.isValidUtf16()) {
         emit recoveryFailed(token, tr("Invalid appearance or layout settings."));
         return false;
     }
-    const bool preset = appearance.accentKind == "preset";
-    const bool validCustom =
-        appearance.accent.size() == 7 && appearance.accent.front() == '#' &&
-        std::ranges::all_of(appearance.accent.sliced(1), [](QChar value) {
-            const auto c = value.unicode();
-            return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-        });
     const auto screenBytes = appearance.screenName.toUtf8();
     const quint64 retainedBytes = static_cast<quint64>(appearance.theme.toUtf8().size()) +
                                   static_cast<quint64>(appearance.density.toUtf8().size()) +
                                   static_cast<quint64>(appearance.accentKind.toUtf8().size()) +
                                   static_cast<quint64>(appearance.accent.toUtf8().size()) +
                                   static_cast<quint64>(screenBytes.size());
-    if (appearance.version != 1 || !member(appearance.theme, {u"system", u"light", u"dark"}) ||
-        !member(appearance.density, {u"compact", u"comfortable"}) ||
-        !member(appearance.accentKind, {u"preset", u"custom"}) ||
-        (preset && !member(appearance.accent, {u"cobalt", u"azure", u"violet", u"teal", u"green",
-                                               u"orange", u"rose"})) ||
-        (!preset && !validCustom) || appearance.navigatorWidth < 96 ||
-        appearance.navigatorWidth > 2048 || appearance.editorResultsSplit < 100 ||
-        appearance.editorResultsSplit > 900 || appearance.historyHeight < 80 ||
-        appearance.historyHeight > 4096 || appearance.width < 960 || appearance.height < 640 ||
-        appearance.width > 16384 || appearance.height > 16384 || appearance.x < -1000000 ||
-        appearance.x > 1000000 || appearance.y < -1000000 || appearance.y > 1000000 ||
-        screenBytes.size() > 256 ||
-        (appearance.hasScreenName && (screenBytes.isEmpty() || screenBytes.contains('\0'))) ||
-        retainedBytes > 4096) {
+    if (screenBytes.size() > 256 || retainedBytes > 4096) {
         emit recoveryFailed(token, tr("Invalid appearance or layout settings."));
         return false;
     }

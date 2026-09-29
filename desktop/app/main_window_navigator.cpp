@@ -2,6 +2,7 @@
 
 #include "app/editor_preferences.h"
 #include "app/main_window_ui.h"
+#include "app/main_window_widgets.h"
 #include "app/navigator_controller.h"
 #include "app/object_explorer.h"
 #include "app/query_workspace.h"
@@ -59,25 +60,25 @@ void MainWindow::connectNavigator(const Ui& ui) {
         const auto* model = tree->model();
         if (!model)
             return;
-        const std::function<int(const QModelIndex&)> countVisible =
-            [tree, model, &countVisible](const QModelIndex& parent) -> int {
-            int count = 0;
+        const std::function<int(const QModelIndex&)> visibleHeight =
+            [this, tree, model, &visibleHeight](const QModelIndex& parent) -> int {
+            int height = 0;
             for (int row = 0; row < model->rowCount(parent); ++row) {
                 const auto index = model->index(row, 0, parent);
-                ++count;
+                height += std::max(theme_->metrics().navigationRowHeight,
+                                   tree->sizeHintForIndex(index).height());
                 if (tree->isExpanded(index))
-                    count += countVisible(index);
+                    height += visibleHeight(index);
             }
-            return count;
+            return height;
         };
-        const int rowHeight =
-            std::max(theme_->metrics().navigationRowHeight, tree->sizeHintForRow(0));
         tree->setFixedHeight(std::max(design::spacing(design::Spacing::Two),
-                                      countVisible({}) * rowHeight + 2 * tree->frameWidth()));
+                                      visibleHeight({}) + 2 * tree->frameWidth()));
     };
     const auto scheduleTreeHeight = [tree, updateTreeHeight] {
         QTimer::singleShot(0, tree, updateTreeHeight);
     };
+    new main_window_detail::SidebarWidthObserver(tree->viewport(), scheduleTreeHeight);
     const auto scheduleRevealCurrent = [tree, revealCurrent] {
         QTimer::singleShot(0, tree, revealCurrent);
     };

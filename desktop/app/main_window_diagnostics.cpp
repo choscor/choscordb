@@ -11,7 +11,6 @@
 #include "design_system/metrics/metrics.h"
 #include "design_system/text/text.h"
 #include <QDesktopServices>
-#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFutureWatcher>
@@ -20,6 +19,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QTabWidget>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -32,7 +32,6 @@ namespace {
 template <typename Result> class BackgroundTask final : public QObject {
   public:
     explicit BackgroundTask(QObject* parent) : QObject(parent) {}
-    ~BackgroundTask() override { watcher_.waitForFinished(); }
     void start(std::function<Result()> work, std::function<void(const Result&)> completed) {
         connect(&watcher_, &QFutureWatcher<Result>::finished, this,
                 [this, completed = std::move(completed)] {
@@ -52,49 +51,82 @@ struct ClearOutcome {
     DiagnosticSummary summary;
 };
 
+QString fromRust(const rust::String& value) {
+    return QString::fromUtf8(value.data(), qsizetype(value.size()));
+}
+
+class DiagnosticsWorker final {
+  public:
+    explicit DiagnosticsWorker(const RustDiagnostics& source)
+        : backend_(diagnostics_clone(source)) {}
+
+    DiagnosticSummary preview() const {
+        const auto source = diagnostics_preview(*backend_);
+        DiagnosticSummary result;
+        result.estimatedBytes = qint64(source.estimated_bytes);
+        for (const auto& count : source.category_counts)
+            result.categoryCounts.insert(fromRust(count.name), int(count.count));
+        for (const auto& count : source.duration_bucket_counts)
+            result.durationBucketCounts.insert(fromRust(count.name), int(count.count));
+        result.fromUtc = QDateTime::fromString(fromRust(source.from_utc), Qt::ISODateWithMs);
+        result.toUtc = QDateTime::fromString(fromRust(source.to_utc), Qt::ISODateWithMs);
+        for (const auto& name : source.unavailable_categories)
+            result.unavailableCategories.append(fromRust(name));
+        result.droppedRecords = source.dropped_records;
+        result.hasHistory = source.has_history;
+        return result;
+    }
+
+    ClearOutcome clearThenPreview() const {
+        const auto source = diagnostics_clear(*backend_);
+        ClearOutcome result;
+        result.success = source.success;
+        result.error = fromRust(source.error);
+        if (result.success)
+            result.summary = preview();
+        return result;
+    }
+
+    DiagnosticExportResult exportZip(const QString& destination,
+                                     const DiagnosticCancellation& cancellation) const {
+        const auto path = destination.toUtf8();
+        const auto source = diagnostics_export_zip(
+            *backend_, rust::Str(path.constData(), size_t(path.size())), cancellation);
+        return {.success = source.success,
+                .cancelled = source.cancelled,
+                .error = fromRust(source.error)};
+    }
+
+  private:
+    rust::Box<RustDiagnostics> backend_;
+};
+
 class ExportTask final : public QObject {
   public:
-    explicit ExportTask(QObject* parent) : QObject(parent) {}
-    ~ExportTask() override {
-        cancel();
-        watcher_.waitForFinished();
-    }
-    void cancel() { cancelled_ = true; }
-    void start(DiagnosticsService* service, QString destination,
+    explicit ExportTask(QObject* parent)
+        : QObject(parent), cancellation_(std::make_shared<rust::Box<DiagnosticCancellation>>(
+                               diagnostics_new_cancellation())) {}
+    ~ExportTask() override { cancel(); }
+    void cancel() { diagnostics_cancel(**cancellation_); }
+    void start(std::shared_ptr<DiagnosticsWorker> service, QString destination,
                std::function<void(const DiagnosticExportResult&)> completed) {
         connect(&watcher_, &QFutureWatcher<DiagnosticExportResult>::finished, this,
                 [this, completed = std::move(completed)] {
                     completed(watcher_.result());
                     deleteLater();
                 });
-        watcher_.setFuture(QtConcurrent::run([this, service, destination = std::move(destination)] {
-            return service->exportZip(destination, &cancelled_);
-        }));
+        const auto cancellation = cancellation_;
+        watcher_.setFuture(QtConcurrent::run(
+            [service = std::move(service), cancellation, destination = std::move(destination)] {
+                return service->exportZip(destination, **cancellation);
+            }));
     }
 
   private:
-    std::atomic_bool cancelled_ = false;
+    std::shared_ptr<rust::Box<DiagnosticCancellation>> cancellation_;
     QFutureWatcher<DiagnosticExportResult> watcher_;
 };
 
-DiagnosticDriver safeDriver(const QString& driver) {
-    if (driver == QLatin1String("sqlite"))
-        return DiagnosticDriver::SQLite;
-    if (driver == QLatin1String("postgres"))
-        return DiagnosticDriver::PostgreSQL;
-    if (driver == QLatin1String("mysql"))
-        return DiagnosticDriver::MySQL;
-    return DiagnosticDriver::Unknown;
-}
-DiagnosticDurationBucket durationBucket(quint64 durationMs) {
-    if (durationMs < 100)
-        return DiagnosticDurationBucket::Under100Ms;
-    if (durationMs < 1000)
-        return DiagnosticDurationBucket::Under1s;
-    if (durationMs < 10000)
-        return DiagnosticDurationBucket::Under10s;
-    return DiagnosticDurationBucket::Over10s;
-}
 QString summaryText(const DiagnosticSummary& summary) {
     QString text = QObject::tr(
         "The standard ZIP covers the last 7 days of local diagnostics: typed errors, "
@@ -133,80 +165,49 @@ QString summaryText(const DiagnosticSummary& summary) {
 void MainWindow::connectDiagnostics() {
     if (!diagnostics_ || !workspace_)
         return;
-    connect(workspace_, &QueryWorkspace::connectionReady, this, [this](quint64 connection) {
-        diagnostics_->record({.event = DiagnosticEvent::ConnectionSucceeded,
-                              .driver = safeDriver(workspace_->driverForConnection(connection)),
-                              .openTabs = editors_ ? editors_->count() : 0});
-        diagnostics_->sampleMemory(editors_ ? editors_->count() : 0, true);
-    });
-    connect(workspace_, &QueryWorkspace::connectionAttemptFailed, this,
-            [this](const QString& driver) {
-                diagnostics_->record({.event = DiagnosticEvent::ConnectionFailed,
-                                      .driver = safeDriver(driver),
-                                      .errorClass = DiagnosticErrorClass::Connection,
-                                      .openTabs = editors_ ? editors_->count() : 0});
-            });
     auto* adapter = workspace_->adapter();
-    auto queryStarts = std::make_shared<QHash<quint64, QElapsedTimer>>();
-    connect(
-        adapter, &EngineAdapter::eventReady, this, [this, queryStarts](const BridgeEvent& event) {
-            const auto kind = QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
-            if (kind == QLatin1String("query_state")) {
-                const auto state =
-                    QString::fromUtf8(event.state.data(), qsizetype(event.state.size()));
-                if (state == QLatin1String("queued") && !queryStarts->contains(event.id)) {
-                    if (queryStarts->size() >= 1024)
-                        queryStarts->clear();
-                    QElapsedTimer timer;
-                    timer.start();
-                    queryStarts->insert(event.id, timer);
-                }
-                return;
-            }
-            DiagnosticRecord record;
-            record.openTabs = editors_ ? editors_->count() : 0;
-            if (kind == QLatin1String("query_finished")) {
-                record.event = DiagnosticEvent::QuerySucceeded;
-                record.durationBucket = durationBucket(event.duration_ms);
-                queryStarts->remove(event.id);
-            } else if (kind == QLatin1String("query_failed")) {
-                const auto errorKind =
-                    QString::fromUtf8(event.error_kind.data(), qsizetype(event.error_kind.size()));
-                record.event = errorKind == QLatin1String("Cancelled")
-                                   ? DiagnosticEvent::Cancelled
-                                   : DiagnosticEvent::QueryFailed;
-                record.errorClass = DiagnosticErrorClass::Query;
-                const auto start = queryStarts->find(event.id);
-                if (start != queryStarts->end()) {
-                    record.durationBucket =
-                        durationBucket(quint64(qMax<qint64>(0, start->elapsed())));
-                    queryStarts->erase(start);
-                }
-            } else if (kind == QLatin1String("stored_page")) {
-                record.event = DiagnosticEvent::ResultPage;
-            } else if (kind == QLatin1String("export_finished")) {
-                record.event = DiagnosticEvent::ExportSucceeded;
-            } else if (kind == QLatin1String("export_failed")) {
-                record.event = DiagnosticEvent::ExportFailed;
-                record.errorClass = DiagnosticErrorClass::IO;
-            } else {
-                return;
-            }
-            diagnostics_->record(record);
-            if (record.event == DiagnosticEvent::QuerySucceeded ||
-                record.event == DiagnosticEvent::QueryFailed)
-                diagnostics_->sampleMemory(record.openTabs, true);
-        });
+    adapter->attachDiagnostics(diagnostics_->backend());
+    connect(workspace_, &QueryWorkspace::connectionReady, this, [this](quint64) {
+        if (diagnostics_)
+            diagnostics_->sampleMemory(editors_ ? editors_->count() : 0, true);
+    });
     connect(adapter, &EngineAdapter::commandFailed, this, [this](const QString&) {
-        diagnostics_->record(
-            {.event = DiagnosticEvent::Error, .errorClass = DiagnosticErrorClass::Internal});
+        if (diagnostics_)
+            diagnostics_->observeCommandFailure();
     });
     diagnostics_->sampleMemory(editors_ ? editors_->count() : 0);
+    if (editors_)
+        connect(editors_, &QTabWidget::currentChanged, this, [this](int) {
+            if (diagnostics_)
+                diagnostics_->setOpenTabs(editors_->count());
+        });
+    auto* tabCount = new QTimer(this);
+    tabCount->setInterval(1000);
+    connect(tabCount, &QTimer::timeout, this, [this] {
+        if (diagnostics_)
+            diagnostics_->setOpenTabs(editors_ ? editors_->count() : 0);
+    });
+    tabCount->start();
     auto* sampler = new QTimer(this);
     sampler->setInterval(60 * 1000);
-    connect(sampler, &QTimer::timeout, this,
-            [this] { diagnostics_->sampleMemory(editors_ ? editors_->count() : 0); });
+    connect(sampler, &QTimer::timeout, this, [this] {
+        if (diagnostics_)
+            diagnostics_->sampleMemory(editors_ ? editors_->count() : 0);
+    });
     sampler->start();
+}
+
+void MainWindow::disableDiagnostics() {
+    diagnostics_ = nullptr;
+    if (auto* dialog = findChild<DialogShell*>("diagnosticsExportDialog")) {
+        if (auto* summary = dialog->findChild<QLabel*>("diagnosticsSummary"))
+            summary->setText(tr("Local diagnostics are unavailable in this session."));
+        for (const auto* name : {"diagnosticsDestination", "diagnosticsBrowse",
+                                 "diagnosticsShowFolder", "diagnosticsClear", "diagnosticsSave"}) {
+            if (auto* control = dialog->findChild<QWidget*>(name))
+                control->setEnabled(false);
+        }
+    }
 }
 
 void MainWindow::showDiagnosticsExport() {
@@ -240,6 +241,7 @@ void MainWindow::showDiagnosticsExport() {
     auto* destination = new QLineEdit(sections);
     destination->setObjectName("diagnosticsDestination");
     destination->setAccessibleName(tr("Diagnostic ZIP destination"));
+    destination->setEnabled(diagnostics_ != nullptr);
     destinationLabel->setBuddy(destination);
     destinationRow->addWidget(destinationLabel);
     destinationRow->addWidget(destination, 1);
@@ -247,6 +249,7 @@ void MainWindow::showDiagnosticsExport() {
     browse->setObjectName("diagnosticsBrowse");
     browse->setAccessibleName(tr("Choose diagnostic ZIP destination"));
     browse->setVariant(design::ButtonVariant::Outline);
+    browse->setEnabled(diagnostics_ != nullptr);
     destinationRow->addWidget(browse);
     sections->bodyLayout()->addLayout(destinationRow);
     auto* folder = new design::Button(tr("Show Diagnostics Folder"), sections);
@@ -314,17 +317,12 @@ void MainWindow::showDiagnosticsExport() {
                         status->setText(tr("Clearing local diagnostics…"));
                         auto* task = new BackgroundTask<ClearOutcome>(this);
                         const QPointer<DialogShell> guard(dialog);
+                        auto service = std::make_shared<DiagnosticsWorker>(diagnostics_->backend());
                         task->start(
-                            [service = diagnostics_] {
-                                ClearOutcome outcome;
-                                outcome.success = service->clear(&outcome.error);
-                                if (outcome.success)
-                                    outcome.summary = service->preview();
-                                return outcome;
-                            },
-                            [guard, summary, status, clear, save, destination,
+                            [service = std::move(service)] { return service->clearThenPreview(); },
+                            [this, guard, summary, status, clear, save, destination,
                              previewReady](const ClearOutcome& outcome) {
-                                if (!guard)
+                                if (!guard || !diagnostics_)
                                     return;
                                 *previewReady = true;
                                 clear->setEnabled(true);
@@ -356,6 +354,10 @@ void MainWindow::showDiagnosticsExport() {
                     if (answer != QMessageBox::Yes)
                         return;
                 }
+                // The nested confirmation event loop may process a failed async
+                // diagnostics startup and disable this service before returning.
+                if (!diagnostics_)
+                    return;
                 save->setEnabled(false);
                 destination->setEnabled(false);
                 browse->setEnabled(false);
@@ -365,11 +367,12 @@ void MainWindow::showDiagnosticsExport() {
                 auto* task = new ExportTask(this);
                 connect(dialog, &QDialog::finished, task, [task] { task->cancel(); });
                 const QPointer<DialogShell> dialogGuard(dialog);
+                auto service = std::make_shared<DiagnosticsWorker>(diagnostics_->backend());
                 task->start(
-                    diagnostics_, path,
-                    [dialogGuard, destination, browse, folder, clear, save, status,
+                    std::move(service), path,
+                    [this, dialogGuard, destination, browse, folder, clear, save, status,
                      path](const DiagnosticExportResult& result) {
-                        if (!dialogGuard)
+                        if (!dialogGuard || !diagnostics_)
                             return;
                         destination->setEnabled(true);
                         browse->setEnabled(true);
@@ -393,10 +396,11 @@ void MainWindow::showDiagnosticsExport() {
     if (diagnostics_) {
         auto* task = new BackgroundTask<DiagnosticSummary>(this);
         const QPointer<DialogShell> guard(dialog);
-        task->start([service = diagnostics_] { return service->preview(); },
+        auto service = std::make_shared<DiagnosticsWorker>(diagnostics_->backend());
+        task->start([service = std::move(service)] { return service->preview(); },
                     [this, guard, summary, clear, save, destination,
                      previewReady](const DiagnosticSummary& result) {
-                        if (!guard)
+                        if (!guard || !diagnostics_)
                             return;
                         auto text = summaryText(result);
                         if (!diagnostics_->warning().isEmpty())

@@ -12,6 +12,7 @@
 #include <QClipboard>
 #include <QComboBox>
 #include <QDialog>
+#include <QItemSelectionModel>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QMenu>
@@ -148,7 +149,7 @@ class ResultCopyWorkspaceTest : public QObject {
         });
         emit grid.customContextMenuRequested(QPoint(0, 0));
         QVERIFY(menuSeen);
-        QCOMPARE(QApplication::clipboard()->text(), QString("2\tsecond"));
+        QTRY_COMPARE(QApplication::clipboard()->text(), QString("2\tsecond"));
         QTimer::singleShot(0, &window, [&] {
             auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
@@ -161,7 +162,21 @@ class ResultCopyWorkspaceTest : public QObject {
             menu->close();
         });
         emit grid.customContextMenuRequested(QPoint());
-        QCOMPARE(QApplication::clipboard()->text(), QString("1\tfirst\n2\tsecond"));
+        QTRY_COMPARE(QApplication::clipboard()->text(), QString("1\tfirst\n2\tsecond"));
+        QApplication::clipboard()->setText("keep after stale render");
+        QTimer::singleShot(0, &window, [&] {
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+            QVERIFY(menu);
+            auto* action = menu->findChild<QAction*>("copyCurrentPage");
+            QVERIFY(action);
+            action->trigger();
+            QVERIFY(model->setPage({column("replacement")}, {{qint64(99)}}, 0));
+            menu->close();
+        });
+        emit grid.customContextMenuRequested(QPoint());
+        QTRY_VERIFY(messages.toPlainText().contains("result changed before copying completed",
+                                                    Qt::CaseInsensitive));
+        QCOMPARE(QApplication::clipboard()->text(), QString("keep after stale render"));
         QApplication::clipboard()->setText("keep on stale selection");
         QTimer::singleShot(0, &window, [&] {
             auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
@@ -206,7 +221,7 @@ class ResultCopyWorkspaceTest : public QObject {
         });
         emit grid.customContextMenuRequested(QPoint());
         QCOMPARE(QApplication::clipboard()->text(), QString("keep on stale selection"));
-        QVERIFY(messages.toPlainText().contains("odd_type"));
+        QTRY_VERIFY(messages.toPlainText().contains("odd_type"));
         QVERIFY2(queryEvents.isEmpty(), qPrintable(queryEvents.join(", ")));
         QCOMPARE(failures.count(), 0);
     }
@@ -239,8 +254,37 @@ class ResultCopyWorkspaceTest : public QObject {
         QApplication::clipboard()->setText("preserve on selection change");
         QTest::keySequence(grid, QKeySequence::Copy);
         grid->setCurrentIndex(grid->model()->index(0, 1));
-        QTest::qWait(200);
         QCOMPARE(QApplication::clipboard()->text(), QString("preserve on selection change"));
+        grid->setCurrentIndex(index);
+        grid->selectionModel()->select(index, QItemSelectionModel::ClearAndSelect);
+        QApplication::clipboard()->setText("restart copy");
+        QTest::keySequence(grid, QKeySequence::Copy);
+        QTRY_COMPARE(QApplication::clipboard()->text(),
+                     QStringLiteral("0x") + QString(140000, QChar('0')));
+        QTest::qWait(200);
+        QCOMPARE(QApplication::clipboard()->text(),
+                 QStringLiteral("0x") + QString(140000, QChar('0')));
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("SELECT zeroblob(8388609) AS payload");
+        run->trigger();
+        QTRY_VERIFY(grid->model()->rowCount() == 1 &&
+                    qobject_cast<choscordb::ResultTableModel*>(grid->model())
+                        ->deferredValue(grid->model()->index(0, 0))
+                        .has_value() &&
+                    qobject_cast<choscordb::ResultTableModel*>(grid->model())
+                            ->deferredValue(grid->model()->index(0, 0))
+                            ->bytes == 8388609);
+        grid->setCurrentIndex(grid->model()->index(0, 0));
+        grid->selectionModel()->select(grid->model()->index(0, 0),
+                                       QItemSelectionModel::ClearAndSelect);
+        grid->setFocus();
+        QApplication::clipboard()->setText("preserve oversized copy");
+        QTest::keySequence(grid, QKeySequence::Copy);
+        auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
+        QVERIFY(messages);
+        QTRY_VERIFY2(messages->toPlainText().contains("8 MiB"),
+                     qPrintable(messages->toPlainText()));
+        QCOMPARE(QApplication::clipboard()->text(), QString("preserve oversized copy"));
     }
     void sqlResultsCopyCompleteDeferredFallbackText() {
         choscordb::MainWindow window;
@@ -283,9 +327,11 @@ class ResultCopyWorkspaceTest : public QObject {
             auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
             auto* action = menu->findChild<QAction*>("viewRowJson");
-            QVERIFY(action && action->isEnabled());
-            action->trigger();
+            const bool enabled =
+                action && QTest::qWaitFor([action] { return action->isEnabled(); });
             menu->close();
+            QVERIFY(enabled);
+            action->trigger();
         });
         emit grid->customContextMenuRequested(grid->visualRect(index).center());
         auto* sheet = window.findChild<QDialog*>("rowJsonSheet");

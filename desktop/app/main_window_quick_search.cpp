@@ -257,7 +257,10 @@ void MainWindow::updateQuickSearch(const QString& query) {
             context += QStringLiteral(" · ") + editor->filePath();
         else if (auto* object = qobject_cast<ObjectExplorer*>(editors_->widget(index)))
             context += QStringLiteral(" · ") + object->property("objectProfileId").toString();
-        ranked.append({*score, {tr("Tab"), title, context, id, design::Icon::File}});
+        const auto icon = editors_->widget(index)->property("objectType").toString() == "view"
+                              ? design::Icon::Eye
+                              : design::Icon::File;
+        ranked.append({*score, {tr("Tab"), title, context, id, icon}});
     }
     std::stable_sort(ranked.begin(), ranked.end(),
                      [](const auto& left, const auto& right) { return left.first < right.first; });
@@ -302,7 +305,9 @@ void MainWindow::updateQuickSearch(const QString& query) {
                      .arg(object.value(QStringLiteral("kind")).toString())
                      .arg(object.value(QStringLiteral("qualifiedName")).toString())
                      .arg(object.value(QStringLiteral("connection")).toULongLong()),
-                 id, design::Icon::Table});
+                 id,
+                 object.value(QStringLiteral("kind")).toString() == "view" ? design::Icon::Eye
+                                                                           : design::Icon::Table});
             quickObjectMatches_.insert(id, object);
         }
     }
@@ -474,7 +479,7 @@ void MainWindow::updateQuickObjectRows() {
         quickObjectRows_.append(
             {tr("Object"), object.name,
              tr("%1 · %2 · %3").arg(object.context, object.qualifiedName, object.kind), id,
-             design::Icon::Table});
+             object.kind == "view" ? design::Icon::Eye : design::Icon::Table});
         quickObjectMatches_.insert(
             id, {{QStringLiteral("connection"), QVariant::fromValue<qulonglong>(object.connection)},
                  {QStringLiteral("objectId"), object.objectId},

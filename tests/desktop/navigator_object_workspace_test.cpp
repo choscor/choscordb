@@ -77,7 +77,8 @@ void NavigatorSqlWorkspaceTest::sqlRowJsonLoadsUtf8TextAndIgnoresReplacedResult(
                 QFAIL("Row context menu did not open");
             }
             auto* action = menu->findChild<QAction*>("viewRowJson");
-            const bool enabled = action && action->isEnabled();
+            const bool enabled =
+                action && QTest::qWaitFor([action] { return action->isEnabled(); });
             menu->close();
             QVERIFY(enabled);
             action->trigger();
@@ -159,7 +160,7 @@ void NavigatorSqlWorkspaceTest::sqlRowJsonDoesNotChangeDatabaseContents() {
             QFAIL("Row context menu did not open");
         }
         auto* action = menu->findChild<QAction*>("viewRowJson");
-        const bool enabled = action && action->isEnabled();
+        const bool enabled = action && QTest::qWaitFor([action] { return action->isEnabled(); });
         menu->close();
         QVERIFY(enabled);
         action->trigger();
@@ -168,7 +169,8 @@ void NavigatorSqlWorkspaceTest::sqlRowJsonDoesNotChangeDatabaseContents() {
     auto* sheet = window.findChild<QDialog*>("rowJsonSheet");
     QVERIFY(sheet);
     auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
-    QVERIFY(copy && copy->isEnabled());
+    QVERIFY(copy);
+    QTRY_VERIFY(copy->isEnabled());
     copy->click();
     QCOMPARE(QJsonDocument::fromJson(QApplication::clipboard()->text().toUtf8())
                  .object()

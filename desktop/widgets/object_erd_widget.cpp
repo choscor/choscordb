@@ -40,9 +40,10 @@ ObjectErdWidget::ObjectErdWidget(QWidget* parent)
     layout->setSpacing(0);
     view_->setObjectName("objectErdView");
     view_->setAccessibleName(tr("Entity relationship diagram"));
-    view_->setAccessibleDescription(tr("Pinch to zoom; scroll or drag to pan. Use arrow keys to "
-                                       "select a table, Enter to open it, plus and minus to zoom, "
-                                       "and 0 to fit the whole diagram."));
+    view_->setAccessibleDescription(
+        tr("Scroll vertically or pinch to zoom; scroll horizontally or drag to pan. "
+           "Use arrow keys to select a table, Enter to open it, plus and minus to zoom, "
+           "and 0 to fit the whole diagram."));
     view_->setScene(scene_);
     view_->setRenderHint(QPainter::Antialiasing);
     view_->setDragMode(QGraphicsView::ScrollHandDrag);
@@ -191,7 +192,8 @@ bool ObjectErdWidget::eventFilter(QObject* watched, QEvent* event) {
                 wheel->pixelDelta().isNull() ? wheel->angleDelta() / 3 : wheel->pixelDelta();
             if (!delta.isNull())
                 userNavigated_ = true;
-            if (wheel->modifiers() & (Qt::ControlModifier | Qt::MetaModifier)) {
+            const bool wheelZoom = delta.y() != 0;
+            if (wheelZoom || wheel->modifiers() & (Qt::ControlModifier | Qt::MetaModifier)) {
                 zoomAt(qExp(delta.y() / 400.0), wheel->position().toPoint());
                 return true;
             }

@@ -10,6 +10,7 @@
 class QObject;
 
 namespace choscordb {
+struct RustDiagnostics;
 
 // Schema 1. Keep this contract free of SQL, names, paths, and driver error text.
 enum class DiagnosticEvent {
@@ -72,6 +73,7 @@ class DiagnosticsService {
     void stop();
     void record(DiagnosticRecord record) noexcept;
     void sampleMemory(int openTabs = 0, bool force = false) noexcept;
+    void setOpenTabs(int openTabs) noexcept;
     void flush();
     DiagnosticSummary preview();
     DiagnosticExportResult exportZip(const QString& destination,
@@ -79,6 +81,8 @@ class DiagnosticsService {
     bool clear(QString* error = nullptr);
     QString folderPath() const;
     QString warning() const;
+    const RustDiagnostics& backend() const;
+    void observeCommandFailure();
 
   private:
     struct State;

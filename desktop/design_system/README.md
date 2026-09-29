@@ -30,7 +30,7 @@ preserved by the component extraction.
 | Item view | `item_view/`: selectors genuinely shared by table/tree/list |
 | Saved connection row | `navigation_profile_row/`: compact database profile delegate and selection state |
 | Recent history row | `history_row/`: SQL excerpt, database metadata, status badge, and muted hover delegate |
-| Column row | `column_row/`: iconless navigation name with a right-aligned database type |
+| Column row | `column_row/`: iconless navigation name with a right-aligned database type on the same row |
 | Header | `header/`: header and table-corner styles |
 | Scrollbar | `scrollbar/`: scrollbar dimensions and states |
 | Splitter, separator | `splitter/`, `separator/`: handles and horizontal/vertical rules |

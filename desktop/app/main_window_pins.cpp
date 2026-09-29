@@ -1,6 +1,7 @@
 #include "app/main_window.h"
 
 #include "app/main_window_ui.h"
+#include "app/main_window_widgets.h"
 #include "app/navigator_controller.h"
 #include "app/pinned_tree_model.h"
 #include "app/query_workspace.h"
@@ -12,6 +13,7 @@
 #include <QAbstractItemModel>
 #include <QAction>
 #include <QComboBox>
+#include <QFutureWatcher>
 #include <QItemSelectionModel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -20,6 +22,7 @@
 #include <QTimer>
 #include <QTreeView>
 #include <QVariantMap>
+#include <QtConcurrentRun>
 #include <algorithm>
 #include <utility>
 
@@ -54,6 +57,7 @@ PinRecord recordFor(const QModelIndex& index, const QString& profileId,
 } // namespace
 
 void MainWindow::initializePins(const Ui& ui) {
+    pinIoPool_.setMaxThreadCount(1);
     pinnedList_ = ui.pinnedList;
     pinnedModel_ = new PinnedTreeModel(navigatorController_->model(), pinnedList_);
     pinnedList_->setModel(pinnedModel_);
@@ -67,24 +71,35 @@ void MainWindow::initializePins(const Ui& ui) {
         pinnedList_->setVisible(hasPins);
         if (!hasPins)
             return;
-        const auto countVisible = [this](auto&& self, const QModelIndex& parent) -> int {
-            int count = 0;
+        const auto updateRows = [this](auto&& self, const QModelIndex& parent) -> void {
             for (int row = 0; row < pinnedModel_->rowCount(parent); ++row) {
                 const auto child = pinnedModel_->index(row, 0, parent);
-                ++count;
-                if (pinnedList_->isExpanded(child))
-                    count += self(self, child);
+                const bool hidden = !showsSidebarChild(child);
+                if (pinnedList_->isRowHidden(row, parent) != hidden)
+                    pinnedList_->setRowHidden(row, parent, hidden);
+                self(self, child);
             }
-            return count;
         };
-        const int rowHeight =
-            std::max(theme_->metrics().navigationRowHeight, pinnedList_->sizeHintForRow(0));
-        pinnedList_->setFixedHeight(countVisible(countVisible, {}) * rowHeight +
+        updateRows(updateRows, {});
+        const auto visibleHeight = [this](auto&& self, const QModelIndex& parent) -> int {
+            int height = 0;
+            for (int row = 0; row < pinnedModel_->rowCount(parent); ++row) {
+                if (pinnedList_->isRowHidden(row, parent))
+                    continue;
+                const auto child = pinnedModel_->index(row, 0, parent);
+                height += pinnedList_->sizeHintForIndex(child).height();
+                if (pinnedList_->isExpanded(child))
+                    height += self(self, child);
+            }
+            return height;
+        };
+        pinnedList_->setFixedHeight(visibleHeight(visibleHeight, {}) +
                                     2 * pinnedList_->frameWidth());
     };
     const auto schedulePinnedGeometry = [this, updatePinnedGeometry] {
         QTimer::singleShot(0, pinnedList_, updatePinnedGeometry);
     };
+    new main_window_detail::SidebarWidthObserver(pinnedList_->viewport(), schedulePinnedGeometry);
     connect(pinnedModel_, &QAbstractItemModel::rowsInserted, pinnedList_, schedulePinnedGeometry);
     connect(pinnedModel_, &QAbstractItemModel::rowsRemoved, pinnedList_, schedulePinnedGeometry);
     connect(pinnedModel_, &QAbstractItemModel::modelReset, pinnedList_, schedulePinnedGeometry);
@@ -141,11 +156,27 @@ void MainWindow::initializePins(const Ui& ui) {
             });
     connect(theme_, &design::ThemeManager::metricsChanged, pinnedList_, schedulePinnedGeometry);
     schedulePinnedGeometry();
-    QString error;
-    pins_ = pinStore_.load(&error);
-    if (!error.isEmpty())
-        showToast(tr("Some saved pins could not be loaded: %1").arg(error), ToastVariant::Warning);
-    renderPins();
+    auto* loadWatcher = new QFutureWatcher<std::pair<QList<PinRecord>, QString>>(this);
+    connect(loadWatcher, &QFutureWatcher<std::pair<QList<PinRecord>, QString>>::finished, this,
+            [this, loadWatcher, updatePinnedGeometry] {
+                const auto [loaded, error] = loadWatcher->result();
+                loadWatcher->deleteLater();
+                pinsLoaded_ = true;
+                if (pinSaveGeneration_ == 0) {
+                    pins_ = loaded;
+                    savedPins_ = loaded;
+                    renderPins();
+                    updatePinnedGeometry();
+                }
+                if (!error.isEmpty())
+                    showToast(tr("Some saved pins could not be loaded: %1").arg(error),
+                              ToastVariant::Warning);
+            });
+    loadWatcher->setFuture(QtConcurrent::run(&pinIoPool_, [store = pinStore_] {
+        QString error;
+        auto loaded = store.load(&error);
+        return std::make_pair(std::move(loaded), std::move(error));
+    }));
     navigatorController_->setPinStateResolver(
         [this](const QModelIndex& index) -> std::optional<bool> {
             const auto connection = index.data(NavigatorModel::ConnectionRole).toULongLong();
@@ -163,6 +194,8 @@ void MainWindow::initializePins(const Ui& ui) {
         });
     connect(navigatorController_, &NavigatorController::pinRequested, this,
             [this](const QModelIndex& index, bool unpin) {
+                if (!pinsLoaded_)
+                    return;
                 if (!index.isValid())
                     return;
                 const auto connection = index.data(NavigatorModel::ConnectionRole).toULongLong();
@@ -196,13 +229,7 @@ void MainWindow::initializePins(const Ui& ui) {
                     }
                 if (!unpin)
                     updated.prepend(candidate);
-                QString error;
-                if (!pinStore_.save(updated, &error)) {
-                    showToast(tr("Could not save pins: %1").arg(error), ToastVariant::Danger);
-                    return;
-                }
-                pins_ = std::move(updated);
-                renderPins();
+                savePinsAsync(std::move(updated), tr("Could not save pins: %1"));
             });
     connect(ui.pinnedList, &QTreeView::clicked, this, [this](const QModelIndex& index) {
         if (pinnedModel_->isPinnedRoot(index))
@@ -255,13 +282,7 @@ void MainWindow::initializePins(const Ui& ui) {
             for (auto it = updated.begin(); it != updated.end(); ++it)
                 if (PinStore::identityKey(*it) == key) {
                     updated.erase(it);
-                    QString error;
-                    if (!pinStore_.save(updated, &error)) {
-                        showToast(tr("Could not save pins: %1").arg(error), ToastVariant::Danger);
-                        return;
-                    }
-                    pins_ = std::move(updated);
-                    renderPins();
+                    savePinsAsync(std::move(updated), tr("Could not save pins: %1"));
                     return;
                 }
         });
@@ -278,14 +299,8 @@ void MainWindow::initializePins(const Ui& ui) {
                 updated.removeIf([&](const PinRecord& pin) { return pin.profileId == profileId; });
                 if (updated.size() == pins_.size())
                     return;
-                QString error;
-                if (!pinStore_.save(updated, &error)) {
-                    showToast(tr("Could not remove deleted profile's pins: %1").arg(error),
-                              ToastVariant::Danger);
-                    return;
-                }
-                pins_ = std::move(updated);
-                renderPins();
+                savePinsAsync(std::move(updated),
+                              tr("Could not remove deleted profile's pins: %1"));
             });
     connect(workspace_, &QueryWorkspace::connectionReady, this, [this](quint64) {
         QTimer::singleShot(0, this, [this] {
@@ -483,13 +498,8 @@ void MainWindow::tryExpandPendingPins() {
                         for (auto& entry : updated)
                             if (PinStore::identityKey(entry) == key)
                                 entry.unavailable = true;
-                        QString error;
-                        if (pinStore_.save(updated, &error)) {
-                            pins_ = std::move(updated);
-                            renderPins();
-                        } else
-                            showToast(tr("Could not save unavailable pin state: %1").arg(error),
-                                      ToastVariant::Danger);
+                        savePinsAsync(std::move(updated),
+                                      tr("Could not save unavailable pin state: %1"));
                     }
                     auto visibleReason = reason;
                     visibleReason.replace(tr("Activate the pin to retry."),
@@ -621,14 +631,8 @@ void MainWindow::tryRevealPendingPin() {
                     for (auto& entry : updated)
                         if (PinStore::identityKey(entry) == key)
                             entry.unavailable = true;
-                    QString error;
-                    if (pinStore_.save(updated, &error)) {
-                        pins_ = std::move(updated);
-                        renderPins();
-                    } else {
-                        showToast(tr("Could not save unavailable pin state: %1").arg(error),
-                                  ToastVariant::Danger);
-                    }
+                    savePinsAsync(std::move(updated),
+                                  tr("Could not save unavailable pin state: %1"));
                 }
                 showToast(reason, ToastVariant::Warning);
             },
@@ -650,6 +654,32 @@ void MainWindow::tryRevealPendingPin() {
         if (pendingPinKey_ == key)
             tryRevealPendingPin();
     });
+}
+
+void MainWindow::savePinsAsync(QList<PinRecord> updated, const QString& failureMessage) {
+    const auto generation = ++pinSaveGeneration_;
+    pins_ = updated;
+    renderPins();
+    auto* watcher = new QFutureWatcher<QString>(this);
+    connect(watcher, &QFutureWatcher<QString>::finished, this,
+            [this, watcher, generation, updated, failureMessage] {
+                const auto error = watcher->result();
+                watcher->deleteLater();
+                if (error.isEmpty() && generation > pinPersistedGeneration_) {
+                    pinPersistedGeneration_ = generation;
+                    savedPins_ = updated;
+                } else if (!error.isEmpty() && generation == pinSaveGeneration_) {
+                    pins_ = savedPins_;
+                    renderPins();
+                    showToast(failureMessage.arg(error), ToastVariant::Danger);
+                }
+            });
+    watcher->setFuture(
+        QtConcurrent::run(&pinIoPool_, [store = pinStore_, pins = std::move(updated)] {
+            QString error;
+            (void)store.save(pins, &error);
+            return error;
+        }));
 }
 
 void MainWindow::updatePinsForObjectAction(const PendingObjectAction& action) {
@@ -674,13 +704,6 @@ void MainWindow::updatePinsForObjectAction(const PendingObjectAction& action) {
     }
     if (!changed)
         return;
-    QString error;
-    if (!pinStore_.save(updated, &error)) {
-        showToast(tr("The object changed, but its pin could not be saved: %1").arg(error),
-                  ToastVariant::Danger);
-        return;
-    }
-    pins_ = std::move(updated);
-    renderPins();
+    savePinsAsync(std::move(updated), tr("The object changed, but its pin could not be saved: %1"));
 }
 } // namespace choscordb

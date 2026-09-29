@@ -110,7 +110,7 @@ class ComponentsTest final : public QObject {
             QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()), colors.muted);
             QCOMPARE(image.pixelColor(6, rect.center().y()), colors.muted);
             QCOMPARE(image.pixelColor(10, rect.top() + 3), colors.muted);
-            QVERIFY(image.pixelColor(6, rect.top() + 3) != colors.muted);
+            QVERIFY(image.pixelColor(6, rect.top() + 1) != colors.muted);
             const auto hoverRect = tree.visualRect(model.index(1, 0));
             QVERIFY(tree.viewport()->hasMouseTracking());
             QTest::mouseMove(tree.viewport(), QPoint(1, 1));

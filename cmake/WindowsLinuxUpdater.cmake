@@ -37,10 +37,9 @@ function(choscordb_configure_windows_linux_updater target)
   if(NOT update_base_lower STREQUAL update_canonical_base)
     message(FATAL_ERROR "Update Pages URL must belong to CHOSCORDB_UPDATE_REPOSITORY")
   endif()
-  find_package(Qt6 6.8 REQUIRED COMPONENTS Network)
   target_sources(${target} PRIVATE desktop/app/updater_windows_linux.cpp)
   _choscordb_register_first_party_target(${target} desktop/app/updater_windows_linux.cpp)
-  target_link_libraries(${target} PRIVATE choscordb-update-metadata Qt6::Network Qt6::Concurrent)
+  target_link_libraries(${target} PRIVATE choscordb-update-metadata Qt6::Concurrent)
   target_compile_definitions(${target} PRIVATE
     CHOSCORDB_CROSS_PLATFORM_UPDATER
     CHOSCORDB_UPDATE_PUBLIC_KEY="${CHOSCORDB_UPDATE_PUBLIC_KEY}"

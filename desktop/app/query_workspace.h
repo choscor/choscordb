@@ -9,6 +9,7 @@
 #include <QString>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 class QComboBox;
 class QAction;
@@ -29,6 +30,7 @@ class ProfileDialog;
 class QuerySettingsController;
 class ResultFilterBar;
 class EngineAdapter;
+class DeferredAssemblerJob;
 struct BridgeEvent;
 struct SavedProfile;
 struct QueryPreferences;
@@ -76,6 +78,9 @@ class QueryWorkspace final : public QObject {
     QString driverForConnection(quint64 connection) const {
         return connectionDrivers_.value(connection);
     }
+    void setDriverForConnection(quint64 connection, const QString& driver) {
+        connectionDrivers_.insert(connection, driver);
+    }
     bool confirmShutdown();
     void beginShutdown();
     void cancelShutdown();
@@ -113,6 +118,7 @@ class QueryWorkspace final : public QObject {
     void documentTargetChanged();
     void openQueryRequested(quint64 connection);
     void activityChanged(bool busy);
+    void gridEditPlanningChanged(bool planning);
     void executionStateChanged(const QString& state);
     void transactionStateChanged(quint64 connection, bool active);
     void foreignKeyRequested(quint64 connection, const QString& object, const QString& label,
@@ -148,12 +154,14 @@ class QueryWorkspace final : public QObject {
     void openJsonView(JsonViewMode mode, int row = 0, int column = 0);
     void appendJsonViewActions(QMenu& menu, const QPersistentModelIndex& clicked, bool current);
     bool jsonResultCurrent() const;
-    bool serializeJsonView(QString* json, QString* error) const;
+    void scheduleJsonViewEvaluation(bool afterDeferred);
     void requestRowJsonChunk();
     void failRowJson(const QString& error);
     void clearRowJson();
     void handleRowJsonEvent(const BridgeEvent& event);
     void copyResult(int scope);
+    void renderCopy(ResultTableModel::CopySnapshot snapshot, QPersistentModelIndex anchor,
+                    quint64 query, QModelIndexList selection, int scope, quint64 generation);
     void requestCopyChunk();
     void handleCopyEvent(const BridgeEvent& event);
     void failCopy(const QString& error);
@@ -177,23 +185,21 @@ class QueryWorkspace final : public QObject {
     QPointer<QPlainTextEdit> rowJsonText_;
     QPointer<QPushButton> rowJsonCopy_;
     QPointer<QLabel> rowJsonStatus_;
-    QPointer<QLabel> rowJsonOmittedNote_;
-    QPointer<QLabel> rowJsonPageNote_;
     QPersistentModelIndex rowJsonIndex_;
+    quint64 rowJsonGeneration_ = 0;
+    bool rowJsonRendering_ = false;
     bool jsonResultInvalidated_ = false;
     JsonViewMode rowJsonMode_ = JsonViewMode::Row;
     std::optional<quint64> rowJsonQuery_;
     std::map<std::pair<int, int>, Cell> rowJsonResolved_;
-    QByteArray rowJsonLoadingBytes_;
-    QString rowJsonLoadingKind_;
-    QString rowJsonExpectedKind_;
+    std::shared_ptr<DeferredAssemblerJob> rowJsonAssembler_;
+    bool rowJsonAssemblyPending_ = false;
     int rowJsonLoadingColumn_ = -1;
     int rowJsonLoadingRow_ = -1;
     int rowJsonScanRow_ = -1;
     int rowJsonScanColumn_ = -1;
     quint64 rowJsonLoadingHandle_ = 0;
     quint64 rowJsonLoadingOffset_ = 0;
-    quint64 rowJsonLoadingTotal_ = 0;
     quint64 rowJsonResolvedBytes_ = 0;
     struct PendingCopy {
         int scope = 0;
@@ -203,12 +209,13 @@ class QueryWorkspace final : public QObject {
         ResultTableModel::ResolvedCells resolved;
         std::vector<std::pair<int, int>> deferred;
         std::size_t next = 0;
-        QByteArray bytes;
-        QString kind;
+        std::shared_ptr<DeferredAssemblerJob> assembler;
+        bool assembling = false;
         quint64 offset = 0;
         quint64 resolvedBytes = 0;
     };
     std::optional<PendingCopy> pendingCopy_;
+    quint64 copyGeneration_ = 0;
     ExportDialog* export_ = nullptr;
     ProfileDialog* profiles_ = nullptr;
     QString resultOrigin_;
@@ -219,6 +226,8 @@ class QueryWorkspace final : public QObject {
     std::vector<QString> editColumnNames_;
     std::vector<bool> editKey_, editGenerated_;
     quint64 editTargetToken_ = 0, editApplyToken_ = 0;
+    quint64 editPolicyGeneration_ = 0, editabilityJobToken_ = 0;
+    bool editabilityPlanning_ = false, editPlanRunning_ = false;
     bool editApplying_ = false, editApplied_ = false;
     bool exporting_ = false;
     std::optional<quint64> query_;

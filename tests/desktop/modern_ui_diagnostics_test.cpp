@@ -1,11 +1,12 @@
-#include "app/diagnostics_file_lock.h"
 #include "app/diagnostics_service.h"
 #include "app/main_window.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
+#include "diagnostics_legacy_lock.h"
 #include "modern_ui_test.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
+#include <QApplication>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDir>
@@ -22,7 +23,9 @@
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
 #include <QUrl>
+#include <memory>
 
 void ModernUiTest::helpOpensDiagnosticsExportSummary() {
     choscordb::MainWindow window;
@@ -338,6 +341,126 @@ void ModernUiTest::diagnosticsPreviewAndClearKeepDialogResponsiveDuringStorageWa
     QVERIFY(dialog->findChild<QPushButton*>("diagnosticsCancel")->isEnabled());
     lock.unlock();
     QTRY_VERIFY(status->text().contains("cleared"));
+    dialog->close();
+    diagnostics.stop();
+}
+
+void ModernUiTest::diagnosticsWindowDestructionDoesNotWaitForBlockedPreview() {
+    QTemporaryDir storage;
+    QVERIFY(storage.isValid());
+    choscordb::DiagnosticsService diagnostics(storage.path(), "1.2.3");
+    QVERIFY(diagnostics.start());
+    diagnostics.flush();
+    auto window = std::make_unique<choscordb::MainWindow>(
+        nullptr, storage.filePath("workspace.sqlite"), &diagnostics);
+    window->show();
+    choscordb::DiagnosticsFileLock lock(diagnostics.folderPath());
+    QVERIFY(lock.lock(1000));
+    window->findChild<QAction*>("exportDiagnostics")->trigger();
+    QTest::qWait(100);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    window.reset();
+    const auto destructionMs = elapsed.elapsed();
+    lock.unlock();
+    QVERIFY2(destructionMs < 300, "Destroying the window waited for diagnostics preview I/O");
+    diagnostics.stop();
+}
+
+void ModernUiTest::diagnosticsWindowDestructionCancelsBlockedExport() {
+    QTemporaryDir storage;
+    QVERIFY(storage.isValid());
+    choscordb::DiagnosticsService diagnostics(storage.path(), "1.2.3");
+    QVERIFY(diagnostics.start());
+    auto window = std::make_unique<choscordb::MainWindow>(
+        nullptr, storage.filePath("workspace.sqlite"), &diagnostics);
+    window->show();
+    window->findChild<QAction*>("exportDiagnostics")->trigger();
+    auto* dialog = window->findChild<QDialog*>("diagnosticsExportDialog");
+    QVERIFY(dialog);
+    const auto path = storage.filePath("cancelled-on-close.zip");
+    dialog->findChild<QLineEdit*>("diagnosticsDestination")->setText(path);
+    auto* save = dialog->findChild<QPushButton*>("diagnosticsSave");
+    QTRY_VERIFY(save && save->isEnabled());
+    choscordb::DiagnosticsFileLock lock(diagnostics.folderPath());
+    QVERIFY(lock.lock(1000));
+    save->click();
+    QTest::qWait(100);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    window.reset();
+    const auto destructionMs = elapsed.elapsed();
+    lock.unlock();
+    QVERIFY2(destructionMs < 300, "Destroying the window waited for diagnostic ZIP export");
+    QVERIFY(!QFile::exists(path));
+    diagnostics.stop();
+}
+
+void ModernUiTest::diagnosticsFailureDuringPreviewDisablesOpenDialog() {
+    QTemporaryDir storage;
+    QVERIFY(storage.isValid());
+    choscordb::DiagnosticsService diagnostics(storage.path(), "1.2.3");
+    QVERIFY(diagnostics.start());
+    diagnostics.flush();
+    choscordb::MainWindow window(nullptr, storage.filePath("workspace.sqlite"), &diagnostics);
+    window.show();
+    choscordb::DiagnosticsFileLock lock(diagnostics.folderPath());
+    QVERIFY(lock.lock(1000));
+    window.findChild<QAction*>("exportDiagnostics")->trigger();
+    auto* dialog = window.findChild<QDialog*>("diagnosticsExportDialog");
+    QVERIFY(dialog);
+    auto* summary = dialog->findChild<QLabel*>("diagnosticsSummary");
+    QVERIFY(summary && summary->text().contains("Reading"));
+    window.disableDiagnostics();
+    lock.unlock();
+    QTRY_VERIFY(summary->text().contains("unavailable"));
+    QVERIFY(!dialog->findChild<QPushButton*>("diagnosticsShowFolder")->isEnabled());
+    QVERIFY(!dialog->findChild<QPushButton*>("diagnosticsClear")->isEnabled());
+    QVERIFY(!dialog->findChild<QPushButton*>("diagnosticsSave")->isEnabled());
+    QTest::qWait(100);
+    QVERIFY(summary->text().contains("unavailable"));
+    dialog->close();
+    diagnostics.stop();
+}
+
+void ModernUiTest::diagnosticsFailureDuringReplaceConfirmationDoesNotStartExport() {
+    QTemporaryDir storage;
+    QVERIFY(storage.isValid());
+    choscordb::DiagnosticsService diagnostics(storage.path(), "1.2.3");
+    QVERIFY(diagnostics.start());
+    choscordb::MainWindow window(nullptr, storage.filePath("workspace.sqlite"), &diagnostics);
+    window.show();
+    window.findChild<QAction*>("exportDiagnostics")->trigger();
+    auto* dialog = window.findChild<QDialog*>("diagnosticsExportDialog");
+    QVERIFY(dialog);
+    auto* destination = dialog->findChild<QLineEdit*>("diagnosticsDestination");
+    auto* save = dialog->findChild<QPushButton*>("diagnosticsSave");
+    QVERIFY(destination && save);
+    const auto path = storage.filePath("existing.zip");
+    QFile existing(path);
+    QVERIFY(existing.open(QIODevice::WriteOnly));
+    QCOMPARE(existing.write("keep existing bytes"), qint64(19));
+    existing.close();
+    destination->setText(path);
+    QTRY_VERIFY(save->isEnabled());
+    bool answered = false;
+    QTimer::singleShot(0, &window, [&] {
+        auto* confirmation = window.findChild<QMessageBox*>();
+        window.disableDiagnostics();
+        if (confirmation && confirmation->button(QMessageBox::Yes)) {
+            answered = true;
+            confirmation->button(QMessageBox::Yes)->click();
+        }
+    });
+    QTimer::singleShot(2000, &window, [&] {
+        if (auto* modal = QApplication::activeModalWidget())
+            modal->close();
+    });
+    save->click();
+    QVERIFY(answered);
+    QTest::qWait(100);
+    QVERIFY(existing.open(QIODevice::ReadOnly));
+    QCOMPARE(existing.readAll(), QByteArray("keep existing bytes"));
     dialog->close();
     diagnostics.stop();
 }

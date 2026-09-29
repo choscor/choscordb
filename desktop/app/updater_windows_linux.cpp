@@ -1,7 +1,8 @@
+#include "app/application_data.h"
 #include "app/main_window.h"
 #include "app/update_metadata.h"
-#include "app/update_readiness.h"
 #include "app/updater.h"
+#include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_shell/dialog_shell.h"
@@ -9,52 +10,52 @@
 
 #include <QApplication>
 #include <QDesktopServices>
-#include <QDir>
-#include <QFile>
-#include <QFileInfo>
 #include <QFutureWatcher>
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
 #include <QPointer>
-#include <QProcess>
-#include <QProcessEnvironment>
 #include <QProgressBar>
-#include <QSettings>
 #include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QStyle>
-#include <QTemporaryFile>
-#include <QThread>
+#include <QThreadPool>
 #include <QTimer>
 #include <QVBoxLayout>
-#include <QtConcurrent>
-#include <limits>
+#include <QtConcurrentRun>
+#include <algorithm>
 #include <memory>
-#ifdef Q_OS_LINUX
-#include <cerrno>
-#include <csignal>
-#include <fcntl.h>
-#include <linux/fs.h>
-#include <poll.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-#endif
+#include <optional>
+#include <utility>
 
 namespace choscordb {
 namespace {
 #ifdef Q_OS_WIN
 constexpr auto platform = "windows";
 constexpr auto architecture = "x64";
-constexpr auto feedName = "windows-x64.json";
 #else
 constexpr auto platform = "linux";
 constexpr auto architecture = "x86_64";
-constexpr auto feedName = "linux-x86_64.json";
 #endif
+
+rust::Str utf8(const QByteArray& bytes) {
+    return {bytes.constData(), size_t(bytes.size())};
+}
+
+rust::Slice<const uint8_t> bytes(const QByteArray& value) {
+    return {reinterpret_cast<const uint8_t*>(value.constData()), size_t(value.size())};
+}
+
+QString text(const rust::String& value) {
+    return QString::fromUtf8(value.data(), qsizetype(value.size()));
+}
+
+UpdateRecord recordFromDto(const UpdateRecordDto& dto) {
+    return {
+        text(dto.version), QUrl(text(dto.url)), qint64(dto.size),
+        QByteArray(reinterpret_cast<const char*>(dto.sha256.data()), qsizetype(dto.sha256.size())),
+        text(dto.notes)};
+}
 
 QByteArray updatePublicKey() {
     return QByteArray::fromBase64(QByteArray(CHOSCORDB_UPDATE_PUBLIC_KEY));
@@ -67,109 +68,13 @@ void report(QWidget* parent, const QString& title, const QString& detail) {
 }
 
 #ifdef Q_OS_LINUX
-QString launchedAppImage() {
-    const auto appImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
-    const auto invoked = QString::fromLocal8Bit(qgetenv("ARGV0"));
-    if (appImage.isEmpty() || invoked.isEmpty())
-        return {};
-    const QFileInfo invocation(invoked);
-    const QFileInfo target(appImage);
-    const auto directPath = QDir::cleanPath(invocation.absoluteFilePath());
-    const auto targetPath = QDir::cleanPath(target.absoluteFilePath());
-    if (!target.isAbsolute() || directPath != targetPath || invocation.isSymLink() ||
-        target.isSymLink() || !target.isFile() || !target.isExecutable() ||
-        target.canonicalFilePath() != targetPath ||
-        !QFileInfo(target.dir().absolutePath()).isWritable() ||
-        !targetPath.endsWith(QStringLiteral(".AppImage")))
-        return {};
-    return targetPath;
-}
-
-bool exchangeFiles(const QString& first, const QString& second) {
-    const auto firstBytes = QFile::encodeName(first);
-    const auto secondBytes = QFile::encodeName(second);
-    return syscall(SYS_renameat2, AT_FDCWD, firstBytes.constData(), AT_FDCWD,
-                   secondBytes.constData(), RENAME_EXCHANGE) == 0;
-}
-
-class UpdateProcessHandle final {
-  public:
-    enum class State { Running, Exited, Unknown };
-    explicit UpdateProcessHandle(qint64 pid) : pid_(pid) {
-        if (pid <= 1 || pid > std::numeric_limits<pid_t>::max())
-            return;
-        descriptor_ = int(syscall(SYS_pidfd_open, pid_t(pid), 0));
-        if (descriptor_ < 0)
-            openError_ = errno;
-    }
-    ~UpdateProcessHandle() {
-        if (descriptor_ >= 0)
-            (void)::close(descriptor_);
-    }
-    UpdateProcessHandle(const UpdateProcessHandle&) = delete;
-    UpdateProcessHandle& operator=(const UpdateProcessHandle&) = delete;
-
-    bool valid() const { return descriptor_ >= 0; }
-    State state() const {
-        if (descriptor_ < 0)
-            return openError_ == ESRCH ? State::Exited : State::Unknown;
-        pollfd descriptor{descriptor_, POLLIN, 0};
-        const int result = ::poll(&descriptor, 1, 0);
-        if (result == 0)
-            return State::Running;
-        if (result == 1 && (descriptor.revents & POLLIN))
-            return State::Exited;
-        return State::Unknown;
-    }
-    bool hasReadinessEnvironment(const QString& path) const {
-        if (state() != State::Running)
-            return false;
-        QFile environment(QStringLiteral("/proc/%1/environ").arg(pid_));
-        if (!environment.open(QIODevice::ReadOnly))
-            return false;
-        const auto expected = QByteArray("CHOSCORDB_UPDATE_READY_FILE=") + QFile::encodeName(path);
-        return environment.readAll().split('\0').contains(expected);
-    }
-    bool sendSignal(int signal) const {
-        return descriptor_ >= 0 &&
-               syscall(SYS_pidfd_send_signal, descriptor_, signal, nullptr, 0) == 0;
-    }
-
-  private:
-    qint64 pid_ = 0;
-    int descriptor_ = -1;
-    int openError_ = 0;
-};
-
-bool stopUpdateProcess(UpdateProcessHandle& handle) {
-    if (handle.state() == UpdateProcessHandle::State::Exited)
-        return true;
-    if (handle.state() != UpdateProcessHandle::State::Running)
-        return false;
-    if (!handle.sendSignal(SIGTERM))
-        return handle.state() == UpdateProcessHandle::State::Exited;
-    for (int count = 0; count < 20; ++count) {
-        if (handle.state() == UpdateProcessHandle::State::Exited)
-            return true;
-        QThread::msleep(100);
-    }
-    if (!handle.sendSignal(SIGKILL))
-        return handle.state() == UpdateProcessHandle::State::Exited;
-    for (int count = 0; count < 20; ++count) {
-        if (handle.state() == UpdateProcessHandle::State::Exited)
-            return true;
-        QThread::msleep(100);
-    }
-    return handle.state() == UpdateProcessHandle::State::Exited;
-}
-
-void offerManualUpdate(const UpdateRecord& record, const QString& detail) {
+void offerManualUpdate(const QUrl& url, const QString& detail) {
     const auto answer = ConfirmationDialog::question(
         nullptr, QObject::tr("Manual update available"),
         detail + QObject::tr(" Open the verified release download page?"),
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     if (answer == QMessageBox::Yes)
-        QDesktopServices::openUrl(record.url);
+        QDesktopServices::openUrl(url);
 }
 #endif
 
@@ -211,17 +116,31 @@ class UpdateProgressDialog final : public DialogShell {
 class NativeUpdater final : public QObject {
   public:
     explicit NativeUpdater(MainWindow& window) : QObject(&window), window_(&window) {
+        const auto feedBase = QByteArray(CHOSCORDB_UPDATE_BASE_URL);
+        const auto repository = QByteArray(CHOSCORDB_UPDATE_REPOSITORY);
+        const auto key = updatePublicKey();
+        session_ = std::make_shared<rust::Box<RustUpdateSession>>(update_session_new(
+            utf8(feedBase), bytes(key), platform, architecture, utf8(repository)));
+        consentDirectory_ = applicationDataDirectory();
+#ifdef CHOSCORDB_TEST_UPDATER_MENU
+        const auto testDataDirectory = qEnvironmentVariable("CHOSCORDB_TEST_UPDATE_DATA_DIR");
+        if (!testDataDirectory.isEmpty())
+            consentDirectory_ = testDataDirectory;
+#endif
+        consentPool_.setMaxThreadCount(1);
 #ifdef Q_OS_WIN
         QTimer::singleShot(0, this, [this] {
-            const auto marker =
-                QDir(qEnvironmentVariable("LOCALAPPDATA"))
-                    .filePath(QStringLiteral("ChoscorDB/update-install-failure.txt"));
-            if (QFile::exists(marker)) {
-                QFile::remove(marker);
-                report(window_, tr("Update installation failed"),
-                       tr("The installer could not complete the upgrade. Your previous version "
-                          "remains available. Please try again or install manually."));
-            }
+            auto* watcher = new QFutureWatcher<bool>(this);
+            connect(watcher, &QFutureWatcher<bool>::finished, this, [this, watcher] {
+                const bool failed = watcher->result();
+                watcher->deleteLater();
+                if (failed && window_)
+                    report(window_, tr("Update installation failed"),
+                           tr("The installer could not complete the upgrade. Your previous version "
+                              "remains available. Please try again or install manually."));
+            });
+            watcher->setFuture(
+                QtConcurrent::run([] { return update_take_windows_failure_marker(); }));
         });
 #endif
         auto* menu = window.menuBar()->addMenu(tr("Updates"));
@@ -237,12 +156,12 @@ class NativeUpdater final : public QObject {
         installAction_->setEnabled(false);
         connect(installAction_, &QAction::triggered, this, [this] { promptToInstall(); });
         auto* automatic = menu->addAction(tr("Check Automatically"));
+        automaticAction_ = automatic;
         automatic->setObjectName(QStringLiteral("automaticUpdateChecks"));
         automatic->setCheckable(true);
-        automatic->setChecked(
-            QSettings().value(QStringLiteral("updates/backgroundConsent"), false).toBool());
+        automatic->setEnabled(false);
         connect(automatic, &QAction::toggled, this, [this](bool enabled) {
-            QSettings().setValue(QStringLiteral("updates/backgroundConsent"), enabled);
+            persistConsent(enabled);
             if (enabled) {
                 timer_.start();
                 checkForUpdates(false);
@@ -252,25 +171,29 @@ class NativeUpdater final : public QObject {
         });
         timer_.setInterval(24 * 60 * 60 * 1000);
         connect(&timer_, &QTimer::timeout, this, [this] { checkForUpdates(false); });
-        if (QSettings().contains(QStringLiteral("updates/backgroundConsent"))) {
-            if (automatic->isChecked()) {
-                timer_.start();
-                QTimer::singleShot(5000, this, [this] { checkForUpdates(false); });
+        progressTimer_.setInterval(50);
+        connect(&progressTimer_, &QTimer::timeout, this, [this] {
+            if (!progress_)
+                return;
+            const auto progress = update_session_progress(**session_);
+            if (progress.verifying) {
+                if (!showingVerification_) {
+                    showingVerification_ = true;
+                    progress_->setVerifying();
+                }
+            } else if (progress.total > 0 && !showingVerification_) {
+                progress_->setProgress(
+                    int(std::min<uint64_t>(999, progress.received * 1000 / progress.total)));
             }
-        } else {
-            QTimer::singleShot(0, this, [this, automatic] {
-                if (!window_)
-                    return;
-                const auto answer = ConfirmationDialog::question(
-                    window_, tr("Automatic update checks"),
-                    tr("Check for stable ChoscorDB updates in the background? You can change this "
-                       "in the Updates menu."),
-                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-                automatic->setChecked(answer == QMessageBox::Yes);
-                QSettings().setValue(QStringLiteral("updates/backgroundConsent"),
-                                     answer == QMessageBox::Yes);
-            });
-        }
+        });
+        loadConsent();
+    }
+
+    ~NativeUpdater() override {
+        auto session = std::move(session_);
+        update_session_cancel(**session);
+        // A staged TempPath can unlink a file when the session is dropped.
+        (void)QtConcurrent::run(&consentPool_, [session = std::move(session)] { (void)session; });
     }
 
 #ifdef CHOSCORDB_TEST_UPDATER_MENU
@@ -281,6 +204,88 @@ class NativeUpdater final : public QObject {
 #endif
 
   private:
+    void loadConsent() {
+        const auto directory = consentDirectory_;
+        auto* watcher = new QFutureWatcher<UpdateConsentDto>(this);
+        connect(watcher, &QFutureWatcher<UpdateConsentDto>::finished, this, [this, watcher] {
+            const auto result = watcher->result();
+            watcher->deleteLater();
+            if (!window_ || !automaticAction_)
+                return;
+            automaticAction_->setEnabled(true);
+            if (!result.error.empty())
+                report(window_, tr("Automatic update checks"), text(result.error));
+            if (result.has_value) {
+                persistedConsent_ = result.value;
+                const QSignalBlocker blocker(automaticAction_);
+                automaticAction_->setChecked(result.value);
+                if (result.value) {
+                    timer_.start();
+                    QTimer::singleShot(5000, this, [this] { checkForUpdates(false); });
+                }
+                return;
+            }
+            QTimer::singleShot(0, this, [this] {
+                if (!window_ || !automaticAction_)
+                    return;
+                const auto answer = ConfirmationDialog::question(
+                    window_, tr("Automatic update checks"),
+                    tr("Check for stable ChoscorDB updates in the background? You can change this "
+                       "in the Updates menu."),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+                const bool enabled = answer == QMessageBox::Yes;
+                if (automaticAction_->isChecked() != enabled)
+                    automaticAction_->setChecked(enabled);
+                else
+                    persistConsent(enabled);
+            });
+        });
+        watcher->setFuture(QtConcurrent::run(&consentPool_, [directory] {
+            const auto path = directory.toUtf8();
+#ifdef CHOSCORDB_TEST_UPDATER_MENU
+            const auto legacyIni =
+                qEnvironmentVariable("CHOSCORDB_TEST_UPDATE_LEGACY_INI").toUtf8();
+            if (!legacyIni.isEmpty()) {
+                rust::Vec<rust::String> legacyPaths;
+                legacyPaths.push_back(
+                    rust::String(legacyIni.constData(), size_t(legacyIni.size())));
+                return update_consent_load_legacy_ini(utf8(path), std::move(legacyPaths));
+            }
+#endif
+            return update_consent_load_native(utf8(path));
+        }));
+    }
+
+    void persistConsent(bool enabled) {
+        const auto generation = ++consentGeneration_;
+        const auto directory = consentDirectory_;
+        auto* watcher = new QFutureWatcher<rust::String>(this);
+        connect(watcher, &QFutureWatcher<rust::String>::finished, this,
+                [this, watcher, generation, enabled] {
+                    const auto error = watcher->result();
+                    watcher->deleteLater();
+                    if (error.empty()) {
+                        if (generation > persistedConsentGeneration_) {
+                            persistedConsentGeneration_ = generation;
+                            persistedConsent_ = enabled;
+                        }
+                    } else if (generation == consentGeneration_ && automaticAction_) {
+                        const QSignalBlocker blocker(automaticAction_);
+                        automaticAction_->setChecked(persistedConsent_);
+                        if (persistedConsent_)
+                            timer_.start();
+                        else
+                            timer_.stop();
+                        if (window_)
+                            report(window_, tr("Automatic update checks"), text(error));
+                    }
+                });
+        watcher->setFuture(QtConcurrent::run(&consentPool_, [directory, enabled] {
+            const auto path = directory.toUtf8();
+            return update_consent_save(utf8(path), enabled);
+        }));
+    }
+
     void promptToInstall() {
         if (!readyToInstall_ || !window_)
             return;
@@ -297,66 +302,40 @@ class NativeUpdater final : public QObject {
     }
 
     void checkForUpdates(bool manual) {
-        if (feedReply_ || packageReply_ || verifying_)
+        if (checking_ || downloading_ || installing_)
             return;
         manual_ = manual;
-        feedBytes_.clear();
+        checking_ = true;
 #ifdef CHOSCORDB_TEST_UPDATER_MENU
         const auto testUrl = qEnvironmentVariable("CHOSCORDB_TEST_UPDATE_FEED_URL");
-        const auto feedUrl = testUrl.isEmpty()
-                                 ? QUrl(QString::fromLatin1(CHOSCORDB_UPDATE_BASE_URL) +
-                                        QLatin1Char('/') + QString::fromLatin1(feedName))
-                                 : QUrl(testUrl);
-#else
-        const auto feedUrl = QUrl(QString::fromLatin1(CHOSCORDB_UPDATE_BASE_URL) +
-                                  QLatin1Char('/') + QString::fromLatin1(feedName));
+        if (!testUrl.isEmpty()) {
+            const auto url = testUrl.toUtf8();
+            session_ = std::make_shared<rust::Box<RustUpdateSession>>(
+                update_session_new_failure_fixture(utf8(url)));
+        }
 #endif
-        QNetworkRequest request(feedUrl);
-        request.setTransferTimeout(15000);
-        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                             QNetworkRequest::ManualRedirectPolicy);
-        feedReply_ = network_.get(request);
-        connect(feedReply_, &QNetworkReply::readyRead, this, [this] {
-            feedBytes_ += feedReply_->readAll();
-            if (feedBytes_.size() > 32768)
-                feedReply_->abort();
-        });
-        connect(feedReply_, &QNetworkReply::finished, this, [this] {
-            auto* reply = feedReply_.data();
-            if (!reply)
+        const auto session = session_;
+        update_session_begin_check(**session);
+        const auto baseline =
+            readyToInstall_ && record_ ? record_->version : QCoreApplication::applicationVersion();
+        auto* watcher = new QFutureWatcher<UpdateCheckDto>(this);
+        connect(watcher, &QFutureWatcher<UpdateCheckDto>::finished, this, [this, watcher] {
+            checking_ = false;
+            const auto result = watcher->result();
+            watcher->deleteLater();
+            if (!window_)
                 return;
-            feedBytes_ += reply->readAll();
-            const bool good =
-                reply->error() == QNetworkReply::NoError &&
-                reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 200 &&
-                feedBytes_.size() <= 32768;
-            reply->deleteLater();
-            feedReply_ = nullptr;
-            if (!good) {
+            if (!result.error.empty()) {
                 if (manual_)
-                    report(window_, tr("Update check failed"),
-                           tr("The update feed is unavailable. Please try again later."));
+                    report(window_, tr("Update check failed"), text(result.error));
                 return;
             }
-            QString error;
-            const auto baseline = readyToInstall_ && record_
-                                      ? record_->version
-                                      : QCoreApplication::applicationVersion();
-            const auto record = parseSignedUpdateMetadata(
-                feedBytes_, updatePublicKey(), baseline, QString::fromLatin1(platform),
-                QString::fromLatin1(architecture), QStringLiteral(CHOSCORDB_UPDATE_REPOSITORY),
-                &error);
-            if (!error.isEmpty()) {
-                if (manual_)
-                    report(window_, tr("Update check failed"), error);
-                return;
-            }
-            if (!record) {
+            if (!result.found) {
                 if (manual_) {
                     if (readyToInstall_ && record_)
                         report(window_, tr("Downloaded update is ready"),
-                               tr("ChoscorDB %1 is downloaded. Choose Install Downloaded Update "
-                                  "from the Updates menu when you are ready.")
+                               tr("ChoscorDB %1 is downloaded. Choose Install Downloaded "
+                                  "Update from the Updates menu when you are ready.")
                                    .arg(record_->version));
                     else
                         report(window_, tr("ChoscorDB is up to date"),
@@ -364,118 +343,79 @@ class NativeUpdater final : public QObject {
                 }
                 return;
             }
+            const auto offered = recordFromDto(result.record);
             ConfirmationDialog offer(
-                QMessageBox::Information, tr("ChoscorDB %1 is available").arg(record->version),
-                tr("Release notes:\n%1\n\nDownload this update?").arg(record->notes),
+                QMessageBox::Information, tr("ChoscorDB %1 is available").arg(offered.version),
+                tr("Release notes:\n%1\n\nDownload this update?").arg(offered.notes),
                 QMessageBox::Yes | QMessageBox::No, window_);
             offer.setTextFormat(Qt::PlainText);
             if (offer.exec() == QMessageBox::Yes) {
                 if (readyToInstall_) {
-                    staged_.reset();
                     readyToInstall_ = false;
                     installAction_->setEnabled(false);
                 }
-                record_ = *record;
-                envelope_ = feedBytes_;
+                record_ = offered;
                 download();
             }
         });
+        watcher->setFuture(QtConcurrent::run([session, baseline] {
+            const auto version = baseline.toUtf8();
+            return update_session_check(**session, utf8(version));
+        }));
     }
 
     void download() {
         if (!record_ || !window_)
             return;
-#ifdef Q_OS_LINUX
-        const auto appImage = launchedAppImage();
-        if (appImage.isEmpty()) {
-            manualDownload();
-            return;
-        }
-        const auto templatePath =
-            QFileInfo(appImage).dir().filePath(QStringLiteral(".ChoscorDB-update-XXXXXX.AppImage"));
-#else
-        const auto templatePath =
-            QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                .filePath(QStringLiteral("ChoscorDB-update-XXXXXX.exe"));
-#endif
-        staged_ = std::make_unique<QTemporaryFile>(templatePath);
-        if (!staged_->open()) {
-            manualDownload();
-            return;
-        }
+        downloading_ = true;
         cancelled_ = false;
+        showingVerification_ = false;
         auto* progress = new UpdateProgressDialog(window_);
         progress_ = progress;
         progress->open();
-        connect(progress, &QDialog::rejected, this, [this] {
+        connect(progress, &QDialog::rejected, this, [this, session = session_] {
             cancelled_ = true;
-            if (packageReply_)
-                packageReply_->abort();
+            update_session_cancel(**session);
         });
-        QNetworkRequest request(record_->url);
-        request.setTransferTimeout(30000);
-        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                             QNetworkRequest::NoLessSafeRedirectPolicy);
-        packageReply_ = network_.get(request);
-        connect(packageReply_, &QNetworkReply::redirected, this, [this](const QUrl& next) {
-            const auto host = next.host().toLower();
-            if (next.scheme() != QStringLiteral("https") ||
-                (host != QStringLiteral("github.com") &&
-                 host != QStringLiteral("release-assets.githubusercontent.com")))
-                packageReply_->abort();
-        });
-        connect(packageReply_, &QNetworkReply::readyRead, this, [this] {
-            const auto bytes = packageReply_->readAll();
-            if (!staged_ || staged_->write(bytes) != bytes.size() ||
-                staged_->size() > record_->size)
-                packageReply_->abort();
-        });
-        connect(packageReply_, &QNetworkReply::downloadProgress, this,
-                [this](qint64 received, qint64) {
-                    if (progress_ && record_ && record_->size > 0)
-                        progress_->setProgress(
-                            int(qMin(999.0, double(received) * 1000.0 / double(record_->size))));
-                });
-        connect(packageReply_, &QNetworkReply::finished, this, [this] {
-            auto* reply = packageReply_.data();
-            if (!reply)
+        progressTimer_.start();
+        const auto session = session_;
+        const auto appimage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
+        const auto invoked = QString::fromLocal8Bit(qgetenv("ARGV0"));
+        auto* watcher = new QFutureWatcher<UpdateDownloadDto>(this);
+        connect(watcher, &QFutureWatcher<UpdateDownloadDto>::finished, this, [this, watcher] {
+            progressTimer_.stop();
+            const auto result = watcher->result();
+            watcher->deleteLater();
+            if (!window_)
                 return;
-            const auto bytes = reply->readAll();
-            const bool good =
-                reply->error() == QNetworkReply::NoError &&
-                reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 200 &&
-                staged_ && staged_->write(bytes) == bytes.size() && staged_->flush();
-            reply->deleteLater();
-            packageReply_ = nullptr;
-            if (!good || cancelled_) {
-                finishDownload(false,
-                               cancelled_ ? QString() : tr("Download failed. Please try again."));
+            if (cancelled_ && result.success) {
+                const auto session = session_;
+                auto* cleanup = new QFutureWatcher<void>(this);
+                connect(cleanup, &QFutureWatcher<void>::finished, this, [this, cleanup] {
+                    cleanup->deleteLater();
+                    downloading_ = false;
+                    finishDownload(false, {});
+                });
+                cleanup->setFuture(
+                    QtConcurrent::run([session] { update_session_discard_staged(**session); }));
                 return;
             }
-            staged_->close();
-            if (progress_)
-                progress_->setVerifying();
-            verifying_ = true;
-            auto* watcher = new QFutureWatcher<bool>(this);
-            const auto path = staged_->fileName();
-            const auto record = *record_;
-            connect(watcher, &QFutureWatcher<bool>::finished, this, [this, watcher] {
-                verifying_ = false;
-                const bool verified = watcher->result();
-                watcher->deleteLater();
-                if (cancelled_ || !verified) {
-                    finishDownload(
-                        false, cancelled_
-                                   ? QString()
-                                   : tr("The downloaded update failed integrity verification."));
-                    return;
-                }
-                finishDownload(true, {});
-                promptToInstall();
-            });
-            watcher->setFuture(QtConcurrent::run(
-                [path, record] { return verifyUpdateFile(path, record, nullptr); }));
+            downloading_ = false;
+            if (!result.success) {
+                finishDownload(false, cancelled_ || result.cancelled || result.staging_unavailable
+                                          ? QString()
+                                          : text(result.error));
+                if (result.staging_unavailable && !cancelled_)
+                    manualDownload();
+                return;
+            }
+            finishDownload(true, {});
+            promptToInstall();
         });
+        watcher->setFuture(QtConcurrent::run([session, appimage, invoked] {
+            const auto target = appimage.toUtf8(), invocation = invoked.toUtf8();
+            return update_session_download(**session, utf8(target), utf8(invocation));
+        }));
     }
 
     void finishDownload(bool success, const QString& error) {
@@ -486,7 +426,6 @@ class NativeUpdater final : public QObject {
             progress_ = nullptr;
         }
         if (!success) {
-            staged_.reset();
             if (!error.isEmpty())
                 report(window_, tr("Update could not be downloaded"), error);
         } else {
@@ -513,66 +452,63 @@ class NativeUpdater final : public QObject {
     }
 
     void requestInstall() {
-        if (!readyToInstall_ || !staged_ || !record_ || !window_)
+        if (!readyToInstall_ || !record_ || !window_ || installing_)
             return;
         QPointer<MainWindow> window = window_;
         window_->requestUpdateRestart([this, window] {
-            if (!window || !staged_)
+            if (!window)
                 return;
-#ifdef Q_OS_WIN
-            if (!record_ || !verifyUpdateFile(staged_->fileName(), *record_, nullptr)) {
-                staged_.reset();
-                readyToInstall_ = false;
-                installAction_->setEnabled(false);
-                window->setEnabled(true);
-                report(window, tr("Update could not be installed"),
-                       tr("The downloaded installer failed integrity verification. Please download "
-                          "the update again."));
-                return;
-            }
-#endif
-            staged_->setAutoRemove(false);
-#ifdef Q_OS_WIN
-            const auto executable = staged_->fileName();
-            const QStringList arguments{
-                QStringLiteral("/S"),
-                QStringLiteral("/WAITPID=%1").arg(QCoreApplication::applicationPid())};
-#elif defined(Q_OS_LINUX)
-            const auto executable = launchedAppImage();
-            const QStringList arguments{QStringLiteral("--apply-update"), staged_->fileName(),
-                                        QString::fromLatin1(envelope_.toBase64()),
-                                        QString::number(QCoreApplication::applicationPid())};
-#else
-            const QString executable;
-            const QStringList arguments;
-#endif
-            if (executable.isEmpty() || !QProcess::startDetached(executable, arguments)) {
-                staged_->setAutoRemove(true);
-                window->setEnabled(true);
-                report(
-                    window, tr("Update could not be installed"),
-                    tr("The installer could not start. Your current version is still available."));
-                return;
-            }
-            qApp->quit();
+            installing_ = true;
+            const auto session = session_;
+            const auto appimage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
+            const auto invoked = QString::fromLocal8Bit(qgetenv("ARGV0"));
+            const auto parentPid = uint32_t(QCoreApplication::applicationPid());
+            auto* watcher = new QFutureWatcher<UpdateInstallDto>(this);
+            connect(watcher, &QFutureWatcher<UpdateInstallDto>::finished, this,
+                    [this, watcher, window] {
+                        installing_ = false;
+                        const auto result = watcher->result();
+                        watcher->deleteLater();
+                        if (!window)
+                            return;
+                        if (result.success) {
+                            qApp->quit();
+                            return;
+                        }
+                        if (result.invalid_package) {
+                            readyToInstall_ = false;
+                            installAction_->setEnabled(false);
+                        }
+                        window->setEnabled(true);
+                        report(window, tr("Update could not be installed"), text(result.error));
+                    });
+            watcher->setFuture(QtConcurrent::run([session, appimage, invoked, parentPid] {
+                const auto target = appimage.toUtf8(), invocation = invoked.toUtf8();
+                return update_session_install(**session, utf8(target), utf8(invocation), parentPid);
+            }));
         });
     }
 
     QPointer<MainWindow> window_;
     QPointer<QAction> installAction_;
-    QNetworkAccessManager network_;
-    QPointer<QNetworkReply> feedReply_;
-    QPointer<QNetworkReply> packageReply_;
+    QPointer<QAction> automaticAction_;
     QPointer<UpdateProgressDialog> progress_;
-    QByteArray feedBytes_;
-    QByteArray envelope_;
-    std::optional<UpdateRecord> record_;
-    std::unique_ptr<QTemporaryFile> staged_;
+    std::shared_ptr<rust::Box<RustUpdateSession>> session_;
+    QThreadPool consentPool_;
+    QString consentDirectory_;
     QTimer timer_;
+    QTimer progressTimer_;
+    std::optional<UpdateRecord> record_;
     bool manual_ = false;
-    bool cancelled_ = false;
     bool readyToInstall_ = false;
-    bool verifying_ = false;
+    bool checking_ = false;
+    bool downloading_ = false;
+    bool cancelled_ = false;
+    bool installing_ = false;
+    bool showingVerification_ = false;
+    bool persistedConsent_ = false;
+    quint64 consentGeneration_ = 0;
+    quint64 persistedConsentGeneration_ = 0;
 };
 } // namespace
 
@@ -592,122 +528,26 @@ void installNativeUpdaterForTest(MainWindow& window, bool downloadedReady) {
 
 int runNativeUpdateHelper(const QStringList& arguments) {
 #ifdef Q_OS_LINUX
-    if (arguments.size() != 5)
-        return 2;
-    const auto target = launchedAppImage();
-    const auto staged = arguments.at(2);
-    const QFileInfo stageInfo(staged);
-    bool pidValid = false;
-    const auto parentPid = arguments.at(4).toLongLong(&pidValid);
-    QString error;
-    const auto envelope = QByteArray::fromBase64(arguments.at(3).toLatin1());
-    const auto record = parseSignedUpdateMetadata(
-        envelope, updatePublicKey(), QCoreApplication::applicationVersion(),
-        QStringLiteral("linux"), QStringLiteral("x86_64"),
-        QStringLiteral(CHOSCORDB_UPDATE_REPOSITORY), &error);
-    if (target.isEmpty() || !pidValid || parentPid <= 1 ||
-        parentPid > std::numeric_limits<pid_t>::max() || !record || !stageInfo.isFile() ||
-        stageInfo.isSymLink() ||
-        stageInfo.dir().absolutePath() != QFileInfo(target).dir().absolutePath() ||
-        !stageInfo.fileName().startsWith(QStringLiteral(".ChoscorDB-update-")) ||
-        !verifyUpdateFile(staged, *record, &error)) {
-        if (record)
-            offerManualUpdate(*record, QObject::tr("The verified update is no longer safe to "
-                                                   "install. Your previous version is unchanged."));
-        else
-            report(
-                nullptr, QObject::tr("Update could not be installed"),
-                QObject::tr(
-                    "The update could not be authenticated. Your previous version is unchanged."));
-        return 1;
+    rust::Vec<rust::String> values;
+    values.reserve(size_t(arguments.size()));
+    for (const auto& argument : arguments) {
+        const auto value = argument.toUtf8();
+        values.push_back(rust::String(value.constData(), size_t(value.size())));
     }
-    UpdateProcessHandle pidfdSupport(getpid());
-    UpdateProcessHandle parentProcess(parentPid);
-    if (!pidfdSupport.valid() || !pidfdSupport.sendSignal(0) ||
-        parentProcess.state() == UpdateProcessHandle::State::Unknown) {
-        offerManualUpdate(*record, QObject::tr("Process state could not be checked safely. The "
-                                               "previous AppImage remains usable."));
-        return 1;
-    }
-    for (int i = 0; i < 900 && parentProcess.state() == UpdateProcessHandle::State::Running; ++i)
-        QThread::msleep(100);
-    QTemporaryFile readinessTemplate(
-        QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-            .filePath(QStringLiteral("ChoscorDB-update-ready-XXXXXX.txt")));
-    if (!readinessTemplate.open()) {
-        offerManualUpdate(
-            *record,
-            QObject::tr(
-                "Update startup could not be verified. The previous AppImage remains usable."));
-        return 1;
-    }
-    const auto readyPath = readinessTemplate.fileName();
-    readinessTemplate.close();
-    if (!readinessTemplate.remove()) {
-        offerManualUpdate(
-            *record,
-            QObject::tr(
-                "Update startup could not be verified. The previous AppImage remains usable."));
-        return 1;
-    }
-    if (parentProcess.state() != UpdateProcessHandle::State::Exited ||
-        launchedAppImage() != target || !verifyUpdateFile(staged, *record, &error) ||
-        !QFile::setPermissions(staged, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner |
-                                           QFile::ReadGroup | QFile::ExeGroup | QFile::ReadOther |
-                                           QFile::ExeOther) ||
-        !exchangeFiles(staged, target)) {
-        offerManualUpdate(
-            *record,
-            QObject::tr("The current AppImage could not be safely replaced. It remains usable."));
-        return 1;
-    }
-    if (!verifyUpdateFile(target, *record, &error)) {
-        (void)exchangeFiles(staged, target);
-        offerManualUpdate(*record, QObject::tr("The replacement AppImage failed verification. The "
-                                               "previous version was restored where possible."));
-        return 1;
-    }
-    QProcess next;
-    next.setProgram(target);
-    auto environment = QProcessEnvironment::systemEnvironment();
-    environment.insert(QStringLiteral("CHOSCORDB_UPDATE_READY_FILE"), readyPath);
-    next.setProcessEnvironment(environment);
-    qint64 childPid = 0;
-    const bool launched = next.startDetached(&childPid);
-    UpdateProcessHandle childProcess(childPid);
-    bool identified = false;
-    if (launched && childProcess.valid()) {
-        for (int attempt = 0;
-             attempt < 50 && childProcess.state() == UpdateProcessHandle::State::Running;
-             ++attempt) {
-            if (childProcess.hasReadinessEnvironment(readyPath)) {
-                identified = true;
-                break;
-            }
-            QThread::msleep(100);
-        }
-    }
-    const bool ready =
-        identified && waitForUpdateReadiness(readyPath, 60000, 2000, [&childProcess] {
-            return childProcess.state() == UpdateProcessHandle::State::Running;
-        });
-    if (!ready) {
-        const bool stopped = !launched ||
-                             childProcess.state() == UpdateProcessHandle::State::Exited ||
-                             (identified && stopUpdateProcess(childProcess));
-        QFile::remove(readyPath);
-        const bool restored = stopped && exchangeFiles(staged, target);
-        if (restored)
-            QFile::remove(staged);
-        offerManualUpdate(*record, restored
-                                       ? QObject::tr("The previous AppImage was restored.")
-                                       : QObject::tr("The new AppImage did not confirm startup. "
-                                                     "Restore the previous version manually."));
-        return 1;
-    }
-    QFile::remove(readyPath);
-    QFile::remove(staged);
-    return 0;
+    const auto key = updatePublicKey();
+    const auto version = QCoreApplication::applicationVersion().toUtf8();
+    const auto repo = QByteArray(CHOSCORDB_UPDATE_REPOSITORY);
+    const auto target = QString::fromLocal8Bit(qgetenv("APPIMAGE")).toUtf8();
+    const auto invoked = QString::fromLocal8Bit(qgetenv("ARGV0")).toUtf8();
+    const auto result = update_run_linux_helper(std::move(values), bytes(key), utf8(version),
+                                                utf8(repo), utf8(target), utf8(invoked));
+    if (result.success)
+        return 0;
+    if (!result.manual_url.empty())
+        offerManualUpdate(QUrl(text(result.manual_url)), text(result.error));
+    else
+        report(nullptr, QObject::tr("Update could not be installed"), text(result.error));
+    return 1;
 #else
     Q_UNUSED(arguments)
     return 2;

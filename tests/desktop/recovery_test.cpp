@@ -253,7 +253,7 @@ class RecoveryTest : public QObject {
         QCOMPARE(tabs.widget(0), original);
     }
 
-    void restoredViewUsesGridIconAndOtherKindsKeepTheirIcon() {
+    void restoredViewUsesEyeIconAndOtherKindsKeepTheirIcon() {
         QTabWidget tabs;
         WorkspaceRecoveryController recovery(&tabs, [] { return new SqlEditor; });
         recovery.setObjectFactory([](const SavedWorkspaceTab&) -> QWidget* { return new QWidget; });
@@ -274,7 +274,7 @@ class RecoveryTest : public QObject {
         QCOMPARE(tabs.count(), 2);
         const auto color = design::resolvedThemeForWidget(tabs).colors.mutedText;
         QCOMPARE(tabs.tabIcon(0).pixmap(16, 16).toImage(),
-                 design::themedIcon(design::Icon::Grid2x2, color, 16).pixmap(16, 16).toImage());
+                 design::themedIcon(design::Icon::Eye, color, 16).pixmap(16, 16).toImage());
         QCOMPARE(tabs.tabIcon(1).pixmap(16, 16).toImage(),
                  design::themedIcon(design::Icon::Table, color, 16).pixmap(16, 16).toImage());
     }

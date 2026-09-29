@@ -33,6 +33,8 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void workspaceTabsUseContentWidth();
     void sidebarPanelsSwitchWithoutChangingTheSqlTarget();
     void savedPanelFiltersFolderTreeAndReusesEditedTab();
+    void savedPanelRapidDistinctFilesOpenBothAndFocusLatest();
+    void savedPanelRejectsFileReplacedBySymlink();
     void historySearchAppliesToRefreshedFullSql();
     void historySidebarFormatsSqlAndShowsEntryDetails();
     void historySidebarReusesRecordIdAndKeepsDistinctIdenticalSql();

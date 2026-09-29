@@ -161,10 +161,11 @@ void WorkspaceRecoveryController::applyTabs(const QList<SavedWorkspaceTab>& tabs
         if (tab.isObject) {
             auto* widget = objectFactory_ ? objectFactory_(tab) : nullptr;
             if (widget && tabs_->indexOf(widget) < 0) {
-                const auto icon = design::themedIcon(
-                    tab.objectType == "table" || tab.objectType == "view" ? design::Icon::Grid2x2
-                                                                          : design::Icon::Table,
-                    design::resolvedThemeForWidget(*tabs_).colors.mutedText, 16);
+                const auto icon =
+                    design::themedIcon(tab.objectType == "view"    ? design::Icon::Eye
+                                       : tab.objectType == "table" ? design::Icon::Grid2x2
+                                                                   : design::Icon::Table,
+                                       design::resolvedThemeForWidget(*tabs_).colors.mutedText, 16);
                 tabs_->addTab(widget, icon, objectTabTitle(tab.objectId, tab.label));
             }
         } else {

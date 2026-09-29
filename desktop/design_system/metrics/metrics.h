@@ -92,6 +92,9 @@ struct DesignMetrics final {
     int sqlResultHeaderHeight = 34;
     int objectDataHeaderHeight = 34;
     int navigationRowHeight = 33;
+    int navigationItemMinHeight = 18;
+    int navigationItemPadding = 2;
+    int navigationHighlightGap = 1;
     int workspaceChromeHeight = 35;
     int dialogContentSpacing = 16;
     int modalHeaderHeight = 58;

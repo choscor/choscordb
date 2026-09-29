@@ -15,6 +15,8 @@ class NavigationTreeView final : public QTreeView {
     bool viewportEvent(QEvent* event) override;
     void drawRow(QPainter* painter, const QStyleOptionViewItem& option,
                  const QModelIndex& index) const override;
+    void drawBranches(QPainter* painter, const QRect& rect,
+                      const QModelIndex& index) const override;
 
   private:
     void updateHoveredIndex();

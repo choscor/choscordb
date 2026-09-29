@@ -1,6 +1,4 @@
 #include "tools/preview/preview_window.h"
-#include "tools/preview/preview_standard.h"
-
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
 #include "design_system/column_row/column_row.h"
@@ -23,56 +21,51 @@
 #include "design_system/text_area/text_area_style.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
-
+#include "design_system/tree/navigation_tree_view.h"
+#include "tools/preview/preview_standard.h"
 #include <QApplication>
 #include <QCheckBox>
-#include <QDockWidget>
-#include <QDoubleSpinBox>
-#include <QFrame>
-#include <QHelpEvent>
-#include <QKeySequenceEdit>
-#include <QListWidget>
-#include <QMainWindow>
-#include <QPlainTextEdit>
-#include <QProgressBar>
-#include <QRadioButton>
-#include <QScrollArea>
-#include <QSpinBox>
-#include <QSplitter>
-#include <QStandardItemModel>
-#include <QTabBar>
-#include <QTabWidget>
-#include <QTextEdit>
-#include <QToolBar>
-#include <QToolButton>
-#include <QToolTip>
-
 #include <QClipboard>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDockWidget>
+#include <QDoubleSpinBox>
 #include <QEvent>
 #include <QEventLoop>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QHelpEvent>
 #include <QImage>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
+#include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMainWindow>
 #include <QMenu>
 #include <QPainter>
+#include <QPlainTextEdit>
+#include <QProgressBar>
 #include <QPushButton>
-#include <QSaveFile>
+#include <QRadioButton>
 #include <QScopeGuard>
+#include <QScrollArea>
 #include <QSignalBlocker>
+#include <QSpinBox>
+#include <QSplitter>
+#include <QStandardItemModel>
 #include <QSysInfo>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QTableView>
 #include <QTableWidget>
+#include <QTextEdit>
+#include <QToolBar>
+#include <QToolButton>
+#include <QToolTip>
 #include <QTreeView>
 #include <QVBoxLayout>
 
@@ -867,10 +860,12 @@ void PreviewWindow::rebuildSpecimens() {
             tree->setObjectName("previewColumnRows");
             auto* model = new QStandardItemModel(tree);
             for (const auto& [name, type] :
-                 {std::pair{"customer_id", "INTEGER"},
+                 {std::pair{"id", "bigint"}, std::pair{"name", "text"},
+                  std::pair{"customer_id", "INTEGER"},
                   std::pair{"very_long_descriptive_column_name", "VARCHAR(255)"},
                   std::pair{"measurement", "timestamp(6) with time zone and extended suffix"},
-                  std::pair{"untyped_column", ""}}) {
+                  std::pair{"untyped_column", ""},
+                  std::pair{"created_at", "timestamp with time zone"}}) {
                 auto* item = new QStandardItem(QString::fromLatin1(name));
                 item->setData(QString::fromLatin1(type), detailRole);
                 model->appendRow(item);
@@ -878,9 +873,33 @@ void PreviewWindow::rebuildSpecimens() {
             tree->setModel(model);
             tree->setItemDelegate(new ColumnRowDelegate(detailRole, tree));
             tree->setHeaderHidden(true);
-            tree->setFixedWidth(220);
-            tree->setMinimumHeight(165);
+            tree->setFixedSize(220, 275);
             contentLayout->addWidget(tree);
+            auto* pinnedSurface = new QWidget(content);
+            pinnedSurface->setProperty("designSurface", "muted");
+            auto* pinnedLayout = new QVBoxLayout(pinnedSurface);
+            auto* pinnedTree = new NavigationTreeView(pinnedSurface);
+            pinnedTree->setObjectName("pinnedList");
+            auto* pinnedModel = new QStandardItemModel(pinnedTree);
+            auto* pinnedColumn = new QStandardItem("id");
+            pinnedColumn->setData("bigint", detailRole);
+            pinnedModel->appendRow(pinnedColumn);
+            auto* pinnedSchema = new QStandardItem("public");
+            auto* pinnedTable = new QStandardItem("customers");
+            auto* nestedColumn = new QStandardItem("created_at");
+            nestedColumn->setData("timestamp with time zone", detailRole);
+            pinnedTable->appendRow(nestedColumn);
+            pinnedSchema->appendRow(pinnedTable);
+            pinnedModel->appendRow(pinnedSchema);
+            pinnedTree->setModel(pinnedModel);
+            pinnedTree->setItemDelegate(new ColumnRowDelegate(detailRole, pinnedTree));
+            pinnedTree->setHeaderHidden(true);
+            pinnedTree->expandAll();
+            pinnedTree->setFixedSize(220, 230);
+            pinnedLayout->addWidget(pinnedTree);
+            pinnedSurface->setFixedHeight(250);
+            contentLayout->addWidget(pinnedSurface);
+            contentLayout->addStretch();
         } else if (id == "typography") {
             populateTypography(content, contentLayout);
         } else if (id == "tables") {

@@ -35,8 +35,10 @@ the app from opening or running queries; the export dialog reports a failed save
 
 The app records a run marker while it is open. A marker from a terminated process
 becomes an `unclean_exit` event on the next launch. It may represent a crash,
-force quit, power loss, or another abrupt termination. This release cannot
-capture a portable safe crash signature and does not include native crash
+force quit, power loss, or another abrupt termination. A reused process ID can
+delay recognition of a stale marker until a later launch. The marker does not
+identify the cause of termination. This release cannot capture a portable safe
+crash signature and does not include native crash
 reports or thread samples. Memory trends can show growth but cannot prove a leak
 or identify an allocation. Hang-end events include bounded durations and timing
 buckets. The manifest labels unavailable evidence accordingly.

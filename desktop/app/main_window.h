@@ -6,6 +6,7 @@
 #include <QMainWindow>
 #include <QPointer>
 #include <QSet>
+#include <QThreadPool>
 #include <QVariant>
 #include <functional>
 #include <limits>
@@ -42,6 +43,7 @@ class MainWindow final : public QMainWindow {
     void requestUpdateRestart(std::function<void()> install);
     void openConnectionQuery(quint64 connection);
     void showToast(const QString& message, ToastVariant variant);
+    void disableDiagnostics();
     std::optional<quint64> browsingConnection() const { return browsingConnection_; }
   signals:
     void browsingConnectionChanged(quint64 connection);
@@ -77,6 +79,7 @@ class MainWindow final : public QMainWindow {
     void activateNavigatorObject(const QModelIndex& index);
     void tryRevealPendingPin();
     void updatePinsForObjectAction(const PendingObjectAction& action);
+    void savePinsAsync(QList<PinRecord> updated, const QString& failureMessage);
     void requestObjectAction(const QString& action, quint64 connection, const QString& objectId,
                              const QString& shortName, const QString& kind,
                              const QString& parentObjectId, const QString& qualifiedName,
@@ -117,6 +120,11 @@ class MainWindow final : public QMainWindow {
     std::optional<PendingObjectRefresh> pendingObjectRefresh_;
     PinStore pinStore_;
     QList<PinRecord> pins_;
+    QList<PinRecord> savedPins_;
+    QThreadPool pinIoPool_;
+    quint64 pinSaveGeneration_ = 0;
+    quint64 pinPersistedGeneration_ = 0;
+    bool pinsLoaded_ = false;
     QPointer<QTreeView> pinnedList_;
     PinnedTreeModel* pinnedModel_ = nullptr;
     QSet<QString> pendingExpansionKeys_;

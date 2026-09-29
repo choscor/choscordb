@@ -54,8 +54,9 @@ void NavigationTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& 
 
     const auto theme = resolvedThemeForWidget(*this);
     const auto& colors = theme.colors;
-    const QRectF highlight(5, option.rect.top() + 2, viewport()->width() - 10,
-                           option.rect.height() - 4);
+    const qreal gap = DesignMetrics{}.navigationHighlightGap;
+    const QRectF highlight(5, option.rect.top() + gap / 2, viewport()->width() - 10,
+                           option.rect.height() - gap);
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(theme.forcedContrast && selected ? QPen(colors.focus, 2) : QPen(Qt::NoPen));
@@ -66,6 +67,22 @@ void NavigationTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& 
     QStyleOptionViewItem unselected(option);
     unselected.state &= ~(QStyle::State_Selected | QStyle::State_MouseOver);
     QTreeView::drawRow(painter, unselected, index);
+}
+
+void NavigationTreeView::drawBranches(QPainter* painter, const QRect& rect,
+                                      const QModelIndex& index) const {
+    if ((selectionModel() && selectionModel()->isSelected(index)) || hoveredIndex_ == index) {
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        painter->setClipRect(rect);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(resolvedThemeForWidget(*this).colors.muted);
+        const qreal gap = DesignMetrics{}.navigationHighlightGap;
+        painter->drawRoundedRect(
+            QRectF(5, rect.top() + gap / 2, viewport()->width() - 10, rect.height() - gap), 5, 5);
+        painter->restore();
+    }
+    QTreeView::drawBranches(painter, rect, index);
 }
 
 } // namespace choscordb::design

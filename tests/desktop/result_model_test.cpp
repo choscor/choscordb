@@ -1,3 +1,4 @@
+#include "bridge/engine_adapter.h"
 #include "bridge/result_column_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/table/table_style.h"
@@ -7,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QtTest>
+#include <future>
 #include <limits>
 using namespace choscordb;
 namespace {
@@ -20,6 +22,55 @@ ResultColumn column(const QString& name, const QString& databaseType) {
 class ResultModelTest : public QObject {
     Q_OBJECT
   private slots:
+    void jsonSnapshotCanRenderAfterModelChangesOnWorker() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("payload", "json")}, {{QString("{\"old\":1}")}}, 0));
+        auto snapshot = model.jsonViewSnapshot(ResultTableModel::JsonViewScope::Row, 0, 0);
+        QVERIFY(snapshot.has_value());
+        QVERIFY(model.setPage({column("payload", "json")}, {{QString("{\"new\":2}")}}, 0));
+        auto task = std::async(std::launch::async, [value = std::move(*snapshot)]() mutable {
+            return ResultTableModel::evaluateJsonView(std::move(value));
+        });
+        const auto rendered = task.get();
+        QCOMPARE(rendered.state, ResultTableModel::JsonViewState::Ready);
+        QCOMPARE(rendered.json, QString("{\n  \"payload\": {\n    \"old\": 1\n  }\n}"));
+    }
+    void gridEditsParseDatabaseTypesThroughBridge() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("count", "INTEGER"), column("flag", "bool"),
+                               column("amount", "NUMERIC(30,2)"), column("ratio", "float8"),
+                               column("custom", "custom_type")},
+                              {{qint64(0), false, DecimalValue{"0"}, 0.0, QString("old")}}, 0));
+        model.setEditableColumns({true, true, true, true, true}, false, false);
+        QVERIFY(model.setData(model.index(0, 0), QString(" -9223372036854775808 ")));
+        QCOMPARE(std::get<qint64>(*model.cellValue(model.index(0, 0))),
+                 std::numeric_limits<qint64>::min());
+        QVERIFY(!model.setData(model.index(0, 0), QString("9223372036854775808")));
+        QVERIFY(model.setData(model.index(0, 1), QString("TrUe")));
+        QVERIFY(std::get<bool>(*model.cellValue(model.index(0, 1))));
+        QVERIFY(!model.setData(model.index(0, 1), QString(" true ")));
+        QVERIFY(model.setData(model.index(0, 2), QString("2.500")));
+        QCOMPARE(std::get<DecimalValue>(*model.cellValue(model.index(0, 2))).text,
+                 QString("2.500"));
+        QVERIFY(model.setData(model.index(0, 3), QString("1.25")));
+        QCOMPARE(std::get<double>(*model.cellValue(model.index(0, 3))), 1.25);
+        QVERIFY(!model.setData(model.index(0, 3), QString("1e309")));
+        QVERIFY(model.setData(model.index(0, 4), QString("02.5")));
+        QCOMPARE(std::get<QString>(*model.cellValue(model.index(0, 4))), QString("02.5"));
+    }
+    void foreignKeyBridgeQuotesAndRejectsUnsafeValues() {
+        QCOMPARE(EngineAdapter::foreignKeyPredicate(QStringLiteral("key\"name"),
+                                                    Cell{QStringLiteral("O'Reilly")}),
+                 std::optional<QString>{QStringLiteral("\"key\"\"name\" = 'O''Reilly'")});
+        QCOMPARE(EngineAdapter::foreignKeyPredicate(QStringLiteral("id"), Cell{qint64(-42)}),
+                 std::optional<QString>{QStringLiteral("\"id\" = -42")});
+        QVERIFY(EngineAdapter::foreignKeyValueFilterable(Cell{DecimalValue{"2.50"}}));
+        QVERIFY(
+            !EngineAdapter::foreignKeyValueFilterable(Cell{DecimalValue{"1.0000000000000001"}}));
+        QVERIFY(!EngineAdapter::foreignKeyPredicate(QStringLiteral("id"),
+                                                    Cell{DeferredValue{7, 50, "text"}}));
+        QVERIFY(!EngineAdapter::foreignKeyPredicate(QString(), Cell{qint64(1)}));
+    }
     void typedNullChoiceStagesNullRatherThanText() {
         ResultTableModel model;
         QVERIFY(model.setPage({column("state", "text")}, {{QString("ready")}}, 0));
@@ -645,8 +696,12 @@ class ResultModelTest : public QObject {
         QCOMPARE(fallback.value("database_type").toString(), QString("range_type"));
         QCOMPARE(model.pageJsonReadiness(&error), ResultTableModel::RowJsonReadiness::Ready);
         QVERIFY(model.pageJson(&json, &error));
-        const auto pageFallback =
-            QJsonDocument::fromJson(json.toUtf8()).array().at(0).toObject().value("unfamiliar").toObject();
+        const auto pageFallback = QJsonDocument::fromJson(json.toUtf8())
+                                      .array()
+                                      .at(0)
+                                      .toObject()
+                                      .value("unfamiliar")
+                                      .toObject();
         QCOMPARE(pageFallback.value("fallback_text").toString(), QString("[1,9)"));
         QVERIFY(model.setPage({column("ordinary", "text"), column("unfamiliar", "range_type")},
                               {{QString("ordinary"), UnavailableValue{"range_type", "failed"}}},
@@ -748,6 +803,28 @@ class ResultModelTest : public QObject {
                  QString("12345678901234567890.001\t\"a\tb\n\"\"c\"\"\""));
         QVERIFY(!model.setPage({column("one", "text")}, {{QString("a"), QString("b")}}, 0));
         QCOMPARE(model.columnCount(), 2);
+    }
+    void copiedRealsMatchDisplayedPrecisionAndNotation() {
+        const std::vector<double> values{0.0,
+                                         -0.0,
+                                         0.1,
+                                         1.2345678901234567,
+                                         0.0001,
+                                         0.00001,
+                                         1e16,
+                                         1e17,
+                                         std::numeric_limits<double>::infinity(),
+                                         -std::numeric_limits<double>::infinity(),
+                                         std::numeric_limits<double>::quiet_NaN()};
+        std::vector<ResultTableModel::Row> rows;
+        for (double value : values)
+            rows.push_back({value});
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("real", "double")}, std::move(rows), 0));
+        for (int row = 0; row < model.rowCount(); ++row) {
+            const auto index = model.index(row, 0);
+            QCOMPARE(model.copyCells({index}), index.data().toString());
+        }
     }
 };
 QTEST_MAIN(ResultModelTest)

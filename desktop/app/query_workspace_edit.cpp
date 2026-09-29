@@ -5,183 +5,162 @@
 #include "design_system/modal_panel/modal_panel.h"
 #include <QDialogButtonBox>
 #include <QEventLoop>
+#include <QFutureWatcher>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
-#include <algorithm>
+#include <QtConcurrentRun>
 
 namespace choscordb {
 using query_workspace_detail::nextEditRequestToken;
 using query_workspace_detail::text;
+namespace {
+GridEditRequest editRequest(const QString& driver, const QString& qualifiedName,
+                            const QString& parameterStyle, const QString& reason,
+                            bool objectReadOnly, const std::vector<ResultColumn>& resultColumns,
+                            const std::vector<ResultCellMetadata>& metadata,
+                            const std::vector<QString>& names, const std::vector<bool>& keys,
+                            const std::vector<bool>& generated, const ResultTableModel& model) {
+    GridEditRequest request;
+    request.driver = driver;
+    request.qualifiedName = qualifiedName;
+    request.parameterStyle = parameterStyle;
+    request.reason = reason;
+    request.objectReadOnly = objectReadOnly;
+    if (names.size() != resultColumns.size() || names.size() != keys.size() ||
+        names.size() != generated.size())
+        return request;
+    for (size_t index = 0; index < names.size(); ++index) {
+        GridEditColumn column;
+        column.name = names[index];
+        column.resultName = resultColumns[index].name;
+        column.databaseType = resultColumns[index].databaseType;
+        column.key = keys[index];
+        column.generated = generated[index];
+        if (index < metadata.size()) {
+            column.enumSourceColumn = metadata[index].sourceColumn;
+            column.enumChoices = metadata[index].enumChoices;
+        }
+        request.columns.push_back(std::move(column));
+    }
+    const auto& rows = model.rows();
+    const auto& originals = model.originalRows();
+    const auto& touched = model.touched();
+    const auto& inserted = model.inserted();
+    const auto& deleted = model.deleted();
+    if (rows.size() != touched.size() || rows.size() != inserted.size() ||
+        rows.size() != deleted.size())
+        return request;
+    for (size_t index = 0; index < rows.size(); ++index) {
+        if (!inserted[index] && index >= originals.size())
+            return request;
+        request.rows.push_back({rows[index],
+                                inserted[index] ? ResultTableModel::Row{} : originals[index],
+                                touched[index], inserted[index], deleted[index]});
+    }
+    return request;
+}
+} // namespace
 void QueryWorkspace::configureEditability() {
+    const auto generation = ++editPolicyGeneration_;
+    const auto job = ++editabilityJobToken_;
     if (widgets_.objectReadOnly && model_->columnCount() == static_cast<int>(editKey_.size()))
         model_->setKeyColumns(editKey_);
-    if (editQualifiedName_.isEmpty() ||
-        (!editReason_.isEmpty() &&
-         !(widgets_.objectReadOnly && editReason_.contains("inserts only", Qt::CaseInsensitive))) ||
-        model_->columnCount() != static_cast<int>(editColumnNames_.size()))
-        return;
-    std::vector<bool> editable(editColumnNames_.size()), insertEditable(editColumnNames_.size());
-    std::vector<bool> opaqueColumns(editColumnNames_.size(), false);
-    for (const auto& row : model_->rows())
-        for (size_t i = 0; i < row.size(); ++i)
-            opaqueColumns[i] = opaqueColumns[i] || std::holds_alternative<FallbackText>(row[i]) ||
-                               std::holds_alternative<UnavailableValue>(row[i]);
-    bool aligned = true, keyed = false;
-    for (size_t i = 0; i < editable.size(); ++i) {
-        aligned &= !widgets_.objectReadOnly || columns_[i].name == editColumnNames_[i];
-        keyed |= editKey_[i];
-        editable[i] = !opaqueColumns[i] && !editColumnNames_[i].isEmpty() && !editKey_[i] &&
-                      !editGenerated_[i];
-        insertEditable[i] =
-            !opaqueColumns[i] && !editColumnNames_[i].isEmpty() && !editGenerated_[i];
-    }
-    if (!aligned) {
-        editReason_ = tr("Result columns do not match table metadata.");
+    if (!queryConnection_ || model_->columnCount() != static_cast<int>(editColumnNames_.size())) {
+        editabilityPlanning_ = false;
+        updateActions();
         return;
     }
-    if (!keyed)
-        std::fill(editable.begin(), editable.end(), false);
-    for (size_t i = 0; i < editKey_.size(); ++i)
-        if (editKey_[i] && opaqueColumns[i]) {
-            keyed = false;
-            std::fill(editable.begin(), editable.end(), false);
-            break;
-        }
-    const auto comparableType = [](QString type) {
-        type = type.toLower();
-        return type == "integer" || type == "bigint" || type == "smallint" || type == "boolean" ||
-               type == "text" || type == "uuid" || type == "date" ||
-               type == "time without time zone" || type == "time with time zone" ||
-               type.startsWith("timestamp") || type.startsWith("character") ||
-               type.startsWith("varchar") || type.startsWith("numeric") ||
-               type.startsWith("decimal") || type == "real" || type == "double precision" ||
-               type == "jsonb";
-    };
-    if (editParameterStyle_ == "$")
-        for (size_t i = 0; i < columns_.size(); ++i)
-            if (!opaqueColumns[i] && !editColumnNames_[i].isEmpty() &&
-                !comparableType(columns_[i].databaseType) &&
-                !(i < cellMetadata_.size() && !cellMetadata_[i].enumChoices.isEmpty() &&
-                  cellMetadata_[i].sourceColumn == editColumnNames_[i])) {
-                keyed = false;
-                std::fill(editable.begin(), editable.end(), false);
-                break;
-            }
-    for (const auto& row : model_->rows())
-        if (std::any_of(row.begin(), row.end(), [](const Cell& value) {
-                return std::holds_alternative<DeferredValue>(value) ||
-                       std::holds_alternative<QByteArray>(value);
-            })) {
-            keyed = false;
-            std::fill(editable.begin(), editable.end(), false);
-            editReason_ = tr("Binary or deferred original values prevent safe conflict checks; "
-                             "inserts remain available.");
-            break;
-        }
-    model_->setEditableColumns(std::move(editable), true, keyed, std::move(insertEditable));
+    const auto connection = *queryConnection_;
+    const auto query = query_;
+    const auto targetToken = editTargetToken_;
+    const auto qualifiedName = editQualifiedName_;
+    auto request = editRequest(driverForConnection(*queryConnection_), editQualifiedName_,
+                               editParameterStyle_, editReason_, widgets_.objectReadOnly, columns_,
+                               cellMetadata_, editColumnNames_, editKey_, editGenerated_, *model_);
+    editabilityPlanning_ = true;
     updateActions();
+    auto* watcher = new QFutureWatcher<GridEditEligibility>(this);
+    connect(watcher, &QFutureWatcher<GridEditEligibility>::finished, this,
+            [this, watcher, job, generation, connection, query, targetToken, qualifiedName] {
+                auto eligibility = watcher->result();
+                watcher->deleteLater();
+                if (job != editabilityJobToken_)
+                    return;
+                editabilityPlanning_ = false;
+                if (generation != editPolicyGeneration_ || queryConnection_ != connection ||
+                    query_ != query || editTargetToken_ != targetToken ||
+                    editQualifiedName_ != qualifiedName || stopping_ ||
+                    !connectionAvailable(connection)) {
+                    updateActions();
+                    return;
+                }
+                if (!eligibility.reason.isEmpty())
+                    editReason_ = eligibility.reason;
+                if (eligibility.canInsert)
+                    model_->setEditableColumns(std::move(eligibility.editable),
+                                               eligibility.canInsert, eligibility.canDelete,
+                                               std::move(eligibility.insertEditable));
+                updateActions();
+            });
+    watcher->setFuture(QtConcurrent::run(
+        [request = std::move(request)] { return EngineAdapter::gridEditability(request); }));
 }
 bool QueryWorkspace::applyStagedEdits() {
     if (!model_->hasPendingEdits())
         return true;
-    if (!queryConnection_ || workInFlight() || editApplying_ || editQualifiedName_.isEmpty())
+    if (!queryConnection_ || workInFlight() || editabilityPlanning_ || editApplying_ ||
+        editQualifiedName_.isEmpty())
         return false;
     if (pendingTransactions_.contains(*queryConnection_) ||
         (widgets_.transactionActive && widgets_.transactionActive(*queryConnection_))) {
         message(tr("Commit or roll back the manual transaction before applying grid changes."));
         return false;
     }
-    const bool mysql = driverForConnection(*queryConnection_) == QStringLiteral("mysql");
-    const auto quoted = [mysql](QString name) {
-        if (mysql) {
-            name.replace('`', QStringLiteral("``"));
-            return QStringLiteral("`") + name + QStringLiteral("`");
-        }
-        name.replace('"', QStringLiteral("\"\""));
-        return QStringLiteral("\"") + name + QStringLiteral("\"");
-    };
-    const bool postgres = editParameterStyle_ == QStringLiteral("$");
-    std::vector<ReviewedEditStatement> batch;
+    auto request = editRequest(driverForConnection(*queryConnection_), editQualifiedName_,
+                               editParameterStyle_, editReason_, widgets_.objectReadOnly, columns_,
+                               cellMetadata_, editColumnNames_, editKey_, editGenerated_, *model_);
+    const auto generation = editPolicyGeneration_;
+    const auto connectionId = *queryConnection_;
+    const auto queryId = query_;
+    const auto targetToken = editTargetToken_;
+    const auto qualifiedName = editQualifiedName_;
+    QPointer<QueryWorkspace> self(this);
+    QEventLoop planningLoop;
+    QFutureWatcher<std::shared_ptr<GridEditPlan>> planner;
+    connect(&planner, &QFutureWatcher<std::shared_ptr<GridEditPlan>>::finished, &planningLoop,
+            &QEventLoop::quit);
+    connect(this, &QObject::destroyed, &planningLoop, &QEventLoop::quit);
+    editPlanRunning_ = true;
+    emit gridEditPlanningChanged(true);
+    updateActions();
+    planner.setFuture(QtConcurrent::run([request = std::move(request)] {
+        return std::make_shared<GridEditPlan>(EngineAdapter::planGridEdits(request));
+    }));
+    if (!planner.isFinished())
+        planningLoop.exec();
+    if (!self)
+        return false;
+    editPlanRunning_ = false;
+    emit gridEditPlanningChanged(false);
+    updateActions();
+    if (!planner.isFinished() || generation != editPolicyGeneration_ ||
+        queryConnection_ != connectionId || query_ != queryId || editTargetToken_ != targetToken ||
+        editQualifiedName_ != qualifiedName || stopping_ || !connectionAvailable(connectionId) ||
+        workInFlight())
+        return false;
+    auto plan = std::move(*planner.result());
+    if (!plan.error.isEmpty()) {
+        message(plan.error);
+        return false;
+    }
+    auto batch = std::move(plan.statements);
     QString review;
-    const auto& rows = model_->rows();
-    const auto& originals = model_->originalRows();
-    const auto& touched = model_->touched();
-    const auto& inserted = model_->inserted();
-    const auto& deleted = model_->deleted();
-    for (size_t r = 0; r < rows.size(); ++r) {
-        if (!inserted[r] && !deleted[r] &&
-            std::none_of(touched[r].begin(), touched[r].end(), [](bool v) { return v; }))
-            continue;
-        ReviewedEditStatement statement;
-        const auto bind = [&](const Cell& value, size_t column) {
-            statement.params.push_back(value);
-            statement.paramTypes.push_back(columns_[column].databaseType);
-            return postgres ? QStringLiteral("$") + QString::number(statement.params.size())
-                            : QStringLiteral("?");
-        };
-        if (inserted[r] && deleted[r])
-            continue;
-        if (inserted[r]) {
-            QStringList names, values;
-            for (size_t c = 0; c < editColumnNames_.size(); ++c)
-                if (touched[r][c] && !editGenerated_[c]) {
-                    names << quoted(editColumnNames_[c]);
-                    values << bind(rows[r][c], c);
-                }
-            statement.sql = names.isEmpty()
-                                ? (mysql ? QStringLiteral("INSERT INTO %1 () VALUES ()")
-                                         : QStringLiteral("INSERT INTO %1 DEFAULT VALUES"))
-                                      .arg(editQualifiedName_)
-                                : QStringLiteral("INSERT INTO %1 (%2) VALUES (%3)")
-                                      .arg(editQualifiedName_, names.join(", "), values.join(", "));
-        } else {
-            QStringList assignments, predicates;
-            if (!deleted[r])
-                for (size_t c = 0; c < editColumnNames_.size(); ++c)
-                    if (touched[r][c] && !editKey_[c] && !editGenerated_[c])
-                        assignments << quoted(editColumnNames_[c]) + " = " + bind(rows[r][c], c);
-            if (assignments.isEmpty() && !deleted[r])
-                continue;
-            for (size_t c = 0; c < editColumnNames_.size(); ++c) {
-                if (editColumnNames_[c].isEmpty())
-                    continue;
-                if (std::holds_alternative<DeferredValue>(originals[r][c]) ||
-                    std::holds_alternative<QByteArray>(originals[r][c])) {
-                    message(tr("Cannot safely compare a deferred or binary original value."));
-                    return false;
-                }
-                if (std::holds_alternative<FallbackText>(originals[r][c]) ||
-                    std::holds_alternative<UnavailableValue>(originals[r][c])) {
-                    if (deleted[r] || editKey_[c]) {
-                        message(tr("Cannot safely delete or match a row using a fallback or "
-                                   "unavailable value."));
-                        return false;
-                    }
-                    continue;
-                }
-                predicates << quoted(editColumnNames_[c]) +
-                                  (postgres ? QStringLiteral(" IS NOT DISTINCT FROM ")
-                                   : mysql  ? QStringLiteral(" <=> ")
-                                            : QStringLiteral(" IS ")) +
-                                  bind(originals[r][c], c);
-            }
-            statement.sql = deleted[r] ? QStringLiteral("DELETE FROM %1 WHERE %2")
-                                             .arg(editQualifiedName_, predicates.join(" AND "))
-                                       : QStringLiteral("UPDATE %1 SET %2 WHERE %3")
-                                             .arg(editQualifiedName_, assignments.join(", "),
-                                                  predicates.join(" AND "));
-            statement.expectedRows = 1;
-        }
+    for (const auto& statement : batch) {
         review += statement.sql + "\n";
         for (size_t i = 0; i < statement.params.size(); ++i) {
             const auto& value = statement.params[i];
-            if (const auto* binary = std::get_if<QByteArray>(&value);
-                binary && binary->size() > 65536) {
-                message(tr("Binary parameter exceeds the 64 KiB review limit; narrow the edit."));
-                return false;
-            }
             QString shown = std::holds_alternative<std::monostate>(value) ? QStringLiteral("NULL")
                             : std::holds_alternative<QByteArray>(value)
                                 ? QStringLiteral("binary 0x%1 (%2 bytes)")
@@ -209,7 +188,6 @@ bool QueryWorkspace::applyStagedEdits() {
             review += tr("  Parameter %1: %2\n").arg(i + 1).arg(shown);
         }
         review += "\n";
-        batch.push_back(std::move(statement));
     }
     if (batch.empty())
         return false;
@@ -228,26 +206,38 @@ bool QueryWorkspace::applyStagedEdits() {
     layout->addWidget(buttons);
     if (widgets_.dialogParent)
         box.resize(widgets_.dialogParent->size() * (2.0 / 3.0));
-    if (box.exec() != QDialog::Accepted || !queryConnection_ ||
-        !connectionAvailable(*queryConnection_))
+    const auto accepted = box.exec() == QDialog::Accepted;
+    if (!self)
+        return false;
+    if (!accepted || generation != editPolicyGeneration_ || queryConnection_ != connectionId ||
+        query_ != queryId || editTargetToken_ != targetToken ||
+        editQualifiedName_ != qualifiedName || !connectionAvailable(connectionId) || workInFlight())
         return false;
     editApplyToken_ = nextEditRequestToken();
     editApplying_ = true;
     editApplied_ = false;
-    if (!adapter_->applyEditBatch(*queryConnection_, batch, editApplyToken_)) {
-        editApplying_ = false;
-        return false;
-    }
+    updateActions();
     QEventLoop loop;
-    const auto connection =
-        connect(adapter_, &EngineAdapter::eventReady, &loop, [this, &loop](const BridgeEvent& e) {
-            if (e.request_token == editApplyToken_ &&
+    const auto eventConnection =
+        connect(adapter_, &EngineAdapter::eventReady, &loop, [self, &loop](const BridgeEvent& e) {
+            if (self && e.request_token == self->editApplyToken_ &&
                 (text(e.kind) == "edit_applied" || text(e.kind) == "edit_failed"))
                 loop.quit();
         });
+    connect(this, &QObject::destroyed, &loop, &QEventLoop::quit);
+    connect(adapter_, &QObject::destroyed, &loop, &QEventLoop::quit);
+    if (!adapter_ || !adapter_->applyEditBatch(connectionId, batch, editApplyToken_)) {
+        editApplying_ = false;
+        updateActions();
+        return false;
+    }
     if (editApplying_)
         loop.exec();
-    disconnect(connection);
+    disconnect(eventConnection);
+    if (!self)
+        return false;
+    if (!adapter_)
+        editApplying_ = false;
     return editApplied_;
 }
 } // namespace choscordb

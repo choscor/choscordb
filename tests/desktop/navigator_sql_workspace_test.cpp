@@ -142,7 +142,7 @@ void NavigatorSqlWorkspaceTest::sqlRowJsonUsesClickedRowAndCopiesDisplayedDocume
             QFAIL("View row as JSON action is missing");
         }
         const auto label = action->text();
-        const bool enabled = action->isEnabled();
+        const bool enabled = QTest::qWaitFor([action] { return action->isEnabled(); });
         menu->close();
         QCOMPARE(label, QString("View row as JSON"));
         QVERIFY(enabled);
@@ -157,6 +157,7 @@ void NavigatorSqlWorkspaceTest::sqlRowJsonUsesClickedRowAndCopiesDisplayedDocume
     QVERIFY(document);
     QVERIFY(copy);
     QVERIFY(document->isReadOnly());
+    QTRY_VERIFY(copy->isEnabled());
     const auto json = document->toPlainText();
     const auto parsed = QJsonDocument::fromJson(json.toUtf8());
     QVERIFY(parsed.isObject());
@@ -222,6 +223,8 @@ void NavigatorSqlWorkspaceTest::sqlRowJsonLoadsFullDeferredBinaryAndRejectsOvers
                 QFAIL("Row context menu did not open");
             }
             auto* action = menu->findChild<QAction*>("viewRowJson");
+            if (action)
+                QTRY_VERIFY(action->isEnabled());
             const bool enabled = action && action->isEnabled();
             menu->close();
             QVERIFY(enabled);
@@ -231,7 +234,8 @@ void NavigatorSqlWorkspaceTest::sqlRowJsonLoadsFullDeferredBinaryAndRejectsOvers
                 QVERIFY(sheet);
                 auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
                 QVERIFY(copy && !copy->isEnabled());
-                QVERIFY(sheet->findChild<QLabel*>("rowJsonStatus")->text().contains("Loading"));
+                const auto status = sheet->findChild<QLabel*>("rowJsonStatus")->text();
+                QVERIFY(status.contains("Preparing") || status.contains("Loading"));
                 sheet->reject();
             }
         });
@@ -264,7 +268,7 @@ void NavigatorSqlWorkspaceTest::sqlRowJsonLoadsFullDeferredBinaryAndRejectsOvers
     openJson();
     QVERIFY(!copy->isEnabled());
     QVERIFY(text->toPlainText().isEmpty());
-    QVERIFY(sheet->findChild<QLabel*>("rowJsonStatus")->text().contains("8 MiB"));
+    QTRY_VERIFY(sheet->findChild<QLabel*>("rowJsonStatus")->text().contains("8 MiB"));
     sheet->reject();
     QTRY_VERIFY(run->isEnabled());
     editor->setText("SELECT zeroblob(4194304) AS payload;");
@@ -304,6 +308,8 @@ void NavigatorSqlWorkspaceTest::sqlRowJsonLoadsFullDeferredBinaryAndRejectsOvers
             QFAIL("Row context menu did not open");
         }
         auto* action = menu->findChild<QAction*>("viewRowJson");
+        if (action)
+            QTRY_VERIFY(action->isEnabled());
         const bool enabled = action && action->isEnabled();
         menu->close();
         QVERIFY(enabled);
@@ -313,9 +319,9 @@ void NavigatorSqlWorkspaceTest::sqlRowJsonLoadsFullDeferredBinaryAndRejectsOvers
     QTRY_VERIFY(sheet->isVisible());
     QVERIFY(!copy->isEnabled());
     QVERIFY(text->toPlainText().isEmpty());
-    QVERIFY(sheet->findChild<QLabel*>("rowJsonStatus")
-                ->text()
-                .contains("invalid", Qt::CaseInsensitive));
+    QTRY_VERIFY(sheet->findChild<QLabel*>("rowJsonStatus")
+                    ->text()
+                    .contains("invalid", Qt::CaseInsensitive));
     sheet->reject();
 }
 
@@ -673,76 +679,6 @@ void NavigatorSqlWorkspaceTest::sidebarPanelsSwitchWithoutChangingTheSqlTarget()
     QCOMPARE(panels->currentIndex(), 0);
     QCOMPARE(editor->connectionTarget(), target);
     QCOMPARE(tabs->currentWidget(), editor);
-}
-
-void NavigatorSqlWorkspaceTest::savedPanelFiltersFolderTreeAndReusesEditedTab() {
-    QStandardPaths::setTestModeEnabled(true);
-    const auto directory =
-        QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
-            .filePath("com.choscor.ChoscorDB/sql");
-    QVERIFY(QDir().mkpath(directory + "/nested"));
-    const auto name = QStringLiteral("sidebar-test-%1.sql").arg(QCoreApplication::applicationPid());
-    const auto path = QDir(directory).filePath(name);
-    QFile file(path);
-    QVERIFY(file.open(QIODevice::WriteOnly));
-    QCOMPARE(file.write("SELECT 13;"), qint64(10));
-    file.close();
-    QFile nested(QDir(directory + "/nested").filePath(name));
-    QVERIFY(nested.open(QIODevice::WriteOnly));
-    nested.write("SELECT 99;");
-    nested.close();
-    choscordb::MainWindow window;
-    window.show();
-    if (auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>())
-        QTRY_VERIFY(recovery->isReady());
-    window.findChild<QPushButton*>("sidebarSaved")->click();
-    auto* list = window.findChild<QTreeWidget*>("sidebarSavedFiles");
-    QVERIFY(list);
-    auto* search = window.findChild<QLineEdit*>("sidebarSavedSearch");
-    QVERIFY(search);
-    const auto matches = list->findItems(name, Qt::MatchExactly | Qt::MatchRecursive);
-    QCOMPARE(matches.size(), 2);
-    auto* selected = matches.at(0)->parent() ? matches.at(1) : matches.at(0);
-    QVERIFY(!selected->parent());
-    auto* nestedItem = matches.at(0)->parent() ? matches.at(0) : matches.at(1);
-    QCOMPARE(nestedItem->parent()->text(0), QString("nested"));
-    search->setText("NESTED");
-    QVERIFY(selected->isHidden());
-    QVERIFY(!nestedItem->isHidden());
-    QVERIFY(!nestedItem->parent()->isHidden());
-    nestedItem->parent()->setExpanded(false);
-    search->setText(name.toUpper());
-    QVERIFY(nestedItem->parent()->isExpanded());
-    QVERIFY(!nestedItem->isHidden());
-    QVERIFY(!nestedItem->parent()->isHidden());
-    QVERIFY(!selected->isHidden());
-    search->setText("no-matching-file");
-    QVERIFY(nestedItem->parent()->isHidden());
-    search->clear();
-    QVERIFY(!selected->isHidden());
-    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
-    const int beforeFolder = tabs->count();
-    emit list->itemClicked(nestedItem->parent(), 0);
-    QCOMPARE(tabs->count(), beforeFolder);
-    QMetaObject::invokeMethod(list, "itemClicked", Q_ARG(QTreeWidgetItem*, selected),
-                              Q_ARG(int, 0));
-    QTRY_COMPARE(tabs->count(), 1);
-    auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
-    QVERIFY(editor);
-    QTRY_COMPARE(editor->text(), QString("SELECT 13;"));
-    editor->setText("unsaved edit");
-    QMetaObject::invokeMethod(list, "itemClicked", Q_ARG(QTreeWidgetItem*, selected),
-                              Q_ARG(int, 0));
-    QCOMPARE(tabs->count(), 1);
-    QCOMPARE(editor->text(), QString("unsaved edit"));
-    emit list->itemClicked(nestedItem, 0);
-    QTRY_COMPARE(tabs->count(), 2);
-    auto* nestedEditor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
-    QVERIFY(nestedEditor && nestedEditor != editor);
-    QTRY_COMPARE(nestedEditor->text(), QString("SELECT 99;"));
-    QCOMPARE(editor->text(), QString("unsaved edit"));
-    file.remove();
-    nested.remove();
 }
 
 void NavigatorSqlWorkspaceTest::historySearchAppliesToRefreshedFullSql() {

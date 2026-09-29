@@ -12,6 +12,7 @@
 #include <QList>
 #include <QMouseEvent>
 #include <QPointer>
+#include <QResizeEvent>
 #include <QScrollArea>
 #include <QStyleOptionViewItem>
 #include <QStyledItemDelegate>
@@ -50,7 +51,8 @@ class NavigatorIconDelegate final : public design::ColumnRowDelegate {
                        ? connectionIcon(index.data(NavigatorModel::ConnectionRole).toULongLong())
                        : design::Icon::Database)
             : kind == "schema" || kind == "database"  ? design::Icon::Folder
-            : kind == "table" || kind == "view"       ? design::Icon::Grid2x2
+            : kind == "view"                          ? design::Icon::Eye
+            : kind == "table"                         ? design::Icon::Grid2x2
             : kind == "index" || kind.contains("key") ? design::Icon::Key
                                                       : design::Icon::File;
         if (option->widget) {
@@ -126,6 +128,27 @@ class SidebarWheelForwarder final : public QObject {
 
   private:
     QScrollArea* scroll_;
+};
+
+class SidebarWidthObserver final : public QObject {
+  public:
+    SidebarWidthObserver(QWidget* viewport, std::function<void()> widthChanged)
+        : QObject(viewport), widthChanged_(std::move(widthChanged)) {
+        viewport->installEventFilter(this);
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::Resize) {
+            const auto* resize = static_cast<QResizeEvent*>(event);
+            if (resize->size().width() != resize->oldSize().width())
+                QTimer::singleShot(0, this, widthChanged_);
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    std::function<void()> widthChanged_;
 };
 
 class HoveredTabCloseVisibility final : public QObject {

@@ -1,5 +1,5 @@
-#include "app/diagnostics_file_lock.h"
 #include "app/diagnostics_service.h"
+#include "diagnostics_legacy_lock.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>

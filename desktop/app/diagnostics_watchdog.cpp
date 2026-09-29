@@ -53,13 +53,8 @@ void DiagnosticsWatchdog::start() {
                                         std::chrono::duration_cast<std::chrono::milliseconds>(
                                             now - *state->hangStart)
                                             .count();
-                                    const auto bucket =
-                                        duration < 1000    ? DiagnosticDurationBucket::Under1s
-                                        : duration < 10000 ? DiagnosticDurationBucket::Under10s
-                                                           : DiagnosticDurationBucket::Over10s;
                                     state->service->record(
                                         {.event = DiagnosticEvent::UiHangEnd,
-                                         .durationBucket = bucket,
                                          .durationMs = int(
                                              std::clamp<decltype(duration)>(duration, 0, 600000))});
                                     state->hangStart.reset();

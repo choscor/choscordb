@@ -9,6 +9,9 @@ import tempfile
 import time
 import zipfile
 
+if os.name == "posix":
+    import fcntl
+
 
 def main() -> None:
     executable = Path(sys.argv[1])
@@ -44,6 +47,10 @@ def main() -> None:
             manifest = json.loads(archive.read("manifest.json"))
             if manifest["schema"] != 1 or not manifest["has_history"]:
                 raise AssertionError("diagnostic manifest lacks the smoke run")
+            if manifest["build_version"] != "unknown" or "build_version" not in manifest[
+                "unavailable_categories"
+            ]:
+                raise AssertionError("manifest invented a build identifier")
             expected_family = (
                 "windows"
                 if sys.platform == "win32"
@@ -86,6 +93,35 @@ def main() -> None:
             )
         if list(folder.glob("run-*.marker")):
             raise AssertionError("clean exit left a run marker")
+
+        if os.name == "posix":
+            lock_fd = os.open(folder / ".io.lock", os.O_RDWR | os.O_CREAT, 0o600)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            screenshot = Path(root, "locked-startup.png")
+            process = subprocess.Popen(
+                [str(executable), "--screenshot", str(screenshot)],
+                env=environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                deadline = time.monotonic() + 2.5
+                while not screenshot.is_file() and time.monotonic() < deadline:
+                    if process.poll() is not None:
+                        raise AssertionError("locked startup exited before Qt drew the window")
+                    time.sleep(0.025)
+                if not screenshot.is_file():
+                    raise AssertionError("diagnostics lock blocked the Qt startup event loop")
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+                try:
+                    process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=10)
+            if process.returncode:
+                raise AssertionError(f"locked startup exited {process.returncode}")
 
         held_environment = environment.copy()
         held_environment["CHOSCORDB_TEST_SMOKE_DELAY_MS"] = "10000"

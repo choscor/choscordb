@@ -9,6 +9,7 @@ class SqlEditor final : public QsciScintilla {
   public:
     explicit SqlEditor(QWidget* parent = nullptr);
     void openFile(const QString& path);
+    void openSavedFile(const QString& root, const QString& path);
     void saveFile(const QString& path);
     QString filePath() const { return path_; }
     bool isIoBusy() const { return ioBusy_; }
@@ -37,6 +38,7 @@ class SqlEditor final : public QsciScintilla {
     bool viewportEvent(QEvent* event) override;
 
   private:
+    void openFileFrom(const QString& root, const QString& path);
     void applyPalette();
     void updateLineNumberMargin();
     std::optional<quint64> connectionTarget_;

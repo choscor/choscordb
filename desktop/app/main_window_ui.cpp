@@ -285,7 +285,7 @@ MainWindow::Ui MainWindow::buildUi() {
     connectionsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto* connectionsLayout = new QVBoxLayout(connectionsPanel);
     connectionsLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
-    connectionsLayout->setSpacing(design::spacing(design::Spacing::Three));
+    connectionsLayout->setSpacing(design::spacing(design::Spacing::Two));
     connectionSection->addAction(refreshNavigator);
     connectionSection->addAction(addConnection);
     connectionsLayout->addWidget(connectionSection);
@@ -345,7 +345,7 @@ MainWindow::Ui MainWindow::buildUi() {
     tree->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     tree->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     tree->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    tree->setUniformRowHeights(true);
+    tree->setUniformRowHeights(false);
     new SidebarWheelForwarder(connectionsScroll, pinnedList->viewport());
     new SidebarWheelForwarder(connectionsScroll, tree->viewport());
     auto* objectsEmpty = new design::Text({}, objectSection);
@@ -564,9 +564,10 @@ MainWindow::Ui MainWindow::buildUi() {
         for (int index = 0; index < editors_->count(); ++index) {
             const auto* explorer = qobject_cast<ObjectExplorer*>(editors_->widget(index));
             const auto kind = explorer ? explorer->property("objectType").toString() : QString{};
-            const auto role = !explorer                           ? design::Icon::Code
-                              : kind == "table" || kind == "view" ? design::Icon::Grid2x2
-                                                                  : design::Icon::Table;
+            const auto role = !explorer         ? design::Icon::Code
+                              : kind == "view"  ? design::Icon::Eye
+                              : kind == "table" ? design::Icon::Grid2x2
+                                                : design::Icon::Table;
             editors_->setTabIcon(
                 index, design::themedIcon(role, theme_->resolvedTheme().colors.mutedText, 16));
         }

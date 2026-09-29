@@ -830,7 +830,8 @@ class PinningFlowTest : public QObject {
         QTRY_COMPARE(pins->model()->index(0, 0, second).data(Qt::DisplayRole).toString(),
                      QString("id"));
         QVERIFY(pins->isExpanded(first));
-        QCOMPARE(pins->model()->index(0, 0, first).data(Qt::DisplayRole).toString(), QString("id"));
+        QTRY_COMPARE(pins->model()->index(0, 0, first).data(Qt::DisplayRole).toString(),
+                     QString("id"));
         QCOMPARE(reopened.count(), 1);
 
         auto* navigator = restored.findChild<NavigatorController*>();
@@ -861,23 +862,15 @@ class PinningFlowTest : public QObject {
         const auto connection = table.data(NavigatorModel::ConnectionRole).toULongLong();
         model->refresh(table);
         QTRY_VERIFY(metadata.count() > 0);
-        QVERIFY(model->applyChildren(connection,
-                                     table.data(NavigatorModel::ObjectIdRole).toString(),
-                                     metadata.last().at(2).toULongLong(),
-                                     {{"nested-columns", "Columns", {}, "group", true}}));
+        QVERIFY(model->applyChildren(
+            connection, table.data(NavigatorModel::ObjectIdRole).toString(),
+            metadata.last().at(2).toULongLong(),
+            {{"nested-id", "id", "main.beta.id", "column", false},
+             {"nested-key", "beta_pkey", "main.beta.beta_pkey", "key", false}}));
         QTRY_COMPARE(pins->model()->index(0, 0, first).data(Qt::DisplayRole).toString(),
-                     QString("Columns"));
-        const auto nested = pins->model()->index(0, 0, first);
-        QVERIFY(pins->model()->hasChildren(nested));
-        clickArrow(pins, nested);
-        QTRY_VERIFY(pins->isExpanded(nested));
-        QTRY_COMPARE(metadata.count(), 2);
-        QVERIFY(model->applyChildren(connection, "nested-columns",
-                                     metadata.last().at(2).toULongLong(),
-                                     {{"nested-id", "id", "main.beta.id", "column", false}}));
-        QTRY_COMPARE(pins->model()->index(0, 0, nested).data(Qt::DisplayRole).toString(),
                      QString("id"));
-        const auto column = pins->model()->index(0, 0, nested);
+        QTRY_VERIFY(pins->isRowHidden(1, first));
+        const auto column = pins->model()->index(0, 0, first);
         DescendantPinProbe probe;
         qApp->installEventFilter(&probe);
         QVERIFY(QMetaObject::invokeMethod(pins, "customContextMenuRequested",

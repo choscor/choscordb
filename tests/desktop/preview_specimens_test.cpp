@@ -62,7 +62,6 @@
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextEdit>
-#include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
 #include <QTreeView>
@@ -640,8 +639,8 @@ void PreviewTest::navigationTreeTogglesAndRenamesFromMenu() {
         QVERIFY(specimen);
         const auto root = specimen->model()->index(0, 0);
         const auto child = specimen->model()->index(0, 0, root);
-        QVERIFY(specimen->visualRect(root).height() >= 28);
-        QVERIFY(specimen->visualRect(root).height() <= 32);
+        QVERIFY(specimen->visualRect(root).height() >= 18);
+        QVERIFY(specimen->visualRect(root).height() <= 24);
         QVERIFY(specimen->visualRect(child).left() - specimen->visualRect(root).left() <= 20);
     }
     const auto group = tree->model()->index(0, 0);

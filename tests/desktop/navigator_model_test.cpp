@@ -162,7 +162,15 @@ class NavigatorModelTest : public QObject {
         QVERIFY(model->canShowUnverifiedObject(7, "public.ordinary"));
         QVERIFY(!model->canShowUnverifiedObject(7, "\"pg_catalog\".\"hidden\""));
         QVERIFY(!model->canShowUnverifiedObject(7, "pg_catalog.hidden"));
+        QVERIFY(!model->canShowUnverifiedObject(7, "PG_CATALOG.hidden"));
+        QVERIFY(model->canShowUnverifiedObject(7, "\"pub\"\"lic\".\"ordinary\""));
+        QVERIFY(!model->canShowUnverifiedObject(7, "\"pg_\"\"temp\".\"hidden\""));
+        QVERIFY(!model->canShowUnverifiedObject(7, "public..broken"));
+        QVERIFY(!model->canShowUnverifiedObject(7, "\"public\".\"unterminated"));
         QVERIFY(!model->canShowUnverifiedObject(7, "unqualified"));
+        controller.setDriverResolver([](quint64) { return QStringLiteral("sqlite"); });
+        QVERIFY(model->canShowUnverifiedObject(7, "unqualified"));
+        controller.setDriverResolver([](quint64) { return QStringLiteral("postgres"); });
         QTRY_VERIFY(controller.quickObjectResults().isEmpty());
         QVERIFY(!model->objectSnapshot(7, "catalog-table").has_value());
         QVERIFY(model->matchesObject(7, "catalog-table", "table", "pg_catalog.catalog_table",

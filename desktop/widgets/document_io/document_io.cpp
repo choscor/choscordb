@@ -1,39 +1,44 @@
 #include "widgets/document_io/document_io.h"
-#include <QFile>
-#include <QFileInfo>
-#include <QSaveFile>
+#include "choscordb-bridge/src/lib.rs.h"
 #include <QtConcurrentRun>
+
 namespace choscordb {
+namespace {
+DocumentIoResult fromDto(const DocumentIoResultDto& value) {
+    return {QByteArray(reinterpret_cast<const char*>(value.bytes.data()),
+                       static_cast<qsizetype>(value.bytes.size())),
+            QString::fromUtf8(value.error.data(), static_cast<qsizetype>(value.error.size()))};
+}
+rust::Str pathView(const QByteArray& path) {
+    return {path.constData(), static_cast<size_t>(path.size())};
+}
+} // namespace
+
 QFuture<DocumentIoResult> DocumentIo::read(QString path) const {
-    return QtConcurrent::run([path = std::move(path)]() -> DocumentIoResult {
-        if (!QFileInfo(path).isFile())
-            return {{}, tr("Path is not a regular file.")};
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly))
-            return {{}, file.errorString()};
-        if (file.size() > MaximumBytes)
-            return {{}, tr("SQL files are limited to 16 MiB.")};
-        auto bytes = file.read(MaximumBytes + 1);
-        if (file.error() != QFileDevice::NoError)
-            return {{}, file.errorString()};
-        if (bytes.size() > MaximumBytes)
-            return {{}, tr("SQL files are limited to 16 MiB.")};
-        return {std::move(bytes), {}};
+    return QtConcurrent::run([path = std::move(path)]() {
+        if (!path.isValidUtf16())
+            return DocumentIoResult{{}, QObject::tr("Path is not valid Unicode.")};
+        const auto encoded = path.toUtf8();
+        return fromDto(read_sql_document_file(pathView(encoded)));
+    });
+}
+QFuture<DocumentIoResult> DocumentIo::readSaved(QString root, QString path) const {
+    return QtConcurrent::run([root = std::move(root), path = std::move(path)]() {
+        if (!root.isValidUtf16() || !path.isValidUtf16())
+            return DocumentIoResult{{}, QObject::tr("Path is not valid Unicode.")};
+        const auto encodedRoot = root.toUtf8();
+        const auto encodedPath = path.toUtf8();
+        return fromDto(saved_sql_read_file(pathView(encodedRoot), pathView(encodedPath)));
     });
 }
 QFuture<DocumentIoResult> DocumentIo::write(QString path, QByteArray bytes) const {
-    return QtConcurrent::run(
-        [path = std::move(path), bytes = std::move(bytes)]() -> DocumentIoResult {
-            if (bytes.size() > MaximumBytes)
-                return {{}, tr("SQL files are limited to 16 MiB.")};
-            QSaveFile file(path);
-            if (!file.open(QIODevice::WriteOnly))
-                return {{}, file.errorString()};
-            if (file.write(bytes) != bytes.size())
-                return {{}, file.errorString()};
-            if (!file.commit())
-                return {{}, file.errorString()};
-            return {};
-        });
+    return QtConcurrent::run([path = std::move(path), bytes = std::move(bytes)]() {
+        if (!path.isValidUtf16())
+            return DocumentIoResult{{}, QObject::tr("Path is not valid Unicode.")};
+        const auto encoded = path.toUtf8();
+        const auto data = rust::Slice<const uint8_t>(
+            reinterpret_cast<const uint8_t*>(bytes.constData()), static_cast<size_t>(bytes.size()));
+        return fromDto(write_sql_document_file(pathView(encoded), data));
+    });
 }
 } // namespace choscordb

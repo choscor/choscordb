@@ -196,7 +196,8 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         auto* model = new QStandardItemModel(tree);
         auto* parent = new QStandardItem("Navigation group");
         auto* child = new QStandardItem("Nested item");
-        child->setIcon(themedIcon(Icon::Table, resolvedThemeForWidget(*host).colors.mutedText, 14));
+        child->setIcon(themedIcon(Icon::Table, resolvedThemeForWidget(*host).colors.mutedText,
+                                  dimension(Dimension::IconSmall)));
         parent->appendRow(child);
         model->appendRow(parent);
         tree->setModel(model);

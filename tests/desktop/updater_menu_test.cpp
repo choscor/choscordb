@@ -1,5 +1,6 @@
 #include "app/main_window.h"
 #include "app/updater.h"
+#include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include <QAction>
 #include <QHostAddress>
@@ -18,10 +19,12 @@ class UpdaterMenuTest : public QObject {
     void isolatedRunHasNoUpdaterAndProductionMenuKeepsManualCheck() {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
-        QSettings::setDefaultFormat(QSettings::IniFormat);
-        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
-        QCoreApplication::setOrganizationName(QStringLiteral("ChoscorDBUpdaterMenuTest"));
-        QSettings().setValue(QStringLiteral("updates/backgroundConsent"), true);
+        QSettings legacy(directory.filePath("legacy.ini"), QSettings::IniFormat);
+        legacy.setValue(QStringLiteral("updates/backgroundConsent"), true);
+        legacy.sync();
+        QCOMPARE(legacy.status(), QSettings::NoError);
+        qputenv("CHOSCORDB_TEST_UPDATE_LEGACY_INI", directory.filePath("legacy.ini").toUtf8());
+        qputenv("CHOSCORDB_TEST_UPDATE_DATA_DIR", directory.filePath("update-data").toUtf8());
         choscordb::MainWindow window(nullptr, directory.filePath("workspace.sqlite"));
         choscordb::installNativeUpdater(window, true);
         QVERIFY(!window.findChild<QAction*>("checkForUpdates"));
@@ -37,12 +40,22 @@ class UpdaterMenuTest : public QObject {
         QCOMPARE(check->menuRole(), QAction::ApplicationSpecificRole);
         QVERIFY(check->isEnabled());
         QVERIFY(automatic->isCheckable());
-        QVERIFY(automatic->isChecked());
+        QTRY_VERIFY(automatic->isEnabled());
+        QTRY_VERIFY(automatic->isChecked());
         automatic->setChecked(false);
-        QCOMPARE(QSettings().value(QStringLiteral("updates/backgroundConsent")).toBool(), false);
+        QTRY_VERIFY([&] {
+            const auto path = directory.filePath("update-data").toUtf8();
+            const auto stored =
+                choscordb::update_consent_load(rust::Str(path.constData(), size_t(path.size())));
+            return stored.has_value && !stored.value && stored.error.empty();
+        }());
+        legacy.sync();
+        QCOMPARE(legacy.value(QStringLiteral("updates/backgroundConsent")).toBool(), true);
         auto* updates = qobject_cast<QMenu*>(check->parent());
         QVERIFY(updates);
         QCOMPARE(updates->title(), QString("Updates"));
+        qunsetenv("CHOSCORDB_TEST_UPDATE_DATA_DIR");
+        qunsetenv("CHOSCORDB_TEST_UPDATE_LEGACY_INI");
     }
     void manualCheckRequiresRenewedConsentAfterDeclinedInstall() {
         QTemporaryDir directory;
@@ -53,10 +66,12 @@ class UpdaterMenuTest : public QObject {
                 QStringLiteral("http://127.0.0.1:%1/updates/feed.json")
                     .arg(server.serverPort())
                     .toLatin1());
-        QSettings::setDefaultFormat(QSettings::IniFormat);
-        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
-        QCoreApplication::setOrganizationName(QStringLiteral("ChoscorDBUpdaterMenuConsentTest"));
-        QSettings().setValue(QStringLiteral("updates/backgroundConsent"), false);
+        QSettings legacy(directory.filePath("legacy.ini"), QSettings::IniFormat);
+        legacy.setValue(QStringLiteral("updates/backgroundConsent"), false);
+        legacy.sync();
+        QCOMPARE(legacy.status(), QSettings::NoError);
+        qputenv("CHOSCORDB_TEST_UPDATE_LEGACY_INI", directory.filePath("legacy.ini").toUtf8());
+        qputenv("CHOSCORDB_TEST_UPDATE_DATA_DIR", directory.filePath("update-data").toUtf8());
         choscordb::MainWindow window(nullptr, directory.filePath("workspace.sqlite"));
         choscordb::installNativeUpdaterForTest(window, true);
         auto* check = window.findChild<QAction*>("checkForUpdates");
@@ -64,6 +79,10 @@ class UpdaterMenuTest : public QObject {
         QVERIFY(check);
         QVERIFY(install);
         QVERIFY(install->isEnabled());
+        auto* automatic = window.findChild<QAction*>("automaticUpdateChecks");
+        QVERIFY(automatic);
+        QTRY_VERIFY(automatic->isEnabled());
+        QVERIFY(!automatic->isChecked());
         int prompts = 0;
         const auto declineInstall = [&] {
             QTimer::singleShot(0, &window, [&] {
@@ -114,6 +133,8 @@ class UpdaterMenuTest : public QObject {
         QCOMPARE(prompts, 2);
         QVERIFY(window.isEnabled());
         qunsetenv("CHOSCORDB_TEST_UPDATE_FEED_URL");
+        qunsetenv("CHOSCORDB_TEST_UPDATE_DATA_DIR");
+        qunsetenv("CHOSCORDB_TEST_UPDATE_LEGACY_INI");
     }
 };
 QTEST_MAIN(UpdaterMenuTest)

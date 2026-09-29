@@ -262,8 +262,8 @@ void ModernUiTest::savedAndHistoryEmptyStatesUseOneLineBreak() {
     window.findChild<QPushButton*>("sidebarSaved")->click();
     auto* saved = window.findChild<QLabel*>("sidebarSavedStatus");
     QVERIFY(saved);
-    QCOMPARE(saved->text(), QString("No saved queries yet.\nSave a query as a SQL file in the "
-                                    "default folder to find it here."));
+    QTRY_COMPARE(saved->text(), QString("No saved queries yet.\nSave a query as a SQL file in the "
+                                        "default folder to find it here."));
     window.findChild<QPushButton*>("sidebarHistory")->click();
     auto* history = window.findChild<QLabel*>("sidebarHistoryStatus");
     QVERIFY(history);

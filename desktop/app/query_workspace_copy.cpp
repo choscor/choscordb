@@ -1,19 +1,27 @@
 #include "app/query_workspace.h"
 #include "app/query_workspace_p.h"
+#include "bridge/deferred_assembler.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include <QApplication>
 #include <QClipboard>
+#include <QFutureWatcher>
 #include <QItemSelectionModel>
-#include <QStringDecoder>
 #include <QTableView>
 #include <QTimer>
+#include <QtConcurrentRun>
 #include <algorithm>
 
 namespace choscordb {
 using query_workspace_detail::text;
 namespace {
-constexpr quint64 CopyLoadLimit = 8 * 1024 * 1024;
+QString copyAssemblyError(const QString& code) {
+    if (code == QLatin1String("too_large"))
+        return QObject::tr("Complete values exceed the 8 MiB copy loading limit.");
+    if (code == QLatin1String("invalid_utf8"))
+        return QObject::tr("The complete text value is not valid UTF-8.");
+    return QObject::tr("Invalid or stale complete value chunk.");
+}
 
 QModelIndexList sortedSelection(QModelIndexList selection) {
     std::sort(selection.begin(), selection.end(), [](const auto& left, const auto& right) {
@@ -26,6 +34,7 @@ QModelIndexList sortedSelection(QModelIndexList selection) {
 } // namespace
 
 void QueryWorkspace::copyResult(int scope) {
+    ++copyGeneration_;
     pendingCopy_.reset();
     if (widgets_.grid->model() != model_ || !widgets_.grid->selectionModel() ||
         widgets_.grid->selectionModel()->model() != model_) {
@@ -60,30 +69,19 @@ void QueryWorkspace::copyResult(int scope) {
             for (int column = 0; column < model_->columnCount(); ++column)
                 positions.emplace_back(row, column);
     }
-    quint64 deferredBytes = 0;
     for (const auto [row, column] : positions) {
         const auto value = model_->cellValue(model_->index(row, column));
         if (!value)
             return failCopy(tr("The result page changed before copying."));
-        if (const auto* unavailable = std::get_if<UnavailableValue>(&*value))
-            return failCopy(tr("Cannot copy unavailable %1 value: %2")
-                                .arg(unavailable->databaseType, unavailable->reason));
-        if (const auto* deferred = std::get_if<DeferredValue>(&*value)) {
-            if (deferred->bytes > CopyLoadLimit - deferredBytes)
-                return failCopy(tr("Complete values exceed the 8 MiB copy loading limit."));
-            deferredBytes += deferred->bytes;
+        if (std::holds_alternative<DeferredValue>(*value)) {
             request.deferred.emplace_back(row, column);
         }
     }
     if (request.deferred.empty()) {
-        QString error;
-        const auto copied = scope == 0   ? model_->copyCells(selection, &error)
-                            : scope == 1 ? model_->copyRows(selection, &error)
-                                         : model_->copyPage(&error);
-        if (!error.isEmpty())
-            message(error);
-        else
-            QApplication::clipboard()->setText(copied);
+        auto snapshot = model_->copySnapshot(selection, scope);
+        if (snapshot)
+            renderCopy(std::move(*snapshot), request.anchor, request.query, request.selection,
+                       request.scope, copyGeneration_);
         return;
     }
     if (!query_ || !queryAvailable() || !adapter_)
@@ -93,14 +91,44 @@ void QueryWorkspace::copyResult(int scope) {
 }
 
 void QueryWorkspace::failCopy(const QString& error) {
+    ++copyGeneration_;
     pendingCopy_.reset();
     message(error.left(1024));
+}
+
+void QueryWorkspace::renderCopy(ResultTableModel::CopySnapshot snapshot,
+                                QPersistentModelIndex anchor, quint64 query,
+                                QModelIndexList selection, int scope, quint64 generation) {
+    auto* watcher = new QFutureWatcher<ResultTableModel::CopyEvaluation>(this);
+    connect(
+        watcher, &QFutureWatcher<ResultTableModel::CopyEvaluation>::finished, this,
+        [this, watcher, anchor, query, selection = std::move(selection), scope, generation] {
+            const auto result = watcher->result();
+            watcher->deleteLater();
+            if (generation != copyGeneration_)
+                return;
+            if (!anchor.isValid() || widgets_.grid->model() != model_ ||
+                !widgets_.grid->selectionModel() ||
+                widgets_.grid->selectionModel()->model() != model_ || query_.value_or(0) != query ||
+                (scope != 2 &&
+                 sortedSelection(widgets_.grid->selectionModel()->selectedIndexes()) != selection))
+                return failCopy(tr("The result changed before copying completed."));
+            if (!result.error.isEmpty())
+                message(result.error);
+            else
+                QApplication::clipboard()->setText(result.text);
+        });
+    watcher->setFuture(QtConcurrent::run([snapshot = std::move(snapshot)]() mutable {
+        return ResultTableModel::evaluateCopy(std::move(snapshot));
+    }));
 }
 
 void QueryWorkspace::requestCopyChunk() {
     if (!pendingCopy_)
         return;
     auto& request = *pendingCopy_;
+    if (request.assembling)
+        return;
     if (!request.anchor.isValid() || widgets_.grid->model() != model_ ||
         !widgets_.grid->selectionModel() || widgets_.grid->selectionModel()->model() != model_ ||
         query_ != request.query || !queryAvailable() || !adapter_)
@@ -110,22 +138,50 @@ void QueryWorkspace::requestCopyChunk() {
             sortedSelection(widgets_.grid->selectionModel()->selectedIndexes()) !=
                 request.selection)
             return failCopy(tr("The selection changed before copying completed."));
-        QString error;
-        const auto copied =
-            request.scope == 0   ? model_->copyCells(request.selection, &error, request.resolved)
-            : request.scope == 1 ? model_->copyRows(request.selection, &error, request.resolved)
-                                 : model_->copyPage(&error, request.resolved);
+        auto snapshot = model_->copySnapshot(request.selection, request.scope, request.resolved);
+        const auto anchor = request.anchor;
+        const auto query = request.query;
+        const auto selection = request.selection;
+        const auto scope = request.scope;
         pendingCopy_.reset();
-        if (!error.isEmpty())
-            message(error);
-        else
-            QApplication::clipboard()->setText(copied);
+        if (!snapshot)
+            return failCopy(tr("The result changed before copying completed."));
+        renderCopy(std::move(*snapshot), anchor, query, selection, scope, copyGeneration_);
         return;
     }
     const auto [row, column] = request.deferred[request.next];
     const auto value = model_->deferredValue(model_->index(row, column));
-    if (!value || value->bytes > CopyLoadLimit - request.resolvedBytes)
-        return failCopy(tr("The complete value is no longer available within the copy limit."));
+    if (!value)
+        return failCopy(tr("The complete value is no longer available."));
+    if (!request.assembler) {
+        request.assembling = true;
+        const auto generation = copyGeneration_;
+        const auto position = request.next;
+        auto* watcher =
+            new QFutureWatcher<std::pair<std::shared_ptr<DeferredAssemblerJob>, QString>>(this);
+        connect(
+            watcher,
+            &QFutureWatcher<std::pair<std::shared_ptr<DeferredAssemblerJob>, QString>>::finished,
+            this, [this, watcher, generation, position] {
+                const auto [job, error] = watcher->result();
+                watcher->deleteLater();
+                if (generation != copyGeneration_ || !pendingCopy_ ||
+                    pendingCopy_->next != position)
+                    return;
+                auto& current = *pendingCopy_;
+                current.assembling = false;
+                if (!error.isEmpty())
+                    return failCopy(copyAssemblyError(error));
+                current.assembler = job;
+                QTimer::singleShot(0, this, &QueryWorkspace::requestCopyChunk);
+            });
+        watcher->setFuture(QtConcurrent::run([value = *value, resolved = request.resolvedBytes] {
+            auto job = std::make_shared<DeferredAssemblerJob>(value.type, value.fallback,
+                                                              value.bytes, resolved, false);
+            return std::pair{job, job->initialError()};
+        }));
+        return;
+    }
     adapter_->loadValueChunk(request.query, value->handle, request.offset, 65536);
 }
 
@@ -141,43 +197,54 @@ void QueryWorkspace::handleCopyEvent(const BridgeEvent& event) {
     const auto eventKind = text(event.kind);
     if (eventKind == "value_chunk_failed")
         return failCopy(text(event.error));
-    if (eventKind != "value_chunk")
+    if (eventKind != "value_chunk" || request.assembling || !request.assembler)
         return;
     const auto kind = text(event.chunk_kind);
     const auto size = static_cast<quint64>(event.chunk_bytes.size());
-    if (!request.anchor.isValid() || query_ != request.query || !event.has_lease ||
-        (kind != "text" && kind != "binary") || (value->fallback && kind != "text") ||
-        (!request.kind.isEmpty() && request.kind != kind) || event.total_bytes != value->bytes ||
-        size > 65536 || request.offset > value->bytes || size > value->bytes - request.offset ||
-        (size == 0 && request.offset < value->bytes))
-        return failCopy(tr("Invalid or stale complete value chunk."));
-    if (!adapter_ || !adapter_->retainTransfer(event.lease_id, size))
+    if (!request.anchor.isValid() || query_ != request.query)
+        return failCopy(tr("The result changed before copying completed."));
+    if (event.has_lease && (!adapter_ || !adapter_->retainTransfer(event.lease_id, size)))
         return failCopy(tr("The complete value exceeds the available memory budget."));
-    if (size)
-        request.bytes.append(reinterpret_cast<const char*>(event.chunk_bytes.data()),
-                             static_cast<qsizetype>(size));
-    adapter_->releasePageLease(event.lease_id);
-    request.kind = kind;
-    request.offset += size;
-    if (request.offset == value->bytes) {
-        Cell complete;
-        if (kind == "text") {
-            QStringDecoder decoder(QStringDecoder::Utf8);
-            auto decoded = decoder(QByteArrayView(request.bytes));
-            if (decoder.hasError())
-                return failCopy(tr("The complete text value is not valid UTF-8."));
-            complete = value->fallback ? Cell{FallbackText{std::move(decoded), value->type}}
-                                       : Cell{std::move(decoded)};
-        } else {
-            complete = std::move(request.bytes);
-        }
-        request.resolved[{row, column}] = std::move(complete);
-        request.resolvedBytes += value->bytes;
-        request.bytes.clear();
-        request.kind.clear();
-        request.offset = 0;
-        ++request.next;
-    }
-    QTimer::singleShot(0, this, &QueryWorkspace::requestCopyChunk);
+    QByteArray chunk(reinterpret_cast<const char*>(event.chunk_bytes.data()),
+                     static_cast<qsizetype>(size));
+    if (event.has_lease)
+        adapter_->releasePageLease(event.lease_id);
+    request.assembling = true;
+    const auto generation = copyGeneration_;
+    const auto position = request.next;
+    const auto totalBytes = event.total_bytes;
+    auto job = request.assembler;
+    auto* watcher = new QFutureWatcher<DeferredAssemblyOutcome>(this);
+    connect(watcher, &QFutureWatcher<DeferredAssemblyOutcome>::finished, this,
+            [this, watcher, generation, position, job, row, column, totalBytes] {
+                const auto result = watcher->result();
+                watcher->deleteLater();
+                if (generation != copyGeneration_ || !pendingCopy_ ||
+                    pendingCopy_->next != position || pendingCopy_->assembler != job)
+                    return;
+                auto& current = *pendingCopy_;
+                current.assembling = false;
+                if (!result.error.isEmpty())
+                    return failCopy(copyAssemblyError(result.error));
+                current.offset = result.receivedBytes;
+                if (result.complete) {
+                    if (result.kind == QLatin1String("fallback_text"))
+                        current.resolved[{row, column}] =
+                            FallbackText{result.text, result.databaseType};
+                    else if (result.kind == QLatin1String("text"))
+                        current.resolved[{row, column}] = result.text;
+                    else
+                        current.resolved[{row, column}] = result.bytes;
+                    current.resolvedBytes += totalBytes;
+                    current.assembler.reset();
+                    current.offset = 0;
+                    ++current.next;
+                }
+                QTimer::singleShot(0, this, &QueryWorkspace::requestCopyChunk);
+            });
+    watcher->setFuture(QtConcurrent::run([job, kind, offset = event.chunk_offset, totalBytes,
+                                          chunk = std::move(chunk), hasLease = event.has_lease] {
+        return job->append(kind, offset, totalBytes, chunk, hasLease);
+    }));
 }
 } // namespace choscordb

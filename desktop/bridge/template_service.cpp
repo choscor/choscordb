@@ -32,8 +32,6 @@ SqlTemplateLimits SqlTemplateService::limits() {
 SqlTemplateResult SqlTemplateService::generate(const QString& kind, const QString& qualified,
                                                const QStringList& columns) {
     const auto maximum = limits();
-    if (kind != "select" && kind != "insert" && kind != "update" && kind != "delete")
-        return {false, {}, QStringLiteral("Unknown SQL template.")};
     quint64 remaining = maximum.maxBytes;
     if (quint64(columns.size()) > maximum.maxColumns || !charge(qualified, remaining))
         return {false,
@@ -56,12 +54,6 @@ SqlTemplateResult SqlTemplateService::generate(const QString& kind, const QStrin
         rust::Str(nameBytes.constData(), static_cast<size_t>(nameBytes.size())), std::move(names));
     if (!result.valid)
         return {false, {}, text(result.error)};
-    const QString explanation =
-        (kind == "insert" || kind == "update") && !columns.isEmpty()
-            ? QStringLiteral("-- Replace numbered placeholders with values before running.\n")
-            : QString{};
-    if (quint64(result.sql.size()) > maximum.maxBytes - quint64(explanation.size()))
-        return {false, {}, QStringLiteral("Generated SQL exceeds the template size limit.")};
-    return {true, explanation + text(result.sql), {}};
+    return {true, text(result.sql), {}};
 }
 } // namespace choscordb

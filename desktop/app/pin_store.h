@@ -29,7 +29,8 @@ class PinStore {
     static QString identityKey(const PinRecord& pin);
 
   private:
-    QString path_;
+    QString storageLocation_;
+    bool profileStorage_ = false;
 };
 
 } // namespace choscordb

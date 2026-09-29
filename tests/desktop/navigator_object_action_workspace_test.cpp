@@ -169,7 +169,8 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QVERIFY(collisionSubmitted);
     auto* toast = window.findChild<ToastRegion*>("toastRegion");
     QVERIFY(toast);
-    QTRY_VERIFY(toast->accessibleDescription().contains("Could not rename"));
+    QTRY_VERIFY2(toast->accessibleDescription().contains("Could not rename"),
+                 qPrintable(toast->accessibleDescription()));
     QCOMPARE(tabs->count(), 3);
     QCOMPARE(object->property("objectId").toString(),
              model->index(0, 0, group).data(NavigatorModel::ObjectIdRole).toString());

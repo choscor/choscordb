@@ -74,6 +74,9 @@ class PreviewTest final : public QObject {
     void fieldValidationIsBelowInputAndSelectInBothThemes();
     void tokensExposeCopyableValuesAndSources();
     void exportsAreDeterministicAndFailuresVisible();
+    void exportReportsMetadataFailureAfterPngWrite();
+    void exportRejectsQueuedReentry();
+    void exportSurvivesOwnerDestruction();
     void comparisonThemesAreIndependent();
     void navigationIsSearchable();
     void componentFamiliesAreRendered();

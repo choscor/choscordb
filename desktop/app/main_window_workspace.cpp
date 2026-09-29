@@ -25,12 +25,11 @@
 #include <QAction>
 #include <QComboBox>
 #include <QDir>
-#include <QDirIterator>
 #include <QDockWidget>
-#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFontMetrics>
+#include <QFutureWatcher>
 #include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QKeyEvent>
@@ -42,16 +41,73 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTreeView>
 #include <QTreeWidget>
+#include <QtConcurrentRun>
 #include <atomic>
+#include <memory>
 
 namespace choscordb {
 namespace {
+QString fromRust(const rust::String& value) {
+    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
+}
+
+rust::Str pathView(const QByteArray& encoded) {
+    return {encoded.constData(), static_cast<size_t>(encoded.size())};
+}
+
+struct SavedSqlEntry {
+    QString path;
+    QString relativePath;
+};
+
+struct SavedSqlListing {
+    QList<SavedSqlEntry> entries;
+    QString error;
+    bool hasMore = false;
+};
+
+SavedSqlListing loadSavedSql(const QString& root) {
+    SavedSqlListing result;
+    if (!root.isValidUtf16()) {
+        result.error = QObject::tr("Path is not valid Unicode.");
+        return result;
+    }
+    const auto encoded = root.toUtf8();
+    const auto dto = saved_sql_list_directory(pathView(encoded));
+    result.error = fromRust(dto.error);
+    result.hasMore = dto.has_more;
+    for (const auto& entry : dto.entries)
+        result.entries.append({fromRust(entry.path), fromRust(entry.relative_path)});
+    return result;
+}
+
+struct SavedSqlIdentity {
+    QString path;
+    QString error;
+};
+
+SavedSqlIdentity documentIdentity(const QString& path) {
+    if (!path.isValidUtf16())
+        return {{}, QObject::tr("Path is not valid Unicode.")};
+    const auto encoded = path.toUtf8();
+    const auto dto = saved_sql_document_identity(pathView(encoded));
+    return {fromRust(dto.path), fromRust(dto.error)};
+}
+
+QString prepareSavedSqlDirectory(const QString& root) {
+    if (!root.isValidUtf16())
+        return QObject::tr("Path is not valid Unicode.");
+    const auto encoded = root.toUtf8();
+    return fromRust(saved_sql_prepare_directory(pathView(encoded)));
+}
+
 void elideResultSource(QLabel* source) {
     const auto full = source->property("fullSource").toString();
     const auto visible = source->fontMetrics().elidedText(full, Qt::ElideMiddle, source->width());
@@ -230,62 +286,72 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             filterItem(filterItem, savedFiles->topLevelItem(i), {});
     };
     connect(savedSearch, &QLineEdit::textChanged, this, filterSavedFiles);
-    auto refreshSavedFiles = [savedFiles, savedStatus, savedDirectory, filterSavedFiles] {
+    const auto savedRefreshGeneration = std::make_shared<quint64>(0);
+    auto refreshSavedFiles = [this, savedFiles, savedStatus, savedDirectory, filterSavedFiles,
+                              savedRefreshGeneration] {
+        const auto generation = ++*savedRefreshGeneration;
         savedFiles->clear();
         savedStatus->show();
-        const QDir directory(savedDirectory);
-        if (!directory.exists()) {
-            savedStatus->setText(QObject::tr("No saved queries yet.\nSave a query as a SQL file "
-                                             "in the default folder to find it here."));
-            return;
-        }
-        if (!directory.isReadable()) {
-            savedStatus->setText(
-                QObject::tr("Saved SQL directory cannot be read: %1").arg(savedDirectory));
-            return;
-        }
-        QDirIterator files(savedDirectory, {"*.sql"}, QDir::Files | QDir::NoSymLinks,
-                           QDirIterator::Subdirectories);
-        constexpr int limit = 1000;
-        int count = 0;
-        QHash<QString, QTreeWidgetItem*> folders;
-        while (files.hasNext() && count < limit) {
-            const auto path = files.next();
-            const auto parts = directory.relativeFilePath(path).split('/');
-            QTreeWidgetItem* parent = savedFiles->invisibleRootItem();
-            QString folderPath;
-            for (int i = 0; i + 1 < parts.size(); ++i) {
-                folderPath += parts.at(i) + '/';
-                auto* folder = folders.value(folderPath);
-                if (!folder) {
-                    folder = new QTreeWidgetItem(parent, {parts.at(i)});
-                    folder->setData(0, NavigatorModel::KindRole, "schema");
-                    folders.insert(folderPath, folder);
+        savedStatus->setText(QObject::tr("Loading saved queries…"));
+        auto* watcher = new QFutureWatcher<SavedSqlListing>(this);
+        connect(
+            watcher, &QFutureWatcher<SavedSqlListing>::finished, this,
+            [watcher, savedFiles, savedStatus, savedDirectory, filterSavedFiles,
+             savedRefreshGeneration, generation] {
+                const auto result = watcher->result();
+                watcher->deleteLater();
+                if (generation != *savedRefreshGeneration)
+                    return;
+                if (!result.error.isEmpty()) {
+                    savedStatus->setText(
+                        QObject::tr("Saved SQL directory cannot be read: %1").arg(savedDirectory));
+                    return;
                 }
-                parent = folder;
-            }
-            auto* item = new QTreeWidgetItem(parent, {parts.last()});
-            item->setData(0, Qt::UserRole, path);
-            item->setToolTip(0, directory.relativeFilePath(path));
-            item->setData(0, NavigatorModel::KindRole, "file");
-            ++count;
-        }
-        savedFiles->sortItems(0, Qt::AscendingOrder);
-        savedStatus->setText(files.hasNext() ? QObject::tr("Showing the first %1 files.").arg(limit)
-                             : count ? QString{}
-                                     : QObject::tr("No saved queries yet.\nSave a query as a SQL "
-                                                   "file in the default folder to find it here."));
-        savedStatus->setVisible(!savedStatus->text().isEmpty());
-        filterSavedFiles();
+                QHash<QString, QTreeWidgetItem*> folders;
+                for (const auto& entry : result.entries) {
+                    const auto relative = QDir::fromNativeSeparators(entry.relativePath);
+                    const auto parts = relative.split('/');
+                    QTreeWidgetItem* parent = savedFiles->invisibleRootItem();
+                    QString folderPath;
+                    for (int i = 0; i + 1 < parts.size(); ++i) {
+                        folderPath += parts.at(i) + '/';
+                        auto* folder = folders.value(folderPath);
+                        if (!folder) {
+                            folder = new QTreeWidgetItem(parent, {parts.at(i)});
+                            folder->setData(0, NavigatorModel::KindRole, "schema");
+                            folders.insert(folderPath, folder);
+                        }
+                        parent = folder;
+                    }
+                    auto* item = new QTreeWidgetItem(parent, {parts.last()});
+                    item->setData(0, Qt::UserRole, entry.path);
+                    item->setToolTip(0, relative);
+                    item->setData(0, NavigatorModel::KindRole, "file");
+                }
+                savedFiles->sortItems(0, Qt::AscendingOrder);
+                savedStatus->setText(
+                    result.hasMore ? QObject::tr("Showing the first %1 files.").arg(1000)
+                    : result.entries.isEmpty()
+                        ? QObject::tr("No saved queries yet.\nSave a query as a SQL file "
+                                      "in the default folder to find it here.")
+                        : QString{});
+                savedStatus->setVisible(!savedStatus->text().isEmpty());
+                filterSavedFiles();
+            });
+        watcher->setFuture(
+            QtConcurrent::run([savedDirectory] { return loadSavedSql(savedDirectory); }));
     };
     refreshSavedFiles_ = refreshSavedFiles;
     connect(sidebarPanels, &QStackedWidget::currentChanged, this, [refreshSavedFiles](int index) {
         if (index == 1)
             refreshSavedFiles();
     });
-    auto openSavedItem = [this](QTreeWidgetItem* item) {
+    const auto pendingSavedOpens = std::make_shared<QSet<QString>>();
+    const auto savedOpenGeneration = std::make_shared<quint64>(0);
+    auto openSavedItem = [this, savedDirectory, pendingSavedOpens,
+                          savedOpenGeneration](QTreeWidgetItem* item) {
         const auto path = item->data(0, Qt::UserRole).toString();
-        if (path.isEmpty())
+        if (path.isEmpty() || pendingSavedOpens->contains(path))
             return;
         if (!allowDocumentChange() || databaseClosePending_ ||
             (recovery_ && (!recovery_->isReady() || recovery_->isClosing()))) {
@@ -293,77 +359,137 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                       ToastVariant::Warning);
             return;
         }
-        const auto identity = [](const QString& value) {
-            const QFileInfo info(value);
-            const auto canonical = info.canonicalFilePath();
-            return canonical.isEmpty() ? info.absoluteFilePath() : canonical;
-        };
+        pendingSavedOpens->insert(path);
+        const auto generation = ++*savedOpenGeneration;
+        QList<QPointer<SqlEditor>> openEditors;
+        QStringList openPaths;
         for (int i = 0; i < editors_->count(); ++i) {
             auto* existing = qobject_cast<SqlEditor*>(editors_->widget(i));
-            if (existing && !existing->filePath().isEmpty() &&
-                identity(existing->filePath()) == identity(path)) {
-                editors_->setCurrentIndex(i);
-                showScreen(Screen::Sql);
-                return;
-            }
+            if (!existing || existing->filePath().isEmpty())
+                continue;
+            openEditors.append(existing);
+            openPaths.append(existing->filePath());
         }
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly)) {
-            showToast(
-                tr("Could not open %1: %2").arg(QFileInfo(path).fileName(), file.errorString()),
-                ToastVariant::Danger);
-            return;
-        }
-        file.close();
-        if (auto* editor = addEditor()) {
-            connect(editor, &SqlEditor::fileOpened, this,
-                    [this, editor](const QString&, const QString& error) {
-                        if (error.isEmpty() || editors_->indexOf(editor) < 0)
+        auto* watcher = new QFutureWatcher<QList<SavedSqlIdentity>>(this);
+        connect(watcher, &QFutureWatcher<QList<SavedSqlIdentity>>::finished, this,
+                [this, watcher, openEditors, openPaths, path, savedDirectory, pendingSavedOpens,
+                 savedOpenGeneration, generation] {
+                    const auto identities = watcher->result();
+                    watcher->deleteLater();
+                    const bool focusRequested = generation == *savedOpenGeneration;
+                    if (!allowDocumentChange() || databaseClosePending_ ||
+                        (recovery_ && (!recovery_->isReady() || recovery_->isClosing()))) {
+                        pendingSavedOpens->remove(path);
+                        showToast(tr("Saved file cannot be opened while the workspace is busy."),
+                                  ToastVariant::Warning);
+                        return;
+                    }
+                    if (identities.isEmpty() || !identities.front().error.isEmpty()) {
+                        pendingSavedOpens->remove(path);
+                        showToast(tr("Could not open %1: %2")
+                                      .arg(QFileInfo(path).fileName(),
+                                           identities.isEmpty() ? tr("Path is invalid.")
+                                                                : identities.front().error),
+                                  ToastVariant::Danger);
+                        return;
+                    }
+                    for (int i = 0; i < openEditors.size(); ++i) {
+                        auto* existing = openEditors.at(i).data();
+                        if (existing && existing->filePath() == openPaths.at(i) &&
+                            identities.at(i + 1).error.isEmpty() &&
+                            identities.at(i + 1).path == identities.front().path) {
+                            pendingSavedOpens->remove(path);
+                            if (focusRequested) {
+                                editors_->setCurrentWidget(existing);
+                                showScreen(Screen::Sql);
+                            }
                             return;
-                        editors_->removeTab(editors_->indexOf(editor));
-                        editor->deleteLater();
-                        if (!editors_->count())
-                            showScreen(Screen::Start);
-                    });
-            editor->openFile(path);
-        }
+                        }
+                    }
+                    const QPointer<QWidget> previouslyFocused = editors_->currentWidget();
+                    if (auto* editor = addEditor()) {
+                        connect(editor, &SqlEditor::fileOpened, this,
+                                [this, editor, path, pendingSavedOpens](const QString& openedPath,
+                                                                        const QString& error) {
+                                    pendingSavedOpens->remove(path);
+                                    editor->setProperty("savedSqlOpen", false);
+                                    if (error.isEmpty() || editors_->indexOf(editor) < 0)
+                                        return;
+                                    showToast(tr("Could not open %1: %2")
+                                                  .arg(QFileInfo(openedPath).fileName(), error),
+                                              ToastVariant::Danger);
+                                    editors_->removeTab(editors_->indexOf(editor));
+                                    editor->deleteLater();
+                                    if (!editors_->count())
+                                        showScreen(Screen::Start);
+                                });
+                        connect(editor, &QObject::destroyed, this,
+                                [pendingSavedOpens, path] { pendingSavedOpens->remove(path); });
+                        editor->setProperty("savedSqlOpen", true);
+                        editor->openSavedFile(savedDirectory, path);
+                        if (!focusRequested && previouslyFocused &&
+                            editors_->indexOf(previouslyFocused) >= 0)
+                            editors_->setCurrentWidget(previouslyFocused);
+                    } else
+                        pendingSavedOpens->remove(path);
+                });
+        watcher->setFuture(QtConcurrent::run([path, openPaths] {
+            QList<SavedSqlIdentity> identities;
+            identities.reserve(openPaths.size() + 1);
+            identities.append(documentIdentity(path));
+            for (const auto& openPath : openPaths)
+                identities.append(documentIdentity(openPath));
+            return identities;
+        }));
     };
     connect(savedFiles, &QTreeWidget::itemClicked, this, openSavedItem);
     connect(savedFiles, &QTreeWidget::itemActivated, this, openSavedItem);
-    connect(save, &QAction::triggered, this, [this] {
+    auto promptSaveSql = [this, savedDirectory](QPointer<SqlEditor> editor, const QString& title,
+                                                const QString& suggested, bool createDirectory) {
+        auto showDialog = [this, editor, title, suggested] {
+            if (!editor)
+                return;
+            const auto path =
+                QFileDialog::getSaveFileName(this, title, suggested, tr("SQL files (*.sql)"));
+            if (!path.isEmpty() && editor)
+                editor->saveFile(path);
+        };
+        if (!createDirectory) {
+            showDialog();
+            return;
+        }
+        auto* watcher = new QFutureWatcher<QString>(this);
+        connect(watcher, &QFutureWatcher<QString>::finished, this,
+                [this, watcher, savedDirectory, showDialog] {
+                    const auto error = watcher->result();
+                    watcher->deleteLater();
+                    if (!error.isEmpty()) {
+                        showToast(
+                            tr("Could not create saved SQL directory: %1").arg(savedDirectory),
+                            ToastVariant::Danger);
+                        return;
+                    }
+                    showDialog();
+                });
+        watcher->setFuture(QtConcurrent::run(
+            [savedDirectory] { return prepareSavedSqlDirectory(savedDirectory); }));
+    };
+    connect(save, &QAction::triggered, this, [this, savedDirectory, promptSaveSql] {
         auto* editor = qobject_cast<SqlEditor*>(editors_->currentWidget());
         if (!editor)
             return;
-        auto path = editor->filePath();
-        if (path.isEmpty()) {
-            const auto directory = QDir(applicationDataDirectory()).filePath("sql");
-            if (!QDir().mkpath(directory)) {
-                showToast(tr("Could not create saved SQL directory: %1").arg(directory),
-                          ToastVariant::Danger);
-                return;
-            }
-            path = QFileDialog::getSaveFileName(this, tr("Save SQL file"), directory + "/",
-                                                tr("SQL files (*.sql)"));
-        }
-        if (path.isEmpty())
-            return;
-        editor->saveFile(path);
+        if (!editor->filePath().isEmpty())
+            editor->saveFile(editor->filePath());
+        else
+            promptSaveSql(editor, tr("Save SQL file"), savedDirectory + "/", true);
     });
-    connect(saveAs, &QAction::triggered, this, [this, savedDirectory] {
+    connect(saveAs, &QAction::triggered, this, [this, savedDirectory, promptSaveSql] {
         auto* editor = qobject_cast<SqlEditor*>(editors_->currentWidget());
         if (!editor)
             return;
         const auto suggested =
             editor->filePath().isEmpty() ? savedDirectory + "/" : editor->filePath();
-        if (editor->filePath().isEmpty() && !QDir().mkpath(savedDirectory)) {
-            showToast(tr("Could not create saved SQL directory: %1").arg(savedDirectory),
-                      ToastVariant::Danger);
-            return;
-        }
-        const auto path = QFileDialog::getSaveFileName(this, tr("Save SQL file as"), suggested,
-                                                       tr("SQL files (*.sql)"));
-        if (!path.isEmpty())
-            editor->saveFile(path);
+        promptSaveSql(editor, tr("Save SQL file as"), suggested, editor->filePath().isEmpty());
     });
     connect(run, &QAction::triggered, this, [this] { showScreen(Screen::Sql); });
     workspace_ =

@@ -1,5 +1,6 @@
 #include "app/query_workspace.h"
 #include "app/query_workspace_p.h"
+#include "bridge/deferred_assembler.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
@@ -11,17 +12,39 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDialog>
+#include <QFutureWatcher>
 #include <QLabel>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QStringDecoder>
+#include <QSemaphore>
 #include <QTableView>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QtConcurrentRun>
+#include <atomic>
+#include <memory>
 
 namespace choscordb {
 using query_workspace_detail::text;
+namespace {
+QString jsonAssemblyError(const QString& code) {
+    if (code == QLatin1String("too_large"))
+        return QObject::tr("The complete JSON view exceeds the 8 MiB loading limit.");
+    if (code == QLatin1String("invalid_utf8"))
+        return QObject::tr("The complete text value is not valid UTF-8.");
+    return QObject::tr("Invalid or oversized value chunk.");
+}
+QSemaphore& jsonMenuSlots() {
+    static QSemaphore permits(2);
+    return permits;
+}
+bool jsonActionAvailable(ResultTableModel::JsonViewState state, bool deferredAvailable) {
+    return state == ResultTableModel::JsonViewState::Ready ||
+           state == ResultTableModel::JsonViewState::Invalid ||
+           (state == ResultTableModel::JsonViewState::NeedsDeferred && deferredAvailable);
+}
+} // namespace
 bool QueryWorkspace::jsonResultCurrent() const {
     if (jsonResultInvalidated_)
         return false;
@@ -34,15 +57,7 @@ void QueryWorkspace::appendJsonViewActions(QMenu& menu, const QPersistentModelIn
                              clicked.row() >= 0 && clicked.row() < model_->rowCount();
     auto* viewCell = menu.addAction(tr("View cell as JSON"));
     viewCell->setObjectName("viewCellJson");
-    bool cellAvailable = false;
-    if (validTarget) {
-        const auto readiness = model_->cellJsonReadiness(clicked);
-        cellAvailable = readiness == ResultTableModel::CellJsonReadiness::Ready ||
-                        readiness == ResultTableModel::CellJsonReadiness::Invalid ||
-                        (readiness == ResultTableModel::CellJsonReadiness::NeedsDeferred &&
-                         query_ && queryAvailable());
-    }
-    viewCell->setEnabled(cellAvailable);
+    viewCell->setEnabled(false);
     connect(viewCell, &QAction::triggered, this, [this, clicked] {
         if (clicked.isValid() && clicked.model() == model_ && widgets_.grid->model() == model_ &&
             widgets_.grid->selectionModel() && widgets_.grid->selectionModel()->model() == model_)
@@ -50,15 +65,64 @@ void QueryWorkspace::appendJsonViewActions(QMenu& menu, const QPersistentModelIn
     });
     auto* viewRow = menu.addAction(tr("View row as JSON"));
     viewRow->setObjectName("viewRowJson");
-    bool rowAvailable = validTarget;
-    if (rowAvailable) {
-        const auto readiness = model_->rowJsonReadiness(clicked.row());
-        rowAvailable = readiness == ResultTableModel::RowJsonReadiness::Ready ||
-                       readiness == ResultTableModel::RowJsonReadiness::Invalid ||
-                       (readiness == ResultTableModel::RowJsonReadiness::NeedsDeferred && query_ &&
-                        queryAvailable());
+    viewRow->setEnabled(false);
+    if (validTarget) {
+        QPointer<QMenu> menuGuard(&menu);
+        QPointer<QueryWorkspace> owner(this);
+        QPointer<QAction> cellGuard(viewCell), rowGuard(viewRow);
+        auto cancelled = std::make_shared<std::atomic_bool>(false);
+        connect(&menu, &QMenu::aboutToHide, this,
+                [cancelled] { cancelled->store(true, std::memory_order_relaxed); });
+        auto attempt = std::make_shared<std::function<void()>>();
+        std::weak_ptr<std::function<void()>> weakAttempt = attempt;
+        *attempt = [this, owner, menuGuard, cellGuard, rowGuard, clicked, cancelled, weakAttempt] {
+            if (!owner || !menuGuard || !cellGuard || !rowGuard ||
+                cancelled->load(std::memory_order_relaxed) || !clicked.isValid() ||
+                !jsonResultCurrent())
+                return;
+            if (!jsonMenuSlots().tryAcquire()) {
+                if (auto retry = weakAttempt.lock())
+                    QTimer::singleShot(20, menuGuard.data(), [retry] { (*retry)(); });
+                return;
+            }
+            auto cell = model_->jsonViewSnapshot(ResultTableModel::JsonViewScope::Cell,
+                                                 clicked.row(), clicked.column());
+            auto row = model_->jsonViewSnapshot(ResultTableModel::JsonViewScope::Row, clicked.row(),
+                                                clicked.column());
+            if (!cell || !row) {
+                jsonMenuSlots().release();
+                return;
+            }
+            using Evaluations = std::pair<ResultTableModel::JsonViewEvaluation,
+                                          ResultTableModel::JsonViewEvaluation>;
+            auto* watcher = new QFutureWatcher<Evaluations>(this);
+            connect(watcher, &QFutureWatcher<Evaluations>::finished, this,
+                    [this, watcher, cellGuard, rowGuard, clicked, cancelled] {
+                        const auto result = watcher->result();
+                        watcher->deleteLater();
+                        if (!cellGuard || !rowGuard || cancelled->load(std::memory_order_relaxed) ||
+                            !clicked.isValid() || clicked.model() != model_ ||
+                            widgets_.grid->model() != model_ || !jsonResultCurrent())
+                            return;
+                        const bool deferredAvailable = query_ && queryAvailable();
+                        cellGuard->setEnabled(
+                            jsonActionAvailable(result.first.state, deferredAvailable));
+                        rowGuard->setEnabled(
+                            jsonActionAvailable(result.second.state, deferredAvailable));
+                    });
+            watcher->setFuture(QtConcurrent::run(
+                [cell = std::move(*cell), row = std::move(*row), cancelled]() mutable {
+                    Evaluations result;
+                    if (!cancelled->load(std::memory_order_relaxed))
+                        result.first = ResultTableModel::evaluateJsonView(std::move(cell));
+                    if (!cancelled->load(std::memory_order_relaxed))
+                        result.second = ResultTableModel::evaluateJsonView(std::move(row));
+                    jsonMenuSlots().release();
+                    return result;
+                }));
+        };
+        QTimer::singleShot(0, &menu, [attempt] { (*attempt)(); });
     }
-    viewRow->setEnabled(rowAvailable);
     connect(viewRow, &QAction::triggered, this, [this, clicked] {
         if (clicked.isValid() && clicked.model() == model_ && widgets_.grid->model() == model_ &&
             widgets_.grid->selectionModel() && widgets_.grid->selectionModel()->model() == model_)
@@ -80,6 +144,7 @@ void QueryWorkspace::appendJsonViewActions(QMenu& menu, const QPersistentModelIn
 }
 void QueryWorkspace::clearResult() {
     clearRowJson();
+    ++copyGeneration_;
     pendingCopy_.reset();
     if (export_)
         export_->clearQuery();
@@ -104,18 +169,19 @@ void QueryWorkspace::clearResult() {
     }
 }
 void QueryWorkspace::clearRowJson() {
+    ++rowJsonGeneration_;
+    rowJsonRendering_ = false;
     rowJsonIndex_ = QPersistentModelIndex{};
     rowJsonMode_ = JsonViewMode::Row;
     rowJsonQuery_.reset();
     rowJsonResolved_.clear();
-    rowJsonLoadingBytes_.clear();
-    rowJsonLoadingKind_.clear();
-    rowJsonExpectedKind_.clear();
+    rowJsonAssembler_.reset();
+    rowJsonAssemblyPending_ = false;
     rowJsonLoadingColumn_ = -1;
     rowJsonLoadingRow_ = -1;
     rowJsonScanRow_ = -1;
     rowJsonScanColumn_ = -1;
-    rowJsonLoadingHandle_ = rowJsonLoadingOffset_ = rowJsonLoadingTotal_ = 0;
+    rowJsonLoadingHandle_ = rowJsonLoadingOffset_ = 0;
     rowJsonResolvedBytes_ = 0;
     if (rowJsonCopy_)
         rowJsonCopy_->setEnabled(false);
@@ -126,24 +192,65 @@ void QueryWorkspace::clearRowJson() {
     if (rowJsonSheet_ && rowJsonSheet_->isVisible())
         rowJsonSheet_->reject();
 }
-bool QueryWorkspace::serializeJsonView(QString* json, QString* error) const {
-    if (rowJsonMode_ == JsonViewMode::Table)
-        return model_->pageJson(json, error, rowJsonResolved_);
-    if (!rowJsonIndex_.isValid()) {
-        if (error)
-            *error = tr("This result is no longer available.");
-        return false;
+void QueryWorkspace::scheduleJsonViewEvaluation(bool afterDeferred) {
+    if (!rowJsonIndex_.isValid() || rowJsonIndex_.model() != model_) {
+        if (afterDeferred)
+            failRowJson(tr("This result is no longer available."));
+        else
+            rowJsonStatus_->setText(tr("This result is no longer available."));
+        return;
     }
-    if (rowJsonMode_ == JsonViewMode::Cell) {
-        const auto found = rowJsonResolved_.find({rowJsonIndex_.row(), rowJsonIndex_.column()});
-        const std::optional<Cell> resolved =
-            found == rowJsonResolved_.end() ? std::nullopt : std::optional<Cell>{found->second};
-        return model_->cellJson(rowJsonIndex_, json, error, resolved);
+    const auto scope = rowJsonMode_ == JsonViewMode::Cell    ? ResultTableModel::JsonViewScope::Cell
+                       : rowJsonMode_ == JsonViewMode::Table ? ResultTableModel::JsonViewScope::Page
+                                                             : ResultTableModel::JsonViewScope::Row;
+    auto snapshot = model_->jsonViewSnapshot(scope, rowJsonIndex_.row(), rowJsonIndex_.column(),
+                                             rowJsonResolved_);
+    if (!snapshot) {
+        if (afterDeferred)
+            failRowJson(tr("This result is no longer available."));
+        else
+            rowJsonStatus_->setText(tr("This result is no longer available."));
+        return;
     }
-    std::map<int, Cell> resolved;
-    for (const auto& [position, value] : rowJsonResolved_)
-        resolved.emplace(position.second, value);
-    return model_->rowJson(rowJsonIndex_.row(), json, error, resolved);
+    rowJsonRendering_ = true;
+    const auto generation = ++rowJsonGeneration_;
+    auto* watcher = new QFutureWatcher<ResultTableModel::JsonViewEvaluation>(this);
+    connect(
+        watcher, &QFutureWatcher<ResultTableModel::JsonViewEvaluation>::finished, this,
+        [this, watcher, generation, afterDeferred] {
+            const auto result = watcher->result();
+            watcher->deleteLater();
+            if (generation != rowJsonGeneration_ || !rowJsonSheet_ || !rowJsonSheet_->isVisible())
+                return;
+            rowJsonRendering_ = false;
+            if (!jsonResultCurrent() || !rowJsonIndex_.isValid() ||
+                rowJsonIndex_.model() != model_) {
+                failRowJson(tr("This result is no longer available."));
+                return;
+            }
+            if (result.state == ResultTableModel::JsonViewState::Ready) {
+                rowJsonText_->setPlainText(result.json);
+                rowJsonCopy_->setEnabled(true);
+                rowJsonStatus_->clear();
+                rowJsonStatus_->hide();
+                rowJsonQuery_.reset();
+                rowJsonResolved_.clear();
+            } else if (!afterDeferred &&
+                       result.state == ResultTableModel::JsonViewState::NeedsDeferred && query_ &&
+                       queryAvailable()) {
+                rowJsonQuery_ = query_;
+                rowJsonStatus_->setText(tr("Loading complete JSON values…"));
+                requestRowJsonChunk();
+            } else if (afterDeferred) {
+                failRowJson(result.error.isEmpty() ? tr("The JSON cannot be read.") : result.error);
+            } else {
+                rowJsonStatus_->setText(result.error.isEmpty() ? tr("The JSON cannot be read.")
+                                                               : result.error);
+            }
+        });
+    watcher->setFuture(QtConcurrent::run([snapshot = std::move(*snapshot)]() mutable {
+        return ResultTableModel::evaluateJsonView(std::move(snapshot));
+    }));
 }
 void QueryWorkspace::openJsonView(JsonViewMode mode, int row, int column) {
     if (!jsonResultCurrent() || widgets_.grid->model() != model_ ||
@@ -153,18 +260,6 @@ void QueryWorkspace::openJsonView(JsonViewMode mode, int row, int column) {
     const auto target = model_->index(row, mode == JsonViewMode::Cell ? column : 0);
     if (!target.isValid())
         return;
-    if (mode == JsonViewMode::Cell) {
-        const auto readiness = model_->cellJsonReadiness(target);
-        if (readiness == ResultTableModel::CellJsonReadiness::Unavailable ||
-            (readiness == ResultTableModel::CellJsonReadiness::NeedsDeferred &&
-             (!query_ || !queryAvailable())))
-            return;
-    } else if (mode == JsonViewMode::Row) {
-        const auto readiness = model_->rowJsonReadiness(row);
-        if (readiness == ResultTableModel::RowJsonReadiness::NeedsDeferred &&
-            (!query_ || !queryAvailable()))
-            return;
-    }
     clearRowJson();
     if (!rowJsonSheet_) {
         rowJsonSheet_ = new design::RightSheet(widgets_.dialogParent);
@@ -172,17 +267,6 @@ void QueryWorkspace::openJsonView(JsonViewMode mode, int row, int column) {
         auto* body = new QWidget(rowJsonSheet_);
         body->setAccessibleName(tr("JSON content"));
         auto* layout = new QVBoxLayout(body);
-        rowJsonOmittedNote_ = new QLabel(tr("Omitted fields are shown as { \"$omitted\": true }; "
-                                            "their database defaults have not been fetched."),
-                                         body);
-        rowJsonOmittedNote_->setWordWrap(true);
-        rowJsonOmittedNote_->setAccessibleName(tr("Omitted field explanation"));
-        rowJsonPageNote_ = new QLabel(
-            tr("Only rows on the currently loaded page are included; other pages are excluded."),
-            body);
-        rowJsonPageNote_->setObjectName("rowJsonPageNote");
-        rowJsonPageNote_->setWordWrap(true);
-        rowJsonPageNote_->setAccessibleName(tr("JSON page scope"));
         rowJsonStatus_ = new QLabel(body);
         rowJsonStatus_->setObjectName("rowJsonStatus");
         rowJsonStatus_->setAccessibleName(tr("Row JSON status"));
@@ -190,8 +274,6 @@ void QueryWorkspace::openJsonView(JsonViewMode mode, int row, int column) {
         rowJsonText_ = new design::JsonTextView(body);
         rowJsonText_->setObjectName("rowJsonText");
         rowJsonText_->setAccessibleName(tr("Row JSON text"));
-        layout->addWidget(rowJsonPageNote_);
-        layout->addWidget(rowJsonOmittedNote_);
         layout->addWidget(rowJsonStatus_);
         layout->addWidget(rowJsonText_, 1);
         rowJsonSheet_->setBody(body);
@@ -218,36 +300,14 @@ void QueryWorkspace::openJsonView(JsonViewMode mode, int row, int column) {
     rowJsonText_->setAccessibleName(mode == JsonViewMode::Row ? tr("Row JSON text") : title);
     rowJsonStatus_->setAccessibleName(mode == JsonViewMode::Row ? tr("Row JSON status")
                                                                 : tr("JSON view status"));
-    rowJsonPageNote_->setVisible(mode == JsonViewMode::Table);
-    rowJsonOmittedNote_->setVisible(mode != JsonViewMode::Cell);
-    QString json, error;
-    const bool ready = serializeJsonView(&json, &error);
-    if (ready) {
-        rowJsonText_->setPlainText(json);
-        rowJsonCopy_->setEnabled(true);
-        rowJsonStatus_->clear();
-    } else {
-        const bool deferred = mode == JsonViewMode::Cell
-                                  ? model_->cellJsonReadiness(target) ==
-                                        ResultTableModel::CellJsonReadiness::NeedsDeferred
-                                  : (mode == JsonViewMode::Table
-                                         ? model_->pageJsonReadiness() ==
-                                               ResultTableModel::RowJsonReadiness::NeedsDeferred
-                                         : model_->rowJsonReadiness(row) ==
-                                               ResultTableModel::RowJsonReadiness::NeedsDeferred);
-        if (!deferred || !query_ || !queryAvailable()) {
-            rowJsonStatus_->setText(error.isEmpty() ? tr("The JSON cannot be read.") : error);
-        } else {
-            rowJsonQuery_ = query_;
-            rowJsonStatus_->setText(tr("Loading complete JSON values…"));
-        }
-    }
+    rowJsonStatus_->show();
+    rowJsonStatus_->setText(tr("Preparing JSON…"));
     rowJsonSheet_->open();
-    if (rowJsonQuery_)
-        requestRowJsonChunk();
+    scheduleJsonViewEvaluation(false);
 }
 void QueryWorkspace::requestRowJsonChunk() {
-    constexpr quint64 Limit = 8 * 1024 * 1024;
+    if (rowJsonRendering_ || rowJsonAssemblyPending_)
+        return;
     if (!rowJsonSheet_ || !rowJsonSheet_->isVisible() || !rowJsonQuery_ ||
         !rowJsonIndex_.isValid() || rowJsonIndex_.model() != model_ || query_ != rowJsonQuery_ ||
         !queryAvailable()) {
@@ -272,39 +332,47 @@ void QueryWorkspace::requestRowJsonChunk() {
             const auto value = model_->deferredValue(model_->index(row, column));
             if (!value)
                 continue;
-            if (value->bytes > Limit || rowJsonResolvedBytes_ > Limit - value->bytes) {
-                failRowJson(tr("The complete JSON view exceeds the 8 MiB loading limit."));
-                return;
-            }
             rowJsonLoadingRow_ = row;
             rowJsonLoadingColumn_ = column;
             rowJsonLoadingHandle_ = value->handle;
-            rowJsonLoadingOffset_ = rowJsonLoadingTotal_ = 0;
-            rowJsonLoadingBytes_.clear();
-            rowJsonLoadingKind_.clear();
-            const auto type = value->type.toLower();
-            if (value->fallback || type == "text" || type == "string" || type == "json" ||
-                type == "jsonb")
-                rowJsonExpectedKind_ = QStringLiteral("text");
-            else if (type == "binary" || type == "blob" || type == "bytea" ||
-                     type == "varbinary")
-                rowJsonExpectedKind_ = QStringLiteral("binary");
-            else
-                rowJsonExpectedKind_.clear();
+            rowJsonLoadingOffset_ = 0;
             break;
         }
     }
     if (rowJsonLoadingColumn_ < 0) {
-        QString json, error;
-        if (!serializeJsonView(&json, &error)) {
-            failRowJson(error);
-            return;
-        }
-        rowJsonText_->setPlainText(json);
-        rowJsonCopy_->setEnabled(true);
-        rowJsonStatus_->clear();
-        rowJsonQuery_.reset();
-        rowJsonResolved_.clear();
+        scheduleJsonViewEvaluation(true);
+        return;
+    }
+    if (!rowJsonAssembler_) {
+        const auto deferred =
+            model_->deferredValue(model_->index(rowJsonLoadingRow_, rowJsonLoadingColumn_));
+        if (!deferred)
+            return failRowJson(tr("The result page is no longer available."));
+        rowJsonAssemblyPending_ = true;
+        const auto generation = rowJsonGeneration_;
+        auto* watcher =
+            new QFutureWatcher<std::pair<std::shared_ptr<DeferredAssemblerJob>, QString>>(this);
+        connect(
+            watcher,
+            &QFutureWatcher<std::pair<std::shared_ptr<DeferredAssemblerJob>, QString>>::finished,
+            this, [this, watcher, generation] {
+                const auto [job, error] = watcher->result();
+                watcher->deleteLater();
+                if (generation != rowJsonGeneration_ || !rowJsonQuery_ || !rowJsonSheet_ ||
+                    !rowJsonSheet_->isVisible())
+                    return;
+                rowJsonAssemblyPending_ = false;
+                if (!error.isEmpty())
+                    return failRowJson(jsonAssemblyError(error));
+                rowJsonAssembler_ = job;
+                QTimer::singleShot(0, this, &QueryWorkspace::requestRowJsonChunk);
+            });
+        watcher->setFuture(
+            QtConcurrent::run([deferred = *deferred, resolved = rowJsonResolvedBytes_] {
+                auto job = std::make_shared<DeferredAssemblerJob>(deferred.type, deferred.fallback,
+                                                                  deferred.bytes, resolved, true);
+                return std::pair{job, job->initialError()};
+            }));
         return;
     }
     rowJsonStatus_->setText(tr("Loading complete JSON values… %1 bytes")
@@ -312,11 +380,12 @@ void QueryWorkspace::requestRowJsonChunk() {
     adapter_->loadValueChunk(*rowJsonQuery_, rowJsonLoadingHandle_, rowJsonLoadingOffset_, 65536);
 }
 void QueryWorkspace::failRowJson(const QString& error) {
+    ++rowJsonGeneration_;
+    rowJsonRendering_ = false;
     rowJsonQuery_.reset();
     rowJsonResolved_.clear();
-    rowJsonLoadingBytes_.clear();
-    rowJsonLoadingKind_.clear();
-    rowJsonExpectedKind_.clear();
+    rowJsonAssembler_.reset();
+    rowJsonAssemblyPending_ = false;
     rowJsonLoadingColumn_ = -1;
     rowJsonLoadingRow_ = -1;
     rowJsonResolvedBytes_ = 0;
@@ -338,56 +407,55 @@ void QueryWorkspace::handleRowJsonEvent(const BridgeEvent& event) {
         failRowJson(text(event.error));
         return;
     }
-    if (kind != "value_chunk")
+    if (kind != "value_chunk" || rowJsonAssemblyPending_ || !rowJsonAssembler_)
         return;
-    constexpr quint64 Limit = 8 * 1024 * 1024;
     const auto chunkKind = text(event.chunk_kind);
     const quint64 chunkSize = event.chunk_bytes.size();
-    if (!event.has_lease || (chunkKind != "text" && chunkKind != "binary") ||
-        (!rowJsonLoadingKind_.isEmpty() && rowJsonLoadingKind_ != chunkKind) ||
-        (!rowJsonExpectedKind_.isEmpty() && rowJsonExpectedKind_ != chunkKind) ||
-        (rowJsonLoadingOffset_ > 0 && event.total_bytes != rowJsonLoadingTotal_) ||
-        event.total_bytes > Limit - rowJsonResolvedBytes_ || chunkSize > 65536 ||
-        event.chunk_offset > event.total_bytes ||
-        chunkSize > event.total_bytes - event.chunk_offset ||
-        (chunkSize == 0 && event.chunk_offset < event.total_bytes)) {
-        failRowJson(tr("Invalid or oversized value chunk."));
-        return;
-    }
-    if (!adapter_ || !adapter_->retainTransfer(event.lease_id, chunkSize)) {
+    if (event.has_lease && (!adapter_ || !adapter_->retainTransfer(event.lease_id, chunkSize))) {
         failRowJson(tr("The value exceeds the available memory budget."));
         return;
     }
     QByteArray chunk(reinterpret_cast<const char*>(event.chunk_bytes.data()),
                      static_cast<qsizetype>(chunkSize));
-    rowJsonLoadingBytes_.append(chunk);
-    chunk.clear();
-    adapter_->releasePageLease(event.lease_id);
-    rowJsonLoadingKind_ = chunkKind;
-    rowJsonLoadingTotal_ = event.total_bytes;
-    rowJsonLoadingOffset_ += chunkSize;
-    if (rowJsonLoadingOffset_ == rowJsonLoadingTotal_) {
-        if (chunkKind == "text") {
-            QStringDecoder decoder(QStringDecoder::Utf8);
-            const QString decoded = decoder(QByteArrayView(rowJsonLoadingBytes_));
-            if (decoder.hasError()) {
-                failRowJson(tr("The complete text value is not valid UTF-8."));
-                return;
-            }
-            const auto deferred =
-                model_->deferredValue(model_->index(rowJsonLoadingRow_, rowJsonLoadingColumn_));
-            rowJsonResolved_[{rowJsonLoadingRow_, rowJsonLoadingColumn_}] =
-                deferred && deferred->fallback ? Cell{FallbackText{decoded, deferred->type}}
-                                               : Cell{decoded};
-        } else {
-            rowJsonResolved_[{rowJsonLoadingRow_, rowJsonLoadingColumn_}] =
-                std::move(rowJsonLoadingBytes_);
-        }
-        rowJsonResolvedBytes_ += rowJsonLoadingTotal_;
-        rowJsonLoadingBytes_.clear();
-        rowJsonLoadingColumn_ = -1;
-        rowJsonLoadingRow_ = -1;
-    }
-    QTimer::singleShot(0, this, &QueryWorkspace::requestRowJsonChunk);
+    if (event.has_lease)
+        adapter_->releasePageLease(event.lease_id);
+    rowJsonAssemblyPending_ = true;
+    const auto generation = rowJsonGeneration_;
+    const auto row = rowJsonLoadingRow_, column = rowJsonLoadingColumn_;
+    const auto totalBytes = event.total_bytes;
+    auto job = rowJsonAssembler_;
+    auto* watcher = new QFutureWatcher<DeferredAssemblyOutcome>(this);
+    connect(watcher, &QFutureWatcher<DeferredAssemblyOutcome>::finished, this,
+            [this, watcher, generation, job, row, column, totalBytes] {
+                const auto result = watcher->result();
+                watcher->deleteLater();
+                if (generation != rowJsonGeneration_ || job != rowJsonAssembler_ ||
+                    !rowJsonQuery_ || !rowJsonSheet_ || !rowJsonSheet_->isVisible())
+                    return;
+                rowJsonAssemblyPending_ = false;
+                if (!queryAvailable() || query_ != rowJsonQuery_)
+                    return failRowJson(tr("The result page is no longer available."));
+                if (!result.error.isEmpty())
+                    return failRowJson(jsonAssemblyError(result.error));
+                rowJsonLoadingOffset_ = result.receivedBytes;
+                if (result.complete) {
+                    if (result.kind == QLatin1String("fallback_text"))
+                        rowJsonResolved_[{row, column}] =
+                            FallbackText{result.text, result.databaseType};
+                    else if (result.kind == QLatin1String("text"))
+                        rowJsonResolved_[{row, column}] = result.text;
+                    else
+                        rowJsonResolved_[{row, column}] = result.bytes;
+                    rowJsonResolvedBytes_ += totalBytes;
+                    rowJsonAssembler_.reset();
+                    rowJsonLoadingColumn_ = rowJsonLoadingRow_ = -1;
+                    rowJsonLoadingOffset_ = 0;
+                }
+                QTimer::singleShot(0, this, &QueryWorkspace::requestRowJsonChunk);
+            });
+    watcher->setFuture(QtConcurrent::run([job, chunkKind, offset = event.chunk_offset, totalBytes,
+                                          chunk = std::move(chunk), hasLease = event.has_lease] {
+        return job->append(chunkKind, offset, totalBytes, chunk, hasLease);
+    }));
 }
 } // namespace choscordb

@@ -1,6 +1,7 @@
 #include "app/main_window.h"
 #include "app/navigator_controller.h"
 #include "app/pin_store.h"
+#include "app/pinned_tree_model.h"
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
@@ -12,6 +13,7 @@
 #include <QListWidget>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSignalBlocker>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTreeView>
@@ -56,6 +58,109 @@ class PinningSidebarTest final : public QObject {
                  QStringLiteral("table"));
         QVERIFY(pins->model()->hasChildren(root));
         QVERIFY(!pins->isExpanded(root));
+    }
+
+    void expandedPinnedTableShowsOnlyColumnsAndFitsVisibleRows() {
+        using namespace choscordb;
+        QTemporaryDir storage;
+        QVERIFY(storage.isValid());
+        const auto path = storage.filePath("settings.sqlite");
+        const auto tablePin = pin();
+        PinRecord schemaPin = tablePin;
+        schemaPin.objectId = "pg:schema:1";
+        schemaPin.name = "public";
+        schemaPin.qualifiedName = "public";
+        schemaPin.kind = "schema";
+        schemaPin.parentObjectId = "pg:database:1";
+        schemaPin.ancestryIds = {"pg:database:1"};
+        schemaPin.ancestryNames = {"database"};
+        QVERIFY(savePins(path, {tablePin, schemaPin}));
+        MainWindow window(nullptr, path);
+        window.resize(960, 640);
+        window.show();
+        auto* pins = window.findChild<QTreeView*>("pinnedList");
+        auto* navigator = window.findChild<NavigatorController*>();
+        auto* workspace = window.findChild<QueryWorkspace*>();
+        QVERIFY(pins && navigator && workspace);
+        auto* pinnedModel = qobject_cast<PinnedTreeModel*>(pins->model());
+        QVERIFY(pinnedModel);
+        auto* model = navigator->model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, workspace->adapter(),
+                            &EngineAdapter::loadMetadata);
+        QVERIFY(model->addConnection(927, "Synthetic database"));
+        const auto connection = model->index(0, 0);
+        model->fetchMore(connection);
+        QVERIFY(
+            model->applyChildren(927, {}, model->pendingRequestToken(connection),
+                                 {{"pg:database:1", "database", "database", "database", true}}));
+        const auto database = model->index(0, 0, connection);
+        model->fetchMore(database);
+        QVERIFY(model->applyChildren(927, "pg:database:1", model->pendingRequestToken(database),
+                                     {{"pg:schema:1", "public", "public", "schema", true}}));
+        const auto schema = model->index(0, 0, database);
+        model->fetchMore(schema);
+        QVERIFY(model->applyChildren(
+            927, "pg:schema:1", model->pendingRequestToken(schema),
+            {{"pg:relation:1", "object_1", "public.object_1", "table", true}}));
+        const auto table = model->index(0, 0, schema);
+        model->fetchMore(table);
+        NavigatorObject column{"column-id", "created_at", "public.object_1.created_at", "column",
+                               false};
+        column.databaseType = "timestamp with time zone";
+        QVERIFY(model->applyChildren(
+            927, "pg:relation:1", model->pendingRequestToken(table),
+            {column,
+             {"key-id", "object_1_pkey", "public.object_1.object_1_pkey", "key", false},
+             {"index-id", "object_1_idx", "public.object_1.object_1_idx", "index", false}}));
+        QTest::qWait(200);
+        QVERIFY(pinnedModel->setResolved(PinStore::identityKey(tablePin), table));
+        const auto root = pinnedModel->index(0, 0);
+        {
+            const QSignalBlocker blocker(pins);
+            pins->expand(root);
+        }
+        pinnedModel->setStatus(PinStore::identityKey(tablePin), "Connected");
+        QTRY_VERIFY(pins->isExpanded(root));
+        QCOMPARE(pinnedModel->rowCount(root), 3);
+        QVERIFY(!pins->isRowHidden(0, root));
+        QTRY_VERIFY(pins->isRowHidden(1, root));
+        QTRY_VERIFY(pins->isRowHidden(2, root));
+        const auto pinnedColumn = pinnedModel->index(0, 0, root);
+        QTRY_COMPARE(pins->visualRect(pinnedColumn).height(), pins->visualRect(root).height());
+        QTRY_COMPARE(pins->verticalScrollBar()->maximum(), 0);
+        pins->setFixedWidth(240);
+        QCoreApplication::processEvents();
+        const int wideHeight = pins->height();
+        pins->setFixedWidth(150);
+        QTRY_COMPARE(pins->height(), wideHeight);
+        QTRY_COMPARE(pins->verticalScrollBar()->maximum(), 0);
+        pins->setFixedWidth(300);
+        QTRY_COMPARE(pins->height(), wideHeight);
+        QTRY_COMPARE(pins->verticalScrollBar()->maximum(), 0);
+
+        QVERIFY(pinnedModel->setResolved(PinStore::identityKey(schemaPin), schema));
+        const auto pinnedSchema = pinnedModel->index(1, 0);
+        const auto nestedTable = pinnedModel->index(0, 0, pinnedSchema);
+        {
+            const QSignalBlocker blocker(pins);
+            pins->expand(pinnedSchema);
+            pins->expand(nestedTable);
+        }
+        pinnedModel->setStatus(PinStore::identityKey(schemaPin), "Connected");
+        QTRY_VERIFY(pins->isExpanded(nestedTable));
+        QCOMPARE(pinnedModel->rowCount(nestedTable), 3);
+        QVERIFY(!pins->isRowHidden(0, nestedTable));
+        QTRY_VERIFY(pins->isRowHidden(1, nestedTable));
+        QTRY_VERIFY(pins->isRowHidden(2, nestedTable));
+        QTRY_COMPARE(pins->verticalScrollBar()->maximum(), 0);
+        const auto lastColumn = pinnedModel->index(0, 0, nestedTable);
+        QTRY_VERIFY(pins->visualRect(lastColumn).isValid());
+        const int unusedHeight =
+            pins->viewport()->height() - (pins->visualRect(lastColumn).bottom() + 1);
+        QVERIFY2(
+            unusedHeight <= design::spacing(design::Spacing::Two),
+            qPrintable(
+                QStringLiteral("Pinned tree leaves %1 px after its last row").arg(unusedHeight)));
     }
 
     void pinnedSectionIsHiddenWithoutPins() {
@@ -175,11 +280,24 @@ class PinningSidebarTest final : public QObject {
                            savedCaption->mapTo(connectionSection, QPoint(0, savedCaption->height()))
                                .y();
                 };
+                const int connectionToPin =
+                    caption->mapToGlobal(QPoint()).y() -
+                    saved->viewport()
+                        ->mapToGlobal(saved->visualItemRect(saved->item(0)).bottomLeft())
+                        .y();
+                QVERIFY2(
+                    connectionToPin <=
+                        choscordb::design::spacing(choscordb::design::Spacing::Three),
+                    qPrintable(
+                        QStringLiteral("Connection to Pinned gap: %1 px").arg(connectionToPin)));
                 QVERIFY2(qAbs(pinGap - objectGap) <=
                              choscordb::design::spacing(choscordb::design::Spacing::One),
                          qPrintable(QStringLiteral("Pinned gap %1, neighboring gap %2")
                                         .arg(pinGap)
                                         .arg(objectGap)));
+                QVERIFY2(pinGap <= choscordb::design::spacing(choscordb::design::Spacing::Half),
+                         qPrintable(
+                             QStringLiteral("Pinned caption to first row gap: %1 px").arg(pinGap)));
                 QTRY_VERIFY2(
                     qAbs(pinGap - savedGap()) <=
                         choscordb::design::spacing(choscordb::design::Spacing::One),
@@ -232,16 +350,16 @@ class PinningSidebarTest final : public QObject {
         QVERIFY(navigator && tree && scroll);
         QTest::qWait(100);
         QList<quint64> ids;
-        for (quint64 id = 1; id <= 31; ++id) {
+        for (quint64 id = 1; id <= 60; ++id) {
             QVERIFY(navigator->model()->addConnection(id, QStringLiteral("Connection %1").arg(id)));
             ids.append(id);
         }
         navigator->setVisibleConnections(ids);
-        QTRY_COMPARE(tree->model()->rowCount(), 31);
+        QTRY_COMPARE(tree->model()->rowCount(), 60);
         QTRY_VERIFY(scroll->verticalScrollBar()->maximum() > 0);
         QCOMPARE(tree->verticalScrollBar()->maximum(), 0);
         scroll->verticalScrollBar()->setValue(0);
-        tree->setCurrentIndex(tree->model()->index(30, 0));
+        tree->setCurrentIndex(tree->model()->index(59, 0));
         QTRY_VERIFY(scroll->verticalScrollBar()->value() > 0);
     }
 };

@@ -384,8 +384,9 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
     explorer->setProperty("objectType", kind);
     explorer->setProperty("objectLabel", label);
     explorer->openObject(connection, objectId, label, kind, properties);
-    const auto icon = design::themedIcon(kind == "table" || kind == "view" ? design::Icon::Grid2x2
-                                                                           : design::Icon::Table,
+    const auto icon = design::themedIcon(kind == "view"    ? design::Icon::Eye
+                                         : kind == "table" ? design::Icon::Grid2x2
+                                                           : design::Icon::Table,
                                          theme_->resolvedTheme().colors.mutedText, 16);
     const int index = editors_->addTab(explorer, icon, objectTabTitle(objectId, label));
     editors_->setCurrentIndex(index);
@@ -500,6 +501,8 @@ SqlEditor* MainWindow::addEditor() {
     connect(editor, &SqlEditor::fileOpened, this,
             [this, editor](const QString& path, const QString& error) {
                 if (!error.isEmpty()) {
+                    if (editor->property("savedSqlOpen").toBool())
+                        return;
                     ConfirmationDialog box(QMessageBox::Warning, tr("Open failed"), error,
                                            QMessageBox::Ok, this);
                     box.setTextFormat(Qt::PlainText);

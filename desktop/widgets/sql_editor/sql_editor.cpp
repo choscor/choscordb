@@ -132,6 +132,12 @@ void SqlEditor::setProfileId(const QString& id) {
     emit profileAssociationChanged();
 }
 void SqlEditor::openFile(const QString& path) {
+    openFileFrom({}, path);
+}
+void SqlEditor::openSavedFile(const QString& root, const QString& path) {
+    openFileFrom(root, path);
+}
+void SqlEditor::openFileFrom(const QString& root, const QString& path) {
     if (ioBusy_) {
         QTimer::singleShot(0, this, [this, path] {
             emit fileOpened(path, tr("Another file operation is active."));
@@ -162,7 +168,7 @@ void SqlEditor::openFile(const QString& path) {
                 }
                 emit fileOpened(path, error);
             });
-    watcher->setFuture(io_.read(path));
+    watcher->setFuture(root.isEmpty() ? io_.read(path) : io_.readSaved(root, path));
 }
 void SqlEditor::saveFile(const QString& path) {
     if (ioBusy_) {

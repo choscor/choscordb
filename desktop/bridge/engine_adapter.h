@@ -10,11 +10,38 @@
 #include <vector>
 namespace choscordb {
 struct BridgeEvent;
+struct RustDiagnostics;
 struct ReviewedEditStatement {
     QString sql;
     std::vector<Cell> params;
-    std::vector<QString> paramTypes;
+    // Exact Rust Value kinds accompany the presentation values through review and apply.
+    std::vector<QString> paramKinds;
     std::optional<quint64> expectedRows;
+};
+struct GridEditColumn {
+    QString name, resultName, databaseType, enumSourceColumn;
+    QStringList enumChoices;
+    bool key = false, generated = false;
+};
+struct GridEditRow {
+    std::vector<Cell> current, original;
+    std::vector<bool> touched;
+    bool inserted = false, deleted = false;
+};
+struct GridEditRequest {
+    QString driver, qualifiedName, parameterStyle, reason;
+    bool objectReadOnly = false;
+    std::vector<GridEditColumn> columns;
+    std::vector<GridEditRow> rows;
+};
+struct GridEditEligibility {
+    std::vector<bool> editable, insertEditable, keyColumns;
+    bool canInsert = false, canDelete = false;
+    QString reason;
+};
+struct GridEditPlan {
+    std::vector<ReviewedEditStatement> statements;
+    QString error;
 };
 struct Submit;
 struct SshHopCredential {
@@ -182,6 +209,7 @@ class EngineAdapter final : public QObject {
   public:
     explicit EngineAdapter(QObject* parent = nullptr, const QString& storagePath = {});
     ~EngineAdapter() override;
+    void attachDiagnostics(const RustDiagnostics& service);
     std::optional<quint64> connectSqlite(const QString& path, bool readOnly = false);
     std::optional<quint64> execute(quint64 connection, const QString& sql, bool autoCommit = true,
                                    const QString& profileId = {},
@@ -282,6 +310,16 @@ class EngineAdapter final : public QObject {
                             const QStringList& resultColumns, quint64 token);
     bool applyEditBatch(quint64 connection, const std::vector<ReviewedEditStatement>& statements,
                         quint64 token);
+    static GridEditEligibility gridEditability(const GridEditRequest& request);
+    static GridEditPlan planGridEdits(const GridEditRequest& request);
+    static bool foreignKeyValueFilterable(const Cell& value);
+    static std::optional<QString> foreignKeyPredicate(const QString& targetColumn,
+                                                      const Cell& value);
+    static std::optional<Cell> parseGridEditValue(const QString& databaseType, const QString& text);
+    static bool navigatorObjectVisible(const QString& driver, bool showSystemSchemas,
+                                       const QString& qualifiedName);
+    static bool postgresSystemSchema(const QString& schema);
+    static bool appearanceThemeValid(const QString& theme);
     void loadObjectInspection(quint64 connection, const QString& object, ObjectInspectionPane pane,
                               quint64 requestToken);
     void loadObjectGraph(quint64 connection, const QString& object, quint64 requestToken);

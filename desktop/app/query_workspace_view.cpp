@@ -10,39 +10,8 @@
 #include <QStyle>
 #include <QTableView>
 #include <algorithm>
-#include <cmath>
 
 namespace choscordb {
-namespace {
-QString quotedIdentifier(QString name) {
-    name.replace('"', QStringLiteral("\"\""));
-    return '"' + name + '"';
-}
-std::optional<QString> sqlLiteral(const Cell& cell) {
-    return std::visit(
-        [](const auto& value) -> std::optional<QString> {
-            using T = std::decay_t<decltype(value)>;
-            if constexpr (std::is_same_v<T, bool>)
-                return value ? QStringLiteral("1") : QStringLiteral("0");
-            else if constexpr (std::is_same_v<T, qint64>)
-                return QString::number(value);
-            else if constexpr (std::is_same_v<T, double>)
-                return std::isfinite(value)
-                           ? std::optional<QString>(QString::number(value, 'g', 17))
-                           : std::nullopt;
-            else if constexpr (std::is_same_v<T, DecimalValue>)
-                return value.text;
-            else if constexpr (std::is_same_v<T, QString>) {
-                QString escaped = value;
-                escaped.replace('\'', QStringLiteral("''"));
-                return '\'' + escaped + '\'';
-            } else
-                return std::nullopt;
-        },
-        cell);
-}
-} // namespace
-
 void QueryWorkspace::activateForeignKey(const QModelIndex& index) {
     if (!queryConnection_ || !queryAvailable() || workInFlight() || stopping_ ||
         widgets_.grid->model() != model_)
@@ -51,12 +20,11 @@ void QueryWorkspace::activateForeignKey(const QModelIndex& index) {
     const auto value = model_->cellValue(index);
     if (!metadata || !value)
         return;
-    const auto literal = sqlLiteral(*value);
-    if (!literal)
+    const auto predicate = EngineAdapter::foreignKeyPredicate(metadata->targetColumn, *value);
+    if (!predicate)
         return;
     emit foreignKeyRequested(*queryConnection_, metadata->targetObject,
-                             metadata->targetQualifiedName,
-                             quotedIdentifier(metadata->targetColumn) + " = " + *literal);
+                             metadata->targetQualifiedName, *predicate);
 }
 
 void QueryWorkspace::requestCellMetadata() {
