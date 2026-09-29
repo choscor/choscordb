@@ -26,13 +26,55 @@
   {
     "path": "desktop/app/object_explorer.cpp",
     "rule": "domain-parsing",
-    "sha256": "996b149ce98bfafec2ae20a1f708cf3970ab484cbfbd2f0b698191acba6db701",
+    "sha256": "2f10eac2eaef8899a48cf4b7f80d4e7d678361ac91cc5e46ea71a591a05cb6a9",
     "reason": "Regular expressions identify SQL keywords and numbers for QTextCharFormat syntax highlighting."
   },
   {
     "path": "CMakeLists.txt",
     "rule": "backend-link",
-    "sha256": "ee6a237b10c3fa7f1272c535cae15fb94e414453bdf2799aa23988d90b82473a",
+    "sha256": "0c45b50edac2bcfa9fb7aad0ee638beb3b7f759cd34cd1599ceeb2687a01bdf8",
     "reason": "Qt6::Network is linked only to choscordb-updater-menu-tests for its local HTTP fixture under BUILD_TESTING; no production target receives it here."
+  },
+  {
+    "path": "desktop/app/main_window_quick_search.cpp",
+    "rule": "serialization",
+    "sha256": "ca8211bada1fc3f6de2ef43d9b2d2285f981763fa9e8200385f1b453c7d3ebbf",
+    "reason": "QJsonDocument encodes a tuple into an ephemeral search-row key so distinct open UI objects do not collide. The key is neither persisted nor sent to the engine; typed fields retained in quickObjectMatches_ drive activation and Rust validates object requests."
+  },
+  {
+    "path": "desktop/models/shortcut_catalog.cpp",
+    "rule": "domain-parsing",
+    "sha256": "618d74eb893705ad1d9ec154aa528bb6bb18e6583654b05ff7726e85627965e7",
+    "reason": "QRegularExpression strips modifier names only to compare Qt QKeySequence round trips. Qt owns native key/chord parsing and action conflict feedback; Rust separately validates persisted preference bounds and command identifiers."
+  },
+  {
+    "path": "desktop/tools/preview/preview_standard.cpp",
+    "rule": "sql-text",
+    "sha256": "04a8f405636822ef1af176ac2adac3314e7179980b0236188746fdbba395d08c",
+    "reason": "The CREATE TABLE literal populates a synthetic read-only SQL-editor specimen. This developer gallery does not execute it or derive application SQL from it."
+  },
+  {
+    "path": "desktop/tools/preview/preview_window.cpp",
+    "rule": "sql-text",
+    "sha256": "ed4272f0361643751883ada69785fb89ad9a93355384f0757f048406961dd4d7",
+    "reason": "The SELECT literal is synthetic content for the SQL-editor gallery specimen in Light and Dark themes. The gallery does not execute it or generate database requests."
+  },
+  {
+    "path": "desktop/widgets/profile_dialog/profile_dialog_security.cpp",
+    "rule": "serialization",
+    "sha256": "ea03e019b5c8209b68288c3497c26d5efd97948f48d4aefd14cf7e01af4e5f2d",
+    "reason": "QJsonDocument hydrates transient SSH form controls and SshHopEditor rows from existing bridge strings, including saved-credential placeholders. This file does not write serialized settings or authorize network operations; Rust owns profile persistence and SSH option validation."
+  },
+  {
+    "path": "desktop/widgets/profile_dialog/profile_dialog_security.cpp",
+    "rule": "domain-parsing",
+    "sha256": "ea03e019b5c8209b68288c3497c26d5efd97948f48d4aefd14cf7e01af4e5f2d",
+    "reason": "QRegularExpression detects a wildcard local-bind address solely to show a form warning. It does not accept or reject a request; Rust validates forwarding options and executes all network operations."
+  },
+  {
+    "path": "desktop/widgets/profile_dialog/profile_dialog_ssh_trust.cpp",
+    "rule": "serialization",
+    "sha256": "9cdce65e507e786f15aacb9066d75f506b1cc6ce01c38ccc08954e0443476905",
+    "reason": "QJsonDocument reads the displayed SSH hop draft to identify the selected UI row, its known-hosts path, and preceding credential fields for an inspection request. Rust independently resolves and validates inspection targets and credentials; this file only orchestrates selection, revision guards, and approval dialogs."
   }
 ]

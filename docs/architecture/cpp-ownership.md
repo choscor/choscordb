@@ -94,7 +94,7 @@ link; any edit to that file requires reviewing that exception again.
 The initial audit of the working tree on 2026-09-30 scanned **351 native files**:
 264 under `desktop/` and 87 under `tests/`, plus 12 CMake files. After six narrow
 exceptions, **35 findings remain blocking**. Run the tool for current counts.
-The gate intentionally fails; existing code is not automatically grandfathered.
+That initial gate failed; existing code was not automatically grandfathered.
 
 The six storage findings have since been resolved. Rust now reads and migrates
 legacy updater preferences, writes preview PNG files, and serializes and writes
@@ -102,14 +102,18 @@ capture metadata. Qt retains rendering, in-memory PNG encoding, control geometry
 and worker dispatch. The unused preview storage include was removed. The storage
 regression test rejects reintroducing these C++ capabilities.
 
-The current report has **zero blocking capability errors** and **26 outstanding
-review findings**. Filesystem existence checks in diagnostics and export UI
-require review against Rust's document/export contract. JSON handling in profile
-UI, object identity display and the graph bridge, shortcut validation, and example
-SQL require ownership review; these findings alone do not establish violations.
-The graph bridge's JSON decoding also deserves review against the typed-bridge
-requirement. The existing Qt Network link is test-only, not a production network
-implementation.
+The follow-up review resolved the filesystem probes through a Rust document-path
+service executed on Qt workers. Object label/identity interpretation and proxy
+credential requirements now use Rust policy. ER graphs cross CXX as typed nested
+DTOs; the frontend only converts them to Qt display structures.
+
+The remaining review matches have narrow content-hashed presentation exceptions:
+ephemeral quick-search row keys, Qt-native shortcut feedback, synthetic gallery
+SQL, SSH form hydration, local-bind warning hints, and inspection-row selection.
+Rust remains authoritative for persistence, profile/SSH validation, inspection,
+and approval. The current gate has **zero blocking findings and zero inventory
+errors**. These exceptions are reviewed against the current contents, not a
+baseline exemption for future code.
 
 ## Limits and maintaining the gate
 
