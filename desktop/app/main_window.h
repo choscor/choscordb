@@ -32,6 +32,7 @@ class SearchPanel;
 class EditorCompletionController;
 class EditorPreferencesController;
 class AppearanceController;
+class DiagnosticsService;
 struct BridgeEvent;
 class MainWindow final : public QMainWindow {
     Q_OBJECT
@@ -48,7 +49,8 @@ class MainWindow final : public QMainWindow {
                                const QString& qualifiedName, const QString& kind);
 
   public:
-    explicit MainWindow(QWidget* parent = nullptr, const QString& storagePath = {});
+    explicit MainWindow(QWidget* parent = nullptr, const QString& storagePath = {},
+                        DiagnosticsService* diagnostics = nullptr);
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -65,6 +67,8 @@ class MainWindow final : public QMainWindow {
     void connectWorkspace(const Ui& ui, const QString& storagePath);
     void connectLifecycle(const Ui& ui, const QString& storagePath);
     void connectNavigator(const Ui& ui);
+    void connectDiagnostics();
+    void showDiagnosticsExport();
     void initializePins(const Ui& ui);
     void renderPins();
     void activatePin(const QString& key);
@@ -207,5 +211,6 @@ class MainWindow final : public QMainWindow {
     design::PlatformAccessibilityMonitor* platformAccessibility_ = nullptr;
     design::ThemeManager* theme_ = nullptr;
     QueryWorkspace* workspace_ = nullptr;
+    DiagnosticsService* diagnostics_ = nullptr;
 };
 } // namespace choscordb

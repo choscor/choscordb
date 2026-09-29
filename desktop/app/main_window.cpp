@@ -53,8 +53,8 @@ void MainWindow::showToast(const QString& message, ToastVariant variant) {
     }
 }
 
-MainWindow::MainWindow(QWidget* parent, const QString& storagePath)
-    : QMainWindow(parent), pinStore_(storagePath) {
+MainWindow::MainWindow(QWidget* parent, const QString& storagePath, DiagnosticsService* diagnostics)
+    : QMainWindow(parent), pinStore_(storagePath), diagnostics_(diagnostics) {
     ::qInitResources_resources();
     theme_ = new design::ThemeManager(this);
     theme_->setSystemPalette(qApp->palette());
@@ -79,6 +79,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath)
                                      theme_->metrics().iconLarge));
     const auto ui = buildUi();
     connectWorkspace(ui, storagePath);
+    connectDiagnostics();
     connectLifecycle(ui, storagePath);
     connectNavigator(ui);
     initializePins(ui);

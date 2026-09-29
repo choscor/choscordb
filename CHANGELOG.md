@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added local diagnostics with a Help action to review and export a privacy-safe ZIP manually.
+  Reports include bounded typed events, UI stalls, memory trends, and unclean-exit evidence.
+  They do not include SQL, result data, raw crash reports, or stack traces. A stale run
+  marker indicates an unclean exit; it cannot distinguish a crash from a force quit or
+  power loss. Native crash signatures are unavailable in this release.
+
 ## [0.1.7]
 
 - Added quick search for connections, database objects, and open workspaces with Cmd/Ctrl+P.

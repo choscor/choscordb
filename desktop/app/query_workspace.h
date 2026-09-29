@@ -108,6 +108,7 @@ class QueryWorkspace final : public QObject {
     bool navigationAllowed() const { return !workInFlight() && !stopping_; }
   signals:
     void connectionReady(quint64 connection);
+    void connectionAttemptFailed(const QString& driver);
     void documentTargetChanged();
     void openQueryRequested(quint64 connection);
     void activityChanged(bool busy);

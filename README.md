@@ -6,6 +6,7 @@ Implementation is in progress. See [the PRD](docs/prd-mvp.md), [UI reference](do
 
 To try the application with sample data, use the runnable
 [PostgreSQL and SQLite examples](examples/databases/README.md).
+For support reports, see [local diagnostics](docs/diagnostics.md).
 
 ## Downloads
 

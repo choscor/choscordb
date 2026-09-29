@@ -79,6 +79,18 @@ if(APPLE)
   target_link_libraries(choscordb-design-system PRIVATE "-framework AppKit")
 endif()
 
+choscordb_add_library(choscordb-diagnostics
+  desktop/app/diagnostics_service.cpp
+  desktop/app/diagnostics_file_lock.cpp
+  desktop/app/diagnostics_watchdog.cpp
+  desktop/app/diagnostics_memory.cpp
+)
+target_include_directories(choscordb-diagnostics PUBLIC desktop)
+target_link_libraries(choscordb-diagnostics PUBLIC Qt6::Core)
+if(WIN32)
+  target_link_libraries(choscordb-diagnostics PRIVATE psapi)
+endif()
+
 choscordb_add_library(choscordb-desktop-services
   desktop/app/appearance_controller.cpp
   desktop/bridge/template_service.cpp
@@ -132,6 +144,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/query_settings.cpp
   desktop/app/editor_preferences.cpp
   desktop/app/main_window.cpp
+  desktop/app/main_window_diagnostics.cpp
   desktop/app/main_window_quick_search.cpp
   desktop/app/quick_search_match.cpp
   desktop/app/main_window_ui.cpp
@@ -157,7 +170,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/object_action_sql.cpp
   desktop/app/navigator_controller.cpp
 )
-target_link_libraries(choscordb-desktop PUBLIC choscordb-widgets)
+target_link_libraries(choscordb-desktop PUBLIC choscordb-widgets choscordb-diagnostics)
 if(APPLE)
   enable_language(OBJCXX)
   target_sources(choscordb-desktop PRIVATE desktop/app/macos_title_bar.mm)
