@@ -143,7 +143,7 @@ QList<Specimen> specimens() {
         {"Components", "confirmations", "Destructive confirmations",
          "desktop/design_system/confirmation_dialog/confirmation_dialog.cpp"},
         {"Components", "menus", "Menus and submenus", "desktop/design_system/menu/menu.cpp"},
-        {"Components", "feedback", "Toasts with dismiss buttons",
+        {"Components", "feedback", "Toasts, pinned failures, and dismiss buttons",
          "desktop/design_system/toast_region/toast_region.cpp"},
     };
 }

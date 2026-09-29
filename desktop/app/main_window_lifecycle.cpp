@@ -193,14 +193,6 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
             explorer->selectPane(restoredObjectPane(tab.pane));
             return explorer;
         });
-        auto* recoveryStatus = new QWidget(toolbar);
-        recoveryStatus->setObjectName("workspaceRecoveryActions");
-        auto* recoveryLayout = new QHBoxLayout(recoveryStatus);
-        recoveryLayout->setContentsMargins(0, 0, 0, 0);
-        auto* recoveryMessage = new QLabel;
-        recoveryMessage->setTextFormat(Qt::PlainText);
-        recoveryMessage->setFixedWidth(
-            recoveryMessage->fontMetrics().horizontalAdvance(tr("Workspace recovery failed")));
         auto* recoveryMenu = new QMenu(tr("Workspace recovery"), fileMenu);
         recoveryMenu->setObjectName("workspaceRecoveryMenu");
         fileMenu->insertMenu(quit, recoveryMenu);
@@ -212,34 +204,37 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
         discardClose->setObjectName("closeWithoutRecovery");
         auto* cancelClose = recoveryMenu->addAction(tr("Keep workspace open"));
         cancelClose->setObjectName("cancelRecoveryClose");
-        recoveryLayout->addWidget(recoveryMessage);
         auto* recoveryHeader = new QWidget;
         recoveryHeader->setObjectName("workspaceToolbar");
         auto* recoveryHeaderLayout = new QHBoxLayout(recoveryHeader);
         recoveryHeaderLayout->setContentsMargins(0, 0, 0, 0);
         recoveryHeaderLayout->setSpacing(0);
-        recoveryHeaderLayout->addWidget(recoveryStatus);
         recoveryHeaderLayout->addWidget(toolbarHost, 1);
         workspaceTabs->workspaceBar()->setHeader(recoveryHeader);
-        recoveryMessage->hide();
         for (auto* action : {retry, startNew, discardClose, cancelClose})
             action->setEnabled(false);
         // Disable the common ancestor so lifecycle updates can still change each
         // action's own enabled state while recovery blocks normal interaction.
-        const auto showRecovery = [toolbar, recoveryMessage, retry] {
+        const auto showRecovery = [toolbar, retry] {
             toolbar->setEnabled(false);
-            recoveryMessage->show();
             retry->setEnabled(true);
         };
-        const auto hideRecovery = [toolbar, recoveryMessage, retry, startNew, discardClose,
-                                   cancelClose] {
-            recoveryMessage->hide();
+        const auto hideRecovery = [toolbar, toast, retry, startNew, discardClose, cancelClose] {
+            toast->clearPinnedToast();
             for (auto* action : {retry, startNew, discardClose, cancelClose})
                 action->setEnabled(false);
             toolbar->setEnabled(true);
         };
         connect(retry, &QAction::triggered, recovery_, &WorkspaceRecoveryController::retry);
         connect(startNew, &QAction::triggered, recovery_, &WorkspaceRecoveryController::startEmpty);
+        connect(startNew, &QAction::triggered, this, [this, hideRecovery, workspaceTabs] {
+            if (!recovery_->isReady())
+                return;
+            workspaceTabs->workspaceBar()->setProperty("recoveryActive", false);
+            workspaceTabs->workspaceBar()->setHeaderVisible(
+                qobject_cast<SqlEditor*>(editors_->currentWidget()) != nullptr);
+            hideRecovery();
+        });
         connect(discardClose, &QAction::triggered, recovery_,
                 &WorkspaceRecoveryController::closeWithoutRecovery);
         connect(cancelClose, &QAction::triggered, this, [this, hideRecovery, workspaceTabs] {
@@ -280,7 +275,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                     hideRecovery();
                 });
         connect(recovery_, &WorkspaceRecoveryController::errorOccurred, this,
-                [this, showRecovery, recoveryMessage, startNew, discardClose, cancelClose,
+                [this, showRecovery, toast, startNew, discardClose, cancelClose,
                  workspaceTabs](const QString& error, bool closing) {
                     if (closing && updateInstall_) {
                         updateInstall_ = {};
@@ -290,10 +285,14 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                         showToast(tr("Update postponed: %1").arg(error), ToastVariant::Warning);
                         return;
                     }
-                    recoveryMessage->setText(recoveryMessage->fontMetrics().elidedText(
-                        error, Qt::ElideRight, recoveryMessage->width()));
-                    recoveryMessage->setToolTip(error);
-                    recoveryMessage->setAccessibleName(error);
+                    const auto title = closing ? tr("Could not save workspace before closing")
+                                       : recovery_->isReady()
+                                           ? tr("Could not save workspace for recovery")
+                                           : tr("Could not restore workspace");
+                    toast->showPinnedToast(
+                        title,
+                        tr("Details: %1. Recovery actions: File → Workspace recovery.").arg(error),
+                        ToastVariant::Danger);
                     startNew->setEnabled(!closing && !recovery_->isReady());
                     discardClose->setEnabled(closing);
                     cancelClose->setEnabled(closing);

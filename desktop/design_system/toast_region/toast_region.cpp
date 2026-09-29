@@ -27,7 +27,7 @@ ToastRegion::ToastRegion(QWidget* parent)
     dismiss_->setToolTip(tr("Dismiss notification"));
     dismiss_->setIconSize(QSize(14, 14));
     dismiss_->setFixedSize(24, 24);
-    connect(dismiss_, &QToolButton::clicked, this, &ToastRegion::clearNotice);
+    connect(dismiss_, &QToolButton::clicked, this, &ToastRegion::dismissNotice);
     timer_->setSingleShot(true);
     connect(timer_, &QTimer::timeout, this, &ToastRegion::clearNotice);
     setGraphicsEffect(opacity_);
@@ -92,6 +92,16 @@ void ToastRegion::placeOverlay() {
 }
 void ToastRegion::showToast(const QString& title, const QString& body, ToastVariant variant,
                             int durationMs) {
+    const Notice notice{title, body, variant, durationMs, false};
+    if (pinned_) {
+        queuedNotice_ = notice;
+        return;
+    }
+    currentNotice_ = notice;
+    renderToast(title, body, variant, durationMs);
+}
+void ToastRegion::renderToast(const QString& title, const QString& body, ToastVariant variant,
+                              int durationMs) {
     progress_->hide();
     const char* name = variant == ToastVariant::Success   ? "success"
                        : variant == ToastVariant::Warning ? "warning"
@@ -105,7 +115,41 @@ void ToastRegion::showToast(const QString& title, const QString& body, ToastVari
     if (durationMs > 0)
         timer_->start(durationMs);
 }
+void ToastRegion::showPinnedToast(const QString& title, const QString& body, ToastVariant variant) {
+    if (!pinned_ && currentNotice_ && isVisible() && !dismissing_) {
+        queuedNotice_ = currentNotice_;
+        if (timer_->isActive())
+            queuedNotice_->durationMs = timer_->remainingTime();
+    }
+    currentNotice_.reset();
+    pinned_ = true;
+    renderToast(title, body, variant, 0);
+}
+void ToastRegion::clearPinnedToast() {
+    if (!pinned_)
+        return;
+    pinned_ = false;
+    if (queuedNotice_) {
+        const Notice next = *queuedNotice_;
+        queuedNotice_.reset();
+        if (next.progress)
+            showProgress(next.title, next.detail);
+        else
+            showToast(next.title, next.detail, next.variant, next.durationMs);
+    } else {
+        clearVisibleNotice();
+    }
+}
 void ToastRegion::showProgress(const QString& title, const QString& detail) {
+    const Notice notice{title, detail, ToastVariant::Success, 0, true};
+    if (pinned_) {
+        queuedNotice_ = notice;
+        return;
+    }
+    currentNotice_ = notice;
+    renderProgress(title, detail);
+}
+void ToastRegion::renderProgress(const QString& title, const QString& detail) {
     const bool updating = isVisible() && !dismissing_ && !progress_->isHidden() &&
                           property("variant").toString() == QLatin1String("progress");
     setProperty("variant", "progress");
@@ -143,6 +187,20 @@ void ToastRegion::display(const QString& text) {
     QAccessible::updateAccessibility(&announcement);
 }
 void ToastRegion::clearNotice() {
+    if (pinned_) {
+        queuedNotice_.reset();
+        return;
+    }
+    currentNotice_.reset();
+    clearVisibleNotice();
+}
+void ToastRegion::dismissNotice() {
+    if (pinned_)
+        clearPinnedToast();
+    else
+        clearNotice();
+}
+void ToastRegion::clearVisibleNotice() {
     timer_->stop();
     fade_->stop();
     if (isHidden()) {

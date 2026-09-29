@@ -30,6 +30,11 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void historySidebarReusesRecordIdAndKeepsDistinctIdenticalSql();
     void historyNavigationStaysInSidebar();
     void recoveryActionsRemainInMenuWithoutToolButtons();
+    void recoveryFailuresUsePersistentWindowToast();
+    void recoveryToastDismissalKeepsActionsAndLaterFailure();
+    void startNewWhileRestorePendingKeepsRecoveryBlocked();
+    void startNewAfterRestoreFailureResolvesNotice();
+    void rejectedRecoverySubmissionShowsBackendDetail();
     void objectTabsUseConnectionAndQualifiedIdentity();
     void erdKeyboardActivationOpensAndRefocusesRelatedTable();
     void sidebarViewsKeepTheirDefaultPane();
