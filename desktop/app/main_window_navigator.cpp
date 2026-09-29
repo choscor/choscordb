@@ -193,36 +193,7 @@ void MainWindow::connectNavigator(const Ui& ui) {
                         previous, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
                     return;
                 }
-                auto object = current;
-                auto kind = object.data(NavigatorModel::KindRole).toString();
-                const auto selectedKind = kind;
-                while (object.isValid() && kind != "table" && kind != "view" && kind != "index" &&
-                       kind != "sequence" && kind != "function" && kind != "schema" &&
-                       kind != "connection") {
-                    object = object.parent();
-                    kind = object.data(NavigatorModel::KindRole).toString();
-                }
-                if (!object.isValid())
-                    return;
-                const auto connection = object.data(NavigatorModel::ConnectionRole);
-                if (!connection.isValid())
-                    return;
-                browsingConnection_ = connection.toULongLong();
-                emit browsingConnectionChanged(*browsingConnection_);
-                if (kind == "table" || kind == "view" || kind == "index" || kind == "sequence" ||
-                    kind == "function") {
-                    const auto pane = selectedKind == "column"       ? 0
-                                      : selectedKind == "index"      ? 1
-                                      : selectedKind.contains("key") ? 2
-                                      : selectedKind == "ddl"        ? 3
-                                      : selectedKind == "data"       ? 5
-                                      : selectedKind == "table"      ? 5
-                                                                     : -1;
-                    openObjectTab(*browsingConnection_,
-                                  object.data(NavigatorModel::ObjectIdRole).toString(),
-                                  object.data(NavigatorModel::QualifiedNameRole).toString(), kind,
-                                  object.data(NavigatorModel::PropertiesRole).toList(), pane);
-                }
+                activateNavigatorObject(current);
             });
     connect(tree->selectionModel(), &QItemSelectionModel::currentChanged, this,
             [tree, refreshNavigator, refreshNavigatorAction,
@@ -338,5 +309,38 @@ void MainWindow::connectNavigator(const Ui& ui) {
                 object->activateRestoredObject();
         }
     });
+}
+
+void MainWindow::activateNavigatorObject(const QModelIndex& current) {
+    if (!current.isValid())
+        return;
+    auto object = current;
+    auto kind = object.data(NavigatorModel::KindRole).toString();
+    const auto selectedKind = kind;
+    while (object.isValid() && kind != "table" && kind != "view" && kind != "index" &&
+           kind != "sequence" && kind != "function" && kind != "schema" && kind != "connection") {
+        object = object.parent();
+        kind = object.data(NavigatorModel::KindRole).toString();
+    }
+    if (!object.isValid())
+        return;
+    const auto connection = object.data(NavigatorModel::ConnectionRole);
+    if (!connection.isValid())
+        return;
+    browsingConnection_ = connection.toULongLong();
+    emit browsingConnectionChanged(*browsingConnection_);
+    if (kind == "table" || kind == "view" || kind == "index" || kind == "sequence" ||
+        kind == "function") {
+        const auto pane = selectedKind == "column"       ? 0
+                          : selectedKind == "index"      ? 1
+                          : selectedKind.contains("key") ? 2
+                          : selectedKind == "ddl"        ? 3
+                          : selectedKind == "data"       ? 5
+                          : selectedKind == "table"      ? 5
+                                                         : -1;
+        openObjectTab(*browsingConnection_, object.data(NavigatorModel::ObjectIdRole).toString(),
+                      object.data(NavigatorModel::QualifiedNameRole).toString(), kind,
+                      object.data(NavigatorModel::PropertiesRole).toList(), pane);
+    }
 }
 } // namespace choscordb

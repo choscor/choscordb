@@ -257,11 +257,60 @@ void NavigatorController::setPinStateResolver(
     std::function<std::optional<bool>(const QModelIndex&)> resolver) {
     pinStateResolver_ = std::move(resolver);
 }
+bool NavigatorController::resolveObject(
+    quint64 connection, const QStringList& ancestryIds, const QString& objectId,
+    const QString& kind, const QString& qualifiedName, const QString& subtype,
+    std::function<void(RevealResult, const QString&, const QModelIndex&)> finished,
+    std::function<bool()> stillCurrent, bool refreshFinalParent) {
+    return lookupObject(connection, ancestryIds, objectId, kind, qualifiedName, subtype,
+                        std::move(finished), std::move(stillCurrent), false, refreshFinalParent);
+}
 bool NavigatorController::revealObject(quint64 connection, const QStringList& ancestryIds,
                                        const QString& objectId, const QString& kind,
                                        const QString& qualifiedName, const QString& subtype,
                                        std::function<void(RevealResult, const QString&)> finished,
                                        std::function<bool()> stillCurrent) {
+    return lookupObject(
+        connection, ancestryIds, objectId, kind, qualifiedName, subtype,
+        [this, finished = std::move(finished)](RevealResult result, const QString& reason,
+                                               const QModelIndex& source) {
+            if (result != RevealResult::Found) {
+                if (finished)
+                    finished(result, reason);
+                return;
+            }
+            filter_->clear();
+            for (auto ancestor = source.parent(); ancestor.isValid();
+                 ancestor = ancestor.parent()) {
+                const auto visible = proxy_->mapFromSource(ancestor);
+                if (visible.isValid())
+                    tree_->expand(visible);
+            }
+            const auto visible = proxy_->mapFromSource(source);
+            if (!visible.isValid()) {
+                if (finished)
+                    finished(RevealResult::Retry,
+                             tr("The object could not be shown. Activate the pin to retry."));
+                return;
+            }
+            tree_->setCurrentIndex(visible);
+            if (tree_->currentIndex() != visible) {
+                if (finished)
+                    finished(RevealResult::Retry, tr("Finish active database work before opening "
+                                                     "this pin. Activate it to retry."));
+                return;
+            }
+            tree_->scrollTo(visible);
+            if (finished)
+                finished(RevealResult::Found, {});
+        },
+        std::move(stillCurrent), true, true);
+}
+bool NavigatorController::lookupObject(
+    quint64 connection, const QStringList& ancestryIds, const QString& objectId,
+    const QString& kind, const QString& qualifiedName, const QString& subtype,
+    std::function<void(RevealResult, const QString&, const QModelIndex&)> finished,
+    std::function<bool()> stillCurrent, bool requireVisibleConnection, bool refreshFinalParent) {
     QModelIndex root;
     for (int row = 0; row < model_->rowCount(); ++row) {
         const auto candidate = model_->index(row, 0);
@@ -272,7 +321,8 @@ bool NavigatorController::revealObject(quint64 connection, const QStringList& an
         }
     }
     if (!root.isValid() ||
-        !static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection))
+        (requireVisibleConnection &&
+         !static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection)))
         return false;
     struct State {
         QPersistentModelIndex parent;
@@ -281,9 +331,11 @@ bool NavigatorController::revealObject(quint64 connection, const QStringList& an
         quint64 connection = 0;
         int depth = 0, requests = 0;
         bool finalRefreshStarted = false;
+        bool requireVisibleConnection = false;
+        bool refreshFinalParent = true;
         QSet<QString> requestedParents;
         QPointer<QObject> task;
-        std::function<void(RevealResult, const QString&)> finished;
+        std::function<void(RevealResult, const QString&, const QModelIndex&)> finished;
         std::function<bool()> stillCurrent;
         std::function<void()> step;
     };
@@ -295,6 +347,8 @@ bool NavigatorController::revealObject(quint64 connection, const QStringList& an
     state->qualifiedName = qualifiedName;
     state->subtype = subtype;
     state->connection = connection;
+    state->requireVisibleConnection = requireVisibleConnection;
+    state->refreshFinalParent = refreshFinalParent;
     state->finished = std::move(finished);
     state->stillCurrent = std::move(stillCurrent);
     state->task = new QObject(this);
@@ -303,25 +357,31 @@ bool NavigatorController::revealObject(quint64 connection, const QStringList& an
         const auto state = weak.lock();
         if (!state || !state->task)
             return;
-        const auto finish = [state](RevealResult result, const QString& reason) {
-            if (state->finished)
-                state->finished(result, reason);
-            state->finished = {};
-            state->task->deleteLater();
+        const auto finish = [state](RevealResult result, const QString& reason,
+                                    const QModelIndex& source = QModelIndex()) {
+            auto finished = std::move(state->finished);
+            const auto task = state->task;
             state->task = nullptr;
+            if (finished)
+                finished(result, reason, source);
+            if (task)
+                task->deleteLater();
         };
         if (state->stillCurrent && !state->stillCurrent()) {
             finish(RevealResult::Retry, {});
             return;
         }
         if (!state->parent.isValid() ||
-            !static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(state->connection)) {
+            (state->requireVisibleConnection &&
+             !static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(
+                 state->connection))) {
             finish(RevealResult::Retry,
                    tr("The connection is no longer visible. Activate the pin to retry."));
             return;
         }
         const auto parent = QModelIndex(state->parent);
-        if (state->depth == state->route.size() && !state->finalRefreshStarted) {
+        if (state->refreshFinalParent && state->depth == state->route.size() &&
+            !state->finalRefreshStarted) {
             state->finalRefreshStarted = true;
             const auto parentId = parent.data(NavigatorModel::ObjectIdRole).toString();
             if (!model_->canFetchMore(parent) && !state->requestedParents.contains(parentId)) {
@@ -369,26 +429,7 @@ bool NavigatorController::revealObject(quint64 connection, const QStringList& an
                        tr("The pinned object no longer matches its saved identity."));
                 return;
             }
-            filter_->clear();
-            for (auto ancestor = child.parent(); ancestor.isValid(); ancestor = ancestor.parent()) {
-                const auto visible = proxy_->mapFromSource(ancestor);
-                if (visible.isValid())
-                    tree_->expand(visible);
-            }
-            const auto visible = proxy_->mapFromSource(child);
-            if (!visible.isValid()) {
-                finish(RevealResult::Retry,
-                       tr("The object could not be shown. Activate the pin to retry."));
-                return;
-            }
-            tree_->setCurrentIndex(visible);
-            if (tree_->currentIndex() != visible) {
-                finish(RevealResult::Retry, tr("Finish active database work before opening this "
-                                               "pin. Activate it to retry."));
-                return;
-            }
-            tree_->scrollTo(visible);
-            finish(RevealResult::Found, {});
+            finish(RevealResult::Found, {}, child);
             return;
         }
         if (parent.data(NavigatorModel::ChildrenLoadedRole).toBool() ||

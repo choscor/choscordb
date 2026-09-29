@@ -44,7 +44,7 @@ struct MainWindow::Ui {
     QStackedWidget* sidebarPanels{};
     QListWidget* savedConnections{};
     SidebarSection* pinnedSection{};
-    QListWidget* pinnedList{};
+    QTreeView* pinnedList{};
     design::Text* pinnedEmpty{};
     QLineEdit* filter{};
     QTreeView* tree{};

@@ -2,17 +2,14 @@
 
 #include "app/main_window_widgets.h"
 #include "design_system/text/text.h"
-#include "design_system/theme_manager.h"
+#include "design_system/tree/navigation_tree_view.h"
 #include "widgets/sidebar_section/sidebar_section.h"
-#include <QAbstractItemModel>
 #include <QCoreApplication>
-#include <QListWidget>
 #include <QPalette>
 #include <QVBoxLayout>
 
 namespace choscordb {
-PinnedSidebar buildPinnedSidebar(QWidget* parent, QVBoxLayout* layout,
-                                 design::ThemeManager* theme) {
+PinnedSidebar buildPinnedSidebar(QWidget* parent, QVBoxLayout* layout) {
     const auto label = [](const char* text) {
         return QCoreApplication::translate("MainWindow", text);
     };
@@ -29,41 +26,24 @@ PinnedSidebar buildPinnedSidebar(QWidget* parent, QVBoxLayout* layout,
     empty->setMargin(design::spacing(design::Spacing::Three));
     empty->setTextFormat(Qt::PlainText);
     section->contentLayout()->addWidget(empty);
-    auto* list = new QListWidget(section);
+    auto* list = new design::NavigationTreeView(section);
     list->setObjectName("pinnedList");
     list->setAccessibleName(label("Pinned schemas and database objects"));
-    list->setAccessibleDescription(label("Activate a shortcut to reveal its original object"));
-    list->setProperty("designSurface", "sidebar");
-    list->setProperty("designNavigationItem", true);
+    list->setAccessibleDescription(label(
+        "Use the arrow to browse children; activate a pinned row to reveal its original object"));
     list->setItemDelegate(new main_window_detail::NavigatorIconDelegate(list));
-    list->setSpacing(0);
-    list->setWordWrap(false);
+    list->setHeaderHidden(true);
+    list->setUniformRowHeights(true);
     list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     list->setSelectionMode(QAbstractItemView::SingleSelection);
     list->setEditTriggers(QAbstractItemView::NoEditTriggers);
     list->setContextMenuPolicy(Qt::CustomContextMenu);
     list->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    const auto sizeList = [theme, list] {
-        const int rowHeight = std::max(theme->metrics().navigationRowHeight,
-                                       list->count() ? list->sizeHintForRow(0) : 0);
-        list->setFixedHeight(list->count() * rowHeight + 2 * list->frameWidth());
-    };
-    QObject::connect(theme, &design::ThemeManager::metricsChanged, list, sizeList);
-    sizeList();
+    list->setFixedHeight(design::spacing(design::Spacing::Two));
     section->contentLayout()->addWidget(list);
-    const auto updateEmpty = [section, list, empty, sizeList] {
-        const bool isEmpty = list->count() == 0;
-        section->setVisible(!isEmpty);
-        empty->setVisible(false);
-        list->setVisible(!isEmpty);
-        sizeList();
-    };
-    QObject::connect(list->model(), &QAbstractItemModel::rowsInserted, empty, updateEmpty);
-    QObject::connect(list->model(), &QAbstractItemModel::rowsRemoved, empty, updateEmpty);
-    QObject::connect(list->model(), &QAbstractItemModel::modelReset, empty, updateEmpty);
-    QObject::connect(list->model(), &QAbstractItemModel::dataChanged, list, sizeList);
-    updateEmpty();
+    empty->hide();
+    section->hide();
     return {section, list, empty};
 }
 } // namespace choscordb

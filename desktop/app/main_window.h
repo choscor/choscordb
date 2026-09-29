@@ -13,6 +13,8 @@
 class QTabWidget;
 class QStackedWidget;
 class QListWidget;
+class QTreeView;
+class QModelIndex;
 namespace choscordb {
 namespace design {
 class PlatformAccessibilityMonitor;
@@ -23,6 +25,7 @@ class SqlEditor;
 class QueryWorkspace;
 class ObjectExplorer;
 class NavigatorController;
+class PinnedTreeModel;
 class WorkspaceRecoveryController;
 class HistoryDock;
 class SearchPanel;
@@ -65,6 +68,9 @@ class MainWindow final : public QMainWindow {
     void initializePins(const Ui& ui);
     void renderPins();
     void activatePin(const QString& key);
+    void expandPin(const QString& key);
+    void tryExpandPendingPins();
+    void activateNavigatorObject(const QModelIndex& index);
     void tryRevealPendingPin();
     void updatePinsForObjectAction(const PendingObjectAction& action);
     void requestObjectAction(const QString& action, quint64 connection, const QString& objectId,
@@ -107,7 +113,15 @@ class MainWindow final : public QMainWindow {
     std::optional<PendingObjectRefresh> pendingObjectRefresh_;
     PinStore pinStore_;
     QList<PinRecord> pins_;
-    QPointer<QListWidget> pinnedList_;
+    QPointer<QTreeView> pinnedList_;
+    PinnedTreeModel* pinnedModel_ = nullptr;
+    QSet<QString> pendingExpansionKeys_;
+    QSet<QString> pinExpansionInFlight_;
+    QSet<QString> pinExpansionRebinding_;
+    QHash<QString, int> pinExpansionAttempts_;
+    QHash<QString, quint64> pinExpansionGenerations_;
+    QHash<QString, QString> pinExpansionErrors_;
+    QHash<QString, quint64> pinExpansionConnectionIds_;
     QString pendingPinKey_;
     quint64 pinActivationGeneration_ = 0;
     bool pinRevealInFlight_ = false;

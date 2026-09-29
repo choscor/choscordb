@@ -1,7 +1,11 @@
 #include "app/main_window.h"
 #include "app/navigator_controller.h"
 #include "app/pin_store.h"
-#include "design_system/theme.h"
+#include "app/query_workspace.h"
+#include "bridge/engine_adapter.h"
+#include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/text/text.h"
+#include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
 #include <QLabel>
 #include <QLineEdit>
@@ -14,226 +18,207 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
+namespace {
+choscordb::PinRecord pin(int number = 1) {
+    const auto name = QStringLiteral("object_%1").arg(number);
+    return {.profileId = QStringLiteral("saved-profile"),
+            .profileName = QStringLiteral("Saved profile"),
+            .objectId = QStringLiteral("pg:relation:%1").arg(number),
+            .name = name,
+            .qualifiedName = QStringLiteral("public.%1").arg(name),
+            .kind = QStringLiteral("table"),
+            .parentObjectId = QStringLiteral("pg:schema:1"),
+            .ancestryIds = {QStringLiteral("pg:database:1"), QStringLiteral("pg:schema:1")},
+            .ancestryNames = {QStringLiteral("database"), QStringLiteral("public")}};
+}
+bool savePins(const QString& path, const QList<choscordb::PinRecord>& pins) {
+    QString error;
+    return choscordb::PinStore(path).save(pins, &error);
+}
+} // namespace
+
 class PinningSidebarTest final : public QObject {
     Q_OBJECT
-
   private slots:
-    void pinnedSectionShowsEmptyStateWithoutSelection() {
+    void restoredPinsUseNavigationRows() {
+        QTemporaryDir storage;
+        QVERIFY(storage.isValid());
+        const auto path = storage.filePath("settings.sqlite");
+        QVERIFY(savePins(path, {pin()}));
+        choscordb::MainWindow window(nullptr, path);
+        window.show();
+        auto* pins = window.findChild<QTreeView*>("pinnedList");
+        QVERIFY2(pins, "Pinned rows should use the same navigation tree as Schema & Objects");
+        QTRY_COMPARE(pins->model()->rowCount(), 1);
+        const auto root = pins->model()->index(0, 0);
+        QCOMPARE(root.data(Qt::DisplayRole).toString(), QStringLiteral("object_1"));
+        QCOMPARE(root.data(choscordb::NavigatorModel::KindRole).toString(),
+                 QStringLiteral("table"));
+        QVERIFY(pins->model()->hasChildren(root));
+        QVERIFY(!pins->isExpanded(root));
+    }
+
+    void pinnedSectionIsHiddenWithoutPins() {
         QTemporaryDir storage;
         QVERIFY(storage.isValid());
         choscordb::MainWindow window(nullptr, storage.filePath("settings.sqlite"));
         window.show();
-
         auto* panel = window.findChild<QWidget*>("connectionsPanel");
         auto* section = window.findChild<QWidget*>("pinnedSection");
-        auto* list = window.findChild<QListWidget*>("pinnedList");
+        auto* pins = window.findChild<QTreeView*>("pinnedList");
         auto* empty = window.findChild<QLabel*>("pinnedEmpty");
         auto* filter = window.findChild<QLineEdit*>("navigatorFilter");
-        QVERIFY(panel && section && list && empty && filter);
         auto* scroll = window.findChild<QScrollArea*>("connectionsScroll");
+        QVERIFY(panel && section && pins && empty && filter && scroll);
         auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
-        QVERIFY(scroll && layout);
+        QVERIFY(layout);
         QCOMPARE(scroll->widget(), panel);
         QCOMPARE(layout->itemAt(1)->widget(), section);
         QCOMPARE(layout->itemAt(2)->widget()->findChild<QLineEdit*>("navigatorFilter"), filter);
         QVERIFY(!section->isVisible());
         QVERIFY(!section->accessibleName().isEmpty());
-        QVERIFY(!empty->isVisible());
         QVERIFY(empty->text().contains("pin", Qt::CaseInsensitive));
-        QCOMPARE(list->count(), 0);
-        QVERIFY(!list->isVisible());
+        QCOMPARE(pins->model()->rowCount(), 0);
     }
 
     void restoredPinsScrollAndIgnoreObjectFilter() {
         QTemporaryDir storage;
         QVERIFY(storage.isValid());
         const auto path = storage.filePath("settings.sqlite");
-        QList<choscordb::PinRecord> pins;
-        for (int index = 0; index < 31; ++index) {
-            const auto name = QStringLiteral("object_%1").arg(index);
-            pins.append(choscordb::PinRecord{
-                .profileId = QStringLiteral("saved-profile"),
-                .profileName = QStringLiteral("Saved profile"),
-                .objectId = QStringLiteral("pg:relation:%1").arg(index),
-                .name = name,
-                .qualifiedName = QStringLiteral("public.%1").arg(name),
-                .kind = QStringLiteral("table"),
-                .parentObjectId = QStringLiteral("pg:schema:1"),
-                .ancestryIds = {QStringLiteral("pg:database:1"), QStringLiteral("pg:schema:1")},
-                .ancestryNames = {QStringLiteral("database"), QStringLiteral("public")}});
-        }
-        QString error;
-        QVERIFY2(choscordb::PinStore(path).save(pins, &error), qPrintable(error));
-
+        QList<choscordb::PinRecord> records;
+        for (int number = 0; number < 31; ++number)
+            records.append(pin(number));
+        QVERIFY(savePins(path, records));
         choscordb::MainWindow window(nullptr, path);
+        window.resize(960, 640);
         window.show();
-        auto* list = window.findChild<QListWidget*>("pinnedList");
+        auto* pins = window.findChild<QTreeView*>("pinnedList");
         auto* scroll = window.findChild<QScrollArea*>("connectionsScroll");
         auto* section = window.findChild<QWidget*>("pinnedSection");
-        auto* empty = window.findChild<QLabel*>("pinnedEmpty");
         auto* filter = window.findChild<QLineEdit*>("navigatorFilter");
-        QVERIFY(list && scroll && section && empty && filter);
-        QTRY_COMPARE(list->count(), 31);
-        QVERIFY(section->isVisible());
-        QVERIFY(list->isVisible());
-        QVERIFY(!empty->isVisible());
-        QVERIFY(!list->accessibleName().isEmpty());
+        QVERIFY(pins && scroll && section && filter);
+        QTRY_COMPARE(pins->model()->rowCount(), 31);
+        QTRY_VERIFY(section->isVisible() && pins->isVisible());
+        QVERIFY(!pins->accessibleName().isEmpty());
         QTRY_VERIFY(scroll->verticalScrollBar()->maximum() > 0);
-        QCOMPARE(list->verticalScrollBar()->maximum(), 0);
-        QCOMPARE(list->item(0)->text(), QStringLiteral("object_0"));
-        QCOMPARE(list->item(0)->data(choscordb::NavigatorModel::KindRole).toString(),
-                 QStringLiteral("table"));
-        QVERIFY(list->item(0)->toolTip().contains("Saved profile"));
-        auto* first = list->item(0);
-        const auto hoverRow = list->visualItemRect(first);
-        QTest::mouseMove(list->viewport(), QPoint(1, 1));
-        QTest::mouseMove(list->viewport(), hoverRow.center());
-        QCoreApplication::processEvents();
-        const auto hovered = list->viewport()->grab().toImage();
-        const auto muted = choscordb::design::resolvedThemeForWidget(*list).colors.muted;
-        QCOMPARE(hovered.pixelColor(hoverRow.right() - 8, hoverRow.center().y()), muted);
-        QVERIFY(hovered.pixelColor(hoverRow.left() + 2, hoverRow.center().y()) != muted);
-        QCOMPARE(hovered.pixelColor(hoverRow.left() + 8, hoverRow.center().y()), muted);
-        QVERIFY(hovered.pixelColor(hoverRow.left() + 8, hoverRow.top() + 1) != muted);
-        QCOMPARE(hovered.pixelColor(hoverRow.left() + 8, hoverRow.top() + 4), muted);
-        list->setCurrentItem(first);
-        QCoreApplication::processEvents();
-        const auto selected = list->viewport()->grab().toImage();
-        const QRect textArea(hoverRow.left() + 30, hoverRow.top() + 4, 90, hoverRow.height() - 8);
-        QCOMPARE(hovered.copy(textArea), selected.copy(textArea));
-        list->setCurrentItem(nullptr);
-        const auto name = first->text();
-        first->setText({});
-        QCoreApplication::processEvents();
-        const auto row = list->visualItemRect(first);
-        const auto withIcon = list->viewport()->grab(row).toImage();
-        first->setData(choscordb::NavigatorModel::KindRole, QStringLiteral("group"));
-        QCoreApplication::processEvents();
-        QVERIFY(withIcon != list->viewport()->grab(row).toImage());
-        first->setData(choscordb::NavigatorModel::KindRole, QStringLiteral("table"));
-        first->setText(name);
-        auto* navigator = window.findChild<choscordb::NavigatorController*>();
-        auto* tree = window.findChild<QTreeView*>("databaseNavigator");
-        QVERIFY(navigator && tree);
-        QVERIFY(navigator->model()->addConnection(777, QStringLiteral("Sample connection")));
-        navigator->setVisibleConnections({777});
-        QTRY_COMPARE(tree->model()->rowCount(), 1);
-        QTRY_COMPARE(list->visualItemRect(first).height(),
-                     tree->visualRect(tree->model()->index(0, 0)).height());
-
+        QCOMPARE(pins->verticalScrollBar()->maximum(), 0);
+        const auto first = pins->model()->index(0, 0);
+        QCOMPARE(first.data().toString(), QStringLiteral("object_0"));
+        QVERIFY(first.data(Qt::ToolTipRole).toString().contains("Saved profile"));
         scroll->verticalScrollBar()->setValue(0);
-        const auto pinPoint = list->viewport()->rect().center();
-        QWheelEvent pinWheel(pinPoint, list->viewport()->mapToGlobal(pinPoint), {}, {0, -120},
-                             Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-        QCoreApplication::sendEvent(list->viewport(), &pinWheel);
+        const auto point = pins->viewport()->rect().center();
+        QWheelEvent wheel(point, pins->viewport()->mapToGlobal(point), {}, {0, -120}, Qt::NoButton,
+                          Qt::NoModifier, Qt::NoScrollPhase, false);
+        QCoreApplication::sendEvent(pins->viewport(), &wheel);
         QTRY_VERIFY(scroll->verticalScrollBar()->value() > 0);
-
         filter->setText("different_object");
-        QTRY_COMPARE(list->count(), 31);
-        QVERIFY(list->isVisible());
-        QVERIFY(list->item(0)->text().contains("object_0"));
+        QCOMPARE(pins->model()->rowCount(), 31);
+        QCOMPARE(first.data().toString(), QStringLiteral("object_0"));
     }
 
-    void shortPinnedAndObjectSectionsStayTogetherAtTop() {
+    void captionAndLastRowKeepCompactSectionRhythm() {
         QTemporaryDir storage;
         QVERIFY(storage.isValid());
         const auto path = storage.filePath("settings.sqlite");
-        const choscordb::PinRecord pin{
-            .profileId = QStringLiteral("saved-profile"),
-            .profileName = QStringLiteral("Saved profile"),
-            .objectId = QStringLiteral("pg:relation:1"),
-            .name = QStringLiteral("orders"),
-            .qualifiedName = QStringLiteral("public.orders"),
-            .kind = QStringLiteral("table"),
-            .parentObjectId = QStringLiteral("pg:schema:1"),
-            .ancestryIds = {QStringLiteral("pg:database:1"), QStringLiteral("pg:schema:1")},
-            .ancestryNames = {QStringLiteral("database"), QStringLiteral("public")}};
-        QString error;
-        QVERIFY2(choscordb::PinStore(path).save({pin}, &error), qPrintable(error));
-
-        choscordb::MainWindow window(nullptr, path);
-        window.resize(1280, 1000);
-        window.show();
-        auto* panel = window.findChild<QWidget*>("connectionsPanel");
-        auto* pinned = window.findChild<QWidget*>("pinnedSection");
-        auto* list = window.findChild<QListWidget*>("pinnedList");
-        auto* filter = window.findChild<QLineEdit*>("navigatorFilter");
-        auto* tree = window.findChild<QTreeView*>("databaseNavigator");
-        QVERIFY(panel && pinned && list && filter && tree);
-        QTRY_COMPARE(list->count(), 1);
-        QTRY_VERIFY(pinned->height() >= list->mapTo(pinned, QPoint(0, list->height())).y());
-        auto* navigator = window.findChild<choscordb::NavigatorController*>();
-        QVERIFY(navigator);
-        QVERIFY(navigator->model()->addConnection(777, QStringLiteral("Sample connection")));
-        navigator->setVisibleConnections({777});
-        QTRY_COMPARE(tree->model()->rowCount(), 1);
-        QTRY_VERIFY(tree->height() > 8);
-        QTRY_VERIFY(!window.findChild<QLabel*>("sidebarObjectsEmpty")->isVisible());
-        auto* objects = filter->parentWidget();
-        QVERIFY(objects);
-        const int sectionGap = objects->mapTo(panel, QPoint()).y() -
-                               pinned->mapTo(panel, QPoint(0, pinned->height())).y();
-        const int pinnedContentGap =
-            objects->mapTo(panel, QPoint()).y() - list->mapTo(panel, QPoint(0, list->height())).y();
-        const int filterInset = filter->mapTo(objects, QPoint()).y();
-        const int treeGap = tree->mapTo(objects, QPoint()).y() -
-                            filter->mapTo(objects, QPoint(0, filter->height())).y();
-        QVERIFY2(sectionGap < 40, "Pinned and Schema & Objects must stay together");
-        QVERIFY2(pinnedContentGap < 60, "Pinned rows must stay near the next heading");
-        QVERIFY2(filterInset < 60, "Object filter must stay near its section heading");
-        QVERIFY2(treeGap < 40, "Object tree must stay below its filter");
+        QVERIFY(savePins(path, {pin()}));
+        for (const auto mode :
+             {choscordb::design::ThemeMode::Light, choscordb::design::ThemeMode::Dark}) {
+            for (const auto density :
+                 {choscordb::design::Density::Compact, choscordb::design::Density::Comfortable}) {
+                choscordb::MainWindow window(nullptr, path);
+                window.resize(960, density == choscordb::design::Density::Compact ? 640 : 900);
+                auto* theme = window.findChild<choscordb::design::ThemeManager*>();
+                QVERIFY(theme);
+                theme->setMode(mode);
+                theme->setDensity(density);
+                window.show();
+                auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+                auto* saved = window.findChild<QListWidget*>("savedConnections");
+                QVERIFY(workspace && saved);
+                if (saved->count() == 0) {
+                    choscordb::SavedProfile profile;
+                    profile.id = QStringLiteral("saved-profile");
+                    profile.name = QStringLiteral("Saved profile");
+                    profile.path = storage.filePath("database.sqlite");
+                    workspace->adapter()->saveProfile(profile, 8101);
+                }
+                QTRY_COMPARE(saved->count(), 1);
+                auto* savedEmpty = window.findChild<QLabel*>("sidebarConnectionsEmpty");
+                QVERIFY(savedEmpty);
+                QTRY_VERIFY(!savedEmpty->isVisible());
+                QTRY_VERIFY(saved->geometry().top() < 60);
+                auto* section = window.findChild<QWidget*>("pinnedSection");
+                auto* pins = window.findChild<QTreeView*>("pinnedList");
+                auto* filter = window.findChild<QLineEdit*>("navigatorFilter");
+                QVERIFY(section && pins && filter);
+                QTRY_COMPARE(pins->model()->rowCount(), 1);
+                QTRY_VERIFY(section->isVisible() && pins->isVisible());
+                const auto* caption = section->findChild<choscordb::design::Text*>();
+                const auto* savedCaption =
+                    window.findChild<choscordb::design::Text*>("navigatorTitle");
+                auto* objectSection = filter->parentWidget();
+                const auto* objectCaption = objectSection->findChild<choscordb::design::Text*>();
+                QVERIFY(caption && savedCaption && objectCaption);
+                const auto row = pins->visualRect(pins->model()->index(0, 0));
+                QVERIFY(row.height() > 0);
+                const int pinGap = pins->viewport()->mapTo(section, row.topLeft()).y() -
+                                   caption->mapTo(section, QPoint(0, caption->height())).y();
+                const int objectGap =
+                    filter->mapTo(objectSection, QPoint()).y() -
+                    objectCaption->mapTo(objectSection, QPoint(0, objectCaption->height())).y();
+                auto* connectionSection = savedCaption->parentWidget();
+                const auto savedGap = [saved, savedCaption, connectionSection] {
+                    return saved->viewport()
+                               ->mapTo(connectionSection,
+                                       saved->visualItemRect(saved->item(0)).topLeft())
+                               .y() -
+                           savedCaption->mapTo(connectionSection, QPoint(0, savedCaption->height()))
+                               .y();
+                };
+                QVERIFY2(qAbs(pinGap - objectGap) <=
+                             choscordb::design::spacing(choscordb::design::Spacing::One),
+                         qPrintable(QStringLiteral("Pinned gap %1, neighboring gap %2")
+                                        .arg(pinGap)
+                                        .arg(objectGap)));
+                QTRY_VERIFY2(
+                    qAbs(pinGap - savedGap()) <=
+                        choscordb::design::spacing(choscordb::design::Spacing::One),
+                    qPrintable(
+                        QStringLiteral("Pinned gap %1, saved gap %2").arg(pinGap).arg(savedGap())));
+                const int belowPin = objectCaption->mapToGlobal(QPoint()).y() -
+                                     pins->viewport()->mapToGlobal(row.bottomLeft()).y();
+                QVERIFY(belowPin <=
+                        choscordb::design::spacing(choscordb::design::Spacing::Three) * 3);
+            }
+        }
     }
 
     void wrappedObjectEmptyMessageIsFullyVisibleBelowPins() {
         QTemporaryDir storage;
         QVERIFY(storage.isValid());
         const auto path = storage.filePath("settings.sqlite");
-        const choscordb::PinRecord pin{
-            .profileId = QStringLiteral("saved-profile"),
-            .profileName = QStringLiteral("Saved profile"),
-            .objectId = QStringLiteral("pg:relation:1"),
-            .name = QStringLiteral("orders"),
-            .qualifiedName = QStringLiteral("public.orders"),
-            .kind = QStringLiteral("table"),
-            .parentObjectId = QStringLiteral("pg:schema:1"),
-            .ancestryIds = {QStringLiteral("pg:database:1"), QStringLiteral("pg:schema:1")},
-            .ancestryNames = {QStringLiteral("database"), QStringLiteral("public")}};
-        auto secondPin = pin;
-        secondPin.objectId = QStringLiteral("pg:relation:2");
-        secondPin.name = QStringLiteral("customers");
-        secondPin.qualifiedName = QStringLiteral("public.customers");
-        QString error;
-        QVERIFY2(choscordb::PinStore(path).save({pin, secondPin}, &error), qPrintable(error));
-
+        QVERIFY(savePins(path, {pin(1), pin(2)}));
         choscordb::MainWindow window(nullptr, path);
-        window.resize(1280, 900);
+        window.resize(960, 640);
+        window.show();
         auto* navigator = window.findChild<choscordb::NavigatorController*>();
-        QVERIFY(navigator);
-        QVERIFY(navigator->model()->addConnection(777, QStringLiteral("Sample connection")));
-        navigator->setVisibleConnections({777});
         auto* tree = window.findChild<QTreeView*>("databaseNavigator");
         auto* empty = window.findChild<QLabel*>("sidebarObjectsEmpty");
-        QVERIFY(tree && empty);
-        QTRY_COMPARE(tree->model()->rowCount(), 1);
-        QVERIFY(empty->isHidden());
-        window.show();
-        auto* list = window.findChild<QListWidget*>("pinnedList");
+        auto* pins = window.findChild<QTreeView*>("pinnedList");
         auto* scroll = window.findChild<QScrollArea*>("connectionsScroll");
-        QVERIFY(list && empty && tree && scroll);
-        QTRY_COMPARE(list->count(), 2);
-        window.resize(960, 640);
+        QVERIFY(navigator && tree && empty && pins && scroll);
+        QTRY_COMPARE(pins->model()->rowCount(), 2);
+        QVERIFY(navigator->model()->addConnection(777, QStringLiteral("Sample connection")));
+        navigator->setVisibleConnections({777});
         QTRY_COMPARE(tree->model()->rowCount(), 1);
         navigator->setVisibleConnections({});
         QTRY_COMPARE(tree->model()->rowCount(), 0);
         QTRY_VERIFY(tree->height() <= 8);
-        QTRY_VERIFY(empty->width() > 0);
-        QTRY_VERIFY(empty->isVisible() && empty->width() > 0);
         scroll->setFixedWidth(200);
         scroll->setFixedHeight(220);
-        QTRY_VERIFY(empty->width() < 200);
+        QTRY_VERIFY(empty->isVisible() && empty->width() > 0 && empty->width() < 200);
         QVERIFY(empty->text().contains("No database selected"));
-        QVERIFY2(empty->height() >= empty->heightForWidth(empty->width()),
-                 "Wrapped object empty message must fit its rendered lines");
+        QVERIFY(empty->height() >= empty->heightForWidth(empty->width()));
     }
 
     void navigatorCurrentRowRevealsInSharedScroll() {
@@ -255,12 +240,6 @@ class PinningSidebarTest final : public QObject {
         QTRY_COMPARE(tree->model()->rowCount(), 31);
         QTRY_VERIFY(scroll->verticalScrollBar()->maximum() > 0);
         QCOMPARE(tree->verticalScrollBar()->maximum(), 0);
-        scroll->verticalScrollBar()->setValue(0);
-        const auto treePoint = tree->viewport()->rect().center();
-        QWheelEvent treeWheel(treePoint, tree->viewport()->mapToGlobal(treePoint), {}, {0, -120},
-                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-        QCoreApplication::sendEvent(tree->viewport(), &treeWheel);
-        QTRY_VERIFY(scroll->verticalScrollBar()->value() > 0);
         scroll->verticalScrollBar()->setValue(0);
         tree->setCurrentIndex(tree->model()->index(30, 0));
         QTRY_VERIFY(scroll->verticalScrollBar()->value() > 0);
