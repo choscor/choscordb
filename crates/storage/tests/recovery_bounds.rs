@@ -29,7 +29,8 @@ fn mixed_workspace_round_trips_order_active_pane_and_legacy_sql() {
         tabs: vec![object.clone(), WorkspaceTab::Sql(sql), object],
         active_index: 2,
     };
-    assert!(store.save_workspace_tabs(&snapshot).is_err());
+    store.save_workspace_tabs(&snapshot).unwrap();
+    assert_eq!(store.restore_workspace_tabs().unwrap(), snapshot);
     let snapshot = WorkspaceSnapshot {
         tabs: snapshot.tabs[..2].to_vec(),
         active_index: 1,
@@ -61,6 +62,41 @@ fn mixed_workspace_round_trips_order_active_pane_and_legacy_sql() {
     }
     assert!(store.save_workspace_tabs(&invalid_pane).is_err());
     assert_eq!(store.restore_workspace_tabs().unwrap(), distinct);
+}
+#[test]
+fn duplicate_object_tabs_restore_independent_panes_after_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.sqlite");
+    let object = ObjectTab {
+        profile_id: "profile".into(),
+        object_type: "table".into(),
+        object_id: "main.orders".into(),
+        label: "orders".into(),
+        pane: 2,
+    };
+    let snapshot = WorkspaceSnapshot {
+        tabs: vec![
+            WorkspaceTab::Object(object.clone()),
+            WorkspaceTab::Sql(document()),
+            WorkspaceTab::Object(ObjectTab { pane: 5, ..object }),
+        ],
+        active_index: 2,
+    };
+    {
+        let mut store = Storage::open(&path).unwrap();
+        store.save_workspace_tabs(&snapshot).unwrap();
+    }
+    let mut store = Storage::open(&path).unwrap();
+    assert_eq!(store.restore_workspace_tabs().unwrap(), snapshot);
+    let duplicate_sql = WorkspaceSnapshot {
+        tabs: vec![WorkspaceTab::Sql(document()), WorkspaceTab::Sql(document())],
+        active_index: 1,
+    };
+    assert!(matches!(
+        store.save_workspace_tabs(&duplicate_sql),
+        Err(StorageError::InvalidDocument)
+    ));
+    assert_eq!(store.restore_workspace_tabs().unwrap(), snapshot);
 }
 #[test]
 fn erd_pane_round_trips_without_changing_legacy_data_value() {
@@ -159,6 +195,21 @@ fn reads_previous_tagged_mixed_row_ids() {
     };
     store.save_workspace_tabs(&snapshot).unwrap();
     let db = rusqlite::Connection::open(&path).unwrap();
+    let old_canonical_id = format!(
+        "object:{}:{}:{}:{}:{}:{}",
+        "old-profile".len(),
+        "old-profile",
+        "table".len(),
+        "table",
+        "public.orders".len(),
+        "public.orders"
+    );
+    db.execute(
+        "UPDATE editor_documents SET id=?1 WHERE position=1",
+        [old_canonical_id],
+    )
+    .unwrap();
+    assert_eq!(store.restore_workspace_tabs().unwrap(), snapshot);
     db.execute("UPDATE editor_documents SET id='tab' WHERE position=0", [])
         .unwrap();
     db.execute(

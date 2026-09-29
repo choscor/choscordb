@@ -2,8 +2,12 @@
 mod bootstrap_transaction;
 mod driver;
 mod edit_query;
+mod edit_value;
 mod error;
+mod foreign_key_filter;
+mod grid_edit;
 mod ids;
+mod metadata_policy;
 mod options;
 mod socks;
 mod sqlite_uri;
@@ -26,8 +30,12 @@ pub use bootstrap_transaction::{
 };
 pub use driver::*;
 pub use edit_query::*;
+pub use edit_value::*;
 pub use error::*;
+pub use foreign_key_filter::*;
+pub use grid_edit::*;
 pub use ids::*;
+pub use metadata_policy::*;
 pub use options::*;
 pub use socks::*;
 pub use sqlite_uri::*;

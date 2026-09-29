@@ -1,0 +1,16 @@
+[package]
+name = "choscordb-pins"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs"] }

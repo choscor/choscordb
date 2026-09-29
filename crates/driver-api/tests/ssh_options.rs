@@ -1,4 +1,17 @@
-use choscordb_driver_api::SshTunnel;
+use choscordb_driver_api::{SshOptions, SshTunnel};
+
+#[test]
+fn session_timeout_overrides_ssh_profile_without_mutating_the_source() {
+    let original = SshOptions {
+        connect_timeout_seconds: 27,
+        ..Default::default()
+    };
+    let effective = original.clone().with_session_timeout(42).unwrap();
+    assert_eq!(effective.connect_timeout_seconds, 42);
+    assert_eq!(original.connect_timeout_seconds, 27);
+    assert!(original.clone().with_session_timeout(0).is_err());
+    assert!(original.with_session_timeout(301).is_err());
+}
 
 #[test]
 fn persisted_advanced_ssh_settings_round_trip() {

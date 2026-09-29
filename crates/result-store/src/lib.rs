@@ -6,11 +6,20 @@
 //! This store never connects to a database or replays SQL. CRCs detect corruption;
 //! they are not authentication. Files are ephemeral, with no crash recovery promise.
 mod codec;
+mod copy_tsv;
+pub use copy_tsv::{CopyCell, CopyError, CopyRequest, render_copy_tsv};
+mod deferred_assembler;
+pub use deferred_assembler::{
+    CompletedDeferredValue, DeferredAssembler, DeferredAssemblerError, DeferredLoadPolicy,
+    MAX_DEFERRED_CHUNK_BYTES, MAX_DEFERRED_LOAD_BYTES,
+};
 mod index;
+mod json_view;
 use choscordb_driver_api::{Column, ResultPage};
 use codec::{Decoder, Encoder};
 pub use index::INDEX_RECORD_BYTES;
 use index::Record;
+pub use json_view::*;
 use std::{
     fs::File,
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},

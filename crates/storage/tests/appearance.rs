@@ -1,6 +1,6 @@
 use choscordb_storage::{
-    APPEARANCE_LAYOUT_VERSION, Accent, AccentPreset, AppearanceLayout, Density, Storage,
-    StorageError, ThemeMode, WindowGeometry, WorkspaceLayout,
+    APPEARANCE_LAYOUT_VERSION, Accent, AccentPreset, AppearanceChoiceError, AppearanceLayout,
+    Density, Storage, StorageError, ThemeMode, WindowGeometry, WorkspaceLayout,
 };
 
 fn customized() -> AppearanceLayout {
@@ -25,6 +25,53 @@ fn customized() -> AppearanceLayout {
             screen_name: Some("Left display".into()),
         },
     }
+}
+
+#[test]
+fn desktop_theme_choices_use_the_persisted_theme_vocabulary() {
+    assert_eq!(ThemeMode::parse_choice("system"), Some(ThemeMode::System));
+    assert_eq!(ThemeMode::parse_choice("light"), Some(ThemeMode::Light));
+    assert_eq!(ThemeMode::parse_choice("dark"), Some(ThemeMode::Dark));
+    for value in ["sepia", "Dark", "", " dark "] {
+        assert_eq!(ThemeMode::parse_choice(value), None);
+    }
+}
+
+#[test]
+fn desktop_density_and_accent_choices_use_the_persisted_vocabulary() {
+    assert_eq!(Density::parse_choice("compact"), Some(Density::Compact));
+    assert_eq!(
+        Density::parse_choice("comfortable"),
+        Some(Density::Comfortable)
+    );
+    assert_eq!(Density::parse_choice("Comfortable"), None);
+    for (name, expected) in [
+        ("cobalt", AccentPreset::Cobalt),
+        ("azure", AccentPreset::Azure),
+        ("violet", AccentPreset::Violet),
+        ("teal", AccentPreset::Teal),
+        ("green", AccentPreset::Green),
+        ("orange", AccentPreset::Orange),
+        ("rose", AccentPreset::Rose),
+    ] {
+        assert_eq!(AccentPreset::parse_choice(name), Some(expected));
+        assert_eq!(
+            Accent::parse_choice("preset", name.into()),
+            Ok(Accent::Preset(expected))
+        );
+    }
+    assert_eq!(
+        Accent::parse_choice("custom", "#123ABC".into()),
+        Ok(Accent::Custom("#123ABC".into()))
+    );
+    assert_eq!(
+        Accent::parse_choice("preset", "unknown".into()),
+        Err(AppearanceChoiceError::UnknownAccentPreset)
+    );
+    assert_eq!(
+        Accent::parse_choice("other", "cobalt".into()),
+        Err(AppearanceChoiceError::UnknownAccentKind)
+    );
 }
 
 #[test]

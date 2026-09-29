@@ -1,12 +1,14 @@
 use std::fmt::{self, Write};
 pub const MAX_TEMPLATE_BYTES: usize = 1024 * 1024;
 pub const MAX_TEMPLATE_COLUMNS: usize = 4096;
+const PLACEHOLDER_GUIDANCE: &str = "-- Replace numbered placeholders with values before running.\n";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NameError {
     Empty,
     Nul,
     InvalidQualified,
     ResourceLimit,
+    GeneratedResourceLimit,
 }
 impl fmt::Display for NameError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -15,6 +17,7 @@ impl fmt::Display for NameError {
             Self::Nul => "An identifier contains a NUL character",
             Self::InvalidQualified => "The quoted qualified name is invalid",
             Self::ResourceLimit => "SQL template exceeds resource limits",
+            Self::GeneratedResourceLimit => "Generated SQL exceeds the template size limit.",
         })
     }
 }
@@ -107,6 +110,7 @@ pub fn template(
 }
 /// Accepts complete double-quoted or MySQL backtick-quoted components separated by dots.
 /// Dots within components, escaped quotes and Unicode remain unchanged.
+/// Insert and update templates with columns include the editable placeholder guidance.
 pub fn template_from_qualified(
     kind: TemplateKind,
     name: &str,
@@ -129,7 +133,7 @@ pub fn template_from_qualified(
     if matches!(kind, TemplateKind::Update) && columns.is_empty() {
         return Err(NameError::Empty);
     }
-    bounded(|out| match kind {
+    let sql = bounded(|out| match kind {
         TemplateKind::Select => {
             out.write_str("SELECT ")?;
             if columns.is_empty() {
@@ -178,7 +182,14 @@ pub fn template_from_qualified(
             out.write_str(" WHERE /* predicate */;")
         }
         TemplateKind::Delete => write!(out, "DELETE FROM {name} WHERE /* predicate */;"),
-    })
+    })?;
+    if matches!(kind, TemplateKind::Insert | TemplateKind::Update) && !columns.is_empty() {
+        if sql.len() > MAX_TEMPLATE_BYTES - PLACEHOLDER_GUIDANCE.len() {
+            return Err(NameError::GeneratedResourceLimit);
+        }
+        return Ok(format!("{PLACEHOLDER_GUIDANCE}{sql}"));
+    }
+    Ok(sql)
 }
 fn column_list(out: &mut dyn Write, columns: &[&str], delimiter: char) -> fmt::Result {
     for (index, column) in columns.iter().enumerate() {
@@ -244,7 +255,7 @@ mod tests {
         assert_eq!(
             template_from_qualified(TemplateKind::Insert, "`shop`.`odd``table`", &["id", "a`b"])
                 .unwrap(),
-            "INSERT INTO `shop`.`odd``table` (`id`, `a``b`) VALUES (?, ?);"
+            "-- Replace numbered placeholders with values before running.\nINSERT INTO `shop`.`odd``table` (`id`, `a``b`) VALUES (?, ?);"
         );
         assert_eq!(
             template_from_qualified(TemplateKind::Select, "`shop`.`items`", &["title"]).unwrap(),
@@ -252,7 +263,7 @@ mod tests {
         );
         assert_eq!(
             template_from_qualified(TemplateKind::Update, "`items`", &["title"]).unwrap(),
-            "UPDATE `items` SET `title` = ? WHERE /* predicate */;"
+            "-- Replace numbered placeholders with values before running.\nUPDATE `items` SET `title` = ? WHERE /* predicate */;"
         );
         assert_eq!(
             template_from_qualified(TemplateKind::Insert, "`items`", &[]).unwrap(),
@@ -286,11 +297,11 @@ mod tests {
         let columns = ["a.b", "é\"x"];
         assert_eq!(
             template_from_qualified(TemplateKind::Insert, name, &columns).unwrap(),
-            "INSERT INTO \"s\".\"table\" (\"a.b\", \"é\"\"x\") VALUES ($1, $2);"
+            "-- Replace numbered placeholders with values before running.\nINSERT INTO \"s\".\"table\" (\"a.b\", \"é\"\"x\") VALUES ($1, $2);"
         );
         assert_eq!(
             template_from_qualified(TemplateKind::Update, name, &columns).unwrap(),
-            "UPDATE \"s\".\"table\" SET \"a.b\" = $1, \"é\"\"x\" = $2 WHERE /* predicate */;"
+            "-- Replace numbered placeholders with values before running.\nUPDATE \"s\".\"table\" SET \"a.b\" = $1, \"é\"\"x\" = $2 WHERE /* predicate */;"
         );
         assert_eq!(
             template_from_qualified(TemplateKind::Delete, name, &[]).unwrap(),

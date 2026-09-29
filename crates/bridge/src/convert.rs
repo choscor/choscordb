@@ -1,6 +1,50 @@
 use super::{ffi, pack};
 use choscordb_core::Event;
 use choscordb_driver_api::*;
+pub(crate) fn value(cell: ffi::CellDto) -> std::result::Result<Value, ()> {
+    Ok(match cell.kind.as_str() {
+        "null" => Value::Null,
+        "boolean" => Value::Bool(cell.boolean),
+        "integer" => Value::Integer(cell.integer),
+        "real" => Value::Real(cell.real),
+        "decimal" => Value::Decimal(cell.text),
+        "text" => Value::Text(cell.text),
+        "date" => Value::Date(cell.text),
+        "time" => Value::Time(cell.text),
+        "timestamp" => Value::Timestamp(cell.text),
+        "uuid" => Value::Uuid(cell.text),
+        "json" => Value::Json(cell.text),
+        "binary" => Value::Binary(cell.bytes),
+        "fallback_text" => Value::FallbackText {
+            text: cell.text,
+            database_type: cell.database_type,
+        },
+        "unavailable" => Value::Unavailable {
+            database_type: cell.database_type,
+            reason: cell.text,
+        },
+        "deferred" | "deferred_fallback" => {
+            let handle = Handle {
+                slot: cell.handle as u32,
+                generation: (cell.handle >> 32) as u32,
+            };
+            if cell.kind == "deferred" {
+                Value::Deferred {
+                    handle,
+                    byte_length: cell.byte_length,
+                    database_type: cell.database_type,
+                }
+            } else {
+                Value::DeferredFallback {
+                    handle,
+                    byte_length: cell.byte_length,
+                    database_type: cell.database_type,
+                }
+            }
+        }
+        _ => return Err(()),
+    })
+}
 fn column(c: Column) -> ffi::ColumnDto {
     ffi::ColumnDto {
         name: c.name,
@@ -13,7 +57,7 @@ fn column(c: Column) -> ffi::ColumnDto {
         nullability: c.nullable.map(i8::from).unwrap_or(-1),
     }
 }
-fn cell(value: Value) -> ffi::CellDto {
+pub(crate) fn cell(value: Value) -> ffi::CellDto {
     let mut c = ffi::CellDto::default();
     c.kind = match value {
         Value::Null => "null",

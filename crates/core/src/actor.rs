@@ -128,16 +128,95 @@ async fn finish_queued_history(commands: &mut mpsc::Receiver<Request>, events: &
 pub(crate) struct EventSink {
     sender: mpsc::Sender<Event>,
     shutdown: watch::Receiver<bool>,
+    diagnostics: Option<crate::DiagnosticsSlot>,
+    diagnostic_driver: choscordb_diagnostics::Driver,
 }
 impl EventSink {
+    #[cfg(test)]
     pub(crate) fn new(sender: mpsc::Sender<Event>, shutdown: watch::Receiver<bool>) -> Self {
-        Self { sender, shutdown }
+        Self {
+            sender,
+            shutdown,
+            diagnostics: None,
+            diagnostic_driver: choscordb_diagnostics::Driver::Unknown,
+        }
+    }
+    fn with_diagnostics(
+        sender: mpsc::Sender<Event>,
+        shutdown: watch::Receiver<bool>,
+        diagnostics: crate::DiagnosticsSlot,
+        driver: &str,
+    ) -> Self {
+        let diagnostic_driver = match driver {
+            "sqlite" => choscordb_diagnostics::Driver::SQLite,
+            "postgres" | "postgresql" => choscordb_diagnostics::Driver::PostgreSQL,
+            "mysql" => choscordb_diagnostics::Driver::MySQL,
+            _ => choscordb_diagnostics::Driver::Unknown,
+        };
+        Self {
+            sender,
+            shutdown,
+            diagnostics: Some(diagnostics),
+            diagnostic_driver,
+        }
     }
     pub(crate) async fn send(&self, event: Event) {
         send(self, event).await;
     }
+    fn record(&self, action: DiagnosticAction) {
+        let Some(registry) = &self.diagnostics else {
+            return;
+        };
+        let Ok(slot) = registry.try_lock() else {
+            return;
+        };
+        let Some(service) = slot.as_ref().cloned() else {
+            return;
+        };
+        drop(slot);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match action {
+            DiagnosticAction::Connection(succeeded) => {
+                service.observe_connection(self.diagnostic_driver, succeeded, service.open_tabs())
+            }
+            DiagnosticAction::Engine(event) => {
+                service.observe_engine_event(event, service.open_tabs())
+            }
+        }));
+    }
+}
+#[derive(Clone, Copy)]
+enum DiagnosticAction {
+    Connection(bool),
+    Engine(choscordb_diagnostics::EngineBoundaryEvent),
+}
+fn diagnostic_action(event: &Event) -> Option<DiagnosticAction> {
+    use choscordb_diagnostics::EngineBoundaryEvent as Outcome;
+    let id = |query: QueryId| (u64::from(query.generation) << 32) | u64::from(query.slot);
+    Some(match event {
+        Event::Connected { .. } => DiagnosticAction::Connection(true),
+        Event::ConnectionFailed { .. } => DiagnosticAction::Connection(false),
+        Event::QueryFinished {
+            query, duration, ..
+        } => DiagnosticAction::Engine(Outcome::QueryFinished {
+            id: id(*query),
+            duration_ms: duration.as_millis().min(u128::from(u64::MAX)) as u64,
+        }),
+        Event::QueryFailed { query, error } => DiagnosticAction::Engine(Outcome::QueryFailed {
+            id: id(*query),
+            cancelled: error.kind == ErrorKind::Cancelled,
+        }),
+        Event::StoredPage { .. } => DiagnosticAction::Engine(Outcome::StoredPage),
+        Event::ExportFinished { .. } => DiagnosticAction::Engine(Outcome::ExportFinished),
+        Event::ExportFailed { .. } => DiagnosticAction::Engine(Outcome::ExportFailed),
+        _ => return None,
+    })
 }
 async fn send(events: &EventSink, event: Event) {
+    // Capture an outcome when it is produced. A full UI event channel can wait
+    // for a drain indefinitely; diagnostics must remain independent of that drain.
+    if let Some(action) = diagnostic_action(&event) {
+        events.record(action);
+    }
     let mut shutdown = events.shutdown.clone();
     tokio::select! {
         biased;
@@ -147,7 +226,9 @@ async fn send(events: &EventSink, event: Event) {
             let _ = events.sender.try_send(event);
         }
         permit = events.sender.reserve() => {
-            if let Ok(permit) = permit { permit.send(event); }
+            if let Ok(permit) = permit {
+                permit.send(event);
+            }
         }
     }
 }
@@ -315,6 +396,7 @@ pub(crate) async fn run(
     attempt_timeout: Option<Duration>,
     mut commands: mpsc::Receiver<Request>,
     events: mpsc::Sender<Event>,
+    diagnostics: crate::DiagnosticsSlot,
     mut shutdown: watch::Receiver<bool>,
     grace: Duration,
     mut store_config: choscordb_result_store::StoreConfig,
@@ -322,7 +404,7 @@ pub(crate) async fn run(
     memory: Arc<crate::memory::Memory>,
     cache: Arc<crate::hot_cache::HotCache>,
 ) {
-    let events = EventSink::new(events, shutdown.clone());
+    let events = EventSink::with_diagnostics(events, shutdown.clone(), diagnostics, driver.id());
     let probe_timeout = session_probe_timeout(&options);
     let attempt_timeout = attempt_timeout.unwrap_or(probe_timeout);
     let attempt_deadline = Instant::now() + attempt_timeout;

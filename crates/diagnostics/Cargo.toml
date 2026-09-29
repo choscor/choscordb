@@ -1,0 +1,18 @@
+[package]
+name = "choscordb-diagnostics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+fs2 = "0.4"
+proc-memstat = "=0.1.0"
+serde_json = "1"
+tempfile = "3"
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

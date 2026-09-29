@@ -1,0 +1,29 @@
+[package]
+name = "choscordb-update"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = "0.22"
+ed25519-dalek = "2"
+serde_json = "1"
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "stream"] }
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "sync", "time"] }
+tokio-util = "0.7"
+url = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "sync", "time"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["event", "fs", "process"] }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"

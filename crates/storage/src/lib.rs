@@ -5,9 +5,9 @@ mod appearance;
 mod preferences;
 mod query_preferences;
 pub use appearance::{
-    APPEARANCE_LAYOUT_VERSION, Accent, AccentPreset, AppearanceLayout, Density,
-    MAX_APPEARANCE_LAYOUT_BYTES, MAX_SCREEN_NAME_BYTES, MAX_WINDOW_DIMENSION, MIN_WINDOW_HEIGHT,
-    MIN_WINDOW_WIDTH, ThemeMode, WindowGeometry, WorkspaceLayout,
+    APPEARANCE_LAYOUT_VERSION, Accent, AccentPreset, AppearanceChoiceError, AppearanceLayout,
+    Density, MAX_APPEARANCE_LAYOUT_BYTES, MAX_SCREEN_NAME_BYTES, MAX_WINDOW_DIMENSION,
+    MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, ThemeMode, WindowGeometry, WorkspaceLayout,
 };
 use choscordb_driver_api::{ConnectionOptions, Secret};
 pub use choscordb_driver_api::{SshTunnel, TlsMode};
@@ -501,7 +501,7 @@ impl Storage {
         let tx = self.db.transaction()?;
         tx.execute("DELETE FROM editor_documents", [])?;
         for (position, tab) in snapshot.tabs.iter().enumerate() {
-            let id = tab.storage_id();
+            let id = tab.storage_row_id(position);
             tx.execute(
                 "INSERT INTO editor_documents(id,position,data) VALUES (?1,?2,?3)",
                 params![id, position as i64, serde_json::to_string(tab)?],
@@ -527,7 +527,7 @@ impl Storage {
             let (tab, expected_id, legacy_id): (WorkspaceTab, String, Option<String>) =
                 match serde_json::from_str::<WorkspaceTab>(data) {
                     Ok(tab) => {
-                        let id = tab.storage_id();
+                        let id = tab.storage_row_id(tabs.len());
                         let legacy = match &tab {
                             WorkspaceTab::Sql(d) => d.id.clone(),
                             WorkspaceTab::Object(o) => {
@@ -545,7 +545,9 @@ impl Storage {
                 };
             tab.validate()?;
             let row_id = row.get_ref(0)?.as_str().ok();
-            if (row_id != Some(expected_id.as_str()) && row_id != legacy_id.as_deref())
+            if (row_id != Some(expected_id.as_str())
+                && row_id != Some(tab.storage_id().as_str())
+                && row_id != legacy_id.as_deref())
                 || row.get::<_, i64>(1)? != tabs.len() as i64
             {
                 return Err(StorageError::InvalidDocument);
@@ -1202,6 +1204,12 @@ impl WorkspaceTab {
             ),
         }
     }
+    fn storage_row_id(&self, position: usize) -> String {
+        match self {
+            Self::Sql(_) => self.storage_id(),
+            Self::Object(_) => format!("{}:tab:{position}", self.storage_id()),
+        }
+    }
     pub fn validate(&self) -> Result<()> {
         match self {
             Self::Sql(d) => d.validate(),
@@ -1230,9 +1238,10 @@ pub fn validate_workspace_tabs(snapshot: &WorkspaceSnapshot) -> Result<()> {
     }
     let mut ids = std::collections::HashSet::new();
     let mut total = 0usize;
-    for tab in &snapshot.tabs {
+    for (position, tab) in snapshot.tabs.iter().enumerate() {
         tab.validate()?;
-        if !ids.insert(tab.storage_id()) {
+        document_field(&tab.storage_row_id(position), 16 * 1024 + 520)?;
+        if matches!(tab, WorkspaceTab::Sql(_)) && !ids.insert(tab.storage_id()) {
             return Err(StorageError::InvalidDocument);
         }
         total = total.saturating_add(encoded_size(tab, MAX_RECORD_BYTES)?);

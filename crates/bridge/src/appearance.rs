@@ -4,41 +4,19 @@ use choscordb_core::{
 };
 
 fn theme(value: &str) -> Result<ThemeMode, String> {
-    match value {
-        "system" => Ok(ThemeMode::System),
-        "light" => Ok(ThemeMode::Light),
-        "dark" => Ok(ThemeMode::Dark),
-        _ => Err("Unknown appearance theme".into()),
-    }
+    ThemeMode::parse_choice(value).ok_or_else(|| "Unknown appearance theme".into())
+}
+
+pub fn appearance_theme_valid(value: &str) -> bool {
+    ThemeMode::parse_choice(value).is_some()
 }
 
 fn density(value: &str) -> Result<Density, String> {
-    match value {
-        "compact" => Ok(Density::Compact),
-        "comfortable" => Ok(Density::Comfortable),
-        _ => Err("Unknown appearance density".into()),
-    }
-}
-
-fn preset(value: &str) -> Result<AccentPreset, String> {
-    match value {
-        "cobalt" => Ok(AccentPreset::Cobalt),
-        "azure" => Ok(AccentPreset::Azure),
-        "violet" => Ok(AccentPreset::Violet),
-        "teal" => Ok(AccentPreset::Teal),
-        "green" => Ok(AccentPreset::Green),
-        "orange" => Ok(AccentPreset::Orange),
-        "rose" => Ok(AccentPreset::Rose),
-        _ => Err("Unknown appearance accent preset".into()),
-    }
+    Density::parse_choice(value).ok_or_else(|| "Unknown appearance density".into())
 }
 
 fn accent(kind: &str, value: String) -> Result<Accent, String> {
-    match kind {
-        "preset" => Ok(Accent::Preset(preset(&value)?)),
-        "custom" => Ok(Accent::Custom(value)),
-        _ => Err("Unknown appearance accent kind".into()),
-    }
+    Accent::parse_choice(kind, value).map_err(|error| error.to_string())
 }
 
 pub(crate) fn dto(value: AppearanceLayout) -> ffi::AppearanceLayoutDto {

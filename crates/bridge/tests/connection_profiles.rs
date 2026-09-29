@@ -54,6 +54,34 @@ fn connection_dialog_accepts_connection_timeout() {
 }
 
 #[test]
+fn session_timeout_overrides_invalid_saved_timeout_for_connection_attempt() {
+    let invalid = || {
+        let mut profile = draft();
+        profile.ssh_enabled = true;
+        profile.ssh_host = "ssh.example".into();
+        profile.ssh_port = 22;
+        profile.ssh_user = "alice".into();
+        profile.ssh_authentication = "agent".into();
+        profile.ssh_options = r#"{"connect_timeout_seconds":0}"#.into();
+        profile
+    };
+    assert!(!validate_connection_profile(invalid()).is_empty());
+    let mut saved = invalid();
+    saved.session_connection_timeout_seconds = 42;
+    assert!(!validate_connection_profile(saved).is_empty());
+    let mut profile = invalid();
+    profile.session_connection_timeout_seconds = 42;
+    let mut engine = new_engine();
+    let submitted = profile_test_credentials(
+        &mut engine,
+        profile,
+        ffi::ProfileCredentialsDto::default(),
+        77,
+    );
+    assert!(submitted.accepted, "{}", submitted.error);
+}
+
+#[test]
 fn proxy_validation_rejects_unknown_fields_and_ignores_sqlite_stale_settings() {
     let mut profile = draft();
     profile.proxy_options = r#"{"host":"proxy","port":1080,"password":"secret-marker"}"#.into();

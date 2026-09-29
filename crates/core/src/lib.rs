@@ -2,11 +2,24 @@
 //! actors; dropping the engine never joins workers on the caller's thread.
 mod actor;
 mod deferred;
+mod document_io;
+pub use document_io::{
+    DocumentIoError, MAX_SAVED_SQL_DOCUMENTS, MAX_SQL_DOCUMENT_BYTES, SavedSqlDocument,
+    SavedSqlDocuments, ensure_saved_sql_directory, list_saved_sql_documents,
+    read_saved_sql_document, read_sql_document, saved_sql_document_identity, write_sql_document,
+};
 mod hot_cache;
 pub use hot_cache::CacheUsage;
 mod memory;
 pub use memory::{MemoryUsage, PageLease, PageMemoryConfig};
+mod object_action;
+pub use object_action::{ObjectAction, ObjectActionStatement, prepare_object_action};
 mod operation;
+mod preview_capture;
+pub use preview_capture::{
+    MAX_PREVIEW_CONTROLS, MAX_PREVIEW_PNG_BYTES, PreviewCapture, PreviewCaptureError,
+    PreviewControl, write_preview_capture,
+};
 mod profiles;
 mod query_history;
 mod recovery;
@@ -28,10 +41,14 @@ pub use choscordb_storage::{
     WorkspaceLayout, WorkspaceSnapshot, WorkspaceTab,
 };
 mod store;
+use choscordb_diagnostics::{EngineBoundaryEvent, Service as DiagnosticsService};
 use choscordb_driver_api::*;
 pub use protocol::*;
 pub use result_view::{FilterCondition, FilterOperator, ResultSort, SortDirection, value_matches};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use tokio::{
     runtime::Runtime,
     sync::{mpsc, watch},
@@ -51,6 +68,7 @@ struct QuerySlot {
     released: watch::Sender<bool>,
     view_cancellation: watch::Sender<bool>,
 }
+pub(crate) type DiagnosticsSlot = Arc<Mutex<Option<Arc<DiagnosticsService>>>>;
 
 pub struct Engine {
     history_memory: Arc<std::sync::atomic::AtomicUsize>,
@@ -72,8 +90,15 @@ pub struct Engine {
     config: EngineConfig,
     memory: Arc<memory::Memory>,
     cache: Arc<hot_cache::HotCache>,
+    diagnostics: DiagnosticsSlot,
 }
 impl Engine {
+    /// Attach local diagnostics capture to subsequent engine operations.
+    pub fn set_diagnostics(&mut self, service: Arc<DiagnosticsService>) {
+        if let Ok(mut slot) = self.diagnostics.lock() {
+            *slot = Some(service);
+        }
+    }
     /// Construct during application initialization. Subsequent commands never wait for I/O.
     pub fn new(
         config: EngineConfig,
@@ -147,6 +172,7 @@ impl Engine {
             config,
             memory,
             cache,
+            diagnostics: Arc::new(Mutex::new(None)),
         })
     }
     pub fn connect(
@@ -210,6 +236,7 @@ impl Engine {
                 attempt_timeout,
                 rx,
                 self.events_tx.clone(),
+                self.diagnostics.clone(),
                 disconnected,
                 self.config.cancellation_grace,
                 self.config.result_store.clone(),
@@ -286,6 +313,18 @@ impl Engine {
             query: id,
             state: QueryState::Queued,
         });
+        if let Ok(slot) = self.diagnostics.try_lock()
+            && let Some(service) = slot.as_ref()
+        {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                service.observe_engine_event(
+                    EngineBoundaryEvent::QueryQueued(
+                        (u64::from(id.generation) << 32) | u64::from(id.slot),
+                    ),
+                    service.open_tabs(),
+                );
+            }));
+        }
         let sql = Arc::new(sql);
         let history = if object.is_some() {
             None

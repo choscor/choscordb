@@ -20,11 +20,8 @@ pub fn generate_sql_template(
         "insert" => language::TemplateKind::Insert,
         "update" => language::TemplateKind::Update,
         "delete" => language::TemplateKind::Delete,
-        _ => return failure("Unknown SQL template"),
+        _ => return failure("Unknown SQL template."),
     };
-    if columns.len() > language::MAX_TEMPLATE_COLUMNS {
-        return failure("SQL template exceeds resource limits");
-    }
     let columns: Vec<&str> = columns.iter().map(String::as_str).collect();
     match language::template_from_qualified(kind, qualified, &columns) {
         Ok(sql) => ffi::SqlTemplateResultDto {
@@ -47,6 +44,8 @@ mod tests {
         assert!(!invalid.valid);
         assert!(!invalid.error.is_empty());
         assert!(!invalid.error.contains("DROP"));
-        assert!(!generate_sql_template("unknown", "\"table\"", vec![]).valid);
+        let unknown = generate_sql_template("unknown", "\"table\"", vec![]);
+        assert!(!unknown.valid);
+        assert_eq!(unknown.error, "Unknown SQL template.");
     }
 }

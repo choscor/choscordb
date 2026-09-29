@@ -10,6 +10,7 @@ workspace = true
 [dependencies]
 fs2 = "0.4"
 choscordb-credentials = { path = "../credentials" }
+choscordb-diagnostics = { path = "../diagnostics" }
 uuid = { version = "1", features = ["v4"] }
 choscordb-storage = { path = "../storage" }
 async-trait = "0.1"
@@ -22,6 +23,8 @@ thiserror = "2"
 rusqlite = { version = "0.40", features = ["bundled", "collation", "hooks", "limits"] }
 serde_json = "1"
 tempfile = "3"
+cap-std = { version = "4.0.3", default-features = false }
+cap-fs-ext = { version = "4.0.3", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 choscordb-driver-mysql = { path = "../driver-mysql" }
@@ -30,3 +33,4 @@ choscordb-driver-sqlite = { path = "../driver-sqlite" }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.29", default-features = false, features = ["process", "signal"] }
+rustix = { version = "1", features = ["fs"] }

@@ -8,16 +8,22 @@ workspace = true
 [lib]
 crate-type = ["staticlib", "rlib"]
 [dependencies]
+base64 = "0.22"
 choscordb-credentials = { path = "../credentials" }
 choscordb-core = { path = "../core" }
+choscordb-diagnostics = { path = "../diagnostics" }
 choscordb-driver-api = { path = "../driver-api" }
 choscordb-driver-sqlite = { path = "../driver-sqlite" }
 choscordb-driver-mysql = { path = "../driver-mysql" }
 choscordb-driver-postgres = { path = "../driver-postgres" }
+choscordb-pins = { path = "../pins" }
+choscordb-result-store = { path = "../result-store" }
 choscordb-sql-language = { path = "../sql-language" }
+choscordb-update = { path = "../update" }
 cxx = "1"
-ed25519-dalek = "2"
 serde_json = "1"
+tokio = { version = "1", features = ["rt", "time"] }
+tokio-util = "0.7"
 zeroize = "1"
 [build-dependencies]
 cxx-build = "1"

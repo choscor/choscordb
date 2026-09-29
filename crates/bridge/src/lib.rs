@@ -1,9 +1,35 @@
 //! Typed, nonblocking CXX transport. Application policy remains in core services.
 mod appearance;
-pub use appearance::{appearance_layout_get, appearance_layout_reset, appearance_layout_set};
+pub use appearance::{
+    appearance_layout_get, appearance_layout_reset, appearance_layout_set, appearance_theme_valid,
+};
 mod completion;
 mod convert;
+mod deferred_assembler;
+pub use deferred_assembler::{
+    RustDeferredAssembler, deferred_assembler_initial_error, deferred_assembler_new,
+    deferred_assembler_push,
+};
+mod diagnostics;
+mod document_io;
+mod edit_value;
+mod foreign_key_filter;
+mod grid_edit;
+mod metadata_policy;
+mod result_copy;
+mod result_json;
 pub use completion::*;
+pub use diagnostics::*;
+pub use document_io::{read_sql_document_file, write_sql_document_file};
+pub use edit_value::parse_grid_edit_value_policy;
+pub use foreign_key_filter::{foreign_key_predicate_policy, foreign_key_value_filterable_policy};
+pub use grid_edit::{grid_editability_policy, plan_grid_edits_policy};
+pub use metadata_policy::{navigator_object_visible_policy, postgres_system_schema_policy};
+pub use result_copy::render_copy_tsv_policy;
+pub use result_json::{
+    json_cell_readiness_policy, json_page_readiness_policy, json_row_readiness_policy,
+    render_json_cell_policy, render_json_page_policy, render_json_row_policy,
+};
 mod preferences;
 mod query_preferences;
 pub use query_preferences::{
@@ -11,7 +37,19 @@ pub use query_preferences::{
 };
 mod templates;
 pub use templates::*;
+mod object_action;
+pub use object_action::*;
+mod pins;
+pub use pins::{pin_identity_key, pin_load, pin_save, pin_valid};
+mod preview_capture;
+pub use preview_capture::write_preview_capture_file;
 mod recovery;
+mod saved_sql;
+pub use saved_sql::{
+    saved_sql_document_identity, saved_sql_list_directory, saved_sql_prepare_directory,
+    saved_sql_read_file,
+};
+mod update;
 use choscordb_core::{Engine, EngineConfig};
 use choscordb_driver_api::*;
 pub use preferences::*;
@@ -20,6 +58,15 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     sync::Arc,
     time::Duration,
+};
+pub use update::{
+    RustUpdateSession, update_consent_load, update_consent_load_legacy_ini,
+    update_consent_load_native, update_consent_migrate, update_consent_save,
+    update_parse_signed_metadata, update_run_linux_helper, update_session_begin_check,
+    update_session_cancel, update_session_check, update_session_discard_staged,
+    update_session_download, update_session_install, update_session_new,
+    update_session_new_failure_fixture, update_session_progress,
+    update_take_windows_failure_marker, update_verify_file, update_write_readiness,
 };
 // SAFETY: cxx generates the unsafe ABI glue for this one declarative boundary. The bridge's
 // generated static assertions validate the shared layouts and signatures, while transport tests
@@ -31,9 +78,74 @@ use std::{
 #[cxx::bridge(namespace = "choscordb")]
 pub mod ffi {
     #[derive(Default)]
+    struct PreviewControlDto {
+        name: String,
+        theme: String,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    }
+    #[derive(Default)]
+    struct PreviewCaptureDto {
+        section: String,
+        specimen: String,
+        source: String,
+        surface: String,
+        logical_width: u32,
+        logical_height: u32,
+        source_device_scale: f64,
+        themes: String,
+        font: String,
+        qt: String,
+        platform: String,
+        os: String,
+        controls: Vec<PreviewControlDto>,
+    }
+    struct PreviewCaptureResultDto {
+        png_written: bool,
+        error: String,
+    }
+    #[derive(Default)]
     struct Submit {
         accepted: bool,
         id: u64,
+        error: String,
+    }
+    #[derive(Default)]
+    struct DiagnosticRecordDto {
+        event: u16,
+        driver: u16,
+        error_class: u16,
+        duration_bucket: u16,
+        open_tabs: i32,
+        duration_ms: i32,
+        force_memory: bool,
+    }
+    struct DiagnosticCountDto {
+        name: String,
+        count: u64,
+    }
+    #[derive(Default)]
+    struct DiagnosticSummaryDto {
+        estimated_bytes: u64,
+        category_counts: Vec<DiagnosticCountDto>,
+        duration_bucket_counts: Vec<DiagnosticCountDto>,
+        from_utc: String,
+        to_utc: String,
+        unavailable_categories: Vec<String>,
+        dropped_records: u64,
+        has_history: bool,
+    }
+    #[derive(Default)]
+    struct DiagnosticExportDto {
+        success: bool,
+        cancelled: bool,
+        error: String,
+    }
+    #[derive(Default)]
+    struct DiagnosticClearDto {
+        success: bool,
         error: String,
     }
     #[derive(Default)]
@@ -70,6 +182,105 @@ pub mod ffi {
         params: Vec<CellDto>,
         has_expected_rows: bool,
         expected_rows: u64,
+    }
+    struct GridEditColumnDto {
+        name: String,
+        result_name: String,
+        database_type: String,
+        key: bool,
+        generated: bool,
+        enum_source_column: String,
+        enum_choices: Vec<String>,
+    }
+    struct GridEditRowDto {
+        current: Vec<CellDto>,
+        original: Vec<CellDto>,
+        touched: Vec<u8>,
+        inserted: bool,
+        deleted: bool,
+    }
+    struct GridEditRequestDto {
+        driver: String,
+        qualified_name: String,
+        parameter_style: String,
+        reason: String,
+        object_read_only: bool,
+        columns: Vec<GridEditColumnDto>,
+        rows: Vec<GridEditRowDto>,
+    }
+    #[derive(Default)]
+    struct GridEditabilityDto {
+        editable: Vec<u8>,
+        insert_editable: Vec<u8>,
+        key_columns: Vec<u8>,
+        can_insert: bool,
+        can_delete: bool,
+        reason: String,
+    }
+    struct PlannedGridEditDto {
+        statement: EditStatementDto,
+        parameter_types: Vec<String>,
+    }
+    #[derive(Default)]
+    struct GridEditPlanDto {
+        statements: Vec<PlannedGridEditDto>,
+        error: String,
+    }
+    #[derive(Default)]
+    struct ForeignKeyPredicateDto {
+        valid: bool,
+        expression: String,
+    }
+    #[derive(Default)]
+    struct ParsedGridEditValueDto {
+        valid: bool,
+        cell: CellDto,
+    }
+    struct JsonViewRowDto {
+        cells: Vec<CellDto>,
+        touched: Vec<u8>,
+        inserted: bool,
+    }
+    struct JsonResolvedCellDto {
+        row: u32,
+        column: u32,
+        value: CellDto,
+    }
+    #[derive(Default)]
+    struct JsonViewResultDto {
+        json: String,
+        error: String,
+    }
+    #[derive(Default)]
+    struct CopyCellDto {
+        selected: bool,
+        original: CellDto,
+        has_resolved: bool,
+        resolved: CellDto,
+        inserted_omitted: bool,
+    }
+    struct CopyRowDto {
+        cells: Vec<CopyCellDto>,
+    }
+    #[derive(Default)]
+    struct CopyResolutionDto {
+        has_original: bool,
+        original: CellDto,
+        resolved: CellDto,
+    }
+    #[derive(Default)]
+    struct CopyRequestDto {
+        rows: Vec<CopyRowDto>,
+        resolutions: Vec<CopyResolutionDto>,
+        byte_budget: u64,
+        valid_unicode: bool,
+    }
+    #[derive(Default)]
+    struct CopyResultDto {
+        text: String,
+        error: String,
+        database_type: String,
+        reason: String,
     }
     #[derive(Default)]
     struct EditColumnDto {
@@ -140,6 +351,7 @@ pub mod ffi {
         ssh_private_key_ref: String,
         ssh_jump_private_key_refs: String,
         ssh_options: String,
+        session_connection_timeout_seconds: u32,
         credential_ref: String,
         ssh_credential_ref: String,
         ssh_enabled: bool,
@@ -430,8 +642,294 @@ pub mod ffi {
         end: u64,
         confirmation_required: bool,
     }
+    #[derive(Default)]
+    struct ObjectActionStatementDto {
+        valid: bool,
+        sql: String,
+        error: String,
+        new_object_id: String,
+        new_qualified_name: String,
+    }
+    #[derive(Default)]
+    struct DocumentIoResultDto {
+        bytes: Vec<u8>,
+        error: String,
+    }
+    #[derive(Default)]
+    struct DeferredAssemblyDto {
+        complete: bool,
+        received_bytes: u64,
+        kind: String,
+        text: String,
+        bytes: Vec<u8>,
+        database_type: String,
+        error: String,
+    }
+    #[derive(Default)]
+    struct PinRecordDto {
+        profile_id: String,
+        profile_name: String,
+        object_id: String,
+        name: String,
+        qualified_name: String,
+        kind: String,
+        parent_object_id: String,
+        relation_subtype: String,
+        ancestry_ids: Vec<String>,
+        ancestry_names: Vec<String>,
+        unavailable: bool,
+    }
+    #[derive(Default)]
+    struct PinLoadDto {
+        pins: Vec<PinRecordDto>,
+        error: String,
+    }
+    #[derive(Default)]
+    struct PinSaveDto {
+        success: bool,
+        error: String,
+    }
+    #[derive(Default)]
+    struct UpdateRecordDto {
+        version: String,
+        url: String,
+        size: u64,
+        sha256: Vec<u8>,
+        notes: String,
+    }
+    #[derive(Default)]
+    struct UpdateParseDto {
+        found: bool,
+        record: UpdateRecordDto,
+        error: String,
+    }
+    #[derive(Default)]
+    struct UpdateVerifyDto {
+        success: bool,
+        error: String,
+    }
+    #[derive(Default)]
+    struct UpdateCheckDto {
+        found: bool,
+        record: UpdateRecordDto,
+        error: String,
+    }
+    #[derive(Default)]
+    struct UpdateDownloadDto {
+        success: bool,
+        cancelled: bool,
+        staging_unavailable: bool,
+        error: String,
+    }
+    #[derive(Default)]
+    struct UpdateProgressDto {
+        received: u64,
+        total: u64,
+        verifying: bool,
+    }
+    #[derive(Default)]
+    struct UpdateInstallDto {
+        success: bool,
+        pid: u32,
+        invalid_package: bool,
+        error: String,
+    }
+    #[derive(Default)]
+    struct UpdateHelperDto {
+        success: bool,
+        error: String,
+        manual_url: String,
+    }
+    #[derive(Default)]
+    struct UpdateConsentDto {
+        has_value: bool,
+        value: bool,
+        error: String,
+    }
+    struct SavedSqlEntryDto {
+        path: String,
+        relative_path: String,
+        size_bytes: u64,
+    }
+    struct SavedSqlListingDto {
+        entries: Vec<SavedSqlEntryDto>,
+        has_more: bool,
+        error: String,
+    }
+    struct SavedSqlPathDto {
+        path: String,
+        error: String,
+    }
     extern "Rust" {
-        fn verify_update_signature(public_key: &[u8], payload: &[u8], signature: &[u8]) -> bool;
+        fn update_consent_load(directory: &str) -> UpdateConsentDto;
+        fn update_consent_load_native(directory: &str) -> UpdateConsentDto;
+        fn update_consent_load_legacy_ini(directory: &str, paths: Vec<String>) -> UpdateConsentDto;
+        fn update_consent_migrate(
+            directory: &str,
+            has_legacy: bool,
+            legacy_value: bool,
+        ) -> UpdateConsentDto;
+        fn update_consent_save(directory: &str, value: bool) -> String;
+        type RustUpdateSession;
+        fn update_session_new(
+            feed_base: &str,
+            public_key: &[u8],
+            platform: &str,
+            arch: &str,
+            repository: &str,
+        ) -> Box<RustUpdateSession>;
+        fn update_session_new_failure_fixture(feed_url: &str) -> Box<RustUpdateSession>;
+        fn update_session_begin_check(session: &RustUpdateSession);
+        fn update_session_check(
+            session: &RustUpdateSession,
+            current_version: &str,
+        ) -> UpdateCheckDto;
+        fn update_session_cancel(session: &RustUpdateSession);
+        fn update_session_discard_staged(session: &RustUpdateSession);
+        fn update_session_progress(session: &RustUpdateSession) -> UpdateProgressDto;
+        fn update_take_windows_failure_marker() -> bool;
+        fn update_session_download(
+            session: &RustUpdateSession,
+            appimage: &str,
+            invoked: &str,
+        ) -> UpdateDownloadDto;
+        fn update_session_install(
+            session: &RustUpdateSession,
+            appimage: &str,
+            invoked: &str,
+            parent_pid: u32,
+        ) -> UpdateInstallDto;
+        fn update_run_linux_helper(
+            arguments: Vec<String>,
+            public_key: &[u8],
+            current_version: &str,
+            repository: &str,
+            appimage: &str,
+            invoked: &str,
+        ) -> UpdateHelperDto;
+        fn update_parse_signed_metadata(
+            envelope: &[u8],
+            public_key: &[u8],
+            current_version: &str,
+            platform: &str,
+            arch: &str,
+            repository: &str,
+        ) -> UpdateParseDto;
+        fn update_verify_file(path: &str, record: UpdateRecordDto) -> UpdateVerifyDto;
+        fn update_write_readiness(path: &str) -> bool;
+        fn pin_valid(pin: PinRecordDto) -> bool;
+        fn pin_identity_key(pin: PinRecordDto) -> String;
+        fn pin_load(path: &str, profile_storage: bool) -> PinLoadDto;
+        fn pin_save(path: &str, profile_storage: bool, pins: Vec<PinRecordDto>) -> PinSaveDto;
+        fn grid_editability_policy(request: GridEditRequestDto) -> GridEditabilityDto;
+        fn plan_grid_edits_policy(request: GridEditRequestDto) -> GridEditPlanDto;
+        fn foreign_key_value_filterable_policy(value: CellDto) -> bool;
+        fn foreign_key_predicate_policy(
+            target_column: &str,
+            value: CellDto,
+        ) -> ForeignKeyPredicateDto;
+        fn parse_grid_edit_value_policy(database_type: &str, text: &str) -> ParsedGridEditValueDto;
+        fn navigator_object_visible_policy(
+            driver: &str,
+            show_system_schemas: bool,
+            qualified_name: &str,
+        ) -> bool;
+        fn postgres_system_schema_policy(schema: &str) -> bool;
+        fn appearance_theme_valid(value: &str) -> bool;
+        fn json_cell_readiness_policy(
+            column: ColumnDto,
+            cell: CellDto,
+            valid_unicode: bool,
+        ) -> String;
+        fn json_row_readiness_policy(
+            columns: Vec<ColumnDto>,
+            row: JsonViewRowDto,
+            budget: u64,
+            valid_unicode: bool,
+        ) -> String;
+        fn json_page_readiness_policy(
+            columns: Vec<ColumnDto>,
+            rows: Vec<JsonViewRowDto>,
+            budget: u64,
+            valid_unicode: bool,
+        ) -> String;
+        fn render_json_cell_policy(
+            column: ColumnDto,
+            cell: CellDto,
+            resolved: Vec<CellDto>,
+            budget: u64,
+            valid_unicode: bool,
+        ) -> JsonViewResultDto;
+        fn render_json_row_policy(
+            columns: Vec<ColumnDto>,
+            row: JsonViewRowDto,
+            resolved: Vec<JsonResolvedCellDto>,
+            budget: u64,
+            valid_unicode: bool,
+        ) -> JsonViewResultDto;
+        fn render_json_page_policy(
+            columns: Vec<ColumnDto>,
+            rows: Vec<JsonViewRowDto>,
+            resolved: Vec<JsonResolvedCellDto>,
+            budget: u64,
+            valid_unicode: bool,
+        ) -> JsonViewResultDto;
+        fn render_copy_tsv_policy(request: CopyRequestDto) -> CopyResultDto;
+        type RustDiagnostics;
+        type DiagnosticCancellation;
+        fn diagnostics_clone(service: &RustDiagnostics) -> Box<RustDiagnostics>;
+        fn diagnostics_new(
+            data_dir: &str,
+            app_version: &str,
+            build_version: &str,
+        ) -> Box<RustDiagnostics>;
+        fn diagnostics_start(service: &RustDiagnostics) -> bool;
+        fn diagnostics_stop(service: &RustDiagnostics);
+        fn diagnostics_record(service: &RustDiagnostics, record: DiagnosticRecordDto);
+        fn diagnostics_sample_memory(service: &RustDiagnostics, open_tabs: i32, force: bool);
+        fn diagnostics_set_open_tabs(service: &RustDiagnostics, open_tabs: i32);
+        fn diagnostics_flush(service: &RustDiagnostics);
+        fn diagnostics_preview(service: &RustDiagnostics) -> DiagnosticSummaryDto;
+        fn diagnostics_export_zip(
+            service: &RustDiagnostics,
+            destination: &str,
+            cancellation: &DiagnosticCancellation,
+        ) -> DiagnosticExportDto;
+        fn diagnostics_clear(service: &RustDiagnostics) -> DiagnosticClearDto;
+        fn diagnostics_folder_path(service: &RustDiagnostics) -> String;
+        fn diagnostics_warning(service: &RustDiagnostics) -> String;
+        fn diagnostics_new_cancellation() -> Box<DiagnosticCancellation>;
+        fn diagnostics_cancel(cancellation: &DiagnosticCancellation);
+        fn diagnostics_attach_engine(engine: &mut BridgeEngine, service: &RustDiagnostics);
+        fn diagnostics_observe_command_failure(service: &RustDiagnostics);
+        fn read_sql_document_file(path: &str) -> DocumentIoResultDto;
+        fn write_sql_document_file(path: &str, bytes: &[u8]) -> DocumentIoResultDto;
+        fn write_preview_capture_file(
+            path: &str,
+            png: &[u8],
+            metadata: PreviewCaptureDto,
+        ) -> PreviewCaptureResultDto;
+        fn saved_sql_list_directory(root: &str) -> SavedSqlListingDto;
+        fn saved_sql_prepare_directory(root: &str) -> String;
+        fn saved_sql_document_identity(path: &str) -> SavedSqlPathDto;
+        fn saved_sql_read_file(root: &str, path: &str) -> DocumentIoResultDto;
+        type RustDeferredAssembler;
+        fn deferred_assembler_new(
+            database_type: &str,
+            fallback: bool,
+            declared_bytes: u64,
+            resolved_bytes: u64,
+            json: bool,
+        ) -> Box<RustDeferredAssembler>;
+        fn deferred_assembler_initial_error(assembler: &RustDeferredAssembler) -> String;
+        fn deferred_assembler_push(
+            assembler: &mut RustDeferredAssembler,
+            kind: &str,
+            offset: u64,
+            total_bytes: u64,
+            chunk: &[u8],
+            has_lease: bool,
+        ) -> DeferredAssemblyDto;
         type BridgeEngine;
         fn new_engine() -> Box<BridgeEngine>;
         fn new_engine_with_storage(path: &str) -> Box<BridgeEngine>;
@@ -442,6 +940,15 @@ pub mod ffi {
             qualified: &str,
             columns: Vec<String>,
         ) -> SqlTemplateResultDto;
+        fn prepare_object_action(
+            driver: &str,
+            kind: &str,
+            object_id: &str,
+            qualified_name: &str,
+            new_name: &str,
+            relation_subtype: &str,
+            rename: bool,
+        ) -> ObjectActionStatementDto;
         type CompletionCatalog;
         fn completion_limits() -> CompletionLimitsDto;
         fn completion_catalog(
@@ -784,48 +1291,6 @@ pub mod ffi {
     }
 }
 
-pub fn verify_update_signature(public_key: &[u8], payload: &[u8], signature: &[u8]) -> bool {
-    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-    let (Ok(key_bytes), Ok(signature_bytes)) = (
-        <&[u8; 32]>::try_from(public_key),
-        <&[u8; 64]>::try_from(signature),
-    ) else {
-        return false;
-    };
-    let (Ok(key), signature) = (
-        VerifyingKey::from_bytes(key_bytes),
-        Signature::from_bytes(signature_bytes),
-    ) else {
-        return false;
-    };
-    key.verify(payload, &signature).is_ok()
-}
-
-#[cfg(test)]
-mod update_signature_tests {
-    use super::verify_update_signature;
-
-    #[test]
-    fn checks_signed_update_bytes() {
-        let key = [
-            0x79, 0xb5, 0x56, 0x2e, 0x8f, 0xe6, 0x54, 0xf9, 0x40, 0x78, 0xb1, 0x12, 0xe8, 0xa9,
-            0x8b, 0xa7, 0x90, 0x1f, 0x85, 0x3a, 0xe6, 0x95, 0xbe, 0xd7, 0xe0, 0xe3, 0x91, 0x0b,
-            0xad, 0x04, 0x96, 0x64,
-        ];
-        let payload = br#"{"version":"1.2.4","platform":"linux","arch":"x86_64","url":"https://github.com/choscor/choscordb/releases/download/v1.2.4/ChoscorDB-1.2.4-linux-x86_64.AppImage","size":4,"sha256":"88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589","notes":"Stable improvements"}"#;
-        let signature = [
-            0xb7, 0x41, 0x50, 0x19, 0xc9, 0xe2, 0xcf, 0x5a, 0x77, 0x42, 0x4e, 0x52, 0xff, 0x66,
-            0x33, 0x15, 0x7e, 0x4d, 0x98, 0xc0, 0xc7, 0xd0, 0xdc, 0xdf, 0xe7, 0x7a, 0x8c, 0x3f,
-            0x0b, 0xc6, 0xbe, 0x33, 0xa2, 0xe6, 0x54, 0xa0, 0x06, 0x0d, 0x70, 0x63, 0x34, 0x99,
-            0x70, 0x5f, 0x96, 0xc6, 0x8e, 0xeb, 0xaa, 0x83, 0x06, 0x66, 0xa7, 0x2b, 0x34, 0x2c,
-            0x03, 0xbf, 0x52, 0x63, 0x7d, 0xc5, 0x2d, 0x0d,
-        ];
-        assert!(verify_update_signature(&key, payload, &signature));
-        let mut tampered = payload.to_vec();
-        tampered[12] ^= 1;
-        assert!(!verify_update_signature(&key, &tampered, &signature));
-    }
-}
 pub fn ssh_askpass_exit_code() -> i32 {
     choscordb_driver_api::run_ssh_askpass_if_requested().unwrap_or(-1)
 }
@@ -1497,13 +1962,20 @@ fn ssh_options(value: &str) -> std::result::Result<choscordb_driver_api::SshOpti
 }
 fn ssh_tunnel(
     dto: &ffi::ProfileDto,
+    session_timeout: Option<u32>,
 ) -> std::result::Result<Option<choscordb_driver_api::SshTunnel>, String> {
     use choscordb_driver_api::{SshAuthentication, SshTunnel};
     if !dto.ssh_enabled {
         return Ok(None);
     }
+    let mut options = ssh_options(&dto.ssh_options)?;
+    if let Some(seconds) = session_timeout {
+        options = options
+            .with_session_timeout(seconds)
+            .map_err(|error| error.to_string())?;
+    }
     Ok(Some(SshTunnel {
-        options: Box::new(ssh_options(&dto.ssh_options)?),
+        options: Box::new(options),
         host: dto.ssh_host.clone(),
         port: dto.ssh_port,
         user: dto.ssh_user.clone(),
@@ -1524,11 +1996,18 @@ fn ssh_tunnel(
     }))
 }
 fn profile(dto: ffi::ProfileDto) -> std::result::Result<choscordb_core::ConnectionProfile, String> {
+    profile_with_session_timeout(dto, None)
+}
+
+fn profile_with_session_timeout(
+    dto: ffi::ProfileDto,
+    session_timeout: Option<u32>,
+) -> std::result::Result<choscordb_core::ConnectionProfile, String> {
     use choscordb_core::{ConnectionProfile, PostgresTls, ProfileConfiguration};
     let ssh = if dto.driver == "sqlite" {
         None
     } else {
-        ssh_tunnel(&dto)?
+        ssh_tunnel(&dto, session_timeout)?
     };
     let configuration = match dto.driver.as_str() {
         "sqlite" => ProfileConfiguration::Sqlite {
@@ -2294,9 +2773,15 @@ pub fn profile_test_credentials(
             tls: owned_secret(credentials.tls, credentials.has_tls)?,
             proxy: owned_secret(credentials.proxy, credentials.has_proxy)?,
         };
-        e.test_profile_with_secrets(profile(dto)?, secrets, token)
-            .map(|()| token)
-            .map_err(|e| e.to_string())
+        let session_timeout = (dto.session_connection_timeout_seconds != 0)
+            .then_some(dto.session_connection_timeout_seconds);
+        e.test_profile_with_secrets(
+            profile_with_session_timeout(dto, session_timeout)?,
+            secrets,
+            token,
+        )
+        .map(|()| token)
+        .map_err(|e| e.to_string())
     })
 }
 pub fn profile_connect_credentials(
@@ -2319,7 +2804,9 @@ pub fn profile_connect_credentials(
             tls: owned_secret(credentials.tls, credentials.has_tls)?,
             proxy: owned_secret(credentials.proxy, credentials.has_proxy)?,
         };
-        e.connect_profile_with_secrets(profile(dto)?, secrets)
+        let session_timeout = (dto.session_connection_timeout_seconds != 0)
+            .then_some(dto.session_connection_timeout_seconds);
+        e.connect_profile_with_secrets(profile_with_session_timeout(dto, session_timeout)?, secrets)
             .map(pack)
             .map_err(|e| e.to_string())
     })

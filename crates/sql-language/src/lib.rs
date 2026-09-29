@@ -99,7 +99,7 @@ mod editor_tests {
         );
         assert_eq!(
             template(TemplateKind::Insert, &["t"], &["a", "b"]).unwrap(),
-            "INSERT INTO \"t\" (\"a\", \"b\") VALUES ($1, $2);"
+            "-- Replace numbered placeholders with values before running.\nINSERT INTO \"t\" (\"a\", \"b\") VALUES ($1, $2);"
         );
         assert_eq!(
             classify(&template(TemplateKind::Delete, &["t"], &[]).unwrap()),

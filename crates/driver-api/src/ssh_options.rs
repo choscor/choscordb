@@ -190,6 +190,17 @@ fn is_false(value: &bool) -> bool {
     !value
 }
 impl SshOptions {
+    /// Apply the current query preference to this connection attempt.
+    pub fn with_session_timeout(mut self, seconds: u32) -> Result<Self> {
+        if !(1..=300).contains(&seconds) {
+            return Err(DriverError::new(
+                ErrorKind::InvalidInput,
+                "Invalid SSH connection timeout",
+            ));
+        }
+        self.connect_timeout_seconds = seconds;
+        Ok(self)
+    }
     pub fn local_address(&self) -> Result<std::net::SocketAddr> {
         let address = match self.local_host.as_deref() {
             None => std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),

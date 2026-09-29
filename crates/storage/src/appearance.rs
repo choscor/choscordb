@@ -24,12 +24,34 @@ pub enum ThemeMode {
     Dark,
 }
 
+impl ThemeMode {
+    /// Parse a theme choice supplied by the desktop UI.
+    pub fn parse_choice(value: &str) -> Option<Self> {
+        match value {
+            "system" => Some(Self::System),
+            "light" => Some(Self::Light),
+            "dark" => Some(Self::Dark),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Density {
     #[default]
     Compact,
     Comfortable,
+}
+
+impl Density {
+    pub fn parse_choice(value: &str) -> Option<Self> {
+        match value {
+            "compact" => Some(Self::Compact),
+            "comfortable" => Some(Self::Comfortable),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,6 +67,36 @@ pub enum AccentPreset {
     Rose,
 }
 
+impl AccentPreset {
+    pub fn parse_choice(value: &str) -> Option<Self> {
+        match value {
+            "cobalt" => Some(Self::Cobalt),
+            "azure" => Some(Self::Azure),
+            "violet" => Some(Self::Violet),
+            "teal" => Some(Self::Teal),
+            "green" => Some(Self::Green),
+            "orange" => Some(Self::Orange),
+            "rose" => Some(Self::Rose),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppearanceChoiceError {
+    UnknownAccentPreset,
+    UnknownAccentKind,
+}
+
+impl std::fmt::Display for AppearanceChoiceError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::UnknownAccentPreset => "Unknown appearance accent preset",
+            Self::UnknownAccentKind => "Unknown appearance accent kind",
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -55,6 +107,21 @@ pub enum AccentPreset {
 pub enum Accent {
     Preset(AccentPreset),
     Custom(String),
+}
+
+impl Accent {
+    pub fn parse_choice(
+        kind: &str,
+        value: String,
+    ) -> std::result::Result<Self, AppearanceChoiceError> {
+        match kind {
+            "preset" => AccentPreset::parse_choice(&value)
+                .map(Self::Preset)
+                .ok_or(AppearanceChoiceError::UnknownAccentPreset),
+            "custom" => Ok(Self::Custom(value)),
+            _ => Err(AppearanceChoiceError::UnknownAccentKind),
+        }
+    }
 }
 
 impl Default for Accent {
