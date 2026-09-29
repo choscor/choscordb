@@ -92,18 +92,50 @@ pub(crate) async fn row(
             )
             .await?;
         }
+        if let Value::Unavailable {
+            database_type,
+            reason,
+        } = value
+        {
+            return Err(unavailable(database_type, reason));
+        }
+        if matches!(format, ExportFormat::SqlInsert { .. })
+            && matches!(
+                value,
+                Value::FallbackText { .. } | Value::DeferredFallback { .. }
+            )
+        {
+            return Err(unsafe_fallback());
+        }
         if let Value::Deferred {
+            handle,
+            byte_length,
+            ..
+        }
+        | Value::DeferredFallback {
             handle,
             byte_length,
             ..
         } = value
         {
+            let fallback_type = match value {
+                Value::DeferredFallback { database_type, .. } => Some(database_type.as_str()),
+                _ => None,
+            };
+            if let Some(database_type) = fallback_type
+                && matches!(format, ExportFormat::Json | ExportFormat::JsonLines)
+            {
+                crate::budget::deferred_fallback_type(database_type, limits)?;
+            }
             deferred(
                 source,
                 sink,
                 format,
-                *handle,
-                *byte_length,
+                DeferredValue {
+                    handle: *handle,
+                    total: *byte_length,
+                    fallback_type,
+                },
                 config,
                 &mut count,
             )
@@ -138,15 +170,24 @@ pub(crate) async fn row(
     .await?;
     Ok(count.bytes)
 }
+struct DeferredValue<'a> {
+    handle: Handle,
+    total: u64,
+    fallback_type: Option<&'a str>,
+}
 async fn deferred(
     source: &mut dyn ExportSource,
     sink: &mut dyn ExportSink,
     format: &ExportFormat,
-    handle: Handle,
-    total: u64,
+    value: DeferredValue<'_>,
     config: Config<'_>,
     count: &mut Counter<'_>,
 ) -> Result<()> {
+    let DeferredValue {
+        handle,
+        total,
+        fallback_type,
+    } = value;
     let Config { limits, cancel, .. } = config;
     let max = MAX_VALUE_CHUNK_BYTES
         .min(limits.value_bytes)
@@ -175,52 +216,61 @@ async fn deferred(
         {
             return Err(invalid());
         }
+        if fallback_type.is_some() && chunk.kind != DeferredKind::Text {
+            return Err(invalid());
+        }
         if kind.is_none() {
             kind = Some(chunk.kind);
-            let prefix = match (format, chunk.kind) {
-                (ExportFormat::Csv, DeferredKind::Binary) => "\"\\x",
-                (
-                    ExportFormat::Csv | ExportFormat::Json | ExportFormat::JsonLines,
-                    DeferredKind::Text,
-                ) => "\"",
-                (ExportFormat::Json | ExportFormat::JsonLines, DeferredKind::Binary) => {
-                    "{\"binary_hex\":\""
+            let prefix = if fallback_type.is_some()
+                && matches!(format, ExportFormat::Json | ExportFormat::JsonLines)
+            {
+                "{\"fallback_text\":\""
+            } else {
+                match (format, chunk.kind) {
+                    (ExportFormat::Csv, DeferredKind::Binary) => "\"\\x",
+                    (
+                        ExportFormat::Csv | ExportFormat::Json | ExportFormat::JsonLines,
+                        DeferredKind::Text,
+                    ) => "\"",
+                    (ExportFormat::Json | ExportFormat::JsonLines, DeferredKind::Binary) => {
+                        "{\"binary_hex\":\""
+                    }
+                    (
+                        ExportFormat::SqlInsert {
+                            dialect: SqlDialect::Sqlite | SqlDialect::Mysql,
+                            ..
+                        },
+                        DeferredKind::Binary,
+                    ) => "X'",
+                    (
+                        ExportFormat::SqlInsert {
+                            dialect: SqlDialect::Postgres,
+                            ..
+                        },
+                        DeferredKind::Binary,
+                    ) => "decode('",
+                    (
+                        ExportFormat::SqlInsert {
+                            dialect: SqlDialect::Sqlite,
+                            ..
+                        },
+                        DeferredKind::Text,
+                    ) => "'",
+                    (
+                        ExportFormat::SqlInsert {
+                            dialect: SqlDialect::Postgres,
+                            ..
+                        },
+                        DeferredKind::Text,
+                    ) => "E'",
+                    (
+                        ExportFormat::SqlInsert {
+                            dialect: SqlDialect::Mysql,
+                            ..
+                        },
+                        DeferredKind::Text,
+                    ) => "CONVERT(X'",
                 }
-                (
-                    ExportFormat::SqlInsert {
-                        dialect: SqlDialect::Sqlite | SqlDialect::Mysql,
-                        ..
-                    },
-                    DeferredKind::Binary,
-                ) => "X'",
-                (
-                    ExportFormat::SqlInsert {
-                        dialect: SqlDialect::Postgres,
-                        ..
-                    },
-                    DeferredKind::Binary,
-                ) => "decode('",
-                (
-                    ExportFormat::SqlInsert {
-                        dialect: SqlDialect::Sqlite,
-                        ..
-                    },
-                    DeferredKind::Text,
-                ) => "'",
-                (
-                    ExportFormat::SqlInsert {
-                        dialect: SqlDialect::Postgres,
-                        ..
-                    },
-                    DeferredKind::Text,
-                ) => "E'",
-                (
-                    ExportFormat::SqlInsert {
-                        dialect: SqlDialect::Mysql,
-                        ..
-                    },
-                    DeferredKind::Text,
-                ) => "CONVERT(X'",
             };
             write(sink, prefix, count).await?;
         }
@@ -262,6 +312,20 @@ async fn deferred(
         if offset == total {
             break;
         }
+    }
+    if let Some(database_type) = fallback_type
+        && matches!(format, ExportFormat::Json | ExportFormat::JsonLines)
+    {
+        write(
+            sink,
+            &format!(
+                "\",\"database_type\":{}}}",
+                serde_json::to_string(database_type).map_err(|_| invalid())?
+            ),
+            count,
+        )
+        .await?;
+        return Ok(());
     }
     let suffix = match (format, kind.ok_or_else(invalid)?) {
         (ExportFormat::Csv, _)

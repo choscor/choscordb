@@ -1,3 +1,4 @@
+#include "app/main_window.h"
 #include "app/query_settings.h"
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
@@ -5,14 +6,18 @@
 #include "design_system/menu/embedded_popup.h"
 #include "models/result_table_model.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include "widgets/value_detail_dialog/value_detail_dialog.h"
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDialog>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QTabWidget>
 #include <QTableView>
 #include <QTimer>
 #include <QtTest>
@@ -187,9 +192,189 @@ class ResultCopyWorkspaceTest : public QObject {
         });
         emit grid.customContextMenuRequested(QPoint());
         QCOMPARE(QApplication::clipboard()->text(), QString("keep on stale selection"));
-        QVERIFY(messages.toPlainText().contains("Export"));
+        QVERIFY(messages.toPlainText().contains("no longer available"));
+        QVERIFY(model->setPage({column("unreadable")},
+                               {{choscordb::UnavailableValue{"odd_type", "text output failed"}}},
+                               0));
+        QTimer::singleShot(0, &window, [&] {
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+            QVERIFY(menu);
+            auto* action = menu->findChild<QAction*>("copyCurrentPage");
+            QVERIFY(action);
+            action->trigger();
+            menu->close();
+        });
+        emit grid.customContextMenuRequested(QPoint());
+        QCOMPARE(QApplication::clipboard()->text(), QString("keep on stale selection"));
+        QVERIFY(messages.toPlainText().contains("odd_type"));
         QVERIFY2(queryEvents.isEmpty(), qPrintable(queryEvents.join(", ")));
         QCOMPARE(failures.count(), 0);
+    }
+    void sqlResultsCopyCompleteDeferredValue() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        QVERIFY(sql);
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* run = window.findChild<QAction*>("runStatement");
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        auto* grid = window.findChild<QTableView*>("queryResults");
+        QVERIFY(run && editor && grid);
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("SELECT zeroblob(70000) AS payload, 7 AS id");
+        run->trigger();
+        QTRY_COMPARE(grid->model()->rowCount(), 1);
+        const auto index = grid->model()->index(0, 0);
+        QVERIFY(grid->model()->data(index).toString().contains("open to load"));
+        grid->setCurrentIndex(index);
+        grid->setFocus();
+        QApplication::clipboard()->setText("original clipboard");
+        QTest::keySequence(grid, QKeySequence::Copy);
+        QTRY_COMPARE(QApplication::clipboard()->text(),
+                     QStringLiteral("0x") + QString(140000, QChar('0')));
+        grid->setCurrentIndex(index);
+        QApplication::clipboard()->setText("preserve on selection change");
+        QTest::keySequence(grid, QKeySequence::Copy);
+        grid->setCurrentIndex(grid->model()->index(0, 1));
+        QTest::qWait(200);
+        QCOMPARE(QApplication::clipboard()->text(), QString("preserve on selection change"));
+    }
+    void sqlResultsCopyCompleteDeferredFallbackText() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        QVERIFY(sql);
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* run = window.findChild<QAction*>("runStatement");
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        auto* grid = window.findChild<QTableView*>("queryResults");
+        QVERIFY(run && editor && grid);
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("SELECT printf('%070000d', 0) AS unknown_value");
+        run->trigger();
+        QTRY_COMPARE(grid->model()->rowCount(), 1);
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+        QVERIFY(model);
+        const auto deferred = model->deferredValue(model->index(0, 0));
+        QVERIFY(deferred);
+        QCOMPARE(deferred->bytes, quint64(70000));
+        choscordb::ResultColumn column{};
+        column.name = "unknown_value";
+        column.databaseType = "custom_type";
+        QVERIFY(model->setPage(
+            {column},
+            {{choscordb::DeferredValue{deferred->handle, deferred->bytes, "custom_type", true}}},
+            0));
+        const auto index = model->index(0, 0);
+        QCOMPARE(index.data(choscordb::ResultTableModel::ResultValueKindRole).toString(),
+                 QString("deferred_fallback"));
+        grid->setCurrentIndex(index);
+        grid->setFocus();
+        QApplication::clipboard()->setText("old clipboard");
+        QTest::keySequence(grid, QKeySequence::Copy);
+        QTRY_COMPARE(QApplication::clipboard()->text(), QString(70000, QChar('0')));
+        QTimer::singleShot(0, &window, [&] {
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+            QVERIFY(menu);
+            auto* action = menu->findChild<QAction*>("viewRowJson");
+            QVERIFY(action && action->isEnabled());
+            action->trigger();
+            menu->close();
+        });
+        emit grid->customContextMenuRequested(grid->visualRect(index).center());
+        auto* sheet = window.findChild<QDialog*>("rowJsonSheet");
+        QVERIFY(sheet);
+        QTRY_VERIFY(sheet->isVisible());
+        auto* jsonText = sheet->findChild<QPlainTextEdit*>("rowJsonText");
+        QVERIFY(jsonText);
+        QTRY_VERIFY(!jsonText->toPlainText().isEmpty());
+        const auto fallback = QJsonDocument::fromJson(jsonText->toPlainText().toUtf8())
+                                  .object()
+                                  .value("unknown_value")
+                                  .toObject();
+        QCOMPARE(fallback.value("fallback_text").toString(), QString(70000, QChar('0')));
+        QCOMPARE(fallback.value("database_type").toString(), QString("custom_type"));
+        sheet->reject();
+    }
+    void inlineFallbackOpensCompleteReadOnlyDetail() {
+        QWidget window;
+        window.show();
+        QComboBox connections, mode;
+        QAction run, cancel, commit, rollback, newConnection;
+        QPushButton next;
+        QLabel summary;
+        QPlainTextEdit messages;
+        QTableView grid;
+        choscordb::SqlEditor editor;
+        choscordb::QueryWorkspace workspace({&connections,
+                                             &mode,
+                                             &run,
+                                             &cancel,
+                                             &commit,
+                                             &rollback,
+                                             &newConnection,
+                                             &next,
+                                             &summary,
+                                             &messages,
+                                             &grid,
+                                             [&] { return &editor; },
+                                             &window,
+                                             nullptr,
+                                             nullptr,
+                                             {}},
+                                            &window);
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid.model());
+        QVERIFY(model);
+        auto resultColumn = column("unfamiliar");
+        resultColumn.databaseType = "custom_type";
+        const QString complete = QString(180, QChar('x')) + QStringLiteral("\tend");
+        QVERIFY(model->setPage({resultColumn}, {{choscordb::FallbackText{complete, "custom_type"}}},
+                               0));
+        const auto index = model->index(0, 0);
+        QVERIFY(index.data().toString().size() < complete.size());
+        grid.resize(640, 480);
+        grid.show();
+        emit grid.doubleClicked(index);
+        auto* detail = window.findChild<choscordb::ValueDetailDialog*>("valueDetail");
+        QVERIFY(detail);
+        QVERIFY(detail->isVisible());
+        QVERIFY(detail->windowTitle().contains("custom_type"));
+        QVERIFY(detail->windowTitle().contains("fallback", Qt::CaseInsensitive));
+        auto* preview = detail->findChild<QTableView*>("valuePreview");
+        QVERIFY(preview);
+        QVERIFY(preview->editTriggers() == QAbstractItemView::NoEditTriggers);
+        QString shown;
+        for (int row = 0; row < preview->model()->rowCount(); ++row)
+            shown += preview->model()->index(row, 1).data().toString();
+        QCOMPARE(shown, QString(180, QChar('x')) + QStringLiteral("\\tend"));
+        auto binaryColumn = column("payload");
+        binaryColumn.databaseType = "BLOB";
+        QVERIFY(model->setPage({binaryColumn}, {{QByteArray::fromHex("00ff7f")}}, 0));
+        emit grid.doubleClicked(model->index(0, 0));
+        QVERIFY(detail->isVisible());
+        QVERIFY(detail->windowTitle().contains("BLOB"));
+        QCOMPARE(preview->model()->index(0, 1).data().toString(), QString("00 ff 7f"));
+        const QString large = QString(65535, QChar('y')) + QStringLiteral("🙂tail");
+        QVERIFY(
+            model->setPage({resultColumn}, {{choscordb::FallbackText{large, "custom_type"}}}, 0));
+        emit grid.doubleClicked(model->index(0, 0));
+        auto* nextChunk = detail->findChild<QPushButton*>("valueNext");
+        auto* previousChunk = detail->findChild<QPushButton*>("valuePrevious");
+        auto* status = detail->findChild<QLabel*>("valueStatus");
+        QVERIFY(nextChunk && previousChunk && status);
+        QVERIFY(nextChunk->isEnabled());
+        nextChunk->click();
+        QCOMPARE(preview->model()->index(0, 1).data().toString(), QStringLiteral("🙂tail"));
+        QVERIFY(previousChunk->isEnabled());
+        previousChunk->click();
+        QVERIFY(status->text().contains("Bytes 0"));
+        QVERIFY(preview->model()->index(0, 1).data().toString().startsWith('y'));
     }
 };
 QTEST_MAIN(ResultCopyWorkspaceTest)

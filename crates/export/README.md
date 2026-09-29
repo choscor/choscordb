@@ -36,6 +36,13 @@ Formats:
   uses `{"json":"original JSON text"}`. Nonfinite floats use a `float` string tag.
 - JSON Lines begins with a columns metadata record, followed by one
   `{"row":[values]}` record per line using the same value encoding.
+- Server-text fallback values export as their complete text in CSV and as
+  `{"fallback_text":"server text","database_type":"type"}` in JSON and JSON
+  Lines. The tag distinguishes them from native strings. Deferred fallbacks
+  use the same encoding while reading bounded text chunks. A fallback is not a
+  safe SQL literal, so SQL INSERT export rejects it. Unavailable cells reject
+  every format with the database type and conversion reason; the existing
+  destination remains untouched.
 - SQL INSERT quotes each table-name component and column independently. Select
   SQLite or PostgreSQL literal rules; PostgreSQL strings use explicit E literals.
   Decimals must satisfy strict JSON numeric grammar before becoming raw numeric
@@ -58,6 +65,8 @@ Offset, total length, kind consistency, request size, and forward progress are
 validated. The legacy `resolve` hook remains for source compatibility but export
 does not call it. Sources must enforce allocation limits before returning pages
 and chunks and retain their backing storage throughout the export.
+Deferred fallback reads require text chunks; binary chunks are rejected rather
+than decoded or labeled as server text.
 
 These conservative allowances are not a process RSS guarantee. The caller must
 account for source pages, schema, encoding buffers, and sink transfer copies in

@@ -190,14 +190,33 @@ async fn read_inner<C: GenericClient + Sync>(client: &C, request: &Read) -> Resu
     {
         return Err(limit());
     }
+    let statement = client.prepare(&request.sql).await.map_err(normalize)?;
+    let text_overrides = super::worker::text_overrides(client, &statement, request.max).await?;
+    let result_formats: Vec<i16> = statement
+        .columns()
+        .iter()
+        .zip(&text_overrides)
+        .map(|(column, override_type)| {
+            if override_type.is_none()
+                && choscordb_postgres_values::supports_binary_oid(column.type_().oid())
+            {
+                1
+            } else {
+                0
+            }
+        })
+        .collect();
     let stream = client
-        .query_raw(
-            &request.sql,
+        .client()
+        .query_raw_with_result_formats(
+            &statement,
             std::iter::empty::<&(dyn tokio_postgres::types::ToSql + Sync)>(),
+            &result_formats,
         )
         .await
         .map_err(normalize)?;
     futures_util::pin_mut!(stream);
+    let text_overrides = Arc::new(text_overrides);
     let mut rows = Vec::new();
     let mut used = overhead;
     let mut more = false;
@@ -216,11 +235,13 @@ async fn read_inner<C: GenericClient + Sync>(client: &C, request: &Read) -> Resu
             continue;
         }
         let mut spool = request.spool.clone();
+        let text_overrides = text_overrides.clone();
         let max = request.max - overhead;
-        let values =
-            tokio::task::spawn_blocking(move || super::worker::decode(row, &mut spool, max))
-                .await
-                .map_err(|_| limit())??;
+        let values = tokio::task::spawn_blocking(move || {
+            super::worker::decode(row, &mut spool, max, &text_overrides)
+        })
+        .await
+        .map_err(|_| limit())??;
         let bytes = std::mem::size_of::<Row>()
             + values.capacity() * std::mem::size_of::<Value>()
             + values

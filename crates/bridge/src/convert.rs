@@ -61,6 +61,32 @@ fn cell(value: Value) -> ffi::CellDto {
             c.bytes = bytes;
             "binary"
         }
+        Value::FallbackText {
+            text,
+            database_type,
+        } => {
+            c.text = text;
+            c.database_type = database_type;
+            "fallback_text"
+        }
+        Value::DeferredFallback {
+            handle,
+            byte_length,
+            database_type,
+        } => {
+            c.handle = pack(handle);
+            c.byte_length = byte_length;
+            c.database_type = database_type;
+            "deferred_fallback"
+        }
+        Value::Unavailable {
+            database_type,
+            reason,
+        } => {
+            c.text = reason;
+            c.database_type = database_type;
+            "unavailable"
+        }
         Value::Deferred {
             handle,
             byte_length,

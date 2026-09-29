@@ -141,6 +141,33 @@ impl<W: Write> Encoder<W> {
                 self.u64(*byte_length)?;
                 self.text(database_type)
             }
+            Value::FallbackText {
+                text,
+                database_type,
+            } => {
+                self.byte(13)?;
+                self.text(database_type)?;
+                self.text(text)
+            }
+            Value::DeferredFallback {
+                handle,
+                byte_length,
+                database_type,
+            } => {
+                self.byte(14)?;
+                self.u32(handle.slot)?;
+                self.u32(handle.generation)?;
+                self.u64(*byte_length)?;
+                self.text(database_type)
+            }
+            Value::Unavailable {
+                database_type,
+                reason,
+            } => {
+                self.byte(15)?;
+                self.text(database_type)?;
+                self.text(reason)
+            }
         }
     }
     pub fn finish(mut self) -> Result<(u64, u32)> {
@@ -311,6 +338,22 @@ impl<R: Read> Decoder<R> {
                 },
                 byte_length: self.u64()?,
                 database_type: self.text()?,
+            },
+            13 => Value::FallbackText {
+                database_type: self.text()?,
+                text: self.text()?,
+            },
+            14 => Value::DeferredFallback {
+                handle: Handle {
+                    slot: self.u32()?,
+                    generation: self.u32()?,
+                },
+                byte_length: self.u64()?,
+                database_type: self.text()?,
+            },
+            15 => Value::Unavailable {
+                database_type: self.text()?,
+                reason: self.text()?,
             },
             _ => return Err(StoreError::Corrupt),
         })

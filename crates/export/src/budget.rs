@@ -67,12 +67,31 @@ pub fn row(
             | Value::Timestamp(s)
             | Value::Uuid(s)
             | Value::Json(s) => s.len(),
+            Value::FallbackText {
+                text,
+                database_type,
+            } => add(text.len(), database_type.len())?,
+            Value::Unavailable {
+                database_type,
+                reason,
+            } => add(database_type.len(), reason.len())?,
             Value::Binary(b) => b.len(),
-            Value::Deferred { .. } => return Err(limit()),
+            Value::Deferred { .. } | Value::DeferredFallback { .. } => return Err(limit()),
             _ => 32,
         };
         bound = add(bound, add(128, mul(bytes, 6)?)?)?;
     }
+    if mul(bound, 4)? > limits.encoded_row_bytes {
+        Err(limit())
+    } else {
+        Ok(())
+    }
+}
+
+/// Reserve the escaped type tag and its temporary copies before formatting a
+/// deferred fallback as JSON. Its text body is encoded chunk by chunk.
+pub fn deferred_fallback_type(database_type: &str, limits: Limits) -> Result<()> {
+    let bound = add(128, mul(database_type.len(), 6)?)?;
     if mul(bound, 4)? > limits.encoded_row_bytes {
         Err(limit())
     } else {

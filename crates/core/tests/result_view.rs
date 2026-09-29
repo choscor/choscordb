@@ -20,6 +20,7 @@ struct SlowConnection(Arc<AtomicBool>);
 struct SlowCursor {
     next: i64,
     started: Arc<AtomicBool>,
+    fallback: bool,
 }
 struct NoopCancel;
 
@@ -51,12 +52,13 @@ impl Connection for SlowConnection {
     }
     async fn execute(
         &mut self,
-        _: &str,
+        sql: &str,
         _: QueryOptions,
     ) -> choscordb_driver_api::Result<Box<dyn ResultCursor>> {
         Ok(Box::new(SlowCursor {
             next: 1,
             started: self.0.clone(),
+            fallback: sql == "fallback_fixture",
         }))
     }
     async fn load_metadata(
@@ -78,6 +80,20 @@ impl Connection for SlowConnection {
 #[async_trait]
 impl ResultCursor for SlowCursor {
     fn columns(&self) -> &[Column] {
+        if self.fallback {
+            static FALLBACK_COLUMNS: std::sync::LazyLock<Vec<Column>> =
+                std::sync::LazyLock::new(|| {
+                    vec![Column {
+                        name: "item".into(),
+                        database_type: "inventory_item".into(),
+                        precision: None,
+                        scale: None,
+                        timezone: None,
+                        nullable: Some(false),
+                    }]
+                });
+            return &FALLBACK_COLUMNS;
+        }
         static COLUMNS: std::sync::LazyLock<Vec<Column>> = std::sync::LazyLock::new(|| {
             vec![Column {
                 name: "value".into(),
@@ -92,6 +108,22 @@ impl ResultCursor for SlowCursor {
     }
     async fn fetch_page(&mut self, _: PageSize) -> choscordb_driver_api::Result<ResultPage> {
         self.started.store(true, Ordering::Release);
+        if self.fallback {
+            let rows = if self.next == 1 {
+                vec![vec![Value::FallbackText {
+                    text: "(4,blue)".into(),
+                    database_type: "inventory_item".into(),
+                }]]
+            } else {
+                Vec::new()
+            };
+            self.next += 1;
+            return Ok(ResultPage {
+                index: (self.next - 2) as u64,
+                rows,
+                has_more: false,
+            });
+        }
         tokio::time::sleep(Duration::from_millis(200)).await;
         let first = self.next;
         let end = (first + 100).min(301);
@@ -429,6 +461,78 @@ fn text_predicates_are_case_insensitive_and_deferred_values_fail_atomically() {
         )
         .unwrap()
     );
+}
+
+#[test]
+fn server_text_and_unavailable_values_cannot_be_compared_as_native_text() {
+    let fallback = Value::FallbackText {
+        text: "(4,blue)".into(),
+        database_type: "inventory_item".into(),
+    };
+    let unavailable = Value::Unavailable {
+        database_type: "secret_type".into(),
+        reason: "text output denied".into(),
+    };
+    for value in [&fallback, &unavailable] {
+        let equal = choscordb_core::value_matches(
+            value,
+            FilterOperator::Equals,
+            Some(&Value::Text("(4,blue)".into())),
+        )
+        .unwrap_err();
+        let contains = choscordb_core::value_matches(
+            value,
+            FilterOperator::Contains,
+            Some(&Value::Text("blue".into())),
+        )
+        .unwrap_err();
+        assert!(equal.message.contains("Fallback"), "{}", equal.message);
+        assert!(
+            contains.message.contains("Fallback"),
+            "{}",
+            contains.message
+        );
+    }
+}
+
+#[test]
+fn sorting_a_single_fallback_cell_fails_at_the_result_view_seam() {
+    let mut engine = choscordb_core::Engine::new(
+        Default::default(),
+        vec![Arc::new(SlowDriver(Arc::new(AtomicBool::new(false))))],
+    )
+    .unwrap();
+    let connection = engine
+        .connect(
+            "slow-view",
+            ConnectionOptions::Sqlite {
+                path: ":memory:".into(),
+                read_only: false,
+            },
+        )
+        .unwrap();
+    event(&mut engine, |e| matches!(e, Event::Connected { .. }));
+    let query = engine
+        .execute(
+            connection,
+            "fallback_fixture".into(),
+            QueryOptions::default(),
+        )
+        .unwrap();
+    event(&mut engine, |e| matches!(e, Event::Schema { .. }));
+    engine
+        .apply_result_view(
+            query,
+            vec![],
+            Some(ResultSort {
+                column: 0,
+                direction: SortDirection::Ascending,
+            }),
+            PageSize::default(),
+        )
+        .unwrap();
+    let error = failed_view(&mut engine);
+    assert!(error.message.contains("Fallback"), "{}", error.message);
 }
 
 #[test]

@@ -747,13 +747,16 @@ async fn bounded_wide_rows_defer_payload_and_keep_lookahead_on_budget_error() {
         vec!["printf('%01000d',43)"; 80].join(",")
     );
     let mut r = c.execute(&sql, QueryOptions::default()).await.unwrap();
+    // Reserve the fixed row envelope as Value gains new typed states, while
+    // keeping room for only one of these wide rows in the page.
+    let limit = 80 * std::mem::size_of::<Value>() + 2048;
     let first = r
-        .fetch_page_bounded(PageSize::default(), 4096)
+        .fetch_page_bounded(PageSize::default(), limit)
         .await
         .unwrap();
     assert_eq!(first.rows.len(), 1);
     assert!(first.has_more);
-    assert!(first.estimated_bytes() <= 4096);
+    assert!(first.estimated_bytes() <= limit);
     assert!(
         first.rows[0]
             .iter()
@@ -767,7 +770,7 @@ async fn bounded_wide_rows_defer_payload_and_keep_lookahead_on_budget_error() {
         ErrorKind::ResourceLimit
     );
     let second = r
-        .fetch_page_bounded(PageSize::default(), 4096)
+        .fetch_page_bounded(PageSize::default(), limit)
         .await
         .unwrap();
     assert_eq!(second.index, 1);

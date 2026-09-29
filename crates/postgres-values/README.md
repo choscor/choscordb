@@ -25,6 +25,11 @@ binary version byte is checked; JSON syntax validation remains the server's job.
 Unknown OIDs (including arrays, domains, composites, extension types, and interval)
 return `Unsupported`. A driver must explicitly resolve domain base types or add
 another codec; it must not interpret their bytes as UTF-8 by default.
+The PostgreSQL driver uses `supports_binary_oid` to request binary protocol
+results only for native decoders. It requests server text protocol output for
+unfamiliar OIDs and retains the original type in fallback metadata. Directly
+selected domain columns may be reported with their base OID; the driver uses
+their source-column identity to request text and recover the declared domain.
 
 Protocol references:
 - [NUMERIC send/receive](https://github.com/postgres/postgres/blob/master/src/backend/utils/adt/numeric.c)

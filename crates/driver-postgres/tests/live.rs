@@ -80,6 +80,323 @@ async fn run(connection: &mut dyn Connection, sql: &str, auto: bool) -> Vec<Row>
     cursor.close().await.unwrap();
     rows
 }
+
+#[tokio::test]
+#[ignore = "requires disposable live PostgreSQL fixture"]
+async fn unfamiliar_values_keep_server_text_and_native_binary_across_results() {
+    let url = std::env::var("CHOSCORDB_TEST_POSTGRES").unwrap();
+    let (admin, session) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
+        .await
+        .unwrap();
+    let task = tokio::spawn(session);
+    admin
+        .batch_execute(
+            "DROP SCHEMA IF EXISTS universal_values CASCADE;
+             CREATE SCHEMA universal_values;
+             CREATE TYPE universal_values.mood AS ENUM ('ready', 'away');
+             CREATE DOMAIN universal_values.code AS text CHECK (VALUE <> 'bad');
+             CREATE DOMAIN universal_values.number_list AS integer[];
+             CREATE TYPE universal_values.pair AS (left_value integer, right_value text);
+             CREATE TABLE universal_values.samples (
+                 id integer PRIMARY KEY, payload bytea, nums integer[],
+                 code universal_values.code, mood universal_values.mood,
+                 pair universal_values.pair, duration interval, location point,
+                 nums_domain universal_values.number_list);
+             INSERT INTO universal_values.samples VALUES
+                 (1, decode('00ff80', 'hex'), ARRAY[1,2], 'A-1', 'ready',
+                  ROW(7,'hello')::universal_values.pair,
+                  INTERVAL '1 day 02:03:04', point(2,3), ARRAY[9,8]),
+                 (2, ''::bytea, '{}'::integer[], ''::universal_values.code,
+                  'away', ROW(0,'')::universal_values.pair, INTERVAL '0', point(0,0), '{}'),
+                 (3, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+             CREATE VIEW universal_values.sample_view AS SELECT * FROM universal_values.samples;",
+        )
+        .await
+        .unwrap();
+    let oid: u32 = admin
+        .query_one("SELECT 'universal_values.samples'::regclass::oid", &[])
+        .await
+        .unwrap()
+        .get(0);
+    let view_oid: u32 = admin
+        .query_one("SELECT 'universal_values.sample_view'::regclass::oid", &[])
+        .await
+        .unwrap()
+        .get(0);
+    let mut connection = PostgresDriver.connect(settings()).await.unwrap();
+    for relation in [oid, view_oid] {
+        let mut cursor = connection
+            .open_object(
+                &ObjectId(format!("pg:relation:{relation}")),
+                4 * 1024 * 1024,
+            )
+            .await
+            .unwrap();
+        let page = cursor
+            .fetch_page(PageSize::new(100).unwrap())
+            .await
+            .unwrap_or_else(|e| panic!("object fetch: {:?}: {}", e.kind, e.message));
+        assert_eq!(page.rows.len(), 3);
+        assert_eq!(page.rows[0][1], Value::Binary(vec![0, 255, 128]));
+        assert_eq!(page.rows[1][1], Value::Binary(vec![]));
+        assert_eq!(page.rows[2][1], Value::Null);
+        for (column, expected, database_type) in [
+            (2, "{1,2}", "_int4"),
+            (3, "A-1", "universal_values.code"),
+            (4, "ready", "mood"),
+            (5, "(7,hello)", "pair"),
+            (6, "1 day 02:03:04", "interval"),
+            (7, "(2,3)", "point"),
+            (8, "{9,8}", "universal_values.number_list"),
+        ] {
+            let Value::FallbackText {
+                text,
+                database_type: actual_type,
+            } = &page.rows[0][column]
+            else {
+                panic!(
+                    "column {column} did not use text fallback; column metadata {:?}",
+                    cursor.columns()[column]
+                );
+            };
+            assert_eq!(text, expected, "column {column}");
+            assert_eq!(actual_type, database_type, "column {column}");
+            assert_eq!(page.rows[2][column], Value::Null);
+        }
+        assert_eq!(
+            page.rows[1][2],
+            Value::FallbackText {
+                text: "{}".into(),
+                database_type: "_int4".into()
+            }
+        );
+        assert_eq!(
+            page.rows[1][3],
+            Value::FallbackText {
+                text: "".into(),
+                database_type: "universal_values.code".into()
+            }
+        );
+        cursor.close().await.unwrap();
+    }
+    let mut cursor = connection
+        .execute(
+            "SELECT id, payload, nums, code, mood, pair, duration, location, nums_domain \
+         FROM universal_values.samples ORDER BY id",
+            QueryOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(cursor.columns()[3].database_type, "universal_values.code");
+    assert_eq!(
+        cursor.columns()[8].database_type,
+        "universal_values.number_list"
+    );
+    let page = cursor
+        .fetch_page(PageSize::new(100).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(page.rows.len(), 3);
+    assert_eq!(page.rows[0][0], Value::Integer(1));
+    assert_eq!(
+        page.rows[0][2],
+        Value::FallbackText {
+            text: "{1,2}".into(),
+            database_type: "_int4".into()
+        }
+    );
+    assert_eq!(
+        page.rows[0][3],
+        Value::FallbackText {
+            text: "A-1".into(),
+            database_type: "universal_values.code".into()
+        }
+    );
+    assert_eq!(
+        page.rows[0][8],
+        Value::FallbackText {
+            text: "{9,8}".into(),
+            database_type: "universal_values.number_list".into()
+        }
+    );
+    cursor.close().await.unwrap();
+    drop(connection);
+    admin
+        .batch_execute("DROP SCHEMA universal_values CASCADE")
+        .await
+        .unwrap();
+    drop(admin);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires disposable live PostgreSQL fixture"]
+async fn large_fallback_is_chunk_readable_and_sql_portal_executes_once() {
+    let url = std::env::var("CHOSCORDB_TEST_POSTGRES").unwrap();
+    let (admin, session) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
+        .await
+        .unwrap();
+    let task = tokio::spawn(session);
+    admin
+        .batch_execute(
+            "DROP SEQUENCE IF EXISTS universal_values_exec_count;
+         CREATE SEQUENCE universal_values_exec_count START 1;",
+        )
+        .await
+        .unwrap();
+    let mut connection = PostgresDriver.connect(settings()).await.unwrap();
+    let mut cursor = connection
+        .execute(
+            "SELECT nextval('universal_values_exec_count')::bigint AS run_number,
+                ARRAY[repeat('x', 70000)] AS large_value
+         FROM generate_series(1,201)",
+            QueryOptions::default(),
+        )
+        .await
+        .unwrap();
+    let reader = cursor.deferred_reader().unwrap();
+    let mut observed = Vec::new();
+    for expected_len in [100, 100, 1] {
+        let page = cursor
+            .fetch_page(PageSize::new(100).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(page.rows.len(), expected_len);
+        observed.extend(page.rows.iter().map(|row| row[0].clone()));
+        for row in &page.rows {
+            let Value::DeferredFallback {
+                handle,
+                byte_length,
+                database_type,
+            } = &row[1]
+            else {
+                panic!("large array must have a deferred text representation");
+            };
+            assert_eq!(database_type, "_text");
+            assert_eq!(*byte_length, 70002);
+            let first = reader.read_chunk(*handle, 0, 64 * 1024).unwrap();
+            let second = reader
+                .read_chunk(*handle, first.bytes.len() as u64, 64 * 1024)
+                .unwrap();
+            let mut complete = first.bytes;
+            complete.extend(second.bytes);
+            assert_eq!(complete, format!("{{{}}}", "x".repeat(70000)).into_bytes());
+        }
+    }
+    assert_eq!(observed, (1..=201).map(Value::Integer).collect::<Vec<_>>());
+    cursor.close().await.unwrap();
+    let last: i64 = admin
+        .query_one("SELECT last_value FROM universal_values_exec_count", &[])
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(last, 201);
+    drop(connection);
+    admin
+        .batch_execute("DROP SEQUENCE universal_values_exec_count")
+        .await
+        .unwrap();
+    drop(admin);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires disposable live PostgreSQL fixture"]
+async fn invalid_server_text_marks_only_the_affected_cell_unavailable() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let database_name = format!("choscordb_unavailable_{:x}_{nonce:x}", std::process::id());
+    assert!(database_name.len() <= 63);
+    let url = std::env::var("CHOSCORDB_TEST_POSTGRES").unwrap();
+    let (admin, session) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
+        .await
+        .unwrap();
+    let admin_task = tokio::spawn(session);
+    admin
+        .batch_execute(&format!(
+            "CREATE DATABASE {database_name}
+             WITH TEMPLATE template0 ENCODING 'SQL_ASCII' LC_COLLATE 'C' LC_CTYPE 'C'"
+        ))
+        .await
+        .unwrap();
+    let mut config: tokio_postgres::Config = url.parse().unwrap();
+    config.dbname(&database_name);
+    let (fixture, session) = config.connect(tokio_postgres::NoTls).await.unwrap();
+    let fixture_task = tokio::spawn(session);
+    fixture
+        .batch_execute(
+            "CREATE TABLE bad_values (id integer PRIMARY KEY, ordinary text, strange text[]);
+         INSERT INTO bad_values VALUES
+           (1, 'neighbor', ARRAY[convert_from(decode('ff','hex'), 'SQL_ASCII')]),
+           (2, 'healthy', ARRAY['fine']),
+           (3, 'null', NULL);",
+        )
+        .await
+        .unwrap();
+    let oid: u32 = fixture
+        .query_one("SELECT 'bad_values'::regclass::oid", &[])
+        .await
+        .unwrap()
+        .get(0);
+    let mut options = settings();
+    let ConnectionOptions::Postgres { database, .. } = &mut options else {
+        unreachable!()
+    };
+    *database = database_name.clone();
+    let mut connection = PostgresDriver.connect(options).await.unwrap();
+    run(&mut *connection, "SET client_encoding = 'SQL_ASCII'", true).await;
+    for object in [true, false] {
+        let mut cursor = if object {
+            connection
+                .open_object(&ObjectId(format!("pg:relation:{oid}")), 4 * 1024 * 1024)
+                .await
+                .unwrap()
+        } else {
+            connection
+                .execute(
+                    "SELECT id, ordinary, strange FROM bad_values ORDER BY id",
+                    QueryOptions::default(),
+                )
+                .await
+                .unwrap()
+        };
+        let page = cursor
+            .fetch_page(PageSize::new(100).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(page.rows.len(), 3);
+        assert_eq!(page.rows[0][0], Value::Integer(1));
+        assert_eq!(page.rows[0][1], Value::Text("neighbor".into()));
+        assert_eq!(
+            page.rows[0][2],
+            Value::Unavailable {
+                database_type: "_text".into(),
+                reason: "Invalid server text encoding".into(),
+            }
+        );
+        assert_eq!(page.rows[1][1], Value::Text("healthy".into()));
+        assert_eq!(
+            page.rows[1][2],
+            Value::FallbackText {
+                text: "{fine}".into(),
+                database_type: "_text".into(),
+            }
+        );
+        assert_eq!(page.rows[2][2], Value::Null);
+        cursor.close().await.unwrap();
+    }
+    drop(connection);
+    drop(fixture);
+    fixture_task.await.unwrap().unwrap();
+    admin
+        .batch_execute(&format!("DROP DATABASE {database_name} WITH (FORCE)"))
+        .await
+        .unwrap();
+    drop(admin);
+    admin_task.await.unwrap().unwrap();
+}
 #[tokio::test]
 #[ignore = "requires disposable live PostgreSQL fixture"]
 async fn result_cell_catalog_reports_native_choices_and_read_only_fk_provenance() {

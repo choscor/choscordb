@@ -262,6 +262,11 @@ fn sql_value(value: &Value) -> Result<SqlValue, DriverError> {
         Value::Deferred { .. } => {
             return Err(invalid("Deferred values cannot be filtered with SQL"));
         }
+        Value::DeferredFallback { .. } | Value::FallbackText { .. } | Value::Unavailable { .. } => {
+            return Err(invalid(
+                "Fallback and unavailable values cannot be filtered with SQL",
+            ));
+        }
     })
 }
 

@@ -39,6 +39,22 @@ fn exact_values_and_schema_survive_random_access_and_cleanup() {
                 byte_length: 1_000_000,
                 database_type: "BLOB".into(),
             },
+            Value::FallbackText {
+                text: "(4,blue)".into(),
+                database_type: "inventory_item".into(),
+            },
+            Value::DeferredFallback {
+                handle: Handle {
+                    slot: 9,
+                    generation: 8,
+                },
+                byte_length: 1_000_001,
+                database_type: "my_extension".into(),
+            },
+            Value::Unavailable {
+                database_type: "secret_type".into(),
+                reason: "text output denied".into(),
+            },
         ];
         for (i, value) in values.iter().enumerate() {
             store
@@ -51,8 +67,11 @@ fn exact_values_and_schema_survive_random_access_and_cleanup() {
             assert_eq!(stored.first_row, i as u64);
             assert_eq!(stored.page.rows[0][0], values[i]);
         }
-        assert_eq!(store.page_count(), 5);
-        assert!(matches!(store.read_page(5), Err(StoreError::PageMissing)));
+        assert_eq!(store.page_count(), values.len() as u64);
+        assert!(matches!(
+            store.read_page(values.len() as u64),
+            Err(StoreError::PageMissing)
+        ));
     }
     assert!(!directory.exists());
 }

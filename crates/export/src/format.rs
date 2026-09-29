@@ -22,6 +22,14 @@ pub fn csv_field(value: &str) -> String {
 fn invalid(message: &str) -> DriverError {
     DriverError::new(ErrorKind::InvalidInput, message)
 }
+pub(crate) fn unavailable(database_type: &str, reason: &str) -> DriverError {
+    invalid(&format!(
+        "Cannot export unavailable {database_type} value: {reason}"
+    ))
+}
+pub(crate) fn unsafe_fallback() -> DriverError {
+    invalid("Cannot export a fallback value as a SQL literal")
+}
 pub(crate) fn hex(bytes: &[u8]) -> String {
     const HEX: &[u8] = b"0123456789abcdef";
     let mut s = String::with_capacity(bytes.len() * 2);
@@ -88,6 +96,14 @@ pub(crate) fn plain(value: &Value) -> Result<String> {
         | Value::Json(v) => v.clone(),
         Value::Binary(v) => format!("\\x{}", hex(v)),
         Value::Deferred { .. } => return Err(invalid("Deferred value was not resolved")),
+        Value::FallbackText { text, .. } => text.clone(),
+        Value::DeferredFallback { .. } => {
+            return Err(invalid("Deferred fallback was not resolved"));
+        }
+        Value::Unavailable {
+            database_type,
+            reason,
+        } => return Err(unavailable(database_type, reason)),
     })
 }
 pub(crate) fn json(value: &Value) -> Result<String> {
@@ -102,6 +118,21 @@ pub(crate) fn json(value: &Value) -> Result<String> {
         Value::Decimal(v) => format!("{{\"decimal\":{}}}", quoted(v)),
         Value::Binary(v) => format!("{{\"binary_hex\":{}}}", quoted(&hex(v))),
         Value::Json(v) => format!("{{\"json\":{}}}", quoted(v)),
+        Value::FallbackText {
+            text,
+            database_type,
+        } => format!(
+            "{{\"fallback_text\":{},\"database_type\":{}}}",
+            quoted(text),
+            quoted(database_type)
+        ),
+        Value::Unavailable {
+            database_type,
+            reason,
+        } => return Err(unavailable(database_type, reason)),
+        Value::DeferredFallback { .. } => {
+            return Err(invalid("Deferred fallback was not resolved"));
+        }
         Value::Deferred { .. } => return Err(invalid("Deferred value was not resolved")),
         _ => quoted(&plain(value)?),
     })
@@ -138,6 +169,13 @@ pub(crate) fn sql(value: &Value, dialect: SqlDialect) -> Result<String> {
             SqlDialect::Postgres => format!("decode('{}', 'hex')", hex(v)),
         },
         Value::Deferred { .. } => return Err(invalid("Deferred value was not resolved")),
+        Value::FallbackText { .. } | Value::DeferredFallback { .. } => {
+            return Err(unsafe_fallback());
+        }
+        Value::Unavailable {
+            database_type,
+            reason,
+        } => return Err(unavailable(database_type, reason)),
         _ => {
             let value = plain(value)?;
             if matches!(dialect, SqlDialect::Mysql) {
