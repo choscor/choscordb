@@ -210,6 +210,12 @@ in release notes and handoffs.
 
 The Linux Secret Service backend introduces `subtle` 2.6.1 through its cryptographic dependencies. Its packaged license was reviewed as BSD-3-Clause; `deny.toml` allows that exact crate/version. GNU lists the [modified BSD license as GPL-compatible](https://www.gnu.org/licenses/license-list.en.html#ModifiedBSD). Release artifacts still need the dependency's copyright, conditions, and disclaimer in third-party notices. This exception does not approve other unreviewed versions or licenses.
 
+The Windows/Linux update signature verifier adds `ed25519-dalek` 2.2.0 and
+`curve25519-dalek` 4.1.3. Their packaged BSD-3-Clause license texts were
+reviewed, and `deny.toml` allows only these exact crate versions. The release
+notices generator must include their copyright, conditions, and disclaimer;
+the exceptions do not approve future unreviewed versions.
+
 On macOS SDKs without AGL, Qt 6.8.3's qmake and CMake package metadata can retain an obsolete `-framework AGL` link. The QScintilla bootstrap removes that exact generated Makefile token when the selected SDK lacks AGL. Application configuration applies the same condition to Qt's imported WrapOpenGL target using the effective `CMAKE_OSX_SYSROOT`. Both paths remain unchanged when the selected SDK provides AGL.
 
 The optional `CHOSCORDB_ENABLE_STAGING` CMake target invokes the release staging adapter with explicit Qt and QScintilla locations. The macOS adapter installs into a temporary prefix, deploys runtime frameworks and the Cocoa plugin, rewrites QScintilla references to bundle-relative paths, validates Mach-O dependencies, records payload hashes, relocates the stage, and smoke-tests that final location with isolated application data. Ordinary builds never stage, sign, or publish artifacts.

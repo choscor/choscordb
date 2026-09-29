@@ -81,7 +81,6 @@ class PublishTests(unittest.TestCase):
         artifacts = []
         for path, data in [
             (name, b"dmg"),
-            ("ChoscorDB.dmg", b"dmg"),
             ("choscordb-appcast.xml", feed),
             (f"ChoscorDB-{version}-source.tar.gz", b"local source"),
         ]:
@@ -94,21 +93,38 @@ class PublishTests(unittest.TestCase):
                     role=(
                         "dmg"
                         if path == name
-                        else (
-                            "latest"
-                            if path == "ChoscorDB.dmg"
-                            else "appcast"
-                            if path.endswith(".xml")
-                            else "source"
-                        )
+                        else "appcast"
+                        if path.endswith(".xml")
+                        else "source"
                     ),
+                )
+            )
+        for suffix, data in (
+            ("windows-x64-setup.exe", b"setup"),
+            ("linux-x86_64.AppImage", b"appimage"),
+        ):
+            path = self.root / f"ChoscorDB-{version}-{suffix}"
+            path.write_bytes(data)
+            checksum = hashlib.sha256(data).hexdigest()
+            (self.root / (path.name + ".sha256")).write_text(
+                f"{checksum}  {path.name}\n"
+            )
+            (self.root / (path.name + ".candidate.json")).write_text(
+                json.dumps(
+                    {
+                        "source_commit": "a" * 40,
+                        "version": version,
+                        "name": path.name,
+                        "size": len(data),
+                        "sha256": checksum,
+                    }
                 )
             )
         return dict(
             version=version,
             source_commit="a" * 40,
             base_url=BASE,
-            feed_url=BASE + "/latest/download/choscordb-appcast.xml",
+            feed_url="https://choscor.github.io/choscordb/updates/choscordb-appcast.xml",
             artifacts=artifacts,
         )
 
@@ -122,8 +138,8 @@ class PublishTests(unittest.TestCase):
             [
                 "draft",
                 "ChoscorDB-1.0.0.dmg",
-                "ChoscorDB.dmg",
-                "choscordb-appcast.xml",
+                "ChoscorDB-1.0.0-windows-x64-setup.exe",
+                "ChoscorDB-1.0.0-linux-x86_64.AppImage",
                 "publish",
             ],
         )
@@ -143,8 +159,8 @@ class PublishTests(unittest.TestCase):
                     name: (self.root / name).read_bytes()
                     for name in (
                         "ChoscorDB-1.0.0.dmg",
-                        "ChoscorDB.dmg",
-                        "choscordb-appcast.xml",
+                        "ChoscorDB-1.0.0-windows-x64-setup.exe",
+                        "ChoscorDB-1.0.0-linux-x86_64.AppImage",
                     )
                 }
                 store.actions.clear()
@@ -158,7 +174,7 @@ class PublishTests(unittest.TestCase):
         class ChangedNotes(Store):
             def upload(self, tag, path):
                 super().upload(tag, path)
-                if path.name == "choscordb-appcast.xml":
+                if path.name == "ChoscorDB-1.0.0-linux-x86_64.AppImage":
                     self.records[0]["body"] = "Unreviewed replacement"
 
         store = ChangedNotes()
@@ -207,13 +223,13 @@ class PublishTests(unittest.TestCase):
 
     def test_partial_draft_resumes_without_reuploading(self):
         manifest = self.release()
-        self.store.fail = "ChoscorDB.dmg"
+        self.store.fail = "ChoscorDB-1.0.0-windows-x64-setup.exe"
         with self.assertRaisesRegex(ValueError, "interrupted"):
             publish.publish(
                 self.root, manifest, self.store, notes_file=self.root / "notes"
             )
         self.assertTrue(self.store.records[0]["draft"])
-        self.assertNotIn("choscordb-appcast.xml", self.store.objects)
+        self.assertNotIn("ChoscorDB-1.0.0-linux-x86_64.AppImage", self.store.objects)
         self.store.fail = None
         publish.publish(self.root, manifest, self.store, notes_file=self.root / "notes")
         self.assertEqual(
@@ -221,8 +237,8 @@ class PublishTests(unittest.TestCase):
             [
                 "draft",
                 "ChoscorDB-1.0.0.dmg",
-                "ChoscorDB.dmg",
-                "choscordb-appcast.xml",
+                "ChoscorDB-1.0.0-windows-x64-setup.exe",
+                "ChoscorDB-1.0.0-linux-x86_64.AppImage",
                 "publish",
             ],
         )
@@ -691,6 +707,10 @@ if name == 'gh':
             publish.__file__,
             "--manifest",
             str(path),
+            "--windows",
+            str(self.root / "ChoscorDB-1.0.0-windows-x64-setup.exe"),
+            "--linux",
+            str(self.root / "ChoscorDB-1.0.0-linux-x86_64.AppImage"),
             "--dry-run",
         ]
         env = {

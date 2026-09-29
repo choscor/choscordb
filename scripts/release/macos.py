@@ -11,6 +11,7 @@ import plistlib
 import shutil
 import tarfile
 import tempfile
+import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
@@ -180,7 +181,30 @@ def release_base(value):
 
 
 def feed_url(base):
-    return release_base(base) + "/latest/download/choscordb-appcast.xml"
+    parts = release_base(base).removeprefix("https://github.com/").split("/")
+    return f"https://{parts[0]}.github.io/{parts[1]}/updates/choscordb-appcast.xml"
+
+
+def verify_live_feed(base):
+    """Refuse a production build until its exact Pages host serves a valid feed."""
+    url = feed_url(base)
+    try:
+        with urllib.request.urlopen(url, timeout=30) as response:
+            if response.url != url or response.status != 200:
+                raise ValueError(
+                    "Pages appcast URL is not live at its canonical HTTPS URL"
+                )
+            data = response.read(1024 * 1024 + 1)
+    except (OSError, urllib.error.URLError) as error:
+        raise ValueError(
+            "Pages appcast URL is not live; configure Pages before packaging"
+        ) from error
+    if len(data) > 1024 * 1024:
+        raise ValueError("Pages appcast is unexpectedly large")
+    from publish import parse_feed
+
+    parse_feed(data, release_base(base))
+    return url
 
 
 def artifact_url(base, version, name):
@@ -675,12 +699,11 @@ def verify_manifest(path, sparkle_tools=None):
         ):
             raise ValueError("Release artifact changed: " + entry["path"])
         roles.setdefault(entry["role"], []).append(artifact)
-    for role in ["dmg", "latest", "appcast", "source", "metadata"]:
+    for role in ["dmg", "appcast", "source", "metadata"]:
         if not roles.get(role):
             raise ValueError("Missing release artifact role: " + role)
     canonical = {
         f"ChoscorDB-{version}.dmg": "dmg",
-        "ChoscorDB.dmg": "latest",
         "choscordb-appcast.xml": "appcast",
         f"ChoscorDB-{version}-source.tar.gz": "source",
         f"ChoscorDB-{version}-source.json": "metadata",
@@ -712,13 +735,8 @@ def verify_manifest(path, sparkle_tools=None):
         raise ValueError("Release verification is incomplete")
     verify_release_consistency(path.parent, data)
     dmg = safe_artifact(path.parent, f"ChoscorDB-{version}.dmg")
-    latest = safe_artifact(path.parent, "ChoscorDB.dmg")
-    if (
-        roles["dmg"] != [dmg]
-        or roles["latest"] != [latest]
-        or digest(dmg) != digest(latest)
-    ):
-        raise ValueError("Release DMG names or latest alias mismatch")
+    if roles["dmg"] != [dmg]:
+        raise ValueError("Release DMG name mismatch")
     if data.get("app_path") != "staged/ChoscorDB.app":
         raise ValueError("Invalid release app path")
     app = path.parent / data["app_path"]
@@ -792,6 +810,7 @@ def verify_manifest(path, sparkle_tools=None):
 def package(args):
     root = args.root.resolve()
     base_url = release_base(args.base_url)
+    verify_live_feed(base_url)
     record = preflight(root, args.version)
     host_tools()
     dependencies = args.dependencies.resolve(strict=True)
@@ -1000,7 +1019,6 @@ def package(args):
         "choscordb-bridge",
         "aarch64-apple-darwin",
     )
-    shutil.copy2(dmg, output / "ChoscorDB.dmg")
     signature = run(
         [sparkle / "bin/sign_update", "--account", ACCOUNT, "-p", dmg]
     ).strip()
@@ -1019,7 +1037,6 @@ def package(args):
 
     for path, role in [
         (dmg, "dmg"),
-        (output / "ChoscorDB.dmg", "latest"),
         (output / "choscordb-appcast.xml", "appcast"),
     ]:
         artifact(path, role)

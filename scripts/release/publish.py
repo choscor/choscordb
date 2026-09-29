@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Publish verified macOS artifacts exclusively through GitHub Releases."""
+"""Stage three verified packages on one draft before publishing a stable Release."""
 
 import argparse
 import contextlib
-import fcntl
+
+try:
+    import fcntl
+except ImportError:  # Windows candidates import parse_feed, but never publish.
+    fcntl = None
 import hashlib
 import json
 import os
@@ -15,7 +19,6 @@ import xml.etree.ElementTree as ET
 
 SPARKLE = "http://www.andymatuschak.org/xml-namespaces/sparkle"
 FEED = "choscordb-appcast.xml"
-LATEST = "ChoscorDB.dmg"
 
 
 def version_tuple(value):
@@ -66,6 +69,8 @@ def parse_feed(data, base_url):
 @contextlib.contextmanager
 def publication_lock():
     # Per-user, independent of checkout, repository, and selected manifest.
+    if fcntl is None:
+        raise ValueError("local publication requires a Unix maintainer host")
     path = Path(tempfile.gettempdir()) / f"choscordb-publish-{os.getuid()}.lock"
     with path.open("a") as handle:
         try:
@@ -75,7 +80,37 @@ def publication_lock():
         yield
 
 
-def publish(root, manifest, store, dry_run=False, notes_file=None):
+def candidate(path, expected_name, source_commit):
+    path = Path(path)
+    if path.name != expected_name or path.is_symlink() or not path.is_file():
+        raise ValueError("missing or unsafe release candidate: " + expected_name)
+    with path.open("rb") as handle:
+        digest = hashlib.file_digest(handle, "sha256").hexdigest()
+    sidecar = path.parent / (path.name + ".sha256")
+    if (
+        sidecar.is_symlink()
+        or not sidecar.is_file()
+        or sidecar.read_text() != (f"{digest}  {path.name}\n")
+    ):
+        raise ValueError("candidate checksum mismatch: " + expected_name)
+    receipt = path.parent / (path.name + ".candidate.json")
+    if receipt.is_symlink() or not receipt.is_file():
+        raise ValueError("candidate source receipt missing: " + expected_name)
+    expected = {
+        "source_commit": source_commit,
+        "version": expected_name.split("-")[1],
+        "name": expected_name,
+        "size": path.stat().st_size,
+        "sha256": digest,
+    }
+    if json.loads(receipt.read_text()) != expected:
+        raise ValueError("candidate source receipt mismatch: " + expected_name)
+    return digest
+
+
+def publish(
+    root, manifest, store, windows=None, linux=None, dry_run=False, notes_file=None
+):
     from macos import release_base, feed_url, artifact_url
 
     version = manifest["version"]
@@ -94,9 +129,20 @@ def publish(root, manifest, store, dry_run=False, notes_file=None):
         if path.stat().st_size != artifact["size"] or digest != artifact["sha256"]:
             raise ValueError("artifact hash mismatch")
         payload[name] = digest
-    names = [f"ChoscorDB-{version}.dmg", LATEST, FEED]
-    if not set(names).issubset(payload) or payload[names[0]] != payload[LATEST]:
-        raise ValueError("incomplete release or mismatched latest")
+    names = [
+        f"ChoscorDB-{version}.dmg",
+        f"ChoscorDB-{version}-windows-x64-setup.exe",
+        f"ChoscorDB-{version}-linux-x86_64.AppImage",
+    ]
+    if names[0] not in payload or FEED not in payload:
+        raise ValueError("incomplete local macOS release")
+    if windows is None:
+        windows = root / names[1]
+    if linux is None:
+        linux = root / names[2]
+    paths = {names[0]: root / names[0], names[1]: Path(windows), names[2]: Path(linux)}
+    payload[names[1]] = candidate(paths[names[1]], names[1], manifest["source_commit"])
+    payload[names[2]] = candidate(paths[names[2]], names[2], manifest["source_commit"])
     _, _, versions = parse_feed((root / FEED).read_bytes(), base)
     if set(versions) != {version}:
         raise ValueError("package appcast must contain exactly selected release")
@@ -164,7 +210,7 @@ def publish(root, manifest, store, dry_run=False, notes_file=None):
             if set(assets) - set(names):
                 raise ValueError("unexpected remote assets")
             if name not in assets:
-                store.upload(tag, root / name)
+                store.upload(tag, paths[name])
                 assets = store.assets(fresh)
             if name not in assets or store.digest(assets[name]) != payload[name]:
                 raise ValueError("uploaded asset bytes differ: " + name)
@@ -185,8 +231,6 @@ def publish(root, manifest, store, dry_run=False, notes_file=None):
     try:
         for name in names:
             store.available(artifact_url(base, version, name), payload[name])
-        store.available(base + "/latest/download/" + LATEST, payload[LATEST])
-        store.available(feed_url(base), payload[FEED])
     except ValueError as error:
         raise ValueError(
             "Release is published, but public verification failed; retry verification before announcing"
@@ -359,6 +403,8 @@ def main(argv=None):
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--sparkle-tools", type=Path)
     parser.add_argument("--notes-file", type=Path)
+    parser.add_argument("--windows", required=True, type=Path)
+    parser.add_argument("--linux", required=True, type=Path)
     parser.add_argument(
         "--repo", help="Optional assertion against manifest GitHub repository"
     )
@@ -383,6 +429,8 @@ def main(argv=None):
                 args.manifest.resolve().parent,
                 manifest,
                 GitHubStore(repo),
+                args.windows.resolve(),
+                args.linux.resolve(),
                 args.dry_run,
                 args.notes_file,
             )

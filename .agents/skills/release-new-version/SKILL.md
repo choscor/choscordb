@@ -1,6 +1,6 @@
 ---
 name: release-new-version
-description: Release ChoscorDB with signed macOS packaging, unsigned Windows/Linux packages, quality checks, an exact-commit tag, and verified GitHub Release publication. Also resume a macOS build from its verified manifest.
+description: Release ChoscorDB with three verified platform packages from one tag, signed update feeds, and complete GitHub Release publication. Also resume a macOS build from its verified manifest.
 ---
 
 # Release ChoscorDB
@@ -73,9 +73,9 @@ Set `CHOSCORDB_RELEASE_MANIFEST` locally to the selected manifest. Pass
 `--sparkle-tools` only if the default dependency directory is not appropriate.
 Do not write local tool paths into public metadata.
 
-The macOS publisher's public asset allowlist is exactly `ChoscorDB-X.Y.Z.dmg`,
-`ChoscorDB.dmg`, and `choscordb-appcast.xml`. The separate Windows/Linux workflow
-later adds its two versioned packages and versioned SHA-256 file. Keep source
+The public asset allowlist is exactly `ChoscorDB-X.Y.Z.dmg`,
+`ChoscorDB-X.Y.Z-windows-x64-setup.exe`, and
+`ChoscorDB-X.Y.Z-linux-x86_64.AppImage`. Keep the local appcast, source
 archives, license archives, manifests, SBOMs, and other metadata local. Do not
 recursively upload the output directory or use a release-directory wildcard.
 Build directories, staged app trees,
@@ -124,13 +124,13 @@ Do not state an unverified condition as fact. Do not publish placeholder bullets
 or empty headings.
 
 Finish with `## Downloads and requirements`. Include applicable platform
-requirements, the versioned GitHub DMG link derived from the verified manifest's
-release base URL, and the accurate Windows/Linux package availability status.
-The Windows ZIP is unsigned; state that Windows may warn about or block it.
-Before publication, do not imply that Windows/Linux candidate artifacts are
-already public downloads. Include a DMG SHA-256 as text only when verified;
-do not link to unpublished local files or checksum files. Never use raw local
-logs as notes.
+requirements and the three versioned GitHub package links derived from the
+verified manifest's release base URL. The Windows per-user installer is unsigned;
+state that Windows may warn about or block it and that the update signature does
+not grant SmartScreen reputation. Before publication, do not imply candidate
+artifacts are already public downloads. Include a DMG SHA-256 as text only when
+verified; do not link to unpublished local files or checksum files. Never use
+raw local logs as notes.
 
 ## Tag the verified source commit
 
@@ -153,53 +153,61 @@ requires the remote tag to resolve to `source_commit` and never creates tags.
 ## Windows and Linux candidate run
 
 After the exact tag is pushed, dispatch `cross-platform-release.yml` on the
-repository's default branch with `tag=vX.Y.Z` and `publish=false`. Inspect the
+repository's default branch with `tag=vX.Y.Z`. Inspect the
 specific workflow run and require both native build/test/package jobs to pass.
-Review its Windows ZIP, Linux AppImage, inventories, checksums, and smoke-test
+Review its Windows installer, Linux AppImage, inventories, checksums, candidate
+source commit provenance, and smoke-test
 evidence, plus the clean-machine checks in the [platform release
 guide](../../../docs/WINDOWS_LINUX_RELEASE.md). Do not infer Windows/Linux
 readiness from macOS CTest. Candidate Actions artifacts expire and are not
-public release downloads.
+public release downloads. Download the two selected packages to an ignored
+local directory. Their provenance must equal the macOS manifest's exact
+`source_commit` and remote tag.
 
 ## Publish on GitHub
 
 Use `gh` with existing local authentication and `curl` for public verification.
-GitHub Releases is the only publication destination. The manifest's `base_url`
-is `https://github.com/OWNER/REPO/releases`. The app embeds the stable feed URL
-`BASE/latest/download/choscordb-appcast.xml`; enclosures use
-`BASE/download/vX.Y.Z/ChoscorDB-X.Y.Z.dmg`. Forks select their repository at
-packaging time with `--base-url`; never rewrite a signed app or its manifest to
-change the host afterward.
+GitHub Releases hosts the three packages; GitHub Pages hosts stable feeds. The
+manifest's `base_url` is `https://github.com/OWNER/REPO/releases`. The app
+embeds `https://OWNER.github.io/REPO/updates/choscordb-appcast.xml`; its
+enclosure uses `BASE/download/vX.Y.Z/ChoscorDB-X.Y.Z.dmg`. Forks select their
+repository at packaging time with `--base-url`; never rewrite a signed app.
+Bootstrap and publicly verify Pages before packaging, using the existing
+signed `v0.1.7` appcast as described in the platform guide. Abort if the URL
+does not serve the expected bytes or Pages cache is stale.
 
 Run the checked-in publisher rather than assembling independent upload commands:
 
 ```sh
-python scripts/release/publish.py --manifest "$CHOSCORDB_RELEASE_MANIFEST" --notes-file "$CHOSCORDB_RELEASE_NOTES" --dry-run
-python scripts/release/publish.py --manifest "$CHOSCORDB_RELEASE_MANIFEST" --notes-file "$CHOSCORDB_RELEASE_NOTES"
+python scripts/release/publish.py --manifest "$CHOSCORDB_RELEASE_MANIFEST" \
+  --windows "$CHOSCORDB_WINDOWS_CANDIDATE" --linux "$CHOSCORDB_LINUX_CANDIDATE" \
+  --notes-file "$CHOSCORDB_RELEASE_NOTES" --dry-run
+python scripts/release/publish.py --manifest "$CHOSCORDB_RELEASE_MANIFEST" \
+  --windows "$CHOSCORDB_WINDOWS_CANDIDATE" --linux "$CHOSCORDB_LINUX_CANDIDATE" \
+  --notes-file "$CHOSCORDB_RELEASE_NOTES"
 ```
 
-Set `CHOSCORDB_RELEASE_NOTES` to the reviewed ignored notes file. The dry-run
-reads remote state and validates the selected release without publishing. The
-publisher does not validate the prose format. Immediately before the non-dry-run
-call, check the notes version against the manifest and source changelog, verify
-the intended publication date, and review platform availability against the
-release guides, manifest, and actual public assets. If publication slips,
-correct the date before creating a draft; if a remote draft already exists,
-review any notes conflict deliberately under the publisher's retry rules rather
-than silently replacing its body. The publisher creates or resumes a draft,
-uploads the versioned DMG first, identical `ChoscorDB.dmg` next, and appcast
-last. It verifies each uploaded asset before proceeding and publishes the
-complete draft as latest only after validation.
-The public versioned downloads and stable latest feed are then checked. Never
-publish an empty draft, use a wildcard attachment path, or use `--clobber` to
-repair a conflicting asset.
+Set the candidate variables to the selected local packages and
+`CHOSCORDB_RELEASE_NOTES` to the reviewed ignored notes file. The dry-run reads
+remote state and validates the selected release without publishing. The publisher
+does not validate the prose format. Immediately before the non-dry-run call,
+check the notes version against the manifest and source changelog, verify the
+intended publication date, and review platform requirements and package links.
+If publication slips, correct the date before creating a draft; if a remote
+draft already exists, review any notes conflict deliberately under the
+publisher's retry rules rather than silently replacing its body. The publisher
+creates or resumes a draft, uploads exactly the versioned DMG, per-user installer,
+and AppImage, verifies remote bytes and the exact tag/commit identity, then
+publishes the complete stable Release. Check all three public immutable URLs.
+Never publish an empty or partial draft, use a wildcard attachment path, or use
+`--clobber`.
 
-Each release has its own signed, single-release appcast; historical releases and
-their assets remain available under their tags. Do not merge appcasts from the
-previous hosting setup. Refuse a stale version that would replace a newer stable
-release as latest. Authentication or network failures are errors, not evidence of
-absence. Assume one maintainer publishes at a time across machines; the command
-also prevents overlapping local publication.
+Each release has its own locally generated signed single-release appcast;
+historical packages remain under their tags. Do not merge old feeds. Refuse a
+stale version that would replace a newer stable release as latest. Authentication
+or network failures are errors, not evidence of absence. Assume one maintainer
+publishes at a time across machines; the command also prevents overlapping
+local publication.
 
 On retry, reuse matching draft assets and upload only missing files. Conflicting
 bytes, notes, or tag targets require a deliberate decision; never overwrite or
@@ -207,30 +215,45 @@ move them implicitly. If verification fails after publication, report that the
 release is already public and retry verification without rebuilding or deleting
 it. A faulty shipped version should normally be fixed with a higher version.
 
-## Attach Windows and Linux assets
+## Advance Pages after public verification
 
-After the macOS release is public, dispatch `cross-platform-release.yml` again
-with the same tag and `publish=true`. The workflow rebuilds from that tag,
-rechecks native tests and packaged smoke runs, then uses `attach_platforms.py`
-to add the **unsigned** Windows ZIP, Linux AppImage, and versioned SHA-256 file.
-Require the specific run to succeed and verify all three public assets by
-filename and hash. It refuses a draft, prerelease, changed tag, or conflicting
-asset. Do not substitute an unverified Actions artifact or upload a wildcard.
-GitHub Release immutability cannot be enabled while these assets follow macOS
-publication. If the platform run fails after macOS is public, report the partial
-release state and fix the cause before retrying; do not claim all-platform
-publication.
+Keep the dedicated Ed25519 Windows/Linux private PEM in restricted maintainer
+storage with an encrypted offline backup. It must never enter Git, GitHub
+Actions, app packages, Pages, or Release attachments. Verify the derived public
+key matches the one embedded in the packages with
+`python scripts/release/update_feeds.py inspect-key --private-key "$CHOSCORDB_UPDATE_KEY"`.
+The platform guide has the one-time key creation and Pages bootstrap commands.
+Then run:
 
-The original 0.1.0 build embeds the old hosting URL. Its explicitly requested
-replacement uses the GitHub feed, but existing installations cannot change
-automatically: users of the original build must manually install the replacement.
-For future releases, increase the version. Do not publish to the former host or
-claim automatic migration of the original build.
+```sh
+python scripts/release/update_feeds.py deploy --manifest "$CHOSCORDB_RELEASE_MANIFEST" \
+  --windows "$CHOSCORDB_WINDOWS_CANDIDATE" --linux "$CHOSCORDB_LINUX_CANDIDATE" \
+  --notes-file "$CHOSCORDB_RELEASE_NOTES" --private-key "$CHOSCORDB_UPDATE_KEY" --dry-run
+python scripts/release/update_feeds.py deploy --manifest "$CHOSCORDB_RELEASE_MANIFEST" \
+  --windows "$CHOSCORDB_WINDOWS_CANDIDATE" --linux "$CHOSCORDB_LINUX_CANDIDATE" \
+  --notes-file "$CHOSCORDB_RELEASE_NOTES" --private-key "$CHOSCORDB_UPDATE_KEY"
+```
+
+The deployer verifies the three public package URLs and signatures/hashes,
+signs metadata locally, advances all three Pages feeds in one `gh-pages`
+commit, then checks fetched bytes and cache behavior. Never offer a missing
+package. A failed Pages step leaves the previous feed in place; diagnose and
+retry with the same verified inputs. A public Release cannot be atomically
+rolled back by this process. Do not move tags or silently overwrite assets.
+If the key is lost or compromised, clients cannot silently trust a new key;
+manual reinstall is the fallback unless an authenticated rotation exists.
+
+Leave `v0.1.7` and older Releases intact. Existing macOS apps embed the old
+latest-Release appcast URL, which stops working when the three-asset Release
+becomes latest. State the one-time manual DMG reinstall to enter Pages in
+the release notes. Existing Windows ZIP and Linux AppImage builds likewise
+need a manual first install. Preserve normal app data and credentials; do not
+silently move or remove portable packages.
 
 ## Report
 
 Report the version and exact source commit, checks and pending rollout evidence,
-Windows ZIP, Linux AppImage, macOS DMG and feed links, tag push result, and
+Windows installer, Linux AppImage, macOS DMG and Pages feed links, tag push result, and
 GitHub release link or draft status. Distinguish published steps from incomplete
 steps. Never include local
 credential identifiers, private paths, or raw provider diagnostics in release notes.

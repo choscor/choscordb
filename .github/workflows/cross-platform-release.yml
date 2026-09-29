@@ -16,14 +16,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing stable release tag (vX.Y.Z)
+        description: Existing stable candidate tag (vX.Y.Z)
         required: true
         type: string
-      publish:
-        description: Attach unsigned Windows ZIP and Linux AppImage to the existing GitHub Release
-        required: true
-        type: boolean
-        default: false
 permissions:
   contents: read
 concurrency:
@@ -38,17 +33,37 @@ jobs:
       RUSTC_WRAPPER: ''
       QT_QPA_PLATFORM: offscreen
       QT_QPA_FONTDIR: C:/Windows/Fonts
+      RELEASE_TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.tag || github.sha }}
           persist-credentials: false
+      - name: Assert exact candidate tag
+        if: inputs.tag
+        shell: pwsh
+        run: |
+          $tag = $env:RELEASE_TAG
+          if ($tag -notmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'Stable vX.Y.Z tag required' }
+          $head = (git rev-parse HEAD).Trim()
+          $tagCommit = (git rev-parse "refs/tags/$tag^{commit}").Trim()
+          if ($head -ne $tagCommit) { throw 'Checkout is not the selected exact tag' }
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
+      - name: Verify production Pages feed
+        if: inputs.tag
+        run: python scripts/release/update_feeds.py verify-site --repo "${{ github.repository }}"
       - name: Install pinned build tools
-        run: python -m pip install -r scripts/ci/requirements.txt
+        shell: pwsh
+        run: |
+          python -m pip install -r scripts/ci/requirements.txt
+          choco install nsis --version=3.11.0 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Rehearse installer rollback and startup readiness
+        run: python -m unittest scripts/release/test_windows_installer_integration.py
       - name: Install Qt and QScintilla
         run: python scripts/ci/desktop.py dependencies
       - name: Build and test native app
@@ -65,9 +80,19 @@ jobs:
         run: |
           $qt = (Resolve-Path build/ci/qt/6.8.3/msvc2022_64).Path
           $qsci = (Resolve-Path build/ci/qscintilla).Path
-          cmake --preset release "-DCMAKE_PREFIX_PATH=$qt;$qsci" "-DCMAKE_CXX_COMPILER_LAUNCHER="
+          $updates = "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/updates"
+          $updateOptions = @()
+          if ($env:RELEASE_TAG -ne '') {
+            $updateOptions = @(
+              '-DCHOSCORDB_CROSS_PLATFORM_UPDATER=ON',
+              '-DCHOSCORDB_UPDATE_PUBLIC_KEY=tWwf5+4hAmilViw6CrynbGYUr5ISGt/4OOAKR5jm+0o=',
+              "-DCHOSCORDB_UPDATE_BASE_URL=$updates",
+              '-DCHOSCORDB_UPDATE_REPOSITORY=${{ github.repository }}'
+            )
+          }
+          cmake --preset release "-DCMAKE_PREFIX_PATH=$qt;$qsci" "-DCMAKE_CXX_COMPILER_LAUNCHER=" @updateOptions
           cmake --build --preset release --parallel 2
-      - name: Package and smoke test Windows ZIP
+      - name: Package and smoke test Windows per-user installer
         run: >-
           python scripts/release/cross_platform.py windows
           --build build/release
@@ -80,8 +105,9 @@ jobs:
         with:
           name: windows-unsigned-${{ inputs.tag || github.sha }}
           path: |
-            build/cross-platform/windows/*.zip
+            build/cross-platform/windows/*-setup.exe
             build/cross-platform/windows/*.sha256
+            build/cross-platform/windows/*.candidate.json
             build/cross-platform/windows/*-inventory.json
           if-no-files-found: error
           retention-days: 14
@@ -92,14 +118,23 @@ jobs:
     timeout-minutes: 120
     env:
       QT_QPA_PLATFORM: offscreen
+      RELEASE_TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.tag || github.sha }}
           persist-credentials: false
+      - name: Assert exact candidate tag
+        if: inputs.tag
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
+      - name: Verify production Pages feed
+        if: inputs.tag
+        run: python scripts/release/update_feeds.py verify-site --repo "${{ github.repository }}"
       - name: Install native and pinned build tools
         run: |
           sudo apt-get update
@@ -125,7 +160,16 @@ jobs:
         run: |
           qt="$PWD/build/ci/qt/6.8.3/gcc_64"
           qsci="$PWD/build/ci/qscintilla"
-          cmake --preset release "-DCMAKE_PREFIX_PATH=$qt;$qsci"
+          update_options=()
+          if [[ -n "$RELEASE_TAG" ]]; then
+            update_options=(
+              -DCHOSCORDB_CROSS_PLATFORM_UPDATER=ON
+              '-DCHOSCORDB_UPDATE_PUBLIC_KEY=tWwf5+4hAmilViw6CrynbGYUr5ISGt/4OOAKR5jm+0o='
+              '-DCHOSCORDB_UPDATE_BASE_URL=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/updates'
+              '-DCHOSCORDB_UPDATE_REPOSITORY=${{ github.repository }}'
+            )
+          fi
+          cmake --preset release "-DCMAKE_PREFIX_PATH=$qt;$qsci" "${update_options[@]}"
           cmake --build --preset release --parallel 2
       - name: Package and smoke test Linux AppImage
         run: >-
@@ -142,49 +186,7 @@ jobs:
           path: |
             build/cross-platform/linux/*.AppImage
             build/cross-platform/linux/*.sha256
+            build/cross-platform/linux/*.candidate.json
             build/cross-platform/linux/*-inventory.json
           if-no-files-found: error
           retention-days: 14
-
-  publish:
-    name: Attach verified assets to GitHub Release
-    if: inputs.publish
-    needs: [windows, linux]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: write
-      actions: read
-    env:
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ inputs.tag }}
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: '3.12'
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
-        with:
-          name: windows-unsigned-${{ inputs.tag }}
-          path: build/cross-platform/windows
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
-        with:
-          name: linux-${{ inputs.tag }}
-          path: build/cross-platform/linux
-      - name: Verify release state and asset bytes
-        run: |
-          version="${{ inputs.tag }}"
-          version="${version#v}"
-          python scripts/release/attach_platforms.py --tag "${{ inputs.tag }}" \
-            --windows "build/cross-platform/windows/ChoscorDB-${version}-windows-x64.zip" \
-            --linux "build/cross-platform/linux/ChoscorDB-${version}-linux-x86_64.AppImage" \
-            --dry-run
-      - name: Attach and verify public downloads
-        run: |
-          version="${{ inputs.tag }}"
-          version="${version#v}"
-          python scripts/release/attach_platforms.py --tag "${{ inputs.tag }}" \
-            --windows "build/cross-platform/windows/ChoscorDB-${version}-windows-x64.zip" \
-            --linux "build/cross-platform/linux/ChoscorDB-${version}-linux-x86_64.AppImage"

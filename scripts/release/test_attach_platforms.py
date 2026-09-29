@@ -1,6 +1,7 @@
 """Fail-closed checks for adding platform assets to an existing release."""
 
 import hashlib
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -20,7 +21,7 @@ class Store:
         self.release = {
             "id": 1,
             "tag_name": "v1.2.3",
-            "draft": False,
+            "draft": True,
             "prerelease": False,
         }
         self.public = []
@@ -51,10 +52,24 @@ class AttachTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         root = Path(self.temporary.name)
-        self.windows = root / "ChoscorDB-1.2.3-windows-x64.zip"
+        self.windows = root / "ChoscorDB-1.2.3-windows-x64-setup.exe"
         self.linux = root / "ChoscorDB-1.2.3-linux-x86_64.AppImage"
-        self.windows.write_bytes(b"unsigned Windows ZIP")
+        self.windows.write_bytes(b"unsigned Windows installer")
         self.linux.write_bytes(b"Linux AppImage")
+        for path in (self.windows, self.linux):
+            checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+            (root / (path.name + ".sha256")).write_text(f"{checksum}  {path.name}\n")
+            (root / (path.name + ".candidate.json")).write_text(
+                json.dumps(
+                    {
+                        "source_commit": COMMIT,
+                        "version": "1.2.3",
+                        "name": path.name,
+                        "size": path.stat().st_size,
+                        "sha256": checksum,
+                    }
+                )
+            )
         self.store = Store()
         check = patch(
             "attach_platforms.subprocess.check_output",
@@ -73,25 +88,21 @@ class AttachTests(unittest.TestCase):
             **kwargs,
         )
 
-    def test_uploads_once_and_reuses_only_identical_assets(self):
-        self.attach()
-        self.assertEqual(len(self.store.uploaded), 3)
-        self.assertEqual(len(self.store.public), 3)
-        self.attach()
-        self.assertEqual(len(self.store.uploaded), 3)
-        self.store.uploaded[self.windows.name] = b"conflict"
-        with self.assertRaisesRegex(ValueError, "Conflicting published asset"):
-            self.attach()
+    def test_candidates_verify_without_uploading(self):
+        receipt = self.attach()
+        self.assertEqual(set(receipt), {self.windows.name, self.linux.name})
+        self.assertEqual(self.store.uploaded, {})
+        self.assertEqual(self.store.public, [])
 
     def test_missing_asset_stops_before_remote_upload(self):
         self.windows.unlink()
-        with self.assertRaisesRegex(ValueError, "Both platform assets"):
+        with self.assertRaisesRegex(ValueError, "missing or unsafe"):
             self.attach()
         self.assertEqual(self.store.uploaded, {})
 
-    def test_draft_release_is_not_mutated(self):
-        self.store.release["draft"] = True
-        with self.assertRaisesRegex(ValueError, "published stable"):
+    def test_public_release_cannot_be_attached(self):
+        self.store.release["draft"] = False
+        with self.assertRaisesRegex(ValueError, "public or ambiguous"):
             self.attach()
         self.assertEqual(self.store.uploaded, {})
 

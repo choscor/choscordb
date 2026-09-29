@@ -11,11 +11,54 @@ import sys
 import tempfile
 import unittest
 import tarfile
+from unittest.mock import patch
 
 CLI = Path(__file__).with_name("macos.py")
 
 
 class GitHubReleaseURLs(unittest.TestCase):
+    def test_production_package_requires_live_canonical_pages_feed(self):
+        import macos
+
+        with patch("macos.urllib.request.urlopen", side_effect=OSError("offline")):
+            with self.assertRaisesRegex(ValueError, "Pages appcast URL is not live"):
+                macos.verify_live_feed("https://github.com/example/fork/releases")
+        url = macos.feed_url("https://github.com/example/fork/releases")
+        feed = (
+            '<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">'
+            "<channel><item><sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>"
+            '<enclosure url="https://github.com/example/fork/releases/download/v0.1.7/'
+            'ChoscorDB-0.1.7.dmg" sparkle:version="0.1.7" '
+            'sparkle:shortVersionString="0.1.7" sparkle:edSignature="signed" '
+            'length="123" type="application/octet-stream"/></item></channel></rss>'
+        ).encode()
+
+        class Response:
+            status = 200
+
+            def __init__(self, address):
+                self.url = address
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                pass
+
+            def read(self, *_):
+                return feed
+
+        with patch("macos.urllib.request.urlopen", return_value=Response(url)):
+            self.assertEqual(
+                macos.verify_live_feed("https://github.com/example/fork/releases"), url
+            )
+        with patch(
+            "macos.urllib.request.urlopen",
+            return_value=Response("https://evil.test/feed"),
+        ):
+            with self.assertRaisesRegex(ValueError, "canonical HTTPS"):
+                macos.verify_live_feed("https://github.com/example/fork/releases")
+
     def test_generated_feed_uses_versioned_github_asset_and_preserves_signature(self):
         import macos
         import xml.etree.ElementTree as ET
@@ -67,7 +110,7 @@ class GitHubReleaseURLs(unittest.TestCase):
                 macos.release_base(base)
         self.assertEqual(
             macos.feed_url("https://github.com/example/fork/releases"),
-            "https://github.com/example/fork/releases/latest/download/choscordb-appcast.xml",
+            "https://example.github.io/fork/updates/choscordb-appcast.xml",
         )
 
     def test_old_manifest_requires_rebuild_before_artifact_verification(self):
@@ -258,6 +301,16 @@ if name=='cmake':
                 }
             )
         )
+        launcher = Path(self.temp.name) / "fixture_macos.py"
+        launcher.write_text(
+            "import sys\n"
+            + "sys.path.insert(0, "
+            + repr(str(CLI.parent))
+            + ")\n"
+            + "import macos\n"
+            + "macos.verify_live_feed = lambda base: macos.feed_url(base)\n"
+            + "raise SystemExit(macos.main())\n"
+        )
         for failure in ["key", "profile", "configure"]:
             with self.subTest(failure=failure):
                 log.write_text("")
@@ -265,7 +318,7 @@ if name=='cmake':
                 result = subprocess.run(
                     [
                         sys.executable,
-                        str(CLI),
+                        str(launcher),
                         "package",
                         "--root",
                         str(self.root),
@@ -293,7 +346,7 @@ if name=='cmake':
                 if failure == "configure":
                     self.assertIn("cmake -S", calls)
                     self.assertIn(
-                        "-DCHOSCORDB_SPARKLE_FEED_URL=https://github.com/choscor/choscordb/releases/latest/download/choscordb-appcast.xml",
+                        "-DCHOSCORDB_SPARKLE_FEED_URL=https://choscor.github.io/choscordb/updates/choscordb-appcast.xml",
                         calls,
                     )
                     self.assertTrue((output / "INCOMPLETE.json").is_file())
@@ -365,7 +418,7 @@ class ManifestCLI(unittest.TestCase):
                 "version": "1.2.3",
                 "source_commit": "a" * 40,
                 "base_url": "https://github.com/choscor/choscordb/releases",
-                "feed_url": "https://github.com/choscor/choscordb/releases/latest/download/choscordb-appcast.xml",
+                "feed_url": "https://choscor.github.io/choscordb/updates/choscordb-appcast.xml",
                 "artifacts": [
                     {
                         "path": "ChoscorDB-1.2.3.dmg",
@@ -419,7 +472,7 @@ class ManifestCLI(unittest.TestCase):
                 "version": "1.2.3",
                 "source_commit": "a" * 40,
                 "base_url": "https://github.com/choscor/choscordb/releases",
-                "feed_url": "https://github.com/choscor/choscordb/releases/latest/download/choscordb-appcast.xml",
+                "feed_url": "https://choscor.github.io/choscordb/updates/choscordb-appcast.xml",
                 "artifacts": artifacts,
             }
             path = root / "manifest.json"

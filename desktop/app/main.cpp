@@ -3,6 +3,10 @@
 #include "app/diagnostics_service.h"
 #include "app/main_window.h"
 #include "app/updater.h"
+#ifdef CHOSCORDB_CROSS_PLATFORM_UPDATER
+#include "app/update_readiness.h"
+#include "app/workspace_recovery.h"
+#endif
 #include "choscordb-bridge/src/lib.rs.h"
 #include <QApplication>
 #include <QCommandLineParser>
@@ -18,6 +22,10 @@ int main(int argc, char** argv) {
     QApplication::setApplicationName("ChoscorDB");
     QApplication::setOrganizationName(CHOSCORDB_APP_ID);
     QApplication::setApplicationVersion(CHOSCORDB_VERSION);
+#ifdef CHOSCORDB_CROSS_PLATFORM_UPDATER
+    if (argc > 1 && QString::fromLocal8Bit(argv[1]) == QStringLiteral("--apply-update"))
+        return choscordb::runNativeUpdateHelper(app.arguments());
+#endif
     QCommandLineParser args;
     args.addHelpOption();
     args.addVersionOption();
@@ -58,6 +66,21 @@ int main(int argc, char** argv) {
     };
     window.show();
     choscordb::installNativeUpdater(window, args.isSet("smoke-test") || args.isSet("screenshot"));
+#ifdef CHOSCORDB_CROSS_PLATFORM_UPDATER
+    const auto readyPath = qEnvironmentVariable("CHOSCORDB_UPDATE_READY_FILE");
+    if (!readyPath.isEmpty() && !args.isSet("smoke-test") && !args.isSet("screenshot")) {
+        if (auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>()) {
+            const auto acknowledge = [&window, recovery, readyPath] {
+                if (window.isVisible() && recovery->isReady())
+                    (void)choscordb::writeUpdateReadinessFile(readyPath);
+            };
+            QObject::connect(
+                recovery, &choscordb::WorkspaceRecoveryController::restoreCompleted, &window,
+                [&, acknowledge](bool) { QTimer::singleShot(0, &window, acknowledge); });
+            QTimer::singleShot(0, &window, acknowledge);
+        }
+    }
+#endif
     if (args.isSet("screenshot")) {
         QTimer::singleShot(400, &window, applyScreenshotOptions);
         QTimer::singleShot(700, &app,
