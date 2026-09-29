@@ -156,6 +156,10 @@ MainWindow::Ui MainWindow::buildUi() {
     documentation->setMenuRole(QAction::NoRole);
     connect(documentation, &QAction::triggered, this,
             [] { QDesktopServices::openUrl(QUrl("https://github.com/choscor/choscordb#readme")); });
+    helpMenu->addSeparator();
+    auto* diagnostics = helpMenu->addAction(tr("Export Diagnostics…"));
+    diagnostics->setObjectName("exportDiagnostics");
+    connect(diagnostics, &QAction::triggered, this, &MainWindow::showDiagnosticsExport);
     auto* about = helpMenu->addAction(tr("About ChoscorDB"));
     about->setObjectName("aboutChoscorDB");
     about->setMenuRole(QAction::AboutRole);

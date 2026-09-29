@@ -1,5 +1,6 @@
 #include "app/appearance_controller.h"
 #include "app/application_data.h"
+#include "app/diagnostics_service.h"
 #include "app/main_window.h"
 #include "app/updater.h"
 #include "choscordb-bridge/src/lib.rs.h"
@@ -8,6 +9,7 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QtGlobal>
 int main(int argc, char** argv) {
     const auto askpass = choscordb::ssh_askpass_exit_code();
     if (askpass >= 0)
@@ -26,9 +28,21 @@ int main(int argc, char** argv) {
     args.addOption({"screenshot-size", "Window size for a screenshot, for example 960x640.", "size",
                     "1280x900"});
     args.process(app);
-    const auto storagePath =
-        QDir(choscordb::applicationDataDirectory()).filePath("choscordb.sqlite");
-    choscordb::MainWindow window(nullptr, storagePath);
+    const auto testDataDirectory =
+        args.isSet("smoke-test") ? qEnvironmentVariable("CHOSCORDB_TEST_DATA_DIR") : QString{};
+    const auto dataDirectory =
+        testDataDirectory.isEmpty() ? choscordb::applicationDataDirectory() : testDataDirectory;
+    choscordb::DiagnosticsService diagnostics(dataDirectory, app.applicationVersion(),
+                                              app.applicationVersion());
+    const bool diagnosticsStarted = diagnostics.start();
+    choscordb::DiagnosticsWatchdog watchdog(&app, &diagnostics);
+    if (diagnosticsStarted)
+        watchdog.start();
+    const auto storagePath = QDir(dataDirectory).filePath("choscordb.sqlite");
+    choscordb::MainWindow window(nullptr, storagePath, diagnosticsStarted ? &diagnostics : nullptr);
+    if (!diagnosticsStarted)
+        window.showToast(QObject::tr("Local diagnostics could not be started."),
+                         choscordb::ToastVariant::Warning);
     const auto applyScreenshotOptions = [&] {
         const auto requestedTheme = args.value("screenshot-theme");
         if (auto* appearance = window.findChild<choscordb::AppearanceController*>())
@@ -48,7 +62,20 @@ int main(int argc, char** argv) {
         QTimer::singleShot(400, &window, applyScreenshotOptions);
         QTimer::singleShot(700, &app,
                            [&] { app.exit(window.grab().save(args.value("screenshot")) ? 0 : 1); });
-    } else if (args.isSet("smoke-test"))
-        QTimer::singleShot(100, &app, &QApplication::quit);
-    return app.exec();
+    } else if (args.isSet("smoke-test")) {
+        bool validDelay = false;
+        const int requestedDelay =
+            qEnvironmentVariableIntValue("CHOSCORDB_TEST_SMOKE_DELAY_MS", &validDelay);
+        QTimer::singleShot(validDelay ? qBound(100, requestedDelay, 10000) : 100, &app,
+                           &QApplication::quit);
+    }
+    const int result = app.exec();
+    watchdog.stop();
+    diagnostics.stop();
+    if (args.isSet("smoke-test")) {
+        const auto exportPath = qEnvironmentVariable("CHOSCORDB_TEST_EXPORT_PATH");
+        if (!exportPath.isEmpty() && !diagnostics.exportZip(exportPath).success)
+            return result == 0 ? 2 : result;
+    }
+    return result;
 }

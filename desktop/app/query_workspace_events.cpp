@@ -217,6 +217,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         }
         pendingConnections_.remove(e.id);
         if (kind == "connection_failed") {
+            emit connectionAttemptFailed(connectionDrivers_.value(e.id));
             connectionProfiles_.remove(e.id);
             connectionDrivers_.remove(e.id);
             connectionSqlModes_.remove(e.id);

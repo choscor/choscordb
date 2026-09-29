@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QUrl>
 
 class ModernUiTest final : public QObject {
     Q_OBJECT
@@ -8,6 +9,18 @@ class ModernUiTest final : public QObject {
   private slots:
     void queryToolbarShowsOnlyRequestedControls();
     void applicationMenusExposeHelpAndAbout();
+    void helpOpensDiagnosticsExportSummary();
+    void diagnosticsClearRequiresConfirmation();
+    void diagnosticsExportLetsUserChooseZipDestination();
+    void diagnosticsCountConnectionOutcomesFromWorkspace();
+    void diagnosticsRetainDriverTypeForFailedConnection();
+    void diagnosticsExcludeSqlAndDriverErrorFromLocalReport();
+    void diagnosticsShowFolderUsesLocalDiagnosticPath();
+    void diagnosticsClearCancelKeepsRecords();
+    void diagnosticsSaveFailureLeavesNoZip();
+    void diagnosticsCancelDuringExportLeavesNoZip();
+    void diagnosticsPreviewAndClearKeepDialogResponsiveDuringStorageWait();
+    void diagnosticsFolderOpened(const QUrl& url);
     void applicationMenusProvideWindowControlsWithoutConnectionMenu();
     void quickSwitchOpensOneSearchOverlayFromViewAction();
     void quickSearchEmptyQueryShowsScreensAndOpenTabs();
@@ -68,4 +81,7 @@ class ModernUiTest final : public QObject {
     void sidebarConnectionDoesNotColorUnavailableSqlTargetFooter();
     void completedResultFooterSeparatesAndClearsMetrics();
     void narrowResultFooterPreservesOutcomeNavigationAndDetails();
+
+  private:
+    QUrl diagnosticsFolderUrl_;
 };
