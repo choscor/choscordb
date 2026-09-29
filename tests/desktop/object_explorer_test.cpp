@@ -164,14 +164,14 @@ class ObjectExplorerTest final : public QObject {
             missingPair->path().elementAt(missingPair->path().elementCount() - 1);
         QVERIFY(missingEnd.y < ghostBox->rect().center().y());
         const auto fitZoom = erd.zoomFactor();
-        QTest::mouseClick(erd.findChild<QPushButton*>("objectErdZoomIn"), Qt::LeftButton);
+        QTest::keyClick(view, Qt::Key_Plus);
         QVERIFY(erd.zoomFactor() > fitZoom);
         const auto beforeWheel = erd.zoomFactor();
         QWheelEvent wheel(view->viewport()->rect().center(),
                           view->viewport()->mapToGlobal(view->viewport()->rect().center()), {},
                           {0, 120}, Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
         QCoreApplication::sendEvent(view->viewport(), &wheel);
-        QVERIFY(erd.zoomFactor() > beforeWheel);
+        QCOMPARE(erd.zoomFactor(), beforeWheel);
         const auto beforeHorizontal = erd.zoomFactor();
         QWheelEvent horizontal(view->viewport()->rect().center(),
                                view->viewport()->mapToGlobal(view->viewport()->rect().center()), {},
@@ -183,9 +183,9 @@ class ObjectExplorerTest final : public QObject {
                                   {0, -40}, {}, Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase,
                                   false);
         QCoreApplication::sendEvent(view->viewport(), &pixelVertical);
-        QVERIFY(erd.zoomFactor() < beforeHorizontal);
+        QCOMPARE(erd.zoomFactor(), beforeHorizontal);
         for (int i = 0; i < 7; ++i)
-            QTest::mouseClick(erd.findChild<QPushButton*>("objectErdZoomIn"), Qt::LeftButton);
+            QTest::keyClick(view, Qt::Key_Plus);
         QVERIFY(view->horizontalScrollBar()->maximum() > 0);
         QVERIFY(view->verticalScrollBar()->maximum() > 0);
         const auto center = view->viewport()->rect().center();
@@ -215,7 +215,7 @@ class ObjectExplorerTest final : public QObject {
                                 .arg(sceneCenterAfterPan.y())));
         QCOMPARE(erd.graph().tables.size(), 3);
         QCOMPARE(erd.graph().edges.size(), 3);
-        QTest::mouseClick(erd.findChild<QPushButton*>("objectErdFit"), Qt::LeftButton);
+        QTest::keyClick(view, Qt::Key_0);
         QVERIFY(qAbs(erd.zoomFactor() - fitZoom) < 0.01);
         QSignalSpy activated(&erd, &ObjectErdWidget::tableActivated);
         view->setFocus();
@@ -301,6 +301,7 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(graphs.count(), 0);
         explorer.selectPane(4);
         QTRY_COMPARE(graphs.count(), 1);
+        QCOMPARE(erd->findChild<QGraphicsView*>("objectErdView")->geometry().top(), 0);
         QCOMPARE(status->property("state").toString(), QString("empty"));
         QVERIFY(status->text().contains("No foreign-key relationships"));
         QCOMPARE(erd->graph().tables.size(), 1);
