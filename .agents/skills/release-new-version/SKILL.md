@@ -98,12 +98,39 @@ Check the rollout evidence required by the release guide, including clean macOS
 26.0 installation and the signed update rehearsal. Record pending evidence
 honestly; do not invent a pass or silently waive a required release check.
 
-Prepare public release notes in an ignored file under `build/` from the changelog
-at `source_commit`, with platform requirements, relevant known limitations, and
-a link to the versioned GitHub DMG. State that Windows/Linux packages follow
-native verification and that the Windows ZIP is unsigned, so Windows may warn or
-block it. A verified DMG SHA-256 can be included as text;
-do not link to unpublished local checksum files. Never use raw local logs as notes.
+Prepare GitHub release notes in an ignored file under `build/`, using the
+changelog at the manifest's `source_commit` as reviewed source material. Keep
+the changelog's existing format; apply this layout only to future GitHub release
+notes. Verify each change claim against the release diff and changelog at that commit.
+Begin the notes body with `# X.Y.Z` alone, matching the verified manifest and
+source changelog, then `Released: YYYY-MM-DD` with the intended publication date
+in ISO form.
+
+Group notable user-facing changes under `## Features`, `## Improvements`, and
+`## Fixes`, in that order. Use Features for new user capabilities, Improvements
+for notable changes to existing behavior or usability, and Fixes for corrected
+unexpected behavior. Omit categories without entries. Write concise bullets
+about the user effect, qualifying platform or scope where relevant, and merge
+related changes. Do not paste raw commits, implementation trivia, or unsupported
+claims.
+
+After those categories, add `## Security`, `## Upgrade notes`, and
+`## Known issues`, in that order and only when substantiated content applies.
+Security covers verified user-relevant security fixes. Upgrade notes cover breaking
+changes, migrations, changed requirements, deprecations, and user actions;
+surface a prominent action there even if its change is already listed above.
+Known issues identify current limitations and any workaround or next action.
+Do not state an unverified condition as fact. Do not publish placeholder bullets
+or empty headings.
+
+Finish with `## Downloads and requirements`. Include applicable platform
+requirements, the versioned GitHub DMG link derived from the verified manifest's
+release base URL, and the accurate Windows/Linux package availability status.
+The Windows ZIP is unsigned; state that Windows may warn about or block it.
+Before publication, do not imply that Windows/Linux candidate artifacts are
+already public downloads. Include a DMG SHA-256 as text only when verified;
+do not link to unpublished local files or checksum files. Never use raw local
+logs as notes.
 
 ## Tag the verified source commit
 
@@ -153,9 +180,16 @@ python scripts/release/publish.py --manifest "$CHOSCORDB_RELEASE_MANIFEST" --not
 
 Set `CHOSCORDB_RELEASE_NOTES` to the reviewed ignored notes file. The dry-run
 reads remote state and validates the selected release without publishing. The
-publisher creates or resumes a draft, uploads the versioned DMG first, identical
-`ChoscorDB.dmg` next, and appcast last. It verifies each uploaded asset before
-proceeding and publishes the complete draft as latest only after validation.
+publisher does not validate the prose format. Immediately before the non-dry-run
+call, check the notes version against the manifest and source changelog, verify
+the intended publication date, and review platform availability against the
+release guides, manifest, and actual public assets. If publication slips,
+correct the date before creating a draft; if a remote draft already exists,
+review any notes conflict deliberately under the publisher's retry rules rather
+than silently replacing its body. The publisher creates or resumes a draft,
+uploads the versioned DMG first, identical `ChoscorDB.dmg` next, and appcast
+last. It verifies each uploaded asset before proceeding and publishes the
+complete draft as latest only after validation.
 The public versioned downloads and stable latest feed are then checked. Never
 publish an empty draft, use a wildcard attachment path, or use `--clobber` to
 repair a conflicting asset.
