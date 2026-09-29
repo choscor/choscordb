@@ -352,6 +352,23 @@ class UiConsistencyTest(unittest.TestCase):
         self.assertEqual(report["screens"]["app/main_window"]["unclassified"], 0)
         self.assertEqual(report["violations"], [])
 
+    def test_census_counts_column_row_delegate_and_feature_subclass(self):
+        temporary, root = self.fixture()
+        with temporary:
+            (root / "desktop/app/main_window_widgets.h").write_text(
+                "class NavigatorIconDelegate final : public design::ColumnRowDelegate {};\n",
+                encoding="utf-8",
+            )
+            (root / "desktop/app/main_window_ui.cpp").write_text(
+                "auto* navigatorIcons = new NavigatorIconDelegate(tree);\n"
+                "auto* example = new design::ColumnRowDelegate(role, tree);\n",
+                encoding="utf-8",
+            )
+            report = ui_consistency.audit(root)
+        self.assertEqual(report["screens"]["app/main_window"]["composite"], 2)
+        self.assertEqual(report["screens"]["app/main_window"]["unclassified"], 0)
+        self.assertEqual(report["violations"], [])
+
     def test_discovers_feature_composites_through_inheritance(self):
         temporary, root = self.fixture()
         with temporary:

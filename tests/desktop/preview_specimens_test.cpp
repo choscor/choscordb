@@ -159,7 +159,8 @@ void PreviewTest::iconsShowNamedProductionAssetsAtSupportedSizes() {
     for (const auto* theme : {"previewLight", "previewDark"}) {
         auto* host = window.findChild<QWidget*>(theme);
         QVERIFY(host);
-        for (const auto* name : {"database", "cancel", "square", "postgresql", "sqlite"}) {
+        for (const auto* name :
+             {"database", "grid-2x2", "cancel", "square", "postgresql", "sqlite"}) {
             for (int size : {12, 14, 16, 20, 24}) {
                 const auto icons =
                     host->findChildren<QLabel*>(QString("icon-%1-%2").arg(name).arg(size));

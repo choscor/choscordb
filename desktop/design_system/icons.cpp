@@ -109,6 +109,8 @@ QList<IconDefinition> iconCatalog() {
     return {
         {Icon::Code, QStringLiteral("code"), QStringLiteral("desktop/resources/icons/code.svg")},
         {Icon::Table, QStringLiteral("table"), QStringLiteral("desktop/resources/icons/table.svg")},
+        {Icon::Grid2x2, QStringLiteral("grid-2x2"),
+         QStringLiteral("desktop/resources/icons/grid-2x2.svg")},
         {Icon::Folder, QStringLiteral("folder"),
          QStringLiteral("desktop/resources/icons/folder.svg")},
         {Icon::File, QStringLiteral("file"), QStringLiteral("desktop/resources/icons/file.svg")},
@@ -168,6 +170,8 @@ QString iconResourcePath(Icon icon) {
         return QStringLiteral(":/icons/code.svg");
     case Icon::Table:
         return QStringLiteral(":/icons/table.svg");
+    case Icon::Grid2x2:
+        return QStringLiteral(":/icons/grid-2x2.svg");
     case Icon::Folder:
         return QStringLiteral(":/icons/folder.svg");
     case Icon::File:

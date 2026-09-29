@@ -1,4 +1,5 @@
 #pragma once
+#include "design_system/column_row/column_row.h"
 #include "design_system/icons.h"
 #include "design_system/tabs/tab_add_corner.h"
 #include "design_system/tabs/tabs_style.h"
@@ -22,14 +23,23 @@
 #include <utility>
 
 namespace choscordb::main_window_detail {
-class NavigatorIconDelegate final : public QStyledItemDelegate {
+class NavigatorIconDelegate final : public design::ColumnRowDelegate {
   public:
-    using QStyledItemDelegate::QStyledItemDelegate;
+    explicit NavigatorIconDelegate(QObject* parent = nullptr)
+        : design::ColumnRowDelegate(NavigatorModel::DatabaseTypeRole, parent) {}
     std::function<design::Icon(quint64)> connectionIcon;
+    void paint(QPainter* painter, const QStyleOptionViewItem& option,
+               const QModelIndex& index) const override {
+        if (index.data(NavigatorModel::KindRole).toString() == QLatin1String("column")) {
+            design::ColumnRowDelegate::paint(painter, option, index);
+            return;
+        }
+        QStyledItemDelegate::paint(painter, option, index);
+    }
     void initStyleOption(QStyleOptionViewItem* option, const QModelIndex& index) const override {
         QStyledItemDelegate::initStyleOption(option, index);
         const auto kind = index.data(NavigatorModel::KindRole).toString();
-        if (kind == "group") {
+        if (kind == "group" || kind == "column") {
             option->icon = QIcon();
             option->features &= ~QStyleOptionViewItem::HasDecoration;
             return;
@@ -40,7 +50,7 @@ class NavigatorIconDelegate final : public QStyledItemDelegate {
                        ? connectionIcon(index.data(NavigatorModel::ConnectionRole).toULongLong())
                        : design::Icon::Database)
             : kind == "schema" || kind == "database"  ? design::Icon::Folder
-            : kind == "table" || kind == "view"       ? design::Icon::Table
+            : kind == "table" || kind == "view"       ? design::Icon::Grid2x2
             : kind == "index" || kind.contains("key") ? design::Icon::Key
                                                       : design::Icon::File;
         if (option->widget) {
