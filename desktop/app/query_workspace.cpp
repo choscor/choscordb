@@ -129,10 +129,22 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     connect(model_, &QAbstractItemModel::modelReset, this, [this] { clearRowJson(); });
     connect(model_, &QAbstractItemModel::dataChanged, this,
             [this](const QModelIndex& first, const QModelIndex& last) {
-                if (rowJsonIndex_.isValid() && first.row() <= rowJsonIndex_.row() &&
-                    last.row() >= rowJsonIndex_.row())
+                if (rowJsonIndex_.isValid() &&
+                    (rowJsonMode_ == JsonViewMode::Table ||
+                     (first.row() <= rowJsonIndex_.row() && last.row() >= rowJsonIndex_.row() &&
+                      (rowJsonMode_ != JsonViewMode::Cell ||
+                       (first.column() <= rowJsonIndex_.column() &&
+                        last.column() >= rowJsonIndex_.column())))))
                     clearRowJson();
             });
+    connect(model_, &QAbstractItemModel::rowsInserted, this, [this] {
+        if (rowJsonIndex_.isValid())
+            clearRowJson();
+    });
+    connect(model_, &QAbstractItemModel::rowsRemoved, this, [this] {
+        if (rowJsonIndex_.isValid())
+            clearRowJson();
+    });
     connect(adapter_, &EngineAdapter::commandFailed, this, [this](const QString& error) {
         if (fetching_) {
             busy_ = fetching_ = false;
@@ -269,23 +281,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                                  widgets_.grid->selectionModel()->model() == model_;
             const bool selected = current && widgets_.grid->selectionModel()->hasSelection();
             const QPersistentModelIndex clicked = widgets_.grid->indexAt(point);
-            auto* viewJson = menu.addAction(tr("View row as JSON"));
-            viewJson->setObjectName("viewRowJson");
-            bool jsonAvailable = current && clicked.isValid() && clicked.model() == model_ &&
-                                 clicked.row() >= 0 && clicked.row() < model_->rowCount();
-            if (jsonAvailable) {
-                const auto readiness = model_->rowJsonReadiness(clicked.row());
-                jsonAvailable = readiness == ResultTableModel::RowJsonReadiness::Ready ||
-                                (readiness == ResultTableModel::RowJsonReadiness::NeedsDeferred &&
-                                 query_ && queryAvailable());
-            }
-            viewJson->setEnabled(jsonAvailable);
-            connect(viewJson, &QAction::triggered, this, [this, clicked] {
-                if (clicked.isValid() && clicked.model() == model_ &&
-                    widgets_.grid->model() == model_ && widgets_.grid->selectionModel() &&
-                    widgets_.grid->selectionModel()->model() == model_)
-                    openRowJson(clicked.row());
-            });
+            appendJsonViewActions(menu, clicked, current);
             menu.addSeparator();
             const QStringList names = {"copySelectedCells", "copySelectedRows", "copyCurrentPage"};
             const QStringList labels = {tr("Copy selected cells"), tr("Copy selected rows"),

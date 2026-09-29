@@ -34,6 +34,16 @@ class UiConsistencyTest(unittest.TestCase):
         self.assertEqual(report["screens"]["app/main_window"]["explicit"], 1)
         self.assertEqual(report["screens"]["widgets/preferences_dialog"]["stock"], 1)
 
+    def test_counts_json_text_view_as_shared_design_control(self):
+        temporary, root = self.fixture()
+        with temporary:
+            (root / "desktop/app/query_workspace_json.cpp").write_text(
+                "auto* text = new design::JsonTextView(parent);\n", encoding="utf-8"
+            )
+            report = ui_consistency.audit(root)
+        self.assertEqual(report["screens"]["app/query_workspace"]["explicit"], 1)
+        self.assertEqual(report["violations"], [])
+
     def test_rejects_feature_owned_visual_constants_and_qss(self):
         temporary, root = self.fixture()
         with temporary:

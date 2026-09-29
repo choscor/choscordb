@@ -46,7 +46,6 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QPainter>
-#include <QPlainTextEdit>
 #include <QProcess>
 #include <QProgressBar>
 #include <QPushButton>

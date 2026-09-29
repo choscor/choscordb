@@ -84,6 +84,10 @@ struct SemanticColors final {
     QColor sqlString;
     QColor sqlComment;
     QColor sqlNumber;
+    QColor jsonKey;
+    QColor jsonString;
+    QColor jsonNumber;
+    QColor jsonLiteral;
     QColor sqliteBadgeBackground, sqliteBadgeForeground, sqliteBadgeBorder;
     QColor postgresBadgeBackground, postgresBadgeForeground, postgresBadgeBorder;
 

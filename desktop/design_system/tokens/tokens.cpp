@@ -48,6 +48,10 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     add(QStringLiteral("backdrop.blur"), QString::number(backdropBlurRadius()) + "px");
     color(QStringLiteral("switch-track"), colors.switchTrack);
     color(QStringLiteral("switch-thumb"), colors.switchThumb);
+    color(QStringLiteral("json-key"), colors.jsonKey);
+    color(QStringLiteral("json-string"), colors.jsonString);
+    color(QStringLiteral("json-number"), colors.jsonNumber);
+    color(QStringLiteral("json-literal"), colors.jsonLiteral);
     color(QStringLiteral("sqlite-badge-background"), colors.sqliteBadgeBackground);
     color(QStringLiteral("sqlite-badge-foreground"), colors.sqliteBadgeForeground);
     color(QStringLiteral("sqlite-badge-border"), colors.sqliteBadgeBorder);

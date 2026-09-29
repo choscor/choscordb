@@ -20,6 +20,7 @@
 #include <QDialogButtonBox>
 #include <QFile>
 #include <QHeaderView>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
@@ -100,6 +101,67 @@ class ObjectDataWorkspaceTest : public QObject {
         sheet->reject();
         QCOMPARE(grid->currentIndex(), selected);
         QCOMPARE(model->rowCount(), 2);
+    }
+
+    void objectCellAndTableJsonUseSharedGridActions() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(700, 400);
+        data.show();
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+        QVERIFY(model);
+        choscordb::ResultColumn payload{}, plain{};
+        payload.name = "payload";
+        payload.databaseType = "jsonb";
+        plain.name = "plain";
+        plain.databaseType = "text";
+        QVERIFY(model->setPage(
+            {payload, plain},
+            {{QString("{\"id\":1}"), QString("[1,2]")}, {QString("{\"id\":2}"), QString("[3,4]")}},
+            0));
+        grid->setCurrentIndex(model->index(0, 0));
+        const auto selected = grid->currentIndex();
+        const auto trigger = [&](const char* actionName, const QPoint& point) {
+            bool enabled = false;
+            QTimer::singleShot(0, grid, [&] {
+                auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+                if (!menu) {
+                    if (auto* popup = QApplication::activePopupWidget())
+                        popup->close();
+                    return;
+                }
+                auto* action = menu->findChild<QAction*>(actionName);
+                enabled = action && action->isEnabled();
+                menu->close();
+                if (enabled)
+                    action->trigger();
+            });
+            grid->customContextMenuRequested(point);
+            return enabled;
+        };
+        QVERIFY(trigger("viewCellJson", grid->visualRect(model->index(1, 0)).center()));
+        auto* sheet = data.findChild<QDialog*>("rowJsonSheet");
+        QVERIFY(sheet);
+        QTRY_VERIFY(sheet->isVisible());
+        auto* text = sheet->findChild<QPlainTextEdit*>("rowJsonText");
+        QVERIFY(text);
+        QCOMPARE(QJsonDocument::fromJson(text->toPlainText().toUtf8()).object().value("id").toInt(),
+                 2);
+        QCOMPARE(grid->currentIndex(), selected);
+        sheet->reject();
+        const QPoint blank(grid->viewport()->width() - 2, grid->viewport()->height() - 2);
+        QVERIFY(!grid->indexAt(blank).isValid());
+        QVERIFY(trigger("viewTableJson", blank));
+        QTRY_VERIFY(sheet->isVisible());
+        const auto table = QJsonDocument::fromJson(text->toPlainText().toUtf8());
+        QVERIFY(table.isArray());
+        QCOMPARE(table.array().size(), 2);
+        QCOMPARE(table.array().at(0).toObject().value("payload").toObject().value("id").toInt(), 1);
+        QCOMPARE(table.array().at(1).toObject().value("plain").toString(), QString("[3,4]"));
+        QCOMPARE(grid->currentIndex(), selected);
+        sheet->reject();
     }
 
     void valueLoadFailureUsesWindowToast() {
@@ -266,9 +328,10 @@ class ObjectDataWorkspaceTest : public QObject {
                 if (!action->isSeparator())
                     labels << action->text();
             QCOMPARE(labels,
-                     QStringList({"View row as JSON", "Copy selected cells", "Copy selected rows",
-                                  "Copy current page", "Duplicate row", "Add row",
-                                  "Delete selected", "Restore selected", "Set NULL", "Cancel"}));
+                     QStringList({"View cell as JSON", "View row as JSON", "View table as JSON",
+                                  "Copy selected cells", "Copy selected rows", "Copy current page",
+                                  "Duplicate row", "Add row", "Delete selected", "Restore selected",
+                                  "Set NULL", "Cancel"}));
             for (auto* action : actions)
                 if (!action->isSeparator())
                     QVERIFY(!action->isEnabled());

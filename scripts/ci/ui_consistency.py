@@ -36,7 +36,14 @@ STOCK_CONTROLS = {
     "QTreeView",
     "QTreeWidget",
 }
-DESIGN_CONTROLS = {"Button", "Text", "NavigationTreeView", "RightSheet", "Tooltip"}
+DESIGN_CONTROLS = {
+    "Button",
+    "Text",
+    "NavigationTreeView",
+    "RightSheet",
+    "JsonTextView",
+    "Tooltip",
+}
 DESIGN_COMPOSITES = {
     "ButtonGroup",
     "DialogSections",
