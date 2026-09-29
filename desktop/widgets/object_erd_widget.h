@@ -8,7 +8,6 @@
 
 class QGraphicsRectItem;
 class QGraphicsScene;
-class QPushButton;
 
 namespace choscordb {
 
@@ -32,7 +31,9 @@ class ObjectErdWidget final : public QWidget {
 
   private:
     void render();
+    void initialView();
     void zoom(qreal factor);
+    void zoomAt(qreal factor, const QPoint& anchor);
     void activate(const QString& id);
     ObjectGraph graph_;
     QString selectedId_;
@@ -40,13 +41,13 @@ class ObjectErdWidget final : public QWidget {
     QGraphicsScene* scene_;
     QHash<QString, QGraphicsRectItem*> boxes_;
     qreal horizontalWidth_ = 0;
+    qreal minZoom_ = 0.1;
     bool stacked_ = false;
+    bool denseLayout_ = false;
+    bool userNavigated_ = false;
     bool panning_ = false;
     QPoint panStart_;
     QPoint scrollStart_;
-    QPushButton* zoomIn_;
-    QPushButton* zoomOut_;
-    QPushButton* fit_;
 };
 
 } // namespace choscordb

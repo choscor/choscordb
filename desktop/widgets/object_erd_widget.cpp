@@ -1,15 +1,14 @@
 #include "widgets/object_erd_widget.h"
 
-#include "design_system/button/button.h"
 #include "design_system/theme.h"
 #include <QEvent>
 #include <QGraphicsPathItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
 #include <QGraphicsSimpleTextItem>
-#include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QNativeGestureEvent>
 #include <QPainter>
 #include <QScrollBar>
 #include <QTimer>
@@ -39,45 +38,26 @@ ObjectErdWidget::ObjectErdWidget(QWidget* parent)
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
-    auto* controls = new QWidget(this);
-    auto* row = new QHBoxLayout(controls);
-    row->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
-                            metrics.spacingSmall);
-    row->setSpacing(metrics.spacingSmall);
-    auto makeControl = [this, row](const QString& label, const QString& name) {
-        auto* button = new design::Button(label, this);
-        button->setObjectName(name);
-        button->setAccessibleName(label);
-        button->setVariant(design::ButtonVariant::Outline);
-        button->setButtonSize(design::ButtonSize::Small);
-        row->addWidget(button);
-        return button;
-    };
-    zoomIn_ = makeControl(tr("Zoom in"), "objectErdZoomIn");
-    zoomOut_ = makeControl(tr("Zoom out"), "objectErdZoomOut");
-    fit_ = makeControl(tr("Fit diagram"), "objectErdFit");
-    row->addStretch();
-    layout->addWidget(controls);
     view_->setObjectName("objectErdView");
-    view_->setAccessibleName(tr("Entity relationship diagram. Use arrow keys to select a table, "
-                                "Enter to open it, plus and minus to zoom, and 0 to fit."));
+    view_->setAccessibleName(tr("Entity relationship diagram"));
+    view_->setAccessibleDescription(tr("Pinch to zoom; scroll or drag to pan. Use arrow keys to "
+                                       "select a table, Enter to open it, plus and minus to zoom, "
+                                       "and 0 to fit the whole diagram."));
     view_->setScene(scene_);
     view_->setRenderHint(QPainter::Antialiasing);
     view_->setDragMode(QGraphicsView::ScrollHandDrag);
-    view_->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+    view_->setTransformationAnchor(QGraphicsView::NoAnchor);
     view_->setFocusPolicy(Qt::StrongFocus);
     view_->setFrameShape(QFrame::NoFrame);
     view_->viewport()->installEventFilter(this);
     view_->installEventFilter(this);
     layout->addWidget(view_, 1);
-    connect(zoomIn_, &QPushButton::clicked, this, [this] { zoom(1.2); });
-    connect(zoomOut_, &QPushButton::clicked, this, [this] { zoom(1.0 / 1.2); });
-    connect(fit_, &QPushButton::clicked, this, &ObjectErdWidget::fitGraph);
 }
 
 void ObjectErdWidget::clearGraph() {
     panning_ = false;
+    userNavigated_ = false;
+    minZoom_ = 0.1;
     graph_ = {};
     selectedId_.clear();
     boxes_.clear();
@@ -88,8 +68,32 @@ void ObjectErdWidget::clearGraph() {
 void ObjectErdWidget::setGraph(const ObjectGraph& graph, const QString& selectedId) {
     graph_ = graph;
     selectedId_ = selectedId;
+    userNavigated_ = false;
+    minZoom_ = 0.1;
     render();
-    QTimer::singleShot(0, this, [this] { fitGraph(); });
+    QTimer::singleShot(0, this, [this] { initialView(); });
+}
+
+void ObjectErdWidget::initialView() {
+    if (scene_->items().isEmpty())
+        return;
+    const auto viewport = view_->viewport()->size();
+    const auto bounds = scene_->sceneRect().size();
+    const qreal fullScale =
+        qMin(qreal(viewport.width()) / bounds.width(), qreal(viewport.height()) / bounds.height());
+    if (fullScale >= 0.85) {
+        fitGraph();
+        return;
+    }
+    view_->resetTransform();
+    if (auto* selected = boxes_.value(selectedId_, nullptr)) {
+        const auto focus = selected->rect().center();
+        const QRectF visibleAroundFocus(focus.x() - viewport.width() / 2.0,
+                                        focus.y() - viewport.height() / 2.0, viewport.width(),
+                                        viewport.height());
+        scene_->setSceneRect(scene_->sceneRect().united(visibleAroundFocus));
+        view_->centerOn(focus);
+    }
 }
 
 qreal ObjectErdWidget::zoomFactor() const {
@@ -99,16 +103,32 @@ qreal ObjectErdWidget::zoomFactor() const {
 void ObjectErdWidget::fitGraph() {
     if (scene_->items().isEmpty())
         return;
-    view_->fitInView(scene_->sceneRect(), Qt::KeepAspectRatio);
+    const QRectF bounds = scene_->sceneRect();
+    view_->fitInView(bounds.adjusted(-bounds.width() * 0.03, -bounds.height() * 0.03,
+                                     bounds.width() * 0.03, bounds.height() * 0.03),
+                     Qt::KeepAspectRatio);
     if (view_->transform().m11() > 1.0)
         view_->scale(1.0 / view_->transform().m11(), 1.0 / view_->transform().m22());
+    minZoom_ = qMin(qreal(0.1), zoomFactor());
 }
 
 void ObjectErdWidget::zoom(qreal factor) {
-    const auto next = zoomFactor() * factor;
-    if (next < 0.1 || next > 4.0)
+    zoomAt(factor, view_->viewport()->rect().center());
+}
+
+void ObjectErdWidget::zoomAt(qreal factor, const QPoint& anchor) {
+    const qreal current = zoomFactor();
+    const qreal next = qBound(minZoom_, current * factor, qreal(4.0));
+    if (qFuzzyCompare(current, next))
         return;
-    view_->scale(factor, factor);
+    userNavigated_ = true;
+    const QPointF fixedScenePoint = view_->mapToScene(anchor);
+    view_->scale(next / current, next / current);
+    const QPoint moved = view_->mapFromScene(fixedScenePoint);
+    view_->horizontalScrollBar()->setValue(view_->horizontalScrollBar()->value() + moved.x() -
+                                           anchor.x());
+    view_->verticalScrollBar()->setValue(view_->verticalScrollBar()->value() + moved.y() -
+                                         anchor.y());
 }
 
 void ObjectErdWidget::activate(const QString& id) {
@@ -126,6 +146,16 @@ void ObjectErdWidget::changeEvent(QEvent* event) {
 }
 
 bool ObjectErdWidget::eventFilter(QObject* watched, QEvent* event) {
+    if ((watched == view_ || watched == view_->viewport()) &&
+        event->type() == QEvent::NativeGesture) {
+        const auto* gesture = static_cast<QNativeGestureEvent*>(event);
+        if (gesture->gestureType() == Qt::ZoomNativeGesture) {
+            const QPoint anchor =
+                view_->viewport()->mapFromGlobal(gesture->globalPosition().toPoint());
+            zoomAt(qExp(gesture->value()), anchor);
+            return true;
+        }
+    }
     if (watched == view_->viewport()) {
         if (event->type() == QEvent::MouseButtonPress) {
             const auto* mouse = static_cast<QMouseEvent*>(event);
@@ -141,6 +171,8 @@ bool ObjectErdWidget::eventFilter(QObject* watched, QEvent* event) {
             const auto* mouse = static_cast<QMouseEvent*>(event);
             if (mouse->buttons() & Qt::LeftButton) {
                 const auto delta = mouse->pos() - panStart_;
+                if (!delta.isNull())
+                    userNavigated_ = true;
                 view_->horizontalScrollBar()->setValue(scrollStart_.x() - delta.x());
                 view_->verticalScrollBar()->setValue(scrollStart_.y() - delta.y());
                 return true;
@@ -155,12 +187,17 @@ bool ObjectErdWidget::eventFilter(QObject* watched, QEvent* event) {
         }
         if (event->type() == QEvent::Wheel) {
             const auto* wheel = static_cast<QWheelEvent*>(event);
-            int vertical = wheel->angleDelta().y();
-            if (vertical == 0)
-                vertical = wheel->pixelDelta().y();
-            if (vertical == 0)
-                return QWidget::eventFilter(watched, event);
-            zoom(vertical > 0 ? 1.2 : 1.0 / 1.2);
+            const QPoint delta =
+                wheel->pixelDelta().isNull() ? wheel->angleDelta() / 3 : wheel->pixelDelta();
+            if (!delta.isNull())
+                userNavigated_ = true;
+            if (wheel->modifiers() & (Qt::ControlModifier | Qt::MetaModifier)) {
+                zoomAt(qExp(delta.y() / 400.0), wheel->position().toPoint());
+                return true;
+            }
+            view_->horizontalScrollBar()->setValue(view_->horizontalScrollBar()->value() -
+                                                   delta.x());
+            view_->verticalScrollBar()->setValue(view_->verticalScrollBar()->value() - delta.y());
             return true;
         }
         if (event->type() == QEvent::MouseButtonDblClick) {
@@ -173,12 +210,12 @@ bool ObjectErdWidget::eventFilter(QObject* watched, QEvent* event) {
         }
         if (event->type() == QEvent::Resize)
             QTimer::singleShot(0, this, [this] {
-                if (!graph_.tables.isEmpty() &&
+                if (!graph_.tables.isEmpty() && !denseLayout_ &&
                     (view_->viewport()->width() < horizontalWidth_) != stacked_) {
                     render();
-                    fitGraph();
-                } else if (zoomFactor() == 1.0) {
-                    fitGraph();
+                    initialView();
+                } else if (!userNavigated_ && zoomFactor() == 1.0) {
+                    initialView();
                 }
             });
     }
@@ -193,6 +230,7 @@ bool ObjectErdWidget::eventFilter(QObject* watched, QEvent* event) {
             return true;
         }
         if (key->key() == Qt::Key_0) {
+            userNavigated_ = true;
             fitGraph();
             return true;
         }
@@ -207,6 +245,7 @@ bool ObjectErdWidget::eventFilter(QObject* watched, QEvent* event) {
             selectedId_ = ids.at((current + step + ids.size()) % ids.size());
             for (auto it = boxes_.begin(); it != boxes_.end(); ++it)
                 it.value()->setSelected(it.key() == selectedId_);
+            userNavigated_ = true;
             view_->ensureVisible(boxes_.value(selectedId_));
             return true;
         }
@@ -261,51 +300,117 @@ void ObjectErdWidget::render() {
     qreal centerWidth = minWidth;
     qreal centerHeight = headerHeight + rowHeight;
     qreal neighborWidth = 0;
+    qreal neighborHeight = 0;
     for (const auto& table : ordered)
         if (table.id == selectedId_) {
             centerWidth = widthFor(table);
             centerHeight = headerHeight + qMax(1, table.columns.size()) * rowHeight;
         } else {
             neighborWidth = qMax(neighborWidth, widthFor(table));
+            neighborHeight += headerHeight + qMax(1, table.columns.size()) * rowHeight;
         }
     horizontalWidth_ = centerWidth + neighborWidth + gap;
-    stacked_ = view_->viewport()->width() < horizontalWidth_;
-    qreal leftY = 0, rightY = 0, stackedY = centerHeight + gap / 2;
-    for (const auto& table : ordered) {
-        const qreal width = widthFor(table);
-        const qreal height = headerHeight + qMax(1, table.columns.size()) * rowHeight;
-        qreal x = 0, y = 0;
-        if (table.id != selectedId_) {
-            if (stacked_) {
-                x = (centerWidth - width) / 2;
-                y = stackedY;
-                stackedY += height + metrics.spacingLarge * 2;
-            } else {
-                const bool onRight = outgoing.contains(table.id) || !incoming.contains(table.id);
-                x = onRight ? centerWidth + gap : -gap - width;
-                auto& nextY = onRight ? rightY : leftY;
-                y = nextY;
-                nextY += height + metrics.spacingLarge * 2;
-            }
-        }
+    denseLayout_ =
+        ordered.size() > 6 || neighborHeight > qMax(centerHeight * 3, metrics.controlHeight * 18.0);
+    stacked_ = !denseLayout_ && view_->viewport()->width() < horizontalWidth_;
+    const auto place = [&](const ObjectGraphTable& table, qreal x, qreal y) {
         Placement placement;
-        placement.rect = QRectF(x, y, width, height);
+        placement.rect =
+            QRectF(x, y, widthFor(table), headerHeight + qMax(1, table.columns.size()) * rowHeight);
         for (int row = 0; row < table.columns.size(); ++row)
             placement.columnY.insert(table.columns.at(row).name,
                                      y + headerHeight + (row + 0.5) * rowHeight);
         placed.insert(table.id, placement);
-    }
-    const auto centerRect = placed.value(selectedId_).rect;
-    const qreal sideHeight = qMax(leftY, rightY);
-    const qreal shiftY = !stacked_ && sideHeight > 0 ? centerRect.height() / 2 - sideHeight / 2 : 0;
-    for (auto it = placed.begin(); it != placed.end(); ++it) {
-        if (it.key() == selectedId_)
-            continue;
-        it->rect.translate(0, shiftY);
-        for (auto col = it->columnY.begin(); col != it->columnY.end(); ++col)
-            col.value() += shiftY;
+    };
+    if (denseLayout_) {
+        // A bounded-height lane keeps a large one-hop neighborhood near its center.
+        // Lane membership depends only on graph data, so resizing cannot shuffle tables.
+        const qreal rowGap = metrics.spacingLarge * 2;
+        const qreal laneHeight = qMax(centerHeight * 2, metrics.controlHeight * 18.0);
+        QList<ObjectGraphTable> left, right;
+        for (const auto& table : ordered) {
+            if (table.id == selectedId_)
+                place(table, 0, 0);
+            else if (incoming.contains(table.id) && !outgoing.contains(table.id))
+                left.append(table);
+            else
+                right.append(table);
+        }
+        const auto placeSide = [&](const QList<ObjectGraphTable>& side, bool toRight) {
+            QList<QList<ObjectGraphTable>> lanes;
+            qreal used = 0;
+            for (const auto& table : side) {
+                const qreal height = headerHeight + qMax(1, table.columns.size()) * rowHeight;
+                if (lanes.isEmpty() ||
+                    (used + rowGap + height > laneHeight && !lanes.last().isEmpty())) {
+                    lanes.append(QList<ObjectGraphTable>{});
+                    used = 0;
+                }
+                if (used > 0)
+                    used += rowGap;
+                lanes.last().append(table);
+                used += height;
+            }
+            qreal distance = toRight ? centerWidth + gap : -gap;
+            for (const auto& lane : lanes) {
+                qreal width = 0, height = 0;
+                for (const auto& table : lane) {
+                    width = qMax(width, widthFor(table));
+                    height += headerHeight + qMax(1, table.columns.size()) * rowHeight;
+                }
+                height += rowGap * qMax(0, lane.size() - 1);
+                qreal y = (centerHeight - height) / 2;
+                const qreal x = toRight ? distance : distance - width;
+                for (const auto& table : lane) {
+                    place(table, x, y);
+                    y += headerHeight + qMax(1, table.columns.size()) * rowHeight + rowGap;
+                }
+                distance += (toRight ? 1 : -1) * (width + gap);
+            }
+        };
+        placeSide(left, false);
+        placeSide(right, true);
+    } else {
+        qreal leftY = 0, rightY = 0, stackedY = centerHeight + gap / 2;
+        for (const auto& table : ordered) {
+            const qreal width = widthFor(table);
+            const qreal height = headerHeight + qMax(1, table.columns.size()) * rowHeight;
+            qreal x = 0, y = 0;
+            if (table.id != selectedId_) {
+                if (stacked_) {
+                    x = (centerWidth - width) / 2;
+                    y = stackedY;
+                    stackedY += height + metrics.spacingLarge * 2;
+                } else {
+                    const bool onRight =
+                        outgoing.contains(table.id) || !incoming.contains(table.id);
+                    x = onRight ? centerWidth + gap : -gap - width;
+                    auto& nextY = onRight ? rightY : leftY;
+                    y = nextY;
+                    nextY += height + metrics.spacingLarge * 2;
+                }
+            }
+            place(table, x, y);
+        }
+        const auto centerRect = placed.value(selectedId_).rect;
+        const qreal sideHeight = qMax(leftY, rightY);
+        const qreal shiftY =
+            !stacked_ && sideHeight > 0 ? centerRect.height() / 2 - sideHeight / 2 : 0;
+        for (auto it = placed.begin(); it != placed.end(); ++it) {
+            if (it.key() == selectedId_)
+                continue;
+            it->rect.translate(0, shiftY);
+            for (auto col = it->columnY.begin(); col != it->columnY.end(); ++col)
+                col.value() += shiftY;
+        }
     }
     QHash<QString, int> parallel;
+    qreal top = 0, bottom = centerHeight;
+    for (const auto& placement : placed) {
+        top = qMin(top, placement.rect.top());
+        bottom = qMax(bottom, placement.rect.bottom());
+    }
+    int routed = 0;
     for (const auto& edge : graph_.edges) {
         if (!placed.contains(edge.sourceId) || !placed.contains(edge.targetId))
             continue;
@@ -337,9 +442,23 @@ void ObjectErdWidget::render() {
                               ty);
             QPainterPath path(start);
             if (self) {
-                const qreal loop = gap / 2 + index * metrics.spacingMedium + qAbs(separation);
+                const qreal loop =
+                    gap / 2 + index * metrics.spacingMedium + parallelNumber * metrics.spacingLarge;
                 path.cubicTo(QPointF(start.x() + loop, start.y() - rowHeight),
                              QPointF(end.x() + loop, end.y() + rowHeight), end);
+            } else if (denseLayout_ && qAbs(end.x() - start.x()) > gap * 1.5) {
+                // The vertical legs sit in the gaps beside their endpoint boxes.
+                // Cross above or below the lanes so distant links do not cut through boxes.
+                const qreal firstX = start.x() + (toRight ? gap / 2 : -gap / 2);
+                const qreal lastX = end.x() + (toRight ? -gap / 2 : gap / 2);
+                const qreal detour = gap / 2 + (routed / 2) * metrics.spacingSmall;
+                const qreal railY = routed % 2 ? bottom + detour : top - detour;
+                ++routed;
+                path.lineTo(firstX, sy);
+                path.lineTo(firstX, railY);
+                path.lineTo(lastX, railY);
+                path.lineTo(lastX, ty);
+                path.lineTo(end);
             } else {
                 const qreal bend = (start.x() + end.x()) / 2;
                 path.cubicTo(QPointF(bend, start.y() + separation),
