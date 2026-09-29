@@ -174,7 +174,9 @@ pub fn verify_update_file_with_cancel(
         return Err(UpdateError::WrongPackageSize);
     }
     let mut hash = Sha256::new();
-    let mut buffer = [0u8; 1024 * 1024];
+    // Windows caller threads can have a 1 MiB stack. Keep the bounded hashing
+    // chunk on the heap so verification does not exhaust that stack.
+    let mut buffer = vec![0u8; 1024 * 1024];
     loop {
         if cancelled() {
             return Err(UpdateError::VerificationCancelled);

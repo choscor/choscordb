@@ -331,3 +331,27 @@ fn package_hashing_can_be_cancelled_between_chunks() {
     );
     assert_eq!(checks, 3);
 }
+
+#[test]
+fn verifies_package_on_a_small_stack_thread() {
+    let record = parse_signed_update_metadata(
+        &linux_envelope(),
+        &key(),
+        "1.2.3",
+        "linux",
+        "x86_64",
+        "choscor/choscordb",
+    )
+    .unwrap()
+    .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("package");
+    fs::write(&path, b"abcd").unwrap();
+    let verified = std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(move || verify_update_file(&path, &record))
+        .unwrap()
+        .join()
+        .unwrap();
+    assert_eq!(verified, Ok(()));
+}
