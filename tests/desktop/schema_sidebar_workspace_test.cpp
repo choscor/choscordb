@@ -3,6 +3,7 @@
 #include "app/navigator_controller.h"
 #include "app/object_explorer.h"
 #include "app/query_workspace.h"
+#include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "design_system/fonts/fonts.h"
 #include "design_system/icons.h"
@@ -36,6 +37,9 @@ void SchemaSidebarWorkspaceTest::tableAndViewIconsFollowTheNavigatorAndTabTheme(
     QTemporaryDir storage;
     MainWindow window(nullptr, storage.filePath("settings.sqlite"));
     window.show();
+    auto* recovery = window.findChild<WorkspaceRecoveryController*>();
+    QVERIFY(recovery);
+    QTRY_VERIFY(recovery->isReady());
     QCoreApplication::processEvents();
     auto* tree = window.findChild<QTreeView*>("databaseNavigator");
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
@@ -114,6 +118,9 @@ void SchemaSidebarWorkspaceTest::columnRowsShowDeclaredTypesWithoutLosingTheirNa
     QTemporaryDir storage;
     MainWindow window(nullptr, storage.filePath("settings.sqlite"));
     window.show();
+    auto* recovery = window.findChild<WorkspaceRecoveryController*>();
+    QVERIFY(recovery);
+    QTRY_VERIFY(recovery->isReady());
     QCoreApplication::processEvents();
     auto* tree = window.findChild<QTreeView*>("databaseNavigator");
     auto* navigator = window.findChild<NavigatorController*>();
