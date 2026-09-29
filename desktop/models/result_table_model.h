@@ -13,12 +13,21 @@ struct DeferredValue {
     quint64 handle;
     quint64 bytes;
     QString type;
+    bool fallback = false;
+};
+struct FallbackText {
+    QString text;
+    QString databaseType;
+};
+struct UnavailableValue {
+    QString databaseType;
+    QString reason;
 };
 struct DecimalValue {
     QString text;
 };
 using Cell = std::variant<std::monostate, bool, qint64, double, DecimalValue, QString, QByteArray,
-                          DeferredValue>;
+                          DeferredValue, FallbackText, UnavailableValue>;
 struct ResultColumn {
     QString name;
     QString databaseType;
@@ -46,7 +55,11 @@ class ResultTableModel final : public QAbstractTableModel {
     static constexpr int HeaderTypeRole = Qt::UserRole + 1;
     static constexpr int HeaderKeyRole = Qt::UserRole + 2;
     static constexpr int HeaderNameRole = Qt::UserRole + 3;
+    static constexpr int ResultValueKindRole = Qt::UserRole + 4;
+    static constexpr int ResultDatabaseTypeRole = Qt::UserRole + 5;
+    static constexpr int ResultUnavailableReasonRole = Qt::UserRole + 6;
     using Row = std::vector<Cell>;
+    using ResolvedCells = std::map<std::pair<int, int>, Cell>;
     static constexpr std::size_t DefaultBytes = 64 * 1024 * 1024;
     // Budget includes owned page allocations, excluding this fixed QObject and
     // caller-owned in-flight transfers. Shared Qt buffers are charged in full.
@@ -94,6 +107,11 @@ class ResultTableModel final : public QAbstractTableModel {
     QString copyCells(QModelIndexList selection, QString* error = nullptr) const;
     QString copyRows(QModelIndexList selection, QString* error = nullptr) const;
     QString copyPage(QString* error = nullptr) const;
+    QString copyCells(QModelIndexList selection, QString* error,
+                      const ResolvedCells& resolved) const;
+    QString copyRows(QModelIndexList selection, QString* error,
+                     const ResolvedCells& resolved) const;
+    QString copyPage(QString* error, const ResolvedCells& resolved) const;
     // Returns a complete typed JSON object. Deferred cells require full values
     // keyed by column index; failure clears json and sets error.
     bool rowJson(int row, QString* json, QString* error = nullptr,
@@ -112,7 +130,8 @@ class ResultTableModel final : public QAbstractTableModel {
   private:
     bool rowJsonImpl(int row, QString* json, QString* error, const std::map<int, Cell>& resolved,
                      bool allowDeferred, bool* unresolved) const;
-    QString copyScope(QModelIndexList selection, int scope, QString* error) const;
+    QString copyScope(QModelIndexList selection, int scope, QString* error,
+                      const ResolvedCells& resolved = {}) const;
     std::vector<ResultColumn> columns_;
     std::vector<ResultCellMetadata> cellMetadata_;
     std::vector<Row> rows_;

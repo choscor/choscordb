@@ -39,6 +39,25 @@ fn exact_values_and_null_survive_contract_boundary() {
 }
 
 #[test]
+fn fallback_states_survive_stored_page_serialization() {
+    let encoded = r#"[
+        {"FallbackText":{"text":"{1,2}","database_type":"_int4"}},
+        {"DeferredFallback":{"handle":{"slot":2,"generation":4},"byte_length":900000,"database_type":"my_extension"}},
+        {"Unavailable":{"database_type":"secret_type","reason":"text output denied"}},
+        "Null",
+        {"Text":"{1,2}"}
+    ]"#;
+    let values: Vec<Value> = serde_json::from_str(encoded).expect("new page states decode");
+    assert_eq!(
+        serde_json::to_value(&values).unwrap(),
+        serde_json::from_str::<serde_json::Value>(encoded).unwrap()
+    );
+    assert_ne!(values[0], values[4]);
+    assert_ne!(values[2], values[3]);
+    assert!(values[1].estimated_bytes() < 200);
+}
+
+#[test]
 fn secrets_and_server_error_text_are_omitted_from_logs() {
     let secret = Secret::new("private-password");
     assert!(!format!("{secret:?}").contains("private-password"));

@@ -30,6 +30,7 @@ enum class Icon {
     Export,
     Code,
     Table,
+    Grid2x2,
     Folder,
     File,
     Key,

@@ -33,7 +33,16 @@ Cell cell(const CellDto& value) {
                           static_cast<qsizetype>(value.bytes.size()));
     if (kind == "deferred")
         return DeferredValue{value.handle, value.byte_length, text(value.database_type)};
-    return text(value.text);
+    if (kind == "fallback_text")
+        return FallbackText{text(value.text), text(value.database_type)};
+    if (kind == "deferred_fallback")
+        return DeferredValue{value.handle, value.byte_length, text(value.database_type), true};
+    if (kind == "unavailable")
+        return UnavailableValue{text(value.database_type), text(value.text)};
+    if (kind == "text" || kind == "date" || kind == "time" || kind == "timestamp" ||
+        kind == "uuid" || kind == "json")
+        return text(value.text);
+    return UnavailableValue{text(value.database_type), QObject::tr("Unknown value representation")};
 }
 } // namespace
 void QueryWorkspace::handleEvent(const BridgeEvent& e) {
@@ -208,6 +217,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         }
         pendingConnections_.remove(e.id);
         if (kind == "connection_failed") {
+            emit connectionAttemptFailed(connectionDrivers_.value(e.id));
             connectionProfiles_.remove(e.id);
             connectionDrivers_.remove(e.id);
             connectionSqlModes_.remove(e.id);

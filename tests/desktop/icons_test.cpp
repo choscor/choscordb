@@ -104,6 +104,34 @@ class IconsTest final : public QObject {
             }
         }
     }
+    void grid2x2UsesThePinnedLucideShapeInBothThemes() {
+        using namespace choscordb::design;
+        const auto catalog = iconCatalog();
+        const auto found = std::find_if(catalog.cbegin(), catalog.cend(),
+                                        [](const auto& entry) { return entry.name == "grid-2x2"; });
+        QVERIFY(found != catalog.cend());
+        QCOMPARE(iconResourcePath(found->role), QString(":/icons/grid-2x2.svg"));
+        QVERIFY(iconResourceDecodes(found->role));
+        for (const QColor color : {QColor("#171717"), QColor("#fafafa")}) {
+            const auto actual =
+                themedIcon(found->role, color, 24).pixmap(QSize(24, 24), 2.0).toImage();
+            QPixmap expected(48, 48);
+            expected.setDevicePixelRatio(2);
+            expected.fill(Qt::transparent);
+            QSvgRenderer reference(
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" "
+                "fill=\"none\" stroke=\"" +
+                color.name().toUtf8() +
+                "\" stroke-width=\"1.6\" stroke-linecap=\"round\" "
+                "stroke-linejoin=\"round\"><path d=\"M12 3v18\"/>"
+                "<path d=\"M3 12h18\"/><rect x=\"3\" y=\"3\" width=\"18\" "
+                "height=\"18\" rx=\"2\"/></svg>");
+            QPainter painter(&expected);
+            reference.render(&painter, QRectF(0, 0, 24, 24));
+            painter.end();
+            QCOMPARE(actual, expected.toImage());
+        }
+    }
     void strokeCoverageMatchesMvpAtRetinaScale() {
         using namespace choscordb::design;
         const auto image =

@@ -80,6 +80,7 @@ void QueryWorkspace::appendJsonViewActions(QMenu& menu, const QPersistentModelIn
 }
 void QueryWorkspace::clearResult() {
     clearRowJson();
+    pendingCopy_.reset();
     if (export_)
         export_->clearQuery();
     if (detail_)
@@ -282,12 +283,14 @@ void QueryWorkspace::requestRowJsonChunk() {
             rowJsonLoadingBytes_.clear();
             rowJsonLoadingKind_.clear();
             const auto type = value->type.toLower();
-            rowJsonExpectedKind_ =
-                (type == "binary" || type == "blob" || type == "bytea" || type == "varbinary")
-                    ? QStringLiteral("binary")
-                : (type == "text" || type == "string" || type == "json" || type == "jsonb")
-                    ? QStringLiteral("text")
-                    : QString{};
+            if (value->fallback || type == "text" || type == "string" || type == "json" ||
+                type == "jsonb")
+                rowJsonExpectedKind_ = QStringLiteral("text");
+            else if (type == "binary" || type == "blob" || type == "bytea" ||
+                     type == "varbinary")
+                rowJsonExpectedKind_ = QStringLiteral("binary");
+            else
+                rowJsonExpectedKind_.clear();
             break;
         }
     }
@@ -371,7 +374,11 @@ void QueryWorkspace::handleRowJsonEvent(const BridgeEvent& event) {
                 failRowJson(tr("The complete text value is not valid UTF-8."));
                 return;
             }
-            rowJsonResolved_[{rowJsonLoadingRow_, rowJsonLoadingColumn_}] = decoded;
+            const auto deferred =
+                model_->deferredValue(model_->index(rowJsonLoadingRow_, rowJsonLoadingColumn_));
+            rowJsonResolved_[{rowJsonLoadingRow_, rowJsonLoadingColumn_}] =
+                deferred && deferred->fallback ? Cell{FallbackText{decoded, deferred->type}}
+                                               : Cell{decoded};
         } else {
             rowJsonResolved_[{rowJsonLoadingRow_, rowJsonLoadingColumn_}] =
                 std::move(rowJsonLoadingBytes_);

@@ -102,6 +102,8 @@ std::optional<ResultCellMetadata> ResultTableModel::linkedColumn(const QModelInd
         metadata.targetObject.isEmpty() || metadata.targetQualifiedName.isEmpty() ||
         metadata.targetColumn.isEmpty() || std::holds_alternative<std::monostate>(value) ||
         std::holds_alternative<DeferredValue>(value) || std::holds_alternative<QByteArray>(value) ||
+        std::holds_alternative<FallbackText>(value) ||
+        std::holds_alternative<UnavailableValue>(value) ||
         (inserted_[index.row()] && !touched_[index.row()][index.column()]))
         return std::nullopt;
     if (const auto* decimal = std::get_if<DecimalValue>(&value);
@@ -134,6 +136,36 @@ QVariant ResultTableModel::data(const QModelIndex& index, int role) const {
     if (role == Qt::ToolTipRole && inserted_[index.row()])
         return touched_[index.row()][index.column()] ? tr("Pending insert value")
                                                      : tr("Omitted; database default applies");
+    if (role == ResultValueKindRole) {
+        if (std::holds_alternative<FallbackText>(cell))
+            return QStringLiteral("fallback_text");
+        if (std::holds_alternative<UnavailableValue>(cell))
+            return QStringLiteral("unavailable");
+        if (const auto* deferred = std::get_if<DeferredValue>(&cell);
+            deferred && deferred->fallback)
+            return QStringLiteral("deferred_fallback");
+    }
+    if (role == ResultDatabaseTypeRole) {
+        if (const auto* fallback = std::get_if<FallbackText>(&cell))
+            return fallback->databaseType;
+        if (const auto* unavailable = std::get_if<UnavailableValue>(&cell))
+            return unavailable->databaseType;
+        if (const auto* deferred = std::get_if<DeferredValue>(&cell);
+            deferred && deferred->fallback)
+            return deferred->type;
+    }
+    if (role == ResultUnavailableReasonRole)
+        if (const auto* unavailable = std::get_if<UnavailableValue>(&cell))
+            return unavailable->reason;
+    if (role == Qt::ToolTipRole) {
+        if (const auto* fallback = std::get_if<FallbackText>(&cell))
+            return tr("Read-only server text fallback · %1").arg(fallback->databaseType);
+        if (const auto* unavailable = std::get_if<UnavailableValue>(&cell))
+            return tr("Unavailable · %1: %2").arg(unavailable->databaseType, unavailable->reason);
+        if (const auto* deferred = std::get_if<DeferredValue>(&cell);
+            deferred && deferred->fallback)
+            return tr("Read-only server text fallback · %1 · open to load").arg(deferred->type);
+    }
     if (role == Qt::FontRole && std::holds_alternative<std::monostate>(cell)) {
         QFont font;
         font.setItalic(true);
@@ -186,8 +218,23 @@ QVariant ResultTableModel::data(const QModelIndex& index, int role) const {
             else if constexpr (std::is_same_v<T, QByteArray>)
                 return QString("0x") + QString::fromLatin1(value.left(64).toHex()) +
                        (value.size() > 64 ? QString("… (%1 bytes)").arg(value.size()) : QString());
+            else if constexpr (std::is_same_v<T, DeferredValue>)
+                return value.fallback ? tr("[text fallback · %1 · %2 bytes · open to load]")
+                                            .arg(value.type)
+                                            .arg(value.bytes)
+                                      : QString("[%1 · %2 bytes · open to load]")
+                                            .arg(value.type)
+                                            .arg(value.bytes);
+            else if constexpr (std::is_same_v<T, FallbackText>) {
+                constexpr qsizetype PreviewChars = 128;
+                const auto preview = value.text.left(PreviewChars);
+                return tr("[text fallback · %1] %2%3")
+                    .arg(value.databaseType, preview,
+                         value.text.size() > PreviewChars ? QStringLiteral("…") : QString{});
+            } else if constexpr (std::is_same_v<T, UnavailableValue>)
+                return tr("[unavailable · %1]").arg(value.databaseType);
             else
-                return QString("[%1 · %2 bytes · open to load]").arg(value.type).arg(value.bytes);
+                return QString{};
         },
         cell);
 }
@@ -298,6 +345,10 @@ bool ResultTableModel::setPage(std::vector<ResultColumn> columns, std::vector<Ro
                         return count.binary(value);
                     else if constexpr (std::is_same_v<T, DeferredValue>)
                         return count.string(value.type);
+                    else if constexpr (std::is_same_v<T, FallbackText>)
+                        return count.string(value.text) && count.string(value.databaseType);
+                    else if constexpr (std::is_same_v<T, UnavailableValue>)
+                        return count.string(value.databaseType) && count.string(value.reason);
                     else
                         return true;
                 },
@@ -387,7 +438,9 @@ Qt::ItemFlags ResultTableModel::flags(const QModelIndex& index) const {
         !deleted_[index.row()] &&
         (inserted_[index.row()] ? insertEditable_[index.column()] : editable_[index.column()]) &&
         !std::holds_alternative<QByteArray>(rows_[index.row()][index.column()]) &&
-        !std::holds_alternative<DeferredValue>(rows_[index.row()][index.column()]))
+        !std::holds_alternative<DeferredValue>(rows_[index.row()][index.column()]) &&
+        !std::holds_alternative<FallbackText>(rows_[index.row()][index.column()]) &&
+        !std::holds_alternative<UnavailableValue>(rows_[index.row()][index.column()]))
         result |= Qt::ItemIsEditable;
     return result;
 }
@@ -484,6 +537,11 @@ bool ResultTableModel::duplicateRow(int row, const std::vector<bool>& copyable, 
         return fail(tr("This result cannot insert a duplicate row."));
     if (rows_.size() >= 10000)
         return fail(tr("The visible page already has the maximum number of rows."));
+    if (std::any_of(rows_[row].begin(), rows_[row].end(), [](const Cell& value) {
+            return std::holds_alternative<FallbackText>(value) ||
+                   std::holds_alternative<UnavailableValue>(value);
+        }))
+        return fail(tr("Rows with fallback or unavailable values cannot be duplicated."));
     Row duplicate(columns_.size());
     std::vector<bool> touched(columns_.size(), false);
     for (size_t column = 0; column < columns_.size(); ++column) {
@@ -534,7 +592,12 @@ void ResultTableModel::markDeleted(const QModelIndexList& selection, bool delete
             inserted_.erase(inserted_.begin() + row);
             deleted_.erase(deleted_.begin() + row);
             endRemoveRows();
-        } else if (canDelete_) {
+        } else if (canDelete_ &&
+                   (!deleted ||
+                    std::none_of(rows_[row].begin(), rows_[row].end(), [](const Cell& cell) {
+                        return std::holds_alternative<FallbackText>(cell) ||
+                               std::holds_alternative<UnavailableValue>(cell);
+                    }))) {
             deleted_[row] = deleted;
             if (columnCount())
                 emit dataChanged(index(row, 0), index(row, columnCount() - 1));
@@ -572,7 +635,19 @@ QString ResultTableModel::copyPage(QString* error) const {
 QString ResultTableModel::copyCells(QModelIndexList selection, QString* error) const {
     return copyScope(std::move(selection), 0, error);
 }
-QString ResultTableModel::copyScope(QModelIndexList selection, int scope, QString* error) const {
+QString ResultTableModel::copyCells(QModelIndexList selection, QString* error,
+                                    const ResolvedCells& resolved) const {
+    return copyScope(std::move(selection), 0, error, resolved);
+}
+QString ResultTableModel::copyRows(QModelIndexList selection, QString* error,
+                                   const ResolvedCells& resolved) const {
+    return copyScope(std::move(selection), 1, error, resolved);
+}
+QString ResultTableModel::copyPage(QString* error, const ResolvedCells& resolved) const {
+    return copyScope({}, 2, error, resolved);
+}
+QString ResultTableModel::copyScope(QModelIndexList selection, int scope, QString* error,
+                                    const ResolvedCells& resolved) const {
     if (error)
         error->clear();
     auto fail = [error](const QString& message) {
@@ -582,6 +657,25 @@ QString ResultTableModel::copyScope(QModelIndexList selection, int scope, QStrin
     };
     if (rows_.empty() || columns_.empty())
         return {};
+    for (const auto& [position, value] : resolved) {
+        const auto [row, column] = position;
+        if (row < 0 || row >= rowCount() || column < 0 || column >= columnCount() ||
+            !std::holds_alternative<DeferredValue>(rows_[row][column]))
+            return fail(tr("A loaded copy value is invalid."));
+        const auto& deferred = std::get<DeferredValue>(rows_[row][column]);
+        if (deferred.fallback != std::holds_alternative<FallbackText>(value) ||
+            (deferred.fallback && std::get<FallbackText>(value).databaseType != deferred.type) ||
+            (!deferred.fallback && !std::holds_alternative<QString>(value) &&
+             !std::holds_alternative<QByteArray>(value)))
+            return fail(tr("A loaded copy value has the wrong type."));
+        const auto actual = std::holds_alternative<FallbackText>(value)
+                                ? std::get<FallbackText>(value).text.toUtf8().size()
+                            : std::holds_alternative<QString>(value)
+                                ? std::get<QString>(value).toUtf8().size()
+                                : std::get<QByteArray>(value).size();
+        if (actual < 0 || static_cast<quint64>(actual) != deferred.bytes)
+            return fail(tr("A loaded copy value is incomplete."));
+    }
     selection.erase(std::remove_if(selection.begin(), selection.end(),
                                    [this](const auto& i) {
                                        return !i.isValid() || i.model() != this ||
@@ -640,7 +734,11 @@ QString ResultTableModel::copyScope(QModelIndexList selection, int scope, QStrin
                     continue;
                 if (scope == 0)
                     ++selected;
-                const auto& value = rows_[row][column];
+                const auto found = resolved.find({row, column});
+                const auto& value = found == resolved.end() ? rows_[row][column] : found->second;
+                if (const auto* unavailable = std::get_if<UnavailableValue>(&value))
+                    return fail(tr("Cannot copy unavailable %1 value: %2")
+                                    .arg(unavailable->databaseType, unavailable->reason));
                 if (std::holds_alternative<DeferredValue>(value))
                     return fail(tr("Large values cannot be copied from the grid. Export the "
                                    "result to copy the complete value."));
@@ -656,7 +754,10 @@ QString ResultTableModel::copyScope(QModelIndexList selection, int scope, QStrin
                         output += QStringLiteral("0x") + QString::fromLatin1(binary->toHex());
                     continue;
                 }
-                const auto text = data(index(row, column)).toString();
+                const auto text =
+                    std::holds_alternative<FallbackText>(value) ? std::get<FallbackText>(value).text
+                    : std::holds_alternative<QString>(value) ? std::get<QString>(value)
+                                                             : data(index(row, column)).toString();
                 const bool quote = text.contains('\t') || text.contains('\n') ||
                                    text.contains('\r') || text.contains('"');
                 if (!write) {

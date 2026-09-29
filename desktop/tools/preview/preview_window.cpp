@@ -3,6 +3,7 @@
 
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
+#include "design_system/column_row/column_row.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
@@ -112,6 +113,8 @@ QList<Specimen> specimens() {
          "desktop/design_system/field/field_style.cpp"},
         {"Components", "lists-navigation", "Lists and navigation",
          "desktop/design_system/tree/tree_style.cpp"},
+        {"Components", "column-row", "Columns with types",
+         "desktop/design_system/column_row/column_row.cpp"},
         {"Components", "navigation-profile-row", "Selected and unselected saved connections",
          "desktop/design_system/navigation_profile_row/navigation_profile_row.cpp"},
         {"Components", "recent-history-row", "Recent query history rows",
@@ -858,6 +861,26 @@ void PreviewWindow::rebuildSpecimens() {
                            host == light_ ? ResolvedAppearance::Light : ResolvedAppearance::Dark);
         } else if (id == "icons") {
             populateIcons(content, contentLayout);
+        } else if (id == "column-row") {
+            constexpr int detailRole = Qt::UserRole + 1;
+            auto* tree = new QTreeView(content);
+            tree->setObjectName("previewColumnRows");
+            auto* model = new QStandardItemModel(tree);
+            for (const auto& [name, type] :
+                 {std::pair{"customer_id", "INTEGER"},
+                  std::pair{"very_long_descriptive_column_name", "VARCHAR(255)"},
+                  std::pair{"measurement", "timestamp(6) with time zone and extended suffix"},
+                  std::pair{"untyped_column", ""}}) {
+                auto* item = new QStandardItem(QString::fromLatin1(name));
+                item->setData(QString::fromLatin1(type), detailRole);
+                model->appendRow(item);
+            }
+            tree->setModel(model);
+            tree->setItemDelegate(new ColumnRowDelegate(detailRole, tree));
+            tree->setHeaderHidden(true);
+            tree->setFixedWidth(220);
+            tree->setMinimumHeight(165);
+            contentLayout->addWidget(tree);
         } else if (id == "typography") {
             populateTypography(content, contentLayout);
         } else if (id == "tables") {

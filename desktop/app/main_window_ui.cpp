@@ -156,6 +156,10 @@ MainWindow::Ui MainWindow::buildUi() {
     documentation->setMenuRole(QAction::NoRole);
     connect(documentation, &QAction::triggered, this,
             [] { QDesktopServices::openUrl(QUrl("https://github.com/choscor/choscordb#readme")); });
+    helpMenu->addSeparator();
+    auto* diagnostics = helpMenu->addAction(tr("Export Diagnostics…"));
+    diagnostics->setObjectName("exportDiagnostics");
+    connect(diagnostics, &QAction::triggered, this, &MainWindow::showDiagnosticsExport);
     auto* about = helpMenu->addAction(tr("About ChoscorDB"));
     about->setObjectName("aboutChoscorDB");
     about->setMenuRole(QAction::AboutRole);
@@ -558,9 +562,11 @@ MainWindow::Ui MainWindow::buildUi() {
     editors_->setObjectName("editorTabs");
     connect(theme_, &design::ThemeManager::themeChanged, editors_, [this] {
         for (int index = 0; index < editors_->count(); ++index) {
-            const auto role = qobject_cast<ObjectExplorer*>(editors_->widget(index))
-                                  ? design::Icon::Table
-                                  : design::Icon::Code;
+            const auto* explorer = qobject_cast<ObjectExplorer*>(editors_->widget(index));
+            const auto kind = explorer ? explorer->property("objectType").toString() : QString{};
+            const auto role = !explorer                           ? design::Icon::Code
+                              : kind == "table" || kind == "view" ? design::Icon::Grid2x2
+                                                                  : design::Icon::Table;
             editors_->setTabIcon(
                 index, design::themedIcon(role, theme_->resolvedTheme().colors.mutedText, 16));
         }

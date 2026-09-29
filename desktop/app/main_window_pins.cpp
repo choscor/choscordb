@@ -586,15 +586,36 @@ void MainWindow::tryRevealPendingPin() {
     if (navigatorController_->revealObject(
             connection, pin.ancestryIds, pin.objectId, pin.kind, pin.qualifiedName,
             pin.relationSubtype,
-            [this, key, generation](NavigatorController::RevealResult result,
-                                    const QString& reason) {
+            [this, key, generation, pin, connection](NavigatorController::RevealResult result,
+                                                     const QString& reason) {
                 if (generation != pinActivationGeneration_ || pendingPinKey_ != key)
                     return;
                 pinRevealInFlight_ = false;
                 pendingPinKey_.clear();
                 pinStartAttempts_ = 0;
-                if (result == NavigatorController::RevealResult::Found)
+                if (result == NavigatorController::RevealResult::Found) {
+                    const bool tableDetail = pin.kind == QLatin1String("index") ||
+                                             pin.kind == QLatin1String("primarykey") ||
+                                             pin.kind == QLatin1String("foreignkey") ||
+                                             pin.kind == QLatin1String("uniquekey");
+                    auto* tree = findChild<QTreeView*>("databaseNavigator");
+                    const auto selected = tree ? tree->currentIndex() : QModelIndex{};
+                    const auto selectedKind = selected.data(NavigatorModel::KindRole).toString();
+                    if (tableDetail &&
+                        (selectedKind == QLatin1String("table") ||
+                         selectedKind == QLatin1String("view")) &&
+                        selected.data(NavigatorModel::ObjectIdRole).toString() ==
+                            pin.parentObjectId &&
+                        !pin.ancestryIds.isEmpty() &&
+                        pin.ancestryIds.last() == pin.parentObjectId) {
+                        const int pane = pin.kind == QLatin1String("index") ? 1 : 2;
+                        openObjectTab(connection, pin.parentObjectId,
+                                      selected.data(NavigatorModel::QualifiedNameRole).toString(),
+                                      selectedKind,
+                                      selected.data(NavigatorModel::PropertiesRole).toList(), pane);
+                    }
                     return;
+                }
                 if (result == NavigatorController::RevealResult::Unavailable) {
                     auto updated = pins_;
                     for (auto& entry : updated)

@@ -46,6 +46,7 @@ DESIGN_CONTROLS = {
 }
 DESIGN_COMPOSITES = {
     "ButtonGroup",
+    "ColumnRowDelegate",
     "DialogSections",
     "FieldValidation",
     "ModalDialog",
@@ -197,7 +198,7 @@ def feature_composites(sources):
             name
             for name, base in bases.items()
             if base in composites
-            or base in {"DialogShell", "QsciScintilla"}
+            or base in DESIGN_COMPOSITES | {"DialogShell", "QsciScintilla"}
             or is_visual_qt(base)
         }
         if found == composites:

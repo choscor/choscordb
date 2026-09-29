@@ -3,6 +3,8 @@
 #include "app/object_tab_title.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
+#include "design_system/icons.h"
+#include "design_system/theme.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QClipboard>
@@ -249,6 +251,32 @@ class RecoveryTest : public QObject {
         QCOMPARE(errors.count(), 1);
         QCOMPARE(tabs.count(), 1);
         QCOMPARE(tabs.widget(0), original);
+    }
+
+    void restoredViewUsesGridIconAndOtherKindsKeepTheirIcon() {
+        QTabWidget tabs;
+        WorkspaceRecoveryController recovery(&tabs, [] { return new SqlEditor; });
+        recovery.setObjectFactory([](const SavedWorkspaceTab&) -> QWidget* { return new QWidget; });
+        QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreTabsRequested);
+        recovery.start();
+        QCOMPARE(restores.count(), 1);
+        SavedWorkspaceTab view;
+        view.isObject = true;
+        view.profileId = "profile:missing";
+        view.objectType = "view";
+        view.objectId = "main.summary";
+        view.label = "summary";
+        SavedWorkspaceTab function = view;
+        function.objectType = "function";
+        function.objectId = "main.calculate";
+        function.label = "calculate";
+        recovery.restoredTabs(restores.at(0).at(0).toULongLong(), {view, function}, 0);
+        QCOMPARE(tabs.count(), 2);
+        const auto color = design::resolvedThemeForWidget(tabs).colors.mutedText;
+        QCOMPARE(tabs.tabIcon(0).pixmap(16, 16).toImage(),
+                 design::themedIcon(design::Icon::Grid2x2, color, 16).pixmap(16, 16).toImage());
+        QCOMPARE(tabs.tabIcon(1).pixmap(16, 16).toImage(),
+                 design::themedIcon(design::Icon::Table, color, 16).pixmap(16, 16).toImage());
     }
 
     void pendingFileReadDefersCloseUntilLatestBufferCanBeSaved() {

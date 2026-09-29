@@ -47,6 +47,12 @@ pub(crate) fn cmp(left: &Value, right: &Value) -> Result<Ordering, DriverError> 
         (Deferred { .. }, _) | (_, Deferred { .. }) => {
             return Err(invalid("Deferred values cannot be filtered or sorted"));
         }
+        (DeferredFallback { .. } | FallbackText { .. } | Unavailable { .. }, _)
+        | (_, DeferredFallback { .. } | FallbackText { .. } | Unavailable { .. }) => {
+            return Err(invalid(
+                "Fallback and unavailable values cannot be filtered or sorted",
+            ));
+        }
         (Bool(a), Bool(b)) => a.cmp(b),
         (Bool(a), Integer(b)) => i64::from(*a).cmp(b),
         (Integer(a), Bool(b)) => a.cmp(&i64::from(*b)),
@@ -483,11 +489,26 @@ pub fn value_matches(
     if matches!(value, Value::Deferred { .. }) {
         return Err(invalid("Deferred values cannot be filtered or sorted"));
     }
+    if matches!(
+        value,
+        Value::DeferredFallback { .. } | Value::FallbackText { .. } | Value::Unavailable { .. }
+    ) {
+        return Err(invalid(
+            "Fallback and unavailable values cannot be filtered or sorted",
+        ));
+    }
     if matches!(value, Value::Null) {
         return Ok(false);
     }
     let operand = operand.ok_or_else(|| invalid("Filter operator requires a value"))?;
-    if matches!(operand, Value::Null | Value::Deferred { .. }) {
+    if matches!(
+        operand,
+        Value::Null
+            | Value::Deferred { .. }
+            | Value::DeferredFallback { .. }
+            | Value::FallbackText { .. }
+            | Value::Unavailable { .. }
+    ) {
         return Err(invalid("Filter value is invalid"));
     }
     if operator == FilterOperator::Contains {
@@ -544,6 +565,13 @@ pub(crate) fn validate_sort_value(row: &[Value], sort: ResultSort) -> Result<(),
         .ok_or_else(|| invalid("Sort column is out of range"))?;
     if matches!(value, Value::Deferred { .. }) {
         Err(invalid("Deferred values cannot be filtered or sorted"))
+    } else if matches!(
+        value,
+        Value::DeferredFallback { .. } | Value::FallbackText { .. } | Value::Unavailable { .. }
+    ) {
+        Err(invalid(
+            "Fallback and unavailable values cannot be filtered or sorted",
+        ))
     } else {
         Ok(())
     }

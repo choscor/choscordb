@@ -8,6 +8,7 @@ class PreviewTest final : public QObject {
   private slots:
     void codePreviewTextAreaUsesSharedVariantInBothThemes();
     void navigationTreeSpecimenUsesRealTreeInBothThemes();
+    void columnRowSpecimenUsesRealDelegateInBothThemes();
     void switchSpecimenUsesRealControlsInBothThemes();
     void recentHistoryRowsUseSharedDelegateInBothThemes();
     void editorResultsSplitUsesEqualPanesInBothThemes();

@@ -14,6 +14,7 @@ struct NavigatorObject {
     QString kind;
     bool hasChildren = false;
     QVariantList properties;
+    QString databaseType;
     NavigatorObject() = default;
     NavigatorObject(QString id, QString name, QString qualifiedName, QString kind, bool hasChildren,
                     QVariantList properties = {})
@@ -44,7 +45,8 @@ class NavigatorModel final : public QAbstractItemModel {
         ErrorRole,
         ChildrenLoadedRole,
         PropertiesRole,
-        HasMoreRole
+        HasMoreRole,
+        DatabaseTypeRole
     };
     explicit NavigatorModel(QObject* parent = nullptr);
     ~NavigatorModel() override;

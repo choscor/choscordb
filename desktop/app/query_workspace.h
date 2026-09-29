@@ -109,6 +109,7 @@ class QueryWorkspace final : public QObject {
     bool navigationAllowed() const { return !workInFlight() && !stopping_; }
   signals:
     void connectionReady(quint64 connection);
+    void connectionAttemptFailed(const QString& driver);
     void documentTargetChanged();
     void openQueryRequested(quint64 connection);
     void activityChanged(bool busy);
@@ -152,6 +153,10 @@ class QueryWorkspace final : public QObject {
     void failRowJson(const QString& error);
     void clearRowJson();
     void handleRowJsonEvent(const BridgeEvent& event);
+    void copyResult(int scope);
+    void requestCopyChunk();
+    void handleCopyEvent(const BridgeEvent& event);
+    void failCopy(const QString& error);
     void handleEvent(const BridgeEvent& event);
     bool connectionCanDisconnect(quint64 connection) const;
     void updateActions();
@@ -190,6 +195,20 @@ class QueryWorkspace final : public QObject {
     quint64 rowJsonLoadingOffset_ = 0;
     quint64 rowJsonLoadingTotal_ = 0;
     quint64 rowJsonResolvedBytes_ = 0;
+    struct PendingCopy {
+        int scope = 0;
+        QModelIndexList selection;
+        QPersistentModelIndex anchor;
+        quint64 query = 0;
+        ResultTableModel::ResolvedCells resolved;
+        std::vector<std::pair<int, int>> deferred;
+        std::size_t next = 0;
+        QByteArray bytes;
+        QString kind;
+        quint64 offset = 0;
+        quint64 resolvedBytes = 0;
+    };
+    std::optional<PendingCopy> pendingCopy_;
     ExportDialog* export_ = nullptr;
     ProfileDialog* profiles_ = nullptr;
     QString resultOrigin_;

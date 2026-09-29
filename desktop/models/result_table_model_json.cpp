@@ -91,6 +91,12 @@ bool validResolvedValue(const Cell& original, const Cell& resolved, const Result
     const auto* deferred = std::get_if<DeferredValue>(&original);
     if (!deferred)
         return false;
+    if (deferred->fallback) {
+        const auto* fallback = std::get_if<FallbackText>(&resolved);
+        return fallback && fallback->databaseType == deferred->type &&
+               validUnicode(fallback->text) &&
+               static_cast<quint64>(fallback->text.toUtf8().size()) == deferred->bytes;
+    }
     const bool expectedText =
         isJsonType(column.databaseType) ||
         (!column.databaseType.trimmed().isEmpty() && isTextType(column.databaseType)) ||
@@ -226,6 +232,19 @@ bool appendJsonCell(QString& output, const Cell& cell, const ResultColumn& colum
                 QObject::tr("This row contains a non-finite number that JSON cannot represent."));
         return appendJson(output, QString::number(*value, 'g', 17), limit);
     }
+    if (const auto* value = std::get_if<UnavailableValue>(&cell))
+        return fail(QObject::tr("This row contains an unavailable %1 value: %2")
+                        .arg(value->databaseType, value->reason));
+    if (const auto* value = std::get_if<FallbackText>(&cell)) {
+        if (!appendJson(output, QStringLiteral("{\"fallback_text\": "), limit) ||
+            !appendJsonString(output, value->text, limit) ||
+            !appendJson(output, QStringLiteral(", \"database_type\": "), limit) ||
+            !appendJsonString(output, value->databaseType, limit) ||
+            !appendJson(output, QStringLiteral("}"), limit))
+            return fail(QObject::tr(
+                "This row contains invalid fallback text or exceeds the JSON size limit."));
+        return true;
+    }
     if (const auto* value = std::get_if<QString>(&cell)) {
         if (isJsonType(column.databaseType)) {
             if (!validJsonDocument(*value))
@@ -355,8 +374,9 @@ ResultTableModel::CellJsonReadiness ResultTableModel::cellJsonReadiness(const QM
     const bool textType = isTextType(column.databaseType);
     if (!jsonType && !textType)
         return CellJsonReadiness::Unavailable;
-    if (std::holds_alternative<DeferredValue>(*value))
-        return CellJsonReadiness::NeedsDeferred;
+    if (const auto* deferred = std::get_if<DeferredValue>(&*value))
+        return deferred->fallback ? CellJsonReadiness::Unavailable
+                                  : CellJsonReadiness::NeedsDeferred;
     const auto* text = std::get_if<QString>(&*value);
     if (!text)
         return jsonType ? CellJsonReadiness::Invalid : CellJsonReadiness::Unavailable;
@@ -388,6 +408,9 @@ bool ResultTableModel::cellJson(const QModelIndex& index, QString* json, QString
     const auto& column = columns_[index.column()];
     if (!isJsonType(column.databaseType) && !isTextType(column.databaseType))
         return fail(tr("This cell is not a JSON or text value."));
+    if (const auto* deferred = std::get_if<DeferredValue>(&*original);
+        deferred && deferred->fallback)
+        return fail(tr("This cell is a read-only text fallback, not a JSON value."));
     if (resolved && !validResolvedValue(*original, *resolved, column))
         return fail(tr("A loaded cell value is invalid or incomplete."));
     const Cell& value = resolved ? *resolved : *original;
