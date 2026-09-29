@@ -228,7 +228,9 @@ void ModernUiTest::diagnosticsShowFolderUsesLocalDiagnosticPath() {
     auto* folder = dialog->findChild<QPushButton*>("diagnosticsShowFolder");
     QVERIFY(folder);
     folder->click();
-    QCOMPARE(diagnosticsFolderUrl_.toLocalFile(), diagnostics.folderPath());
+    QVERIFY(diagnosticsFolderUrl_.isLocalFile());
+    QCOMPARE(QDir::fromNativeSeparators(diagnosticsFolderUrl_.toLocalFile()),
+             QDir::fromNativeSeparators(diagnostics.folderPath()));
     dialog->close();
     diagnostics.stop();
 }

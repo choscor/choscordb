@@ -38,7 +38,7 @@
   {
     "path": "desktop/app/main_window_quick_search.cpp",
     "rule": "serialization",
-    "sha256": "da3364de4ec8768f44f0f3ba8581b2a9a53c6fdd40c13ce7f46be8945da74776",
+    "sha256": "14c12b1fd7bab3528b7dc58cc006e5615337f5813057c3c8648bab2f372ecc71",
     "reason": "QJsonDocument encodes a tuple into an ephemeral search-row key so distinct open UI objects do not collide. The key is neither persisted nor sent to the engine; typed fields retained in quickObjectMatches_ drive activation and Rust validates object requests."
   },
   {

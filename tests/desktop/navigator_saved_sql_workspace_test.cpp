@@ -126,20 +126,22 @@ void NavigatorSqlWorkspaceTest::savedPanelRapidDistinctFilesOpenBothAndFocusLate
     emit list->itemClicked(secondItems.front(), 0);
     emit list->itemClicked(secondItems.front(), 0);
     QTRY_COMPARE(tabs->count(), 2);
-    const QSet<QString> expectedPaths{firstPath, secondPath};
+    const QSet<QString> expectedPaths{QDir::fromNativeSeparators(firstPath),
+                                      QDir::fromNativeSeparators(secondPath)};
     QTRY_VERIFY([&] {
         QSet<QString> paths;
         for (int i = 0; i < tabs->count(); ++i) {
             auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->widget(i));
             if (!editor || editor->text().isEmpty())
                 return false;
-            paths.insert(editor->filePath());
+            paths.insert(QDir::fromNativeSeparators(editor->filePath()));
         }
         return paths == expectedPaths;
     }());
     auto* current = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
     QVERIFY(current);
-    QCOMPARE(current->filePath(), secondPath);
+    QCOMPARE(QDir::fromNativeSeparators(current->filePath()),
+             QDir::fromNativeSeparators(secondPath));
     QVERIFY(first.remove());
     QVERIFY(second.remove());
 }

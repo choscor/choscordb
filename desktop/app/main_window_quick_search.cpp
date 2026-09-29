@@ -578,8 +578,22 @@ void MainWindow::scanQuickSearchEditors(quint64 generation, int tabIndex, int li
 }
 
 void MainWindow::refreshQuickSearchIfOpen() {
-    if (quickSearch_ && quickSearch_->isVisible())
-        updateQuickSearch(quickSearch_->query());
+    if (!quickSearch_ || !quickSearch_->isVisible())
+        return;
+    if (!quickPendingRecentObject_.isEmpty() && quickSearch_->query().trimmed().isEmpty()) {
+        const auto connection =
+            quickPendingRecentObject_.value(QStringLiteral("connection")).toULongLong();
+        const auto qualifiedName =
+            quickPendingRecentObject_.value(QStringLiteral("qualifiedName")).toString();
+        // Keep the activated lookup across unrelated UI refreshes. Connection
+        // and visibility changes still invalidate it through the normal refresh.
+        if (quickSearchConnection() == connection &&
+            navigatorController_->model()->canShowUnverifiedObject(connection, qualifiedName)) {
+            renderQuickSearch();
+            return;
+        }
+    }
+    updateQuickSearch(quickSearch_->query());
 }
 
 std::optional<quint64> MainWindow::quickSearchConnection() const {

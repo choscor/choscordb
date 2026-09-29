@@ -49,7 +49,7 @@ pub use protocol::*;
 pub use result_view::{FilterCondition, FilterOperator, ResultSort, SortDirection, value_matches};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, RwLock},
 };
 use tokio::{
     runtime::Runtime,
@@ -70,7 +70,7 @@ struct QuerySlot {
     released: watch::Sender<bool>,
     view_cancellation: watch::Sender<bool>,
 }
-pub(crate) type DiagnosticsSlot = Arc<Mutex<Option<Arc<DiagnosticsService>>>>;
+pub(crate) type DiagnosticsSlot = Arc<RwLock<Option<Arc<DiagnosticsService>>>>;
 
 pub struct Engine {
     history_memory: Arc<std::sync::atomic::AtomicUsize>,
@@ -97,7 +97,7 @@ pub struct Engine {
 impl Engine {
     /// Attach local diagnostics capture to subsequent engine operations.
     pub fn set_diagnostics(&mut self, service: Arc<DiagnosticsService>) {
-        if let Ok(mut slot) = self.diagnostics.lock() {
+        if let Ok(mut slot) = self.diagnostics.write() {
             *slot = Some(service);
         }
     }
@@ -174,7 +174,7 @@ impl Engine {
             config,
             memory,
             cache,
-            diagnostics: Arc::new(Mutex::new(None)),
+            diagnostics: Arc::new(RwLock::new(None)),
         })
     }
     pub fn connect(
@@ -315,8 +315,11 @@ impl Engine {
             query: id,
             state: QueryState::Queued,
         });
-        if let Ok(slot) = self.diagnostics.try_lock()
-            && let Some(service) = slot.as_ref()
+        if let Some(service) = self
+            .diagnostics
+            .try_read()
+            .ok()
+            .and_then(|slot| slot.clone())
         {
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 service.observe_engine_event(

@@ -167,7 +167,7 @@ impl EventSink {
         let Some(registry) = &self.diagnostics else {
             return;
         };
-        let Ok(slot) = registry.try_lock() else {
+        let Ok(slot) = registry.try_read() else {
             return;
         };
         let Some(service) = slot.as_ref().cloned() else {
@@ -1928,4 +1928,37 @@ fn column_bytes(columns: &[Column]) -> usize {
                 .saturating_add(column.database_type.capacity())
                 .saturating_add(column.timezone.as_ref().map_or(0, String::capacity))
         })
+}
+
+#[cfg(test)]
+mod diagnostics_tests {
+    use super::*;
+
+    #[test]
+    fn concurrent_service_read_does_not_drop_an_engine_outcome() {
+        let root = tempfile::tempdir().unwrap();
+        let service = Arc::new(choscordb_diagnostics::Service::new(
+            root.path(),
+            "1.2.3",
+            "test",
+        ));
+        assert!(service.start());
+        let slot = Arc::new(std::sync::RwLock::new(Some(Arc::clone(&service))));
+        let (sender, _receiver) = mpsc::channel(1);
+        let (_shutdown_sender, shutdown) = watch::channel(false);
+        let sink = EventSink::with_diagnostics(sender, shutdown, Arc::clone(&slot), "sqlite");
+        let reader = slot.read().unwrap();
+        std::thread::spawn(move || sink.record(DiagnosticAction::Connection(true)))
+            .join()
+            .unwrap();
+        drop(reader);
+        assert_eq!(
+            service
+                .preview()
+                .category_counts
+                .get("connection_succeeded"),
+            Some(&1)
+        );
+        service.stop();
+    }
 }
