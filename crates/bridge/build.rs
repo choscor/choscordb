@@ -12,6 +12,9 @@ fn main() {
             let target = destination.join(file);
             std::fs::create_dir_all(target.parent().expect("header parent"))
                 .expect("create CXX include directory");
+            // Restore staged headers even when Cargo's compiled outputs remain
+            // cached and only the native generated directory was removed.
+            println!("cargo:rerun-if-changed={}", target.display());
             std::fs::copy(source.join(file), target).expect("copy generated CXX header");
         }
     }

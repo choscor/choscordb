@@ -457,7 +457,8 @@ void ModernUiTest::quickSearchFindsCollapsedSelectedConnectionObjectBeforeSqlTex
     auto* overlay = window.findChild<choscordb::design::QuickSearchDialog*>("quickSearchDialog");
     auto* input = overlay->findChild<QLineEdit*>("quickSearchInput");
     input->setText("invoice lin");
-    QTRY_VERIFY(!overlay->results().isEmpty() && overlay->results().first().type == "Object");
+    QTRY_VERIFY2(!overlay->results().isEmpty() && overlay->results().first().type == "Object",
+                 qPrintable(overlay->findChild<QLabel*>("quickSearchStatus")->text()));
     QVERIFY(overlay->results().first().title.contains("invoice_lines"));
     QVERIFY(overlay->results().first().context.contains("table"));
     QCOMPARE(filter->text(), QString("sidebar_only"));
@@ -467,7 +468,8 @@ void ModernUiTest::quickSearchFindsCollapsedSelectedConnectionObjectBeforeSqlTex
     emit overlay->activated(staleObjectId);
     QVERIFY(overlay->isVisible());
     navigator->setSelectedConnection(connection);
-    QTRY_VERIFY(!overlay->results().isEmpty() && overlay->results().first().type == "Object");
+    QTRY_VERIFY2(!overlay->results().isEmpty() && overlay->results().first().type == "Object",
+                 qPrintable(overlay->findChild<QLabel*>("quickSearchStatus")->text()));
     overlay->findChild<QListWidget*>("quickSearchResults")->setCurrentRow(0);
     QTest::keyClick(input, Qt::Key_Return);
     auto* object = qobject_cast<choscordb::ObjectExplorer*>(
@@ -684,7 +686,8 @@ void ModernUiTest::quickSearchColumnResultOpensItsTablePane() {
     auto* overlay = window.findChild<choscordb::design::QuickSearchDialog*>("quickSearchDialog");
     auto* input = overlay->findChild<QLineEdit*>("quickSearchInput");
     input->setText("distinct_field");
-    QTRY_VERIFY(!overlay->results().isEmpty() && overlay->results().first().type == "Object");
+    QTRY_VERIFY2(!overlay->results().isEmpty() && overlay->results().first().type == "Object",
+                 qPrintable(overlay->findChild<QLabel*>("quickSearchStatus")->text()));
     QCOMPARE(overlay->results().first().icon, choscordb::design::Icon::Table);
     QVERIFY(overlay->results().first().context.contains("column"));
     overlay->findChild<QListWidget*>("quickSearchResults")->setCurrentRow(0);
@@ -800,7 +803,8 @@ void ModernUiTest::quickSearchUsesTheBrowsedConnectionWhenTwoAreVisible() {
     window.findChild<QAction*>("quickSwitch")->trigger();
     auto* overlay = window.findChild<choscordb::design::QuickSearchDialog*>("quickSearchDialog");
     overlay->findChild<QLineEdit*>("quickSearchInput")->setText("only_second_connection");
-    QTRY_VERIFY(!overlay->results().isEmpty() && overlay->results().first().type == "Object");
+    QTRY_VERIFY2(!overlay->results().isEmpty() && overlay->results().first().type == "Object",
+                 qPrintable(overlay->findChild<QLabel*>("quickSearchStatus")->text()));
     const QString staleId = overlay->results().first().id;
     tree->selectionModel()->setCurrentIndex(tree->model()->index(0, 0),
                                             QItemSelectionModel::ClearAndSelect |
@@ -834,7 +838,8 @@ void ModernUiTest::quickSearchDoesNotReuseAnObjectIdAfterMetadataRefresh() {
     QTRY_COMPARE(requested.count(), 1);
     QVERIFY(model->applyChildren(connection, {}, requested.last().at(2).toULongLong(),
                                  {{"old", "shared_name_old", "shared_name_old", "table", false}}));
-    QTRY_VERIFY(!overlay->results().isEmpty() && overlay->results().first().type == "Object");
+    QTRY_VERIFY2(!overlay->results().isEmpty() && overlay->results().first().type == "Object",
+                 qPrintable(overlay->findChild<QLabel*>("quickSearchStatus")->text()));
     const QString oldId = overlay->results().first().id;
     model->refresh(model->index(0, 0));
     QTRY_COMPARE(requested.count(), 2);

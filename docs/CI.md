@@ -236,3 +236,13 @@ run `python3 scripts/ci/cpp_ownership.py --json`. Unresolved findings and stale
 content-pinned exceptions fail the gate. See
 [the ownership policy](architecture/cpp-ownership.md) for scope, current migration
 findings, exception review and the limits of static coverage.
+
+### Incremental Rust bridge builds
+
+Cargo stages its generated CXX headers separately from the published include
+directory. `cmake/CxxHeaders.cmake` declares both the Cargo byproducts and the
+published headers, so Ninja recompiles consumers in the same build when the
+bridge layout changes. Publishing uses `copy_if_different` to preserve unchanged
+header timestamps. `scripts/ci/test_cxx_headers.py` verifies a changed layout,
+a no-op rebuild, and restoration of a deleted published header with a real
+compiled consumer.

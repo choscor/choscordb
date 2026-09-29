@@ -7,6 +7,7 @@ class QueryOptionsTest : public QObject {
     void timeoutStopsWorkAndTheConnectionRemainsUsable() {
         choscordb::EngineAdapter adapter;
         bool connected = false;
+        QString connectionError;
         QString failure;
         QList<qint64> values;
         connect(
@@ -16,6 +17,9 @@ class QueryOptionsTest : public QObject {
                     QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
                 if (kind == "connected")
                     connected = true;
+                if (kind == "connection_failed")
+                    connectionError =
+                        QString::fromUtf8(event.error.data(), qsizetype(event.error.size()));
                 if (kind == "query_failed") {
                     failure = QString::fromUtf8(event.error_kind.data(),
                                                 qsizetype(event.error_kind.size()));
@@ -26,7 +30,7 @@ class QueryOptionsTest : public QObject {
             Qt::DirectConnection);
         const auto connection = adapter.connectSqlite(":memory:");
         QVERIFY(connection);
-        QTRY_VERIFY(connected);
+        QTRY_VERIFY2(connected, qPrintable(connectionError));
         choscordb::QueryPreferences preferences;
         preferences.timeoutSeconds = 1;
         const auto query = adapter.execute(*connection,
@@ -46,6 +50,7 @@ class QueryOptionsTest : public QObject {
     void maximumPageSizeAndRemainderAreHonored() {
         choscordb::EngineAdapter adapter;
         bool connected = false;
+        QString connectionError;
         QList<quint32> counts;
         connect(
             &adapter, &choscordb::EngineAdapter::eventReady, &adapter,
@@ -54,13 +59,16 @@ class QueryOptionsTest : public QObject {
                     QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
                 if (kind == "connected")
                     connected = true;
+                if (kind == "connection_failed")
+                    connectionError =
+                        QString::fromUtf8(event.error.data(), qsizetype(event.error.size()));
                 if (kind == "stored_page")
                     counts.append(event.row_count);
             },
             Qt::DirectConnection);
         auto connection = adapter.connectSqlite(":memory:");
         QVERIFY(connection);
-        QTRY_VERIFY(connected);
+        QTRY_VERIFY2(connected, qPrintable(connectionError));
         choscordb::QueryPreferences preferences;
         preferences.pageSize = 10000;
         auto query = adapter.execute(*connection,
@@ -78,6 +86,7 @@ class QueryOptionsTest : public QObject {
     void pageSizeIsCapturedPerExecutionAndUsedForArchivedReads() {
         choscordb::EngineAdapter adapter;
         bool connected = false;
+        QString connectionError;
         struct Page {
             quint64 query, index;
             quint32 rows;
@@ -91,6 +100,9 @@ class QueryOptionsTest : public QObject {
                     QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
                 if (kind == "connected")
                     connected = true;
+                if (kind == "connection_failed")
+                    connectionError =
+                        QString::fromUtf8(event.error.data(), qsizetype(event.error.size()));
                 if (kind == "stored_page")
                     pages.append({event.id, event.page_index, event.row_count,
                                   event.cells.empty() ? 0 : event.cells[0].integer});
@@ -98,7 +110,7 @@ class QueryOptionsTest : public QObject {
             Qt::DirectConnection);
         const auto connection = adapter.connectSqlite(":memory:");
         QVERIFY(connection);
-        QTRY_VERIFY(connected);
+        QTRY_VERIFY2(connected, qPrintable(connectionError));
         const QString sql = "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE "
                             "x<750) SELECT x FROM n";
         choscordb::QueryPreferences preferences;

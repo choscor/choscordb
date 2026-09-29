@@ -15,7 +15,7 @@ if(choscordb_privacy_environment)
 endif()
 # build.rs generates and compiles the CXX implementation. Corrosion owns Cargo
 # invocation and Rust runtime link dependencies; consumers wait for headers.
-corrosion_set_env_vars(choscordb_bridge "CHOSCORDB_CXX_INCLUDE_DIR=${PROJECT_BINARY_DIR}/generated/cxxbridge")
+corrosion_set_env_vars(choscordb_bridge "CHOSCORDB_CXX_INCLUDE_DIR=${PROJECT_BINARY_DIR}/generated/cxxbridge-source")
 if(CHOSCORDB_UPDATE_REHEARSAL)
     corrosion_set_env_vars(choscordb_bridge "CHOSCORDB_CREDENTIAL_SERVICE=com.choscor.ChoscorDB.tests.rehearsal")
 else()
@@ -27,7 +27,10 @@ endif()
 add_library(choscordb-rust INTERFACE)
 target_link_libraries(choscordb-rust INTERFACE choscordb_bridge)
 target_include_directories(choscordb-rust INTERFACE "${PROJECT_BINARY_DIR}/generated/cxxbridge")
-add_dependencies(choscordb-rust cargo-build_choscordb_bridge)
+include("${CMAKE_CURRENT_LIST_DIR}/CxxHeaders.cmake")
+choscordb_export_cxx_headers(choscordb-rust cargo-build_choscordb_bridge
+    "${PROJECT_BINARY_DIR}/generated/cxxbridge-source"
+    "${PROJECT_BINARY_DIR}/generated/cxxbridge")
 
 # Rust's standard-library native link list does not include credential backend libraries.
 if(APPLE)
