@@ -23,3 +23,16 @@ pub fn write_sql_document_file(path: &str, bytes: &[u8]) -> DocumentIoResultDto 
         error,
     }
 }
+
+pub fn document_path_status(path: &str) -> crate::ffi::DocumentPathStatusDto {
+    match choscordb_core::document_path_exists(Path::new(path)) {
+        Ok(exists) => crate::ffi::DocumentPathStatusDto {
+            exists,
+            error: String::new(),
+        },
+        Err(error) => crate::ffi::DocumentPathStatusDto {
+            exists: false,
+            error: error.to_string(),
+        },
+    }
+}

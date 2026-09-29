@@ -158,16 +158,23 @@ fn object_graph_transport_preserves_structured_identity_and_request_token() {
     let event = await_event(&mut engine, "object_graph");
     assert_eq!(event.request_token, 73);
     assert_eq!(event.object, object);
-    let graph: serde_json::Value = serde_json::from_str(&event.graph_json).unwrap();
-    assert_eq!(graph["tables"].as_array().unwrap().len(), 2);
-    assert_eq!(
-        graph["edges"][0]["source_columns"],
-        serde_json::json!(["parent_id"])
-    );
-    assert_eq!(
-        graph["edges"][0]["target_columns"],
-        serde_json::json!(["id"])
-    );
+    let graph = event.graph;
+    assert!(graph.availability == ffi::GraphAvailabilityDto::Available);
+    assert_eq!(graph.tables.len(), 2);
+    assert_eq!(graph.edges.len(), 1);
+    let edge = &graph.edges[0];
+    assert!(graph.tables.iter().any(|table| table.id == edge.source_id));
+    assert!(graph.tables.iter().any(|table| table.id == edge.target_id));
+    let parent = graph
+        .tables
+        .iter()
+        .find(|table| table.id == object)
+        .unwrap();
+    assert_eq!(parent.columns[0].name, "id");
+    assert!(parent.columns[0].primary_key);
+
+    assert_eq!(graph.edges[0].source_columns, ["parent_id"]);
+    assert_eq!(graph.edges[0].target_columns, ["id"]);
     assert!(object_graph_request(&mut engine, connection.id, "bad id", 74).accepted);
     let failed = await_event(&mut engine, "object_graph_failed");
     assert_eq!(failed.request_token, 74);

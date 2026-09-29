@@ -8,7 +8,7 @@
 #include <vector>
 namespace choscordb {
 using engine_adapter_detail::addHopCredentials;
-using engine_adapter_detail::parseObjectGraph;
+using engine_adapter_detail::objectGraph;
 using engine_adapter_detail::profileDto;
 using engine_adapter_detail::rustString;
 using engine_adapter_detail::string;
@@ -100,14 +100,8 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                                                string(event.error));
                     }
                 } else {
-                    bool valid = false;
-                    auto graph = parseObjectGraph(event.graph_json, &valid);
-                    if (valid)
-                        emit objectGraphReady(request.connection, request.object, request.token,
-                                              graph);
-                    else
-                        emit objectGraphFailed(request.connection, request.object, request.token,
-                                               tr("Invalid ER diagram metadata"));
+                    emit objectGraphReady(request.connection, request.object, request.token,
+                                          objectGraph(event.graph));
                 }
             }
         }

@@ -12,7 +12,6 @@
 #include "design_system/text/text.h"
 #include <QDesktopServices>
 #include <QFileDialog>
-#include <QFileInfo>
 #include <QFutureWatcher>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -339,58 +338,78 @@ void MainWindow::showDiagnosticsExport() {
                     });
             confirmation->open();
         });
-    connect(save, &QPushButton::clicked, dialog,
-            [this, dialog, destination, browse, folder, clear, save, status] {
-                if (!diagnostics_)
-                    return;
-                QString path = destination->text().trimmed();
-                if (!path.endsWith(QStringLiteral(".zip"), Qt::CaseInsensitive))
-                    path += QStringLiteral(".zip");
-                if (QFileInfo::exists(path)) {
-                    const auto answer = ConfirmationDialog::question(
-                        this, tr("Replace Diagnostic ZIP"),
-                        tr("Replace the existing ZIP at the chosen destination?"),
-                        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-                    if (answer != QMessageBox::Yes)
+    connect(
+        save, &QPushButton::clicked, dialog,
+        [this, dialog, destination, browse, folder, clear, save, status] {
+            if (!diagnostics_)
+                return;
+            QString path = destination->text().trimmed();
+            if (!path.endsWith(QStringLiteral(".zip"), Qt::CaseInsensitive))
+                path += QStringLiteral(".zip");
+            save->setEnabled(false);
+            auto* preflight = new BackgroundTask<DocumentPathStatusDto>(this);
+            const QPointer<DialogShell> guard(dialog);
+            preflight->start(
+                [path] {
+                    const auto bytes = path.toUtf8();
+                    return document_path_status(rust::Str(bytes.constData(), size_t(bytes.size())));
+                },
+                [this, guard, dialog, destination, browse, folder, clear, save, status,
+                 path](const DocumentPathStatusDto& result) {
+                    if (!guard || !guard->isVisible() || !diagnostics_)
                         return;
-                }
-                // The nested confirmation event loop may process a failed async
-                // diagnostics startup and disable this service before returning.
-                if (!diagnostics_)
-                    return;
-                save->setEnabled(false);
-                destination->setEnabled(false);
-                browse->setEnabled(false);
-                folder->setEnabled(false);
-                clear->setEnabled(false);
-                status->setText(tr("Creating diagnostic ZIP…"));
-                auto* task = new ExportTask(this);
-                connect(dialog, &QDialog::finished, task, [task] { task->cancel(); });
-                const QPointer<DialogShell> dialogGuard(dialog);
-                auto service = std::make_shared<DiagnosticsWorker>(diagnostics_->backend());
-                task->start(
-                    std::move(service), path,
-                    [this, dialogGuard, destination, browse, folder, clear, save, status,
-                     path](const DiagnosticExportResult& result) {
-                        if (!dialogGuard || !diagnostics_)
+                    save->setEnabled(true);
+                    if (!result.error.empty()) {
+                        status->setText(
+                            tr("Could not check destination: %1").arg(fromRust(result.error)));
+                        return;
+                    }
+                    if (result.exists) {
+                        const auto answer = ConfirmationDialog::question(
+                            this, tr("Replace Diagnostic ZIP"),
+                            tr("Replace the existing ZIP at the chosen destination?"),
+                            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+                        if (answer != QMessageBox::Yes)
                             return;
-                        destination->setEnabled(true);
-                        browse->setEnabled(true);
-                        folder->setEnabled(true);
-                        clear->setEnabled(true);
-                        save->setEnabled(true);
-                        if (result.success)
-                            status->setText(QObject::tr("Saved to %1. Inspect the ZIP, then "
-                                                        "attach it manually to your support "
-                                                        "conversation.")
-                                                .arg(path));
-                        else if (result.cancelled)
-                            status->setText(QObject::tr("Diagnostic export cancelled."));
-                        else
-                            status->setText(
-                                QObject::tr("Diagnostic export failed: %1").arg(result.error));
-                    });
-            });
+                    }
+                    // The nested confirmation event loop may process a failed async
+                    // diagnostics startup and disable this service before returning.
+                    if (!guard || !guard->isVisible() || !diagnostics_)
+                        return;
+                    save->setEnabled(false);
+                    destination->setEnabled(false);
+                    browse->setEnabled(false);
+                    folder->setEnabled(false);
+                    clear->setEnabled(false);
+                    status->setText(tr("Creating diagnostic ZIP…"));
+                    auto* task = new ExportTask(this);
+                    connect(dialog, &QDialog::finished, task, [task] { task->cancel(); });
+                    const QPointer<DialogShell> dialogGuard(dialog);
+                    auto service = std::make_shared<DiagnosticsWorker>(diagnostics_->backend());
+                    task->start(
+                        std::move(service), path,
+                        [this, dialogGuard, destination, browse, folder, clear, save, status,
+                         path](const DiagnosticExportResult& result) {
+                            if (!dialogGuard || !diagnostics_)
+                                return;
+                            destination->setEnabled(true);
+                            browse->setEnabled(true);
+                            folder->setEnabled(true);
+                            clear->setEnabled(true);
+                            save->setEnabled(true);
+                            if (result.success)
+                                status->setText(QObject::tr("Saved to %1. Inspect the ZIP, then "
+                                                            "attach it manually to your support "
+                                                            "conversation.")
+                                                    .arg(path));
+                            else if (result.cancelled)
+                                status->setText(QObject::tr("Diagnostic export cancelled."));
+                            else
+                                status->setText(
+                                    QObject::tr("Diagnostic export failed: %1").arg(result.error));
+                        });
+                });
+        });
     dialog->resize(design::dialogInitialSize(design::DialogSize::Export));
     dialog->open();
     if (diagnostics_) {

@@ -56,3 +56,15 @@ fn replacing_document_preserves_existing_permissions() {
         0o640
     );
 }
+
+#[test]
+fn destination_probe_distinguishes_missing_existing_and_invalid_paths() {
+    use choscordb_core::document_path_exists;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("export.csv");
+    assert!(!document_path_exists(&path).unwrap());
+    fs::write(&path, b"existing").unwrap();
+    assert!(document_path_exists(&path).unwrap());
+    assert!(document_path_exists(directory.path()).unwrap());
+    assert!(document_path_exists(&path.join("child")).is_err());
+}

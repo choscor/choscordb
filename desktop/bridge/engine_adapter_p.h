@@ -67,7 +67,7 @@ inline void addHopCredentials(ProfileCredentialsDto& credentials,
     }
 }
 QList<SshHostKeyCandidate> hostKeyCandidates(const rust::Vec<SshHostKeyCandidateDto>& values);
-ObjectGraph parseObjectGraph(const rust::String& payload, bool* ok);
+ObjectGraph objectGraph(const ObjectGraphDto& dto);
 } // namespace engine_adapter_detail
 struct EngineAdapter::Private {
     explicit Private(const QString& path);

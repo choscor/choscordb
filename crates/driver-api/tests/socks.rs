@@ -245,3 +245,20 @@ async fn malformed_proxy_reply_is_a_connection_failure_not_invalid_user_input() 
     );
     server.await.unwrap();
 }
+
+#[test]
+fn persisted_proxy_password_hint_matches_transport_requirements() {
+    use choscordb_driver_api::profile_proxy_needs_password;
+    let options = r#"{"host":"localhost","username":"alice"}"#;
+    assert!(profile_proxy_needs_password("postgres", options));
+    assert!(!profile_proxy_needs_password("sqlite", options));
+    assert!(!profile_proxy_needs_password(
+        "mysql",
+        r#"{"host":"localhost"}"#
+    ));
+    assert!(!profile_proxy_needs_password(
+        "mysql",
+        r#"{"host":"localhost","protocol":"socks4","username":"alice"}"#
+    ));
+    assert!(!profile_proxy_needs_password("postgres", "invalid"));
+}

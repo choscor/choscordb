@@ -11,7 +11,6 @@
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QFileDialog>
-#include <QFileInfo>
 #include <QFormLayout>
 #include <QFutureWatcher>
 #include <QHBoxLayout>
@@ -241,14 +240,19 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
     emit exportRunningChanged(true);
     if (!adapter_ || query_ != query || submissionToken_ != token || !submitting_)
         return;
-    auto* watcher = new QFutureWatcher<bool>(this);
-    connect(watcher, &QFutureWatcher<bool>::finished, this,
+    auto* watcher = new QFutureWatcher<DocumentPathStatusDto>(this);
+    connect(watcher, &QFutureWatcher<DocumentPathStatusDto>::finished, this,
             [this, watcher, query, token, path, format, table, dialect] {
-                const bool exists = watcher->result();
+                const auto result = watcher->result();
                 watcher->deleteLater();
                 if (!adapter_ || query_ != query || submissionToken_ != token || !submitting_)
                     return;
-                if (exists) {
+                if (!result.error.empty()) {
+                    finish(tr("Could not check destination: %1").arg(text(result.error)),
+                           Outcome::Failed);
+                    return;
+                }
+                if (result.exists) {
                     ConfirmationDialog confirmation(
                         QMessageBox::Question, tr("Replace destination?"),
                         tr("Replace the existing file after export completes?\n%1").arg(path),
@@ -284,7 +288,10 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
                 }
                 updateActions();
             });
-    watcher->setFuture(QtConcurrent::run([path] { return QFileInfo::exists(path); }));
+    watcher->setFuture(QtConcurrent::run([path] {
+        const auto bytes = path.toUtf8();
+        return document_path_status(rust::Str(bytes.constData(), size_t(bytes.size())));
+    }));
 }
 
 void ExportDialog::cancel() {

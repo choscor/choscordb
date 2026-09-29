@@ -37,3 +37,15 @@ pub fn prepare_object_action(
         },
     }
 }
+
+pub fn object_display_identity_policy(
+    object_id: &str,
+    qualified_name: &str,
+) -> crate::ffi::ObjectDisplayDto {
+    let (schema, name) = choscordb_core::object_display_identity(object_id, qualified_name);
+    crate::ffi::ObjectDisplayDto {
+        has_schema: schema.is_some(),
+        schema: schema.unwrap_or_default(),
+        name,
+    }
+}

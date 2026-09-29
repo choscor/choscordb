@@ -764,7 +764,44 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             e.id = pack(connection);
             e.object = object.0;
             e.request_token = request_token;
-            e.graph_json = serde_json::to_string(&graph).expect("graph serialization");
+            e.graph = ffi::ObjectGraphDto {
+                availability: match graph.availability {
+                    MetadataAvailability::Available => ffi::GraphAvailabilityDto::Available,
+                    MetadataAvailability::Unsupported => ffi::GraphAvailabilityDto::Unsupported,
+                    MetadataAvailability::Unavailable => ffi::GraphAvailabilityDto::Unavailable,
+                },
+                reason: graph.reason,
+                warnings: graph.warnings,
+                tables: graph
+                    .tables
+                    .into_iter()
+                    .map(|table| ffi::GraphTableDto {
+                        id: table.id.0,
+                        qualified_name: table.qualified_name,
+                        columns: table
+                            .columns
+                            .into_iter()
+                            .map(|column| ffi::GraphColumnDto {
+                                name: column.name,
+                                database_type: column.database_type,
+                                primary_key: column.primary_key,
+                                foreign_key: column.foreign_key,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+                edges: graph
+                    .edges
+                    .into_iter()
+                    .map(|edge| ffi::GraphEdgeDto {
+                        id: edge.id,
+                        source_id: edge.source_id.0,
+                        target_id: edge.target_id.0,
+                        source_columns: edge.source_columns,
+                        target_columns: edge.target_columns,
+                    })
+                    .collect(),
+            };
             "object_graph"
         }
         Event::ObjectGraphFailed {

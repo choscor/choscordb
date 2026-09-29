@@ -249,3 +249,28 @@ fn postgres_special_relations_use_their_own_ddl() {
         );
     }
 }
+
+#[test]
+fn display_identity_preserves_quoted_dots_and_escaped_delimiters() {
+    use choscordb_core::object_display_identity;
+    for (id, label, schema, name) in [
+        (r#"["main","a.\"b"]"#, "ignored", Some("main"), "a.\"b"),
+        (
+            "pg:relation:42",
+            r#""odd.schema"."a""b""#,
+            Some("odd.schema"),
+            "a\"b",
+        ),
+        ("opaque", "`odd.db`.`a``b`", Some("odd.db"), "a`b"),
+        ("opaque", "public.table", Some("public"), "table"),
+        ("opaque", "table", None, "table"),
+        ("opaque", "\"unterminated", None, "\"unterminated"),
+    ] {
+        let actual = object_display_identity(id, label);
+        assert_eq!(
+            actual,
+            (schema.map(str::to_owned), name.to_owned()),
+            "{label}"
+        );
+    }
+}

@@ -14,8 +14,6 @@
 #include <QAction>
 #include <QEvent>
 #include <QHeaderView>
-#include <QJsonArray>
-#include <QJsonDocument>
 #include <QLabel>
 #include <QMenu>
 #include <QPaintEvent>
@@ -569,34 +567,16 @@ void ObjectExplorer::requestPane() {
     if (tabs_->currentIndex() == 0 &&
         (kind_ == "index" || kind_ == "sequence" || kind_ == "function")) {
         pages_->setCurrentIndex(0);
-        auto parts = QJsonDocument::fromJson(object_.toUtf8()).array();
-        QString name = label_;
-        QString schema = tr("Unavailable: schema metadata was not provided");
-        if (parts.size() >= 2 && parts.at(0).isString()) {
-            schema = parts.at(0).toString();
-            if (parts.last().isString())
-                name = parts.last().toString();
-        } else {
-            // PostgreSQL metadata supplies a qualified display label. A quoted
-            // schema may contain dots, so find its closing quote explicitly.
-            if (label_.startsWith('"')) {
-                int end = 1;
-                while (end < label_.size()) {
-                    if (label_.at(end) == '"' && end + 1 < label_.size() &&
-                        label_.at(end + 1) == '"') {
-                        end += 2;
-                        continue;
-                    }
-                    if (label_.at(end) == '"')
-                        break;
-                    ++end;
-                }
-                if (end < label_.size() && label_.mid(end + 1, 1) == ".") {
-                    schema = label_.mid(1, end - 1).replace("\"\"", "\"");
-                    name = label_.mid(end + 2);
-                }
-            }
-        }
+        const auto idBytes = object_.toUtf8();
+        const auto labelBytes = label_.toUtf8();
+        const auto display = object_display_identity_policy(
+            rust::Str(idBytes.constData(), size_t(idBytes.size())),
+            rust::Str(labelBytes.constData(), size_t(labelBytes.size())));
+        const auto name = QString::fromUtf8(display.name.data(), qsizetype(display.name.size()));
+        const auto schema =
+            display.has_schema
+                ? QString::fromUtf8(display.schema.data(), qsizetype(display.schema.size()))
+                : tr("Unavailable: schema metadata was not provided");
         const QString title = kind_ == "index"      ? tr("Index")
                               : kind_ == "sequence" ? tr("Sequence")
                                                     : tr("Function");

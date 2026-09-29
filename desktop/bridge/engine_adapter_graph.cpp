@@ -1,50 +1,33 @@
 #include "bridge/engine_adapter_p.h"
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 
 namespace choscordb::engine_adapter_detail {
-ObjectGraph parseObjectGraph(const rust::String& payload, bool* ok) {
+ObjectGraph objectGraph(const ObjectGraphDto& dto) {
     ObjectGraph graph;
-    const QByteArray bytes(payload.data(), static_cast<qsizetype>(payload.size()));
-    QJsonParseError error;
-    const auto document = QJsonDocument::fromJson(bytes, &error);
-    *ok = error.error == QJsonParseError::NoError && document.isObject();
-    if (!*ok)
-        return graph;
-    const auto root = document.object();
-    const auto availability = root.value(QStringLiteral("availability")).toString();
     graph.availability =
-        availability == QStringLiteral("Unsupported")   ? MetadataAvailability::Unsupported
-        : availability == QStringLiteral("Unavailable") ? MetadataAvailability::Unavailable
-                                                        : MetadataAvailability::Available;
-    graph.reason = root.value(QStringLiteral("reason")).toString();
-    for (const auto& warning : root.value(QStringLiteral("warnings")).toArray())
-        graph.warnings.append(warning.toString());
-    for (const auto& value : root.value(QStringLiteral("tables")).toArray()) {
-        const auto tableJson = value.toObject();
+        dto.availability == GraphAvailabilityDto::Unsupported   ? MetadataAvailability::Unsupported
+        : dto.availability == GraphAvailabilityDto::Unavailable ? MetadataAvailability::Unavailable
+                                                                : MetadataAvailability::Available;
+    graph.reason = string(dto.reason);
+    for (const auto& warning : dto.warnings)
+        graph.warnings.append(string(warning));
+    for (const auto& source : dto.tables) {
         ObjectGraphTable table;
-        table.id = tableJson.value(QStringLiteral("id")).toString();
-        table.qualifiedName = tableJson.value(QStringLiteral("qualified_name")).toString();
-        for (const auto& item : tableJson.value(QStringLiteral("columns")).toArray()) {
-            const auto column = item.toObject();
-            table.columns.append({column.value(QStringLiteral("name")).toString(),
-                                  column.value(QStringLiteral("database_type")).toString(),
-                                  column.value(QStringLiteral("primary_key")).toBool(),
-                                  column.value(QStringLiteral("foreign_key")).toBool()});
-        }
+        table.id = string(source.id);
+        table.qualifiedName = string(source.qualified_name);
+        for (const auto& column : source.columns)
+            table.columns.append({string(column.name), string(column.database_type),
+                                  column.primary_key, column.foreign_key});
         graph.tables.append(table);
     }
-    for (const auto& value : root.value(QStringLiteral("edges")).toArray()) {
-        const auto edgeJson = value.toObject();
+    for (const auto& source : dto.edges) {
         ObjectGraphEdge edge;
-        edge.id = edgeJson.value(QStringLiteral("id")).toString();
-        edge.sourceId = edgeJson.value(QStringLiteral("source_id")).toString();
-        edge.targetId = edgeJson.value(QStringLiteral("target_id")).toString();
-        for (const auto& column : edgeJson.value(QStringLiteral("source_columns")).toArray())
-            edge.sourceColumns.append(column.toString());
-        for (const auto& column : edgeJson.value(QStringLiteral("target_columns")).toArray())
-            edge.targetColumns.append(column.toString());
+        edge.id = string(source.id);
+        edge.sourceId = string(source.source_id);
+        edge.targetId = string(source.target_id);
+        for (const auto& column : source.source_columns)
+            edge.sourceColumns.append(string(column));
+        for (const auto& column : source.target_columns)
+            edge.targetColumns.append(string(column));
         graph.edges.append(edge);
     }
     return graph;

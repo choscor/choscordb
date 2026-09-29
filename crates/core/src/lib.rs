@@ -5,7 +5,7 @@ mod deferred;
 mod document_io;
 pub use document_io::{
     DocumentIoError, MAX_SAVED_SQL_DOCUMENTS, MAX_SQL_DOCUMENT_BYTES, SavedSqlDocument,
-    SavedSqlDocuments, ensure_saved_sql_directory, list_saved_sql_documents,
+    SavedSqlDocuments, document_path_exists, ensure_saved_sql_directory, list_saved_sql_documents,
     read_saved_sql_document, read_sql_document, saved_sql_document_identity, write_sql_document,
 };
 mod hot_cache;
@@ -13,7 +13,9 @@ pub use hot_cache::CacheUsage;
 mod memory;
 pub use memory::{MemoryUsage, PageLease, PageMemoryConfig};
 mod object_action;
-pub use object_action::{ObjectAction, ObjectActionStatement, prepare_object_action};
+pub use object_action::{
+    ObjectAction, ObjectActionStatement, object_display_identity, prepare_object_action,
+};
 mod operation;
 mod preview_capture;
 pub use preview_capture::{

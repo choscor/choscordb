@@ -191,3 +191,43 @@ pub fn prepare_object_action(
         new_qualified_name: target,
     })
 }
+
+/// Decode driver identity/display labels for presentation without treating the
+/// display label as an executable or authoritative action target.
+pub fn object_display_identity(object_id: &str, qualified_name: &str) -> (Option<String>, String) {
+    if let Ok(parts) = serde_json::from_str::<Vec<String>>(object_id)
+        && let Some(name) = parts.last().filter(|name| !name.is_empty())
+    {
+        return ((parts.len() >= 2).then(|| parts[0].clone()), name.clone());
+    }
+    let mut parts = Vec::new();
+    let mut part = String::new();
+    let mut quote = None;
+    let mut chars = qualified_name.chars().peekable();
+    while let Some(character) = chars.next() {
+        if let Some(delimiter) = quote {
+            if character == delimiter {
+                if chars.peek() == Some(&delimiter) {
+                    chars.next();
+                    part.push(delimiter);
+                } else {
+                    quote = None;
+                }
+            } else {
+                part.push(character);
+            }
+        } else if (character == '\"' || character == '`') && part.is_empty() {
+            quote = Some(character);
+        } else if character == '.' {
+            parts.push(std::mem::take(&mut part));
+        } else {
+            part.push(character);
+        }
+    }
+    if quote.is_some() {
+        return (None, qualified_name.to_owned());
+    }
+    parts.push(part);
+    let schema = (parts.len() >= 2).then(|| parts[0].clone());
+    (schema, parts.pop().unwrap_or_default())
+}

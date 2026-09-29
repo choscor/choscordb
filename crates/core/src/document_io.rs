@@ -301,3 +301,13 @@ pub fn write_sql_document(path: &Path, bytes: &[u8]) -> Result<(), DocumentIoErr
     File::open(parent)?.sync_all()?;
     Ok(())
 }
+
+/// Probe an export destination on a blocking worker. Execution must still
+/// validate and atomically replace the path; this is only a confirmation hint.
+pub fn document_path_exists(path: &Path) -> Result<bool, std::io::Error> {
+    match fs::metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}

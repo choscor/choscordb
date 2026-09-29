@@ -444,20 +444,26 @@ void ModernUiTest::diagnosticsFailureDuringReplaceConfirmationDoesNotStartExport
     destination->setText(path);
     QTRY_VERIFY(save->isEnabled());
     bool answered = false;
-    QTimer::singleShot(0, &window, [&] {
+    // Destination probing runs on a Rust worker; wait for the modal rather
+    // than assuming it is created in the save button's signal handler.
+    QTimer answer;
+    answer.setInterval(10);
+    connect(&answer, &QTimer::timeout, &window, [&] {
         auto* confirmation = window.findChild<QMessageBox*>();
+        if (!confirmation || !confirmation->isVisible() || !confirmation->button(QMessageBox::Yes))
+            return;
+        answer.stop();
         window.disableDiagnostics();
-        if (confirmation && confirmation->button(QMessageBox::Yes)) {
-            answered = true;
-            confirmation->button(QMessageBox::Yes)->click();
-        }
+        answered = true;
+        confirmation->button(QMessageBox::Yes)->click();
     });
+    answer.start();
     QTimer::singleShot(2000, &window, [&] {
         if (auto* modal = QApplication::activeModalWidget())
             modal->close();
     });
     save->click();
-    QVERIFY(answered);
+    QTRY_VERIFY(answered);
     QTest::qWait(100);
     QVERIFY(existing.open(QIODevice::ReadOnly));
     QCOMPARE(existing.readAll(), QByteArray("keep existing bytes"));

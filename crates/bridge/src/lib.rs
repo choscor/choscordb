@@ -20,7 +20,7 @@ mod result_copy;
 mod result_json;
 pub use completion::*;
 pub use diagnostics::*;
-pub use document_io::{read_sql_document_file, write_sql_document_file};
+pub use document_io::{document_path_status, read_sql_document_file, write_sql_document_file};
 pub use edit_value::parse_grid_edit_value_policy;
 pub use foreign_key_filter::{foreign_key_predicate_policy, foreign_key_value_filterable_policy};
 pub use grid_edit::{grid_editability_policy, plan_grid_edits_policy};
@@ -554,6 +554,45 @@ pub mod ffi {
         opaque_json: String,
     }
     #[derive(Default)]
+    struct ObjectDisplayDto {
+        has_schema: bool,
+        schema: String,
+        name: String,
+    }
+    enum GraphAvailabilityDto {
+        Available,
+        Unsupported,
+        Unavailable,
+    }
+    #[derive(Default)]
+    struct GraphColumnDto {
+        name: String,
+        database_type: String,
+        primary_key: bool,
+        foreign_key: bool,
+    }
+    #[derive(Default)]
+    struct GraphTableDto {
+        id: String,
+        qualified_name: String,
+        columns: Vec<GraphColumnDto>,
+    }
+    #[derive(Default)]
+    struct GraphEdgeDto {
+        id: String,
+        source_id: String,
+        target_id: String,
+        source_columns: Vec<String>,
+        target_columns: Vec<String>,
+    }
+    struct ObjectGraphDto {
+        availability: GraphAvailabilityDto,
+        reason: String,
+        warnings: Vec<String>,
+        tables: Vec<GraphTableDto>,
+        edges: Vec<GraphEdgeDto>,
+    }
+    #[derive(Default)]
     struct BridgeEvent {
         host_key_candidates: Vec<SshHostKeyCandidateDto>,
         host_key_approval: String,
@@ -583,7 +622,7 @@ pub mod ffi {
         history_recorded: bool,
         object: String,
         ddl: String,
-        graph_json: String,
+        graph: ObjectGraphDto,
         value_handle: u64,
         query_id: u64,
         exported_rows: u64,
@@ -649,6 +688,11 @@ pub mod ffi {
         error: String,
         new_object_id: String,
         new_qualified_name: String,
+    }
+    #[derive(Default)]
+    struct DocumentPathStatusDto {
+        exists: bool,
+        error: String,
     }
     #[derive(Default)]
     struct DocumentIoResultDto {
@@ -902,6 +946,12 @@ pub mod ffi {
         fn diagnostics_cancel(cancellation: &DiagnosticCancellation);
         fn diagnostics_attach_engine(engine: &mut BridgeEngine, service: &RustDiagnostics);
         fn diagnostics_observe_command_failure(service: &RustDiagnostics);
+        fn object_display_identity_policy(
+            object_id: &str,
+            qualified_name: &str,
+        ) -> ObjectDisplayDto;
+        fn profile_proxy_needs_password_policy(driver: &str, options: &str) -> bool;
+        fn document_path_status(path: &str) -> DocumentPathStatusDto;
         fn read_sql_document_file(path: &str) -> DocumentIoResultDto;
         fn write_sql_document_file(path: &str, bytes: &[u8]) -> DocumentIoResultDto;
         fn write_preview_capture_file(
@@ -2885,4 +2935,20 @@ pub fn approve_ssh_host_key(
         .map(|()| token)
         .map_err(|error| error.to_string())
     })
+}
+
+impl Default for ffi::ObjectGraphDto {
+    fn default() -> Self {
+        Self {
+            availability: ffi::GraphAvailabilityDto::Available,
+            reason: String::new(),
+            warnings: Vec::new(),
+            tables: Vec::new(),
+            edges: Vec::new(),
+        }
+    }
+}
+
+pub fn profile_proxy_needs_password_policy(driver: &str, options: &str) -> bool {
+    choscordb_driver_api::profile_proxy_needs_password(driver, options)
 }
