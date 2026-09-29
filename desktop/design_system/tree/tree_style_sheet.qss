@@ -1,9 +1,0 @@
-QTreeView {
-  font-size: 12px;
-  icon-size: 14px;
-  qproperty-indentation: 9;
-}
-
-QTreeView[designNavigationTree="true"] {
-  selection-background-color: transparent;
-}

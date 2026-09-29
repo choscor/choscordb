@@ -1,5 +1,0 @@
-QTreeView::item {
-  min-height: @navigationLineHeight;
-  padding: 3px 3px;
-  border-radius: 0px;
-}

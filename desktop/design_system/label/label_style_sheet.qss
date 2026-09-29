@@ -1,9 +1,0 @@
-QLabel[designRole="heading"] {
-  font-size: 14px;
-  font-weight: 600;
-  color: @foreground;
-}
-
-QLabel[designRole="description"] {
-  color: @mutedText;
-}

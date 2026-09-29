@@ -1,4 +1,0 @@
-aqtinstall==3.3.0
-cmake==4.4.3
-ninja==1.13.2
-ruff==0.16.7

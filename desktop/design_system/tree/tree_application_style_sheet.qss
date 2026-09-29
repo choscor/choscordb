@@ -1,3 +1,0 @@
-QTreeView::item {
-  min-height: %13px;
-}
