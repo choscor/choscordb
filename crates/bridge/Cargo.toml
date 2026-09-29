@@ -16,6 +16,7 @@ choscordb-driver-mysql = { path = "../driver-mysql" }
 choscordb-driver-postgres = { path = "../driver-postgres" }
 choscordb-sql-language = { path = "../sql-language" }
 cxx = "1"
+ed25519-dalek = "2"
 serde_json = "1"
 zeroize = "1"
 [build-dependencies]

@@ -119,13 +119,16 @@ uses its prepared dependency directory directly. Old manifests containing
 For example:
 
 ```sh
-python scripts/release/macos.py verify --manifest build/releases/0.1.0/ChoscorDB-0.1.0-manifest.json --sparkle-tools /local/dependencies/sparkle
-python scripts/release/publish.py --manifest build/releases/0.1.0/ChoscorDB-0.1.0-manifest.json --sparkle-tools /local/dependencies/sparkle --dry-run
+python scripts/release/macos.py verify --manifest build/releases/X.Y.Z/ChoscorDB-X.Y.Z-manifest.json --sparkle-tools /local/dependencies/sparkle
+python scripts/release/publish.py --manifest build/releases/X.Y.Z/ChoscorDB-X.Y.Z-manifest.json \
+  --windows build/candidates/ChoscorDB-X.Y.Z-windows-x64-setup.exe \
+  --linux build/candidates/ChoscorDB-X.Y.Z-linux-x86_64.AppImage \
+  --sparkle-tools /local/dependencies/sparkle --dry-run
 ```
 
 
-Outputs include `ChoscorDB-X.Y.Z.dmg`, `ChoscorDB.dmg`,
-`choscordb-appcast.xml`, version-associated source archives (application, Cargo
+Outputs include `ChoscorDB-X.Y.Z.dmg` and local `choscordb-appcast.xml`,
+version-associated source archives (application, Cargo
 vendor sources, Qt and QScintilla), notices/license texts, SPDX inventory,
 checksums and the release manifest. The source candidate remains labeled a
 working-tree snapshot; the release manifest binds it to the clean checked-in
@@ -136,31 +139,33 @@ versions remain X.Y.Z. Release signature metadata contains no private key.
 ## GitHub Release publication
 
 The repository's [release-new-version skill](../.agents/skills/release-new-version/SKILL.md)
-coordinates notes, quality checks, macOS packaging, an exact-source-commit tag
-push, GitHub Release publication, and the later Windows/Linux asset workflow.
+coordinates notes, quality checks, all three platform packages, an exact-source
+commit tag push, the complete GitHub Release, and Pages feed deployment.
 Invoke it with a version and the intended scope
 (prepare, publish an existing build, or release end to end). Packaging itself
 never tags or publishes.
 
-GitHub Releases is the only upload destination. Use `gh` authenticated locally
-with permission to create releases and upload assets, and `curl` for public
-verification. Credentials and tool configuration stay outside the repository.
+GitHub Releases hosts exactly three installable packages. GitHub Pages hosts
+the stable update feeds. Use `gh` authenticated locally with permission to
+create releases and update Pages, and `curl` for public verification.
+Credentials and tool configuration stay outside the repository.
 The default release base is `https://github.com/choscor/choscordb/releases`.
 Forks select `https://github.com/OWNER/REPO/releases` with `package --base-url`
 or `CHOSCORDB_RELEASE_BASE_URL`. The publisher infers the repository from the
 verified manifest and rejects a conflicting explicit `--repo`.
 
-Sparkle uses these URLs:
+Sparkle uses these URLs for the production repository:
 
-- Feed: `https://github.com/choscor/choscordb/releases/latest/download/choscordb-appcast.xml`
-- Latest DMG: `https://github.com/choscor/choscordb/releases/latest/download/ChoscorDB.dmg`
+- Feed: `https://choscor.github.io/choscordb/updates/choscordb-appcast.xml`
 - Versioned DMG: `https://github.com/choscor/choscordb/releases/download/vX.Y.Z/ChoscorDB-X.Y.Z.dmg`
 
 The stable feed is embedded in the signed app; the appcast enclosure references
-its immutable versioned DMG. Each release carries a single-release appcast.
-Historical assets remain under their original tags. GitHub's latest-release
-redirect selects the stable feed, so publishing a prerelease or an older version
-must not change the stable channel. See [GitHub's release API](https://docs.github.com/en/rest/releases/releases)
+its immutable versioned DMG. The appcast is generated and verified locally,
+then deployed to Pages only after all three public packages are verified.
+Historical packages remain under their original tags. Pages must be enabled,
+bootstrapped with the signed `v0.1.7` appcast, and fetched successfully before
+packaging a build that embeds its URL. Forks derive their own Pages and Release
+URLs from their configured repository. See [GitHub's release API](https://docs.github.com/en/rest/releases/releases)
 and [Sparkle's publishing guide](https://sparkle-project.org/documentation/publishing/).
 
 After local verification, create an annotated `vX.Y.Z` tag at the manifest's exact
@@ -169,16 +174,23 @@ to exist and resolve to the same commit. Prepare reviewed notes in an ignored
 file under `build/`, then run:
 
 ```sh
-python scripts/release/publish.py --manifest build/releases/X.Y.Z/ChoscorDB-X.Y.Z-manifest.json --notes-file build/release-notes-X.Y.Z.md --dry-run
-python scripts/release/publish.py --manifest build/releases/X.Y.Z/ChoscorDB-X.Y.Z-manifest.json --notes-file build/release-notes-X.Y.Z.md
+python scripts/release/publish.py --manifest build/releases/X.Y.Z/ChoscorDB-X.Y.Z-manifest.json \
+  --windows build/candidates/ChoscorDB-X.Y.Z-windows-x64-setup.exe \
+  --linux build/candidates/ChoscorDB-X.Y.Z-linux-x86_64.AppImage \
+  --notes-file build/release-notes-X.Y.Z.md --dry-run
+python scripts/release/publish.py --manifest build/releases/X.Y.Z/ChoscorDB-X.Y.Z-manifest.json \
+  --windows build/candidates/ChoscorDB-X.Y.Z-windows-x64-setup.exe \
+  --linux build/candidates/ChoscorDB-X.Y.Z-linux-x86_64.AppImage \
+  --notes-file build/release-notes-X.Y.Z.md
 ```
 
-Publication creates or resumes a GitHub draft and uploads exactly three files:
-`ChoscorDB-X.Y.Z.dmg` first, identical bytes as `ChoscorDB.dmg` next, and
-`choscordb-appcast.xml` last. It verifies uploaded bytes before proceeding and
-publishes the draft as latest only after all assets match. Public downloads and
-the stable feed are verified afterward. A public-verification failure reports
-that publication has already occurred; it cannot atomically undo a GitHub release.
+Publication creates or resumes a draft and stages exactly the versioned DMG,
+per-user Windows installer, and Linux AppImage. It verifies uploaded bytes and
+the exact tag/commit identity before publishing the complete Release. Verify
+the three public immutable URLs, then sign and deploy the Pages feeds with
+`scripts/release/update_feeds.py deploy` as documented in the [Windows/Linux
+guide](WINDOWS_LINUX_RELEASE.md). A public-verification or Pages failure does
+not atomically undo an already public Release; retry from the verified state.
 
 Source archives, license archives, checksums, SBOMs, and manifests stay local;
 full local verification still checks them. Retain these materials and bundled
@@ -191,16 +203,16 @@ overlapping commands on this machine; use one maintainer at a time across
 machines. Ship a higher version to fix a faulty public release. The workflow
 never force-moves tags or deletes previous releases.
 
-### Existing 0.1.0 installations
+### Existing 0.1.7 and older installations
 
-The original 0.1.0 app embeds the former hosting URL. Changing the source
-configuration does not change installed copies. The maintainer requested a
-rebuilt 0.1.0 release with the GitHub feed and new icon, replacing that tag and
-release. Users who installed the original build must download and reinstall
-the replacement manually; Sparkle cannot discover a same-version replacement
-through a different feed. Subsequent releases should increase the version.
-Legacy manifests using the former host are rejected and must not be relabeled
-as new GitHub-configured builds.
+The existing `v0.1.7` bundle embeds
+`releases/latest/download/choscordb-appcast.xml`. A new three-asset Release
+has no appcast attachment, so that URL stops working when it becomes latest.
+Changing source configuration cannot change an installed bundle. Users of
+`v0.1.7` and older must manually download and install the new versioned DMG
+once to enter the Pages feed. The same app identity preserves profiles,
+history, recovery, preferences and credentials. Leave all older Releases
+intact; do not attach a fourth compatibility asset or claim seamless migration.
 
 ## Required rollout evidence
 
@@ -223,11 +235,10 @@ network-failure UI. Neither an unsigned fixture nor a mocked signing command
 counts as this evidence. Rehearsal outputs must never be passed off as production
 manifests. Normal development, smoke and test runs suppress update checks.
 
-The separate [Windows and Linux release guide](WINDOWS_LINUX_RELEASE.md) covers
-portable Windows ZIP and Linux AppImage candidates and their GitHub attachment
-workflow. Windows/Linux installers and updater backends, Intel/universal
-distribution, beta channels and automatic key rotation remain outside this
-macOS implementation.
+The [Windows and Linux release guide](WINDOWS_LINUX_RELEASE.md) covers their
+installer, AppImage, updater feeds and installed-package rehearsals. Intel or
+universal macOS distribution, beta channels and automatic key rotation remain
+outside this work.
 
 ## Isolated rehearsal commands
 

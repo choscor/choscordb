@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build verified Windows ZIP and Linux AppImage release candidates.
+"""Build verified Windows per-user installer and Linux AppImage candidates.
 
 This tool prepares local artifacts. It never signs, tags, or uploads a release.
 """
@@ -13,9 +13,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import tomllib
 import urllib.request
-import zipfile
 
 import cargo_licenses
 from prepare_qt_notices import SHA256 as QTBASE_SHA256, SVG_SHA256 as QTSVG_SHA256
@@ -197,6 +197,69 @@ def write_inventory(root, path):
     path.write_text(json.dumps(files, indent=2, sort_keys=True) + "\n")
 
 
+def smoke_windows_installer(asset, install_root, smoke_env):
+    """Exercise the shipped installer only in an initially empty user install slot."""
+    install_root = Path(install_root)
+    shortcut = None
+    registration = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\ChoscorDB"
+    if os.name == "nt":
+        import winreg
+
+        shortcut = (
+            Path(os.environ["APPDATA"])
+            / "Microsoft/Windows/Start Menu/Programs"
+            / "ChoscorDB.lnk"
+        )
+
+        def registered():
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, registration):
+                    return True
+            except FileNotFoundError:
+                return False
+
+        if shortcut.exists() or registered():
+            raise ValueError(
+                "existing per-user installation registration; use a disposable Windows account"
+            )
+    if install_root.exists() or install_root.is_symlink():
+        raise ValueError(
+            "existing per-user installation; use a disposable Windows account"
+        )
+    try:
+        run([asset, "/S", "/NORESTART"], timeout=120)
+        executable = install_root / "choscordb.exe"
+        uninstaller = install_root / "Uninstall.exe"
+        if not executable.is_file() or not uninstaller.is_file():
+            raise ValueError("Windows per-user installation is incomplete")
+        run([executable, "--smoke-test"], env=smoke_env, timeout=60)
+    finally:
+        if install_root.is_symlink():
+            raise ValueError("unsafe installer output at per-user installation path")
+        if install_root.exists():
+            uninstaller = install_root / "Uninstall.exe"
+            if uninstaller.is_file():
+                run([uninstaller, "/S"], timeout=120)
+                for _ in range(20):
+                    if not install_root.exists():
+                        break
+                    time.sleep(0.5)
+            if install_root.exists():
+                # This slot was absent before the smoke; only its new files are ours.
+                shutil.rmtree(install_root)
+                raise ValueError("Windows test installation required forced cleanup")
+        if os.name == "nt" and (shortcut.exists() or registered()):
+            # The account was clean at entry; clean our residue, then fail the gate.
+            shortcut.unlink(missing_ok=True)
+            import winreg
+
+            try:
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, registration)
+            except FileNotFoundError:
+                pass
+            raise ValueError("Windows test uninstall left registration or shortcut")
+
+
 def package_windows(build, qt, qsci, qt_notices, output):
     require_inputs(build, qt, qsci, output)
     output.mkdir(parents=True)
@@ -235,26 +298,26 @@ def package_windows(build, qt, qsci, qt_notices, output):
         smoke_env["APPDATA"] = str(Path(temporary) / "appdata")
         smoke_env["LOCALAPPDATA"] = str(Path(temporary) / "localappdata")
         run([stage / exe.name, "--smoke-test"], env=smoke_env, timeout=60)
-        asset = output / f"{name}.zip"
-        with zipfile.ZipFile(
-            asset, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
-        ) as archive:
-            for item in sorted(stage.rglob("*")):
-                if item.is_file():
-                    archive.write(item, f"{name}/{item.relative_to(stage).as_posix()}")
-        with zipfile.ZipFile(asset) as archive:
-            if archive.testzip() is not None:
-                raise ValueError("Windows ZIP failed integrity verification")
-            for required in (
-                f"{name}/choscordb.exe",
-                f"{name}/Qt6PrintSupport.dll",
-                f"{name}/share/licenses/choscordb/LICENSE",
-                f"{name}/share/licenses/choscordb/Qt/source.json",
-                f"{name}/share/licenses/choscordb/QScintilla/LICENSE",
-                f"{name}/share/licenses/choscordb/Cargo/index.json",
-            ):
-                if required not in archive.namelist():
-                    raise ValueError(f"Windows ZIP is missing {required}")
+        asset = output / f"{name}-setup.exe"
+        makensis = shutil.which("makensis") or shutil.which("makensis.exe")
+        if not makensis:
+            raise ValueError(
+                "NSIS makensis 3.11.0 is required for the per-user installer"
+            )
+        run(
+            [
+                makensis,
+                "/V2",
+                f"/DPAYLOAD={stage}",
+                f"/DOUTPUT={asset}",
+                f"/DWAIT_SCRIPT={ROOT / 'scripts/release/windows_wait_for_start.ps1'}",
+                ROOT / "scripts/release/windows_installer.nsi",
+            ]
+        )
+        if not asset.is_file() or asset.stat().st_size < 1024:
+            raise ValueError("NSIS did not produce a Windows installer")
+        installed = Path(os.environ["LOCALAPPDATA"]) / "Programs/ChoscorDB"
+        smoke_windows_installer(asset, installed, smoke_env)
         write_inventory(stage, output / f"{name}-inventory.json")
     write_asset_digest(asset)
     return asset
@@ -385,8 +448,24 @@ def package_linux(build, qt, qsci, qt_notices, output):
 
 
 def write_asset_digest(asset):
-    (asset.parent / f"{asset.name}.sha256").write_text(
-        f"{sha256(asset)}  {asset.name}\n"
+    checksum = sha256(asset)
+    (asset.parent / f"{asset.name}.sha256").write_text(f"{checksum}  {asset.name}\n")
+    source_commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    (asset.parent / f"{asset.name}.candidate.json").write_text(
+        json.dumps(
+            {
+                "source_commit": source_commit,
+                "version": version(),
+                "name": asset.name,
+                "size": asset.stat().st_size,
+                "sha256": checksum,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
     )
 
 

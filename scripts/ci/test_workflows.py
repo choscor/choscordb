@@ -187,25 +187,23 @@ class WorkflowPolicyTests(unittest.TestCase):
                 self.assertNotIn("apt-get", content)
                 self.assertNotIn("services:", content)
 
-    def test_cross_platform_release_keeps_publication_manual(self):
+    def test_cross_platform_release_builds_candidates_without_publication(self):
         workflow = self.files["cross-platform-release.yml"]
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("pull_request:", workflow)
         self.assertNotIn("push:", workflow)
         self.assertIn("windows-2022", workflow)
         self.assertIn("ubuntu-24.04", workflow)
-        publish = yaml_block(workflow, "publish", 2)
         self.assertNotIn("SIGNPATH", workflow)
-        require_values(
-            publish,
-            (
-                "if: inputs.publish",
-                "needs: [windows, linux]",
-                "contents: write",
-                "attach_platforms.py",
-                "--dry-run",
-            ),
+        self.assertNotIn("  publish:", workflow)
+        self.assertNotIn("contents: write", workflow)
+        self.assertNotIn("inputs.publish", workflow)
+        self.assertNotRegex(
+            workflow, r"gh release|release upload|attach_platforms[.]py|publish[.]py"
         )
+        self.assertIn("Assert exact candidate tag", workflow)
+        self.assertIn("*.candidate.json", workflow)
+        self.assertIn("*.sha256", workflow)
 
     def test_ci_has_required_blocking_and_advisory_jobs(self):
         validate_ci(self.files["ci.yml"])

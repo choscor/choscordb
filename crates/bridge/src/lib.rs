@@ -431,6 +431,7 @@ pub mod ffi {
         confirmation_required: bool,
     }
     extern "Rust" {
+        fn verify_update_signature(public_key: &[u8], payload: &[u8], signature: &[u8]) -> bool;
         type BridgeEngine;
         fn new_engine() -> Box<BridgeEngine>;
         fn new_engine_with_storage(path: &str) -> Box<BridgeEngine>;
@@ -780,6 +781,49 @@ pub mod ffi {
             selection_start: u64,
             selection_end: u64,
         ) -> SqlRange;
+    }
+}
+
+pub fn verify_update_signature(public_key: &[u8], payload: &[u8], signature: &[u8]) -> bool {
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    let (Ok(key_bytes), Ok(signature_bytes)) = (
+        <&[u8; 32]>::try_from(public_key),
+        <&[u8; 64]>::try_from(signature),
+    ) else {
+        return false;
+    };
+    let (Ok(key), signature) = (
+        VerifyingKey::from_bytes(key_bytes),
+        Signature::from_bytes(signature_bytes),
+    ) else {
+        return false;
+    };
+    key.verify(payload, &signature).is_ok()
+}
+
+#[cfg(test)]
+mod update_signature_tests {
+    use super::verify_update_signature;
+
+    #[test]
+    fn checks_signed_update_bytes() {
+        let key = [
+            0x79, 0xb5, 0x56, 0x2e, 0x8f, 0xe6, 0x54, 0xf9, 0x40, 0x78, 0xb1, 0x12, 0xe8, 0xa9,
+            0x8b, 0xa7, 0x90, 0x1f, 0x85, 0x3a, 0xe6, 0x95, 0xbe, 0xd7, 0xe0, 0xe3, 0x91, 0x0b,
+            0xad, 0x04, 0x96, 0x64,
+        ];
+        let payload = br#"{"version":"1.2.4","platform":"linux","arch":"x86_64","url":"https://github.com/choscor/choscordb/releases/download/v1.2.4/ChoscorDB-1.2.4-linux-x86_64.AppImage","size":4,"sha256":"88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589","notes":"Stable improvements"}"#;
+        let signature = [
+            0xb7, 0x41, 0x50, 0x19, 0xc9, 0xe2, 0xcf, 0x5a, 0x77, 0x42, 0x4e, 0x52, 0xff, 0x66,
+            0x33, 0x15, 0x7e, 0x4d, 0x98, 0xc0, 0xc7, 0xd0, 0xdc, 0xdf, 0xe7, 0x7a, 0x8c, 0x3f,
+            0x0b, 0xc6, 0xbe, 0x33, 0xa2, 0xe6, 0x54, 0xa0, 0x06, 0x0d, 0x70, 0x63, 0x34, 0x99,
+            0x70, 0x5f, 0x96, 0xc6, 0x8e, 0xeb, 0xaa, 0x83, 0x06, 0x66, 0xa7, 0x2b, 0x34, 0x2c,
+            0x03, 0xbf, 0x52, 0x63, 0x7d, 0xc5, 0x2d, 0x0d,
+        ];
+        assert!(verify_update_signature(&key, payload, &signature));
+        let mut tampered = payload.to_vec();
+        tampered[12] ^= 1;
+        assert!(!verify_update_signature(&key, &tampered, &signature));
     }
 }
 pub fn ssh_askpass_exit_code() -> i32 {
