@@ -1,0 +1,38 @@
+[
+  {
+    "path": "desktop/design_system/icons.cpp",
+    "rule": "storage",
+    "sha256": "7406db5dba680bb8375a855a342d87715edaca956e58b9e75b7492f32820b735",
+    "reason": "QFile reads compiled :/icons resources selected by iconResourcePath in this file; no application document I/O."
+  },
+  {
+    "path": "desktop/design_system/icons.cpp",
+    "rule": "serialization",
+    "sha256": "7406db5dba680bb8375a855a342d87715edaca956e58b9e75b7492f32820b735",
+    "reason": "QXmlStreamReader checks SVG drawing elements for rendering compiled icon resources."
+  },
+  {
+    "path": "desktop/design_system/style/style_resource.cpp",
+    "rule": "storage",
+    "sha256": "61730ee39b3a5b2052b15556d83b8f59d181d070b1350721eaf16a8f2d55ea3a",
+    "reason": "QFile reads only the compiled :/styles/ resource namespace for presentation."
+  },
+  {
+    "path": "desktop/design_system/json_text_view/json_text_view.cpp",
+    "rule": "domain-parsing",
+    "sha256": "488d11169824978365cf87220e0467acc135eef5c1dc0c9fa7d5c04a1ec46b98",
+    "reason": "Regular expressions select syntax highlighting spans; they do not validate or transform backend results."
+  },
+  {
+    "path": "desktop/app/object_explorer.cpp",
+    "rule": "domain-parsing",
+    "sha256": "996b149ce98bfafec2ae20a1f708cf3970ab484cbfbd2f0b698191acba6db701",
+    "reason": "Regular expressions identify SQL keywords and numbers for QTextCharFormat syntax highlighting."
+  },
+  {
+    "path": "CMakeLists.txt",
+    "rule": "backend-link",
+    "sha256": "ee6a237b10c3fa7f1272c535cae15fb94e414453bdf2799aa23988d90b82473a",
+    "reason": "Qt6::Network is linked only to choscordb-updater-menu-tests for its local HTTP fixture under BUILD_TESTING; no production target receives it here."
+  }
+]

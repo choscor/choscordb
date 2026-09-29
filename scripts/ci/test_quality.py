@@ -39,6 +39,7 @@ class QualityCommandTest(unittest.TestCase):
             commands[1:],
             [
                 [quality.PYTHON, "scripts/ci/cpp_size.py"],
+                [quality.PYTHON, "scripts/ci/cpp_ownership.py"],
                 [quality.PYTHON, "scripts/ci/qss_policy.py"],
                 [quality.PYTHON, "scripts/ci/ui_policy.py"],
                 [quality.PYTHON, "scripts/ci/ui_consistency.py"],
@@ -111,6 +112,7 @@ class QualityCommandTest(unittest.TestCase):
             "python-format": 1,
             "cpp-format": 1,
             "cpp-size": 1,
+            "cpp-ownership": 1,
             "actionlint": 1,
             "cargo-deny": 1,
             "native-dependencies": 1,

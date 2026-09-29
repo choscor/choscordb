@@ -216,8 +216,23 @@ reviewed, and `deny.toml` allows only these exact crate versions. The release
 notices generator must include their copyright, conditions, and disclaimer;
 the exceptions do not approve future unreviewed versions.
 
+Saved SQL listing uses `cap-std` and `cap-fs-ext` to traverse directory handles
+on Unix and Windows. Their Windows dependency `winx` 0.36.4
+packages Apache-2.0 with the LLVM exception. `deny.toml` allows that exact
+crate/version after review of its bundled license text; release notices must
+include it. The exception does not approve future versions.
+
 On macOS SDKs without AGL, Qt 6.8.3's qmake and CMake package metadata can retain an obsolete `-framework AGL` link. The QScintilla bootstrap removes that exact generated Makefile token when the selected SDK lacks AGL. Application configuration applies the same condition to Qt's imported WrapOpenGL target using the effective `CMAKE_OSX_SYSROOT`. Both paths remain unchanged when the selected SDK provides AGL.
 
 The optional `CHOSCORDB_ENABLE_STAGING` CMake target invokes the release staging adapter with explicit Qt and QScintilla locations. The macOS adapter installs into a temporary prefix, deploys runtime frameworks and the Cocoa plugin, rewrites QScintilla references to bundle-relative paths, validates Mach-O dependencies, records payload hashes, relocates the stage, and smoke-tests that final location with isolated application data. Ordinary builds never stage, sign, or publish artifacts.
 
 The CMake install boundary now includes the application's root license (inside the macOS bundle's Resources/licenses directory, or share/licenses/choscordb elsewhere). The Windows application target requests the GUI subsystem. A local macOS install into `build/staging-foundation` verified that the installed license exactly matches the source file. This staging tree still depends on development libraries: no relocatable-package or signed-distribution claim is made.
+
+### C++ ownership
+
+`python3 scripts/ci/quality.py cpp-ownership` enforces the Rust/C++ boundary and
+runs as part of `fast` and `full`. For a deterministic file census and findings,
+run `python3 scripts/ci/cpp_ownership.py --json`. Unresolved findings and stale
+content-pinned exceptions fail the gate. See
+[the ownership policy](architecture/cpp-ownership.md) for scope, current migration
+findings, exception review and the limits of static coverage.

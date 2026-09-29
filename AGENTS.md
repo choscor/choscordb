@@ -1,5 +1,29 @@
 # Repository instructions
 
+## Rust and C++ ownership
+
+- C++/Qt owns the application frontend only: widgets, display models, user
+  interaction, transient view state, Qt event-loop and native UI integration,
+  and conversion at the CXX bridge. Keep that bridge small and typed.
+- Rust owns application behavior beyond presentation, including the engine,
+  database drivers, SQL and result rules, domain validation, durable state,
+  application data and document I/O, network operations, diagnostics, exports,
+  and update policy. Put the behavior in `crates/core` or the relevant Rust
+  crate; do not duplicate its rules in C++ or in the bridge.
+- Qt may collect a path from a native dialog or present a backend result. Pass
+  the request to Rust for validation and execution. UI input hints do not
+  replace Rust validation. Keep backend work off the UI thread.
+- Existing C++ backend code is migration work, not precedent for new code.
+  When changing it, move the affected non-frontend behavior to Rust and keep
+  C++ tests focused on UI and bridge behavior. Test policy in Rust.
+- After changes to C++/Qt code, the bridge, or native build dependencies, run
+  `python3 scripts/ci/cpp_ownership.py`. Use `--json` to inspect the file census
+  and findings. Resolve findings introduced or touched by the change, and report
+  remaining pre-existing failures explicitly. Presentation exceptions must be
+  narrow, documented, and reviewed against current content.
+  A passing scan enforces the implemented checks; also review changed C++ for
+  backend behavior that static rules cannot identify.
+
 ## Desktop UI ownership
 
 These rules apply to the Qt Widgets UI in `desktop/app/` and `desktop/widgets/`.
@@ -10,8 +34,8 @@ For changes in `desktop/design_system/`, also follow its `AGENTS.md`.
   add an empty subclass just to increase the subclass count.
 - Use a semantic design component when it owns behavior or presentation beyond
   a stock control.
-- Keep workflow and database state in app/widgets. Keep reusable appearance in
-  the design system.
+- Keep UI workflow and transient view state in app/widgets. Keep database and
+  durable state in Rust. Keep reusable appearance in the design system.
 - In screen code, choose semantic roles, theme colors, typography roles, and
   spacing tokens. Do not add screen-owned QSS, literal visual colors, font
   families or sizes, or another implementation of an existing component.
