@@ -233,6 +233,11 @@ Section "Install"
     Call FailInstall
     Abort
   new_install:
+    ; Release the current-directory handle before renaming the staged payload.
+    ; Windows otherwise keeps the staging directory open and Rename fails.
+    ClearErrors
+    SetOutPath "$TEMP"
+    IfErrors failed_install
     ClearErrors
     Rename "$PendingDir" "$INSTDIR"
     IfErrors failed_install

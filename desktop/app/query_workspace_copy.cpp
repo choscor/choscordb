@@ -69,7 +69,7 @@ void QueryWorkspace::copyResult(int scope) {
             for (int column = 0; column < model_->columnCount(); ++column)
                 positions.emplace_back(row, column);
     }
-    for (const auto [row, column] : positions) {
+    for (const auto& [row, column] : positions) {
         const auto value = model_->cellValue(model_->index(row, column));
         if (!value)
             return failCopy(tr("The result page changed before copying."));
