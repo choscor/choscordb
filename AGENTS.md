@@ -71,6 +71,28 @@ instantiated design controls and stock Qt controls covered by the shared style.
 It is a static estimate, not a runtime or pixel-level claim. The canonical
 quality runner includes the consistency gate and Python tests.
 
+## Release verification
+
+- Before preparing a release, read `.agents/skills/release-new-version/SKILL.md`
+  and `docs/testing/release-lessons.md`. Run focused Windows installer and
+  production-updater configuration checks before expensive packaging or tagging.
+- Require GCC/MSVC native gates and production package smoke checks for the final
+  commit. A passing macOS suite or diagnostic branch does not establish another
+  platform's readiness. Diagnose failures; do not add blind retries, skip checks,
+  or use a timeout increase as the only fix.
+- Synchronize Qt tests with actual recovery/request/operation readiness. An idle
+  snapshot or one event-loop turn can precede deferred work. Track shared transient
+  activity by its source; retain navigation guards for every active source and
+  make destruction callbacks safe during parent-window teardown.
+- Keep the verified manifest, both candidate receipts, and the remote tag on one
+  exact source commit. An explicitly authorized replacement of an unpublished
+  tag requires an exact force-with-lease and fresh packages for all three platforms.
+  Keep published tags and asset bytes immutable.
+- Treat GitHub Release publication and Pages feed deployment as separate steps.
+  Announce completion only after exactly three public package assets and all three
+  live signed feeds have been verified for the selected version. Report a partial
+  rollout honestly; record manual attestations separately from automated evidence.
+
 ## Commit messages
 
 Use Conventional Commits. Include a type, scope, description, body, and footer,
