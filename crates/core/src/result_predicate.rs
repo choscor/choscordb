@@ -228,7 +228,7 @@ impl Predicates {
     }
 }
 
-fn sql_value(value: &Value) -> Result<SqlValue, DriverError> {
+pub(crate) fn sql_value(value: &Value) -> Result<SqlValue, DriverError> {
     Ok(match value {
         Value::Null => SqlValue::Null,
         Value::Bool(value) => SqlValue::Integer(i64::from(*value)),

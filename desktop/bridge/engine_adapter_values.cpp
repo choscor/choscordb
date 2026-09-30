@@ -125,6 +125,35 @@ GridEditPlan EngineAdapter::planGridEdits(const GridEditRequest& request) {
     }
     return result;
 }
+QList<CellFilterOption> EngineAdapter::quickFilterOptions(const QString& column,
+                                                          const Cell& value) {
+    const auto bytes = column.toUtf8();
+    QList<CellFilterOption> result;
+    auto dto = bridge_detail::cellDto(value);
+    if (!column.isValidUtf16())
+        dto.kind = "invalid_unicode";
+    for (const auto& item : quick_filter_options_policy(utf8View(bytes), std::move(dto)))
+        result.append({static_cast<CellFilterOperator>(item.operation), string(item.label),
+                       item.enabled, string(item.reason)});
+    return result;
+}
+CellFilterComposition EngineAdapter::composeQuickFilter(const QStringList& columns,
+                                                        const QString& draft, const QString& column,
+                                                        const Cell& value,
+                                                        CellFilterOperator operation) {
+    rust::Vec<rust::String> names;
+    for (const auto& name : columns)
+        names.push_back(rustString(name));
+    const auto draftBytes = draft.toUtf8();
+    const auto columnBytes = column.toUtf8();
+    auto dto = bridge_detail::cellDto(value);
+    if (!column.isValidUtf16() || !draft.isValidUtf16())
+        dto.kind = "invalid_unicode";
+    const auto result =
+        quick_filter_compose_policy(std::move(names), utf8View(draftBytes), utf8View(columnBytes),
+                                    std::move(dto), static_cast<QuickFilterOperator>(operation));
+    return {string(result.expression), string(result.validation_error), string(result.error)};
+}
 bool EngineAdapter::foreignKeyValueFilterable(const Cell& value) {
     auto dto = bridge_detail::cellDto(value, true);
     if (const auto* decimal = std::get_if<DecimalValue>(&value))

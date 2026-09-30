@@ -144,6 +144,11 @@ class QueryWorkspace final : public QObject {
     void requestCellMetadata();
     void activateForeignKey(const QModelIndex& index);
     void setupResultViewControls();
+    bool quickFilterAvailable(const QPersistentModelIndex& clicked) const;
+    void appendQuickFilterActions(QMenu& menu, const QPersistentModelIndex& clicked);
+    void activateQuickFilter(const QPersistentModelIndex& clicked, quint64 query,
+                             CellFilterOperator operation);
+    bool quickFilterPreparing_ = false;
     void requestResultView(const QList<ResultFilterCondition>& filters, qint32 sortColumn,
                            const QString& sortDirection);
     void submitResultView(const QList<ResultFilterCondition>& filters, qint32 sortColumn,

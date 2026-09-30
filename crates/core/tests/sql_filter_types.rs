@@ -288,3 +288,98 @@ fn manual_patterns_and_lists_preserve_valid_empty_and_typed_literals() {
         .is_err()
     );
 }
+
+#[test]
+fn generated_quick_filters_use_sqlite_literal_semantics() {
+    use choscordb_core::quick_filter::{Operator, predicate};
+    let text = "50%_\\O'Reilly, Việt";
+    let rows = vec![
+        vec![Value::Integer(1), Value::Text(text.into())],
+        vec![
+            Value::Integer(2),
+            Value::Text(format!("prefix {text} suffix")),
+        ],
+        vec![Value::Integer(3), Value::Text("50xyO'Reilly, Việt".into())],
+        vec![Value::Integer(4), Value::Null],
+        vec![Value::Integer(5), Value::Text("".into())],
+    ];
+    let (mut engine, query) = setup(rows);
+    for (value, operator, expected) in [
+        (Value::Text(text.into()), Operator::Like, 2),
+        (Value::Text(text.into()), Operator::In, 1),
+        (Value::Text("".into()), Operator::Like, 4),
+        (Value::Text(text.into()), Operator::NotEquals, 3),
+        (Value::Null, Operator::IsNull, 1),
+        (Value::Null, Operator::IsNotNull, 4),
+    ] {
+        apply(
+            &mut engine,
+            query,
+            &predicate("payload", &value, operator).unwrap(),
+        );
+        assert!(
+            matches!(event(&mut engine, |event| matches!(event, Event::ResultViewApplied { .. })), Event::ResultViewApplied { rows, .. } if rows == expected)
+        );
+    }
+}
+
+#[test]
+fn safe_clicked_cell_does_not_hide_later_unsafe_rows() {
+    use choscordb_core::quick_filter::{Operator, predicate};
+    let (mut engine, query) = setup(vec![
+        vec![Value::Decimal("2.5".into()), Value::Null],
+        vec![Value::Decimal("0.10000000000000001".into()), Value::Null],
+    ]);
+    apply(&mut engine, query, "payload IS NULL");
+    event(&mut engine, |event| {
+        matches!(event, Event::ResultViewApplied { rows: 2, .. })
+    });
+    let expression = predicate("amount", &Value::Decimal("2.5".into()), Operator::Equals).unwrap();
+    apply(&mut engine, query, &expression);
+    assert!(failed_view(&mut engine).message.contains("precision"));
+    engine
+        .fetch_page_at(query, 0, PageSize::new(100).unwrap())
+        .unwrap();
+    assert!(
+        matches!(event(&mut engine, |event| matches!(event, Event::StoredPage { .. })), Event::StoredPage { page, .. } if page.rows.len() == 2)
+    );
+}
+
+#[test]
+fn quick_filter_composition_retains_sql_expression_truth() {
+    use choscordb_core::quick_filter::{Operator, compose, predicate};
+    let columns = TypedCursor(Vec::new()).columns().to_vec();
+    let (mut engine, query) = setup(vec![
+        vec![Value::Integer(1), Value::Text("Bob".into())],
+        vec![Value::Integer(2), Value::Text("Alice".into())],
+        vec![Value::Integer(3), Value::Text("Alice".into())],
+    ]);
+    let generated = predicate("payload", &Value::Text("Alice".into()), Operator::Equals).unwrap();
+    for draft in [
+        "amount = 1 OR amount = 2",
+        "((amount = 1 OR amount = 2))",
+        "amount BETWEEN 1 AND 2",
+        "CASE WHEN amount=1 OR amount=2 THEN 1 ELSE 0 END",
+        "coalesce((amount=1 OR amount=2),0)",
+        "(SELECT amount=1 OR amount=2)",
+    ] {
+        let composed = compose(&columns, draft, &generated).unwrap();
+        assert!(composed.validation_error.is_empty());
+        apply(&mut engine, query, &composed.expression);
+        event(&mut engine, |event| {
+            matches!(event, Event::ResultViewApplied { rows: 1, .. })
+        });
+        engine
+            .fetch_page_at(query, 0, PageSize::new(100).unwrap())
+            .unwrap();
+        let Event::StoredPage { page, .. } = event(&mut engine, |event| {
+            matches!(event, Event::StoredPage { .. })
+        }) else {
+            unreachable!()
+        };
+        assert_eq!(
+            page.rows,
+            vec![vec![Value::Integer(2), Value::Text("Alice".into())]]
+        );
+    }
+}
