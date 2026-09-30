@@ -63,7 +63,7 @@ CTest retries, skip an assertion, or increase a timeout as the only fix.
   plugin, font, and offscreen configuration as `scripts/ci/desktop.py`.
 - A shared diagnostics service must permit concurrent reads; a contended
   `try_lock` must not silently lose a concurrent engine outcome. Preserve the
-  nonblocking shared-read regression in `crates/core/src/engine/actor.rs`.
+  nonblocking shared-read regression in `crates/core/src/actor.rs`.
 - For macOS RSS tests, sample freshly touched noncompressible pages. Idle repeated
   bytes may be compressed by the OS; waiting before allocation avoids measuring
   compression instead of the intended memory-growth threshold.
