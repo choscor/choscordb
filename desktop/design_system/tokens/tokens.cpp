@@ -62,6 +62,7 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     const auto pixels = [&add](const QString& name, int value) {
         add(name, QString::number(value) + QStringLiteral("px"));
     };
+    pixels(QStringLiteral("spacing.0.25"), spacing(Spacing::Quarter));
     pixels(QStringLiteral("spacing.0.5"), spacing(Spacing::Half));
     pixels(QStringLiteral("spacing.1"), spacing(Spacing::One));
     pixels(QStringLiteral("spacing.1.5"), spacing(Spacing::OneHalf));

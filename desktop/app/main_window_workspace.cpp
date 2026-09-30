@@ -714,12 +714,6 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     pending.name = profile.name;
                 }
             }
-            const int rowHeight = savedConnections->sizeHintForRow(0);
-            savedConnections->setMaximumHeight(
-                profiles.isEmpty()
-                    ? 0
-                    : profiles.size() * (rowHeight + 2 * savedConnections->spacing()) +
-                          2 * savedConnections->frameWidth());
             syncVisible();
         });
     connect(workspace_->adapter(), &EngineAdapter::profileSaved, this,

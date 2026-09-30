@@ -14,6 +14,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTreeView>
@@ -181,6 +182,9 @@ class PinningSidebarTest final : public QObject {
         QCOMPARE(layout->itemAt(1)->widget(), section);
         QCOMPARE(layout->itemAt(2)->widget()->findChild<QLineEdit*>("navigatorFilter"), filter);
         QVERIFY(!section->isVisible());
+        QTRY_COMPARE(layout->itemAt(2)->widget()->geometry().top() -
+                         (layout->itemAt(0)->widget()->geometry().bottom() + 1),
+                     16);
         QVERIFY(!section->accessibleName().isEmpty());
         QVERIFY(empty->text().contains("pin", Qt::CaseInsensitive));
         QCOMPARE(pins->model()->rowCount(), 0);
@@ -221,7 +225,7 @@ class PinningSidebarTest final : public QObject {
         QCOMPARE(first.data().toString(), QStringLiteral("object_0"));
     }
 
-    void captionAndLastRowKeepCompactSectionRhythm() {
+    void captionsAndSectionsHaveRequestedSpacing() {
         QTemporaryDir storage;
         QVERIFY(storage.isValid());
         const auto path = storage.filePath("settings.sqlite");
@@ -268,45 +272,12 @@ class PinningSidebarTest final : public QObject {
                 QVERIFY(row.height() > 0);
                 const int pinGap = pins->viewport()->mapTo(section, row.topLeft()).y() -
                                    caption->mapTo(section, QPoint(0, caption->height())).y();
-                const int objectGap =
-                    filter->mapTo(objectSection, QPoint()).y() -
-                    objectCaption->mapTo(objectSection, QPoint(0, objectCaption->height())).y();
                 auto* connectionSection = savedCaption->parentWidget();
-                const auto savedGap = [saved, savedCaption, connectionSection] {
-                    return saved->viewport()
-                               ->mapTo(connectionSection,
-                                       saved->visualItemRect(saved->item(0)).topLeft())
-                               .y() -
-                           savedCaption->mapTo(connectionSection, QPoint(0, savedCaption->height()))
-                               .y();
-                };
-                const int connectionToPin =
-                    caption->mapToGlobal(QPoint()).y() -
-                    saved->viewport()
-                        ->mapToGlobal(saved->visualItemRect(saved->item(0)).bottomLeft())
-                        .y();
-                QVERIFY2(
-                    connectionToPin <=
-                        choscordb::design::spacing(choscordb::design::Spacing::Three),
-                    qPrintable(
-                        QStringLiteral("Connection to Pinned gap: %1 px").arg(connectionToPin)));
-                QVERIFY2(qAbs(pinGap - objectGap) <=
-                             choscordb::design::spacing(choscordb::design::Spacing::One),
-                         qPrintable(QStringLiteral("Pinned gap %1, neighboring gap %2")
-                                        .arg(pinGap)
-                                        .arg(objectGap)));
-                QVERIFY2(pinGap <= choscordb::design::spacing(choscordb::design::Spacing::Half),
-                         qPrintable(
-                             QStringLiteral("Pinned caption to first row gap: %1 px").arg(pinGap)));
-                QTRY_VERIFY2(
-                    qAbs(pinGap - savedGap()) <=
-                        choscordb::design::spacing(choscordb::design::Spacing::One),
-                    qPrintable(
-                        QStringLiteral("Pinned gap %1, saved gap %2").arg(pinGap).arg(savedGap())));
-                const int belowPin = objectCaption->mapToGlobal(QPoint()).y() -
-                                     pins->viewport()->mapToGlobal(row.bottomLeft()).y();
-                QVERIFY(belowPin <=
-                        choscordb::design::spacing(choscordb::design::Spacing::Three) * 3);
+                QCOMPARE(section->geometry().top() - (connectionSection->geometry().bottom() + 1),
+                         16);
+                QCOMPARE(pinGap, 1);
+                QCOMPARE(caption->height(), caption->sizeHint().height());
+                QCOMPARE(objectSection->geometry().top() - (section->geometry().bottom() + 1), 16);
             }
         }
     }
@@ -361,6 +332,112 @@ class PinningSidebarTest final : public QObject {
         scroll->verticalScrollBar()->setValue(0);
         tree->setCurrentIndex(tree->model()->index(59, 0));
         QTRY_VERIFY(scroll->verticalScrollBar()->value() > 0);
+    }
+
+    void savedConnectionsUseOnlyTheSharedVerticalScroll() {
+        using namespace choscordb;
+        QTemporaryDir storage;
+        QVERIFY(storage.isValid());
+        MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+        window.resize(960, 640);
+        window.show();
+        auto* workspace = window.findChild<QueryWorkspace*>();
+        auto* saved = window.findChild<QListWidget*>("savedConnections");
+        auto* scroll = window.findChild<QScrollArea*>("connectionsScroll");
+        auto* theme = window.findChild<design::ThemeManager*>();
+        QVERIFY(workspace && saved && scroll && theme);
+        SavedProfile profile;
+        profile.id = "profile-0";
+        profile.name = "Connection 0";
+        profile.path = ":memory:";
+        workspace->adapter()->saveProfile(profile, 9100);
+        QTRY_COMPARE(saved->count(), 1);
+        QTRY_COMPARE(saved->verticalScrollBar()->maximum(), 0);
+        QTRY_COMPARE(scroll->verticalScrollBar()->maximum(), 0);
+        QTRY_VERIFY(saved->viewport()->rect().contains(saved->visualItemRect(saved->item(0))));
+
+        for (int number = 1; number < 32; ++number) {
+            profile.id = QStringLiteral("profile-%1").arg(number);
+            profile.name = QStringLiteral("Connection %1").arg(number);
+            workspace->adapter()->saveProfile(profile, 9100 + number);
+        }
+        QTRY_COMPARE(saved->count(), 32);
+        for (const auto mode : {design::ThemeMode::Light, design::ThemeMode::Dark}) {
+            for (const auto density : {design::Density::Compact, design::Density::Comfortable}) {
+                theme->setMode(mode);
+                theme->setDensity(density);
+                QTRY_COMPARE(saved->verticalScrollBar()->maximum(), 0);
+                QTRY_VERIFY(saved->viewport()->rect().contains(
+                    saved->visualItemRect(saved->item(saved->count() - 1))));
+                QTRY_VERIFY(scroll->verticalScrollBar()->maximum() > 0);
+                QCOMPARE(saved->horizontalScrollBar()->maximum(), 0);
+                QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+                int visibleBars = 0;
+                for (const auto* bar : scroll->findChildren<QScrollBar*>())
+                    visibleBars += bar->isVisible();
+                QCOMPARE(visibleBars, 1);
+
+                scroll->verticalScrollBar()->setValue(0);
+                const auto point = saved->visualItemRect(saved->item(0)).center();
+                QWheelEvent wheel(point, saved->viewport()->mapToGlobal(point), {}, {0, -120},
+                                  Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+                QCoreApplication::sendEvent(saved->viewport(), &wheel);
+                QTRY_VERIFY(scroll->verticalScrollBar()->value() > 0);
+                QCOMPARE(saved->verticalScrollBar()->value(), 0);
+            }
+        }
+        saved->setCurrentRow(0);
+        scroll->verticalScrollBar()->setValue(0);
+        saved->setFocus();
+        QTest::keyClick(saved, Qt::Key_End);
+        QTRY_COMPARE(saved->currentRow(), 31);
+        const auto currentRowIsVisible = [saved, scroll] {
+            const auto row = saved->visualItemRect(saved->currentItem());
+            return scroll->viewport()->rect().contains(
+                QRect(saved->viewport()->mapTo(scroll->viewport(), row.topLeft()), row.size()));
+        };
+        QTRY_VERIFY(currentRowIsVisible());
+        QTest::keyClick(saved, Qt::Key_Home);
+        QTRY_COMPARE(saved->currentRow(), 0);
+        QTRY_VERIFY(currentRowIsVisible());
+        QSignalSpy opened(workspace, &QueryWorkspace::connectionReady);
+        saved->setCurrentRow(1, QItemSelectionModel::NoUpdate);
+        QTest::keyClick(saved, Qt::Key_Space);
+        QTRY_COMPARE(opened.count(), 1);
+        saved->setCurrentRow(5, QItemSelectionModel::NoUpdate);
+        QTest::keyClick(saved, Qt::Key_Space);
+        QTRY_COMPARE(opened.count(), 2);
+        QTRY_COMPARE(saved->selectedItems().size(), 2);
+        saved->setCurrentRow(0, QItemSelectionModel::NoUpdate);
+        const auto selected = saved->selectedItems();
+        for (const Qt::KeyboardModifiers modifiers :
+             {Qt::KeyboardModifiers{}, Qt::KeyboardModifiers{Qt::ShiftModifier},
+              Qt::KeyboardModifiers{Qt::ControlModifier},
+              Qt::KeyboardModifiers{Qt::ShiftModifier | Qt::ControlModifier}}) {
+            const auto firstRow = saved->visualItemRect(saved->item(0));
+            QTest::keyClick(saved, Qt::Key_PageDown, modifiers);
+            QVERIFY(saved->currentRow() > 0 && saved->currentRow() < 31);
+            const int pageDistance =
+                saved->visualItemRect(saved->currentItem()).center().y() - firstRow.center().y();
+            QVERIFY(pageDistance <= scroll->viewport()->height());
+            QVERIFY(pageDistance >= scroll->viewport()->height() - 2 * firstRow.height());
+            QCOMPARE(saved->selectedItems(), selected);
+            QTRY_VERIFY(currentRowIsVisible());
+            QTest::keyClick(saved, Qt::Key_PageUp, modifiers);
+            QTRY_COMPARE(saved->currentRow(), 0);
+            QCOMPARE(saved->selectedItems(), selected);
+            QTRY_VERIFY(currentRowIsVisible());
+        }
+        for (int number = 1; number < 32; ++number)
+            workspace->adapter()->deleteProfile(QStringLiteral("profile-%1").arg(number),
+                                                9200 + number);
+        QTRY_COMPARE(saved->count(), 1);
+        QTRY_COMPARE(scroll->verticalScrollBar()->maximum(), 0);
+        QTRY_VERIFY(saved->viewport()->rect().contains(saved->visualItemRect(saved->item(0))));
+        workspace->adapter()->deleteProfile("profile-0", 9300);
+        QTRY_COMPARE(saved->count(), 0);
+        QTRY_COMPARE(saved->height(), 0);
+        QTRY_VERIFY(window.findChild<QLabel*>("sidebarConnectionsEmpty")->isVisible());
     }
 };
 

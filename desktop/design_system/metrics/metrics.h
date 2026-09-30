@@ -10,7 +10,7 @@ namespace choscordb::design {
 
 enum class Density { Compact, Comfortable };
 enum class DialogSize { Short, Export, Preferences, Profiles, Detail, Ddl };
-enum class Spacing { Half, One, OneHalf, Two, TwoHalf, Three, Four, Six, Eight };
+enum class Spacing { Quarter, Half, One, OneHalf, Two, TwoHalf, Three, Four, Six, Eight };
 enum class Dimension {
     ButtonExtraSmall,
     ButtonSmall,

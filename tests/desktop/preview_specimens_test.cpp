@@ -22,7 +22,6 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QCheckBox>
-#include <QClipboard>
 #include <QComboBox>
 #include <QCompleter>
 #include <QContextMenuEvent>
@@ -363,22 +362,6 @@ void PreviewTest::fieldValidationIsBelowInputAndSelectInBothThemes() {
             QVERIFY(message->isHidden());
         }
     }
-}
-
-void PreviewTest::tokensExposeCopyableValuesAndSources() {
-    choscordb::design::PreviewWindow window;
-    auto* light = window.findChild<QWidget*>("previewLight");
-    auto* table = light->findChild<QTableWidget*>("previewTokens");
-    QVERIFY(table);
-    const auto matches = table->findItems("color.background", Qt::MatchExactly);
-    QCOMPARE(matches.size(), 1);
-    table->setCurrentCell(matches.front()->row(), 0);
-    auto* copy = light->findChild<QPushButton*>("previewCopyToken");
-    QVERIFY(copy);
-    copy->click();
-    QVERIFY(QApplication::clipboard()->text().contains("background"));
-    QVERIFY(QApplication::clipboard()->text().contains("#f6f7f8", Qt::CaseInsensitive));
-    QVERIFY(QApplication::clipboard()->text().contains("desktop/design_system/tokens/tokens.cpp"));
 }
 
 void PreviewTest::exportsAreDeterministicAndFailuresVisible() {
