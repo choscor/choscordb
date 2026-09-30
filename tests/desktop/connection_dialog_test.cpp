@@ -65,7 +65,7 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
     QTRY_VERIFY(!progress->isVisible());
     QCOMPARE(dialog->findChild<QLabel*>("profileStatus")->text(),
              QString("Connection test succeeded."));
-    QVERIFY(!dialog->findChild<QLabel*>("profileStatus")->isVisible());
+    QVERIFY(dialog->findChild<QLabel*>("profileStatus")->isVisible());
     auto* feedback =
         f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
     QVERIFY(feedback && feedback->isVisible());
@@ -74,6 +74,8 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
     QCOMPARE(feedback->geometry().right(), f.parent.width() - 17);
     QCOMPARE(feedback->geometry().bottom(), f.parent.height() - 17);
     QVERIFY(feedback->text().contains("Connection test succeeded."));
+    feedback->findChild<QToolButton*>("toastDismiss")->click();
+    QTRY_VERIFY(feedback->isHidden());
     auto* save = dialog->findChild<QPushButton*>("profileSave");
     save->click();
     QVERIFY(progress->isVisible());

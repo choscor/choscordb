@@ -321,6 +321,10 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* pinnedSection = pinned.section;
     auto* pinnedList = pinned.list;
     auto* pinnedEmpty = pinned.empty;
+    auto* pinsStatusLine = new design::StatusLine(pinnedSection);
+    pinsStatusLine->setObjectName("pinsStatusLine");
+    pinsStatusLine->hide();
+    pinnedSection->contentLayout()->addWidget(pinsStatusLine);
     auto* objectSection = new SidebarSection(tr("Schema & objects"), navBody);
     connectionsLayout->addWidget(objectSection);
     connectionsLayout->addStretch(1);
@@ -357,6 +361,10 @@ MainWindow::Ui MainWindow::buildUi() {
     objectsEmpty->setTextFormat(Qt::PlainText);
     objectSection->contentLayout()->addWidget(objectsEmpty);
     objectSection->contentLayout()->addWidget(tree);
+    auto* navigatorStatusLine = new design::StatusLine(objectSection);
+    navigatorStatusLine->setObjectName("navigatorStatusLine");
+    navigatorStatusLine->hide();
+    objectSection->contentLayout()->addWidget(navigatorStatusLine);
     auto* navigatorStatus = new QLabel(navBody);
     navigatorStatus->setObjectName("navigatorStatus");
     navigatorStatus->hide();
@@ -390,6 +398,10 @@ MainWindow::Ui MainWindow::buildUi() {
     savedFiles->setItemDelegate(new NavigatorIconDelegate(savedFiles));
     savedFiles->setProperty("designSurface", "sidebar");
     savedSection->contentLayout()->addWidget(savedFiles, 1);
+    auto* savedStatusLine = new design::StatusLine(savedSection);
+    savedStatusLine->setObjectName("savedStatusLine");
+    savedStatusLine->hide();
+    savedSection->contentLayout()->addWidget(savedStatusLine);
     sidebarPanels->addWidget(savedPanel);
     auto* historyPanel = new QWidget(sidebarPanels);
     historyPanel->setObjectName("historyPanel");
@@ -877,7 +889,7 @@ MainWindow::Ui MainWindow::buildUi() {
     connect(theme_, &design::ThemeManager::themeChanged, startIcon, colorStartIcon);
     startLayout->addWidget(startIcon);
     auto* startHint = new design::Text(
-        tr("No database open\nSelect a connection in the sidebar or create a new one."), start);
+        tr("Welcome to ChoscorDB\nSelect a connection in the sidebar or create a new one."), start);
     startHint->setObjectName("startHint");
     startHint->setForegroundRole(QPalette::PlaceholderText);
     startHint->setWordWrap(true);
@@ -916,6 +928,7 @@ MainWindow::Ui MainWindow::buildUi() {
     toast_ = new ToastRegion;
     auto* toast = toast_;
     centralHostLayout->addWidget(screens_, 1);
+    addFeedbackStatusLines(centralHost);
     setCentralWidget(centralHost);
     toast_->attachTo(this);
     return {

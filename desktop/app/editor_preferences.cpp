@@ -82,10 +82,10 @@ void EditorPreferencesController::initialize(EngineAdapter* adapter) {
                 pendingSaves_.remove(token);
                 if (token == loadToken) {
                     loading_ = false;
-                    window_->showToast(
+                    window_->showStatus(
                         tr("Preferences could not be loaded: %1. Open Preferences to retry.")
                             .arg(error),
-                        ToastVariant::Danger);
+                        ToastVariant::Danger, QStringLiteral("preferences"));
                 }
             });
     adapter_->getEditorPreferences(loadToken);
@@ -93,9 +93,10 @@ void EditorPreferencesController::initialize(EngineAdapter* adapter) {
 void EditorPreferencesController::apply(const EditorPreferences& value) {
     const auto error = shortcutValidationError(value, catalog_);
     if (!error.isEmpty()) {
-        window_->showToast(error, ToastVariant::Danger);
+        window_->showStatus(error, ToastVariant::Danger, QStringLiteral("preferences"));
         return;
     }
+    window_->clearStatus(QStringLiteral("preferences"));
     preferences_ = value;
     for (const auto& descriptor : catalog_) {
         QString sequence = descriptor.defaultSequence;

@@ -15,9 +15,9 @@
 #include "design_system/icons.h"
 #include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
-#include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "widgets/editor_completion/editor_completion.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -108,77 +108,7 @@ QString prepareSavedSqlDirectory(const QString& root) {
     return fromRust(saved_sql_prepare_directory(pathView(encoded)));
 }
 
-void elideResultSource(QLabel* source) {
-    const auto full = source->property("fullSource").toString();
-    const auto visible = source->fontMetrics().elidedText(full, Qt::ElideMiddle, source->width());
-    if (source->text() != visible)
-        source->setText(visible);
-}
-
-void elideResultOutcome(QLabel* outcome) {
-    const auto full = outcome->property("fullOutcome").toString();
-    if (full.isEmpty())
-        return;
-    const auto visible = outcome->fontMetrics().elidedText(full, Qt::ElideRight, outcome->width());
-    if (outcome->text() != visible)
-        outcome->setText(visible);
-}
-
-void fitResultFooter(QWidget* footer) {
-    if (!footer)
-        return;
-    auto* source = footer->findChild<QLabel*>("executionSummary");
-    auto* outcome = footer->findChild<QLabel*>("executionStateCompact");
-    auto* previous = footer->findChild<QPushButton*>("previousPage");
-    auto* next = footer->findChild<QPushButton*>("nextPage");
-    if (!source || !outcome || !previous || !next)
-        return;
-    outcome->setMaximumWidth(qMax(outcome->minimumWidth(), footer->width() / 3));
-    auto* layout = footer->layout();
-    const auto margins = layout->contentsMargins();
-    const int spacing = layout->spacing();
-    int space =
-        footer->width() - margins.left() - margins.right() - previous->sizeHint().width() -
-        next->sizeHint().width() - qMin(outcome->sizeHint().width(), outcome->maximumWidth()) -
-        source->fontMetrics().horizontalAdvance(QStringLiteral("Untitled query")) - 6 * spacing;
-    // Page context survives first; size, row count, then duration yield as space shrinks.
-    for (const char* name :
-         {"executionPage", "executionDuration", "executionRows", "executionVisibleSize"}) {
-        auto* metric = footer->findChild<QLabel*>(QString::fromLatin1(name));
-        if (!metric)
-            continue;
-        const bool show =
-            !metric->text().isEmpty() && space >= metric->sizeHint().width() + spacing;
-        metric->setVisible(show);
-        if (show)
-            space -= metric->sizeHint().width() + spacing;
-    }
-    elideResultSource(source);
-    elideResultOutcome(outcome);
-}
 } // namespace
-
-bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
-    if (event->type() == QEvent::Resize &&
-        watched->objectName() == QLatin1String("sqlResultFooter"))
-        fitResultFooter(qobject_cast<QWidget*>(watched));
-    else if (event->type() == QEvent::Resize &&
-             watched->objectName() == QLatin1String("executionSummary"))
-        elideResultSource(qobject_cast<QLabel*>(watched));
-    else if (event->type() == QEvent::Resize &&
-             watched->objectName() == QLatin1String("executionStateCompact"))
-        elideResultOutcome(qobject_cast<QLabel*>(watched));
-    if (watched == savedConnectionsList_.data() && event->type() == QEvent::KeyPress) {
-        const auto* key = static_cast<QKeyEvent*>(event);
-        if ((key->key() == Qt::Key_Space || key->key() == Qt::Key_Select ||
-             key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter) &&
-            key->modifiers() == Qt::NoModifier && activateFocusedSavedProfile_) {
-            activateFocusedSavedProfile_();
-            return true;
-        }
-    }
-    return QMainWindow::eventFilter(watched, event);
-}
 
 void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto newQuery = ui.newQuery;
@@ -226,10 +156,13 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto messages = ui.messages;
     connect(completion_, &EditorCompletionController::partialCatalog, this,
             [this, partialShown = false](bool partial) mutable {
+                const auto hint =
+                    tr("Suggestions use loaded navigator objects. Expand nodes for more "
+                       "names; large catalogs may be limited.");
                 if (partial && !partialShown)
-                    showToast(tr("Suggestions use loaded navigator objects. Expand nodes for more "
-                                 "names; large catalogs may be limited."),
-                              ToastVariant::Warning);
+                    showStatus(hint, ToastVariant::Warning, QStringLiteral("completion"));
+                else if (!partial)
+                    clearStatus(QStringLiteral("completion"), hint);
                 partialShown = partial;
             });
     connect(newQuery, &QAction::triggered, this, [this] { addEditor(); });
@@ -355,8 +288,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             return;
         if (!allowDocumentChange() || databaseClosePending_ ||
             (recovery_ && (!recovery_->isReady() || recovery_->isClosing()))) {
-            showToast(tr("Saved file cannot be opened while the workspace is busy."),
-                      ToastVariant::Warning);
+            showStatus(tr("Saved file cannot be opened while the workspace is busy."),
+                       ToastVariant::Warning, QStringLiteral("saved"), path);
             return;
         }
         pendingSavedOpens->insert(path);
@@ -380,17 +313,17 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     if (!allowDocumentChange() || databaseClosePending_ ||
                         (recovery_ && (!recovery_->isReady() || recovery_->isClosing()))) {
                         pendingSavedOpens->remove(path);
-                        showToast(tr("Saved file cannot be opened while the workspace is busy."),
-                                  ToastVariant::Warning);
+                        showStatus(tr("Saved file cannot be opened while the workspace is busy."),
+                                   ToastVariant::Warning, QStringLiteral("saved"), path);
                         return;
                     }
                     if (identities.isEmpty() || !identities.front().error.isEmpty()) {
                         pendingSavedOpens->remove(path);
-                        showToast(tr("Could not open %1: %2")
-                                      .arg(QFileInfo(path).fileName(),
-                                           identities.isEmpty() ? tr("Path is invalid.")
-                                                                : identities.front().error),
-                                  ToastVariant::Danger);
+                        showStatus(tr("Could not open %1: %2")
+                                       .arg(QFileInfo(path).fileName(),
+                                            identities.isEmpty() ? tr("Path is invalid.")
+                                                                 : identities.front().error),
+                                   ToastVariant::Danger, QStringLiteral("saved"), path);
                         return;
                     }
                     for (int i = 0; i < openEditors.size(); ++i) {
@@ -399,6 +332,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                             identities.at(i + 1).error.isEmpty() &&
                             identities.at(i + 1).path == identities.front().path) {
                             pendingSavedOpens->remove(path);
+                            clearStatus(QStringLiteral("saved"), {}, path);
                             if (focusRequested) {
                                 editors_->setCurrentWidget(existing);
                                 showScreen(Screen::Sql);
@@ -413,11 +347,15 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                                                                         const QString& error) {
                                     pendingSavedOpens->remove(path);
                                     editor->setProperty("savedSqlOpen", false);
-                                    if (error.isEmpty() || editors_->indexOf(editor) < 0)
+                                    if (error.isEmpty()) {
+                                        clearStatus(QStringLiteral("saved"), {}, path);
                                         return;
-                                    showToast(tr("Could not open %1: %2")
-                                                  .arg(QFileInfo(openedPath).fileName(), error),
-                                              ToastVariant::Danger);
+                                    }
+                                    if (editors_->indexOf(editor) < 0)
+                                        return;
+                                    showStatus(tr("Could not open %1: %2")
+                                                   .arg(QFileInfo(openedPath).fileName(), error),
+                                               ToastVariant::Danger, QStringLiteral("saved"), path);
                                     editors_->removeTab(editors_->indexOf(editor));
                                     editor->deleteLater();
                                     if (!editors_->count())
@@ -464,11 +402,12 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     const auto error = watcher->result();
                     watcher->deleteLater();
                     if (!error.isEmpty()) {
-                        showToast(
-                            tr("Could not create saved SQL directory: %1").arg(savedDirectory),
-                            ToastVariant::Danger);
+                        showStatus(tr("Could not create saved SQL directory %1: %2")
+                                       .arg(savedDirectory, error),
+                                   ToastVariant::Danger, QStringLiteral("saved"), savedDirectory);
                         return;
                     }
+                    clearStatus(QStringLiteral("saved"), {}, savedDirectory);
                     showDialog();
                 });
         watcher->setFuture(QtConcurrent::run(
@@ -557,9 +496,15 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             const auto detail = state == "queued"       ? tr("Waiting to run…")
                                 : state == "cancelling" ? tr("Cancelling query…")
                                                         : tr("Running query…");
-            progressToast(centralWidget())->showProgress(tr("Query in progress"), detail);
+            if (auto* footer = findChild<design::StatusLine*>("sqlResultFooter")) {
+                footer->setBusy(true);
+                footer->setMessage(detail);
+            }
         } else {
-            clearProgressToast(centralWidget());
+            if (auto* footer = findChild<design::StatusLine*>("sqlResultFooter")) {
+                footer->setBusy(false);
+                footer->setMessage({});
+            }
         }
     });
     connect(workspace_, &QueryWorkspace::executionStateChanged, this,
@@ -871,6 +816,11 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         const auto profileId = workspace_->profileIdForConnection(id);
         if (profileId.isEmpty())
             return;
+        if (reconnectingProfile_ == profileId) {
+            reconnectingProfile_.clear();
+            showStatus(tr("Connected. Select the object tab to load fresh metadata."),
+                       ToastVariant::Success, QStringLiteral("connection"));
+        }
         sessionProfileIds_.insert(id, profileId);
         if (retiredBrowseConnections_.contains(id))
             return;
@@ -905,6 +855,14 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     if (it->connection != event.id)
                         continue;
                     const auto profileId = it.key();
+                    if (reconnectingProfile_ == profileId) {
+                        reconnectingProfile_.clear();
+                        showStatus(
+                            tr("Could not reconnect %1: %2")
+                                .arg(it->name, QString::fromUtf8(event.error.data(),
+                                                                 qsizetype(event.error.size()))),
+                            ToastVariant::Danger, QStringLiteral("connection"));
+                    }
                     const auto pending = it.value();
                     pendingBrowseProfiles_.erase(it);
                     if (navigatorController_)
@@ -918,7 +876,21 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     break;
                 }
             } else if (kind == "disconnected") {
+                for (auto it = pendingBrowseProfiles_.cbegin(); it != pendingBrowseProfiles_.cend();
+                     ++it) {
+                    if (it->connection == event.id && reconnectingProfile_ == it.key()) {
+                        reconnectingProfile_.clear();
+                        showStatus(tr("The connection closed before reconnecting completed."),
+                                   ToastVariant::Danger, QStringLiteral("connection"));
+                        break;
+                    }
+                }
                 const auto profileId = sessionProfileIds_.take(event.id);
+                if (!profileId.isEmpty() && reconnectingProfile_ == profileId) {
+                    reconnectingProfile_.clear();
+                    showStatus(tr("The connection closed before reconnecting completed."),
+                               ToastVariant::Danger, QStringLiteral("connection"));
+                }
                 retiredBrowseConnections_.remove(event.id);
                 if (!profileId.isEmpty() && selectedSessionIds_.value(profileId) == event.id) {
                     selectedSessionIds_.remove(profileId);
@@ -931,12 +903,13 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     connect(workspace_->adapter(), &EngineAdapter::profileFailed, this,
             [this](quint64 token, const QString& error) {
                 if (token == profileListToken_)
-                    showToast(tr("Saved connections: %1").arg(error), ToastVariant::Danger);
+                    showStatus(tr("Saved connections: %1").arg(error), ToastVariant::Danger,
+                               QStringLiteral("connection"));
             });
     connect(workspace_->adapter(), &EngineAdapter::profileConnectFailed, this,
             [this](const QString& error) {
                 if (!submittingBrowseProfile_ || submittingBrowseProfileId_.isEmpty()) {
-                    showToast(error, ToastVariant::Danger);
+                    showStatus(error, ToastVariant::Danger, QStringLiteral("connection"));
                     return;
                 }
                 submissionError_ = error;

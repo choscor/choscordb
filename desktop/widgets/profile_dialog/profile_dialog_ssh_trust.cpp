@@ -1,5 +1,5 @@
 #include "design_system/button/button.h"
-#include "design_system/toast_region/toast_region.h"
+#include "design_system/status_line/status_line.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/profile_dialog/ssh_host_key_dialog.h"
 #include <QCheckBox>
@@ -53,8 +53,11 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                 if (token != trustToken_)
                     return;
                 trustToken_ = 0;
-                if (feedbackToast_)
-                    feedbackToast_->clearNotice();
+                statusLine_->setBusy(false);
+                statusLine_->setMessage(
+                    tr("SSH host keys inspected. Review the keys before approving."));
+                statusLine_->setAvailable(true);
+                statusLine_->show();
                 updateTrustControls();
                 if (revision_ != trustRevision_) {
                     showTrustStatus(
@@ -132,16 +135,17 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                     ++revision_;
                     trustRevision_ = revision_;
                 }
-                if (trustDialog_)
-                    trustDialog_->finishApproval(outcome);
-                else if (outcome == "approved") {
-                    feedbackToast_ = windowToast(this);
-                    if (feedbackToast_)
-                        feedbackToast_->showToast(tr("Success"), tr("SSH host key approved."),
-                                                  ToastVariant::Success);
+                if (outcome == "approved") {
+                    statusLine_->setBusy(false);
+                    statusLine_->setAvailable(true);
+                    statusLine_->setMessage(
+                        tr("SSH host key approved. Retry the connection to use it."));
+                    statusLine_->show();
                 } else {
                     showTrustStatus(tr("SSH host key approval outcome is unknown."));
                 }
+                if (trustDialog_)
+                    trustDialog_->finishApproval(outcome);
             });
     connect(adapter_, &EngineAdapter::sshHostKeyOperationFailed, this,
             [this](quint64 token, const QString& error) {
@@ -149,20 +153,19 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                     return;
                 trustToken_ = 0;
                 updateTrustControls();
+                showTrustStatus(error, true);
                 if (trustDialog_)
                     trustDialog_->showFailure(error);
-                else
-                    showTrustStatus(error);
             });
     updateTrustControls();
 }
-void ProfileDialog::showTrustStatus(const QString& message) {
-    status_->setText(message);
-    status_->hide();
-    if (isVisible()) {
-        feedbackToast_ = windowToast(this);
-        feedbackToast_->showToast(tr("Error"), message, ToastVariant::Danger);
-    }
+void ProfileDialog::showTrustStatus(const QString& message, bool failure) {
+    statusLine_->setMessage(message);
+    statusLine_->setBusy(false);
+    statusLine_->setAvailable(!failure);
+    if (!failure)
+        statusLine_->setNeutral();
+    statusLine_->show();
 }
 void ProfileDialog::updateTrustControls() {
     if (!inspectSshKeys_)
@@ -200,9 +203,10 @@ void ProfileDialog::inspectHostKeys(const SshHostKeyTarget& target) {
     trustRevision_ = revision_;
     trustToken_ = ++token_;
     updateTrustControls();
-    feedbackToast_ = windowToast(this);
-    if (feedbackToast_)
-        feedbackToast_->showProgress(tr("Profiles"), tr("Inspecting SSH host keys…"));
+    statusLine_->setMessage(tr("Inspecting SSH host keys…"));
+    statusLine_->setAvailable(true);
+    statusLine_->setBusy(true);
+    statusLine_->show();
     adapter_->inspectSshHostKeys(profile, target, credentials, trustToken_);
 }
 } // namespace choscordb

@@ -34,29 +34,30 @@ bool MainWindow::objectActionReady(quint64 connection, const QString& objectId, 
                                    const QString& parentObjectId, const QString& qualifiedName,
                                    const QString& relationSubtype) {
     if (pendingObjectAction_ || pendingObjectRefresh_) {
-        showToast(tr("Finish the current object action and navigator refresh before trying "
-                     "again."),
-                  ToastVariant::Warning);
+        showStatus(tr("Finish the current object action and navigator refresh before trying "
+                      "again."),
+                   ToastVariant::Warning, QStringLiteral("navigator"));
         return false;
     }
     auto* selector = findChild<QComboBox*>("connectionSelector");
     if (databaseClosePending_ || !workspace_ || !navigatorController_ || !selector ||
         selector->findData(QVariant::fromValue<qulonglong>(connection)) < 0 ||
         workspace_->driverForConnection(connection).isEmpty()) {
-        showToast(tr("The selected connection is no longer available."), ToastVariant::Danger);
+        showStatus(tr("The selected connection is no longer available."), ToastVariant::Danger,
+                   QStringLiteral("navigator"));
         return false;
     }
     if (!navigatorController_->model()->matchesObject(connection, objectId, kind, qualifiedName,
                                                       parentObjectId, relationSubtype)) {
-        showToast(tr("The selected object changed. Refresh the navigator and try again."),
-                  ToastVariant::Warning);
+        showStatus(tr("The selected object changed. Refresh the navigator and try again."),
+                   ToastVariant::Warning, QStringLiteral("navigator"));
         return false;
     }
     if (!workspace_->navigationAllowed() || workspace_->hasPendingEdits() ||
         workspace_->activeManualTransaction(connection)) {
-        showToast(tr("Finish or cancel active database work and pending edits before changing "
-                     "this object."),
-                  ToastVariant::Warning);
+        showStatus(tr("Finish or cancel active database work and pending edits before changing "
+                      "this object."),
+                   ToastVariant::Warning, QStringLiteral("navigator"));
         return false;
     }
     for (int i = 0; i < editors_->count(); ++i) {
@@ -64,16 +65,16 @@ bool MainWindow::objectActionReady(quint64 connection, const QString& objectId, 
         if (!object || object->property("objectConnection").toULongLong() != connection)
             continue;
         if (object->operationInFlight()) {
-            showToast(tr("Finish the active object inspection before changing this object."),
-                      ToastVariant::Warning);
+            showStatus(tr("Finish the active object inspection before changing this object."),
+                       ToastVariant::Warning, QStringLiteral("navigator"));
             return false;
         }
         if (auto* objectData = object->findChild<ObjectDataWorkspace*>())
             for (auto* result : objectData->findChildren<QueryWorkspace*>())
                 if (!result->navigationAllowed() || result->hasPendingEdits()) {
-                    showToast(tr("Finish or cancel active object data work and pending edits "
-                                 "before changing this object."),
-                              ToastVariant::Warning);
+                    showStatus(tr("Finish or cancel active object data work and pending edits "
+                                  "before changing this object."),
+                               ToastVariant::Warning, QStringLiteral("navigator"));
                     return false;
                 }
     }
@@ -97,7 +98,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
     if (action == QStringLiteral("drop")) {
         statement = ObjectActionSql::drop(driver, kind, objectId, qualifiedName, relationSubtype);
         if (!statement.valid) {
-            showToast(statement.error, ToastVariant::Danger);
+            showStatus(statement.error, ToastVariant::Danger, QStringLiteral("navigator"));
             return;
         }
         ConfirmationDialog dialog(
@@ -169,7 +170,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
     if (!statement.valid || !objectActionReady(connection, objectId, kind, parentObjectId,
                                                qualifiedName, relationSubtype)) {
         if (!statement.valid)
-            showToast(statement.error, ToastVariant::Danger);
+            showStatus(statement.error, ToastVariant::Danger, QStringLiteral("navigator"));
         return;
     }
     const auto profileId = workspace_->profileIdForConnection(connection);
@@ -177,8 +178,8 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
                                              : QStringLiteral("profile:%1").arg(profileId);
     const auto query = workspace_->adapter()->execute(connection, statement.sql);
     if (!query) {
-        showToast(tr("The object action could not be submitted. Check the connection and retry."),
-                  ToastVariant::Danger);
+        showStatus(tr("The object action could not be submitted. Check the connection and retry."),
+                   ToastVariant::Danger, QStringLiteral("navigator"));
         return;
     }
     pendingObjectAction_ = PendingObjectAction{action,
@@ -194,16 +195,19 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
                                                connection,
                                                *query};
     workspace_->setExternalWork(true);
-    const auto fetchFailure = connect(
-        workspace_->adapter(), &EngineAdapter::commandFailed, this,
-        [this, query](const QString& error) {
-            if (!pendingObjectAction_ || pendingObjectAction_->query != *query)
-                return;
-            pendingObjectAction_.reset();
-            workspace_->setExternalWork(false);
-            workspace_->adapter()->releaseQuery(*query);
-            showToast(tr("The object action could not start: %1").arg(error), ToastVariant::Danger);
-        });
+    showStatusProgress(tr("Changing %1 %2…").arg(displayKind, qualifiedName),
+                       QStringLiteral("navigator"));
+    const auto fetchFailure =
+        connect(workspace_->adapter(), &EngineAdapter::commandFailed, this,
+                [this, query](const QString& error) {
+                    if (!pendingObjectAction_ || pendingObjectAction_->query != *query)
+                        return;
+                    pendingObjectAction_.reset();
+                    workspace_->setExternalWork(false);
+                    workspace_->adapter()->releaseQuery(*query);
+                    showStatus(tr("The object action could not start: %1").arg(error),
+                               ToastVariant::Danger, QStringLiteral("navigator"));
+                });
     workspace_->adapter()->fetchPage(*query);
     disconnect(fetchFailure);
 }
@@ -212,17 +216,24 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
     const auto eventKind = bridgeText(event.kind);
     if ((eventKind == QStringLiteral("disconnected") ||
          eventKind == QStringLiteral("connection_failed")) &&
-        pendingObjectRefresh_ && pendingObjectRefresh_->connection == event.id)
+        pendingObjectRefresh_ && pendingObjectRefresh_->connection == event.id) {
         pendingObjectRefresh_.reset();
+        showStatus(
+            tr("Object changed, but the connection closed before navigator refresh completed. "
+               "Reconnect and choose Refresh to retry."),
+            ToastVariant::Warning, QStringLiteral("navigator"));
+    }
     if (eventKind == QStringLiteral("metadata") || eventKind == QStringLiteral("metadata_failed")) {
         if (pendingObjectRefresh_ && pendingObjectRefresh_->connection == event.id &&
             pendingObjectRefresh_->parentObjectId == bridgeText(event.parent) &&
             pendingObjectRefresh_->token == event.request_token) {
             if (eventKind == QStringLiteral("metadata_failed"))
-                showToast(tr("Object changed, but navigator refresh failed: %1. Choose Refresh "
-                             "to retry.")
-                              .arg(bridgeText(event.error)),
-                          ToastVariant::Danger);
+                showStatus(tr("Object changed, but navigator refresh failed: %1. Choose Refresh "
+                              "to retry.")
+                               .arg(bridgeText(event.error)),
+                           ToastVariant::Warning, QStringLiteral("navigator"));
+            else
+                clearStatus(QStringLiteral("navigator"), tr("Refreshing navigator…"));
             pendingObjectRefresh_.reset();
         }
         return;
@@ -234,8 +245,10 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
         event.id == pendingObjectAction_->connection) {
         pendingObjectAction_.reset();
         workspace_->setExternalWork(false);
-        showToast(tr("The connection closed before the object action completed."),
-                  ToastVariant::Danger);
+        showStatus(
+            tr("The connection closed before the object action completed. Its outcome is unknown; "
+               "reconnect and refresh before retrying."),
+            ToastVariant::Danger, QStringLiteral("navigator"));
         return;
     }
     if (event.id != pendingObjectAction_->query || (eventKind != QStringLiteral("query_finished") &&
@@ -246,14 +259,18 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
     workspace_->adapter()->releaseQuery(action.query);
     workspace_->setExternalWork(false);
     if (eventKind == QStringLiteral("query_failed")) {
-        showToast(tr("Could not %1 %2 %3: %4")
-                      .arg(action.action, action.displayKind, action.qualifiedName,
-                           bridgeText(event.error)),
-                  ToastVariant::Danger);
+        showStatus(tr("Could not %1 %2 %3: %4")
+                       .arg(action.action, action.displayKind, action.qualifiedName,
+                            bridgeText(event.error)),
+                   ToastVariant::Danger, QStringLiteral("navigator"));
         return;
     }
-    if (workspace_->driverForConnection(action.connection).isEmpty())
+    if (workspace_->driverForConnection(action.connection).isEmpty()) {
+        showStatus(tr("Object changed, but the connection is no longer available. Reconnect and "
+                      "refresh the navigator."),
+                   ToastVariant::Warning, QStringLiteral("navigator"));
         return;
+    }
     updatePinsForObjectAction(action);
     for (int i = editors_->count() - 1; i >= 0; --i) {
         auto* object = qobject_cast<ObjectExplorer*>(editors_->widget(i));
@@ -283,15 +300,17 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
     if (recovery_)
         recovery_->changed();
     showToast(action.action == QStringLiteral("drop")
-                  ? tr("%1 dropped. Refreshing navigator…").arg(action.displayKind)
-                  : tr("%1 renamed. Refreshing navigator…").arg(action.displayKind),
+                  ? tr("%1 %2 dropped.").arg(action.displayKind, action.qualifiedName)
+                  : tr("%1 %2 renamed to %3.")
+                        .arg(action.displayKind, action.qualifiedName, action.newQualifiedName),
               ToastVariant::Success);
+    showStatusProgress(tr("Refreshing navigator…"), QStringLiteral("navigator"));
     pendingObjectRefresh_ = PendingObjectRefresh{action.connection, 0, action.parentObjectId};
     if (!navigatorController_->model()->refreshObject(action.connection, action.parentObjectId)) {
         pendingObjectRefresh_.reset();
-        showToast(tr("Object changed, but the navigator could not refresh. Choose Refresh to "
-                     "retry."),
-                  ToastVariant::Warning);
+        showStatus(tr("Object changed, but the navigator could not refresh. Choose Refresh to "
+                      "retry."),
+                   ToastVariant::Warning, QStringLiteral("navigator"));
     }
 }
 } // namespace choscordb

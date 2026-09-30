@@ -363,6 +363,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         auto* available = new StatusLine(host);
         available->setObjectName("previewStatusAvailable");
         available->setAvailable(true);
+
         auto* loaded = new Text("orders · DDL loaded", available);
         loaded->setTypographyRole(TypographyRole::Ui);
         loaded->setProperty("state", "loaded");
@@ -374,20 +375,31 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         disconnected->setTypographyRole(TypographyRole::Ui);
         unavailable->contentLayout()->addWidget(disconnected, 1);
         layout->addWidget(unavailable);
+        auto* loading = new StatusLine(host);
+        loading->setObjectName("previewStatusLoading");
+        loading->setNeutral();
+        loading->setMessage("orders · Loading rows…");
+        loading->setBusy(true);
+        layout->addWidget(loading);
+        auto* detail = new StatusLine(host);
+        detail->setObjectName("previewStatusLongError");
+        detail->setMessage(
+            QString("Storage could not finish. Retry after checking permissions. ").repeated(20));
+        layout->addWidget(detail);
     } else if (id == "feedback") {
         auto* viewport = host->parentWidget();
         auto* toast = new choscordb::ToastRegion;
         toast->attachTo(viewport);
-        layout->addWidget(new QLabel(
-            "Window notifications use a green success surface and a top-right dismiss button.",
-            host));
+        layout->addWidget(new QLabel("Success notices reserve reading time; warnings and errors "
+                                     "stay until dismissed. New notices wait in order.",
+                                     host));
         auto* duration = new QSpinBox(host);
         duration->setObjectName("previewToastSeconds");
-        duration->setRange(1, 30);
-        duration->setValue(5);
+        duration->setRange(10, 60);
+        duration->setValue(10);
         duration->setSuffix(" s");
         auto* durationRow = new QFormLayout;
-        durationRow->addRow("Auto dismiss after", duration);
+        durationRow->addRow("Success reading time (minimum)", duration);
         layout->addLayout(durationRow);
         auto* actions = new QHBoxLayout;
         const struct {
