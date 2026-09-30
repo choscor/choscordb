@@ -75,20 +75,18 @@ class QuerySettingsCorruptionTest : public QObject {
         QVERIFY(dialog);
         auto* apply = dialog->findChild<QPushButton*>("querySettingsApply");
         auto* reset = dialog->findChild<QPushButton*>("querySettingsReset");
-        choscordb::ToastRegion* toast = nullptr;
-        QTRY_VERIFY((toast = window.findChild<choscordb::ToastRegion*>(
-                         "toastRegion", Qt::FindDirectChildrenOnly)));
+        auto* status = dialog->findChild<QLabel*>("querySettingsStatus");
+        QVERIFY(status);
         auto* size = dialog->findChild<QSpinBox*>("queryPageSize");
         QVERIFY(apply);
         QVERIFY(reset);
         QVERIFY(size);
         QTRY_VERIFY(reset->isEnabled());
         QVERIFY(!apply->isEnabled());
-        QTRY_VERIFY(toast->isVisible());
-        QCOMPARE(toast->parentWidget(), static_cast<QWidget*>(&window));
-        QCOMPARE(toast->geometry().right(), window.width() - 17);
-        QCOMPARE(toast->geometry().bottom(), window.height() - 17);
-        QCOMPARE(toast->property("variant").toString(), QString("danger"));
+        QTRY_VERIFY(!status->text().isEmpty());
+        QVERIFY(status->isVisible());
+        QVERIFY(status->textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
+        QVERIFY(!status->text().contains("settings loaded"));
         reset->click();
         QVERIFY(apply->isEnabled());
         size->setValue(222);

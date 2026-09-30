@@ -8,6 +8,7 @@ class QLineEdit;
 namespace choscordb {
 namespace design {
 class Button;
+class StatusLine;
 class FieldValidation;
 } // namespace design
 class SqlEditor;
@@ -25,18 +26,20 @@ class SearchPanel final : public QWidget {
     void hideEvent(QHideEvent* event) override;
 
   private:
+    void setStatus(const QString& message);
     void find(bool backwards);
     void replaceOne();
     void replaceAll();
     void invalidate();
     SqlEditor* editable(bool mutation = true) const;
-    void setPending(bool pending);
+    void setPending(bool pending, const QString& message = {});
     std::function<SqlEditor*()> currentEditor_;
     QLineEdit *needle_, *replacement_;
     design::FieldValidation *needleValidation_, *replacementValidation_;
     QCheckBox *case_, *word_;
     QWidget* replacementRow_;
     QLabel* status_;
+    design::StatusLine* statusLine_;
     design::Button* replaceAll_;
     QPointer<SqlEditor> matchedEditor_;
     quint64 matchRevision_ = 0, matchStart_ = 0, matchEnd_ = 0, generation_ = 0;

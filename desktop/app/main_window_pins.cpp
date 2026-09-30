@@ -28,6 +28,21 @@
 
 namespace choscordb {
 namespace {
+void showPinActivationStatus(MainWindow* window, const QString& key, const QString& message,
+                             ToastVariant variant) {
+    window->setProperty("pinActivationNoticeKey", key);
+    window->setProperty("pinActivationNoticeMessage", message);
+    window->showStatus(message, variant, QStringLiteral("pins"));
+}
+void clearPinActivationStatus(MainWindow* window, const QString& key) {
+    if (window->property("pinActivationNoticeKey").toString() != key)
+        return;
+    const auto message = window->property("pinActivationNoticeMessage").toString();
+    if (!message.isEmpty())
+        window->clearStatus(QStringLiteral("pins"), message);
+    window->setProperty("pinActivationNoticeKey", QVariant{});
+    window->setProperty("pinActivationNoticeMessage", QVariant{});
+}
 QString subtypeFor(const QModelIndex& index) {
     for (const auto& value : index.data(NavigatorModel::PropertiesRole).toList()) {
         const auto property = value.toMap();
@@ -169,8 +184,8 @@ void MainWindow::initializePins(const Ui& ui) {
                     updatePinnedGeometry();
                 }
                 if (!error.isEmpty())
-                    showToast(tr("Some saved pins could not be loaded: %1").arg(error),
-                              ToastVariant::Warning);
+                    showStatus(tr("Some saved pins could not be loaded: %1").arg(error),
+                               ToastVariant::Warning, QStringLiteral("pins"));
             });
     loadWatcher->setFuture(QtConcurrent::run(&pinIoPool_, [store = pinStore_] {
         QString error;
@@ -201,8 +216,8 @@ void MainWindow::initializePins(const Ui& ui) {
                 const auto connection = index.data(NavigatorModel::ConnectionRole).toULongLong();
                 const auto profileId = workspace_->profileIdForConnection(connection);
                 if (profileId.isEmpty()) {
-                    showToast(tr("Save this connection before pinning its objects."),
-                              ToastVariant::Warning);
+                    showStatus(tr("Save this connection before pinning its objects."),
+                               ToastVariant::Warning, QStringLiteral("pins"));
                     return;
                 }
                 QString profileName;
@@ -420,6 +435,8 @@ void MainWindow::expandPin(const QString& key) {
     });
     if (found == pins_.cend() || found->unavailable)
         return;
+    if (pinExpansionErrors_.contains(key))
+        clearStatus(QStringLiteral("pins"), pinExpansionErrors_.value(key));
     pendingExpansionKeys_.insert(key);
     pinExpansionErrors_.remove(key);
     pinExpansionConnectionIds_.remove(key);
@@ -435,7 +452,7 @@ void MainWindow::expandPin(const QString& key) {
         const auto reason = tr("Connection unavailable. Collapse and expand to retry.");
         pinExpansionErrors_.insert(key, reason);
         pinnedModel_->setStatus(key, reason);
-        showToast(reason, ToastVariant::Warning);
+        showStatus(reason, ToastVariant::Warning, QStringLiteral("pins"));
         return;
     }
     if (pendingBrowseProfiles_.contains(found->profileId) &&
@@ -509,7 +526,7 @@ void MainWindow::tryExpandPendingPins() {
                             tr("Could not load children. Collapse and expand to retry.");
                     pinExpansionErrors_.insert(key, visibleReason);
                     pinnedModel_->setStatus(key, visibleReason);
-                    showToast(reason, ToastVariant::Warning);
+                    showStatus(visibleReason, ToastVariant::Warning, QStringLiteral("pins"));
                 },
                 [this, key, generation, profileId = pin.profileId, connection] {
                     return generation == pinExpansionGenerations_.value(key) &&
@@ -544,30 +561,37 @@ void MainWindow::activatePin(const QString& key) {
     if (found == pins_.cend())
         return;
     if (found->unavailable) {
-        showToast(tr("This object is unavailable. Unpin it or refresh the original navigator."),
-                  ToastVariant::Warning);
+        showPinActivationStatus(
+            this, key,
+            tr("This object is unavailable. Unpin it or refresh the original navigator."),
+            ToastVariant::Warning);
         return;
     }
     if (databaseClosePending_ || !workspace_->navigationAllowed() ||
         workspace_->hasPendingEdits() || !allowDocumentChange()) {
-        showToast(tr("Finish active database work or pending edits before opening this pin."),
-                  ToastVariant::Warning);
+        showPinActivationStatus(
+            this, key, tr("Finish active database work or pending edits before opening this pin."),
+            ToastVariant::Warning);
         return;
     }
+    clearPinActivationStatus(this, key);
     ++pinActivationGeneration_;
     pinRevealInFlight_ = false;
     pendingPinKey_ = key;
     pinStartAttempts_ = 0;
     if (!reconnectProfile_) {
         pendingPinKey_.clear();
-        showToast(tr("The saved connection for this pin was not found."), ToastVariant::Danger);
+        showPinActivationStatus(this, key, tr("The saved connection for this pin was not found."),
+                                ToastVariant::Danger);
         return;
     }
     if (!reconnectProfile_(found->profileId)) {
         pendingPinKey_.clear();
-        showToast(tr("The saved connection could not be opened. Fix the connection or finish "
-                     "active work, then activate the pin to retry."),
-                  ToastVariant::Warning);
+        showPinActivationStatus(
+            this, key,
+            tr("The saved connection could not be opened. Fix the connection or finish "
+               "active work, then activate the pin to retry."),
+            ToastVariant::Warning);
         return;
     }
     renderPins();
@@ -604,6 +628,7 @@ void MainWindow::tryRevealPendingPin() {
                 pendingPinKey_.clear();
                 pinStartAttempts_ = 0;
                 if (result == NavigatorController::RevealResult::Found) {
+                    clearPinActivationStatus(this, key);
                     const bool tableDetail = pin.kind == QLatin1String("index") ||
                                              pin.kind == QLatin1String("primarykey") ||
                                              pin.kind == QLatin1String("foreignkey") ||
@@ -634,7 +659,7 @@ void MainWindow::tryRevealPendingPin() {
                     savePinsAsync(std::move(updated),
                                   tr("Could not save unavailable pin state: %1"));
                 }
-                showToast(reason, ToastVariant::Warning);
+                showPinActivationStatus(this, key, reason, ToastVariant::Warning);
             },
             [this, key, generation] {
                 return generation == pinActivationGeneration_ && pendingPinKey_ == key;
@@ -646,8 +671,9 @@ void MainWindow::tryRevealPendingPin() {
     if (++pinStartAttempts_ >= 20) {
         pendingPinKey_.clear();
         pinStartAttempts_ = 0;
-        showToast(tr("The connection is not ready. Activate the pin to retry."),
-                  ToastVariant::Warning);
+        showPinActivationStatus(this, key,
+                                tr("The connection is not ready. Activate the pin to retry."),
+                                ToastVariant::Warning);
         return;
     }
     QTimer::singleShot(50, this, [this, key] {
@@ -668,10 +694,16 @@ void MainWindow::savePinsAsync(QList<PinRecord> updated, const QString& failureM
                 if (error.isEmpty() && generation > pinPersistedGeneration_) {
                     pinPersistedGeneration_ = generation;
                     savedPins_ = updated;
+                    const auto priorFailure = property("pinSaveNoticeMessage").toString();
+                    if (!priorFailure.isEmpty())
+                        clearStatus(QStringLiteral("pins"), priorFailure);
+                    setProperty("pinSaveNoticeMessage", QVariant{});
                 } else if (!error.isEmpty() && generation == pinSaveGeneration_) {
                     pins_ = savedPins_;
                     renderPins();
-                    showToast(failureMessage.arg(error), ToastVariant::Danger);
+                    const auto message = failureMessage.arg(error);
+                    setProperty("pinSaveNoticeMessage", message);
+                    showStatus(message, ToastVariant::Danger, QStringLiteral("pins"));
                 }
             });
     watcher->setFuture(

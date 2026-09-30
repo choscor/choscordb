@@ -3,6 +3,7 @@
 #include "design_system/button/button.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
@@ -71,6 +72,14 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     body->setContentsMargins(0, 0, 0, 0);
     body->setSpacing(0);
     body->addWidget(pages, 1);
+    statusLine_ = new design::StatusLine(this);
+    statusLine_->setObjectName("preferencesStatusLine");
+    status_ = statusLine_->findChild<QLabel*>("statusMessage");
+    status_->setObjectName("preferencesStatus");
+    status_->setTextFormat(Qt::PlainText);
+    status_->setWordWrap(true);
+    status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+    body->addWidget(statusLine_);
     auto addPage = [pages, metrics](QWidget* page, const QString& title) {
         auto* scroll = new QScrollArea(pages);
         scroll->setWidgetResizable(true);
@@ -242,6 +251,9 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
         fillQuery(QueryPreferences{});
         fillHistory(HistoryPolicy{});
         errors_.clear();
+        setStatus({});
+        statusLine_->setAvailable(true);
+        statusLine_->setNeutral();
         if (appearance_) {
             theme_->setCurrentIndex(theme_->findData("system"));
         }
@@ -452,10 +464,12 @@ void PreferencesDialog::updatePreview() {
     preview_->setEditorFont(selected);
 }
 void PreferencesDialog::setBusy(bool busy) {
-    if (busy)
-        progressToast(this)->showProgress(tr("Preferences"), tr("Saving or loading preferences…"));
-    else
-        clearProgressToast(this);
+    statusLine_->setBusy(busy);
+    if (busy) {
+        statusLine_->setAvailable(true);
+        statusLine_->setNeutral();
+        setStatus(saving_ ? tr("Saving preferences…") : tr("Loading preferences…"));
+    }
     busy_ = busy;
     pages_->setEnabled(!busy);
     reset_->setEnabled(!busy);
@@ -495,8 +509,10 @@ void PreferencesDialog::apply() {
     const auto value = draft();
     const auto error = shortcutValidationError(value, catalog_);
     if (!error.isEmpty()) {
-        if (!placeValidationError(error))
-            windowToast(this)->showToast(tr("Error"), error, ToastVariant::Danger);
+        if (!placeValidationError(error)) {
+            statusLine_->setAvailable(false);
+            setStatus(error);
+        }
         return;
     }
     QueryPreferences query;
@@ -518,7 +534,7 @@ void PreferencesDialog::apply() {
     const auto queryToken = queryToken_ = nextToken();
     const auto historyToken = historyToken_ = nextToken();
     appearancePending_ = !appearance_.isNull();
-    progressToast(this)->showProgress(tr("Preferences"), tr("Saving preferences…"));
+    setStatus(tr("Saving preferences…"));
     emit preferencesSaveSubmitted(editorToken);
     emit queryPreferencesSaveSubmitted(queryToken);
     adapter_->setEditorPreferences(value, editorToken);
@@ -547,14 +563,17 @@ void PreferencesDialog::finishRequests() {
         ready_ = errors_.isEmpty();
     setBusy(false);
     if (!errors_.isEmpty()) {
-        windowToast(this)->showToast(tr("Error"), errors_.join(QLatin1Char('\n')),
-                                     ToastVariant::Danger);
+        statusLine_->setAvailable(false);
+        setStatus(errors_.join(QLatin1Char('\n')));
         return;
     }
-    windowToast(this)->showToast(tr("Success"),
-                                 saved ? tr("Preferences saved.") : tr("Preferences loaded."),
-                                 ToastVariant::Success);
+    setStatus({});
+    statusLine_->setAvailable(true);
+    statusLine_->setNeutral();
     if (saved) {
+        if (parentWidget())
+            windowToast(parentWidget())
+                ->showToast(tr("Success"), tr("Preferences saved."), ToastVariant::Success);
         if (confirmedSystemSchemaVisibility_)
             emit systemSchemaVisibilitySaved(*confirmedSystemSchemaVisibility_);
         accept();
@@ -562,8 +581,7 @@ void PreferencesDialog::finishRequests() {
 }
 void PreferencesDialog::reject() {
     if (saving_) {
-        progressToast(this)->showProgress(
-            tr("Preferences"), tr("Saving preferences… Please wait for storage to finish."));
+        setStatus(tr("Saving preferences… Please wait for storage to finish."));
         return;
     }
     DialogShell::reject();
@@ -575,11 +593,13 @@ void PreferencesDialog::showEvent(QShowEvent* event) {
 }
 void PreferencesDialog::closeEvent(QCloseEvent* event) {
     if (saving_) {
-        progressToast(this)->showProgress(
-            tr("Preferences"), tr("Saving preferences… Please wait for storage to finish."));
+        setStatus(tr("Saving preferences… Please wait for storage to finish."));
         event->ignore();
         return;
     }
     DialogShell::closeEvent(event);
+}
+void PreferencesDialog::setStatus(const QString& message) {
+    statusLine_->setMessage(message);
 }
 } // namespace choscordb

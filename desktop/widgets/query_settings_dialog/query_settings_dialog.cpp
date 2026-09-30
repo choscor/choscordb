@@ -1,10 +1,11 @@
 #include "query_settings_dialog.h"
 #include "design_system/button/button.h"
 #include "design_system/field/field.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
-#include "design_system/toast_region/toast_region.h"
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
@@ -61,6 +62,14 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     buttons->addButton(reset_, QDialogButtonBox::ResetRole);
     buttons->addButton(cancel, QDialogButtonBox::RejectRole);
     layout->addStretch();
+    statusLine_ = new design::StatusLine(this);
+    statusLine_->setObjectName("querySettingsStatusLine");
+    status_ = statusLine_->findChild<QLabel*>("statusMessage");
+    status_->setObjectName("querySettingsStatus");
+    status_->setTextFormat(Qt::PlainText);
+    status_->setWordWrap(true);
+    status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+    layout->addWidget(statusLine_);
     layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(apply_, &QPushButton::clicked, this, &QuerySettingsDialog::apply);
@@ -72,7 +81,9 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
         defaults.showSystemSchemas = showSystemSchemas_;
         fill(defaults);
         ready_ = true;
-        windowToast(this)->clearNotice();
+        setStatus({});
+        statusLine_->setAvailable(true);
+        statusLine_->setNeutral();
         updateControls();
     });
     connect(adapter, &EngineAdapter::queryPreferencesReady, this,
@@ -83,7 +94,7 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
                     return;
                 }
                 token_ = 0;
-                clearProgressToast(this);
+                statusLine_->setBusy(false);
                 const auto limits = EngineAdapter::queryPreferenceLimits();
                 if (value.version != limits.version || value.pageSize < limits.minPageSize ||
                     value.pageSize > limits.maxPageSize ||
@@ -96,20 +107,19 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
                         value.timeoutSeconds > limits.maxTimeoutSeconds
                             ? tr("Stored timeout is outside the supported range.")
                             : QString{});
-                    if (value.version != limits.version)
-                        windowToast(this)->showToast(
-                            tr("Error"),
-                            tr("Stored settings version is unsupported. Restore defaults."),
-                            ToastVariant::Danger, 0);
+                    statusLine_->setAvailable(false);
+                    setStatus(value.version != limits.version
+                                  ? tr("Stored settings version is unsupported. Restore defaults.")
+                                  : tr("Stored settings are invalid. Restore defaults."));
+                    saving_ = false;
                     updateControls();
                     return;
                 }
                 fill(value);
                 ready_ = true;
-                windowToast(this)->showToast(tr("Success"),
-                                             saving_ ? tr("Query settings saved.")
-                                                     : tr("Query settings loaded."),
-                                             ToastVariant::Success);
+                statusLine_->setAvailable(true);
+                statusLine_->setNeutral();
+                setStatus(saving_ ? tr("Query settings saved.") : QString{});
                 saving_ = false;
                 updateControls();
                 emit queryPreferencesConfirmed(value);
@@ -119,21 +129,25 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
                 if (!token_ || token != token_)
                     return;
                 token_ = 0;
-                clearProgressToast(this);
+                statusLine_->setBusy(false);
                 saving_ = false;
-                windowToast(this)->showToast(tr("Error"), error, ToastVariant::Danger, 0);
+                statusLine_->setAvailable(false);
+                setStatus(error);
                 updateControls();
             });
     fill(QueryPreferences{});
     token_ = nextToken();
     updateControls();
     if (adapter_) {
-        progressToast(this)->showProgress(tr("Query settings"), tr("Loading query settings…"));
+        statusLine_->setAvailable(true);
+        statusLine_->setNeutral();
+        statusLine_->setBusy(true);
+        setStatus(tr("Loading query settings…"));
         adapter_->getQueryPreferences(token_);
     } else {
         token_ = 0;
-        windowToast(this)->showToast(tr("Error"), tr("Settings service is unavailable."),
-                                     ToastVariant::Danger, 0);
+        statusLine_->setAvailable(false);
+        setStatus(tr("Settings service is unavailable."));
         updateControls();
     }
 }
@@ -172,8 +186,10 @@ void QuerySettingsDialog::apply() {
     saving_ = true;
     const auto token = nextToken();
     token_ = token;
-    windowToast(this)->clearNotice();
-    progressToast(this)->showProgress(tr("Query settings"), tr("Saving query settings…"));
+    statusLine_->setAvailable(true);
+    statusLine_->setNeutral();
+    statusLine_->setBusy(true);
+    setStatus(tr("Saving query settings…"));
     updateControls();
     // The owner registers this token before even a synchronous submission failure.
     // Retain only locals afterward: a signal handler may close/delete this dialog.
@@ -181,5 +197,8 @@ void QuerySettingsDialog::apply() {
     emit queryPreferencesSaveSubmitted(token);
     if (adapter)
         adapter->setQueryPreferences(value, token);
+}
+void QuerySettingsDialog::setStatus(const QString& message) {
+    statusLine_->setMessage(message);
 }
 } // namespace choscordb
