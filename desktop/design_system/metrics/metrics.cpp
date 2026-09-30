@@ -50,6 +50,8 @@ double iconStrokeWidth() {
 
 int spacing(Spacing value) {
     switch (value) {
+    case Spacing::Quarter:
+        return 1;
     case Spacing::Half:
         return 2;
     case Spacing::One:

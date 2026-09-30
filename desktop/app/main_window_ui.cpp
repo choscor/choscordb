@@ -285,7 +285,7 @@ MainWindow::Ui MainWindow::buildUi() {
     connectionsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto* connectionsLayout = new QVBoxLayout(connectionsPanel);
     connectionsLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
-    connectionsLayout->setSpacing(design::spacing(design::Spacing::Two));
+    connectionsLayout->setSpacing(design::spacing(design::Spacing::Four));
     connectionSection->addAction(refreshNavigator);
     connectionSection->addAction(addConnection);
     connectionsLayout->addWidget(connectionSection);
@@ -297,7 +297,11 @@ MainWindow::Ui MainWindow::buildUi() {
     savedConnections->setSpacing(design::spacing(design::Spacing::Half));
     savedConnections->setProperty("designSurface", "sidebar");
     savedConnections->setMouseTracking(true);
-    savedConnections->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+    savedConnections->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    savedConnections->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    savedConnections->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    new SidebarConnectionListScroll(savedConnections, connectionsScroll, theme_);
+    new SidebarWheelForwarder(connectionsScroll, savedConnections->viewport());
     auto* connectionsEmpty = new design::Text(
         tr("No saved connections yet.\nUse + to add a database connection."), connectionSection);
     connectionsEmpty->setObjectName("sidebarConnectionsEmpty");
@@ -397,9 +401,9 @@ MainWindow::Ui MainWindow::buildUi() {
     historyLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     auto* historySection = new SidebarSection(tr("Recent history"), historyPanel);
     historyLayout->addWidget(historySection);
-    const auto alignSidebarHeadings = [connectionSection, pinnedSection, savedSection,
-                                       historySection, addConnection] {
-        for (auto* section : {connectionSection, pinnedSection, savedSection, historySection})
+    const auto alignSidebarHeadings = [connectionSection, savedSection, historySection,
+                                       addConnection] {
+        for (auto* section : {connectionSection, savedSection, historySection})
             section->titleLabel()->setMinimumHeight(addConnection->sizeHint().height());
     };
     connect(theme_, &design::ThemeManager::metricsChanged, this, alignSidebarHeadings);
