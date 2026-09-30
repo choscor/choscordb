@@ -637,20 +637,19 @@ void ObjectExplorer::requestPane() {
                                    requestToken_);
 }
 void ObjectExplorer::setStatus(const QString& state, const QString& text) {
-    if (state == "loading")
-        progressToast(this)->showProgress(tr("Loading object"), text);
-    else
-        clearProgressToast(this);
+    auto* line = static_cast<design::StatusLine*>(footer_->parentWidget());
+    line->setBusy(state == "loading" || operationBusy_);
     status_->setProperty("state", state);
-    status_->setText(state == "loading" ? QString{} : text);
+    status_->setText(text);
+    status_->setToolTip(text);
     status_->setAccessibleName(tr("Object status: %1").arg(text));
     status_->style()->unpolish(status_);
     status_->style()->polish(status_);
     if (dataFooter_ && tabs_->currentIndex() == 5 && state == "busy") {
         // The Data footer already carries its result origin. Keep the guard's
         // explanation visible without adding a second footer or hiding Cancel.
-        if (auto* main = qobject_cast<MainWindow*>(window()))
-            main->showToast(text, ToastVariant::Warning);
+        if (qobject_cast<MainWindow*>(window()))
+            line->setMessage(text);
         else
             status_->show();
     }
@@ -834,6 +833,10 @@ void ObjectExplorer::updateFooter() {
 }
 void ObjectExplorer::setOperationBusy(bool busy) {
     operationBusy_ = busy;
+    auto* line = static_cast<design::StatusLine*>(footer_->parentWidget());
+    line->setBusy(busy || status_->property("state") == "loading");
+    if (!busy)
+        line->setMessage({});
     updateActions();
     refresh_->setEnabled(!busy && connection_.has_value() && !requestToken_);
     if (busy)

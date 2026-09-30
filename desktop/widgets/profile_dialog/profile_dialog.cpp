@@ -4,6 +4,7 @@
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
@@ -336,13 +337,15 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     updateSshAuthentication();
     sshFields->hide();
     formLayout->addRow(postgresFields_);
-    status_ = createInlineStatus(this);
+    statusLine_ = new design::StatusLine(this);
+    statusLine_->setObjectName("profileStatusLine");
+    status_ = statusLine_->findChild<QLabel*>("statusMessage");
     status_->setObjectName("profileStatus");
     status_->setWordWrap(true);
     status_->setTextFormat(Qt::PlainText);
     status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
-    status_->hide();
-    formLayout->addRow(status_);
+    statusLine_->hide();
+    sections->bodyLayout()->addWidget(statusLine_);
     feedbackToast_ = windowToast(this);
     auto* progress = new ProfileProgressDialog(this);
     progressDialog_ = progress;
@@ -473,10 +476,11 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                 list_->clear();
                 for (const auto& profile : profiles_)
                     list_->addItem(profile.name);
-                setBusy(false, refreshNotice_, true);
+                setBusy(false, refreshNotice_, true, refreshHasWarning_);
                 if (isVisible() && focusWidget() == findChild<QPushButton*>("profileDismiss"))
                     name_->setFocus(Qt::OtherFocusReason);
                 refreshNotice_.clear();
+                refreshHasWarning_ = false;
                 const auto sessionPassword =
                     preservePasswordOnRefresh_ ? password_->text() : QString();
                 const bool passwordModified = password_->isModified();
@@ -580,6 +584,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                 proxySecret_->setText(sessionProxySecret);
                 proxySecret_->setModified(proxySecretModified);
             }
+            refreshHasWarning_ = !warning.isEmpty();
             refreshNotice_ =
                 warning.isEmpty() ? tr("Profile saved.") : tr("Profile saved. %1").arg(warning);
             pendingSelection_ = profile.id;
@@ -590,6 +595,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                 if (token != token_)
                     return;
                 setDraft({});
+                refreshHasWarning_ = !warning.isEmpty();
                 refreshNotice_ = warning.isEmpty() ? tr("Profile deleted.")
                                                    : tr("Profile deleted. %1").arg(warning);
                 refresh();
@@ -636,7 +642,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
             } else
                 setBusy(false, tr("Connected."), true);
         } else if (kind == "disconnected") {
-            setBusy(false, tr("Connection closed."), true);
+            setBusy(false,
+                    tr("Connection closed before it was established. Retry the connection."));
         } else {
             auto message =
                 QString::fromUtf8(event.error.data(), static_cast<qsizetype>(event.error.size()));
@@ -699,7 +706,7 @@ void ProfileDialog::showFieldError(QWidget* field, const QString& message) {
         scroll->ensureWidgetVisible(field);
 }
 
-void ProfileDialog::setBusy(bool busy, const QString& message, bool success) {
+void ProfileDialog::setBusy(bool busy, const QString& message, bool success, bool warning) {
     if (busy) {
         progressMessage_->setText(message);
         progressMessage_->setAccessibleName(message);
@@ -714,12 +721,17 @@ void ProfileDialog::setBusy(bool busy, const QString& message, bool success) {
     for (auto* action : actions_)
         action->setEnabled(!busy && adapter_);
     updateTrustControls();
-    status_->setText(busy ? QString() : message);
-    status_->hide();
-    if (!busy && !message.isEmpty() && isVisible()) {
+    statusLine_->setMessage(message);
+    statusLine_->setBusy(busy);
+    statusLine_->setAvailable(busy || success);
+    if (warning)
+        statusLine_->setNeutral();
+    statusLine_->setVisible(!message.isEmpty());
+    if (!busy && success && !message.isEmpty() && isVisible()) {
         feedbackToast_ = windowToast(this);
-        feedbackToast_->showToast(success ? tr("Success") : tr("Error"), message,
-                                  success ? ToastVariant::Success : ToastVariant::Danger);
+        if (feedbackToast_)
+            feedbackToast_->showToast(warning ? tr("Warning") : tr("Success"), message,
+                                      warning ? ToastVariant::Warning : ToastVariant::Success);
     }
 }
 void ProfileDialog::refresh() {

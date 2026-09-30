@@ -22,7 +22,7 @@ preserved by the component extraction.
 | Switch | `switch/`: existing `designRole="switch"` track and thumb painting |
 | Tool button | `tool_button/`: QToolButton states and menu-indicator rules |
 | Toolbar | `toolbar/`: toolbar geometry, separators, and muted workspace variant |
-| Status line | `status_line/`: shared workspace footer layout, 13 px Ui typography, and availability surface |
+| Status line | `status_line/`: shared workspace footer layout, Ui typography, availability/neutral surfaces, loading icon, bounded selectable status and complete Details |
 | Tabs | `tabs/`: pane/document variants, left-aligned document labels, and tab-close painting |
 | Table | `table/`: table font, row styles, and interactive result headers |
 | Tree | `tree/`: navigation rows and branch painting |
@@ -45,7 +45,7 @@ preserved by the component extraction.
 | Dialog shell | `dialog_shell/`: reusable nonmodal `QDialog` shell and content/status styles |
 | Dialog sections | `dialog_sections/`: compact header, growing body, and muted padded footer for dialogs |
 | Confirmation dialog | `confirmation_dialog/`: reusable QMessageBox contract and presentation |
-| Toast region | `toast_region/`: host-attached success, warning, danger, and persistent progress overlays with accessibility announcement |
+| Toast region | `toast_region/`: host-attached queued notices, reading-time and focus/hover pauses, pinned failures, bounded full Details, and gallery progress compatibility |
 | Shared glyphs | `control_glyphs/`: select/spin overlays and arrow painting; Qt retains hit testing |
 
 Stock Qt widgets remain stock widgets. Their owning modules supply styles and,

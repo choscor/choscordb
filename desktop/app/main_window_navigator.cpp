@@ -44,7 +44,6 @@ void MainWindow::connectNavigator(const Ui& ui) {
     const auto objectsEmpty = ui.objectsEmpty;
     const auto navigatorStatus = ui.navigatorStatus;
     const auto connections = ui.connections;
-    const auto toast = ui.toast;
     auto* navigatorController = new NavigatorController(workspace_->adapter(), tree, filter, this);
     navigatorController_ = navigatorController;
     auto* connectionsScroll = findChild<QScrollArea*>("connectionsScroll");
@@ -132,10 +131,10 @@ void MainWindow::connectNavigator(const Ui& ui) {
                     (pendingObjectRefresh_->token != 0 && pendingObjectRefresh_->token != token))
                     return;
                 pendingObjectRefresh_.reset();
-                showToast(
+                showStatus(
                     tr("Object changed, but navigator refresh failed: %1. Choose Refresh to retry.")
                         .arg(error),
-                    ToastVariant::Danger);
+                    ToastVariant::Warning, QStringLiteral("navigator"));
             });
     const auto updateObjectsEmpty = [this, tree, filter, objectsEmpty] {
         objectsEmpty->setVisible(tree->model()->rowCount() == 0);
@@ -214,8 +213,8 @@ void MainWindow::connectNavigator(const Ui& ui) {
     connect(navigatorController, &NavigatorController::disconnectRequested, workspace_,
             &QueryWorkspace::disconnectConnection);
     connect(navigatorController, &NavigatorController::generationFailed, this,
-            [toast](const QString& error) {
-                toast->showToast(tr("Error"), error, ToastVariant::Danger);
+            [this](const QString& error) {
+                showStatus(error, ToastVariant::Danger, QStringLiteral("navigator"));
             });
     const auto openGeneratedSql = [this, connections](quint64 connection, const QString& sql) {
         if (databaseClosePending_ || !editors_->isEnabled() ||
@@ -223,17 +222,19 @@ void MainWindow::connectNavigator(const Ui& ui) {
             return;
         const int target = connections->findData(QVariant::fromValue<qulonglong>(connection));
         if (target < 0) {
-            showToast(tr("The selected connection is no longer available."), ToastVariant::Danger);
+            showStatus(tr("The selected connection is no longer available."), ToastVariant::Danger,
+                       QStringLiteral("navigator"));
             return;
         }
         if (target != connections->currentIndex() && !connections->isEnabled()) {
-            showToast(tr("Finish the active query before switching connections to generate SQL."),
-                      ToastVariant::Warning);
+            showStatus(tr("Finish the active query before switching connections to generate SQL."),
+                       ToastVariant::Warning, QStringLiteral("navigator"));
             return;
         }
         const auto bytes = sql.toUtf8();
         if (!sql.isValidUtf16() || bytes.size() > DocumentIo::MaximumBytes) {
-            showToast(tr("Generated SQL exceeds editor limits."), ToastVariant::Danger);
+            showStatus(tr("Generated SQL exceeds editor limits."), ToastVariant::Danger,
+                       QStringLiteral("navigator"));
             return;
         }
         auto* editor = addEditor();
@@ -242,7 +243,8 @@ void MainWindow::connectNavigator(const Ui& ui) {
         if (!editor->restoreDocument(bytes, {}, 0, 0, true)) {
             editors_->removeTab(editors_->indexOf(editor));
             editor->deleteLater();
-            showToast(tr("Generated SQL could not be opened."), ToastVariant::Danger);
+            showStatus(tr("Generated SQL could not be opened."), ToastVariant::Danger,
+                       QStringLiteral("navigator"));
             return;
         }
         connections->setCurrentIndex(target);

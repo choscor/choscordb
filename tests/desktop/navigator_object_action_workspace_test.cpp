@@ -7,6 +7,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "navigator_sql_workspace_test.h"
@@ -96,6 +97,9 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     rename->trigger();
     QCOMPARE(finished, settledFinished);
     QVERIFY(!window.findChild<QDialog*>("renameObjectDialog"));
+    auto* status = window.findChild<design::StatusLine*>("navigatorStatusLine");
+    QVERIFY(status);
+    QVERIFY(status->accessibleDescription().contains("Finish or cancel active database work"));
     workspace->setExternalWork(false);
     bool renameDialogChecked = false;
     QTimer::singleShot(0, &window, [&] {
@@ -129,6 +133,10 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QTRY_VERIFY(finished > settledFinished);
     QTRY_VERIFY(group.data(NavigatorModel::ChildrenLoadedRole).toBool());
     QTRY_COMPARE(model->index(0, 0, group).data().toString(), QString("new.name"));
+    auto* toast = window.findChild<ToastRegion*>("toastRegion");
+    QVERIFY(toast);
+    QTRY_VERIFY(toast->accessibleDescription().contains("new.name"));
+    QVERIFY(!toast->accessibleDescription().contains("Refreshing"));
     QCOMPARE(tabs->count(), 3);
     QCOMPARE(tabs->tabText(tabs->indexOf(object)), QString("new.name"));
     QCOMPARE(tabs->tabText(tabs->indexOf(secondObject)), QString("new.name"));
@@ -167,14 +175,12 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     });
     collisionRename->trigger();
     QVERIFY(collisionSubmitted);
-    auto* toast = window.findChild<ToastRegion*>("toastRegion");
-    QVERIFY(toast);
-    QTRY_VERIFY2(toast->accessibleDescription().contains("Could not rename"),
-                 qPrintable(toast->accessibleDescription()));
+    QTRY_VERIFY2(status->accessibleDescription().contains("Could not rename"),
+                 qPrintable(status->accessibleDescription()));
     QCOMPARE(tabs->count(), 3);
     QCOMPARE(object->property("objectId").toString(),
              model->index(0, 0, group).data(NavigatorModel::ObjectIdRole).toString());
-    QTRY_COMPARE(toast->property("variant").toString(), QString("danger"));
+    QTRY_COMPARE(status->property("variant").toString(), QString("danger"));
 
     const auto renamed = model->index(0, 0, group);
     QMenu dropMenu;

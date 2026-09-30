@@ -21,7 +21,8 @@ class SshHostKeyDialog;
 class ToastRegion;
 namespace design {
 class FieldValidation;
-}
+class StatusLine;
+} // namespace design
 class ProfileDialog final : public DialogShell {
     Q_OBJECT
   public:
@@ -43,7 +44,7 @@ class ProfileDialog final : public DialogShell {
     void createTrustControls(QFormLayout* form);
     void inspectHostKeys(const SshHostKeyTarget& target);
     void updateTrustControls();
-    void showTrustStatus(const QString& message);
+    void showTrustStatus(const QString& message, bool failure = false);
     QWidget* validated(QWidget* field);
     design::FieldValidation* validationFor(QWidget* field) const;
     void showFieldError(QWidget* field, const QString& message);
@@ -64,7 +65,8 @@ class ProfileDialog final : public DialogShell {
     SavedProfile draft() const;
     void setDraft(const SavedProfile& profile);
     void refresh();
-    void setBusy(bool busy, const QString& message = {}, bool success = false);
+    void setBusy(bool busy, const QString& message = {}, bool success = false,
+                 bool warning = false);
     void updateDriver();
     bool discardChanges();
     bool validateConnectionDraft(const SavedProfile& profile);
@@ -76,6 +78,7 @@ class ProfileDialog final : public DialogShell {
     QString pendingSelection_;
     QString managedProfile_, managedAction_;
     QString refreshNotice_;
+    bool refreshHasWarning_ = false;
     bool savingDraft_ = false;
     bool connectAfterSave_ = false;
     bool openQueryAfterConnect_ = false;
@@ -129,6 +132,7 @@ class ProfileDialog final : public DialogShell {
     QLineEdit *proxyHost_ = nullptr, *proxyUser_ = nullptr, *proxySecret_ = nullptr;
     QSpinBox* proxyPort_ = nullptr;
     QLabel* status_;
+    design::StatusLine* statusLine_;
     QPointer<QDialog> progressDialog_;
     QLabel* progressMessage_ = nullptr;
     QPointer<ToastRegion> feedbackToast_;

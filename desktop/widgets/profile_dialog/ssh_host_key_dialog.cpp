@@ -1,7 +1,7 @@
 #include "widgets/profile_dialog/ssh_host_key_dialog.h"
 #include "design_system/button/button.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/theme.h"
-#include "design_system/toast_region/toast_region.h"
 #include <QDir>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -58,10 +58,15 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
     pathRow->addWidget(browse);
     form->addRow(tr("Known-hosts file"), pathRow);
     layout->addLayout(form);
-    status_ = createInlineStatus(this);
+    statusLine_ = new design::StatusLine(this);
+    statusLine_->setObjectName("sshHostKeyStatusLine");
+    status_ = statusLine_->findChild<QLabel*>("statusMessage");
     status_->setObjectName("sshHostKeyStatus");
     status_->setTextFormat(Qt::PlainText);
-    layout->addWidget(status_);
+    status_->setWordWrap(true);
+    status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+    statusLine_->hide();
+    layout->addWidget(statusLine_);
     auto* actions = new QHBoxLayout;
     auto* cancel = new design::Button(tr("Close"), this);
     cancel->setObjectName("sshHostKeyClose");
@@ -96,7 +101,10 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
         if (!approve_->isEnabled() || row < 0 || row >= candidates_.size())
             return;
         pending_ = true;
-        status_->setText(tr("Approving selected key…"));
+        statusLine_->setMessage(tr("Approving selected key…"));
+        statusLine_->setAvailable(true);
+        statusLine_->setBusy(true);
+        statusLine_->show();
         updateActions();
         emit approvalRequested(candidates_[row], path_->text());
     });
@@ -136,31 +144,32 @@ void SshHostKeyDialog::updateActions() {
 void SshHostKeyDialog::finishApproval(const QString& outcome) {
     pending_ = false;
     approved_ = outcome == "approved";
-    status_->clear();
+    statusLine_->setBusy(false);
+    statusLine_->setAvailable(approved_);
+    if (!approved_)
+        statusLine_->setNeutral();
+    statusLine_->setMessage(approved_
+                                ? tr("Key approved. Retry the connection to use it.")
+                                : tr("Approval outcome is unknown. Check the selected file or "
+                                     "retry approval."));
+    statusLine_->show();
     retry_->setVisible(approved_);
     updateActions();
-    if (auto* toast = windowToast(this))
-        toast->showToast(approved_ ? tr("Success") : tr("Warning"),
-                         approved_ ? tr("Key approved. Retry the connection to use it.")
-                                   : tr("Approval outcome is unknown. Check the selected file or "
-                                        "retry approval."),
-                         approved_ ? ToastVariant::Success : ToastVariant::Warning);
 }
 void SshHostKeyDialog::showFailure(const QString& error) {
     pending_ = false;
-    status_->clear();
+    statusLine_->setBusy(false);
+    statusLine_->setAvailable(false);
+    statusLine_->setMessage(error);
+    statusLine_->show();
     updateActions();
-    if (auto* toast = windowToast(this))
-        toast->showToast(tr("Error"), error, ToastVariant::Danger);
 }
 void SshHostKeyDialog::invalidate() {
     valid_ = false;
-    status_->clear();
+    statusLine_->setBusy(false);
+    statusLine_->setNeutral();
+    statusLine_->setMessage(tr("Connection settings changed. Inspect the host keys again."));
+    statusLine_->show();
     updateActions();
-    if (auto* toast = windowToast(this))
-        toast->showToast(tr("Warning"),
-                         tr("Connection settings changed. Inspect the host keys "
-                            "again."),
-                         ToastVariant::Warning);
 }
 } // namespace choscordb

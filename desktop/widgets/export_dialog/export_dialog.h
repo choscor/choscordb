@@ -11,6 +11,7 @@ namespace choscordb {
 namespace design {
 class Button;
 class FieldValidation;
+class StatusLine;
 } // namespace design
 class EngineAdapter;
 struct BridgeEvent;
@@ -61,6 +62,8 @@ class ExportDialog final : public DialogShell {
     design::Button* start_;
     design::Button* cancel_;
     QLabel* scope_;
+    QLabel* status_;
+    design::StatusLine* statusLine_;
     design::FieldValidation *formatValidation_, *destinationValidation_, *tableValidation_;
 };
 } // namespace choscordb

@@ -38,6 +38,7 @@
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QToolButton>
 #include <QtTest>
 #include <algorithm>
 
@@ -363,7 +364,9 @@ void WorkspaceTest::connectionPanelRetainsFailedSaveConnectDraftAndRetries() {
     auto* completion =
         f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
     QVERIFY(completion && completion->isVisible());
-    QVERIFY(completion->text().contains("Connected."));
+    QVERIFY(completion->text().contains("Profile saved."));
+    completion->findChild<QToolButton*>("toastDismiss")->click();
+    QTRY_VERIFY(completion->text().contains("Connected."));
 }
 
 void WorkspaceTest::saveAndConnectPersistsProfileBeforeOpeningSession() {

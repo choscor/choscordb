@@ -6,6 +6,9 @@ class QLineEdit;
 class QListWidget;
 class QPushButton;
 namespace choscordb {
+namespace design {
+class StatusLine;
+}
 class SshHostKeyDialog final : public DialogShell {
     Q_OBJECT
   public:
@@ -25,6 +28,7 @@ class SshHostKeyDialog final : public DialogShell {
     QListWidget* list_;
     QLineEdit *original_, *hostname_, *port_, *alias_, *algorithm_, *fingerprint_, *path_;
     QLabel* status_;
+    design::StatusLine* statusLine_;
     QPushButton *approve_, *retry_;
     bool pending_ = false, valid_ = true, approved_ = false;
 };
