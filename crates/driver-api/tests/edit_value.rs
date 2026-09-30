@@ -1,4 +1,28 @@
-use choscordb_driver_api::{Value, parse_grid_edit_value};
+use choscordb_driver_api::{Value, parse_grid_edit_value, parse_grid_edit_value_checked};
+
+#[test]
+fn explicit_drafts_report_actionable_type_errors_without_inferring_null() {
+    assert_eq!(
+        parse_grid_edit_value_checked("INTEGER", "3.0"),
+        Err("Enter a whole number from -9223372036854775808 to 9223372036854775807.".into())
+    );
+    assert_eq!(
+        parse_grid_edit_value_checked("BOOL", "yes"),
+        Err("Enter true, false, 1, or 0 without surrounding whitespace.".into())
+    );
+    assert_eq!(
+        parse_grid_edit_value_checked("float8", "1e309"),
+        Err("Enter a representable real number, NaN, inf, or -inf.".into())
+    );
+    assert_eq!(
+        parse_grid_edit_value_checked("text", "NULL"),
+        Ok(Value::Text("NULL".into()))
+    );
+    assert_eq!(
+        parse_grid_edit_value_checked("text", ""),
+        Ok(Value::Text("".into()))
+    );
+}
 
 #[test]
 fn integer_aliases_parse_signed_64_bit_values() {

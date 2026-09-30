@@ -139,10 +139,12 @@ std::optional<QString> EngineAdapter::foreignKeyPredicate(const QString& targetC
     return result.valid ? std::optional<QString>{string(result.expression)} : std::nullopt;
 }
 std::optional<Cell> EngineAdapter::parseGridEditValue(const QString& databaseType,
-                                                      const QString& text) {
+                                                      const QString& text, QString* error) {
     const auto typeBytes = databaseType.toUtf8();
     const auto textBytes = text.toUtf8();
     const auto parsed = parse_grid_edit_value_policy(utf8View(typeBytes), utf8View(textBytes));
+    if (error)
+        *error = string(parsed.error);
     return parsed.valid ? std::optional<Cell>{gridCell(parsed.cell)} : std::nullopt;
 }
 bool EngineAdapter::navigatorObjectVisible(const QString& driver, bool showSystemSchemas,

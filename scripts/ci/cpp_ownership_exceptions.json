@@ -32,7 +32,7 @@
   {
     "path": "CMakeLists.txt",
     "rule": "backend-link",
-    "sha256": "f62fbb57a45ce89dc0e80d8dc61c4dd8947591a3706e957f857e2ee1bd8b3514",
+    "sha256": "c626120bbf264b36b93e2cc6f5d44c0b1d211c0fcc38783cede401e4b33db926",
     "reason": "Qt6::Network is linked only to choscordb-updater-menu-tests for its local HTTP fixture under BUILD_TESTING; no production target receives it here."
   },
   {

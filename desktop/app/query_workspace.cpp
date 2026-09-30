@@ -8,6 +8,7 @@
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/menu/menu.h"
 #include "design_system/modal_panel/modal_panel.h"
+#include "design_system/right_sheet/right_sheet.h"
 #include "design_system/table/table_style.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/profile_dialog/profile_dialog.h"
@@ -56,6 +57,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         widgets_.grid->setToolTip(
             tr("Query results are read only because the source table and key cannot be verified."));
     querySettings_ = new QuerySettingsController(adapter_, widgets_.dialogParent, this);
+    setupCellEditor();
     connect(querySettings_, &QuerySettingsController::readyChanged, this,
             [this](bool) { updateActions(); });
     connect(querySettings_, &QuerySettingsController::failed, this,
@@ -319,6 +321,8 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                                  widgets_.grid->selectionModel()->model() == model_;
             const bool selected = current && widgets_.grid->selectionModel()->hasSelection();
             const QPersistentModelIndex clicked = widgets_.grid->indexAt(point);
+            appendCellEditAction(menu, clicked, current);
+            menu.addSeparator();
             appendJsonViewActions(menu, clicked, current);
             menu.addSeparator();
             const QStringList names = {"copySelectedCells", "copySelectedRows", "copyCurrentPage"};
@@ -382,6 +386,8 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
 }
 QueryWorkspace::~QueryWorkspace() {
     disconnect(model_, nullptr, this, nullptr);
+    clearCellEditor();
+    delete cellEditSheet_.data();
     clearResult();
     if (widgets_.objectReadOnly && adapter_ && query_)
         adapter_->releaseQuery(*query_);
