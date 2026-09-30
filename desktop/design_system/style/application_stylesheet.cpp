@@ -7,6 +7,7 @@
 #include "design_system/item_view/item_view_style.h"
 #include "design_system/label/label_style.h"
 #include "design_system/menu/menu_style.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/style/control_stylesheet.h"
 #include "design_system/tabs/tabs_style.h"
 #include "design_system/theme.h"
@@ -52,7 +53,8 @@ QString applicationStyleSheet(const ResolvedTheme& theme, const DesignMetrics& m
                 .arg(metrics.dialogRadius)
                 .arg(colors.disabled.name())
                 .arg(colors.mutedText.name());
-    return style + controlStyleSheet(theme) + buttonPaintedStyleSheet();
+    return style + controlStyleSheet(theme) + buttonPaintedStyleSheet() +
+           statusLineStyleSheet(theme);
 }
 
 } // namespace choscordb::design

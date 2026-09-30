@@ -1,5 +1,7 @@
+#include "design_system/button/button.h"
 #include "design_system/icons.h"
 #include "design_system/platform_accessibility.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/theme_manager.h"
 
 #include <QApplication>
@@ -9,6 +11,7 @@
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QFontInfo>
+#include <QLabel>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QStyleOptionButton>
@@ -29,6 +32,69 @@ class DesignSystemTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void idleStatusLineUsesNeutralSurface() {
+        using namespace choscordb::design;
+        StatusLine line;
+        const auto colors = resolvedThemeForWidget(line).colors;
+        QCOMPARE(line.palette().color(QPalette::Window), colors.muted);
+        QCOMPARE(line.palette().color(QPalette::WindowText), colors.mutedText);
+    }
+    void structuredStatusContentIsPlainAndComplete() {
+        using namespace choscordb::design;
+        StatusLine line;
+        QLabel source, outcome, duration, memory, page, rows;
+        QPushButton previous, next;
+        line.configure({&source, &outcome, &duration, &memory, &page, &rows, &previous, &next});
+        line.resize(1200, 80);
+        line.show();
+        const QString error = "Failed: <backend>\n[Code: 42]";
+        line.setContent(
+            {"orders", error, "Executed in 12 ms", "4 KiB visible", "Page 2", "10 rows"},
+            StatusLine::State::Error);
+        QCOMPARE(source.text(), QString("orders"));
+        QCOMPARE(outcome.text(), QString("Failed: <backend> [Code: 42]"));
+        QCOMPARE(outcome.textFormat(), Qt::PlainText);
+        QVERIFY(line.toolTip().contains(error));
+        QVERIFY(line.accessibleDescription().contains("4 KiB visible"));
+        QVERIFY(memory.geometry().right() < page.geometry().left());
+        QVERIFY(rows.geometry().right() < previous.mapTo(&line, QPoint()).x());
+        QCOMPARE(line.palette().color(QPalette::Window),
+                 resolvedThemeForWidget(line).colors.dangerSurface);
+    }
+    void narrowStatusLineDropsMemoryThenDurationAndRestores() {
+        using namespace choscordb::design;
+        StatusLine line;
+        QLabel source, outcome, duration, memory, page, rows;
+        Button previous({}), next({});
+        line.configure({&source, &outcome, &duration, &memory, &page, &rows, &previous, &next});
+        line.setContent({"very long source name for a SQL document",
+                         "Failed: a very long backend explanation", "Executed in 123 ms",
+                         "456 KiB visible", "Page 21", "100 rows"},
+                        StatusLine::State::Error);
+        line.resize(1200, line.height());
+        line.show();
+        QVERIFY(memory.isVisible());
+        line.resize(420, line.height());
+        QVERIFY(!memory.isVisible());
+        QVERIFY(duration.isVisible());
+        QVERIFY(outcome.isVisible());
+        QVERIFY(page.isVisible() && rows.isVisible());
+        line.resize(230, line.height());
+        QVERIFY(!duration.isVisible());
+        QVERIFY(outcome.isVisible());
+        QVERIFY(!outcome.text().isEmpty());
+        QVERIFY(line.rect().contains(QRect(next.mapTo(&line, QPoint()), next.size())));
+        QVERIFY(line.rect().contains(QRect(previous.mapTo(&line, QPoint()), previous.size())));
+        QSignalSpy clicked(&next, &QPushButton::clicked);
+        QTest::mouseClick(&next, Qt::LeftButton);
+        QCOMPARE(clicked.count(), 1);
+        QVERIFY(outcome.accessibleDescription().contains("456 KiB visible"));
+        line.resize(1200, line.height());
+        QVERIFY(memory.isVisible() && duration.isVisible());
+        QCOMPARE(source.text(), QString("very long source name for a SQL document"));
+        QCOMPARE(previous.variant(), ButtonVariant::Ghost);
+        QCOMPARE(next.buttonSize(), ButtonSize::IconSmall);
+    }
     void toastVariantsHaveDistinctColoredSurfacesInBothThemes() {
         using namespace choscordb::design;
         ThemeManager manager;

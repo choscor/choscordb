@@ -257,6 +257,16 @@ void ModernUiTest::sqlCompositionKeepsTabsFirstAndPinsResultActions() {
     auto* toolbar = window.findChild<QToolBar*>();
     auto* grid = window.findChild<QTableView*>("queryResults");
     auto* exportButton = window.findChild<QPushButton*>("exportResult");
+    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+    workspace->connectSqlite(":memory:");
+    auto* run = window.findChild<QAction*>("runStatement");
+    QTRY_VERIFY(run->isEnabled());
+    auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+    QVERIFY(editor);
+    editor->setText("SELECT 1");
+    run->trigger();
+    QTRY_COMPARE(grid->model()->rowCount(), 1);
+    QTRY_VERIFY(grid->isVisible());
     QVERIFY(tabs->mapTo(sql, QPoint()).y() < toolbar->mapTo(sql, QPoint()).y());
     QVERIFY(toolbar->mapTo(sql, toolbar->rect().bottomLeft()).y() <=
             grid->mapTo(sql, QPoint()).y());
@@ -274,12 +284,7 @@ void ModernUiTest::sqlCompositionKeepsTabsFirstAndPinsResultActions() {
     QVERIFY(footer->mapTo(sql, QPoint()).y() > grid->mapTo(sql, grid->rect().bottomLeft()).y());
     QVERIFY(exportButton->isVisible());
     QVERIFY(sql->rect().contains(QRect(exportButton->mapTo(sql, QPoint()), exportButton->size())));
-    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
-    workspace->connectSqlite(":memory:");
-    auto* run = window.findChild<QAction*>("runStatement");
     QTRY_VERIFY(run->isEnabled());
-    auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
-    QVERIFY(editor);
     editor->setText("SELECT * FROM missing_table;");
     run->trigger();
     auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
@@ -715,191 +720,4 @@ void ModernUiTest::preferencesUseSectionNavigationAndCancelableLivePreview() {
     dialog->reject();
     QCOMPARE(theme->mode(), choscordb::design::ThemeMode::System);
     QCOMPARE(theme->density(), choscordb::design::Density::Compact);
-}
-
-void ModernUiTest::executionStripKeepsVisibleAndAccessibleTerminalState() {
-    choscordb::MainWindow window;
-    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
-    auto* run = window.findChild<QAction*>("runStatement");
-    auto* summary = window.findChild<QLabel*>("executionSummary");
-    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
-    QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
-    window.findChild<QAction*>("newQuery")->trigger();
-    workspace->connectSqlite(":memory:");
-    QTRY_VERIFY(run->isEnabled());
-    auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
-    editor->setText("SELECT missing FROM nowhere");
-    run->trigger();
-    QTRY_COMPARE(summary->property("state").toString(), QString("failed"));
-    QTRY_VERIFY(summary->accessibleName().contains("failed", Qt::CaseInsensitive));
-    editor->setText("SELECT 1 AS value");
-    run->trigger();
-    QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
-    QTRY_VERIFY(window.findChild<QLabel*>("executionDuration")->text().contains("ms"));
-    QVERIFY(summary->accessibleName().contains("Completed"));
-}
-
-void ModernUiTest::resultFooterTracksActiveSqlTargetIndependentlyOfExecution() {
-    choscordb::MainWindow window;
-    window.show();
-    window.findChild<QAction*>("newQuery")->trigger();
-    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
-    auto* theme = window.findChild<choscordb::design::ThemeManager*>();
-    auto* footer = window.findChild<QWidget*>("sqlResultFooter");
-    auto* summary = window.findChild<QLabel*>("executionSummary");
-    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
-    auto* run = window.findChild<QAction*>("runStatement");
-    QVERIFY(workspace && theme && footer && summary && tabs && run);
-    auto* startFooter = window.findChild<QWidget*>("startFooter");
-    QVERIFY(startFooter);
-    const auto startLabels = startFooter->findChildren<QLabel*>();
-    QCOMPARE(startLabels.size(), 1);
-    QCOMPARE(startLabels.first()->font().pixelSize(), 13);
-    QCOMPARE(QString::fromLatin1(footer->metaObject()->className()),
-             QString("choscordb::design::StatusLine"));
-    QCOMPARE(footer->font().pixelSize(), 13);
-    QCOMPARE(summary->font().pixelSize(), footer->font().pixelSize());
-    for (const char* name : {"executionStateCompact", "executionDuration", "executionPage",
-                             "executionRows", "executionVisibleSize"}) {
-        auto* label = footer->findChild<QLabel*>(name);
-        QVERIFY(label);
-        QCOMPARE(label->font().pixelSize(), footer->font().pixelSize());
-    }
-    QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.dangerSurface);
-
-    workspace->connectSqlite(":memory:");
-    QTRY_VERIFY(run->isEnabled());
-    QTRY_COMPARE(footer->palette().color(QPalette::Window),
-                 theme->resolvedTheme().colors.successSurface);
-    theme->setMode(choscordb::design::ThemeMode::Dark);
-    QTRY_COMPARE(footer->palette().color(QPalette::Window),
-                 theme->resolvedTheme().colors.successSurface);
-    theme->setMode(choscordb::design::ThemeMode::Light);
-    auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
-    QVERIFY(editor);
-    editor->setText("SELECT missing FROM nowhere");
-    run->trigger();
-    QTRY_COMPARE(summary->property("state").toString(), QString("failed"));
-    QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.successSurface);
-
-    window.findChild<QAction*>("newQuery")->trigger();
-    auto* other = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
-    QVERIFY(other && other != editor);
-    other->setConnectionTarget(std::nullopt, {});
-    QTRY_COMPARE(footer->palette().color(QPalette::Window),
-                 theme->resolvedTheme().colors.dangerSurface);
-    tabs->setCurrentWidget(editor);
-    QTRY_COMPARE(footer->palette().color(QPalette::Window),
-                 theme->resolvedTheme().colors.successSurface);
-}
-
-void ModernUiTest::completedResultFooterSeparatesAndClearsMetrics() {
-    choscordb::MainWindow window;
-    window.resize(1200, 700);
-    window.show();
-    window.findChild<QAction*>("newQuery")->trigger();
-    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
-    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
-    auto* run = window.findChild<QAction*>("runStatement");
-    auto* source = window.findChild<QLabel*>("executionSummary");
-    auto* outcome = window.findChild<QLabel*>("executionStateCompact");
-    auto* duration = window.findChild<QLabel*>("executionDuration");
-    auto* page = window.findChild<QLabel*>("executionPage");
-    auto* rows = window.findChild<QLabel*>("executionRows");
-    auto* size = window.findChild<QLabel*>("executionVisibleSize");
-    auto* previous = window.findChild<QPushButton*>("previousPage");
-    QVERIFY(workspace && tabs && run && source && outcome && duration && page && rows && size &&
-            previous);
-    workspace->connectSqlite(":memory:");
-    QTRY_VERIFY(run->isEnabled());
-    auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
-    QVERIFY(editor);
-    editor->setText("SELECT 1 AS value");
-    run->trigger();
-    QTRY_COMPARE(source->property("state").toString(), QString("completed"));
-    QTRY_COMPARE(page->text(), QString("Page 1"));
-    QCOMPARE(rows->text(), QString("1 rows"));
-    QTRY_VERIFY(duration->text().endsWith(" ms"));
-    QVERIFY(size->text().endsWith(" KiB visible"));
-    QVERIFY(duration->isVisible() && page->isVisible() && rows->isVisible() && size->isVisible());
-    QVERIFY(outcome->text().contains("Completed"));
-    QVERIFY(source->text().contains(editor->property("documentTitle").toString()));
-    QVERIFY(!source->text().contains(" ms"));
-    QCoreApplication::processEvents();
-    QVERIFY(source->geometry().right() < duration->geometry().left());
-    QVERIFY(size->geometry().right() < previous->geometry().left());
-
-    QTRY_VERIFY(run->isEnabled());
-    editor->setText("CREATE TABLE metric_reset(value INTEGER)");
-    run->trigger();
-    QTRY_VERIFY(page->text().isEmpty());
-    QTRY_COMPARE(source->property("state").toString(), QString("completed"));
-    QTRY_VERIFY(!duration->text().isEmpty());
-    QVERIFY(page->text().isEmpty());
-    QVERIFY(rows->text().contains("rows affected"));
-    QVERIFY(size->text().isEmpty());
-
-    QTRY_VERIFY(run->isEnabled());
-    editor->setText("INSERT INTO metric_reset(value) VALUES (1), (2) RETURNING value");
-    run->trigger();
-    QTRY_COMPARE(page->text(), QString("Page 1"));
-    QTRY_COMPARE(rows->text(), QString("2 rows"));
-}
-
-void ModernUiTest::narrowResultFooterPreservesOutcomeNavigationAndDetails() {
-    choscordb::MainWindow window;
-    window.resize(960, 640);
-    window.show();
-    window.findChild<QAction*>("newQuery")->trigger();
-    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
-    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
-    auto* run = window.findChild<QAction*>("runStatement");
-    auto* footer = window.findChild<QWidget*>("sqlResultFooter");
-    auto* source = window.findChild<QLabel*>("executionSummary");
-    auto* outcome = window.findChild<QLabel*>("executionStateCompact");
-    auto* page = window.findChild<QLabel*>("executionPage");
-    auto* previous = window.findChild<QPushButton*>("previousPage");
-    auto* next = window.findChild<QPushButton*>("nextPage");
-    QVERIFY(workspace && tabs && run && footer && source && outcome && page && previous && next);
-    workspace->connectSqlite(":memory:");
-    QTRY_VERIFY(run->isEnabled());
-    auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
-    std::optional<quint64> resultQuery;
-    connect(workspace->adapter(), &choscordb::EngineAdapter::eventReady, &window,
-            [&](const choscordb::BridgeEvent& event) {
-                if (QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size())) ==
-                    "stored_page")
-                    resultQuery = event.id;
-            });
-    const QString longTitle(160, QLatin1Char('L'));
-    editor->setProperty("documentTitle", longTitle);
-    editor->setText("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<1101) "
-                    "SELECT x FROM n");
-    run->trigger();
-    QTRY_COMPARE(source->property("state").toString(), QString("completed"));
-    QTRY_VERIFY(next->isEnabled());
-    QCoreApplication::processEvents();
-    QVERIFY2(source->text().contains(QChar(0x2026)),
-             qPrintable(QString("source width=%1 text=%2 full=%3")
-                            .arg(source->width())
-                            .arg(source->text(), source->property("fullSource").toString())));
-    QVERIFY(source->toolTip().contains(longTitle));
-    QVERIFY(source->toolTip().contains("Page 1"));
-    QVERIFY(source->accessibleName().contains(longTitle));
-    QVERIFY(source->accessibleName().contains("KiB visible"));
-    QVERIFY(outcome->isVisible());
-    QVERIFY(outcome->text().contains("Completed"));
-    QVERIFY(footer->rect().contains(QRect(previous->mapTo(footer, QPoint()), previous->size())));
-    QVERIFY(footer->rect().contains(QRect(next->mapTo(footer, QPoint()), next->size())));
-    QTest::mouseClick(next, Qt::LeftButton);
-    QCOMPARE(page->text(), QString{});
-    QTRY_COMPARE(page->text(), QString("Page 2"));
-    QVERIFY(resultQuery.has_value());
-    QTRY_VERIFY(previous->isEnabled());
-    workspace->adapter()->releaseQuery(*resultQuery);
-    QTest::mouseClick(previous, Qt::LeftButton);
-    QTRY_COMPARE(source->property("state").toString(), QString("failed"));
-    QTRY_VERIFY(outcome->text().contains("Failed"));
 }

@@ -707,7 +707,8 @@ void NavigatorSqlWorkspaceTest::documentsKeepTargetsAndImmutableResultOrigin() {
     QCOMPARE(summary->text(), origin);
     tabs->setCurrentWidget(second);
     QCOMPARE(selector->currentData(), secondConnection);
-    QCOMPARE(summary->text(), origin);
+    QVERIFY(!grid->isVisible());
+    QVERIFY(summary->text().isEmpty());
     run->trigger();
     QTRY_COMPARE(grid->model()->rowCount(), 1);
     QTRY_COMPARE(

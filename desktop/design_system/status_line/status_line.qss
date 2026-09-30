@@ -1,0 +1,9 @@
+QLabel[statusLineState="neutral"] {
+  color: @neutral;
+}
+QLabel[statusLineState="success"] {
+  color: @success;
+}
+QLabel[statusLineState="error"] {
+  color: @danger;
+}

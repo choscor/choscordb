@@ -108,66 +108,9 @@ QString prepareSavedSqlDirectory(const QString& root) {
     return fromRust(saved_sql_prepare_directory(pathView(encoded)));
 }
 
-void elideResultSource(QLabel* source) {
-    const auto full = source->property("fullSource").toString();
-    const auto visible = source->fontMetrics().elidedText(full, Qt::ElideMiddle, source->width());
-    if (source->text() != visible)
-        source->setText(visible);
-}
-
-void elideResultOutcome(QLabel* outcome) {
-    const auto full = outcome->property("fullOutcome").toString();
-    if (full.isEmpty())
-        return;
-    const auto visible = outcome->fontMetrics().elidedText(full, Qt::ElideRight, outcome->width());
-    if (outcome->text() != visible)
-        outcome->setText(visible);
-}
-
-void fitResultFooter(QWidget* footer) {
-    if (!footer)
-        return;
-    auto* source = footer->findChild<QLabel*>("executionSummary");
-    auto* outcome = footer->findChild<QLabel*>("executionStateCompact");
-    auto* previous = footer->findChild<QPushButton*>("previousPage");
-    auto* next = footer->findChild<QPushButton*>("nextPage");
-    if (!source || !outcome || !previous || !next)
-        return;
-    outcome->setMaximumWidth(qMax(outcome->minimumWidth(), footer->width() / 3));
-    auto* layout = footer->layout();
-    const auto margins = layout->contentsMargins();
-    const int spacing = layout->spacing();
-    int space =
-        footer->width() - margins.left() - margins.right() - previous->sizeHint().width() -
-        next->sizeHint().width() - qMin(outcome->sizeHint().width(), outcome->maximumWidth()) -
-        source->fontMetrics().horizontalAdvance(QStringLiteral("Untitled query")) - 6 * spacing;
-    // Page context survives first; size, row count, then duration yield as space shrinks.
-    for (const char* name :
-         {"executionPage", "executionDuration", "executionRows", "executionVisibleSize"}) {
-        auto* metric = footer->findChild<QLabel*>(QString::fromLatin1(name));
-        if (!metric)
-            continue;
-        const bool show =
-            !metric->text().isEmpty() && space >= metric->sizeHint().width() + spacing;
-        metric->setVisible(show);
-        if (show)
-            space -= metric->sizeHint().width() + spacing;
-    }
-    elideResultSource(source);
-    elideResultOutcome(outcome);
-}
 } // namespace
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
-    if (event->type() == QEvent::Resize &&
-        watched->objectName() == QLatin1String("sqlResultFooter"))
-        fitResultFooter(qobject_cast<QWidget*>(watched));
-    else if (event->type() == QEvent::Resize &&
-             watched->objectName() == QLatin1String("executionSummary"))
-        elideResultSource(qobject_cast<QLabel*>(watched));
-    else if (event->type() == QEvent::Resize &&
-             watched->objectName() == QLatin1String("executionStateCompact"))
-        elideResultOutcome(qobject_cast<QLabel*>(watched));
     if (watched == savedConnectionsList_.data() && event->type() == QEvent::KeyPress) {
         const auto* key = static_cast<QKeyEvent*>(event);
         if ((key->key() == Qt::Key_Space || key->key() == Qt::Key_Select ||
@@ -210,10 +153,6 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto pageMetric = ui.pageMetric;
     const auto rowsMetric = ui.rowsMetric;
     const auto visibleSizeMetric = ui.visibleSizeMetric;
-    auto* resultFooter = empty->parentWidget();
-    resultFooter->installEventFilter(this);
-    empty->installEventFilter(this);
-    compactState->installEventFilter(this);
     const auto previousPage = ui.previousPage;
     const auto nextPage = ui.nextPage;
     const auto exportResult = ui.exportResult;
@@ -524,9 +463,6 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                             rowsMetric,
                             visibleSizeMetric},
                            this);
-    connect(workspace_, &QueryWorkspace::documentTargetChanged, this,
-            &MainWindow::refreshResultFooterColor);
-    refreshResultFooterColor();
     connect(workspace_, &QueryWorkspace::foreignKeyRequested, this, &MainWindow::openReferencedRow);
     connect(grid->model(), &QAbstractItemModel::modelReset, grid, [grid, fitted = false]() mutable {
         if (!grid->model()->columnCount()) {
@@ -563,13 +499,12 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         }
     });
     connect(workspace_, &QueryWorkspace::executionStateChanged, this,
-            [this, cancelButton, resultFooter](const QString& state) {
+            [this, cancelButton](const QString& state) {
                 const bool active =
                     state == "queued" || state == "running" || state == "cancelling";
                 const bool restoreFocus = !active && cancelButton->hasFocus();
                 if (restoreFocus && editors_->currentWidget())
                     editors_->currentWidget()->setFocus();
-                fitResultFooter(resultFooter);
             });
     auto* objectExplorer = makeObjectExplorer();
     objectExplorer->hide(); // Not part of the workspace until its first object tab opens.

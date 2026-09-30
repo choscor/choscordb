@@ -10,7 +10,7 @@ class ObjectDataWorkspace final : public QWidget {
     explicit ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* parent = nullptr);
     void openObject(quint64 connection, const QString& object, const QString& label,
                     const QString& kind = QStringLiteral("table"));
-    void invalidate();
+    void invalidate(bool connectionLost = false);
     void setInitialFilter(const QString& expression) { initialFilter_ = expression; }
     bool resolvePendingEdits();
     QWidget* footerWidget() const { return footer_; }

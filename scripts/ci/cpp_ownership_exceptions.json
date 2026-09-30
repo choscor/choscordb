@@ -26,13 +26,13 @@
   {
     "path": "desktop/app/object_explorer.cpp",
     "rule": "domain-parsing",
-    "sha256": "2f10eac2eaef8899a48cf4b7f80d4e7d678361ac91cc5e46ea71a591a05cb6a9",
+    "sha256": "785332d0e9ca4de7a17ca689cf96ff4ac589cb55032536234fee7e38c07f6bfb",
     "reason": "Regular expressions identify SQL keywords and numbers for QTextCharFormat syntax highlighting."
   },
   {
     "path": "CMakeLists.txt",
     "rule": "backend-link",
-    "sha256": "f62fbb57a45ce89dc0e80d8dc61c4dd8947591a3706e957f857e2ee1bd8b3514",
+    "sha256": "92d6a0ec6eec6aed48331e21d83942bfba86fa6eb6b27361760267501f4933d9",
     "reason": "Qt6::Network is linked only to choscordb-updater-menu-tests for its local HTTP fixture under BUILD_TESTING; no production target receives it here."
   },
   {
@@ -50,7 +50,7 @@
   {
     "path": "desktop/tools/preview/preview_standard.cpp",
     "rule": "sql-text",
-    "sha256": "04a8f405636822ef1af176ac2adac3314e7179980b0236188746fdbba395d08c",
+    "sha256": "003b46314c0dc4a760bf5c642c0b758fe10c84ee319d864b29b727700d870cd8",
     "reason": "The CREATE TABLE literal populates a synthetic read-only SQL-editor specimen. This developer gallery does not execute it or derive application SQL from it."
   },
   {

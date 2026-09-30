@@ -22,7 +22,7 @@ preserved by the component extraction.
 | Switch | `switch/`: existing `designRole="switch"` track and thumb painting |
 | Tool button | `tool_button/`: QToolButton states and menu-indicator rules |
 | Toolbar | `toolbar/`: toolbar geometry, separators, and muted workspace variant |
-| Status line | `status_line/`: shared workspace footer layout, 13 px Ui typography, and availability surface |
+| Status line | `status_line/`: shared single-row workspace layout, Ui typography, paging, overflow, and neutral/success/error surfaces |
 | Tabs | `tabs/`: pane/document variants, left-aligned document labels, and tab-close painting |
 | Table | `table/`: table font, row styles, and interactive result headers |
 | Tree | `tree/`: navigation rows and branch painting |

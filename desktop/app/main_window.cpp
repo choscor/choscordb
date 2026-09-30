@@ -34,16 +34,6 @@ int qInitResources_resources();
 
 namespace choscordb {
 
-void MainWindow::refreshResultFooterColor() {
-    auto* footer = findChild<design::StatusLine*>("sqlResultFooter");
-    if (!footer)
-        return;
-    const bool available = workspace_ && workspace_->selectedTargetAvailable();
-    footer->setAvailable(available);
-    footer->setAccessibleName(available ? tr("SQL target available")
-                                        : tr("SQL target unavailable"));
-}
-
 void MainWindow::showToast(const QString& message, ToastVariant variant) {
     if (toast_) {
         const auto title = variant == ToastVariant::Success   ? tr("Success")
@@ -255,7 +245,8 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
             [this](quint64 connection, const QString& objectId, const QString& label) {
                 openObjectTab(connection, objectId, label, QStringLiteral("table"), {});
             });
-    connect(explorer, &ObjectExplorer::objectChanged, objectData, &ObjectDataWorkspace::invalidate);
+    connect(explorer, &ObjectExplorer::objectChanged, objectData,
+            [explorer, objectData] { objectData->invalidate(explorer->needsConnection()); });
     connect(explorer, &ObjectExplorer::paneChanged, this, [this](int) {
         if (recovery_)
             recovery_->changed();

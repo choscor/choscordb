@@ -2,13 +2,16 @@
 #include "app/query_workspace_p.h"
 #include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/table/table_style.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QStyle>
 #include <QTableView>
+#include <QVariantMap>
 #include <algorithm>
 
 namespace choscordb {
@@ -101,29 +104,84 @@ EngineAdapter* QueryWorkspace::adapter() const {
 
 void QueryWorkspace::message(const QString& value) {
     widgets_.messages->appendPlainText(value);
+    if (resultEditor_ && widgets_.currentEditor() == resultEditor_) {
+        auto saved = resultEditor_->property("resultStatus").toMap();
+        if (saved.value("source").toString() == resultOrigin_) {
+            saved.insert("messages", widgets_.messages->toPlainText());
+            resultEditor_->setProperty("resultStatus", saved);
+        }
+    }
 }
 
 void QueryWorkspace::setExecutionState(const QString& state, const QString& detail,
                                        const ExecutionMetrics& metrics) {
-    if (state == QLatin1String("queued"))
+    if (state == QLatin1String("queued")) {
         completedDurationMs_.reset();
+        completedAffectedRows_.clear();
+    }
+    if (auto* editor = resultEditor_.data()) {
+        editor->setProperty("resultStatus",
+                            QVariantMap{{"state", state},
+                                        {"detail", detail},
+                                        {"source", resultOrigin_},
+                                        {"duration", metrics.duration},
+                                        {"page", metrics.page},
+                                        {"rows", metrics.rows},
+                                        {"memory", metrics.visibleSize},
+                                        {"messages", widgets_.messages->toPlainText()}});
+    }
+    if (!widgets_.objectReadOnly && ((resultEditor_ && widgets_.currentEditor() != resultEditor_) ||
+                                     (!resultEditor_ && !resultOrigin_.isEmpty())))
+        return;
+    presentExecutionState(state, detail, metrics, resultOrigin_);
+}
+
+void QueryWorkspace::setDocumentStatus(SqlEditor* editor, const QString& state,
+                                       const QString& detail, const QString& source) {
+    if (editor) {
+        const auto messages =
+            editor == widgets_.currentEditor()
+                ? widgets_.messages->toPlainText()
+                : editor->property("resultStatus").toMap().value("messages").toString();
+        editor->setProperty("resultStatus",
+                            QVariantMap{{"state", state},
+                                        {"detail", detail},
+                                        {"source", source},
+                                        {"messages", messages + QStringLiteral("\n") + detail}});
+    }
+    if (editor == widgets_.currentEditor())
+        presentExecutionState(state, detail, {}, source);
+}
+
+void QueryWorkspace::presentExecutionState(const QString& state, const QString& detail,
+                                           const ExecutionMetrics& metrics, const QString& source) {
     widgets_.summary->setProperty("state", state);
     const auto status = detail.isEmpty() ? state : detail;
+    if (auto* footer = qobject_cast<design::StatusLine*>(widgets_.summary->parentWidget())) {
+        const auto semantic = state == "failed"      ? design::StatusLine::State::Error
+                              : state == "completed" ? design::StatusLine::State::Success
+                                                     : design::StatusLine::State::Neutral;
+        footer->setContent(
+            {source, status, metrics.duration, metrics.visibleSize, metrics.page, metrics.rows},
+            semantic);
+        widgets_.summary->setAccessibleName(tr("Execution status: %1").arg(footer->toolTip()));
+        emit executionStateChanged(state);
+        return;
+    }
     QStringList parts;
-    if (!resultOrigin_.isEmpty())
-        parts << resultOrigin_;
+    if (!source.isEmpty())
+        parts << source;
     parts << status;
     for (const auto& metric : {metrics.duration, metrics.page, metrics.rows, metrics.visibleSize})
         if (!metric.isEmpty())
             parts << metric;
     const auto fullSummary = parts.join(QStringLiteral(" · "));
-    widgets_.summary->setProperty("fullSource", resultOrigin_);
-    widgets_.summary->setText(widgets_.outcome ? resultOrigin_ : fullSummary);
+    widgets_.summary->setProperty("fullSource", source);
+    widgets_.summary->setText(widgets_.outcome ? source : fullSummary);
     widgets_.summary->setToolTip(fullSummary);
     widgets_.summary->setAccessibleName(tr("Execution status: %1").arg(fullSummary));
     if (widgets_.outcome) {
         widgets_.outcome->setProperty("fullOutcome", status);
-        widgets_.outcome->setMinimumWidth(widgets_.outcome->fontMetrics().horizontalAdvance(state));
         widgets_.outcome->setText(status);
         widgets_.outcome->setToolTip(fullSummary);
         widgets_.outcome->setAccessibleName(tr("Execution outcome: %1").arg(status));
@@ -194,6 +252,7 @@ void QueryWorkspace::submitResultView(const QList<ResultFilterCondition>& filter
     proposedFiltersFromDraft_ = filterBar_->draftMatches(filters);
     proposedViewSortColumn_ = sortColumn;
     proposedViewSortDirection_ = sortDirection;
+    commandError_.clear();
     const bool accepted =
         filters.isEmpty() && sortColumn < 0
             ? adapter_->clearResultView(*query_)
@@ -205,6 +264,9 @@ void QueryWorkspace::submitResultView(const QList<ResultFilterCondition>& filter
         if (proposedFiltersFromDraft_)
             filterBar_->showValidationError(
                 tr("Filters could not be applied. See Messages for details."));
+        setExecutionState(QStringLiteral("failed"),
+                          tr("Previous result view restored: %1").arg(commandError_));
+        updateActions();
         return;
     }
     viewBusy_ = true;

@@ -362,18 +362,38 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
     } else if (id == "status-line") {
         auto* available = new StatusLine(host);
         available->setObjectName("previewStatusAvailable");
-        available->setAvailable(true);
-        auto* loaded = new Text("orders · DDL loaded", available);
-        loaded->setTypographyRole(TypographyRole::Ui);
-        loaded->setProperty("state", "loaded");
-        available->contentLayout()->addWidget(loaded, 1);
+        auto* source = new Text({}, available);
+        auto* outcome = new Text({}, available);
+        auto* duration = new Text({}, available);
+        auto* memory = new Text({}, available);
+        auto* page = new Text({}, available);
+        auto* rows = new Text({}, available);
+        auto* previous = new Button({}, available);
+        auto* next = new Button({}, available);
+        previous->setObjectName("previewStatusPrevious");
+        previous->setAccessibleName("Previous page");
+        next->setObjectName("previewStatusNext");
+        next->setAccessibleName("Next page");
+        available->configure({source, outcome, duration, memory, page, rows, previous, next});
+        available->setContent(
+            {"orders", "Completed", "Executed in 12 ms", "4 KiB visible", "Page 1", "25 rows"},
+            StatusLine::State::Success);
         layout->addWidget(available);
         auto* unavailable = new StatusLine(host);
         unavailable->setObjectName("previewStatusUnavailable");
-        auto* disconnected = new Text("orders · Connection unavailable", unavailable);
-        disconnected->setTypographyRole(TypographyRole::Ui);
-        unavailable->contentLayout()->addWidget(disconnected, 1);
+        auto* error = new Text({}, unavailable);
+        unavailable->configure({nullptr, error});
+        unavailable->setContent(
+            {{}, "Failed: relation orders is unavailable [Code: 42P01]", {}, {}, {}, {}},
+            StatusLine::State::Error);
         layout->addWidget(unavailable);
+        auto* neutral = new StatusLine(host);
+        neutral->setObjectName("previewStatusNeutral");
+        auto* instruction = new Text({}, neutral);
+        neutral->configure({nullptr, instruction}, true);
+        neutral->setContent({{}, "Choose a connection to get started", {}, {}, {}, {}},
+                            StatusLine::State::Neutral);
+        layout->addWidget(neutral);
     } else if (id == "feedback") {
         auto* viewport = host->parentWidget();
         auto* toast = new choscordb::ToastRegion;

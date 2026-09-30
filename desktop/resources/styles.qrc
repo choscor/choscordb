@@ -51,5 +51,6 @@
     <file alias="tree/tree_item_style_sheet.qss">../design_system/tree/tree_item_style_sheet.qss</file>
     <file alias="tree/tree_state_style_sheet.qss">../design_system/tree/tree_state_style_sheet.qss</file>
     <file alias="tree/tree_style_sheet.qss">../design_system/tree/tree_style_sheet.qss</file>
+    <file alias="status_line/status_line.qss">../design_system/status_line/status_line.qss</file>
   </qresource>
 </RCC>

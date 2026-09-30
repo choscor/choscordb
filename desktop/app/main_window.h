@@ -65,7 +65,6 @@ class MainWindow final : public QMainWindow {
     struct Ui;
     struct PendingObjectAction;
     Ui buildUi();
-    void refreshResultFooterColor();
     void connectWorkspace(const Ui& ui, const QString& storagePath);
     void connectLifecycle(const Ui& ui, const QString& storagePath);
     void connectNavigator(const Ui& ui);

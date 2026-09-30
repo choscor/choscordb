@@ -138,10 +138,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     clear_->setButtonSize(design::ButtonSize::IconSmall);
     refresh_->setButtonSize(design::ButtonSize::Small);
     status_ = new design::Text({}, body);
-    status_->setTypographyRole(design::TypographyRole::Ui);
     status_->setObjectName("historyStatus");
-    status_->setTextFormat(Qt::PlainText);
-    status_->setWordWrap(true);
     model_ = new HistoryModel(this);
     table_ = new QTableView(body);
     table_->setObjectName("historyTable");
@@ -192,7 +189,6 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     previewLayout->addWidget(preview_, 1);
     footer_ = new design::StatusLine(body);
     footer_->setObjectName("historyFooter");
-    auto* footer = footer_->contentLayout();
     auto* manage = new QToolButton(toolbarBody);
     manage->setObjectName("historyManage");
     manage->setText(tr("Manage history"));
@@ -221,19 +217,12 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     next_->setObjectName("historyNext");
     previous_->setObjectName("historyPrevious");
     page_ = new design::Text({}, body);
-    page_->setTypographyRole(design::TypographyRole::Ui);
     page_->setObjectName("historyRange");
     open_ = new design::Button(tr("Open in new query"), body);
     open_->setObjectName("openHistoryQuery");
-    previous_->setVariant(design::ButtonVariant::Outline);
-    next_->setVariant(design::ButtonVariant::Outline);
-    previous_->setDesignIcon(design::Icon::ChevronLeft);
-    next_->setDesignIcon(design::Icon::ChevronRight);
-    previous_->setButtonSize(design::ButtonSize::IconSmall);
     previous_->setText({});
     previous_->setAccessibleName(tr("Previous history page"));
     previous_->setToolTip(tr("Previous history page"));
-    next_->setButtonSize(design::ButtonSize::IconSmall);
     next_->setText({});
     next_->setAccessibleName(tr("Next history page"));
     next_->setToolTip(tr("Next history page"));
@@ -242,18 +231,12 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     open_->setToolTip(tr("Open in new query"));
     open_->setText({});
     open_->setButtonSize(design::ButtonSize::IconSmall);
-    auto* paging = new design::ButtonGroup(Qt::Horizontal, body);
-    paging->setObjectName("historyPaging");
-    paging->addButton(previous_);
-    paging->addButton(next_);
     toolbar->addWidget(manage);
     toolbar->addWidget(clear_);
     toolbar->addWidget(open_);
     toolbar->addStretch();
-    footer->addWidget(page_);
-    footer->addWidget(status_);
-    footer->addStretch();
-    footer->addWidget(paging);
+    footer_->configure({nullptr, status_, nullptr, nullptr, nullptr, page_, previous_, next_});
+    footer_->pagingWidget()->setObjectName("historyPaging");
     layout->addWidget(footer_);
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(0, 0, 0, 0);
@@ -302,7 +285,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
         }
         failed_ = false;
         policyToken_ = token();
-        status_->clear();
+        statusText_.clear();
         updateControls();
         adapter_->setHistoryPolicy(proposed, policyToken_);
     });
@@ -314,7 +297,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
             return;
         failed_ = false;
         clearToken_ = token();
-        status_->clear();
+        statusText_.clear();
         updateControls();
         adapter_->clearHistory(clearToken_);
     });
@@ -333,8 +316,8 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
                 model_->setEntries(entries);
                 selectEntry();
                 if (!failed_)
-                    status_->setText(entries.isEmpty() ? tr("No query history on this page.")
-                                                       : QString{});
+                    statusText_ =
+                        entries.isEmpty() ? tr("No query history on this page.") : QString{};
                 updateControls();
             });
     connect(adapter, &EngineAdapter::historyPolicyReady, this,
@@ -346,8 +329,8 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
                 policy_ = policy;
                 record_->setChecked(policy.enabled);
                 if (!failed_ && !listToken_)
-                    status_->setText(model_->rowCount() == 0 ? tr("No query history on this page.")
-                                                             : QString{});
+                    statusText_ =
+                        model_->rowCount() == 0 ? tr("No query history on this page.") : QString{};
                 updateControls();
             });
     connect(adapter, &EngineAdapter::historyCleared, this, [this](quint64 id) {
@@ -369,7 +352,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
                 if (id == clearToken_)
                     clearToken_ = 0;
                 failed_ = true;
-                status_->setText(error);
+                statusText_ = error;
                 updateControls();
             });
     connect(adapter, &EngineAdapter::profilesReady, this,
@@ -411,7 +394,7 @@ void HistoryDock::loadPage(quint32 offset) {
     listToken_ = token();
     pendingOffset_ = offset;
     if (!failed_)
-        status_->clear();
+        statusText_.clear();
     updateControls();
     adapter_->listHistory(pageSize, offset, listToken_);
 }
@@ -462,7 +445,6 @@ void HistoryDock::openSelection() {
         emit openRequested(*entry);
 }
 void HistoryDock::updateControls() {
-    footer_->setAvailable(!failed_);
     if (clearToken_)
         progressToast(this)->showProgress(tr("History"), tr("Clearing history…"));
     else if (policyToken_)
@@ -472,7 +454,6 @@ void HistoryDock::updateControls() {
         progressToast(this)->showProgress(tr("History"), tr("Loading history…"));
     else
         clearProgressToast(this);
-    status_->setVisible(!status_->text().isEmpty());
     const bool idle = adapter_ && !listToken_ && !clearToken_;
     record_->setEnabled(adapter_ && havePolicy_ && !policyToken_ && !clearToken_);
     refresh_->setEnabled(idle && !policyToken_);
@@ -482,10 +463,15 @@ void HistoryDock::updateControls() {
                       offset_ <= std::numeric_limits<quint32>::max() - quint32(model_->rowCount()));
     open_->setEnabled(model_->entry(table_->currentIndex().row()) != nullptr &&
                       !table_->isRowHidden(table_->currentIndex().row()));
-    if (model_->rowCount() > 0)
-        page_->setText(
-            tr("Rows %1–%2").arg(quint64(offset_) + 1).arg(quint64(offset_) + model_->rowCount()));
-    else
-        page_->setText(offset_ == 0 ? tr("No rows") : tr("After row %1").arg(offset_));
+    const auto range =
+        model_->rowCount() > 0
+            ? tr("Rows %1–%2").arg(quint64(offset_) + 1).arg(quint64(offset_) + model_->rowCount())
+        : offset_ == 0 ? tr("No rows")
+                       : tr("After row %1").arg(offset_);
+    const auto state = failed_ ? design::StatusLine::State::Error
+                       : listToken_ || clearToken_ || policyToken_ || !havePolicy_
+                           ? design::StatusLine::State::Neutral
+                           : design::StatusLine::State::Success;
+    footer_->setContent({{}, statusText_, {}, {}, {}, range}, state);
 }
 } // namespace choscordb

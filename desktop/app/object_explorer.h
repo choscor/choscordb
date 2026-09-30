@@ -16,7 +16,8 @@ class QHBoxLayout;
 namespace choscordb {
 namespace design {
 class Text;
-}
+class StatusLine;
+} // namespace design
 class EngineAdapter;
 class ObjectErdWidget;
 struct ObjectGraph;
@@ -68,7 +69,7 @@ class ObjectExplorer final : public QWidget {
     QPushButton* refresh_;
     QPushButton* open_;
     QPushButton* generate_;
-    QHBoxLayout* footer_;
+    design::StatusLine* footer_;
     QPointer<QWidget> dataFooter_;
     QList<QPointer<QWidget>> dataHeaderActions_;
     QHash<QString, QAction*> generationActions_;

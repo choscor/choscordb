@@ -6,6 +6,7 @@
 #include "bridge/engine_adapter.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/embedded_popup.h"
+#include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/result_table_model.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -58,6 +59,20 @@ class ObjectDataWorkspaceTest : public QObject {
     }
 
   private slots:
+    void rejectedObjectReadShowsCompleteBackendError() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(900, 600);
+        data.show();
+        sql->adapter()->beginShutdown();
+        data.openObject(1, R"(["main","records"])", "records");
+        auto* summary = data.findChild<QLabel*>("objectDataSummary");
+        QTRY_COMPARE(summary->property("state").toString(), QString("failed"));
+        QVERIFY(summary->toolTip().contains("Workspace is closing."));
+        QCOMPARE(data.footerWidget()->palette().color(QPalette::Window),
+                 choscordb::design::resolvedThemeForWidget(data).colors.dangerSurface);
+    }
     void objectRowJsonOpensForReadOnlyRowsWithoutChangingSelection() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
@@ -315,6 +330,8 @@ class ObjectDataWorkspaceTest : public QObject {
         QVERIFY(!data.findChild<QPushButton*>("objectDataDiscard"));
         QVERIFY(!data.findChild<QPushButton*>("objectDataRefresh"));
         auto* footer = data.footerWidget();
+        QCOMPARE(QString::fromLatin1(footer->metaObject()->className()),
+                 QString("choscordb::design::StatusLine"));
         QCOMPARE(footer->findChildren<QPushButton*>().size(), 2);
         auto* grid = data.findChild<QTableView*>("objectDataResults");
         for (const char* name : {"objectDataAddRow", "objectDataDeleteRows",
@@ -374,7 +391,11 @@ class ObjectDataWorkspaceTest : public QObject {
         QCOMPARE(footer->font().pixelSize(), sqlSummary->font().pixelSize());
         QCOMPARE(dataSummary->font().pixelSize(), sqlSummary->font().pixelSize());
         QCOMPARE(objectStatus->font().pixelSize(), sqlSummary->font().pixelSize());
-        QCOMPARE(footer->findChildren<QPushButton*>().size(), 2);
+        auto* dataFooter = explorer.findChild<QWidget*>("objectDataFooter");
+        QVERIFY(dataFooter->isVisible());
+        QVERIFY(!footer->isVisible());
+        QCOMPARE(dataFooter->height(), footer->height());
+        QCOMPARE(dataFooter->findChildren<QPushButton*>().size(), 2);
         for (const char* name : {"objectOpenQuery", "objectGenerateSql", "objectDataCancel"}) {
             auto* control = explorer.findChild<QWidget*>(name);
             QVERIFY2(!control || control->isHidden(), name);
@@ -403,7 +424,7 @@ class ObjectDataWorkspaceTest : public QObject {
         QVERIFY(refresh->isEnabled());
         explorer.selectPane(0);
         QVERIFY(!explorer.findChild<QPushButton*>("objectDataAddRow")->isVisible());
-        QVERIFY(!footer->findChild<QPushButton*>("objectDataNext")->isVisible());
+        QVERIFY(!dataFooter->findChild<QPushButton*>("objectDataNext")->isVisible());
         QVERIFY(explorer.findChild<QPushButton*>("objectRefresh")->isVisible());
     }
     void binaryOriginalAllowsInsertButPreventsUnsafeRowChanges() {
@@ -885,9 +906,21 @@ class ObjectDataWorkspaceTest : public QObject {
         auto* next = data.findChild<QPushButton*>("objectDataNext");
         QVERIFY(next);
         QTRY_VERIFY(next->isEnabled());
+        auto* duration = data.findChild<QLabel*>("objectDataDuration");
         next->click();
         QTRY_COMPARE(objectTable->model()->rowCount(), 1);
         QCOMPARE(objectTable->model()->index(0, 0).data().toString(), QString("1001"));
+        QTRY_VERIFY(duration->accessibleName().startsWith("Executed in "));
+        const auto durationText = duration->accessibleName();
+        QCOMPARE(data.findChild<QLabel*>("objectDataPage")->text(), QString("Page 2"));
+        QCOMPARE(data.findChild<QLabel*>("objectDataRows")->text(), QString("1 rows"));
+        data.findChild<QPushButton*>("objectDataPrevious")->click();
+        QTRY_COMPARE(objectTable->model()->rowCount(), 1000);
+        QCOMPARE(duration->accessibleName(), durationText);
+        QTRY_VERIFY(next->isEnabled());
+        next->click();
+        QTRY_COMPARE(objectTable->model()->rowCount(), 1);
+        QCOMPARE(duration->accessibleName(), durationText);
         auto* sqlNext = window.findChild<QPushButton*>("nextPage");
         QTRY_VERIFY(sqlNext->isEnabled());
         sqlNext->click();

@@ -8,6 +8,7 @@
 #include "design_system/fonts/fonts.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/table/table_style.h"
+#include "design_system/theme.h"
 #include "models/result_table_model.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -418,9 +419,21 @@ class ResultViewWorkspaceTest : public QObject {
         QTRY_VERIFY(error->isVisible());
         QCOMPARE(sqlFilter->text(), QString("id = ("));
         QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("2"));
+        sqlFilter->setText("missing_backend_column = 1");
+        apply->click();
+        auto* summary = data.findChild<QLabel*>("objectDataSummary");
+        QTRY_COMPARE(summary->property("state").toString(), QString("failed"));
+        QVERIFY(summary->toolTip().contains("Previous result view restored"));
+        QVERIFY(summary->toolTip().contains("missing_backend_column"));
+        QCOMPARE(data.footerWidget()->palette().color(QPalette::Window),
+                 choscordb::design::resolvedThemeForWidget(data).colors.dangerSurface);
+        QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("2"));
         sqlFilter->setText("id = 1");
         apply->click();
         QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("1"));
+        QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+        QCOMPARE(data.footerWidget()->palette().color(QPalette::Window),
+                 choscordb::design::resolvedThemeForWidget(data).colors.successSurface);
         clear->click();
         QTRY_COMPARE(grid->model()->rowCount(), 2);
         QVERIFY(sqlFilter->text().isEmpty());

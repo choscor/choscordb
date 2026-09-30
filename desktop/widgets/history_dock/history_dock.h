@@ -50,6 +50,7 @@ class HistoryDock final : public QWidget {
     QList<qsizetype> previewOffsets_;
     qsizetype previewOffset_ = 0, previewLength_ = 0;
     bool havePolicy_ = false;
+    QString statusText_;
     bool failed_ = false;
 };
 } // namespace choscordb

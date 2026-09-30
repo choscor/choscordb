@@ -81,7 +81,12 @@ class ModernUiTest final : public QObject {
     void appearancePreviewsPersistAndRestoreAcrossRestart();
     void preferencesUseSectionNavigationAndCancelableLivePreview();
     void executionStripKeepsVisibleAndAccessibleTerminalState();
-    void resultFooterTracksActiveSqlTargetIndependentlyOfExecution();
+    void resultFooterTracksOperationOutcome();
+    void connectionAttemptFailureIsAnOperationError();
+    void operationFailureRemainsRedAfterDisconnectCleanup();
+    void embeddedDataFailureRemainsVisibleAfterDisconnectCleanup_data();
+    void embeddedDataFailureRemainsVisibleAfterDisconnectCleanup();
+    void sqlDocumentSwitchKeepsFooterAndResultOwnershipTogether();
     void sidebarConnectionDoesNotColorUnavailableSqlTargetFooter();
     void completedResultFooterSeparatesAndClearsMetrics();
     void narrowResultFooterPreservesOutcomeNavigationAndDetails();
