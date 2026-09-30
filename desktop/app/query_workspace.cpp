@@ -422,7 +422,7 @@ bool QueryWorkspace::queryAvailable() const {
     return queryConnection_ && connectionAvailable(*queryConnection_);
 }
 bool QueryWorkspace::workInFlight() const {
-    return externalWork_ || executionModeToken_ != 0 || viewBusy_ || editPlanRunning_ ||
+    return externalWorkActive() || executionModeToken_ != 0 || viewBusy_ || editPlanRunning_ ||
            editApplying_ ||
            ((cancellationPending_ || busy_ || fetching_ || exporting_) &&
             !(queryConnection_ && disconnecting_.contains(*queryConnection_)));
@@ -431,6 +431,20 @@ void QueryWorkspace::setExternalWork(bool busy) {
     if (externalWork_ == busy)
         return;
     externalWork_ = busy;
+    updateActions();
+}
+void QueryWorkspace::setExternalWork(QObject* source, bool busy) {
+    if (!source || externalWorkSources_.contains(source) == busy)
+        return;
+    if (busy) {
+        externalWorkSources_.insert(
+            source, connect(source, &QObject::destroyed, this, [this, source] {
+                if (externalWorkSources_.remove(source))
+                    QTimer::singleShot(0, this, &QueryWorkspace::updateActions);
+            }));
+    } else {
+        disconnect(externalWorkSources_.take(source));
+    }
     updateActions();
 }
 void QueryWorkspace::disconnectConnection(quint64 connection) {

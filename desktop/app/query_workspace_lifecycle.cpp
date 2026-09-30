@@ -7,7 +7,7 @@
 namespace choscordb {
 bool QueryWorkspace::confirmShutdown() {
     const bool transaction = !pendingTransactions_.isEmpty();
-    const bool active = externalWork_ || busy_ || fetching_ || viewBusy_ || exporting_ ||
+    const bool active = externalWorkActive() || busy_ || fetching_ || viewBusy_ || exporting_ ||
                         (query_ && !executionFinished_);
     if (!transaction && !active)
         return true;

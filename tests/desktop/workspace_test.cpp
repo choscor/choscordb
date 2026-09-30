@@ -41,6 +41,27 @@
 #include <QtTest>
 #include <algorithm>
 
+void WorkspaceTest::overlappingObjectWorkRetainsNavigationGuardUntilEverySourceFinishes() {
+    WorkspaceFixture fixture;
+    QTRY_VERIFY(fixture.workspace.navigationAllowed());
+    QObject first;
+    auto second = std::make_unique<QObject>();
+    fixture.workspace.setExternalWork(&first, true);
+    fixture.workspace.setExternalWork(second.get(), false);
+    QVERIFY(!fixture.workspace.navigationAllowed());
+    fixture.workspace.setExternalWork(second.get(), true);
+    fixture.workspace.setExternalWork(&first, false);
+    QVERIFY(!fixture.workspace.navigationAllowed());
+    second.reset();
+    QVERIFY(fixture.workspace.navigationAllowed());
+    fixture.workspace.setExternalWork(true);
+    fixture.workspace.setExternalWork(&first, true);
+    fixture.workspace.setExternalWork(&first, false);
+    QVERIFY(!fixture.workspace.navigationAllowed());
+    fixture.workspace.setExternalWork(false);
+    QVERIFY(fixture.workspace.navigationAllowed());
+}
+
 void WorkspaceTest::unsavedConnectionsRetainTheirDriver() {
     WorkspaceFixture fixture;
     QTRY_VERIFY(fixture.run.isEnabled());

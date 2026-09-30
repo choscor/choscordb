@@ -11,6 +11,7 @@
 - Improved relationship diagram navigation and layout for dense schemas.
 - Show workspace recovery failures in window notifications.
 - Fixed recent-object navigation when quick search reopens immediately after closing tabs.
+- Fixed navigation becoming available too early or staying blocked when object-data tabs have overlapping activity.
 - Fixed Windows installer staging-directory replacement and failure dialogs during silent installation and update rollback.
 
 - Added local diagnostics with a Help action to review and export a privacy-safe ZIP manually.

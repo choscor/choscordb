@@ -7,6 +7,7 @@ class WorkspaceTest : public QObject {
 
   private slots:
     void unsavedConnectionsRetainTheirDriver();
+    void overlappingObjectWorkRetainsNavigationGuardUntilEverySourceFinishes();
     void developmentUpdaterHasNoEnabledActions_data();
     void developmentUpdaterHasNoEnabledActions();
     void productionDataUsesOneIdentityDirectory();

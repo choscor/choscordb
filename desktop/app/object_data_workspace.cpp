@@ -192,7 +192,7 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
             [messages](const QString& state) { messages->setVisible(state == "failed"); });
     connect(result_, &QueryWorkspace::activityChanged, this, [this, cancelButton](bool busy) {
         if (sql_)
-            sql_->setExternalWork(busy);
+            sql_->setExternalWork(this, busy);
         cancelButton->setProperty("busy", busy);
         emit busyChanged(busy);
     });

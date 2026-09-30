@@ -100,6 +100,7 @@ class QueryWorkspace final : public QObject {
     void applyQueryPreferences(const QueryPreferences& preferences);
     QueryPreferences queryPreferences() const;
     void setExternalWork(bool busy);
+    void setExternalWork(QObject* source, bool busy);
     void openObjectData(quint64 connection, const QString& object, const QString& label,
                         const QueryPreferences& preferences,
                         const QString& kind = QStringLiteral("table"), bool preserveView = false,
@@ -258,6 +259,8 @@ class QueryWorkspace final : public QObject {
     bool hasMoreResults_ = false;
     bool stopping_ = false;
     bool externalWork_ = false, invalidatePending_ = false;
+    QHash<QObject*, QMetaObject::Connection> externalWorkSources_;
+    bool externalWorkActive() const { return externalWork_ || !externalWorkSources_.isEmpty(); }
     bool cancellationPending_ = false;
     QList<ResultFilterCondition> viewFilters_, proposedViewFilters_, deferredViewFilters_;
     qint32 viewSortColumn_ = -1, proposedViewSortColumn_ = -1, deferredViewSortColumn_ = -1;
