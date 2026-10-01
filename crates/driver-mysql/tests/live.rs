@@ -927,17 +927,21 @@ async fn large_values_are_deferred_and_survive_cursor_close() {
 #[ignore = "requires disposable MySQL server on localhost:33306"]
 async fn first_page_arrives_before_full_result_finishes() {
     let mut conn = connect().await;
+    // Send a substantial prefix immediately, then block the final row. This
+    // proves streaming without depending on accumulated per-row sleep timing
+    // or the server flushing each small group of delayed rows.
     let mut cursor = tokio::time::timeout(std::time::Duration::from_secs(8), conn.execute(
-        "WITH RECURSIVE n AS (SELECT 1 AS i UNION ALL SELECT i+1 FROM n WHERE i<900) SELECT i, REPEAT('x',4096), SLEEP(0.02) FROM n",
+        "WITH RECURSIVE n AS (SELECT 1 AS i UNION ALL SELECT i+1 FROM n WHERE i<900) SELECT i, REPEAT('x',4096), IF(i=900,SLEEP(30),0) FROM n",
         QueryOptions::default(),
-    )).await.expect("execute must not spool the full eighteen-second result").unwrap();
+    )).await.expect("execute must not wait for the blocked result tail").unwrap();
     let page = tokio::time::timeout(
         std::time::Duration::from_secs(10),
         cursor.fetch_page(PageSize::new(100).unwrap()),
     )
     .await
-    .unwrap()
+    .expect("first page must arrive while the result tail is blocked")
     .unwrap();
+    assert_eq!(page.rows.len(), 100);
     assert_eq!(page.rows[0][0], Value::Integer(1));
     assert!(page.has_more);
     cursor.close().await.unwrap();
