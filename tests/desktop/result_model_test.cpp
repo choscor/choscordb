@@ -22,6 +22,89 @@ ResultColumn column(const QString& name, const QString& databaseType) {
 class ResultModelTest : public QObject {
     Q_OBJECT
   private slots:
+    void explicitTextDraftDistinguishesNullEmptyAndOmitted() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("payload", "text"), column("other", "text")},
+                              {{std::monostate{}, QString("kept")}}, 0));
+        model.setEditableColumns({true, true}, true, false);
+        QVERIFY(model.setData(model.index(0, 1), "staged elsewhere"));
+        const auto cell = model.index(0, 0);
+        auto task =
+            std::async(std::launch::async, [snapshot = model.cellEditSnapshot(cell, "NULL")] {
+                return ResultTableModel::evaluateCellEdit(snapshot);
+            });
+        const auto result = model.stageCellEdit(cell, task.get());
+        QCOMPARE(result.state, ResultTableModel::CellEditState::Ready);
+        QCOMPARE(std::get<QString>(*model.cellValue(cell)), QString("NULL"));
+        QCOMPARE(std::get<QString>(model.rows()[0][1]), QString("staged elsewhere"));
+        QVERIFY(model.addRow());
+        QVERIFY(!model.touched()[1][0]);
+        const auto inserted = model.index(1, 0);
+        const auto empty = model.stageCellEdit(
+            inserted, ResultTableModel::evaluateCellEdit(model.cellEditSnapshot(inserted, "")));
+        QCOMPARE(empty.state, ResultTableModel::CellEditState::Ready);
+        QVERIFY(model.touched()[1][0]);
+        QCOMPARE(std::get<QString>(*model.cellValue(inserted)), QString(""));
+    }
+    void explicitDraftRefusalLeavesTargetAndOtherEditsIntact() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("count", "integer"), column("other", "text")},
+                              {{qint64(7), QString("original")}}, 0));
+        model.setEditableColumns({true, true}, false, true);
+        QVERIFY(model.setData(model.index(0, 1), "unrelated staged value"));
+        const auto target = model.index(0, 0);
+        const auto invalid =
+            ResultTableModel::evaluateCellEdit(model.cellEditSnapshot(target, "oops"));
+        QCOMPARE(invalid.state, ResultTableModel::CellEditState::TypeRejected);
+        QVERIFY(invalid.error.contains("whole number"));
+        QCOMPARE(model.stageCellEdit(target, invalid).state,
+                 ResultTableModel::CellEditState::TypeRejected);
+        QCOMPARE(std::get<qint64>(*model.cellValue(target)), qint64(7));
+        QVERIFY(!model.touched()[0][0]);
+        // The budget allows the current state, but cannot hold a new target draft.
+        QVERIFY(model.setByteBudget(model.residentBytes() + 256));
+        const auto oversized = ResultTableModel::evaluateCellEdit(
+            model.cellEditSnapshot(target, QString(1024, QChar('8'))));
+        QCOMPARE(oversized.state, ResultTableModel::CellEditState::ResourceRefused);
+        QVERIFY(!oversized.error.isEmpty());
+        QCOMPARE(model.stageCellEdit(target, oversized).state,
+                 ResultTableModel::CellEditState::ResourceRefused);
+        QCOMPARE(std::get<qint64>(*model.cellValue(target)), qint64(7));
+        QCOMPARE(std::get<QString>(model.rows()[0][1]), QString("unrelated staged value"));
+        const auto corrected = model.stageCellEdit(
+            target, ResultTableModel::evaluateCellEdit(model.cellEditSnapshot(target, "9")));
+        QCOMPARE(corrected.state, ResultTableModel::CellEditState::Ready);
+        QCOMPARE(std::get<qint64>(*model.cellValue(target)), qint64(9));
+    }
+    void typedStagingRechecksEligibilityAndCurrentBudget() {
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("payload", "text")}, {{QString("original")}}, 0));
+        model.setEditableColumns({true}, false, true);
+        const auto target = model.index(0, 0);
+        const auto evaluation =
+            ResultTableModel::evaluateCellEdit(model.cellEditSnapshot(target, "changed"));
+        QCOMPARE(evaluation.state, ResultTableModel::CellEditState::Ready);
+        QVERIFY(model.setByteBudget(model.residentBytes()));
+        const auto refused = model.stageCellEdit(target, evaluation);
+        QCOMPARE(refused.state, ResultTableModel::CellEditState::ResourceRefused);
+        QVERIFY(!refused.error.isEmpty());
+        QCOMPARE(std::get<QString>(*model.cellValue(target)), QString("original"));
+        QVERIFY(!model.hasPendingEdits());
+        QVERIFY(model.setByteBudget(ResultTableModel::DefaultBytes));
+        model.markDeleted({target}, true);
+        const auto ineligible = model.stageCellEdit(target, evaluation);
+        QCOMPARE(ineligible.state, ResultTableModel::CellEditState::Ineligible);
+        QVERIFY(!ineligible.error.isEmpty());
+        QVERIFY(!model.touched()[0][0]);
+        QCOMPARE(std::get<QString>(*model.cellValue(target)), QString("original"));
+        ResultTableModel other;
+        QVERIFY(other.setPage({column("payload", "text")}, {{QString("foreign")}}, 0));
+        other.setEditableColumns({true}, false, false);
+        QCOMPARE(
+            ResultTableModel::evaluateCellEdit(model.cellEditSnapshot(other.index(0, 0), "bad"))
+                .state,
+            ResultTableModel::CellEditState::Ineligible);
+    }
     void jsonSnapshotCanRenderAfterModelChangesOnWorker() {
         ResultTableModel model;
         QVERIFY(model.setPage({column("payload", "json")}, {{QString("{\"old\":1}")}}, 0));

@@ -315,7 +315,8 @@ class EngineAdapter final : public QObject {
     static bool foreignKeyValueFilterable(const Cell& value);
     static std::optional<QString> foreignKeyPredicate(const QString& targetColumn,
                                                       const Cell& value);
-    static std::optional<Cell> parseGridEditValue(const QString& databaseType, const QString& text);
+    static std::optional<Cell> parseGridEditValue(const QString& databaseType, const QString& text,
+                                                  QString* error = nullptr);
     static bool navigatorObjectVisible(const QString& driver, bool showSystemSchemas,
                                        const QString& qualifiedName);
     static bool postgresSystemSchema(const QString& schema);

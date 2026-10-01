@@ -7,6 +7,7 @@
 #include <QFont>
 #include <algorithm>
 #include <limits>
+#include <new>
 #include <numeric>
 namespace choscordb {
 std::optional<DeferredValue> ResultTableModel::deferredValue(const QModelIndex& index) const {
@@ -396,6 +397,82 @@ bool ResultTableModel::setData(const QModelIndex& index, const QVariant& value, 
     emit dataChanged(index, index);
     emit pendingEditsChanged(hasPendingEdits());
     return true;
+}
+ResultTableModel::CellEditSnapshot ResultTableModel::cellEditSnapshot(const QModelIndex& index,
+                                                                      const QString& text) const {
+    if (index.model() != this || !(flags(index) & Qt::ItemIsEditable))
+        return {};
+    const auto oldBytes = editBytes_[index.row()][index.column()];
+    return {columns_[index.column()].databaseType, text,
+            byteBudget_ - residentBytes_ - (stagedBytes_ - oldBytes), true};
+}
+ResultTableModel::CellEditEvaluation ResultTableModel::evaluateCellEdit(CellEditSnapshot snapshot) {
+    CellEditEvaluation result;
+    if (!snapshot.eligible) {
+        result.error =
+            tr("This cell is no longer editable. Close the editor and reopen an eligible cell.");
+        return result;
+    }
+    // Bound text before UTF-8 conversion and backend parsing can allocate copies.
+    AllocationCounter preflight{snapshot.byteBudget};
+    if (!preflight.add(sizeof(Cell)) || !preflight.add(QtHeaderBytes) ||
+        !preflight.add(std::size_t(snapshot.text.size()) + 1, sizeof(QChar))) {
+        result.state = CellEditState::ResourceRefused;
+        result.error = tr("This value exceeds the remaining edit memory budget. Shorten the value "
+                          "or discard other staged edits.");
+        return result;
+    }
+    try {
+        result.value =
+            EngineAdapter::parseGridEditValue(snapshot.databaseType, snapshot.text, &result.error);
+    } catch (const std::bad_alloc&) {
+        result.state = CellEditState::ResourceRefused;
+        result.error =
+            tr("There is not enough memory to edit this value. Shorten the value and try again.");
+        return result;
+    }
+    result.state = result.value ? CellEditState::Ready : CellEditState::TypeRejected;
+    result.bytes = preflight.bytes;
+    return result;
+}
+ResultTableModel::CellEditEvaluation
+ResultTableModel::stageCellEdit(const QModelIndex& index, CellEditEvaluation evaluation) {
+    if (evaluation.state != CellEditState::Ready)
+        return evaluation;
+    if (!evaluation.value || index.model() != this || !(flags(index) & Qt::ItemIsEditable)) {
+        evaluation.state = CellEditState::Ineligible;
+        evaluation.error =
+            tr("This cell is no longer editable. Close the editor and reopen an eligible cell.");
+        return evaluation;
+    }
+    const auto oldBytes = editBytes_[index.row()][index.column()];
+    AllocationCounter charge{byteBudget_ - residentBytes_ - (stagedBytes_ - oldBytes)};
+    const bool fits =
+        charge.add(sizeof(Cell)) && std::visit(
+                                        [&](const auto& value) {
+                                            using T = std::decay_t<decltype(value)>;
+                                            if constexpr (std::is_same_v<T, QString>)
+                                                return charge.string(value);
+                                            else if constexpr (std::is_same_v<T, DecimalValue>)
+                                                return charge.string(value.text);
+                                            else
+                                                return true;
+                                        },
+                                        *evaluation.value);
+    if (!fits) {
+        evaluation.state = CellEditState::ResourceRefused;
+        evaluation.error = tr("This value exceeds the remaining edit memory budget. Shorten the "
+                              "value or discard other staged edits.");
+        return evaluation;
+    }
+    evaluation.bytes = charge.bytes;
+    rows_[index.row()][index.column()] = std::move(*evaluation.value);
+    touched_[index.row()][index.column()] = true;
+    stagedBytes_ = stagedBytes_ - oldBytes + evaluation.bytes;
+    editBytes_[index.row()][index.column()] = evaluation.bytes;
+    emit dataChanged(index, index);
+    emit pendingEditsChanged(hasPendingEdits());
+    return evaluation;
 }
 bool ResultTableModel::setNull(const QModelIndex& index) {
     if (!(flags(index) & Qt::ItemIsEditable))

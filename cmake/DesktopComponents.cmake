@@ -161,6 +161,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/query_workspace.cpp
   desktop/app/query_workspace_copy.cpp
   desktop/app/query_workspace_edit.cpp
+  desktop/app/query_workspace_cell_edit.cpp
   desktop/app/query_workspace_json.cpp
   desktop/app/query_workspace_events.cpp
   desktop/app/query_workspace_lifecycle.cpp
