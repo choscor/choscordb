@@ -20,6 +20,7 @@ namespace choscordb {
 namespace design {
 class PlatformAccessibilityMonitor;
 class ThemeManager;
+class StatusLine;
 class QuickSearchDialog;
 } // namespace design
 class SqlEditor;
@@ -43,6 +44,12 @@ class MainWindow final : public QMainWindow {
     void requestUpdateRestart(std::function<void()> install);
     void openConnectionQuery(quint64 connection);
     void showToast(const QString& message, ToastVariant variant);
+    void showStatus(const QString& message, ToastVariant variant = ToastVariant::Warning,
+                    const QString& scope = QStringLiteral("workspace"), const QString& owner = {});
+    void showStatusProgress(const QString& message,
+                            const QString& scope = QStringLiteral("workspace"));
+    void clearStatus(const QString& scope = QStringLiteral("workspace"),
+                     const QString& expectedMessage = {}, const QString& owner = {});
     void disableDiagnostics();
     std::optional<quint64> browsingConnection() const { return browsingConnection_; }
   signals:
@@ -65,6 +72,7 @@ class MainWindow final : public QMainWindow {
     struct Ui;
     struct PendingObjectAction;
     Ui buildUi();
+    void addFeedbackStatusLines(QWidget* host);
     void connectWorkspace(const Ui& ui, const QString& storagePath);
     void connectLifecycle(const Ui& ui, const QString& storagePath);
     void connectNavigator(const Ui& ui);
@@ -104,6 +112,7 @@ class MainWindow final : public QMainWindow {
     QSet<quint64> retiredBrowseConnections_;
     quint64 nextPendingPlaceholder_ = std::numeric_limits<quint64>::max();
     QString submittingBrowseProfileId_, submissionError_;
+    QString reconnectingProfile_;
     bool submittingBrowseProfile_ = false;
     NavigatorController* navigatorController_ = nullptr;
     struct PendingObjectAction {

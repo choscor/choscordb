@@ -95,6 +95,19 @@ class ResultTableModel final : public QAbstractTableModel {
         QString text;
         QString error;
     };
+    enum class CellEditState { Ready, TypeRejected, ResourceRefused, Ineligible };
+    struct CellEditSnapshot {
+        QString databaseType;
+        QString text;
+        std::size_t byteBudget = 0;
+        bool eligible = false;
+    };
+    struct CellEditEvaluation {
+        CellEditState state = CellEditState::Ineligible;
+        std::optional<Cell> value;
+        QString error;
+        std::size_t bytes = 0;
+    };
     static constexpr std::size_t DefaultBytes = 64 * 1024 * 1024;
     // Budget includes owned page allocations, excluding this fixed QObject and
     // caller-owned in-flight transfers. Shared Qt buffers are charged in full.
@@ -123,6 +136,11 @@ class ResultTableModel final : public QAbstractTableModel {
     void setKeyColumns(std::vector<bool> keys);
     Qt::ItemFlags flags(const QModelIndex& index) const override;
     bool setData(const QModelIndex& index, const QVariant& value, int role = Qt::EditRole) override;
+    // Capture only the target's type and staging allowance on the model thread.
+    // Evaluate explicit draft text on a worker, then stage on the model thread.
+    CellEditSnapshot cellEditSnapshot(const QModelIndex& index, const QString& text) const;
+    static CellEditEvaluation evaluateCellEdit(CellEditSnapshot snapshot);
+    CellEditEvaluation stageCellEdit(const QModelIndex& index, CellEditEvaluation evaluation);
     bool setNull(const QModelIndex& index);
     bool addRow();
     bool duplicateRow(int row, QString* error = nullptr);
@@ -132,6 +150,7 @@ class ResultTableModel final : public QAbstractTableModel {
     bool hasPendingEdits() const;
     bool canInsert() const { return canInsert_; }
     bool canDelete() const { return canDelete_; }
+    const std::vector<ResultColumn>& columns() const { return columns_; }
     const std::vector<Row>& originalRows() const { return originalRows_; }
     const std::vector<Row>& rows() const { return rows_; }
     const std::vector<std::vector<bool>>& touched() const { return touched_; }

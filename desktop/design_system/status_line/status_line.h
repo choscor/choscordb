@@ -2,6 +2,7 @@
 
 #include <QList>
 #include <QPoint>
+#include <QPointer>
 #include <QString>
 #include <QWidget>
 
@@ -9,6 +10,9 @@ class QLabel;
 class QPushButton;
 
 class QHBoxLayout;
+class QToolButton;
+class QDialog;
+class QPlainTextEdit;
 
 namespace choscordb::design {
 
@@ -38,6 +42,10 @@ class StatusLine final : public QWidget {
     void configure(const Fields& fields, bool centered = false);
     void setContent(const Content& content, State state);
     QWidget* pagingWidget() const { return paging_; }
+    void setAvailable(bool available);
+    void setNeutral(bool neutral = true);
+    void setMessage(const QString& message);
+    void setBusy(bool busy);
 
   protected:
     void changeEvent(QEvent* event) override;
@@ -46,13 +54,24 @@ class StatusLine final : public QWidget {
 
   private:
     void refreshAppearance();
-    void fitContent();
+    void fitContent(bool reserveDetails = false);
+    void refreshContentDescription();
+    void refreshDetailsVisibility();
+    void openDetails();
     Fields fields_;
     Content values_;
     bool centered_ = false;
+    bool configured_ = false;
     QList<QPoint> separators_;
     QWidget* paging_ = nullptr;
     QHBoxLayout* content_ = nullptr;
+    QLabel* message_ = nullptr;
+    QLabel* loading_ = nullptr;
+    QToolButton* details_ = nullptr;
+    QPointer<QDialog> detailsDialog_;
+    QPointer<QPlainTextEdit> detailsText_;
+    QString fullMessage_;
+    QString feedbackMessage_;
     State state_ = State::Neutral;
     bool refreshing_ = false;
 };

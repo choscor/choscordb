@@ -26,13 +26,13 @@
   {
     "path": "desktop/app/object_explorer.cpp",
     "rule": "domain-parsing",
-    "sha256": "785332d0e9ca4de7a17ca689cf96ff4ac589cb55032536234fee7e38c07f6bfb",
+    "sha256": "04aeddea086b2ff4c51f3b5020d11a130f2d1701db3791a9a11c3d10a11c3657",
     "reason": "Regular expressions identify SQL keywords and numbers for QTextCharFormat syntax highlighting."
   },
   {
     "path": "CMakeLists.txt",
     "rule": "backend-link",
-    "sha256": "92d6a0ec6eec6aed48331e21d83942bfba86fa6eb6b27361760267501f4933d9",
+    "sha256": "d65758e7454d78ea377546eabeee34d1a3eba9d564d9fa93a5ece787ba1de7f6",
     "reason": "Qt6::Network is linked only to choscordb-updater-menu-tests for its local HTTP fixture under BUILD_TESTING; no production target receives it here."
   },
   {
@@ -50,13 +50,13 @@
   {
     "path": "desktop/tools/preview/preview_standard.cpp",
     "rule": "sql-text",
-    "sha256": "003b46314c0dc4a760bf5c642c0b758fe10c84ee319d864b29b727700d870cd8",
+    "sha256": "f60ad977f436cace2f8042afcb6cc83198aedb97db96f768d5746a22f8a53ed6",
     "reason": "The CREATE TABLE literal populates a synthetic read-only SQL-editor specimen. This developer gallery does not execute it or derive application SQL from it."
   },
   {
     "path": "desktop/tools/preview/preview_window.cpp",
     "rule": "sql-text",
-    "sha256": "ed4272f0361643751883ada69785fb89ad9a93355384f0757f048406961dd4d7",
+    "sha256": "a98f602731effecf5b74260f35c1e5f371e8a9d3dd4dee5ee2979526f126cce3",
     "reason": "The SELECT literal is synthetic content for the SQL-editor gallery specimen in Light and Dark themes. The gallery does not execute it or generate database requests."
   },
   {
@@ -74,7 +74,7 @@
   {
     "path": "desktop/widgets/profile_dialog/profile_dialog_ssh_trust.cpp",
     "rule": "serialization",
-    "sha256": "9cdce65e507e786f15aacb9066d75f506b1cc6ce01c38ccc08954e0443476905",
+    "sha256": "07a5c57e3a7dd16346b936721f10abe4d29be33dac72bed0b6d856243a461ce7",
     "reason": "QJsonDocument reads the displayed SSH hop draft to identify the selected UI row, its known-hosts path, and preceding credential fields for an inspection request. Rust independently resolves and validates inspection targets and credentials; this file only orchestrates selection, revision guards, and approval dialogs."
   }
 ]

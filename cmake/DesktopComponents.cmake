@@ -144,6 +144,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/query_settings.cpp
   desktop/app/editor_preferences.cpp
   desktop/app/main_window.cpp
+  desktop/app/main_window_feedback.cpp
   desktop/app/main_window_diagnostics.cpp
   desktop/app/main_window_quick_search.cpp
   desktop/app/quick_search_match.cpp
@@ -160,6 +161,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/query_workspace.cpp
   desktop/app/query_workspace_copy.cpp
   desktop/app/query_workspace_edit.cpp
+  desktop/app/query_workspace_cell_edit.cpp
   desktop/app/query_workspace_json.cpp
   desktop/app/query_workspace_events.cpp
   desktop/app/query_workspace_lifecycle.cpp

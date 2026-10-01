@@ -157,11 +157,13 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     finishClose(event);
 }
 bool MainWindow::allowDocumentChange() {
-    if (!workspace_ || workspace_->navigationAllowed())
+    const auto reason = tr("Finish or cancel the active database work before changing workspace "
+                           "tabs. Cancel remains in the active tab.");
+    if (!workspace_ || workspace_->navigationAllowed()) {
+        clearStatus(QStringLiteral("workspace"), reason);
         return true;
-    showToast(tr("Finish or cancel the active database work before changing workspace "
-                 "tabs. Cancel remains in the active tab."),
-              ToastVariant::Warning);
+    }
+    showStatus(reason, ToastVariant::Warning);
     return false;
 }
 bool MainWindow::showScreen(Screen screen) {
@@ -191,12 +193,10 @@ bool MainWindow::showScreen(Screen screen) {
                 return true;
             }
         }
-        showToast(tr("Open an object from the navigator to show its tab."), ToastVariant::Warning);
-        return false;
-    }
-    if (screen == Screen::Start && editors_->count()) {
-        showToast(tr("Close all workspace tabs to return to Start."), ToastVariant::Warning);
-        return false;
+        if (!allowDocumentChange())
+            return false;
+        screens_->setCurrentIndex(static_cast<int>(Screen::Object));
+        return true;
     }
     if (screen == Screen::Sql && editors_->count() &&
         !qobject_cast<SqlEditor*>(editors_->currentWidget())) {
@@ -253,14 +253,6 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
     });
     connect(objectData, &ObjectDataWorkspace::busyChanged, explorer,
             &ObjectExplorer::setOperationBusy);
-    connect(objectData, &ObjectDataWorkspace::busyChanged, objectData, [objectData](bool busy) {
-        if (busy)
-            progressToast(objectData)
-                ->showProgress(QObject::tr("Object data"),
-                               QObject::tr("Working with object data…"));
-        else
-            clearProgressToast(objectData);
-    });
     connect(explorer, &ObjectExplorer::sqlGenerated, this,
             [this](quint64 connection, const QString& sql) {
                 if (openGeneratedSql_)
@@ -308,8 +300,7 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
                 explorer->deleteLater();
                 if (recovery_)
                     recovery_->changed();
-                showToast(tr("This object is already open; its tab is selected."),
-                          ToastVariant::Warning);
+
                 return;
             }
             explorer->setProperty("objectProfileId", reboundContext);
@@ -322,17 +313,22 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
             return;
         }
         if (!sessionContext && !profileId.isEmpty() && reconnectProfile_) {
-            if (reconnectProfile_(profileId))
-                showToast(tr("Reconnecting the saved connection. Select this tab to load fresh "
-                             "metadata."),
-                          ToastVariant::Warning);
-            else
-                showToast(tr("The saved connection is unavailable. Restore it in the sidebar, "
-                             "then retry."),
-                          ToastVariant::Danger);
+            if (reconnectProfile_(profileId)) {
+                if (selectedSessionIds_.contains(profileId)) {
+                    showStatus(tr("Connected. Select the object tab to load fresh metadata."),
+                               ToastVariant::Success, QStringLiteral("connection"));
+                } else {
+                    reconnectingProfile_ = profileId;
+                    showStatusProgress(tr("Reconnecting the saved connection…"),
+                                       QStringLiteral("connection"));
+                }
+            } else
+                showStatus(tr("The saved connection is unavailable. Restore it in the sidebar, "
+                              "then retry."),
+                           ToastVariant::Danger, QStringLiteral("connection"));
         } else {
-            showToast(tr("Select a live connection in the sidebar, then choose Reconnect again."),
-                      ToastVariant::Warning);
+            showStatus(tr("Select a live connection in the sidebar, then choose Reconnect again."),
+                       ToastVariant::Warning, QStringLiteral("connection"));
         }
     });
     return explorer;

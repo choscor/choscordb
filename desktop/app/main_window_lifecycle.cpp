@@ -282,7 +282,8 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                         appearanceCloseApproved_ = false;
                         recoveryCloseApproved_ = false;
                         recovery_->cancelClose();
-                        showToast(tr("Update postponed: %1").arg(error), ToastVariant::Warning);
+                        showStatus(tr("Update postponed: %1").arg(error), ToastVariant::Warning,
+                                   QStringLiteral("lifecycle"));
                         return;
                     }
                     const auto title = closing ? tr("Could not save workspace before closing")
@@ -399,8 +400,6 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     };
     connect(historyItems, &QListWidget::itemClicked, this, openHistoryItem);
     connect(historyItems, &QListWidget::itemActivated, this, openHistoryItem);
-    connect(history_, &HistoryDock::noticeRequested, this,
-            [this](const QString& message) { showToast(message, ToastVariant::Warning); });
     connect(preferences_, &EditorPreferencesController::historyPolicyConfirmed, history_,
             &HistoryDock::applyConfirmedPolicy);
     history_->hide();
@@ -409,18 +408,20 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     preferences_->setAppearanceController(appearance_);
     connect(resetLayout, &QAction::triggered, appearance_, &AppearanceController::resetLayout);
     connect(appearance_, &AppearanceController::warningChanged, this,
-            [toast](const QString& warning) {
+            [this](const QString& warning) {
                 if (warning.isEmpty())
-                    toast->clearNotice();
+                    clearStatus(QStringLiteral("appearance"));
                 else
-                    toast->showToast(tr("Warning"), warning, ToastVariant::Warning, 0);
+                    showStatus(warning, ToastVariant::Warning, QStringLiteral("appearance"));
             });
     connect(appearance_, &AppearanceController::flushFailed, this, [this](const QString& error) {
         updateInstall_ = {};
         appearanceCloseApproved_ = false;
-        showToast(tr("Close postponed: %1").arg(error), ToastVariant::Warning);
+        showStatus(tr("Close postponed: %1").arg(error), ToastVariant::Warning,
+                   QStringLiteral("lifecycle"), QStringLiteral("appearance-close"));
     });
     connect(appearance_, &AppearanceController::flushReady, this, [this] {
+        clearStatus(QStringLiteral("lifecycle"), {}, QStringLiteral("appearance-close"));
         appearanceCloseApproved_ = true;
         QTimer::singleShot(0, this, [this] { close(); });
     });
@@ -432,8 +433,8 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     connect(history_, &HistoryDock::openRequested, this, [this](const SavedHistoryEntry& entry) {
         if (databaseClosePending_ ||
             (recovery_ && (!recovery_->isReady() || recovery_->isClosing()))) {
-            showToast(tr("History cannot be opened while the workspace is unavailable."),
-                      ToastVariant::Warning);
+            showStatus(tr("History cannot be opened while the workspace is unavailable."),
+                       ToastVariant::Warning, QStringLiteral("lifecycle"));
             return;
         }
         for (int i = 0; sidebarHistoryOpen_ && i < editors_->count(); ++i) {
@@ -451,7 +452,8 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
         if (!editor)
             return;
         if (!editor->restoreDocument(entry.sql.toUtf8(), {}, 0, 0, true)) {
-            showToast(tr("History text could not be opened."), ToastVariant::Danger);
+            showStatus(tr("History text could not be opened."), ToastVariant::Danger,
+                       QStringLiteral("lifecycle"));
             editors_->removeTab(editors_->indexOf(editor));
             editor->deleteLater();
             if (!editors_->count())
@@ -517,7 +519,8 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                             recovery_->cancelClose();
                         workspace_->cancelShutdown();
                         history_->setEnabled(true);
-                        showToast(tr("Update postponed: %1").arg(error), ToastVariant::Warning);
+                        showStatus(tr("Update postponed: %1").arg(error), ToastVariant::Warning,
+                                   QStringLiteral("lifecycle"));
                         return;
                     }
                     ConfirmationDialog box(QMessageBox::Warning, tr("History could not be flushed"),

@@ -107,6 +107,29 @@ struct QueryPreferences {
     quint32 version, pageSize, timeoutSeconds, connectionTimeoutSeconds;
     bool showSystemSchemas = false;
 };
+enum class CellFilterOperator : uint8_t {
+    Equals,
+    NotEquals,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    In,
+    Like,
+    IsNull,
+    IsNotNull
+};
+struct CellFilterOption {
+    CellFilterOperator operation;
+    QString label;
+    bool enabled;
+    QString reason;
+};
+struct CellFilterComposition {
+    QString expression;
+    QString validationError;
+    QString error;
+};
 struct ResultFilterCondition {
     quint32 column = 0;
     QString operation;
@@ -312,10 +335,16 @@ class EngineAdapter final : public QObject {
                         quint64 token);
     static GridEditEligibility gridEditability(const GridEditRequest& request);
     static GridEditPlan planGridEdits(const GridEditRequest& request);
+    static QList<CellFilterOption> quickFilterOptions(const QString& column, const Cell& value);
+    static CellFilterComposition composeQuickFilter(const QStringList& columns,
+                                                    const QString& draft, const QString& column,
+                                                    const Cell& value,
+                                                    CellFilterOperator operation);
     static bool foreignKeyValueFilterable(const Cell& value);
     static std::optional<QString> foreignKeyPredicate(const QString& targetColumn,
                                                       const Cell& value);
-    static std::optional<Cell> parseGridEditValue(const QString& databaseType, const QString& text);
+    static std::optional<Cell> parseGridEditValue(const QString& databaseType, const QString& text,
+                                                  QString* error = nullptr);
     static bool navigatorObjectVisible(const QString& driver, bool showSystemSchemas,
                                        const QString& qualifiedName);
     static bool postgresSystemSchema(const QString& schema);

@@ -1,5 +1,6 @@
 #include "app/main_window.h"
 #include "app/workspace_recovery.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/toast_region/toast_region.h"
 #include "navigator_sql_workspace_test.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -183,11 +184,11 @@ void NavigatorSqlWorkspaceTest::savedPanelRejectsFileReplacedBySymlink() {
     QVERIFY(original.remove());
     QVERIFY(QFile::link(target, path));
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
-    auto* toast = window.findChild<choscordb::ToastRegion*>("toastRegion");
-    QVERIFY(tabs && toast);
+    auto* status = window.findChild<choscordb::design::StatusLine*>("savedStatusLine");
+    QVERIFY(tabs && status);
     const int before = tabs->count();
     emit list->itemClicked(matches.front(), 0);
-    QTRY_VERIFY(toast->text().contains("Could not open"));
+    QTRY_VERIFY(status->accessibleDescription().contains("Could not open"));
     QCOMPARE(tabs->count(), before);
     QVERIFY(QFile::remove(path));
 #endif

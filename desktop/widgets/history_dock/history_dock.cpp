@@ -5,7 +5,6 @@
 #include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
-#include "design_system/toast_region/toast_region.h"
 #include "models/history_model.h"
 #include <QAction>
 #include <QCheckBox>
@@ -167,6 +166,15 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     previewBody->hide();
     layout->addWidget(content, 1);
     auto* previewToolbar = new QHBoxLayout;
+    previewStatus_ = new design::Text({}, previewBody);
+    previewStatus_->setObjectName("historyPreviewStatus");
+    previewStatus_->setTypographyRole(design::TypographyRole::Ui);
+    previewStatus_->setTextFormat(Qt::PlainText);
+    previewStatus_->setWordWrap(true);
+    previewStatus_->setTextInteractionFlags(Qt::TextSelectableByMouse |
+                                            Qt::TextSelectableByKeyboard);
+    previewStatus_->hide();
+    previewToolbar->addWidget(previewStatus_, 1);
     previewToolbar->addStretch();
     previewPrevious_ = new design::Button(tr("Earlier text"), body);
     previewPrevious_->setObjectName("historyPreviewPrevious");
@@ -412,10 +420,15 @@ void HistoryDock::renderPreview() {
     previewLength_ = text.size();
     preview_->setPlainText(text);
     const bool partial = entry && entry->sql.size() > 65536;
-    if (partial)
-        emit noticeRequested(
+    if (partial) {
+        previewStatus_->setText(
             tr("Preview truncated to part %1. Use Earlier text / Later text to read all SQL.")
                 .arg(previewOffsets_.size() + 1));
+        emit noticeRequested(previewStatus_->text());
+    } else {
+        previewStatus_->clear();
+    }
+    previewStatus_->setVisible(partial);
     previewPrevious_->setEnabled(!previewOffsets_.isEmpty());
     previewNext_->setEnabled(entry && previewLength_ > 0 &&
                              previewOffset_ + previewLength_ < entry->sql.size());
@@ -445,15 +458,7 @@ void HistoryDock::openSelection() {
         emit openRequested(*entry);
 }
 void HistoryDock::updateControls() {
-    if (clearToken_)
-        progressToast(this)->showProgress(tr("History"), tr("Clearing history…"));
-    else if (policyToken_)
-        progressToast(this)->showProgress(tr("History"),
-                                          tr("Saving or loading history preference…"));
-    else if (listToken_)
-        progressToast(this)->showProgress(tr("History"), tr("Loading history…"));
-    else
-        clearProgressToast(this);
+    footer_->setBusy(clearToken_ || policyToken_ || listToken_);
     const bool idle = adapter_ && !listToken_ && !clearToken_;
     record_->setEnabled(adapter_ && havePolicy_ && !policyToken_ && !clearToken_);
     refresh_->setEnabled(idle && !policyToken_);
@@ -472,6 +477,11 @@ void HistoryDock::updateControls() {
                        : listToken_ || clearToken_ || policyToken_ || !havePolicy_
                            ? design::StatusLine::State::Neutral
                            : design::StatusLine::State::Success;
-    footer_->setContent({{}, statusText_, {}, {}, {}, range}, state);
+    const auto status = failed_        ? statusText_
+                        : clearToken_  ? tr("Clearing history…")
+                        : policyToken_ ? tr("Updating history preference…")
+                        : listToken_   ? tr("Loading history…")
+                                       : statusText_;
+    footer_->setContent({{}, status, {}, {}, {}, range}, state);
 }
 } // namespace choscordb

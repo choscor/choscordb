@@ -5,6 +5,7 @@
 #include "design_system/theme_manager.h"
 
 #include <QApplication>
+#include <QDialog>
 #include <QDir>
 #include <QEnterEvent>
 #include <QFile>
@@ -12,9 +13,11 @@
 #include <QFontDatabase>
 #include <QFontInfo>
 #include <QLabel>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QStyleOptionButton>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QtTest>
 
@@ -74,7 +77,8 @@ class DesignSystemTest final : public QObject {
         line.resize(1200, line.height());
         line.show();
         QVERIFY(memory.isVisible());
-        line.resize(420, line.height());
+        // The compact Details control shares the row with execution metrics.
+        line.resize(460, line.height());
         QVERIFY(!memory.isVisible());
         QVERIFY(duration.isVisible());
         QVERIFY(outcome.isVisible());
@@ -94,6 +98,54 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(source.text(), QString("very long source name for a SQL document"));
         QCOMPARE(previous.variant(), ButtonVariant::Ghost);
         QCOMPARE(next.buttonSize(), ButtonSize::IconSmall);
+    }
+    void structuredStatusRetainsDetailsPagingAndTransientFeedback() {
+        using namespace choscordb::design;
+        StatusLine line;
+        QLabel source, outcome, page, rows;
+        Button previous({}), next({});
+        line.configure({&source, &outcome, nullptr, nullptr, &page, &rows, &previous, &next});
+        const QString error = QString("backend failure <detail>\n").repeated(30) + "FINAL DETAIL";
+        line.setContent({"orders", error, {}, {}, "Page 2", "10 rows"}, StatusLine::State::Error);
+        line.resize(300, line.height());
+        line.show();
+        const int height = line.height();
+        auto* details = line.findChild<QToolButton*>("statusDetails");
+        QVERIFY(details && details->isVisible());
+        QVERIFY(line.rect().contains(details->geometry()));
+        QVERIFY(line.rect().contains(QRect(next.mapTo(&line, QPoint()), next.size())));
+        QVERIFY(details->geometry().right() < previous.mapTo(&line, QPoint()).x());
+        details->click();
+        auto* dialog = line.findChild<QDialog*>("statusDetailsDialog");
+        QVERIFY(dialog && dialog->isVisible());
+        auto* text = dialog->findChild<QPlainTextEdit*>("statusDetailsText");
+        QVERIFY(text && text->isReadOnly());
+        QCOMPARE(text->toPlainText(), line.accessibleDescription());
+        QVERIFY(text->toPlainText().contains(error));
+        dialog->reject();
+        line.setBusy(true);
+        auto* loading = line.findChild<QLabel*>("statusLoadingIcon");
+        QVERIFY(loading && loading->isVisible());
+        QVERIFY(line.rect().contains(loading->geometry()));
+        QCOMPARE(line.palette().color(QPalette::Window), resolvedThemeForWidget(line).colors.muted);
+        line.setMessage("Finish active work before changing panes.");
+        QVERIFY(outcome.accessibleName().contains("Finish active work"));
+        QVERIFY(source.accessibleName().contains("orders"));
+        line.setMessage({});
+        QVERIFY(outcome.accessibleName().contains(error));
+        line.setBusy(false);
+        QCOMPARE(line.height(), height);
+        QCOMPARE(line.palette().color(QPalette::Window),
+                 resolvedThemeForWidget(line).colors.dangerSurface);
+        QSignalSpy clicked(&next, &QPushButton::clicked);
+        next.click();
+        QCOMPARE(clicked.count(), 1);
+        line.setContent({"orders", "Completed", {}, {}, "Page 2", "10 rows"},
+                        StatusLine::State::Success);
+        QVERIFY(details->isHidden());
+        QVERIFY(loading->isHidden());
+        QVERIFY(outcome.textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
+        QCOMPARE(line.height(), height);
     }
     void toastVariantsHaveDistinctColoredSurfacesInBothThemes() {
         using namespace choscordb::design;

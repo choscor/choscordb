@@ -14,7 +14,7 @@
 class SearchTest : public QObject {
     Q_OBJECT
   private slots:
-    void completedReplacementsUseSharedWindowToast() {
+    void completedReplacementsRemainInLocalStatus() {
         QWidget parent;
         parent.resize(900, 600);
         choscordb::SqlEditor editor(&parent);
@@ -28,21 +28,14 @@ class SearchTest : public QObject {
         QTRY_COMPARE(editor.selectedText(), QString("cat"));
         panel.findChild<QPushButton*>("searchReplace")->click();
         QCOMPARE(editor.text(), QString("dog cat cat"));
-        auto* toast =
-            parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
-        QVERIFY(toast);
-        QTRY_VERIFY(toast->isVisible());
-        QCOMPARE(toast->property("variant").toString(), QString("success"));
-        QVERIFY(toast->accessibleDescription().contains("Replaced one match."));
-        QVERIFY(!panel.findChild<QLabel*>("searchStatus")->text().contains("Replaced"));
-        QCOMPARE(toast->geometry().right(), parent.width() - 17);
-        QCOMPARE(toast->geometry().bottom(), parent.height() - 17);
-
+        auto* status = panel.findChild<QLabel*>("searchStatus");
+        QVERIFY(status);
+        QCOMPARE(status->text(), QString("Replaced one match."));
+        QVERIFY(parent.findChild<choscordb::ToastRegion*>("toastRegion") == nullptr);
         panel.findChild<QPushButton*>("searchReplaceAll")->click();
         QTRY_COMPARE(editor.text(), QString("dog dog dog"));
-        QTRY_VERIFY(toast->accessibleDescription().contains("Replaced 2 matches."));
-        QCOMPARE(toast->property("variant").toString(), QString("success"));
-        QVERIFY(!panel.findChild<QLabel*>("searchStatus")->text().contains("Replaced"));
+        QCOMPARE(status->text(), QString("Replaced 2 matches."));
+        QVERIFY(parent.findChild<choscordb::ToastRegion*>("toastRegion") == nullptr);
     }
     void replaceAllShowsEmptySearchErrorBelowFindField() {
         QWidget parent;

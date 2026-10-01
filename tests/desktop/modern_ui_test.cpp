@@ -217,11 +217,12 @@ void ModernUiTest::emptyStatesUseOneTextWithOneLineBreak() {
     auto* start = window.findChild<QWidget*>("startScreen");
     auto* startHint = start->findChild<QLabel*>("startHint");
     QVERIFY(startHint);
-    QCOMPARE(startHint->text(),
-             QString("No database open\nSelect a connection in the sidebar or create a new one."));
+    QCOMPARE(
+        startHint->text(),
+        QString("Welcome to ChoscorDB\nSelect a connection in the sidebar or create a new one."));
     int startMessageLabels = 0;
     for (auto* label : start->findChildren<QLabel*>())
-        startMessageLabels += label->text().contains("No database open");
+        startMessageLabels += label->text().contains("Welcome to ChoscorDB");
     QCOMPARE(startMessageLabels, 1);
     auto* connections = window.findChild<QLabel*>("sidebarConnectionsEmpty");
     QVERIFY(connections);

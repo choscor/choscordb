@@ -6,12 +6,15 @@
 #include "design_system/table/table_style.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QBoxLayout>
+#include <QFutureWatcher>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMenu>
 #include <QPlainTextEdit>
 #include <QStyle>
 #include <QTableView>
 #include <QVariantMap>
+#include <QtConcurrent>
 #include <algorithm>
 
 namespace choscordb {
@@ -28,6 +31,96 @@ void QueryWorkspace::activateForeignKey(const QModelIndex& index) {
         return;
     emit foreignKeyRequested(*queryConnection_, metadata->targetObject,
                              metadata->targetQualifiedName, *predicate);
+}
+
+bool QueryWorkspace::quickFilterAvailable(const QPersistentModelIndex& clicked) const {
+    return filterBar_ && adapter_ && query_ && queryAvailable() && !workInFlight() && !stopping_ &&
+           !referenceFilterFailed_ && clicked.isValid() && clicked.model() == model_ &&
+           widgets_.grid->model() == model_ &&
+           clicked.column() < static_cast<int>(model_->columns().size());
+}
+
+void QueryWorkspace::appendQuickFilterActions(QMenu& menu, const QPersistentModelIndex& clicked) {
+    if (!filterBar_)
+        return;
+    auto* quick = menu.addMenu(tr("Quick Filter"));
+    quick->setObjectName("resultQuickFilter");
+    quick->setToolTipsVisible(true);
+    if (!quickFilterAvailable(clicked)) {
+        quick->menuAction()->setEnabled(false);
+        quick->menuAction()->setToolTip(
+            tr("Quick Filter requires an available cell and an idle result."));
+        return;
+    }
+    const auto value = model_->cellValue(clicked);
+    if (!value) {
+        quick->menuAction()->setEnabled(false);
+        quick->menuAction()->setToolTip(tr("This cell is unavailable."));
+        return;
+    }
+    const auto options =
+        EngineAdapter::quickFilterOptions(model_->columns()[clicked.column()].name, *value);
+    bool enabled = false;
+    for (const auto& option : options) {
+        auto* action = quick->addAction(QString(option.label).replace('&', "&&"));
+        action->setObjectName(
+            QStringLiteral("resultQuickFilterOption%1").arg(static_cast<int>(option.operation)));
+        action->setEnabled(option.enabled);
+        action->setToolTip(option.reason);
+        enabled |= option.enabled;
+        connect(action, &QAction::triggered, this,
+                [this, clicked, query = *query_, operation = option.operation] {
+                    activateQuickFilter(clicked, query, operation);
+                });
+    }
+    quick->menuAction()->setEnabled(enabled);
+    if (!enabled && !options.isEmpty())
+        quick->menuAction()->setToolTip(options.first().reason);
+}
+
+void QueryWorkspace::activateQuickFilter(const QPersistentModelIndex& clicked, quint64 query,
+                                         CellFilterOperator operation) {
+    if (query_ != query || !quickFilterAvailable(clicked))
+        return;
+    // Capture the staged typed value before edit review can discard it or refresh the model.
+    const auto value = model_->cellValue(clicked);
+    if (!value)
+        return;
+    const auto column = model_->columns()[clicked.column()].name;
+    QStringList columns;
+    for (const auto& item : model_->columns())
+        columns << item.name;
+    const auto filters = filterBar_->conditions();
+    const auto draft = filters.isEmpty() ? QString{} : filters.first().value;
+    auto* watcher = new QFutureWatcher<CellFilterComposition>(this);
+    watcher->setObjectName("resultQuickFilterPreparation");
+    quickFilterPreparing_ = true;
+    filterBar_->setBusy(true);
+    updateActions();
+    connect(watcher, &QFutureWatcher<CellFilterComposition>::finished, this,
+            [this, watcher, clicked, query, filters] {
+                const auto result = watcher->result();
+                watcher->deleteLater();
+                quickFilterPreparing_ = false;
+                filterBar_->setBusy(viewBusy_);
+                updateActions();
+                if (query_ != query || !quickFilterAvailable(clicked) ||
+                    !filterBar_->draftMatches(filters))
+                    return;
+                if (!result.error.isEmpty()) {
+                    filterBar_->showValidationError(result.error);
+                    return;
+                }
+                filterBar_->setExpression(result.expression);
+                if (!result.validationError.isEmpty()) {
+                    filterBar_->showValidationError(result.validationError);
+                    return;
+                }
+                requestResultView(filterBar_->conditions(), viewSortColumn_, viewSortDirection_);
+            });
+    watcher->setFuture(QtConcurrent::run([columns, draft, column, value = *value, operation] {
+        return EngineAdapter::composeQuickFilter(columns, draft, column, value, operation);
+    }));
 }
 
 void QueryWorkspace::requestCellMetadata() {
@@ -161,6 +254,7 @@ void QueryWorkspace::presentExecutionState(const QString& state, const QString& 
         const auto semantic = state == "failed"      ? design::StatusLine::State::Error
                               : state == "completed" ? design::StatusLine::State::Success
                                                      : design::StatusLine::State::Neutral;
+        footer->setBusy(state == "queued" || state == "running" || state == "cancelling");
         footer->setContent(
             {source, status, metrics.duration, metrics.visibleSize, metrics.page, metrics.rows},
             semantic);
@@ -226,21 +320,32 @@ void QueryWorkspace::clearViewState() {
 
 void QueryWorkspace::requestResultView(const QList<ResultFilterCondition>& filters,
                                        qint32 sortColumn, const QString& sortDirection) {
-    if (!widgets_.objectReadOnly || !query_ || !queryAvailable() || workInFlight())
+    if (!widgets_.objectReadOnly || !query_ || !queryAvailable() || workInFlight() || stopping_)
         return;
+    const auto originalQuery = query_;
+    const auto originalConnection = queryConnection_;
+    const auto originalObject = objectId_;
     if (model_->hasPendingEdits()) {
         deferredViewFilters_ = filters;
         deferredViewSortColumn_ = sortColumn;
         deferredViewSortDirection_ = sortDirection;
         deferredViewRequest_ = true;
-        if (!resolvePendingEdits()) {
+        const QPointer<QueryWorkspace> self(this);
+        const bool resolved = resolvePendingEdits();
+        if (!self)
+            return;
+        if (!resolved) {
             deferredViewRequest_ = false;
             filterBar_->restoreApplied();
+            return;
         }
         if (model_->hasPendingEdits() || editApplying_ || preserveViewOnRefresh_)
             return;
         deferredViewRequest_ = false;
     }
+    if (query_ != originalQuery || queryConnection_ != originalConnection ||
+        objectId_ != originalObject || !queryAvailable() || workInFlight() || stopping_)
+        return;
     submitResultView(filters, sortColumn, sortDirection);
 }
 

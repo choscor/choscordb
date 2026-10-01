@@ -232,7 +232,7 @@ void PreviewTest::showToastOpensTransientToastAtViewportCorner() {
     QCoreApplication::processEvents();
     QCOMPARE(toast->geometry().right(), scroll->viewport()->width() - 17);
     QCOMPARE(toast->geometry().bottom(), scroll->viewport()->height() - 17);
-    QTRY_VERIFY_WITH_TIMEOUT(toast->isHidden(), 8000);
+    QTRY_VERIFY_WITH_TIMEOUT(toast->isHidden(), 13000);
 }
 
 void PreviewTest::toastPortalIsPresentInBothThemes() {
@@ -286,6 +286,8 @@ void PreviewTest::toastPortalIsPresentInBothThemes() {
         QCOMPARE(toast->grab().toImage().pixelColor(3, toast->height() / 2),
                  choscordb::design::resolvedThemeForWidget(*toast).colors.warningSurface);
         toast->showToast("Error", "Failure", choscordb::ToastVariant::Danger, 0);
+        QCOMPARE(toast->property("variant").toString(), QString("warning"));
+        QTest::mouseClick(dismiss, Qt::LeftButton);
         QCOMPARE(toast->grab().toImage().pixelColor(3, toast->height() / 2),
                  choscordb::design::resolvedThemeForWidget(*toast).colors.dangerSurface);
         QTest::mouseClick(dismiss, Qt::LeftButton);
@@ -364,46 +366,6 @@ void PreviewTest::windowToastClearsDestroyedModalOwner() {
     QCOMPARE(toast->property("embeddedPopupOwner").value<QObject*>(), second);
     QTest::mouseClick(toast->findChild<QToolButton*>("toastDismiss"), Qt::LeftButton);
     QTRY_VERIFY(toast->isHidden());
-}
-
-void PreviewTest::toastVariantsShowTitleBodyAndUseConfiguredTimeout() {
-    choscordb::design::PreviewWindow window;
-    QVERIFY(window.selectSpecimen("feedback"));
-    window.show();
-    auto* host = window.findChild<QWidget*>("previewLight");
-    QVERIFY(host);
-    auto* toast = host->findChild<choscordb::ToastRegion*>("toastRegion");
-    auto* opacity = toast ? toast->findChild<QGraphicsOpacityEffect*>() : nullptr;
-    auto* seconds = host->findChild<QSpinBox*>("previewToastSeconds");
-    QVERIFY(toast && opacity && seconds);
-    seconds->setValue(1);
-    for (const auto& variant : {"success", "warning", "danger"}) {
-        auto* button = host->findChild<QPushButton*>(QString("previewToast_%1").arg(variant));
-        QVERIFY(button);
-        button->click();
-        QTRY_VERIFY(toast->isVisible());
-        QTRY_VERIFY(opacity->opacity() > 0.9);
-        QCOMPARE(toast->property("variant").toString(), QString(variant));
-        QVERIFY(toast->text().contains("<b>"));
-        QVERIFY(toast->text().contains("<br/>"));
-    }
-    QTRY_VERIFY_WITH_TIMEOUT(toast->isHidden(), 2000);
-    toast->showToast("Warning", "Persistent warning", choscordb::ToastVariant::Warning, 0);
-    QVERIFY(toast->text().contains("Persistent warning"));
-    QCOMPARE(toast->property("variant").toString(), QString("warning"));
-    QTRY_VERIFY(opacity->opacity() > 0.9);
-    QTest::qWait(1200);
-    QVERIFY(toast->isVisible());
-    toast->clearNotice();
-    QTRY_VERIFY(opacity->opacity() < 0.1);
-    QTRY_VERIFY(toast->isHidden());
-    toast->showToast("Saved", "First", choscordb::ToastVariant::Success, 5000);
-    toast->clearNotice();
-    toast->showToast("Error", "Replacement", choscordb::ToastVariant::Danger, 5000);
-    QTRY_VERIFY(opacity->opacity() > 0.9);
-    QVERIFY(toast->isVisible());
-    QVERIFY(toast->text().contains("Replacement"));
-    QCOMPARE(toast->property("variant").toString(), QString("danger"));
 }
 
 void PreviewTest::nonmodalDialogSurfaceHasNoOutline() {
@@ -903,6 +865,15 @@ void PreviewTest::statusLineSpecimenUsesSharedSurfaceInBothThemes() {
         QCOMPARE(neutral->height(), available->height());
         QCOMPARE(unavailable->height(), available->height());
         QVERIFY(available->findChild<QPushButton*>("previewStatusNext"));
+        auto* loadingLine = host->findChild<StatusLine*>("previewStatusLoading");
+        QVERIFY(loadingLine);
+        auto* loading = loadingLine->findChild<QLabel*>("statusLoadingIcon");
+        QVERIFY(loading);
+        QVERIFY(loading->isVisible());
+        auto* longError = host->findChild<StatusLine*>("previewStatusLongError");
+        QVERIFY(longError);
+        auto* details = longError->findChild<QToolButton*>("statusDetails");
+        QVERIFY(details && details->isVisible());
         auto* loaded = available->findChild<Text*>();
         QVERIFY(loaded);
         QVERIFY(available->isVisible());

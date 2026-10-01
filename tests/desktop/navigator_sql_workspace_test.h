@@ -39,6 +39,7 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void historySidebarFormatsSqlAndShowsEntryDetails();
     void historySidebarReusesRecordIdAndKeepsDistinctIdenticalSql();
     void historyNavigationStaysInSidebar();
+    void startNavigationPreservesDocumentsAndIndependentFeedback();
     void recoveryActionsRemainInMenuWithoutToolButtons();
     void recoveryFailuresUsePersistentWindowToast();
     void recoveryToastDismissalKeepsActionsAndLaterFailure();

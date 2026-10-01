@@ -145,6 +145,11 @@ class QueryWorkspace final : public QObject {
     void requestCellMetadata();
     void activateForeignKey(const QModelIndex& index);
     void setupResultViewControls();
+    bool quickFilterAvailable(const QPersistentModelIndex& clicked) const;
+    void appendQuickFilterActions(QMenu& menu, const QPersistentModelIndex& clicked);
+    void activateQuickFilter(const QPersistentModelIndex& clicked, quint64 query,
+                             CellFilterOperator operation);
+    bool quickFilterPreparing_ = false;
     void requestResultView(const QList<ResultFilterCondition>& filters, qint32 sortColumn,
                            const QString& sortDirection);
     void submitResultView(const QList<ResultFilterCondition>& filters, qint32 sortColumn,
@@ -156,6 +161,13 @@ class QueryWorkspace final : public QObject {
     void openJsonView(JsonViewMode mode, int row = 0, int column = 0);
     void appendJsonViewActions(QMenu& menu, const QPersistentModelIndex& clicked, bool current);
     bool jsonResultCurrent() const;
+    void setupCellEditor();
+    bool cellEditEligible(const QPersistentModelIndex& index) const;
+    void appendCellEditAction(QMenu& menu, const QPersistentModelIndex& clicked, bool current);
+    void openCellEditor(const QPersistentModelIndex& index);
+    void clearCellEditor();
+    void saveCellEditor();
+    void cellEditError(const QString& error);
     void scheduleJsonViewEvaluation(bool afterDeferred);
     void requestRowJsonChunk();
     void failRowJson(const QString& error);
@@ -195,6 +207,15 @@ class QueryWorkspace final : public QObject {
     quint64 rowJsonGeneration_ = 0;
     bool rowJsonRendering_ = false;
     bool jsonResultInvalidated_ = false;
+    QPointer<design::RightSheet> cellEditSheet_;
+    QPointer<QPlainTextEdit> cellEditText_;
+    QPointer<QPushButton> cellEditSave_;
+    QPointer<QLabel> cellEditStatus_;
+    QPersistentModelIndex cellEditIndex_;
+    quint64 cellResultGeneration_ = 0, cellDraftGeneration_ = 0;
+    quint64 cellOpenResultGeneration_ = 0, cellOpenTargetToken_ = 0;
+    std::optional<quint64> cellOpenQuery_, cellOpenConnection_;
+    bool cellDraftEdited_ = false, cellEditStaging_ = false, cellEditParsing_ = false;
     JsonViewMode rowJsonMode_ = JsonViewMode::Row;
     std::optional<quint64> rowJsonQuery_;
     std::map<std::pair<int, int>, Cell> rowJsonResolved_;

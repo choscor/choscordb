@@ -2,8 +2,10 @@
 #include "app/main_window.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/toast_region/toast_region.h"
 #include "navigator_sql_workspace_test.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QFile>
 #include <QLabel>
@@ -122,6 +124,8 @@ void NavigatorSqlWorkspaceTest::recoveryToastDismissalKeepsActionsAndLaterFailur
     QVERIFY(window.findChild<QAction*>("retryWorkspaceRecovery")->isEnabled());
     QVERIFY(!window.findChild<QAction*>("startNewWorkspace")->isEnabled());
     QVERIFY(!window.findChild<QToolBar*>()->isEnabled());
+    dismiss->click();
+    QTRY_VERIFY(toast->isHidden());
     window.showToast(QStringLiteral("After dismissal"), choscordb::ToastVariant::Warning);
     QVERIFY(QMetaObject::invokeMethod(recovery, "persistenceSucceeded", Qt::DirectConnection));
     QVERIFY(toast->accessibleDescription().contains(QStringLiteral("After dismissal")));
@@ -219,4 +223,38 @@ void NavigatorSqlWorkspaceTest::rejectedRecoverySubmissionShowsBackendDetail() {
     QTRY_VERIFY(!retry->isEnabled());
     QTRY_VERIFY(!toast->isVisible());
     QVERIFY(window.findChild<QToolBar*>("queryToolbar")->isEnabled());
+}
+
+void NavigatorSqlWorkspaceTest::startNavigationPreservesDocumentsAndIndependentFeedback() {
+    QTemporaryDir storage;
+    choscordb::MainWindow window(nullptr, storage.filePath("workspace"));
+    window.show();
+    auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>();
+    QTRY_VERIFY(recovery->isReady());
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+    QVERIFY(tabs && tabs->count() == 1);
+    auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+    QVERIFY(editor);
+    editor->setText("SELECT 123;");
+    QVERIFY(window.showScreen(choscordb::MainWindow::Screen::Start));
+    QCOMPARE(tabs->count(), 1);
+    QCOMPARE(editor->text(), QString("SELECT 123;"));
+    QVERIFY(window.showScreen(choscordb::MainWindow::Screen::Sql));
+    window.showStatus("Settings storage failed", choscordb::ToastVariant::Danger, "preferences");
+    window.showStatus("Wait for database work", choscordb::ToastVariant::Warning);
+    window.showStatus("Saved file could not open", choscordb::ToastVariant::Danger, "saved");
+    auto* preferences = window.findChild<choscordb::design::StatusLine*>("preferencesStatusLine");
+    auto* saved = window.findChild<choscordb::design::StatusLine*>("savedStatusLine");
+    QVERIFY(preferences && saved);
+    QCOMPARE(preferences->accessibleDescription(), QString("Settings storage failed"));
+    QCOMPARE(saved->accessibleDescription(), QString("Saved file could not open"));
+    auto* appearance = window.findChild<choscordb::AppearanceController*>();
+    QVERIFY(appearance);
+    window.showToast("Export complete", choscordb::ToastVariant::Success);
+    QVERIFY(QMetaObject::invokeMethod(appearance, "warningChanged", Qt::DirectConnection,
+                                      Q_ARG(QString, QString{})));
+    auto* toast = window.findChild<choscordb::ToastRegion*>("toastRegion");
+    QVERIFY(toast->text().contains("Export complete"));
+    QCOMPARE(preferences->accessibleDescription(), QString("Settings storage failed"));
 }

@@ -2,12 +2,13 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
-#include "design_system/toast_region/toast_region.h"
 #include "models/value_preview_model.h"
 #include <QCloseEvent>
 #include <QDialogButtonBox>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QPushButton>
@@ -27,8 +28,7 @@ constexpr qsizetype InlineLimit = 8 * 1024 * 1024;
 } // namespace
 ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter), model_(new ValuePreviewModel(this)),
-      table_(new QTableView(this)), status_(createInlineStatus(this)),
-      previous_(new design::Button(tr("Previous"), this)),
+      table_(new QTableView(this)), previous_(new design::Button(tr("Previous"), this)),
       next_(new design::Button(tr("Next"), this)) {
     previous_->setVariant(design::ButtonVariant::Outline);
     previous_->setDesignIcon(design::Icon::ChevronLeft);
@@ -38,9 +38,16 @@ ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     setWindowTitle(tr("Value detail"));
     setModal(false);
     resize(design::dialogInitialSize(design::DialogSize::Detail));
+    statusLine_ = new design::StatusLine(this);
+    statusLine_->setObjectName("valueStatusLine");
+    statusLine_->setAvailable(true);
+    statusLine_->setNeutral();
+    status_ = statusLine_->findChild<QLabel*>("statusMessage");
     status_->setObjectName("valueStatus");
-    status_->setTextFormat(Qt::PlainText);
-    status_->setWordWrap(true);
+    retry_ = new design::Button(tr("Retry"), this);
+    retry_->setObjectName("valueRetry");
+    retry_->setVariant(design::ButtonVariant::Outline);
+    retry_->hide();
     previous_->setObjectName("valuePrevious");
     next_->setObjectName("valueNext");
     table_->setObjectName("valuePreview");
@@ -54,6 +61,7 @@ ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     close->setObjectName("valueClose");
     close->setVariant(design::ButtonVariant::Outline);
     buttons->addButton(close, QDialogButtonBox::RejectRole);
+    buttons->addButton(retry_, QDialogButtonBox::ActionRole);
     buttons->addButton(previous_, QDialogButtonBox::ActionRole);
     buttons->addButton(next_, QDialogButtonBox::ActionRole);
     auto* layout = new QVBoxLayout(this);
@@ -62,11 +70,12 @@ ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     layout->addWidget(heading);
     layout->addWidget(
         createDescription(tr("Inspect a bounded window of a large text or binary value."), this));
-    layout->addWidget(status_);
+    layout->addWidget(statusLine_);
     layout->addWidget(table_, 1);
     layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, this, &ValueDetailDialog::reject);
     connect(previous_, &QPushButton::clicked, this, &ValueDetailDialog::previousChunk);
+    connect(retry_, &QPushButton::clicked, this, [this] { request(offset_); });
     connect(table_->verticalScrollBar(), &QScrollBar::valueChanged, this,
             [this] { sizeVisibleColumns(); });
     connect(next_, &QPushButton::clicked, this, [this] { request(nextOffset_); });
@@ -133,7 +142,9 @@ void ValueDetailDialog::clearValue() {
     dropChunk();
     offset_ = total_ = nextOffset_ = 0;
     windowBytes_ = ChunkBytes;
-    status_->clear();
+    setStatus({});
+    statusLine_->setBusy(false);
+    retry_->hide();
     updateActions();
     hide();
 }
@@ -178,6 +189,9 @@ void ValueDetailDialog::previousChunk() {
 void ValueDetailDialog::request(quint64 offset, quint32 maxBytes) {
     if ((!query_ && !inlineMode_) || loading_)
         return;
+    retry_->hide();
+    statusLine_->setAvailable(true);
+    statusLine_->setNeutral();
     // Release the displayed allocation before waiting for another transfer reservation.
     dropChunk();
     offset_ = offset;
@@ -196,11 +210,11 @@ void ValueDetailDialog::request(quint64 offset, quint32 maxBytes) {
         hasChunk_ = true;
         nextOffset_ = model_->nextOffset();
         windowBytes_ = ChunkBytes;
-        status_->setText(tr("Bytes %1–%2 of %3 · %4")
-                             .arg(offset_)
-                             .arg(nextOffset_)
-                             .arg(total_)
-                             .arg(inlineBinary_ ? tr("Hexadecimal") : tr("Escaped UTF-8 text")));
+        setStatus(tr("Bytes %1–%2 of %3 · %4")
+                      .arg(offset_)
+                      .arg(nextOffset_)
+                      .arg(total_)
+                      .arg(inlineBinary_ ? tr("Hexadecimal") : tr("Escaped UTF-8 text")));
         table_->scrollToTop();
         table_->setColumnWidth(1, 500);
         sizeVisibleColumns();
@@ -208,8 +222,8 @@ void ValueDetailDialog::request(quint64 offset, quint32 maxBytes) {
         return;
     }
     loading_ = true;
-    status_->clear();
-    progressToast(this)->showProgress(tr("Value"), tr("Loading bytes at offset %1…").arg(offset));
+    statusLine_->setBusy(true);
+    setStatus(tr("Loading bytes at offset %1…").arg(offset));
     updateActions();
     if (adapter_)
         adapter_->loadValueChunk(*query_, handle_, offset, maxBytes);
@@ -218,13 +232,12 @@ void ValueDetailDialog::request(quint64 offset, quint32 maxBytes) {
 }
 void ValueDetailDialog::fail(const QString& error) {
     loading_ = false;
-    clearProgressToast(this);
+    statusLine_->setBusy(false);
     alignmentTarget_.reset();
-    status_->clear();
+    statusLine_->setAvailable(false);
+    setStatus(tr("Unable to load value: %1").arg(error));
+    retry_->show();
     updateActions();
-    if (auto* toast = windowToast(this))
-        toast->showToast(tr("Error"), tr("Unable to load value: %1").arg(error.left(1024)),
-                         ToastVariant::Danger);
 }
 void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
     if (!loading_ || !query_ || event.id != *query_ || event.value_handle != handle_ ||
@@ -282,17 +295,16 @@ void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
     lease_ = event.lease_id;
     hasChunk_ = true;
     loading_ = false;
-    clearProgressToast(this);
+    statusLine_->setBusy(false);
     total_ = event.total_bytes;
     nextOffset_ = model_->nextOffset();
     if (!event.chunk_bytes.empty())
         windowBytes_ = event.chunk_bytes.size();
-    status_->setText(
-        tr("Bytes %1–%2 of %3 · %4")
-            .arg(offset_)
-            .arg(nextOffset_)
-            .arg(total_)
-            .arg(chunkKind == "binary" ? tr("Hexadecimal") : tr("Escaped UTF-8 text")));
+    setStatus(tr("Bytes %1–%2 of %3 · %4")
+                  .arg(offset_)
+                  .arg(nextOffset_)
+                  .arg(total_)
+                  .arg(chunkKind == "binary" ? tr("Hexadecimal") : tr("Escaped UTF-8 text")));
     table_->scrollToTop();
     table_->setColumnWidth(1, 500);
     sizeVisibleColumns();
@@ -303,5 +315,8 @@ void ValueDetailDialog::updateActions() {
     previous_->setEnabled(available && !loading_ && offset_ > 0);
     next_->setEnabled(available && !loading_ && hasChunk_ && nextOffset_ > offset_ &&
                       nextOffset_ < total_);
+}
+void ValueDetailDialog::setStatus(const QString& message) {
+    statusLine_->setMessage(message);
 }
 } // namespace choscordb

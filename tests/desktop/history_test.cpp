@@ -57,7 +57,10 @@ class HistoryTest : public QObject {
             previousRight = action->mapTo(&history, action->rect().topRight()).x();
         }
         const auto footerButtons = footer->findChildren<QAbstractButton*>();
-        QCOMPARE(footerButtons.size(), 2);
+        QCOMPARE(footerButtons.size(), 3);
+        auto* details = footer->findChild<QAbstractButton*>("statusDetails");
+        QVERIFY(details && footerButtons.contains(details));
+        QVERIFY(!details->isVisible());
         QCOMPARE(history.findChild<QLabel*>("historyStatus")->wordWrap(), false);
         auto* previous = history.findChild<QPushButton*>("historyPrevious");
         auto* next = history.findChild<QPushButton*>("historyNext");
@@ -230,6 +233,45 @@ class HistoryTest : public QObject {
         model.setProfileNames({{"missing-profile", "Analytics"}});
         QCOMPARE(model.data(model.index(0, 1)).toString(), QString("Analytics"));
     }
+    void previewPagingHintDoesNotReplaceOperationFailureAndClearsForCompleteSelection() {
+        choscordb::EngineAdapter adapter;
+        choscordb::HistoryDock dock(&adapter);
+        dock.resize(800, 600);
+        dock.show();
+        QTRY_VERIFY(dock.findChild<QPushButton*>("refreshHistory")->isEnabled());
+        adapter.shutdown();
+        dock.refresh();
+        auto* status = dock.findChild<QLabel*>("historyStatus");
+        QTRY_VERIFY(!status->text().isEmpty());
+        const auto failure = status->text();
+        dock.findChild<QAction*>("historyShowPreview")->setChecked(true);
+        auto* table = dock.findChild<QTableView*>("historyTable");
+        auto* model = qobject_cast<choscordb::HistoryModel*>(table->model());
+        choscordb::SavedHistoryEntry entry;
+        entry.id = "preview";
+        entry.sql = QString(70000, QChar('x'));
+        model->setEntries({entry});
+        table->selectRow(0);
+        auto* hint = dock.findChild<QLabel*>("historyPreviewStatus");
+        QVERIFY(hint && hint->isVisible());
+        QVERIFY(hint->text().contains("part 1"));
+        QCOMPARE(status->text(), failure);
+        dock.findChild<QPushButton*>("historyPreviewNext")->click();
+        QVERIFY(hint->text().contains("part 2"));
+        QCOMPARE(status->text(), failure);
+        entry.sql = "SELECT 'short'";
+        model->setEntries({entry});
+        table->selectRow(0);
+        QVERIFY(hint->text().isEmpty());
+        QVERIFY(!hint->isVisible());
+        QCOMPARE(status->text(), failure);
+        model->setEntries({});
+        QVERIFY(hint->text().isEmpty());
+        QVERIFY(!hint->isVisible());
+        QCOMPARE(status->text(), failure);
+        QVERIFY(status->textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
+    }
+
     void dockLoadsEmptyPolicyAndOpensFullSqlWithoutExecution() {
         choscordb::EngineAdapter adapter;
         QSignalSpy policies(&adapter, &choscordb::EngineAdapter::historyPolicyReady);

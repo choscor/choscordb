@@ -75,8 +75,8 @@ int main(int argc, char** argv) {
     window.show();
     if (!diagnosticsStartup.valid()) {
         window.disableDiagnostics();
-        window.showToast(QObject::tr("Local diagnostics could not be started."),
-                         choscordb::ToastVariant::Warning);
+        window.showStatus(QObject::tr("Local diagnostics could not be started."),
+                          choscordb::ToastVariant::Warning, QStringLiteral("application"));
     }
     bool diagnosticsStarted = false;
     QTimer startupPoll;
@@ -94,8 +94,8 @@ int main(int argc, char** argv) {
             watchdog.start();
         } else {
             window.disableDiagnostics();
-            window.showToast(QObject::tr("Local diagnostics could not be started."),
-                             choscordb::ToastVariant::Warning);
+            window.showStatus(QObject::tr("Local diagnostics could not be started."),
+                              choscordb::ToastVariant::Warning, QStringLiteral("application"));
         }
     });
     if (diagnosticsStartup.valid())

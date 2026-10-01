@@ -9,7 +9,8 @@ class QTableView;
 namespace choscordb {
 namespace design {
 class Button;
-}
+class StatusLine;
+} // namespace design
 class EngineAdapter;
 class ValuePreviewModel;
 struct BridgeEvent;
@@ -28,6 +29,7 @@ class ValueDetailDialog final : public DialogShell {
     void reject() override;
 
   private:
+    void setStatus(const QString& message);
     void request(quint64 offset, quint32 maxBytes = 65536);
     void previousChunk();
     void sizeVisibleColumns();
@@ -39,6 +41,8 @@ class ValueDetailDialog final : public DialogShell {
     ValuePreviewModel* model_;
     QTableView* table_;
     QLabel* status_;
+    design::StatusLine* statusLine_;
+    design::Button* retry_;
     design::Button* previous_;
     design::Button* next_;
     std::optional<quint64> query_;

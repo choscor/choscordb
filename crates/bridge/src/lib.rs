@@ -16,6 +16,8 @@ mod edit_value;
 mod foreign_key_filter;
 mod grid_edit;
 mod metadata_policy;
+mod quick_filter;
+pub use quick_filter::{quick_filter_compose_policy, quick_filter_options_policy};
 mod result_copy;
 mod result_json;
 pub use completion::*;
@@ -226,6 +228,30 @@ pub mod ffi {
         statements: Vec<PlannedGridEditDto>,
         error: String,
     }
+    enum QuickFilterOperator {
+        Equals,
+        NotEquals,
+        Less,
+        LessEqual,
+        Greater,
+        GreaterEqual,
+        In,
+        Like,
+        IsNull,
+        IsNotNull,
+    }
+    struct QuickFilterOptionDto {
+        operation: QuickFilterOperator,
+        label: String,
+        enabled: bool,
+        reason: String,
+    }
+    #[derive(Default)]
+    struct QuickFilterCompositionDto {
+        expression: String,
+        validation_error: String,
+        error: String,
+    }
     #[derive(Default)]
     struct ForeignKeyPredicateDto {
         valid: bool,
@@ -235,6 +261,7 @@ pub mod ffi {
     struct ParsedGridEditValueDto {
         valid: bool,
         cell: CellDto,
+        error: String,
     }
     struct JsonViewRowDto {
         cells: Vec<CellDto>,
@@ -867,6 +894,14 @@ pub mod ffi {
         fn pin_save(path: &str, profile_storage: bool, pins: Vec<PinRecordDto>) -> PinSaveDto;
         fn grid_editability_policy(request: GridEditRequestDto) -> GridEditabilityDto;
         fn plan_grid_edits_policy(request: GridEditRequestDto) -> GridEditPlanDto;
+        fn quick_filter_options_policy(column: &str, value: CellDto) -> Vec<QuickFilterOptionDto>;
+        fn quick_filter_compose_policy(
+            columns: Vec<String>,
+            draft: &str,
+            column: &str,
+            value: CellDto,
+            operation: QuickFilterOperator,
+        ) -> QuickFilterCompositionDto;
         fn foreign_key_value_filterable_policy(value: CellDto) -> bool;
         fn foreign_key_predicate_policy(
             target_column: &str,

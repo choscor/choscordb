@@ -27,6 +27,11 @@ class PreviewTest final : public QObject {
     void toastCanAttachAcrossWidgetTrees();
     void windowToastClearsDestroyedModalOwner();
     void toastVariantsShowTitleBodyAndUseConfiguredTimeout();
+    void ordinaryToastsWaitForReadingAndKeepEveryNotice();
+    void hiddenHostPreservesUnreadToasts();
+    void toastReadingPausesOnHoverAndFocus();
+    void longToastKeepsFullDetailsInsideReadableSurface();
+    void statusLineLongErrorKeepsControlsAndFullDetails();
     void pinnedToastKeepsPriorityAndRestoresLatestNotice();
     void dismissingPinnedToastPreservesLaterOrdinaryNotice();
     void pinnedToastSpecimenIsPresentInBothThemes();

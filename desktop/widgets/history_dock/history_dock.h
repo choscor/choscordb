@@ -2,6 +2,7 @@
 #include "bridge/engine_adapter.h"
 #include <QPointer>
 #include <QWidget>
+class QLabel;
 class QCheckBox;
 class QLineEdit;
 class QComboBox;
@@ -36,7 +37,8 @@ class HistoryDock final : public QWidget {
     HistoryModel* model_;
     QTableView* table_;
     QPlainTextEdit* preview_;
-    design::Text *status_, *page_;
+    QLabel* status_;
+    design::Text *page_, *previewStatus_;
     QCheckBox* record_;
     QLineEdit* search_;
     QComboBox* statusFilter_;

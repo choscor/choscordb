@@ -3,6 +3,7 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
 #include "modern_ui_test.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -52,11 +53,11 @@ void ModernUiTest::resultFooterTracksOperationOutcome() {
     QVERIFY(workspace && theme && footer && summary && tabs && run);
     auto* startFooter = window.findChild<QWidget*>("startFooter");
     QVERIFY(startFooter);
-    const auto startLabels = startFooter->findChildren<QLabel*>();
-    QCOMPARE(startLabels.size(), 1);
-    QCOMPARE(startLabels.first()->font().pixelSize(), 13);
-    QCOMPARE(startLabels.first()->text(), QString("Choose a connection to get started"));
-    QCOMPARE(startLabels.first()->alignment(), Qt::AlignCenter);
+    auto* startLabel = startFooter->findChild<choscordb::design::Text*>();
+    QVERIFY(startLabel);
+    QCOMPARE(startLabel->font().pixelSize(), 13);
+    QCOMPARE(startLabel->text(), QString("Choose a connection to get started"));
+    QCOMPARE(startLabel->alignment(), Qt::AlignCenter);
     QCOMPARE(QString::fromLatin1(footer->metaObject()->className()),
              QString("choscordb::design::StatusLine"));
     QCOMPARE(footer->font().pixelSize(), 13);
