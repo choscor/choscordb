@@ -131,7 +131,14 @@ def validate_security(security):
     if languages != {"rust", "c-cpp", "python", "actions"}:
         raise AssertionError(f"unexpected CodeQL language matrix: {languages}")
     require_values(
-        codeql, ("codeql-action/init@", "codeql-action/analyze@", "security-extended")
+        codeql,
+        (
+            "codeql-action/init@",
+            "codeql-action/analyze@",
+            "security-extended",
+            "matrix.language == 'c-cpp' && 'macos-15-intel' || 'macos-15'",
+            "timeout-minutes: 75",
+        ),
     )
 
 
@@ -176,14 +183,19 @@ class WorkflowPolicyTests(unittest.TestCase):
                     nearby = text[checkout.start() : checkout.start() + 240]
                     self.assertIn("persist-credentials: false", nearby)
 
-    def test_existing_quality_jobs_use_apple_silicon_macos(self):
+    def test_quality_keeps_arm_gates_and_native_intel_cpp_tracing(self):
         for name, content in self.files.items():
             if name == "cross-platform-release.yml":
                 continue
             with self.subTest(workflow=name):
                 runners = re.findall(r"(?m)^\s+runs-on:\s*(.+)$", content)
                 self.assertTrue(runners)
-                self.assertEqual(set(runners), {"macos-15"})
+                expected = {"macos-15"}
+                if name == "security.yml":
+                    expected.add(
+                        "${{ matrix.language == 'c-cpp' && 'macos-15-intel' || 'macos-15' }}"
+                    )
+                self.assertEqual(set(runners), expected)
                 self.assertNotIn("apt-get", content)
                 self.assertNotIn("services:", content)
 

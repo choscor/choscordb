@@ -28,7 +28,9 @@ jobs:
           fail-on-severity: high
   codeql:
     name: CodeQL (${{ matrix.language }})
-    runs-on: macos-15
+    # Compiled extraction requires Rosetta on ARM. Use native Intel tracing and
+    # its additional RAM while build-mode:none languages continue on ARM.
+    runs-on: ${{ matrix.language == 'c-cpp' && 'macos-15-intel' || 'macos-15' }}
     timeout-minutes: 75
     permissions:
       contents: read
