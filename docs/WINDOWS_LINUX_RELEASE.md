@@ -15,6 +15,9 @@ GitHub's generated source-code links are not Release attachments.
 
 ## Pages and signing preparation
 
+Feed signing requires OpenSSL 3 on PATH. On macOS, install `openssl@3` and
+add its `bin` directory to PATH before running the release tools or signing tests.
+
 GitHub Pages hosts the stable macOS appcast and signed Windows/Linux metadata
 at `https://OWNER.github.io/REPO/updates/`. The repository's Pages site must
 be enabled and its real HTTPS URL verified before production apps embed it.

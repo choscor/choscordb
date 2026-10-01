@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## [0.1.9]
+
+- Added a side sheet for editing result cells.
+- Added quick filters for Object Data cells.
+- Unified workspace status lines with paging, execution information, and full status details.
+- Made notification feedback easier to read and keep available.
+- Improved sidebar scrolling and section spacing.
+- Corrected PostgreSQL shutdown errors being reported as query errors instead of disconnected connections.
+
 ## [0.1.8]
 
 - Added signed update checks and installation for Windows and Linux, with a per-user Windows installer.
