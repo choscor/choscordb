@@ -332,11 +332,12 @@ class ObjectDataWorkspaceTest : public QObject {
             for (auto* action : actions)
                 if (!action->isSeparator())
                     labels << action->text();
-            QCOMPARE(labels,
-                     QStringList({"Edit cell…", "View cell as JSON", "View row as JSON",
-                                  "View table as JSON", "Copy selected cells", "Copy selected rows",
-                                  "Copy current page", "Duplicate row", "Add row",
-                                  "Delete selected", "Restore selected", "Set NULL", "Cancel"}));
+            QCOMPARE(
+                labels,
+                QStringList({"Edit cell…", "Quick Filter", "View cell as JSON", "View row as JSON",
+                             "View table as JSON", "Copy selected cells", "Copy selected rows",
+                             "Copy current page", "Duplicate row", "Add row", "Delete selected",
+                             "Restore selected", "Set NULL", "Cancel"}));
             for (auto* action : actions)
                 if (!action->isSeparator())
                     QVERIFY(!action->isEnabled());

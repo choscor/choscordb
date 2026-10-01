@@ -27,12 +27,14 @@ class CellEditWorkspaceTest : public QObject {
             QVERIFY(menu);
             const auto actions = menu->actions();
             menu->close();
-            QVERIFY(actions.size() > 4);
+            QVERIFY(actions.size() > 5);
             QCOMPARE(actions[0]->text(), QString("Edit cell…"));
             QVERIFY(actions[1]->isSeparator());
-            QCOMPARE(actions[2]->objectName(), QString("viewCellJson"));
-            QCOMPARE(actions[3]->objectName(), QString("viewRowJson"));
-            QCOMPARE(actions[4]->objectName(), QString("viewTableJson"));
+            QVERIFY(actions[2]->menu());
+            QCOMPARE(actions[2]->menu()->objectName(), QString("resultQuickFilter"));
+            QCOMPARE(actions[3]->objectName(), QString("viewCellJson"));
+            QCOMPARE(actions[4]->objectName(), QString("viewRowJson"));
+            QCOMPARE(actions[5]->objectName(), QString("viewTableJson"));
             auto* edit = actions[0];
             QVERIFY(edit->isEnabled());
             edit->trigger();

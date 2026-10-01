@@ -27,6 +27,7 @@ mod query_history;
 mod recovery;
 pub use profiles::{CredentialUpdate, CredentialUpdates, ProfileSecrets};
 mod protocol;
+pub mod quick_filter;
 mod result_predicate;
 mod result_view;
 mod ssh_trust;

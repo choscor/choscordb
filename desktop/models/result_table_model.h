@@ -150,6 +150,7 @@ class ResultTableModel final : public QAbstractTableModel {
     bool hasPendingEdits() const;
     bool canInsert() const { return canInsert_; }
     bool canDelete() const { return canDelete_; }
+    const std::vector<ResultColumn>& columns() const { return columns_; }
     const std::vector<Row>& originalRows() const { return originalRows_; }
     const std::vector<Row>& rows() const { return rows_; }
     const std::vector<std::vector<bool>>& touched() const { return touched_; }
