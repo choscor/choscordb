@@ -371,10 +371,10 @@ class QuickFilterWorkspaceTest : public QObject {
                         button->click();
                         return;
                     }
-            } else if (auto* box = qobject_cast<QDialog*>(dialog);
-                       box && box->findChild<QPlainTextEdit*>("gridEditReview")) {
+            } else if (auto* reviewDialog = qobject_cast<QDialog*>(dialog);
+                       reviewDialog && reviewDialog->findChild<QPlainTextEdit*>("gridEditReview")) {
                 reviewShown = true;
-                box->accept();
+                reviewDialog->accept();
             }
         });
         review.start(10);
