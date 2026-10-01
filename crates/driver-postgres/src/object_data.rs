@@ -6,18 +6,34 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio_postgres::GenericClient;
 pub(super) struct Stop {
     cancelled: AtomicBool,
-    running: tokio::sync::Mutex<bool>,
+    running: tokio::sync::Mutex<ReadActivity>,
     shared: Arc<Cancellation>,
+}
+#[derive(Default)]
+struct ReadActivity {
+    active: bool,
+    cancellation_sent: bool,
+}
+impl ReadActivity {
+    async fn cancel(&mut self, send: impl std::future::Future<Output = Result<()>>) -> Result<()> {
+        // A second packet can arrive after the SELECT ends and cancel savepoint
+        // cleanup or an unrelated SQL portal. Keep failed sends retryable.
+        if self.active && !self.cancellation_sent {
+            send.await?;
+            self.cancellation_sent = true;
+        }
+        Ok(())
+    }
 }
 #[async_trait]
 impl CancelHandle for Stop {
     async fn cancel(&self) -> Result<()> {
         self.cancelled.store(true, Ordering::Release);
-        let running = self.running.lock().await;
-        if *running {
-            self.shared.send_cancel().await?;
-        }
-        Ok(())
+        self.running
+            .lock()
+            .await
+            .cancel(self.shared.send_cancel())
+            .await
     }
 }
 pub(super) struct Opened {
@@ -69,7 +85,7 @@ pub(super) async fn open(
         index: 0,
         stop: Arc::new(Stop {
             cancelled: AtomicBool::new(false),
-            running: tokio::sync::Mutex::new(false),
+            running: tokio::sync::Mutex::new(ReadActivity::default()),
             shared,
         }),
         closed: false,
@@ -154,7 +170,7 @@ pub(super) async fn read<C: GenericClient + Sync>(
         if request.stop.cancelled.load(Ordering::Acquire) {
             false
         } else {
-            *running = true;
+            running.active = true;
             true
         }
     };
@@ -166,7 +182,7 @@ pub(super) async fn read<C: GenericClient + Sync>(
     if ready && result.is_err() {
         let _ = request.stop.cancel().await;
     }
-    *request.stop.running.lock().await = false;
+    request.stop.running.lock().await.active = false;
     if transaction {
         let cleanup = if result.is_err() {
             format!("ROLLBACK TO SAVEPOINT {savepoint}; RELEASE SAVEPOINT {savepoint}")
@@ -316,5 +332,55 @@ impl ResultCursor for ObjectCursor {
     async fn close(&mut self) -> Result<()> {
         self.closed = true;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn successful_cancel_is_not_dispatched_again() {
+        let mut activity = ReadActivity {
+            active: true,
+            ..Default::default()
+        };
+        activity.cancel(async { Ok(()) }).await.unwrap();
+        activity
+            .cancel(async { panic!("repeated cancellation reached the transport") })
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn idle_read_does_not_cancel_another_operation() {
+        ReadActivity::default()
+            .cancel(async { panic!("idle cancellation reached the transport") })
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_send_can_be_retried() {
+        let mut activity = ReadActivity {
+            active: true,
+            ..Default::default()
+        };
+        assert!(
+            activity
+                .cancel(async {
+                    Err(DriverError::new(
+                        ErrorKind::Connection,
+                        "cancellation transport unavailable",
+                    ))
+                })
+                .await
+                .is_err()
+        );
+        activity.cancel(async { Ok(()) }).await.unwrap();
+        activity
+            .cancel(async { panic!("successful retry was dispatched again") })
+            .await
+            .unwrap();
     }
 }

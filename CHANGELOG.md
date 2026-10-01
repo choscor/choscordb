@@ -10,6 +10,7 @@
 - Made notification feedback easier to read and keep available.
 - Improved sidebar scrolling and section spacing.
 - Corrected PostgreSQL shutdown errors being reported as query errors instead of disconnected connections.
+- Fixed repeated cancellation of PostgreSQL object reads interrupting an existing transaction or SQL cursor.
 
 ## [0.1.8]
 

@@ -1554,6 +1554,8 @@ async fn cancelling_object_read_keeps_user_savepoint_transaction_and_sql_portal(
     });
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     cancel.cancel().await.unwrap();
+    // A repeated request must not cancel cleanup or the existing SQL portal.
+    cancel.cancel().await.unwrap();
     let result = tokio::time::timeout(std::time::Duration::from_secs(3), read)
         .await
         .unwrap()
