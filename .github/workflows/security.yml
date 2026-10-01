@@ -65,7 +65,7 @@ jobs:
           queries: security-extended
       - name: Build C++ for CodeQL extraction
         if: matrix.language == 'c-cpp'
-        run: python scripts/ci/quality.py native-build
+        run: python scripts/ci/quality.py codeql-build
       - uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
         with:
           category: /language:${{ matrix.language }}

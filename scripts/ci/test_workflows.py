@@ -219,7 +219,7 @@ class WorkflowPolicyTests(unittest.TestCase):
         )
         self.assertLess(
             codeql.index("github/codeql-action/init@"),
-            codeql.index("quality.py native-build"),
+            codeql.index("quality.py codeql-build"),
         )
 
     def test_coverage_is_parser_validated_and_separate(self):

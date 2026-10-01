@@ -31,7 +31,9 @@ def configuration():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=["dependencies", "build", "test", "rust"])
+    parser.add_argument(
+        "stage", choices=["dependencies", "build", "codeql", "test", "rust"]
+    )
     args = parser.parse_args()
     tools = ROOT / "build/ci"
     host, architecture, directory = configuration()
@@ -87,13 +89,15 @@ def main():
             ],
             env=env,
         )
-    elif args.stage == "build":
+    elif args.stage in {"build", "codeql"}:
+        extraction = args.stage == "codeql"
+        build_directory = "build/ci/codeql" if extraction else "build/ci/native"
         configure = [
             "cmake",
             "-S",
             ".",
             "-B",
-            "build/ci/native",
+            build_directory,
             "-G",
             "Ninja",
             "-DCMAKE_BUILD_TYPE=Release",
@@ -106,8 +110,30 @@ def main():
             # CodeQL's translated tools can otherwise make CMake choose Intel
             # while Rust and the prepared QScintilla library use the host CPU.
             configure.append(f"-DCMAKE_OSX_ARCHITECTURES={macos_native_architecture()}")
+        if extraction:
+            # Extract every target with Release preprocessing, without spending
+            # the analysis budget optimizing executable machine code. Keep this
+            # cache separate from the optimized native test/package builds.
+            flags = "/Od /DNDEBUG" if host == "windows" else "-O0 -DNDEBUG"
+            configure.extend(
+                [
+                    "-DCMAKE_CXX_COMPILER_LAUNCHER=",
+                    f"-DCMAKE_CXX_FLAGS_RELEASE={flags}",
+                ]
+            )
+            if host == "mac":
+                configure.append(f"-DCMAKE_OBJCXX_FLAGS_RELEASE={flags}")
         run(configure, env=env)
-        run(["cmake", "--build", "build/ci/native", "--parallel", "2"], env=env)
+        run(
+            [
+                "cmake",
+                "--build",
+                build_directory,
+                "--parallel",
+                "3" if extraction else "2",
+            ],
+            env=env,
+        )
     elif args.stage == "test":
         command = [
             "ctest",

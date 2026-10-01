@@ -20,6 +20,8 @@ class NativeArchitectureTest(unittest.TestCase):
         configure = run.call_args_list[0].args[0]
         self.assertIn("-DCMAKE_OSX_ARCHITECTURES=arm64", configure)
         self.assertNotIn("-DCMAKE_OSX_ARCHITECTURES=x86_64", configure)
+        self.assertFalse(any("FLAGS_RELEASE=" in flag for flag in configure))
+        self.assertEqual(run.call_args_list[1].args[0][-2:], ["--parallel", "2"])
 
     def test_intel_macos_keeps_a_native_intel_target(self):
         with (
@@ -31,3 +33,24 @@ class NativeArchitectureTest(unittest.TestCase):
         ):
             desktop.main()
         self.assertIn("-DCMAKE_OSX_ARCHITECTURES=x86_64", run.call_args_list[0].args[0])
+
+    def test_codeql_preserves_all_release_targets_in_a_separate_cache(self):
+        with (
+            patch.object(sys, "argv", ["desktop.py", "codeql"]),
+            patch.object(desktop.platform, "system", return_value="Darwin"),
+            patch.object(desktop.subprocess, "check_output", return_value="1\n"),
+            patch.object(desktop, "run") as run,
+        ):
+            desktop.main()
+        configure = run.call_args_list[0].args[0]
+        self.assertIn("build/ci/codeql", configure)
+        self.assertIn("-DBUILD_TESTING=ON", configure)
+        self.assertIn("-DCMAKE_BUILD_TYPE=Release", configure)
+        self.assertIn("-DCMAKE_OSX_ARCHITECTURES=arm64", configure)
+        self.assertIn("-DCMAKE_CXX_FLAGS_RELEASE=-O0 -DNDEBUG", configure)
+        self.assertIn("-DCMAKE_OBJCXX_FLAGS_RELEASE=-O0 -DNDEBUG", configure)
+        self.assertIn("-DCMAKE_CXX_COMPILER_LAUNCHER=", configure)
+        build = run.call_args_list[1].args[0]
+        self.assertEqual(
+            build, ["cmake", "--build", "build/ci/codeql", "--parallel", "3"]
+        )

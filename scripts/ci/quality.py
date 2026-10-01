@@ -271,7 +271,7 @@ def require_native_dependencies():
         )
 
 
-def native_build():
+def native_build(stage="build"):
     require_native_dependencies()
     require_tool(
         "cmake", install=f"{PYTHON} -m pip install -r scripts/ci/requirements.txt"
@@ -279,7 +279,7 @@ def native_build():
     require_tool(
         "ninja", install=f"{PYTHON} -m pip install -r scripts/ci/requirements.txt"
     )
-    desktop("build")
+    desktop(stage)
 
 
 def native_tests():
@@ -308,6 +308,7 @@ STAGES = {
     "cargo-deny": cargo_deny,
     "native-dependencies": lambda: desktop("dependencies"),
     "native-build": native_build,
+    "codeql-build": lambda: native_build("codeql"),
     "native-tests": native_tests,
 }
 
