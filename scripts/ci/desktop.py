@@ -9,6 +9,8 @@ import subprocess
 import sys
 import tomllib
 
+from bootstrap_qscintilla import macos_native_architecture
+
 ROOT = Path(__file__).resolve().parents[2]
 QT_VERSION = "6.8.3"
 
@@ -100,6 +102,10 @@ def main():
         ]
         if host == "windows":
             configure.append("-DCMAKE_CXX_COMPILER_LAUNCHER=")
+        elif host == "mac":
+            # CodeQL's translated tools can otherwise make CMake choose Intel
+            # while Rust and the prepared QScintilla library use the host CPU.
+            configure.append(f"-DCMAKE_OSX_ARCHITECTURES={macos_native_architecture()}")
         run(configure, env=env)
         run(["cmake", "--build", "build/ci/native", "--parallel", "2"], env=env)
     elif args.stage == "test":

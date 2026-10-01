@@ -1,0 +1,33 @@
+"""Native build configuration stays coherent under translated CI tools."""
+
+import sys
+import unittest
+from unittest.mock import patch
+
+import desktop
+
+
+class NativeArchitectureTest(unittest.TestCase):
+    def test_translated_macos_configures_the_physical_arm_host(self):
+        with (
+            patch.object(sys, "argv", ["desktop.py", "build"]),
+            patch.object(desktop.platform, "system", return_value="Darwin"),
+            patch.object(desktop.platform, "machine", return_value="x86_64"),
+            patch.object(desktop.subprocess, "check_output", return_value="1\n"),
+            patch.object(desktop, "run") as run,
+        ):
+            desktop.main()
+        configure = run.call_args_list[0].args[0]
+        self.assertIn("-DCMAKE_OSX_ARCHITECTURES=arm64", configure)
+        self.assertNotIn("-DCMAKE_OSX_ARCHITECTURES=x86_64", configure)
+
+    def test_intel_macos_keeps_a_native_intel_target(self):
+        with (
+            patch.object(sys, "argv", ["desktop.py", "build"]),
+            patch.object(desktop.platform, "system", return_value="Darwin"),
+            patch.object(desktop.platform, "machine", return_value="x86_64"),
+            patch.object(desktop.subprocess, "check_output", return_value="0\n"),
+            patch.object(desktop, "run") as run,
+        ):
+            desktop.main()
+        self.assertIn("-DCMAKE_OSX_ARCHITECTURES=x86_64", run.call_args_list[0].args[0])
