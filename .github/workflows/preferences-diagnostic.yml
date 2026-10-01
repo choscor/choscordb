@@ -1,0 +1,37 @@
+name: Preferences state diagnosis
+on:
+  push:
+    branches: [choscordb/diagnostic/preferences-state-019]
+permissions:
+  contents: read
+jobs:
+  preferences:
+    name: macOS 15 preferences state
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Install pinned native dependencies
+        run: |
+          python -m pip install --requirement scripts/ci/requirements.txt
+          python scripts/ci/quality.py native-dependencies
+      - name: Build optimized preferences test
+        run: |
+          cmake -S . -B build/ci/native -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON "-DCMAKE_PREFIX_PATH=$PWD/build/ci/qt/6.8.3/macos;$PWD/build/ci/qscintilla" -DCMAKE_OSX_ARCHITECTURES=arm64
+          cmake --build build/ci/native --target choscordb-preferences-workspace-tests --parallel 2
+      - name: Diagnose preferences state and stop at first failure
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_PLUGIN_PATH: ${{ github.workspace }}/build/ci/qt/6.8.3/macos/plugins
+          DYLD_FRAMEWORK_PATH: ${{ github.workspace }}/build/ci/qt/6.8.3/macos/lib
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/build/ci/qscintilla/lib:${{ github.workspace }}/build/ci/qt/6.8.3/macos/lib
+        run: |
+          for iteration in $(seq 1 20); do
+            echo "Preferences diagnostic iteration $iteration/20"
+            build/ci/native/choscordb-preferences-workspace-tests
+          done

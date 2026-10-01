@@ -499,7 +499,18 @@ class PreferencesWorkspaceTest : public QObject {
         QCOMPARE(restarted.findChild<QAction*>("command_find")->shortcut(), QKeySequence("Ctrl+J"));
         restarted.findChild<QAction*>("preferences")->trigger();
         auto* dialog = restarted.findChild<QDialog*>("preferencesDialog");
-        QTRY_VERIFY(dialog->findChild<QPushButton*>("preferencesApply")->isEnabled());
+        auto* appearance = restarted.findChild<choscordb::AppearanceController*>();
+        QTRY_VERIFY2(
+            dialog->findChild<QPushButton*>("preferencesApply")->isEnabled(),
+            qPrintable(QString("%1 | %2 | appearance ready=%3, save=%4 | dialog enabled=%5, "
+                               "save explicitly disabled=%6")
+                           .arg(dialog->findChild<QLabel*>("preferencesStatus")->text(),
+                                appearance->currentWarning())
+                           .arg(appearance->isReady())
+                           .arg(appearance->canSave())
+                           .arg(dialog->isEnabled())
+                           .arg(dialog->findChild<QPushButton*>("preferencesApply")
+                                    ->testAttribute(Qt::WA_ForceDisabled))));
         QVERIFY(dialog->grab().save("native-preferences.png"));
         dialog->close();
         restarted.close();
