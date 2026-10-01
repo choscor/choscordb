@@ -596,6 +596,8 @@ class ObjectDataWorkspaceTest : public QObject {
         QTRY_COMPARE(grid->horizontalHeader()->sortIndicatorOrder(), Qt::AscendingOrder);
         QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
                      QString("completed"));
+        // Page completion precedes asynchronous editability planning.
+        QTRY_VERIFY(data.findChild<QPushButton*>("objectDataAddRow")->isEnabled());
         triggerTableAction(grid, "Duplicate row");
         QCOMPARE(model->rowCount(), 2);
         const auto acceptReview = [&data] {
