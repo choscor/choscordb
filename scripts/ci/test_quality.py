@@ -117,18 +117,11 @@ class QualityCommandTest(unittest.TestCase):
             "cargo-deny": 1,
             "native-dependencies": 1,
             "native-build": 1,
-            "codeql-build": 1,
             "native-tests": 1,
         }
         for stage, count in expected.items():
             with self.subTest(stage=stage):
                 self.assertEqual(len(self.run_stage(stage)), count)
-
-    def test_codeql_uses_the_full_extraction_build(self):
-        self.assertEqual(
-            self.run_stage("codeql-build"),
-            [[quality.PYTHON, "scripts/ci/desktop.py", "codeql"]],
-        )
 
     def test_cpp_scope_is_only_hand_written_sources_and_headers(self):
         files = quality.cpp_files()

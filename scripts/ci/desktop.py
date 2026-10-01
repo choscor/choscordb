@@ -31,10 +31,7 @@ def configuration():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "stage",
-        choices=["dependencies", "build", "codeql-prepare", "codeql", "test", "rust"],
-    )
+    parser.add_argument("stage", choices=["dependencies", "build", "test", "rust"])
     args = parser.parse_args()
     tools = ROOT / "build/ci"
     host, architecture, directory = configuration()
@@ -90,15 +87,13 @@ def main():
             ],
             env=env,
         )
-    elif args.stage in {"build", "codeql-prepare", "codeql"}:
-        extraction = args.stage.startswith("codeql")
-        build_directory = "build/ci/codeql" if extraction else "build/ci/native"
+    elif args.stage == "build":
         configure = [
             "cmake",
             "-S",
             ".",
             "-B",
-            build_directory,
+            "build/ci/native",
             "-G",
             "Ninja",
             "-DCMAKE_BUILD_TYPE=Release",
@@ -108,54 +103,11 @@ def main():
         if host == "windows":
             configure.append("-DCMAKE_CXX_COMPILER_LAUNCHER=")
         elif host == "mac":
-            # CodeQL's translated tools can otherwise make CMake choose Intel
-            # while Rust and the prepared QScintilla library use the host CPU.
+            # Keep CMake and QScintilla on the physical host architecture,
+            # including when Python runs under translation.
             configure.append(f"-DCMAKE_OSX_ARCHITECTURES={macos_native_architecture()}")
-        if extraction:
-            # Extract every target with Release preprocessing, without spending
-            # the analysis budget optimizing executable machine code. Keep this
-            # cache separate from the optimized native test/package builds.
-            flags = "/Od /DNDEBUG" if host == "windows" else "-O0 -DNDEBUG"
-            configure.extend(
-                [
-                    "-DCMAKE_CXX_COMPILER_LAUNCHER=",
-                    f"-DCMAKE_CXX_FLAGS_RELEASE={flags}",
-                ]
-            )
-            if host == "mac":
-                configure.append(f"-DCMAKE_OBJCXX_FLAGS_RELEASE={flags}")
         run(configure, env=env)
-        if args.stage == "codeql-prepare":
-            # Compile the Rust backend before tracing. The generated CXX bridge
-            # is rebuilt under tracing below so native source coverage is kept.
-            run(
-                [
-                    "cmake",
-                    "--build",
-                    build_directory,
-                    "--target",
-                    "cargo-build_choscordb_bridge",
-                ],
-                env=env,
-            )
-            return
-        if extraction:
-            # build.rs tracks this staged header. Removing it forces the bridge
-            # build script (and its C++ compilation) to run under CodeQL even
-            # when the Rust backend was prepared outside extraction.
-            (ROOT / build_directory / "generated/cxxbridge-source/rust/cxx.h").unlink(
-                missing_ok=True
-            )
-        run(
-            [
-                "cmake",
-                "--build",
-                build_directory,
-                "--parallel",
-                "3" if extraction else "2",
-            ],
-            env=env,
-        )
+        run(["cmake", "--build", "build/ci/native", "--parallel", "2"], env=env)
     elif args.stage == "test":
         command = [
             "ctest",

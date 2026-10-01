@@ -4,6 +4,14 @@
 - **Date:** 2026-09-12
 - **Source context:** Repository-specific brainstorm and review of current CI, Rust/LLVM/CMake/GitHub guidance, Google's public C++ style and engineering practices, and Google's Tricorder/OSS-Fuzz material.
 
+## CI policy amendment — 2026-10-01
+
+The maintainer requested removal of CodeQL CI after repeated long extraction and
+analysis runs. CodeQL requirements below describe the original plan and are
+superseded by this amendment. Dependency review, compiler/Clippy checks,
+clang-tidy, native tests, coverage, and scheduled dynamic analysis remain.
+See [the current CI policy and runtime review](../CI.md).
+
 ## Intended outcome
 
 Establish strict, reproducible quality gates for ChoscorDB, a solo-maintained open-source Rust/C++ Qt application. The gates must catch platform-specific regressions, unsafe or suspicious code, style drift, test failures, dependency risks, and CI configuration errors while keeping the maintainer workflow lightweight. The repository should also be ready for future contributors without imposing review bureaucracy today.

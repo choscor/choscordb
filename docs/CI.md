@@ -9,8 +9,10 @@ permissions default to read-only.
 The merge-blocking layer is deterministic quality (format, Ruff, actionlint and
 both Python suites), Apple Silicon macOS Rust/native checks, PostgreSQL 17 and
 MySQL 8.4 integration, full cargo-deny policy, and pull-request dependency review.
-Clang-tidy and CodeQL are introduced as baseline-first gates: existing findings
-must be reviewed before their analysis policy is made required. The initial
+Clang-tidy is introduced as a baseline-first gate: existing findings must be
+reviewed before its analysis policy is made required. CodeQL was removed from
+CI on 2026-10-01 at the maintainer's request after repeated long extraction
+and analysis runs; pull-request dependency review remains enabled. The initial
 clang-tidy workflow step is therefore explicitly nonblocking while still
 reporting all findings as errors inside the stage. Rust and C++
 coverage generate separate artifact-only reports with no numeric threshold.
@@ -38,8 +40,7 @@ Qt installation uses the project's [documented aqt CLI](https://aqtinstall.readt
 
 The QScintilla bootstrap reads the macOS host architecture rather than the
 Python process architecture, which can report `x86_64` under Rosetta on an
-Apple Silicon runner. The C++ CodeQL job provisions Qt and QScintilla before
-starting extraction, then traces the first-party native build.
+Apple Silicon runner. CMake uses the same physical-host architecture check.
 
 The unsigned macOS CI build remains a development compatibility check. Production
 macOS releases use a separate isolated toolchain with an arm64, macOS 26.0 target
@@ -204,7 +205,7 @@ This check covers Cargo packages, including build and test dependencies. It does
 ## Verification boundaries
 
 Local success does not prove that GitHub's arm64 macOS, database integration,
-CodeQL, coverage, or scheduled jobs passed. Until these files
+coverage or scheduled jobs passed. Until these files
 are pushed, remote execution awaits a maintainer run. Preserve that distinction
 in release notes and handoffs.
 
@@ -246,3 +247,26 @@ bridge layout changes. Publishing uses `copy_if_different` to preserve unchanged
 header timestamps. `scripts/ci/test_cxx_headers.py` verifies a changed layout,
 a no-op rebuild, and restoration of a deleted published header with a real
 compiled consumer.
+
+
+## Runtime review (2026-10-01)
+
+The completed runs for source `a482740` show the following slow phases. Jobs run
+in parallel; their durations should not be added together as release elapsed time.
+
+| Job | Main phases | Measured minutes |
+|---|---|---:|
+| Windows candidate | Native build/tests; production build; installer smoke | 20.9; 8.9; 1.1 |
+| macOS Rust/native | Strict native build; native tests | 11.0; 9.1 |
+| PostgreSQL integration | Native test build; live suites; native coverage | 12.1; 1.5; 8.5 |
+| C++ coverage | Instrumented build, tests, and report validation | 19.1 |
+| Linux candidate | Native build/tests; production build | 14.9; 5.6 |
+
+Sources: [CI run](https://github.com/choscor/choscordb/actions/runs/36858854845),
+[coverage run](https://github.com/choscor/choscordb/actions/runs/36858854614), and
+[platform candidate run](https://github.com/choscor/choscordb/actions/runs/36858854847).
+The native test and production builds exercise different updater configurations;
+keep both for release verification. Compilation and native tests dominate the
+remaining runtime. Qt/QScintilla setup took 2.4–5.5 minutes in these native jobs.
+Removed C++ CodeQL separately took 11.1 minutes of preparation, 35.5 minutes of
+traced compilation, and more than 20 minutes of analysis before cancellation.

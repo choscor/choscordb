@@ -126,20 +126,8 @@ def validate_security(security):
     require_values(
         dependency, ("github.event_name == 'pull_request'", "fail-on-severity: high")
     )
-    codeql = yaml_block(security, "codeql", 2)
-    languages = set(re.findall(r"^\s+- language: ([a-z-]+)$", codeql, re.MULTILINE))
-    if languages != {"rust", "c-cpp", "python", "actions"}:
-        raise AssertionError(f"unexpected CodeQL language matrix: {languages}")
-    require_values(
-        codeql,
-        (
-            "codeql-action/init@",
-            "codeql-action/analyze@",
-            "security-extended",
-            "matrix.language == 'c-cpp' && 'macos-15-intel' || 'macos-15'",
-            "timeout-minutes: 120",
-        ),
-    )
+    if "codeql" in security.lower():
+        raise AssertionError("CodeQL is disabled by the repository CI policy")
 
 
 def validate_coverage(coverage):
@@ -183,19 +171,14 @@ class WorkflowPolicyTests(unittest.TestCase):
                     nearby = text[checkout.start() : checkout.start() + 240]
                     self.assertIn("persist-credentials: false", nearby)
 
-    def test_quality_keeps_arm_gates_and_native_intel_cpp_tracing(self):
+    def test_quality_keeps_arm_gates(self):
         for name, content in self.files.items():
             if name == "cross-platform-release.yml":
                 continue
             with self.subTest(workflow=name):
                 runners = re.findall(r"(?m)^\s+runs-on:\s*(.+)$", content)
                 self.assertTrue(runners)
-                expected = {"macos-15"}
-                if name == "security.yml":
-                    expected.add(
-                        "${{ matrix.language == 'c-cpp' && 'macos-15-intel' || 'macos-15' }}"
-                    )
-                self.assertEqual(set(runners), expected)
+                self.assertEqual(set(runners), {"macos-15"})
                 self.assertNotIn("apt-get", content)
                 self.assertNotIn("services:", content)
 
@@ -220,23 +203,8 @@ class WorkflowPolicyTests(unittest.TestCase):
     def test_ci_has_required_blocking_and_advisory_jobs(self):
         validate_ci(self.files["ci.yml"])
 
-    def test_security_has_exact_advanced_analysis_matrix(self):
+    def test_security_keeps_dependency_review_without_codeql(self):
         validate_security(self.files["security.yml"])
-
-    def test_codeql_builds_third_party_qscintilla_before_extraction(self):
-        codeql = yaml_block(self.files["security.yml"], "codeql", 2)
-        self.assertLess(
-            codeql.index("quality.py native-dependencies"),
-            codeql.index("github/codeql-action/init@"),
-        )
-        self.assertLess(
-            codeql.index("quality.py codeql-prepare"),
-            codeql.index("github/codeql-action/init@"),
-        )
-        self.assertLess(
-            codeql.index("github/codeql-action/init@"),
-            codeql.index("quality.py codeql-build"),
-        )
 
     def test_coverage_is_parser_validated_and_separate(self):
         validate_coverage(self.files["coverage.yml"])
@@ -289,7 +257,7 @@ class WorkflowPolicyTests(unittest.TestCase):
 
     def test_mutations_of_material_policy_are_rejected(self):
         security = self.files["security.yml"].replace(
-            "          - language: actions\n            build-mode: none\n", ""
+            "fail-on-severity: high", "fail-on-severity: critical"
         )
         with self.assertRaises(AssertionError):
             validate_security(security)
