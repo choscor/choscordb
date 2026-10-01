@@ -32,8 +32,14 @@ class PreferencesWorkspaceTest : public QObject {
         using namespace choscordb;
         QTemporaryDir directory;
         MainWindow window(nullptr, directory.filePath("integration.sqlite"));
-        window.show();
         auto* workspace = window.findChild<QueryWorkspace*>();
+        QVERIFY(workspace);
+        QSignalSpy profilesReady(workspace->adapter(), &EngineAdapter::profilesReady);
+        window.show();
+        // This test controls navigator visibility directly. The initial saved
+        // profile reply must finish before installing its synthetic roots,
+        // otherwise the normal sidebar synchronization clears that fixture.
+        QTRY_COMPARE(profilesReady.count(), 1);
         auto* controller = window.findChild<NavigatorController*>();
         auto* tree = window.findChild<QTreeView*>("databaseNavigator");
         QVERIFY(workspace && controller && tree);
