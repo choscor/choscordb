@@ -166,22 +166,25 @@ class ObjectDataWorkspaceTest : public QObject {
         sheet->reject();
     }
 
-    void valueLoadFailureUsesWindowToast() {
+    void valueLoadFailureRemainsInLocalStatus() {
         choscordb::EngineAdapter adapter;
         QWidget host;
         host.resize(900, 600);
         host.show();
         choscordb::ValueDetailDialog detail(&adapter, &host);
+        detail.show();
         detail.openValue(777, 888);
-        QTRY_VERIFY(
-            host.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly));
-        auto* toast =
-            host.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
-        QTRY_VERIFY2(toast->text().contains("Unable to load value"), qPrintable(toast->text()));
-        QCOMPARE(toast->property("variant").toString(), QString("danger"));
-        QVERIFY(toast->x() >= host.width() / 2);
-        QVERIFY(toast->y() >= host.height() / 2);
-        QVERIFY(detail.findChild<QLabel*>("valueStatus")->text().isEmpty());
+        auto* status = detail.findChild<QLabel*>("valueStatus");
+        QVERIFY(status);
+        QTRY_VERIFY2(status->text().contains("Unable to load value"), qPrintable(status->text()));
+        QVERIFY(status->isVisible());
+        auto* retry = detail.findChild<QPushButton*>("valueRetry");
+        QVERIFY(retry && retry->isVisible());
+        retry->click();
+        QTRY_VERIFY(status->text().contains("Unable to load value"));
+        QTRY_VERIFY(retry->isVisible());
+        QVERIFY(
+            !host.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly));
     }
 
     void resultGridUsesCompactHeaderAndAlternatingRows() {
@@ -329,11 +332,12 @@ class ObjectDataWorkspaceTest : public QObject {
             for (auto* action : actions)
                 if (!action->isSeparator())
                     labels << action->text();
-            QCOMPARE(labels,
-                     QStringList({"Quick Filter", "View cell as JSON", "View row as JSON",
-                                  "View table as JSON", "Copy selected cells", "Copy selected rows",
-                                  "Copy current page", "Duplicate row", "Add row",
-                                  "Delete selected", "Restore selected", "Set NULL", "Cancel"}));
+            QCOMPARE(
+                labels,
+                QStringList({"Edit cell…", "Quick Filter", "View cell as JSON", "View row as JSON",
+                             "View table as JSON", "Copy selected cells", "Copy selected rows",
+                             "Copy current page", "Duplicate row", "Add row", "Delete selected",
+                             "Restore selected", "Set NULL", "Cancel"}));
             for (auto* action : actions)
                 if (!action->isSeparator())
                     QVERIFY(!action->isEnabled());

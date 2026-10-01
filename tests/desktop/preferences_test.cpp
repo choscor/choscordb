@@ -318,18 +318,63 @@ class PreferencesTest : public QObject {
                 QTest::keyClick(&dialog, Qt::Key_Escape);
             QVERIFY(dialog.isVisible());
             QVERIFY(dialog.isRunning());
-            auto* progress = dialog.findChild<choscordb::ToastRegion*>("progressToast");
-            QVERIFY(progress);
-            QVERIFY(progress->text().contains("Cancelling"));
+            auto* status = dialog.findChild<QLabel*>("exportStatus");
+            QVERIFY(status && status->isVisible());
+            QVERIFY(status->text().contains("Cancelling"));
+            QVERIFY(!dialog.findChild<choscordb::ToastRegion*>("progressToast"));
         });
         dialog.startExportTo(directory.filePath("cancelled.csv"), "csv");
         QTRY_VERIFY(cancellationRequested);
         QTRY_VERIFY(!dialog.isRunning());
         QVERIFY(!dialog.isVisible());
+        auto* finalStatus = dialog.findChild<QLabel*>("exportStatus");
+        QVERIFY(finalStatus);
+        QCOMPARE(finalStatus->text(), QString("Export cancelled."));
+        QVERIFY(!owner.findChild<choscordb::ToastRegion*>("toastRegion"));
         QCOMPARE(QDir(directory.path())
                      .entryList(QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot)
                      .size(),
                  0);
+    }
+
+    void exportFailureKeepsReadableRetryFeedback() {
+        choscordb::EngineAdapter adapter;
+        QTemporaryDir directory;
+        QWidget owner;
+        owner.show();
+        choscordb::ExportDialog dialog(&adapter, &owner);
+        dialog.setQuery(1);
+        adapter.shutdown();
+        dialog.show();
+        dialog.startExportTo(directory.filePath("failed.csv"), "csv");
+        QTRY_VERIFY(!dialog.isRunning());
+        auto* status = dialog.findChild<QLabel*>("exportStatus");
+        QVERIFY(status && status->isVisible());
+        QVERIFY(!status->text().isEmpty());
+        QCOMPARE(dialog.findChild<QPushButton*>("exportStart")->text(), QString("&Retry"));
+        QVERIFY(dialog.isVisible());
+        QVERIFY(!owner.findChild<choscordb::ToastRegion*>("toastRegion"));
+    }
+
+    void exportCancellationKeepsNeutralLocalFeedback() {
+        choscordb::EngineAdapter adapter;
+        QTemporaryDir directory;
+        QWidget owner;
+        owner.show();
+        choscordb::ExportDialog dialog(&adapter, &owner);
+        dialog.setQuery(1);
+        dialog.show();
+        dialog.startExportTo(directory.filePath("cancelled.csv"), "csv");
+        QVERIFY(dialog.isRunning());
+        auto* loading = dialog.findChild<QLabel*>("statusLoadingIcon");
+        QVERIFY(loading && loading->isVisible());
+        dialog.findChild<QPushButton*>("exportCancel")->click();
+        QVERIFY(!dialog.isRunning());
+        QVERIFY(!loading->isVisible());
+        auto* status = dialog.findChild<QLabel*>("exportStatus");
+        QVERIFY(status && status->isVisible());
+        QCOMPARE(status->text(), QString("Export cancelled."));
+        QVERIFY(!owner.findChild<choscordb::ToastRegion*>("toastRegion"));
     }
 
     void appearanceOffersOnlySystemLightAndDark() {
@@ -355,11 +400,11 @@ class PreferencesTest : public QObject {
         auto* apply = dialog.findChild<QPushButton*>("preferencesApply");
         QTRY_VERIFY(reset->isEnabled());
         QVERIFY(!apply->isEnabled());
-        auto* toast = dialog.findChild<choscordb::ToastRegion*>("toastRegion");
-        QVERIFY(toast);
-        QTRY_VERIFY(toast->isVisible());
-        QCOMPARE(toast->property("variant").toString(), QString("danger"));
-        QVERIFY(dialog.findChild<QLabel*>("preferencesStatus") == nullptr);
+        auto* status = dialog.findChild<QLabel*>("preferencesStatus");
+        QVERIFY(status);
+        QTRY_VERIFY(!status->text().isEmpty());
+        QVERIFY(status->textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
+        QVERIFY(dialog.findChild<choscordb::ToastRegion*>("toastRegion") == nullptr);
         reset->click();
         QVERIFY(apply->isEnabled());
     }
@@ -447,9 +492,9 @@ class PreferencesTest : public QObject {
         emit adapter.editorPreferencesReady(confirmed.first().at(0).toULongLong(),
                                             choscordb::EditorPreferences{});
         QCOMPARE(size->value(), 24);
-        auto* toast = dialog.findChild<choscordb::ToastRegion*>("toastRegion");
-        QVERIFY(toast);
-        const auto error = toast->accessibleDescription();
+        auto* status = dialog.findChild<QLabel*>("preferencesStatus");
+        QVERIFY(status);
+        const auto error = status->text();
         QVERIFY(error.contains("SQL editor / Keyboard shortcuts"));
         QVERIFY(error.contains("Results & execution"));
         QVERIFY(error.contains("History & recovery"));

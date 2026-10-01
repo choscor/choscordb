@@ -14,7 +14,8 @@ class QComboBox;
 namespace choscordb {
 namespace design {
 class FieldValidation;
-}
+class StatusLine;
+} // namespace design
 class SqlEditor;
 class AppearanceController;
 class PreferencesDialog final : public DialogShell {
@@ -38,6 +39,7 @@ class PreferencesDialog final : public DialogShell {
     void showEvent(QShowEvent* event) override;
 
   private:
+    void setStatus(const QString& message);
     EditorPreferences draft() const;
     void fill(const EditorPreferences& preferences);
     void updatePreview();
@@ -48,6 +50,8 @@ class PreferencesDialog final : public DialogShell {
     void fillQuery(const QueryPreferences& value);
     void fillHistory(const HistoryPolicy& value);
     bool placeValidationError(const QString& message);
+    design::StatusLine* statusLine_;
+    QLabel* status_;
     QPointer<EngineAdapter> adapter_;
     QPointer<AppearanceController> appearance_;
     QList<ShortcutDescriptor> catalog_;

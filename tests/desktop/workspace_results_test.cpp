@@ -376,7 +376,10 @@ void WorkspaceTest::exportsOriginalResultAfterBrowsing() {
     QCOMPARE(toast->parentWidget(), &f.parent);
     QVERIFY(toast->x() >= f.parent.width() / 2);
     QVERIFY(toast->y() >= f.parent.height() / 2);
-    QVERIFY(!dialog->findChild<QLabel*>("exportStatus"));
+    auto* status = dialog->findChild<QLabel*>("exportStatus");
+    QVERIFY(status && status->isVisible());
+    QVERIFY(status->text().contains("Export complete"));
+    QVERIFY(status->text().contains(destination));
     QFile output(destination);
     QVERIFY(output.open(QIODevice::ReadOnly));
     const auto bytes = output.readAll();
@@ -440,13 +443,13 @@ void WorkspaceTest::exportFailureLeavesResultUsable() {
     QVERIFY(dialog);
     dialog->startExportTo(directory.filePath("missing/rows.csv"), "csv");
     QTRY_VERIFY(!dialog->isRunning());
+    auto* status = dialog->findChild<QLabel*>("exportStatus");
+    QVERIFY(status && status->isVisible());
+    QVERIFY(status->text().contains("failed", Qt::CaseInsensitive));
     auto* toast =
         f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
-    QVERIFY(toast);
-    QTRY_VERIFY(toast->isVisible());
-    QVERIFY(toast->text().contains("failed", Qt::CaseInsensitive));
-    QCOMPARE(toast->property("variant").toString(), QString("danger"));
-    QVERIFY(!dialog->findChild<QLabel*>("exportStatus"));
+    QVERIFY(!toast || !toast->isVisible());
+    QCOMPARE(dialog->findChild<QPushButton*>("exportStart")->text(), QString("&Retry"));
     QVERIFY(f.run.isEnabled());
     QCOMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("42"));
     QVERIFY(QDir(directory.path())

@@ -9,6 +9,7 @@
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/menu/menu.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "models/result_table_model.h"
@@ -607,12 +608,9 @@ void NavigatorSqlWorkspaceTest::objectDataKeepsCancelPaneVisibleUntilAcknowledge
     QVERIFY(explorer->findChild<QLabel*>("objectStatus")
                 ->text()
                 .contains("cancel", Qt::CaseInsensitive));
-    QVERIFY(window.findChild<choscordb::ToastRegion*>("toastRegion")
-                ->text()
+    QVERIFY(explorer->findChild<choscordb::design::StatusLine*>("objectFooter")
+                ->accessibleDescription()
                 .contains("cancel", Qt::CaseInsensitive));
-    QCOMPARE(
-        window.findChild<choscordb::ToastRegion*>("toastRegion")->property("variant").toString(),
-        QString("warning"));
     QVERIFY(!window.showScreen(choscordb::MainWindow::Screen::Start));
     QSignalSpy changed(explorer, &choscordb::ObjectExplorer::objectChanged);
     explorer->openObject(connection, R"(["main","another"])", "another");
@@ -739,17 +737,16 @@ void NavigatorSqlWorkspaceTest::activeExecutionKeepsDocumentAndCancelReachable()
                    "x<100000000) SELECT sum(x) FROM n;");
     run->trigger();
     QVERIFY(!run->isEnabled());
-    auto* progress = window.findChild<choscordb::ToastRegion*>("progressToast");
-    QVERIFY(progress);
-    QVERIFY(progress->isVisible());
-    QVERIFY(progress->findChild<QProgressBar*>()->isVisible());
-    QCOMPARE(progress->geometry().right(), progress->parentWidget()->width() - 17);
-    QCOMPARE(progress->geometry().bottom(), progress->parentWidget()->height() - 17);
+    auto* progress = window.findChild<choscordb::design::StatusLine*>("sqlResultFooter");
+    QVERIFY(progress && progress->isVisible());
+    QVERIFY(progress->property("busy").toBool());
+    QVERIFY(progress->findChild<QLabel*>("statusLoadingIcon")->isVisible());
+    QVERIFY(!window.findChild<choscordb::ToastRegion*>("progressToast"));
     QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier,
                       tabs->tabBar()->tabRect(1).center());
     QCOMPARE(tabs->currentWidget(), first);
-    QVERIFY(window.findChild<choscordb::ToastRegion*>("toastRegion")
-                ->text()
+    QVERIFY(window.findChild<choscordb::design::StatusLine*>("workspaceStatusLine")
+                ->accessibleDescription()
                 .contains("cancel", Qt::CaseInsensitive));
     first->setFocus();
     QTest::keyClick(first, Qt::Key_Tab, Qt::ControlModifier);
@@ -857,6 +854,10 @@ void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWit
     profiles->saveDraft(profile);
     QTRY_COMPARE(profiles->findChild<QListWidget*>("profileList")->count(), 1);
     QTRY_VERIFY(save->isEnabled());
+    auto* savedNotice = window.findChild<choscordb::ToastRegion*>("toastRegion");
+    QVERIFY(savedNotice && savedNotice->text().contains("Profile saved."));
+    savedNotice->findChild<QToolButton*>("toastDismiss")->click();
+    QTRY_VERIFY(savedNotice->isHidden());
     profiles->selectProfile(profile.id);
     profiles->findChild<QPushButton*>("profileConnect")->click();
     QTRY_COMPARE(connected.count(), 1);
@@ -921,6 +922,11 @@ void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWit
     QCOMPARE(choscordb::design::DialogPresentation::activeDialog(), nullptr);
     tabs->tabCloseRequested(tabs->currentIndex());
     tabs->setCurrentWidget(original);
+    auto* connectionNotice = window.findChild<choscordb::ToastRegion*>("toastRegion");
+    QVERIFY(connectionNotice);
+    QVERIFY(connectionNotice->text().contains("Connected."));
+    connectionNotice->findChild<QToolButton*>("toastDismiss")->click();
+    QTRY_VERIFY(connectionNotice->isHidden());
     auto* select = menu.findChild<QAction*>("generate_select");
     QVERIFY(select);
     select->trigger();

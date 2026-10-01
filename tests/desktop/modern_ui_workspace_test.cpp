@@ -118,7 +118,9 @@ void ModernUiTest::centralScreensPreserveDraftsAndLastCloseReturnsToStart() {
     QCOMPARE(screens->currentWidget()->objectName(), QString("sqlScreen"));
     QCOMPARE(window.findChild<QStackedWidget*>("sidebarPanels")->currentIndex(), 2);
     window.findChild<QAction*>("showStart")->trigger();
-    QCOMPARE(screens->currentWidget()->objectName(), QString("sqlScreen"));
+    QCOMPARE(screens->currentWidget()->objectName(), QString("startScreen"));
+    QCOMPARE(tabs->count(), 1);
+    QCOMPARE(editor->text(), QString("-- retained draft"));
     window.findChild<QAction*>("showSql")->trigger();
     QCOMPARE(tabs->currentWidget(), editor);
     QCOMPARE(editor->text(), QString("-- retained draft"));
@@ -459,6 +461,8 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     const auto contentBefore = window.findChild<QStackedWidget*>()->geometry();
     toast->showToast("Warning", "First notice", choscordb::ToastVariant::Warning, 10000);
     toast->showToast("Warning", "Replacement notice", choscordb::ToastVariant::Warning, 10000);
+    QVERIFY(toast->text().contains("First notice"));
+    toast->findChild<QToolButton*>("toastDismiss")->click();
     QVERIFY(toast->text().contains("Replacement notice"));
     QCOMPARE(toast->property("variant").toString(), QString("warning"));
     QCoreApplication::processEvents();
@@ -472,11 +476,13 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     QCoreApplication::processEvents();
     QCOMPARE(toast->geometry().right(), host->width() - 17);
     QCOMPARE(toast->geometry().bottom(), host->height() - 17);
+    toast->findChild<QToolButton*>("toastDismiss")->click();
     window.showToast("Could not save", choscordb::ToastVariant::Danger);
     QCOMPARE(toast->property("variant").toString(), QString("danger"));
     QVERIFY(toast->text().contains("Could not save"));
     QCOMPARE(window.findChildren<choscordb::ToastRegion*>("toastRegion").size(), 1);
     QCOMPARE(choscordb::windowToast(&window), toast);
+    toast->findChild<QToolButton*>("toastDismiss")->click();
     window.showToast("Connected", choscordb::ToastVariant::Success);
     QTRY_VERIFY_WITH_TIMEOUT(
         qobject_cast<QGraphicsOpacityEffect*>(toast->graphicsEffect())->opacity() > 0.99, 2000);

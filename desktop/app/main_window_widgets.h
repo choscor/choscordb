@@ -9,7 +9,10 @@
 #include <QCoreApplication>
 #include <QEvent>
 #include <QIcon>
+#include <QItemSelectionModel>
+#include <QKeyEvent>
 #include <QList>
+#include <QListWidget>
 #include <QMouseEvent>
 #include <QPointer>
 #include <QResizeEvent>
@@ -20,6 +23,7 @@
 #include <QTabWidget>
 #include <QTimer>
 #include <QWheelEvent>
+#include <algorithm>
 #include <functional>
 #include <utility>
 
@@ -149,6 +153,70 @@ class SidebarWidthObserver final : public QObject {
 
   private:
     std::function<void()> widthChanged_;
+};
+
+class SidebarConnectionListScroll final : public QObject {
+  public:
+    SidebarConnectionListScroll(QListWidget* list, QScrollArea* scroll, design::ThemeManager* theme)
+        : QObject(list), list_(list), scroll_(scroll) {
+        list->installEventFilter(this);
+        const auto updateHeight = [list] {
+            int height = 0;
+            for (int row = 0; row < list->count(); ++row)
+                height += list->sizeHintForRow(row) + 2 * list->spacing();
+            list->setFixedHeight(list->count() == 0 ? 0 : height + 2 * list->frameWidth());
+        };
+        const auto scheduleHeight = [this, updateHeight] {
+            QTimer::singleShot(0, this, updateHeight);
+        };
+        auto* model = list->model();
+        connect(model, &QAbstractItemModel::rowsInserted, this, scheduleHeight);
+        connect(model, &QAbstractItemModel::rowsRemoved, this, scheduleHeight);
+        connect(model, &QAbstractItemModel::modelReset, this, scheduleHeight);
+        connect(model, &QAbstractItemModel::layoutChanged, this, scheduleHeight);
+        connect(model, &QAbstractItemModel::dataChanged, this, scheduleHeight);
+        connect(theme, &design::ThemeManager::metricsChanged, this, scheduleHeight);
+        scheduleHeight();
+        const auto revealCurrent = [list, scroll] {
+            auto* item = list->currentItem();
+            if (!item)
+                return;
+            const auto row = list->visualItemRect(item);
+            const auto point = list->viewport()->mapTo(scroll->widget(), row.center());
+            scroll->ensureVisible(point.x(), point.y(), 0, row.height());
+        };
+        connect(list, &QListWidget::currentItemChanged, this,
+                [this, revealCurrent] { QTimer::singleShot(0, this, revealCurrent); });
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched != list_ || event->type() != QEvent::KeyPress || !list_->currentItem())
+            return QObject::eventFilter(watched, event);
+        auto* key = static_cast<QKeyEvent*>(event);
+        if (key->key() != Qt::Key_PageDown && key->key() != Qt::Key_PageUp)
+            return QObject::eventFilter(watched, event);
+        const int direction = key->key() == Qt::Key_PageDown ? 1 : -1;
+        const auto current = list_->visualItemRect(list_->currentItem());
+        const int distance =
+            std::max(current.height(), scroll_->viewport()->height() - current.height());
+        const int targetY = current.center().y() + direction * distance;
+        int targetRow = list_->currentRow();
+        for (int row = targetRow + direction; row >= 0 && row < list_->count(); row += direction) {
+            const int centerY = list_->visualItemRect(list_->item(row)).center().y();
+            if (direction * (centerY - targetY) > 0)
+                break;
+            targetRow = row;
+        }
+        // MultiSelection page keys move focus without changing the selected connections.
+        list_->setCurrentRow(targetRow, QItemSelectionModel::NoUpdate);
+        key->accept();
+        return true;
+    }
+
+  private:
+    QListWidget* list_;
+    QScrollArea* scroll_;
 };
 
 class HoveredTabCloseVisibility final : public QObject {

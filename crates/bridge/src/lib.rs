@@ -261,6 +261,7 @@ pub mod ffi {
     struct ParsedGridEditValueDto {
         valid: bool,
         cell: CellDto,
+        error: String,
     }
     struct JsonViewRowDto {
         cells: Vec<CellDto>,

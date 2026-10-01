@@ -133,7 +133,7 @@ QList<Specimen> specimens() {
          "desktop/design_system/right_sheet/right_sheet.cpp"},
         {"Components", "quick-search", "Quick search overlay",
          "desktop/design_system/quick_search/quick_search_dialog.cpp"},
-        {"Components", "status-line", "Workspace status line",
+        {"Components", "status-line", "Workspace status line with loading indicator",
          "desktop/design_system/status_line/status_line.cpp"},
         {"Components", "nonmodal", "Nonmodal content",
          "desktop/design_system/dialog_shell/dialog_shell.cpp"},

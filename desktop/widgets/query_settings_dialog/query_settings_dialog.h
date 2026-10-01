@@ -3,10 +3,12 @@
 #include "design_system/dialog_shell/dialog_shell.h"
 #include <QPointer>
 class QSpinBox;
+class QLabel;
 namespace choscordb {
 namespace design {
 class Button;
 class FieldValidation;
+class StatusLine;
 } // namespace design
 class QuerySettingsDialog final : public DialogShell {
     Q_OBJECT
@@ -17,9 +19,12 @@ class QuerySettingsDialog final : public DialogShell {
     void queryPreferencesSaveSubmitted(quint64 token);
 
   private:
+    void setStatus(const QString& message);
     void apply();
     void fill(const QueryPreferences& value);
     void updateControls();
+    design::StatusLine* statusLine_;
+    QLabel* status_;
     QPointer<EngineAdapter> adapter_;
     QSpinBox *pageSize_, *timeout_;
     quint32 connectionTimeoutSeconds_;

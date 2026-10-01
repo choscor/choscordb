@@ -110,12 +110,11 @@ class QuerySettingsDialogTest : public QObject {
         QCOMPARE(submitted.count(), 2);
         QCOMPARE(confirmed.count(), 2);
         QCOMPARE(size->value(), 432);
-        auto* toast = dialog.findChild<choscordb::ToastRegion*>("toastRegion");
-        QVERIFY(toast);
-        QTRY_VERIFY(toast->isVisible());
-        QCOMPARE(toast->property("variant").toString(), QString("danger"));
-        QVERIFY(!toast->accessibleDescription().isEmpty());
-        QVERIFY(dialog.findChild<QLabel*>("querySettingsStatus") == nullptr);
+        auto* status = dialog.findChild<QLabel*>("querySettingsStatus");
+        QVERIFY(status);
+        QVERIFY(!status->text().isEmpty());
+        QVERIFY(status->textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
+        QVERIFY(dialog.findChild<choscordb::ToastRegion*>("toastRegion") == nullptr);
         emit adapter.queryPreferencesReady(submitted.first().at(0).toULongLong(),
                                            choscordb::QueryPreferences{});
         QCOMPARE(size->value(), 432);
