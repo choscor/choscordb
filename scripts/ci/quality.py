@@ -308,6 +308,7 @@ STAGES = {
     "cargo-deny": cargo_deny,
     "native-dependencies": lambda: desktop("dependencies"),
     "native-build": native_build,
+    "codeql-prepare": lambda: native_build("codeql-prepare"),
     "codeql-build": lambda: native_build("codeql"),
     "native-tests": native_tests,
 }

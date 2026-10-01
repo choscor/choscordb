@@ -137,7 +137,7 @@ def validate_security(security):
             "codeql-action/analyze@",
             "security-extended",
             "matrix.language == 'c-cpp' && 'macos-15-intel' || 'macos-15'",
-            "timeout-minutes: 75",
+            "timeout-minutes: 120",
         ),
     )
 
@@ -227,6 +227,10 @@ class WorkflowPolicyTests(unittest.TestCase):
         codeql = yaml_block(self.files["security.yml"], "codeql", 2)
         self.assertLess(
             codeql.index("quality.py native-dependencies"),
+            codeql.index("github/codeql-action/init@"),
+        )
+        self.assertLess(
+            codeql.index("quality.py codeql-prepare"),
             codeql.index("github/codeql-action/init@"),
         )
         self.assertLess(

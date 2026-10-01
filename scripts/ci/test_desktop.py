@@ -1,6 +1,8 @@
 """Native build configuration stays coherent under translated CI tools."""
 
+from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -54,3 +56,42 @@ class NativeArchitectureTest(unittest.TestCase):
         self.assertEqual(
             build, ["cmake", "--build", "build/ci/codeql", "--parallel", "3"]
         )
+
+
+class CodeqlPreparationTest(unittest.TestCase):
+    def test_preparation_leaves_native_targets_for_traced_build(self):
+        with (
+            patch.object(sys, "argv", ["desktop.py", "codeql-prepare"]),
+            patch.object(desktop.platform, "system", return_value="Darwin"),
+            patch.object(desktop.subprocess, "check_output", return_value="0\n"),
+            patch.object(desktop, "run") as run,
+        ):
+            desktop.main()
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(
+            run.call_args_list[1].args[0],
+            [
+                "cmake",
+                "--build",
+                "build/ci/codeql",
+                "--target",
+                "cargo-build_choscordb_bridge",
+            ],
+        )
+
+    def test_traced_build_invalidates_prepared_bridge_header(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            header = root / "build/ci/codeql/generated/cxxbridge-source/rust/cxx.h"
+            header.parent.mkdir(parents=True)
+            header.write_text("prepared header")
+            with (
+                patch.object(sys, "argv", ["desktop.py", "codeql"]),
+                patch.object(desktop, "ROOT", root),
+                patch.object(desktop.platform, "system", return_value="Darwin"),
+                patch.object(desktop.subprocess, "check_output", return_value="0\n"),
+                patch.object(desktop, "run") as run,
+            ):
+                desktop.main()
+            self.assertFalse(header.exists())
+            self.assertNotIn("--target", run.call_args_list[-1].args[0])
