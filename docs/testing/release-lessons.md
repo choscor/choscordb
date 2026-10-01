@@ -93,3 +93,19 @@ CTest retries, skip an assertion, or increase a timeout as the only fix.
   from a network failure; distinguish a published release from unfinished feeds.
 - Record manual clean-machine/update checks separately from automated evidence.
   A maintainer attestation is not an independently observed pass or a supplied log.
+
+
+## Native macOS full-screen readiness
+
+The v0.1.9 preparation run on macOS 15.7 reported a title-bar failure while the
+native window still had its full-screen mask after `showNormal()`. The test had
+accepted that mask as entry readiness and slept for a fixed 1.2 seconds.
+Wait for actual AppKit entry/exit notifications and safe content layout before
+requesting the next state. Use a bounded `QEventLoop::exec()` for the transition:
+Qt's Cocoa dispatcher uses the native application run loop in exec mode, whereas
+manual `processEvents()` pumping only flushes events. A local diagnostic waiting
+for the notification with manual pumping failed; the bounded native loop passed.
+Retain the layout assertions and four-second transition limits. Remove observers
+before the local state and window are destroyed.
+
+Reference: [Qt 6.8.3 Cocoa event dispatcher](https://github.com/qt/qtbase/blob/v6.8.3/src/plugins/platforms/cocoa/qcocoaeventdispatcher.mm).

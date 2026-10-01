@@ -3,8 +3,11 @@
 #import <AppKit/AppKit.h>
 #include <QApplication>
 #include <QDockWidget>
+#include <QEventLoop>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QtTest>
+#include <functional>
 
 static bool contentClearsTitleBar(choscordb::MainWindow& window, NSWindow* native) {
     if (native.styleMask & NSWindowStyleMaskFullSizeContentView)
@@ -16,11 +19,35 @@ static bool contentClearsTitleBar(choscordb::MainWindow& window, NSWindow* nativ
     return window.contentsMargins().top() == 0 && contentTop == 0 && navigatorTop == 0;
 }
 
+static bool waitForNativeState(const std::function<bool()>& ready) {
+    // A manually pumped processEvents() does not enter Cocoa's NSApp run loop.
+    // Full-screen completion needs that native loop, just like the running app.
+    QEventLoop loop;
+    QTimer poll;
+    QTimer deadline;
+    deadline.setSingleShot(true);
+    QObject::connect(&poll, &QTimer::timeout, &loop, [&] {
+        if (ready())
+            loop.quit();
+    });
+    QObject::connect(&deadline, &QTimer::timeout, &loop, &QEventLoop::quit);
+    poll.start(10);
+    deadline.start(4000);
+    loop.exec();
+    return ready();
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QTemporaryDir storage;
     choscordb::MainWindow window(nullptr, storage.filePath("profiles.sqlite"));
     window.show();
+    window.activateWindow();
+    window.raise();
+    if (!QTest::qWaitForWindowActive(&window, 4000)) {
+        qCritical("Native title bar test window must be active before transitions");
+        return 1;
+    }
     app.processEvents();
     NSWindow* native = [reinterpret_cast<NSView*>(window.winId()) window];
     auto* theme = window.findChild<choscordb::design::ThemeManager*>();
@@ -58,32 +85,46 @@ int main(int argc, char** argv) {
         qCritical("Resized content must begin directly below the native title bar");
         return 1;
     }
+    bool entered = false;
+    auto* enteredState = &entered;
+    bool exited = false;
+    auto* exitedState = &exited;
+    auto* center = [NSNotificationCenter defaultCenter];
+    id enterObserver = [center addObserverForName:NSWindowDidEnterFullScreenNotification
+                                           object:native
+                                            queue:nil
+                                       usingBlock:^(NSNotification*) {
+                                         *enteredState = true;
+                                       }];
+    id exitObserver = [center addObserverForName:NSWindowDidExitFullScreenNotification
+                                          object:native
+                                           queue:nil
+                                      usingBlock:^(NSNotification*) {
+                                        *exitedState = true;
+                                      }];
     window.showFullScreen();
-    const bool enteredSafe = QTest::qWaitFor(
-        [&] {
-            return (native.styleMask & NSWindowStyleMaskFullScreen) &&
+    // Qt sets the style mask before AppKit completes the transition. Wait for
+    // the native completion notification before asking it to exit full screen.
+    const bool fullScreenSafe = waitForNativeState([&] {
+        return entered && (native.styleMask & NSWindowStyleMaskFullScreen) &&
+               contentClearsTitleBar(window, native);
+    });
+    bool windowedSafe = false;
+    if (fullScreenSafe) {
+        window.showNormal();
+        windowedSafe = waitForNativeState([&] {
+            return exited && !(native.styleMask & NSWindowStyleMaskFullScreen) &&
                    contentClearsTitleBar(window, native);
-        },
-        4000);
-    // Qt applies the full-screen mask before AppKit finishes its transition.
-    QTest::qWait(1200);
-    const bool fullScreenSafe = enteredSafe && (native.styleMask & NSWindowStyleMaskFullScreen) &&
-                                contentClearsTitleBar(window, native);
-    window.showNormal();
-    const bool exitedSafe = QTest::qWaitFor(
-        [&] {
-            return !(native.styleMask & NSWindowStyleMaskFullScreen) &&
-                   contentClearsTitleBar(window, native);
-        },
-        4000);
-    QTest::qWait(1200);
-    const bool windowedSafe = exitedSafe && !(native.styleMask & NSWindowStyleMaskFullScreen) &&
-                              contentClearsTitleBar(window, native);
+        });
+    }
+    [center removeObserver:enterObserver];
+    [center removeObserver:exitObserver];
     if (!fullScreenSafe || !windowedSafe) {
-        qCritical("Qt content must remain below the native title bar through full-screen "
-                  "transitions (fullSafe=%d, normalSafe=%d, mask=%lu, margin=%d)",
-                  fullScreenSafe, windowedSafe, static_cast<unsigned long>(native.styleMask),
-                  window.contentsMargins().top());
+        qCritical(
+            "Qt content must remain below the native title bar through full-screen "
+            "transitions (fullSafe=%d, normalSafe=%d, mask=%lu, margin=%d, entered=%d, exited=%d)",
+            fullScreenSafe, windowedSafe, static_cast<unsigned long>(native.styleMask),
+            window.contentsMargins().top(), entered, exited);
         return 1;
     }
     return 0;
