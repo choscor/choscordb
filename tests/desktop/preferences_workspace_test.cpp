@@ -14,12 +14,14 @@
 #include <QComboBox>
 #include <QCompleter>
 #include <QDialog>
+#include <QEventLoop>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QTreeView>
 #include <Qsci/qscilexer.h>
 #include <QtTest>
@@ -458,6 +460,41 @@ class PreferencesWorkspaceTest : public QObject {
         QCOMPARE(value.height, quint32(760));
     }
 
+    void appearanceReadinessDuringPreviewKeepsSaveEnabled() {
+        QTemporaryDir directory;
+        choscordb::MainWindow window(nullptr, directory.filePath("preview-readiness.sqlite"));
+        window.show();
+        auto* appearance = window.findChild<choscordb::AppearanceController*>();
+        QTRY_VERIFY(appearance->canSave());
+        QSignalSpy reloaded(appearance, &choscordb::AppearanceController::readyChanged);
+        bool readyDuringPreview = false;
+        QObject notificationObserver;
+        connect(appearance, &choscordb::AppearanceController::warningChanged, &notificationObserver,
+                [&](const QString& message) {
+                    if (message.isEmpty() || !reloaded.isEmpty())
+                        return;
+                    // A notification can run a nested event loop while preview
+                    // still holds its earlier "loading" result.
+                    QEventLoop delivery;
+                    connect(appearance, &choscordb::AppearanceController::readyChanged, &delivery,
+                            &QEventLoop::quit);
+                    QTimer::singleShot(5000, &delivery, &QEventLoop::quit);
+                    delivery.exec();
+                    readyDuringPreview = !reloaded.isEmpty();
+                });
+        appearance->retry();
+        window.findChild<QAction*>("preferences")->trigger();
+        auto* dialog = window.findChild<QDialog*>("preferencesDialog");
+        QVERIFY(readyDuringPreview);
+        QVERIFY(reloaded.last().first().toBool());
+        QVERIFY(appearance->canSave());
+        QTRY_VERIFY(dialog->findChild<QSpinBox*>("preferencesFontSize")->isEnabled());
+        QVERIFY(dialog->findChild<QPushButton*>("preferencesApply")->isEnabled());
+        dialog->close();
+        window.close();
+        QTRY_VERIFY(!window.isVisible());
+    }
+
     void savedPreferencesSurviveDialogClosureAndRestart() {
         QTemporaryDir directory;
         const auto path = directory.filePath("preferences.sqlite");
@@ -499,7 +536,18 @@ class PreferencesWorkspaceTest : public QObject {
         QCOMPARE(restarted.findChild<QAction*>("command_find")->shortcut(), QKeySequence("Ctrl+J"));
         restarted.findChild<QAction*>("preferences")->trigger();
         auto* dialog = restarted.findChild<QDialog*>("preferencesDialog");
-        QTRY_VERIFY(dialog->findChild<QPushButton*>("preferencesApply")->isEnabled());
+        auto* appearance = restarted.findChild<choscordb::AppearanceController*>();
+        QTRY_VERIFY2(
+            dialog->findChild<QPushButton*>("preferencesApply")->isEnabled(),
+            qPrintable(QString("%1 | %2 | appearance ready=%3, save=%4 | dialog enabled=%5, "
+                               "save explicitly disabled=%6")
+                           .arg(dialog->findChild<QLabel*>("preferencesStatus")->text(),
+                                appearance->currentWarning())
+                           .arg(appearance->isReady())
+                           .arg(appearance->canSave())
+                           .arg(dialog->isEnabled())
+                           .arg(dialog->findChild<QPushButton*>("preferencesApply")
+                                    ->testAttribute(Qt::WA_ForceDisabled))));
         QVERIFY(dialog->grab().save("native-preferences.png"));
         dialog->close();
         restarted.close();

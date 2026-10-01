@@ -264,8 +264,22 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     connect(font_, &QFontComboBox::currentFontChanged, this, &PreferencesDialog::updatePreview);
     connect(size_, &QSpinBox::valueChanged, this, &PreferencesDialog::updatePreview);
     const auto appearanceChanged = [this] {
-        if (appearance_)
-            appearanceValid_ = appearance_->preview(theme_->currentData().toString());
+        const QPointer<PreferencesDialog> guard(this);
+        if (appearance_) {
+            const auto revision = appearanceRevision_;
+            const bool valid = appearance_->preview(theme_->currentData().toString());
+            if (!guard)
+                return;
+            appearanceValid_ = valid;
+            // Readiness may arrive in a notification's nested event loop while
+            // preview still holds its earlier loading result.
+            if (appearance_ && revision != appearanceRevision_) {
+                const bool current = appearance_->preview(theme_->currentData().toString());
+                if (!guard)
+                    return;
+                appearanceValid_ = current;
+            }
+        }
         apply_->setEnabled(!busy_ && ready_ && appearanceValid_);
     };
     connect(theme_, &QComboBox::currentIndexChanged, this, appearanceChanged);
@@ -280,6 +294,7 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
         showAppearance(appearance_->current());
         connect(appearance_, &AppearanceController::resolvedChoicesChanged, this, showAppearance);
         connect(appearance_, &AppearanceController::readyChanged, this, [this](bool ready) {
+            ++appearanceRevision_;
             if (ready) {
                 appearanceValid_ = appearance_->canSave();
                 apply_->setEnabled(!busy_ && ready_ && appearanceValid_);
@@ -320,21 +335,26 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
             [this](quint64 token, const EditorPreferences& value) {
                 if (!token_ || token != token_)
                     return;
+                const QPointer<PreferencesDialog> guard(this);
                 token_ = 0;
                 const auto validation = shortcutValidationError(value, catalog_);
                 if (!validation.isEmpty())
                     errors_.append(tr("SQL editor / Keyboard shortcuts: %1").arg(validation));
                 else {
                     emit preferencesConfirmed(value);
+                    if (!guard)
+                        return;
                     if (!saving_)
                         fill(value);
                 }
-                finishRequests();
+                if (guard && advanceLoad())
+                    finishRequests();
             });
     connect(adapter, &EngineAdapter::queryPreferencesReady, this,
             [this](quint64 token, const QueryPreferences& value) {
                 if (!queryToken_ || token != queryToken_)
                     return;
+                const QPointer<PreferencesDialog> guard(this);
                 queryToken_ = 0;
                 const auto limits = EngineAdapter::queryPreferenceLimits();
                 if (value.version != limits.version || value.pageSize < limits.minPageSize ||
@@ -349,9 +369,12 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                         fillQuery(value);
                     else
                         confirmedSystemSchemaVisibility_ = value.showSystemSchemas;
+                    if (!guard)
+                        return;
                     emit queryPreferencesConfirmed(value);
                 }
-                finishRequests();
+                if (guard && advanceLoad())
+                    finishRequests();
             });
     connect(adapter, &EngineAdapter::historyPolicyReady, this,
             [this](quint64 token, const HistoryPolicy& value) {
@@ -387,7 +410,8 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                 } else
                     return;
                 errors_.append(tr("%1: %2").arg(section, error));
-                finishRequests();
+                if (advanceLoad())
+                    finishRequests();
             });
     fill(EditorPreferences{});
     fillQuery(QueryPreferences{});
@@ -400,9 +424,9 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     queryToken_ = nextToken();
     historyToken_ = nextToken();
     if (adapter_) {
+        // Startup may still have history/recovery replies awaiting Qt delivery.
+        // Advance each section after its result rather than adding a burst.
         adapter_->getEditorPreferences(token_);
-        adapter_->getQueryPreferences(queryToken_);
-        adapter_->getHistoryPolicy(historyToken_);
     } else {
         token_ = queryToken_ = historyToken_ = 0;
         errors_.append(tr("Settings service is unavailable."));
@@ -553,6 +577,17 @@ void PreferencesDialog::fillHistory(const HistoryPolicy& value) {
     recordHistory_->setChecked(value.enabled);
     historyDays_->setValue(value.maxAgeDays);
     historyRecords_->setValue(value.maxRecords);
+}
+bool PreferencesDialog::advanceLoad() {
+    const QPointer<PreferencesDialog> guard(this);
+    if (!saving_ && adapter_ && !token_) {
+        if (queryToken_)
+            adapter_->getQueryPreferences(queryToken_);
+        else if (historyToken_)
+            adapter_->getHistoryPolicy(historyToken_);
+    }
+    // A rejected request can synchronously deliver a failure notification.
+    return !guard.isNull();
 }
 void PreferencesDialog::finishRequests() {
     if (token_ || queryToken_ || historyToken_ || appearancePending_)

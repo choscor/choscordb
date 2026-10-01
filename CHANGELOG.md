@@ -11,6 +11,7 @@
 - Improved sidebar scrolling and section spacing.
 - Corrected PostgreSQL shutdown errors being reported as query errors instead of disconnected connections.
 - Fixed repeated cancellation of PostgreSQL object reads interrupting an existing transaction or SQL cursor.
+- Fixed Preferences failing to load during startup or staying unable to save after appearance settings load.
 
 ## [0.1.8]
 

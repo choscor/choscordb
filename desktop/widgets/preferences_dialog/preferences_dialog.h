@@ -49,6 +49,7 @@ class PreferencesDialog final : public DialogShell {
     void finishRequests();
     void fillQuery(const QueryPreferences& value);
     void fillHistory(const HistoryPolicy& value);
+    bool advanceLoad();
     bool placeValidationError(const QString& message);
     design::StatusLine* statusLine_;
     QLabel* status_;
@@ -73,6 +74,7 @@ class PreferencesDialog final : public DialogShell {
     QComboBox* theme_ = nullptr;
     QPushButton *apply_, *reset_;
     quint64 token_ = 0, queryToken_ = 0, historyToken_ = 0;
+    quint64 appearanceRevision_ = 0;
     bool appearancePending_ = false;
     QStringList errors_;
     std::optional<bool> confirmedSystemSchemaVisibility_;

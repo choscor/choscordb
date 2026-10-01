@@ -20,6 +20,7 @@
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWindow>
 #include <QtTest>
@@ -116,6 +117,26 @@ class PreferencesTest : public QObject {
                           background.mapTo(&owner, background.rect().center()));
         QCOMPARE(clicked.count(), 1);
     }
+    void preferencesLoadWhileStartupReadsAwaitDelivery() {
+        QTemporaryDir directory;
+        choscordb::EngineAdapter adapter(nullptr, directory.filePath("pending-loads.sqlite"));
+        QSignalSpy failed(&adapter, &choscordb::EngineAdapter::recoveryFailed);
+        const auto timers = adapter.findChildren<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+        QCOMPARE(timers.size(), 1);
+        auto* delivery = timers.first();
+        // Keep startup responses awaiting Qt delivery while the dialog opens.
+        delivery->stop();
+        for (quint64 token = 1000; token < 1007; ++token)
+            QVERIFY(adapter.getHistoryPolicy(token));
+        choscordb::PreferencesDialog dialog(&adapter, {});
+        delivery->start();
+        QCOMPARE(failed.count(), 0);
+        dialog.show();
+        QTRY_VERIFY(dialog.findChild<QPushButton*>("preferencesApply")->isEnabled());
+        QCOMPARE(failed.count(), 0);
+        dialog.close();
+    }
+
     void preferencesExposeSixSectionsAndCloseOnlyAfterSave() {
         choscordb::EngineAdapter adapter;
         choscordb::PreferencesDialog dialog(&adapter, {});
