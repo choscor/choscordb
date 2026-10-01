@@ -140,10 +140,6 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto pageMetric = ui.pageMetric;
     const auto rowsMetric = ui.rowsMetric;
     const auto visibleSizeMetric = ui.visibleSizeMetric;
-    auto* resultFooter = empty->parentWidget();
-    resultFooter->installEventFilter(this);
-    empty->installEventFilter(this);
-    compactState->installEventFilter(this);
     const auto previousPage = ui.previousPage;
     const auto nextPage = ui.nextPage;
     const auto exportResult = ui.exportResult;
@@ -463,9 +459,6 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                             rowsMetric,
                             visibleSizeMetric},
                            this);
-    connect(workspace_, &QueryWorkspace::documentTargetChanged, this,
-            &MainWindow::refreshResultFooterColor);
-    refreshResultFooterColor();
     connect(workspace_, &QueryWorkspace::foreignKeyRequested, this, &MainWindow::openReferencedRow);
     connect(grid->model(), &QAbstractItemModel::modelReset, grid, [grid, fitted = false]() mutable {
         if (!grid->model()->columnCount()) {
@@ -489,32 +482,13 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 else if (state == "completed" || state == "queued" || state == "running")
                     results->setCurrentIndex(0);
             });
-    connect(workspace_, &QueryWorkspace::executionStateChanged, this, [this](const QString& state) {
-        if (!centralWidget())
-            return;
-        if (state == "queued" || state == "running" || state == "cancelling") {
-            const auto detail = state == "queued"       ? tr("Waiting to run…")
-                                : state == "cancelling" ? tr("Cancelling query…")
-                                                        : tr("Running query…");
-            if (auto* footer = findChild<design::StatusLine*>("sqlResultFooter")) {
-                footer->setBusy(true);
-                footer->setMessage(detail);
-            }
-        } else {
-            if (auto* footer = findChild<design::StatusLine*>("sqlResultFooter")) {
-                footer->setBusy(false);
-                footer->setMessage({});
-            }
-        }
-    });
     connect(workspace_, &QueryWorkspace::executionStateChanged, this,
-            [this, cancelButton, resultFooter](const QString& state) {
+            [this, cancelButton](const QString& state) {
                 const bool active =
                     state == "queued" || state == "running" || state == "cancelling";
                 const bool restoreFocus = !active && cancelButton->hasFocus();
                 if (restoreFocus && editors_->currentWidget())
                     editors_->currentWidget()->setFocus();
-                fitResultFooter(resultFooter);
             });
     auto* objectExplorer = makeObjectExplorer();
     objectExplorer->hide(); // Not part of the workspace until its first object tab opens.

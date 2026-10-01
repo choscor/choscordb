@@ -1,3 +1,6 @@
+#include "app/object_explorer.h"
+#include "bridge/engine_adapter.h"
+#include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/theme_manager.h"
 #include "widgets/object_erd_widget.h"
 #include <QGraphicsPathItem>
@@ -6,6 +9,7 @@
 #include <QGraphicsSimpleTextItem>
 #include <QGraphicsView>
 #include <QInputDevice>
+#include <QLabel>
 #include <QMap>
 #include <QNativeGestureEvent>
 #include <QPainterPath>
@@ -19,6 +23,39 @@ using namespace choscordb;
 class ObjectErdNavigationTest final : public QObject {
     Q_OBJECT
   private slots:
+    void erdReportsMissingRelatedTableAsIncomplete() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        const auto create = adapter.execute(
+            *connection,
+            "CREATE TABLE child(id INTEGER, parent_id INTEGER REFERENCES missing(id))");
+        QVERIFY(create);
+        adapter.fetchPage(*create);
+        QTRY_COMPARE(finished, 1);
+        ObjectExplorer explorer(&adapter);
+        explorer.show();
+        explorer.openObject(*connection, R"(["main","child"])", "main.child", "table");
+        explorer.selectPane(4);
+        auto* status = explorer.findChild<QLabel*>("objectStatus");
+        auto* erd = explorer.findChild<ObjectErdWidget*>("objectErd");
+        QTRY_COMPARE(status->property("state").toString(), QString("incomplete"));
+        QVERIFY(status->toolTip().contains("missing"));
+        auto* footer = explorer.findChild<QWidget*>("objectFooter");
+        QCOMPARE(footer->palette().color(QPalette::Window),
+                 design::resolvedThemeForWidget(explorer).colors.muted);
+        QCOMPARE(erd->graph().edges.size(), 1);
+        QCOMPARE(erd->graph().tables.size(), 2);
+    }
     void sparseTallGraphKeepsReadableScaleWhenStacked() {
         ObjectErdWidget erd;
         erd.resize(900, 420);

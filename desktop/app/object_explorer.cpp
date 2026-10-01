@@ -300,16 +300,12 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     layout->insertWidget(0, headerBody);
     auto* footerBody = new design::StatusLine(this);
     footerBody->setObjectName("objectFooter");
-    auto* footer = footerBody->contentLayout();
-    footer_ = footer;
+    footer_ = footerBody;
     status_ = new design::Text(tr("Select a table or view in the sidebar."), this);
     status_->setObjectName("objectStatus");
-    status_->setTextFormat(Qt::PlainText);
-    status_->setWordWrap(false);
-    status_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-    status_->setMinimumWidth(0);
-    status_->setTypographyRole(design::TypographyRole::Ui);
-    footer->addWidget(status_, 1);
+    footer_->configure({nullptr, status_});
+    footer_->setContent({{}, tr("Select a table or view in the sidebar."), {}, {}, {}, {}},
+                        design::StatusLine::State::Neutral);
     setContextMenuPolicy(Qt::CustomContextMenu);
     connect(this, &QWidget::customContextMenuRequested, this, [this](const QPoint& position) {
         QMenu menu(this);
@@ -548,7 +544,9 @@ void ObjectExplorer::setDisconnected() {
     refresh_->setEnabled(false);
     updateActions();
     updateFooter();
-    setStatus("disconnected", tr("%1 · Connection unavailable. Reconnect manually.").arg(label_));
+    if (status_->property("state") != "failed")
+        setStatus("disconnected",
+                  tr("%1 · Connection unavailable. Reconnect manually.").arg(label_));
     emit objectChanged();
 }
 void ObjectExplorer::requestPane() {
@@ -637,19 +635,20 @@ void ObjectExplorer::requestPane() {
                                    requestToken_);
 }
 void ObjectExplorer::setStatus(const QString& state, const QString& text) {
-    auto* line = static_cast<design::StatusLine*>(footer_->parentWidget());
+    auto* line = footer_;
     line->setBusy(state == "loading" || operationBusy_);
     status_->setProperty("state", state);
-    status_->setText(text);
-    status_->setToolTip(text);
+    const auto semantic = state == "failed" ? design::StatusLine::State::Error
+                          : state == "loaded" || state == "empty"
+                              ? design::StatusLine::State::Success
+                              : design::StatusLine::State::Neutral;
+    footer_->setContent({{}, text, {}, {}, {}, {}}, semantic);
     status_->setAccessibleName(tr("Object status: %1").arg(text));
-    status_->style()->unpolish(status_);
-    status_->style()->polish(status_);
     if (dataFooter_ && tabs_->currentIndex() == 5 && state == "busy") {
         // The Data footer already carries its result origin. Keep the guard's
         // explanation visible without adding a second footer or hiding Cancel.
-        if (qobject_cast<MainWindow*>(window()))
-            line->setMessage(text);
+        if (auto* dataLine = qobject_cast<design::StatusLine*>(dataFooter_.data()))
+            dataLine->setMessage(text);
         else
             status_->show();
     }
@@ -791,7 +790,7 @@ void ObjectExplorer::installDataWidget(QWidget* widget) {
             action->deleteLater();
     dataHeaderActions_.clear();
     if (dataFooter_) {
-        footer_->removeWidget(dataFooter_);
+        layout()->removeWidget(dataFooter_);
         dataFooter_->setParent(previous);
         dataFooter_ = nullptr;
     }
@@ -811,29 +810,26 @@ void ObjectExplorer::installDataWidget(QWidget* widget) {
         dataFooter_ = objectData->footerWidget();
         if (dataFooter_) {
             widget->layout()->removeWidget(dataFooter_);
-            dataFooter_->setParent(footer_->parentWidget());
-            dataFooter_->layout()->setContentsMargins(0, 0, 0, 0);
-            footer_->insertWidget(0, dataFooter_, 1);
+            dataFooter_->setParent(this);
+            static_cast<QVBoxLayout*>(layout())->addWidget(dataFooter_);
         }
     }
     updateFooter();
     previous->deleteLater();
 }
 void ObjectExplorer::updateFooter() {
-    static_cast<design::StatusLine*>(footer_->parentWidget())
-        ->setAvailable(connection_.has_value());
-    const bool dataVisible = dataFooter_ && tabs_->currentIndex() == 5 && connection_.has_value();
+    const bool dataVisible = dataFooter_ && tabs_->currentIndex() == 5;
     for (const auto& action : dataHeaderActions_)
         if (action)
-            action->setEnabled(dataVisible);
+            action->setEnabled(dataVisible && connection_.has_value());
     if (dataFooter_)
         dataFooter_->setVisible(dataVisible);
-    status_->setVisible(!dataVisible);
+    footer_->setVisible(!dataVisible);
     refresh_->setEnabled(!operationBusy_ && connection_.has_value() && !requestToken_);
 }
 void ObjectExplorer::setOperationBusy(bool busy) {
     operationBusy_ = busy;
-    auto* line = static_cast<design::StatusLine*>(footer_->parentWidget());
+    auto* line = footer_;
     line->setBusy(busy || status_->property("state") == "loading");
     if (!busy)
         line->setMessage({});

@@ -716,11 +716,6 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* empty =
         new design::Text(tr("○ Disconnected · Connect and run a statement to view results."));
     empty->setObjectName("executionSummary");
-    empty->setTextFormat(Qt::PlainText);
-    empty->setWordWrap(false);
-    empty->setTypographyRole(design::TypographyRole::Ui);
-    empty->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-    empty->setMinimumWidth(0);
     empty->setProperty("state", "disconnected");
     empty->setAccessibleName(tr("Execution status: disconnected"));
     auto* grid = new QTableView;
@@ -738,18 +733,11 @@ MainWindow::Ui MainWindow::buildUi() {
     resultLayout->addWidget(grid, 1);
     auto* resultFooter = new design::StatusLine;
     resultFooter->setObjectName("sqlResultFooter");
-    auto* pager = resultFooter->contentLayout();
-    pager->addWidget(empty, 1);
     auto* compactState = new design::Text(tr("Disconnected"), resultFooter);
     compactState->setObjectName("executionStateCompact");
-    compactState->setTypographyRole(design::TypographyRole::Ui);
-    pager->addWidget(compactState);
-    pager->addStretch(1);
-    const auto addMetric = [pager](const char* name) {
+    const auto addMetric = [](const char* name) {
         auto* label = new design::Text;
         label->setObjectName(QString::fromLatin1(name));
-        label->setTypographyRole(design::TypographyRole::Ui);
-        pager->addWidget(label);
         return label;
     };
     auto* durationMetric = addMetric("executionDuration");
@@ -759,13 +747,11 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* previousPage = new design::Button({});
     previousPage->setAccessibleName(tr("Previous page"));
     previousPage->setToolTip(tr("Previous page"));
-    previousPage->setButtonSize(design::ButtonSize::IconSmall);
     previousPage->setObjectName("previousPage");
     previousPage->setEnabled(false);
     auto* nextPage = new design::Button({});
     nextPage->setAccessibleName(tr("Next page"));
     nextPage->setToolTip(tr("Next page"));
-    nextPage->setButtonSize(design::ButtonSize::IconSmall);
     nextPage->setObjectName("nextPage");
     nextPage->setEnabled(false);
     auto* exportResult = new design::Button({});
@@ -775,13 +761,11 @@ MainWindow::Ui MainWindow::buildUi() {
     exportResult->setToolTip(tr("Export"));
     exportResult->setObjectName("exportResult");
     exportResult->setEnabled(false);
-    for (auto* button : {previousPage, nextPage})
-        button->setVariant(design::ButtonVariant::Ghost);
-    previousPage->setDesignIcon(design::Icon::ChevronLeft);
-    nextPage->setDesignIcon(design::Icon::ChevronRight);
     exportResult->setDesignIcon(design::Icon::Export);
-    pager->addWidget(previousPage);
-    pager->addWidget(nextPage);
+    resultFooter->configure({empty, compactState, durationMetric, visibleSizeMetric, pageMetric,
+                             rowsMetric, previousPage, nextPage});
+    resultFooter->setContent({{}, tr("Disconnected"), {}, {}, {}, {}},
+                             design::StatusLine::State::Neutral);
     const auto addGridAction = [toolbar](const QString& label, const char* name, design::Icon icon,
                                          bool inToolbar = true) {
         auto* button = new design::Button({}, toolbar);
@@ -812,8 +796,6 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* applyResultEdits =
         addGridAction(tr("Apply"), "queryResultApplyEdits", design::Icon::Check, false);
     toolbar->addWidget(exportResult);
-    connect(theme_, &design::ThemeManager::themeChanged, this,
-            &MainWindow::refreshResultFooterColor);
     auto* messages = new QPlainTextEdit;
     messages->setObjectName("queryMessages");
     messages->setReadOnly(true);
@@ -900,19 +882,12 @@ MainWindow::Ui MainWindow::buildUi() {
     startHint->setAlignment(Qt::AlignCenter);
     startLayout->addWidget(startHint);
     startLayout->addStretch();
-    auto* startFooter = new QWidget(start);
+    auto* startFooter = new design::StatusLine(start);
     startFooter->setObjectName("startFooter");
-    startFooter->setProperty("designSurface", "subtle");
-    startFooter->setAttribute(Qt::WA_StyledBackground);
-    auto* startActions = new QHBoxLayout(startFooter);
-    startActions->setContentsMargins(
-        design::spacing(design::Spacing::TwoHalf), initialMetrics.spacingSmall,
-        design::spacing(design::Spacing::TwoHalf), initialMetrics.spacingSmall);
-    auto* startStatus = new design::Text(tr("PostgreSQL · MySQL · SQLite"), startFooter);
-    startStatus->setTypographyRole(design::TypographyRole::Ui);
-    startStatus->setForegroundRole(QPalette::PlaceholderText);
-    startActions->addWidget(startStatus);
-    startActions->addStretch();
+    auto* startStatus = new design::Text({}, startFooter);
+    startFooter->configure({nullptr, startStatus}, true);
+    startFooter->setContent({{}, tr("Choose a connection to get started"), {}, {}, {}, {}},
+                            design::StatusLine::State::Neutral);
     startLayout->addWidget(startFooter);
     screens_->addWidget(start);
     screens_->addWidget(central);

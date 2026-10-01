@@ -61,6 +61,7 @@ class HistoryTest : public QObject {
         auto* details = footer->findChild<QAbstractButton*>("statusDetails");
         QVERIFY(details && footerButtons.contains(details));
         QVERIFY(!details->isVisible());
+        QCOMPARE(history.findChild<QLabel*>("historyStatus")->wordWrap(), false);
         auto* previous = history.findChild<QPushButton*>("historyPrevious");
         auto* next = history.findChild<QPushButton*>("historyNext");
         QVERIFY(footerButtons.contains(previous));
@@ -76,6 +77,23 @@ class HistoryTest : public QObject {
         QVERIFY(range->mapTo(footer, range->rect().topRight()).x() <
                 previous->mapTo(footer, QPoint{}).x());
         QVERIFY(next->mapTo(footer, next->rect().topRight()).x() > footer->width() - 40);
+    }
+    void historyOperationFailureRetainsFullExplanation() {
+        choscordb::EngineAdapter adapter;
+        choscordb::HistoryDock history(&adapter);
+        history.resize(800, 600);
+        history.show();
+        auto* refresh = history.findChild<QPushButton*>("refreshHistory");
+        QTRY_VERIFY(refresh->isEnabled());
+        adapter.beginShutdown();
+        refresh->click();
+        auto* footer = history.findChild<QWidget*>("historyFooter");
+        auto* status = history.findChild<QLabel*>("historyStatus");
+        QTRY_COMPARE(footer->palette().color(QPalette::Window),
+                     choscordb::design::resolvedThemeForWidget(history).colors.dangerSurface);
+        QVERIFY(!status->accessibleName().isEmpty());
+        QVERIFY(footer->toolTip().contains("Workspace is closed."));
+        QVERIFY(!status->wordWrap());
     }
     void queryRowsUseFullWidthAndFullTextPreviewIsExplicit() {
         choscordb::EngineAdapter adapter;
@@ -162,6 +180,8 @@ class HistoryTest : public QObject {
         choscordb::EngineAdapter adapter;
         QSignalSpy listed(&adapter, &choscordb::EngineAdapter::historyListed);
         choscordb::HistoryDock dock(&adapter);
+        dock.resize(800, 600);
+        dock.show();
         auto* table = dock.findChild<QTableView*>("historyTable");
         auto* model = qobject_cast<choscordb::HistoryModel*>(table->model());
         auto* next = dock.findChild<QPushButton*>("historyNext");

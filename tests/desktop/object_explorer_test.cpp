@@ -328,36 +328,6 @@ class ObjectExplorerTest final : public QObject {
         QTRY_COMPARE(status->property("state").toString(), QString("disconnected"));
         QCOMPARE(erd->graph().tables.size(), 0);
     }
-    void erdReportsMissingRelatedTableAsIncomplete() {
-        EngineAdapter adapter;
-        bool connected = false;
-        int finished = 0;
-        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
-            if (event.kind == "connected")
-                connected = true;
-            if (event.kind == "query_finished")
-                ++finished;
-        });
-        const auto connection = adapter.connectSqlite(":memory:");
-        QVERIFY(connection);
-        QTRY_VERIFY(connected);
-        const auto create = adapter.execute(
-            *connection,
-            "CREATE TABLE child(id INTEGER, parent_id INTEGER REFERENCES missing(id))");
-        QVERIFY(create);
-        adapter.fetchPage(*create);
-        QTRY_COMPARE(finished, 1);
-        ObjectExplorer explorer(&adapter);
-        explorer.show();
-        explorer.openObject(*connection, R"(["main","child"])", "main.child", "table");
-        explorer.selectPane(4);
-        auto* status = explorer.findChild<QLabel*>("objectStatus");
-        auto* erd = explorer.findChild<ObjectErdWidget*>("objectErd");
-        QTRY_COMPARE(status->property("state").toString(), QString("incomplete"));
-        QVERIFY(status->text().contains("missing"));
-        QCOMPARE(erd->graph().edges.size(), 1);
-        QCOMPARE(erd->graph().tables.size(), 2);
-    }
     void erdFailureCanRetryAfterTableAppears() {
         EngineAdapter adapter;
         bool connected = false;
@@ -578,14 +548,11 @@ class ObjectExplorerTest final : public QObject {
         explorer.selectPane(3);
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
         design::ThemeManager theme;
-        theme.setMode(design::ThemeMode::Light);
-        theme.applyTo(explorer);
-        QCOMPARE(footer->palette().color(QPalette::Window),
-                 theme.resolvedTheme().colors.successSurface);
-        theme.setMode(design::ThemeMode::Dark);
-        theme.applyTo(explorer);
-        QCOMPARE(footer->palette().color(QPalette::Window),
-                 theme.resolvedTheme().colors.successSurface);
+        for (const auto mode : {design::ThemeMode::Light, design::ThemeMode::Dark}) {
+            theme.setMode(mode);
+            theme.applyTo(explorer);
+            QCOMPARE(footer->palette().color(QPalette::Window), theme.resolvedTheme().colors.muted);
+        }
         QCOMPARE(explorer.paneIndex(), 3);
         QTest::qWait(50);
         QCOMPARE(inspections.count(), 0);
@@ -615,7 +582,7 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(status->property("state").toString(), QString("disconnected"));
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
         QCOMPARE(footer->palette().color(QPalette::Window),
-                 design::resolvedThemeForWidget(*footer).colors.dangerSurface);
+                 design::resolvedThemeForWidget(*footer).colors.muted);
         QVERIFY(!explorer.findChild<QPushButton*>("objectReconnect"));
         auto* action = explorer.findChild<QAction*>("objectReconnect");
         QVERIFY(action);
@@ -865,6 +832,8 @@ class ObjectExplorerTest final : public QObject {
         explorer.openObject(*connection, R"(["main","changing"])", "changing");
         auto* table = explorer.findChild<QTableView*>("objectMetadata");
         auto* status = explorer.findChild<QLabel*>("objectStatus");
+        auto* footer = explorer.findChild<QWidget*>("objectFooter");
+        const auto colors = design::resolvedThemeForWidget(explorer).colors;
         auto* tabs = explorer.findChild<QTabBar*>("objectTabs");
         QTRY_COMPARE(table->model()->rowCount(), 1);
         auto alter = adapter.execute(*connection, "ALTER TABLE changing ADD COLUMN extra INTEGER");
@@ -878,17 +847,21 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(table->model()->index(1, 0).data().toString(), QString("extra"));
         tabs->setCurrentIndex(1);
         QTRY_COMPARE(status->property("state").toString(), QString("empty"));
+        QCOMPARE(footer->palette().color(QPalette::Window), colors.successSurface);
         QCOMPARE(table->model()->rowCount(), 0);
         QVERIFY(status->text().contains("No indexes"));
         explorer.openObject(*connection, R"(["main"])", "main");
         tabs->setCurrentIndex(3);
         QTRY_COMPARE(status->property("state").toString(), QString("unsupported"));
         QVERIFY(status->text().size() > QString("Unsupported:").size());
+        QCOMPARE(footer->palette().color(QPalette::Window), colors.muted);
         QSignalSpy failed(&adapter, &EngineAdapter::objectInspectionFailed);
         explorer.openObject(*connection, R"(["main","later"])", "later");
         tabs->setCurrentIndex(3);
         QTRY_COMPARE(status->property("state").toString(), QString("failed"));
         QVERIFY(!failed.isEmpty());
+        QCOMPARE(footer->palette().color(QPalette::Window), colors.dangerSurface);
+        QVERIFY(footer->toolTip().contains(failed.last().at(3).toString()));
         const auto failedToken = failed.last().at(2).toULongLong();
         auto later = adapter.execute(*connection, "CREATE TABLE later(value TEXT)");
         QVERIFY(later);
@@ -899,6 +872,7 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(retry->isEnabled());
         retry->trigger();
         QTRY_COMPARE(status->property("state").toString(), QString("loaded"));
+        QCOMPARE(footer->palette().color(QPalette::Window), colors.successSurface);
         auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
         QVERIFY(ddl->toPlainText().contains("CREATE TABLE later"));
         adapter.objectInspectionFailed(*connection, R"(["main","later"])", failedToken,

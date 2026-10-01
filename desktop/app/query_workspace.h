@@ -7,6 +7,7 @@
 #include <QPointer>
 #include <QSet>
 #include <QString>
+#include <QVariantMap>
 #include <functional>
 #include <map>
 #include <memory>
@@ -105,7 +106,7 @@ class QueryWorkspace final : public QObject {
                         const QueryPreferences& preferences,
                         const QString& kind = QStringLiteral("table"), bool preserveView = false,
                         const QString& initialFilter = {});
-    void invalidateResult();
+    void invalidateResult(bool connectionLost = false);
     bool hasPendingEdits() const { return model_->hasPendingEdits(); }
     bool activeManualTransaction(quint64 connection) const {
         return pendingTransactions_.contains(connection);
@@ -187,6 +188,10 @@ class QueryWorkspace final : public QObject {
     void message(const QString& text);
     void setExecutionState(const QString& state, const QString& detail = {},
                            const ExecutionMetrics& metrics = {});
+    void setDocumentStatus(SqlEditor* editor, const QString& state, const QString& detail,
+                           const QString& source);
+    void presentExecutionState(const QString& state, const QString& detail,
+                               const ExecutionMetrics& metrics, const QString& source);
     std::optional<quint64> selectedConnection() const;
     Widgets widgets_;
     QPointer<EngineAdapter> adapter_;
@@ -240,7 +245,12 @@ class QueryWorkspace final : public QObject {
     quint64 copyGeneration_ = 0;
     ExportDialog* export_ = nullptr;
     ProfileDialog* profiles_ = nullptr;
+    QPointer<SqlEditor> resultEditor_;
     QString resultOrigin_;
+    QString commandError_;
+    QHash<quint64, QPointer<SqlEditor>> connectionAttemptEditors_;
+    QHash<quint64, QVariantMap> connectionAttemptStatus_;
+    QString completedAffectedRows_;
     std::optional<quint64> completedDurationMs_;
     QString objectKind_, objectId_;
     QString executedSql_, editParameterStyle_;
@@ -280,6 +290,7 @@ class QueryWorkspace final : public QObject {
     bool hasMoreResults_ = false;
     bool stopping_ = false;
     bool externalWork_ = false, invalidatePending_ = false;
+    bool invalidateConnectionLost_ = false;
     QHash<QObject*, QMetaObject::Connection> externalWorkSources_;
     bool externalWorkActive() const { return externalWork_ || !externalWorkSources_.isEmpty(); }
     bool cancellationPending_ = false;

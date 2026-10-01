@@ -120,7 +120,10 @@ class CellEditSqlWorkspaceTest : public QObject {
         QVERIFY(!model->hasPendingEdits());
         QVERIFY(sql->adapter()->disconnectConnection(connection));
         QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
-                     QString("disconnected"));
+                     QString("failed"));
+        QVERIFY(data.findChild<QLabel*>("objectDataSummary")
+                    ->accessibleDescription()
+                    .contains("Connection closed"));
         QTRY_VERIFY(!sheet->isVisible());
         QVERIFY(text->toPlainText().isEmpty());
         save->click();

@@ -3,6 +3,7 @@
 #include "app/result_column_header.h"
 #include "bridge/engine_adapter.h"
 #include "design_system/button/button.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/table/table_style.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
@@ -36,11 +37,6 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     layout->setSpacing(metrics.spacingSmall);
     auto* summary = new design::Text(tr("Open Data to read an object."), this);
     summary->setObjectName("objectDataSummary");
-    summary->setTypographyRole(design::TypographyRole::Ui);
-    summary->setTextFormat(Qt::PlainText);
-    summary->setWordWrap(false);
-    summary->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    summary->setMinimumWidth(0);
     auto* table = new QTableView(this);
     table->setObjectName("objectDataResults");
     table->setHorizontalHeader(new ResultColumnHeader(table));
@@ -64,11 +60,9 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     messages->setMaximumHeight(metrics.dataRowHeight * 3);
     messages->hide();
     layout->addWidget(messages);
-    footer_ = new QWidget(this);
+    auto* statusLine = new design::StatusLine(this);
+    footer_ = statusLine;
     footer_->setObjectName("objectDataFooter");
-    auto* footer = new QHBoxLayout(footer_);
-    footer->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
-                               metrics.spacingSmall);
     toolbar_ = new QWidget(this);
     toolbar_->setObjectName("objectDataToolbar");
     auto* toolbar = new QHBoxLayout(toolbar_);
@@ -87,10 +81,27 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
         target->addWidget(button);
         return button;
     };
-    footer->addWidget(summary, 1);
-    auto* previous =
-        makeButton(footer, tr("Previous page"), "objectDataPrevious", design::Icon::ChevronLeft);
-    auto* next = makeButton(footer, tr("Next page"), "objectDataNext", design::Icon::ChevronRight);
+    const auto metric = [statusLine](const char* name) {
+        auto* text = new design::Text({}, statusLine);
+        text->setObjectName(QString::fromLatin1(name));
+        return text;
+    };
+    auto* outcome = metric("objectDataOutcome");
+    auto* duration = metric("objectDataDuration");
+    auto* memory = metric("objectDataVisibleSize");
+    auto* page = metric("objectDataPage");
+    auto* rows = metric("objectDataRows");
+    auto* previous = new design::Button({}, statusLine);
+    previous->setObjectName("objectDataPrevious");
+    previous->setAccessibleName(tr("Previous page"));
+    previous->setToolTip(tr("Previous page"));
+    auto* next = new design::Button({}, statusLine);
+    next->setObjectName("objectDataNext");
+    next->setAccessibleName(tr("Next page"));
+    next->setToolTip(tr("Next page"));
+    statusLine->configure({summary, outcome, duration, memory, page, rows, previous, next});
+    statusLine->setContent({{}, tr("Open Data to read an object."), {}, {}, {}, {}},
+                           design::StatusLine::State::Neutral);
     auto* exportButton =
         makeButton(toolbar, tr("Export…"), "objectDataExport", design::Icon::Export);
     auto* addRow = makeButton(toolbar, tr("Add row"), "objectDataAddRow", design::Icon::Add);
@@ -147,7 +158,12 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
          applyEdits,
          nullptr,
          [this](quint64 connection) { return sql_ && sql_->activeManualTransaction(connection); },
-         restoreRows},
+         restoreRows,
+         outcome,
+         duration,
+         page,
+         rows,
+         memory},
         this);
     auto headerSizing = std::make_shared<HeaderSizingState>();
     connect(table->model(), &QAbstractItemModel::modelReset, table, [table, headerSizing] {
@@ -210,10 +226,10 @@ void ObjectDataWorkspace::openObject(quint64 connection, const QString& object,
     result_->openObjectData(connection, object, label, sql_->queryPreferences(), kind, false,
                             filter);
 }
-void ObjectDataWorkspace::invalidate() {
+void ObjectDataWorkspace::invalidate(bool connectionLost) {
     if (!resolvePendingEdits())
         return;
-    result_->invalidateResult();
+    result_->invalidateResult(connectionLost);
 }
 bool ObjectDataWorkspace::resolvePendingEdits() {
     return !result_ || result_->resolvePendingEdits();

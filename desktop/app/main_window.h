@@ -73,10 +73,6 @@ class MainWindow final : public QMainWindow {
     struct PendingObjectAction;
     Ui buildUi();
     void addFeedbackStatusLines(QWidget* host);
-    static void fitResultFooter(QWidget* footer);
-    static void elideResultSource(QLabel* source);
-    static void elideResultOutcome(QLabel* outcome);
-    void refreshResultFooterColor();
     void connectWorkspace(const Ui& ui, const QString& storagePath);
     void connectLifecycle(const Ui& ui, const QString& storagePath);
     void connectNavigator(const Ui& ui);

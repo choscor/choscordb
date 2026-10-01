@@ -37,8 +37,7 @@ void ModernUiTest::sidebarConnectionDoesNotColorUnavailableSqlTargetFooter() {
     auto* profiles = window.findChild<QListWidget*>("savedConnections");
     QVERIFY(editor && workspace && theme && footer && profiles);
     editor->setConnectionTarget(quint64{0xF00D}, "Unavailable target");
-    QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.dangerSurface);
+    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.muted);
 
     choscordb::SavedProfile profile;
     profile.id = "sidebar-only";
@@ -52,45 +51,39 @@ void ModernUiTest::sidebarConnectionDoesNotColorUnavailableSqlTargetFooter() {
     QTRY_COMPARE(opened.count(), 1);
     QTRY_VERIFY(window.browsingConnection().has_value());
     QVERIFY(editor->connectionTarget() == quint64{0xF00D});
-    QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.dangerSurface);
+    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.muted);
     for (const auto mode :
          {choscordb::design::ThemeMode::Light, choscordb::design::ThemeMode::Dark}) {
         theme->setMode(mode);
         const auto colors = theme->resolvedTheme().colors;
-        QCOMPARE(footer->palette().color(QPalette::Window), colors.dangerSurface);
-        QVERIFY(choscordb::design::contrastRatio(colors.text, colors.dangerSurface) >= 4.5);
+        QCOMPARE(footer->palette().color(QPalette::Window), colors.muted);
+        QVERIFY(choscordb::design::contrastRatio(colors.text, colors.muted) >= 4.5);
         editor->setConnectionTarget(*window.browsingConnection(), "Sidebar Only");
-        QCOMPARE(footer->palette().color(QPalette::Window), colors.successSurface);
-        QVERIFY(choscordb::design::contrastRatio(colors.text, colors.successSurface) >= 4.5);
+        QCOMPARE(footer->palette().color(QPalette::Window), colors.muted);
+        QVERIFY(choscordb::design::contrastRatio(colors.text, colors.muted) >= 4.5);
         editor->setConnectionTarget(quint64{0xF00D}, "Unavailable target");
     }
     const auto browsingId = *window.browsingConnection();
     editor->setConnectionTarget(browsingId, "Sidebar Only");
-    QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.successSurface);
+    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.muted);
     QVERIFY(workspace->adapter()->disconnectConnection(browsingId));
-    QTRY_COMPARE(footer->palette().color(QPalette::Window),
-                 theme->resolvedTheme().colors.dangerSurface);
+    QTRY_COMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.muted);
     QSignalSpy reconnected(workspace, &choscordb::QueryWorkspace::connectionReady);
     workspace->connectSqlite(":memory:");
     QTRY_COMPARE(reconnected.count(), 1);
-    QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.dangerSurface);
+    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.muted);
     editor->setConnectionTarget(reconnected.at(0).at(0).toULongLong(), "Reconnected");
-    QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.successSurface);
+    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.muted);
     editor->setConnectionTarget(quint64{0xF00D}, "Unavailable target");
     theme->setForcedContrast(true);
-    QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.dangerSurface);
-    QVERIFY(footer->accessibleName().contains("unavailable", Qt::CaseInsensitive));
+    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.muted);
+    QCOMPARE(footer->accessibleName(), QString("Status"));
+    QVERIFY(!footer->accessibleDescription().isEmpty());
     QVERIFY(choscordb::design::contrastRatio(theme->resolvedTheme().colors.text,
                                              footer->palette().color(QPalette::Window)) >= 4.5);
     editor->setConnectionTarget(reconnected.at(0).at(0).toULongLong(), "Reconnected");
-    QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.successSurface);
-    QCOMPARE(footer->accessibleName(), QString("SQL target available"));
+    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.muted);
+    QCOMPARE(footer->accessibleName(), QString("Status"));
 }
 
 void ModernUiTest::savedProfileSelectionKeepsEditorTargetAndShowsMultipleTrees() {

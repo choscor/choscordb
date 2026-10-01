@@ -1,17 +1,23 @@
+#include "design_system/button/button.h"
 #include "design_system/icons.h"
 #include "design_system/platform_accessibility.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/theme_manager.h"
 
 #include <QApplication>
+#include <QDialog>
 #include <QDir>
 #include <QEnterEvent>
 #include <QFile>
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QFontInfo>
+#include <QLabel>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QStyleOptionButton>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QtTest>
 
@@ -29,6 +35,118 @@ class DesignSystemTest final : public QObject {
     Q_OBJECT
 
   private slots:
+    void idleStatusLineUsesNeutralSurface() {
+        using namespace choscordb::design;
+        StatusLine line;
+        const auto colors = resolvedThemeForWidget(line).colors;
+        QCOMPARE(line.palette().color(QPalette::Window), colors.muted);
+        QCOMPARE(line.palette().color(QPalette::WindowText), colors.mutedText);
+    }
+    void structuredStatusContentIsPlainAndComplete() {
+        using namespace choscordb::design;
+        StatusLine line;
+        QLabel source, outcome, duration, memory, page, rows;
+        QPushButton previous, next;
+        line.configure({&source, &outcome, &duration, &memory, &page, &rows, &previous, &next});
+        line.resize(1200, 80);
+        line.show();
+        const QString error = "Failed: <backend>\n[Code: 42]";
+        line.setContent(
+            {"orders", error, "Executed in 12 ms", "4 KiB visible", "Page 2", "10 rows"},
+            StatusLine::State::Error);
+        QCOMPARE(source.text(), QString("orders"));
+        QCOMPARE(outcome.text(), QString("Failed: <backend> [Code: 42]"));
+        QCOMPARE(outcome.textFormat(), Qt::PlainText);
+        QVERIFY(line.toolTip().contains(error));
+        QVERIFY(line.accessibleDescription().contains("4 KiB visible"));
+        QVERIFY(memory.geometry().right() < page.geometry().left());
+        QVERIFY(rows.geometry().right() < previous.mapTo(&line, QPoint()).x());
+        QCOMPARE(line.palette().color(QPalette::Window),
+                 resolvedThemeForWidget(line).colors.dangerSurface);
+    }
+    void narrowStatusLineDropsMemoryThenDurationAndRestores() {
+        using namespace choscordb::design;
+        StatusLine line;
+        QLabel source, outcome, duration, memory, page, rows;
+        Button previous({}), next({});
+        line.configure({&source, &outcome, &duration, &memory, &page, &rows, &previous, &next});
+        line.setContent({"very long source name for a SQL document",
+                         "Failed: a very long backend explanation", "Executed in 123 ms",
+                         "456 KiB visible", "Page 21", "100 rows"},
+                        StatusLine::State::Error);
+        line.resize(1200, line.height());
+        line.show();
+        QVERIFY(memory.isVisible());
+        // The compact Details control shares the row with execution metrics.
+        line.resize(460, line.height());
+        QVERIFY(!memory.isVisible());
+        QVERIFY(duration.isVisible());
+        QVERIFY(outcome.isVisible());
+        QVERIFY(page.isVisible() && rows.isVisible());
+        line.resize(230, line.height());
+        QVERIFY(!duration.isVisible());
+        QVERIFY(outcome.isVisible());
+        QVERIFY(!outcome.text().isEmpty());
+        QVERIFY(line.rect().contains(QRect(next.mapTo(&line, QPoint()), next.size())));
+        QVERIFY(line.rect().contains(QRect(previous.mapTo(&line, QPoint()), previous.size())));
+        QSignalSpy clicked(&next, &QPushButton::clicked);
+        QTest::mouseClick(&next, Qt::LeftButton);
+        QCOMPARE(clicked.count(), 1);
+        QVERIFY(outcome.accessibleDescription().contains("456 KiB visible"));
+        line.resize(1200, line.height());
+        QVERIFY(memory.isVisible() && duration.isVisible());
+        QCOMPARE(source.text(), QString("very long source name for a SQL document"));
+        QCOMPARE(previous.variant(), ButtonVariant::Ghost);
+        QCOMPARE(next.buttonSize(), ButtonSize::IconSmall);
+    }
+    void structuredStatusRetainsDetailsPagingAndTransientFeedback() {
+        using namespace choscordb::design;
+        StatusLine line;
+        QLabel source, outcome, page, rows;
+        Button previous({}), next({});
+        line.configure({&source, &outcome, nullptr, nullptr, &page, &rows, &previous, &next});
+        const QString error = QString("backend failure <detail>\n").repeated(30) + "FINAL DETAIL";
+        line.setContent({"orders", error, {}, {}, "Page 2", "10 rows"}, StatusLine::State::Error);
+        line.resize(300, line.height());
+        line.show();
+        const int height = line.height();
+        auto* details = line.findChild<QToolButton*>("statusDetails");
+        QVERIFY(details && details->isVisible());
+        QVERIFY(line.rect().contains(details->geometry()));
+        QVERIFY(line.rect().contains(QRect(next.mapTo(&line, QPoint()), next.size())));
+        QVERIFY(details->geometry().right() < previous.mapTo(&line, QPoint()).x());
+        details->click();
+        auto* dialog = line.findChild<QDialog*>("statusDetailsDialog");
+        QVERIFY(dialog && dialog->isVisible());
+        auto* text = dialog->findChild<QPlainTextEdit*>("statusDetailsText");
+        QVERIFY(text && text->isReadOnly());
+        QCOMPARE(text->toPlainText(), line.accessibleDescription());
+        QVERIFY(text->toPlainText().contains(error));
+        dialog->reject();
+        line.setBusy(true);
+        auto* loading = line.findChild<QLabel*>("statusLoadingIcon");
+        QVERIFY(loading && loading->isVisible());
+        QVERIFY(line.rect().contains(loading->geometry()));
+        QCOMPARE(line.palette().color(QPalette::Window), resolvedThemeForWidget(line).colors.muted);
+        line.setMessage("Finish active work before changing panes.");
+        QVERIFY(outcome.accessibleName().contains("Finish active work"));
+        QVERIFY(source.accessibleName().contains("orders"));
+        line.setMessage({});
+        QVERIFY(outcome.accessibleName().contains(error));
+        line.setBusy(false);
+        QCOMPARE(line.height(), height);
+        QCOMPARE(line.palette().color(QPalette::Window),
+                 resolvedThemeForWidget(line).colors.dangerSurface);
+        QSignalSpy clicked(&next, &QPushButton::clicked);
+        next.click();
+        QCOMPARE(clicked.count(), 1);
+        line.setContent({"orders", "Completed", {}, {}, "Page 2", "10 rows"},
+                        StatusLine::State::Success);
+        QVERIFY(details->isHidden());
+        QVERIFY(loading->isHidden());
+        QVERIFY(outcome.textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
+        QCOMPARE(line.height(), height);
+    }
     void toastVariantsHaveDistinctColoredSurfacesInBothThemes() {
         using namespace choscordb::design;
         ThemeManager manager;

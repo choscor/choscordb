@@ -858,7 +858,13 @@ void PreviewTest::statusLineSpecimenUsesSharedSurfaceInBothThemes() {
         QVERIFY(host);
         auto* available = host->findChild<StatusLine*>("previewStatusAvailable");
         auto* unavailable = host->findChild<StatusLine*>("previewStatusUnavailable");
-        QVERIFY(available && unavailable);
+        auto* neutral = host->findChild<StatusLine*>("previewStatusNeutral");
+        QVERIFY(available && unavailable && neutral);
+        QCOMPARE(neutral->palette().color(QPalette::Window),
+                 resolvedThemeForWidget(*host).colors.muted);
+        QCOMPARE(neutral->height(), available->height());
+        QCOMPARE(unavailable->height(), available->height());
+        QVERIFY(available->findChild<QPushButton*>("previewStatusNext"));
         auto* loadingLine = host->findChild<StatusLine*>("previewStatusLoading");
         QVERIFY(loadingLine);
         auto* loading = loadingLine->findChild<QLabel*>("statusLoadingIcon");

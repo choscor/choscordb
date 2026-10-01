@@ -32,7 +32,6 @@ class HistoryDock final : public QWidget {
     void selectEntry();
     void renderPreview();
     void updateControls();
-    void setStatus(const QString& message);
     void openSelection();
     QPointer<EngineAdapter> adapter_;
     HistoryModel* model_;
@@ -40,7 +39,6 @@ class HistoryDock final : public QWidget {
     QPlainTextEdit* preview_;
     QLabel* status_;
     design::Text *page_, *previewStatus_;
-    QString operationStatus_;
     QCheckBox* record_;
     QLineEdit* search_;
     QComboBox* statusFilter_;
@@ -54,6 +52,7 @@ class HistoryDock final : public QWidget {
     QList<qsizetype> previewOffsets_;
     qsizetype previewOffset_ = 0, previewLength_ = 0;
     bool havePolicy_ = false;
+    QString statusText_;
     bool failed_ = false;
 };
 } // namespace choscordb
