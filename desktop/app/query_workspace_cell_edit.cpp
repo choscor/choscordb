@@ -48,12 +48,12 @@ class CellDraftTextEdit final : public QPlainTextEdit {
 
   protected:
     QMimeData* createMimeDataFromSelection() const override {
-        auto* data = new QMimeData;
+        auto* mimeData = new QMimeData;
         const auto cursor = textCursor();
         const auto first = sourceOffset(cursor.selectionStart());
         const auto last = sourceOffset(cursor.selectionEnd());
-        data->setText(exact_.mid(first, last - first));
-        return data;
+        mimeData->setText(exact_.mid(first, last - first));
+        return mimeData;
     }
     void insertFromMimeData(const QMimeData* source) override {
         pasted_ = source->text();

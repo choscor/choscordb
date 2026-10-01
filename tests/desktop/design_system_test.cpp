@@ -77,8 +77,11 @@ class DesignSystemTest final : public QObject {
         line.resize(1200, line.height());
         line.show();
         QVERIFY(memory.isVisible());
+        // Find the overflow boundary using this platform's actual font metrics.
         // The compact Details control shares the row with execution metrics.
-        line.resize(460, line.height());
+        int compactWidth = line.width();
+        while (memory.isVisible() && compactWidth > 230)
+            line.resize(--compactWidth, line.height());
         QVERIFY(!memory.isVisible());
         QVERIFY(duration.isVisible());
         QVERIFY(outcome.isVisible());

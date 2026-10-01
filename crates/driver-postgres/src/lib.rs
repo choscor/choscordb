@@ -126,7 +126,7 @@ pub(crate) fn normalize(error: tokio_postgres::Error) -> DriverError {
             ErrorKind::Cancelled
         } else if code.starts_with("28") {
             ErrorKind::Authentication
-        } else if code.starts_with("08") {
+        } else if code.starts_with("08") || matches!(code, "57P01" | "57P02" | "57P04") {
             ErrorKind::Disconnected
         } else {
             ErrorKind::Query

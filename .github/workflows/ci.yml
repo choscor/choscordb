@@ -32,7 +32,8 @@ jobs:
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           cargo install cargo-deny --version 0.20.2 --locked
-          brew install clang-format
+          brew install clang-format openssl@3
+          echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
       - name: Run fast repository quality gates
         run: python scripts/ci/quality.py fast
   platform:

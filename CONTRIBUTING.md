@@ -28,7 +28,9 @@ for small changes. Revisit the description if the change evolves during review.
 
 Install Python 3.12+, the Rust toolchain pinned by `rust-toolchain.toml`, LLVM 23,
 actionlint 1.7.7, cargo-deny 0.20.2, and the dependencies in
-`scripts/ci/requirements.txt`. The exact missing-tool message includes the
+`scripts/ci/requirements.txt`. Feed-signing tests require OpenSSL 3 on PATH;
+on macOS, install `openssl@3` and add its `bin` directory to PATH.
+The exact missing-tool message includes the
 installation command. Run:
 
 ```sh
