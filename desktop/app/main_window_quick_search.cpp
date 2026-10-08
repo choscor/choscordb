@@ -3,6 +3,7 @@
 #include "app/editor_preferences.h"
 #include "app/navigator_controller.h"
 #include "app/object_explorer.h"
+#include "app/object_kind_icon.h"
 #include "app/query_workspace.h"
 #include "app/quick_search_match.h"
 #include "app/workspace_recovery.h"
@@ -259,9 +260,10 @@ void MainWindow::updateQuickSearch(const QString& query) {
             context += QStringLiteral(" · ") + editor->filePath();
         else if (auto* object = qobject_cast<ObjectExplorer*>(editors_->widget(index)))
             context += QStringLiteral(" · ") + object->property("objectProfileId").toString();
-        const auto icon = editors_->widget(index)->property("objectType").toString() == "view"
-                              ? design::Icon::Eye
-                              : design::Icon::File;
+        const auto icon =
+            qobject_cast<ObjectExplorer*>(editors_->widget(index))
+                ? objectKindIcon(editors_->widget(index)->property("objectType").toString())
+                : design::Icon::Code;
         ranked.append({*score, {tr("Tab"), title, context, id, icon}});
     }
     std::stable_sort(ranked.begin(), ranked.end(),
@@ -307,9 +309,7 @@ void MainWindow::updateQuickSearch(const QString& query) {
                      .arg(object.value(QStringLiteral("kind")).toString())
                      .arg(object.value(QStringLiteral("qualifiedName")).toString())
                      .arg(object.value(QStringLiteral("connection")).toULongLong()),
-                 id,
-                 object.value(QStringLiteral("kind")).toString() == "view" ? design::Icon::Eye
-                                                                           : design::Icon::Table});
+                 id, objectKindIcon(object.value(QStringLiteral("kind")).toString())});
             quickObjectMatches_.insert(id, object);
         }
     }
@@ -481,7 +481,7 @@ void MainWindow::updateQuickObjectRows() {
         quickObjectRows_.append(
             {tr("Object"), object.name,
              tr("%1 · %2 · %3").arg(object.context, object.qualifiedName, object.kind), id,
-             object.kind == "view" ? design::Icon::Eye : design::Icon::Table});
+             objectKindIcon(object.kind)});
         quickObjectMatches_.insert(
             id, {{QStringLiteral("connection"), QVariant::fromValue<qulonglong>(object.connection)},
                  {QStringLiteral("objectId"), object.objectId},

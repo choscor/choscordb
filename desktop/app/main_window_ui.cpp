@@ -302,14 +302,9 @@ MainWindow::Ui MainWindow::buildUi() {
     savedConnections->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     new SidebarConnectionListScroll(savedConnections, connectionsScroll, theme_);
     new SidebarWheelForwarder(connectionsScroll, savedConnections->viewport());
-    auto* connectionsEmpty = new design::Text(
+    auto* connectionsEmpty = createEmptyStateText(
         tr("No saved connections yet.\nUse + to add a database connection."), connectionSection);
     connectionsEmpty->setObjectName("sidebarConnectionsEmpty");
-    connectionsEmpty->setWordWrap(true);
-    connectionsEmpty->setForegroundRole(QPalette::PlaceholderText);
-    connectionsEmpty->setAlignment(Qt::AlignCenter);
-    connectionsEmpty->setMargin(design::spacing(design::Spacing::Three));
-    connectionsEmpty->setTextFormat(Qt::PlainText);
     connectionSection->contentLayout()->addWidget(connectionsEmpty);
     const auto updateConnectionsEmpty = [savedConnections, connectionsEmpty] {
         connectionsEmpty->setVisible(savedConnections->count() == 0);
@@ -356,20 +351,15 @@ MainWindow::Ui MainWindow::buildUi() {
     tree->setUniformRowHeights(false);
     new SidebarWheelForwarder(connectionsScroll, pinnedList->viewport());
     new SidebarWheelForwarder(connectionsScroll, tree->viewport());
-    auto* objectsEmpty = new design::Text({}, objectSection);
+    auto* objectsEmpty = createEmptyStateText({}, objectSection);
     objectsEmpty->setObjectName("sidebarObjectsEmpty");
-    objectsEmpty->setWordWrap(true);
-    objectsEmpty->setForegroundRole(QPalette::PlaceholderText);
-    objectsEmpty->setAlignment(Qt::AlignCenter);
-    objectsEmpty->setMargin(design::spacing(design::Spacing::Three));
-    objectsEmpty->setTextFormat(Qt::PlainText);
     objectSection->contentLayout()->addWidget(objectsEmpty);
     objectSection->contentLayout()->addWidget(tree);
     auto* navigatorStatusLine = new design::StatusLine(objectSection);
     navigatorStatusLine->setObjectName("navigatorStatusLine");
     navigatorStatusLine->hide();
     objectSection->contentLayout()->addWidget(navigatorStatusLine);
-    auto* navigatorStatus = new QLabel(navBody);
+    auto* navigatorStatus = new design::Text({}, navBody);
     navigatorStatus->setObjectName("navigatorStatus");
     navigatorStatus->hide();
     objectSection->contentLayout()->addWidget(navigatorStatus);
@@ -387,13 +377,8 @@ MainWindow::Ui MainWindow::buildUi() {
     savedSearch->setPlaceholderText(tr("Filter saved queries…"));
     savedSearch->setAccessibleName(tr("Filter saved SQL files"));
     savedSection->contentLayout()->addWidget(savedSearch);
-    auto* savedStatus = new design::Text({}, savedSection);
+    auto* savedStatus = createEmptyStateText({}, savedSection);
     savedStatus->setObjectName("sidebarSavedStatus");
-    savedStatus->setWordWrap(true);
-    savedStatus->setForegroundRole(QPalette::PlaceholderText);
-    savedStatus->setAlignment(Qt::AlignCenter);
-    savedStatus->setMargin(design::spacing(design::Spacing::Three));
-    savedStatus->setTextFormat(Qt::PlainText);
     savedSection->contentLayout()->addWidget(savedStatus);
     auto* savedFiles = new QTreeWidget(savedSection);
     savedFiles->setObjectName("sidebarSavedFiles");
@@ -425,13 +410,8 @@ MainWindow::Ui MainWindow::buildUi() {
     historySearch->setPlaceholderText(tr("Filter recent history…"));
     historySearch->setAccessibleName(tr("Filter recent query history"));
     historySection->contentLayout()->addWidget(historySearch);
-    auto* historyStatus = new design::Text({}, historySection);
+    auto* historyStatus = createEmptyStateText({}, historySection);
     historyStatus->setObjectName("sidebarHistoryStatus");
-    historyStatus->setWordWrap(true);
-    historyStatus->setForegroundRole(QPalette::PlaceholderText);
-    historyStatus->setAlignment(Qt::AlignCenter);
-    historyStatus->setMargin(design::spacing(design::Spacing::Three));
-    historyStatus->setTextFormat(Qt::PlainText);
     historySection->contentLayout()->addWidget(historyStatus);
     auto* historyItems = new QListWidget(historySection);
     historyItems->setObjectName("sidebarHistoryItems");
@@ -580,12 +560,10 @@ MainWindow::Ui MainWindow::buildUi() {
         for (int index = 0; index < editors_->count(); ++index) {
             const auto* explorer = qobject_cast<ObjectExplorer*>(editors_->widget(index));
             const auto kind = explorer ? explorer->property("objectType").toString() : QString{};
-            const auto role = !explorer         ? design::Icon::Code
-                              : kind == "view"  ? design::Icon::Eye
-                              : kind == "table" ? design::Icon::Grid2x2
-                                                : design::Icon::Table;
-            editors_->setTabIcon(
-                index, design::themedIcon(role, theme_->resolvedTheme().colors.mutedText, 16));
+            const auto role = explorer ? objectKindIcon(kind) : design::Icon::Code;
+            editors_->setTabIcon(index,
+                                 design::themedIcon(role, theme_->resolvedTheme().colors.mutedText,
+                                                    objectIconSize()));
         }
     });
     connect(editors_, &QTabWidget::currentChanged, this, [this, workspaceTabs] {
@@ -686,7 +664,8 @@ MainWindow::Ui MainWindow::buildUi() {
                     editor->setFocus();
             });
         }
-        menu->popup(editors_->tabBar()->mapToGlobal(editors_->tabBar()->rect().bottomLeft()));
+        design::popupContextMenu(
+            *menu, editors_->tabBar()->mapToGlobal(editors_->tabBar()->rect().bottomLeft()));
     });
     auto* editorPane = new QWidget;
     auto* editorPaneLayout = new QVBoxLayout(editorPane);
@@ -713,8 +692,8 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* resultLayout = new QVBoxLayout(resultBody);
     resultLayout->setContentsMargins(0, 0, 0, 0);
     resultLayout->setSpacing(0);
-    auto* empty =
-        new design::Text(tr("○ Disconnected · Connect and run a statement to view results."));
+    // StatusLine::setContent below supplies the visible text and semantic state.
+    auto* empty = new design::Text;
     empty->setObjectName("executionSummary");
     empty->setProperty("state", "disconnected");
     empty->setAccessibleName(tr("Execution status: disconnected"));
@@ -727,7 +706,9 @@ MainWindow::Ui MainWindow::buildUi() {
     design::configureResultTable(*grid);
     grid->setWordWrap(false);
     grid->horizontalHeader()->setStretchLastSection(false);
+    // QTableView::sizeHintForColumn samples rows using the vertical header's precision.
     grid->horizontalHeader()->setResizeContentsPrecision(50);
+    grid->verticalHeader()->setResizeContentsPrecision(50);
     grid->verticalHeader()->setDefaultSectionSize(initialMetrics.sqlResultRowHeight);
     grid->horizontalHeader()->setFixedHeight(initialMetrics.sqlResultHeaderHeight);
     resultLayout->addWidget(grid, 1);
@@ -867,19 +848,17 @@ MainWindow::Ui MainWindow::buildUi() {
     startIcon->setObjectName("startDatabaseIcon");
     startIcon->setAlignment(Qt::AlignCenter);
     const auto colorStartIcon = [this, startIcon] {
-        startIcon->setPixmap(
-            design::themedIcon(design::Icon::Database, theme_->resolvedTheme().colors.mutedText, 30)
-                .pixmap(30, 30));
+        const int size = design::dimension(design::Dimension::IconLarge) * 3 / 2;
+        startIcon->setPixmap(design::themedIcon(design::Icon::Database,
+                                                theme_->resolvedTheme().colors.mutedText, size)
+                                 .pixmap(size, size));
     };
     colorStartIcon();
     connect(theme_, &design::ThemeManager::themeChanged, startIcon, colorStartIcon);
     startLayout->addWidget(startIcon);
-    auto* startHint = new design::Text(
+    auto* startHint = createEmptyStateText(
         tr("Welcome to ChoscorDB\nSelect a connection in the sidebar or create a new one."), start);
     startHint->setObjectName("startHint");
-    startHint->setForegroundRole(QPalette::PlaceholderText);
-    startHint->setWordWrap(true);
-    startHint->setAlignment(Qt::AlignCenter);
     startLayout->addWidget(startHint);
     startLayout->addStretch();
     auto* startFooter = new design::StatusLine(start);
@@ -895,9 +874,7 @@ MainWindow::Ui MainWindow::buildUi() {
     object->setObjectName("objectScreen");
     auto* objectLayout = new QVBoxLayout(object);
     auto* objectHint =
-        new design::Text(tr("Select a table or view in the sidebar to inspect it."), object);
-    objectHint->setWordWrap(true);
-    objectHint->setAlignment(Qt::AlignCenter);
+        createEmptyStateText(tr("Select a table or view in the sidebar to inspect it."), object);
     objectLayout->addWidget(objectHint);
     screens_->addWidget(object);
     auto* centralHost = new QWidget(this);

@@ -5,6 +5,7 @@
 #include "app/main_window_ui.h"
 #include "app/object_data_workspace.h"
 #include "app/object_explorer.h"
+#include "app/object_kind_icon.h"
 #include "app/object_tab_title.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
@@ -371,10 +372,8 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
     explorer->setProperty("objectType", kind);
     explorer->setProperty("objectLabel", label);
     explorer->openObject(connection, objectId, label, kind, properties);
-    const auto icon = design::themedIcon(kind == "view"    ? design::Icon::Eye
-                                         : kind == "table" ? design::Icon::Grid2x2
-                                                           : design::Icon::Table,
-                                         theme_->resolvedTheme().colors.mutedText, 16);
+    const auto icon = design::themedIcon(
+        objectKindIcon(kind), theme_->resolvedTheme().colors.mutedText, objectIconSize());
     const int index = editors_->addTab(explorer, icon, objectTabTitle(objectId, label));
     editors_->setCurrentIndex(index);
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
@@ -401,7 +400,8 @@ void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
     objectData->setInitialFilter(filter);
     explorer->openObject(connection, objectId, label, QStringLiteral("table"));
     const auto icon =
-        design::themedIcon(design::Icon::Grid2x2, theme_->resolvedTheme().colors.mutedText, 16);
+        design::themedIcon(objectKindIcon(QStringLiteral("table")),
+                           theme_->resolvedTheme().colors.mutedText, objectIconSize());
     editors_->setCurrentIndex(editors_->addTab(explorer, icon, objectTabTitle(objectId, label)));
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
     explorer->selectPane(5);
@@ -471,10 +471,11 @@ SqlEditor* MainWindow::addEditor() {
             }
         }
     }
-    const int index = editors_->addTab(
-        editor,
-        design::themedIcon(design::Icon::Code, theme_->resolvedTheme().colors.mutedText, 16),
-        title);
+    const int index = editors_->addTab(editor,
+                                       design::themedIcon(design::Icon::Code,
+                                                          theme_->resolvedTheme().colors.mutedText,
+                                                          objectIconSize()),
+                                       title);
     editors_->setCurrentIndex(index);
     if (!constructing_)
         showScreen(Screen::Sql);

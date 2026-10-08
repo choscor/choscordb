@@ -19,6 +19,8 @@ SshHopEditor::SshHopEditor(QWidget* parent) : QWidget(parent) {
     auto* help = new QLabel(tr("Connect through these hosts in order before the final SSH server. "
                                "Each host has its own authentication and password."),
                             this);
+    help->setProperty("designRole", "description");
+    help->setTextFormat(Qt::PlainText);
     help->setWordWrap(true);
     layout->addWidget(help);
     list_ = new QListWidget(this);

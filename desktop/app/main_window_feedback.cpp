@@ -25,12 +25,9 @@ void MainWindow::showStatus(const QString& message, ToastVariant variant, const 
         return;
     line->setProperty("noticeOwner", owner);
     line->setBusy(false);
-    line->setAvailable(variant != ToastVariant::Danger);
-    if (variant != ToastVariant::Danger)
-        line->setNeutral();
-    line->setProperty("variant", variant == ToastVariant::Danger    ? "danger"
-                                 : variant == ToastVariant::Warning ? "warning"
-                                                                    : "success");
+    // StatusLine has neutral, success and error surfaces; warnings and progress stay neutral.
+    line->setState(variant == ToastVariant::Danger ? design::StatusLine::State::Error
+                                                   : design::StatusLine::State::Neutral);
     line->setMessage(message);
     line->setVisible(!message.isEmpty());
 }

@@ -2,8 +2,9 @@
 #include "bridge/engine_adapter.h"
 #include <QPointer>
 #include <QWidget>
+class QAction;
 class QLabel;
-class QCheckBox;
+class QToolButton;
 class QLineEdit;
 class QComboBox;
 class QPlainTextEdit;
@@ -22,6 +23,10 @@ class HistoryDock final : public QWidget {
   public slots:
     void refresh();
     void applyConfirmedPolicy(const choscordb::HistoryPolicy& policy);
+
+  protected:
+    void changeEvent(QEvent* event) override;
+
   signals:
     void openRequested(const choscordb::SavedHistoryEntry& entry);
     void noticeRequested(const QString& message);
@@ -33,16 +38,18 @@ class HistoryDock final : public QWidget {
     void renderPreview();
     void updateControls();
     void openSelection();
+    void refreshManageIcon();
     QPointer<EngineAdapter> adapter_;
     HistoryModel* model_;
     QTableView* table_;
     QPlainTextEdit* preview_;
     QLabel* status_;
     design::Text *page_, *previewStatus_;
-    QCheckBox* record_;
+    QAction *record_, *refresh_;
+    QToolButton* manage_ = nullptr;
     QLineEdit* search_;
     QComboBox* statusFilter_;
-    design::Button *clear_, *refresh_, *previous_, *next_, *open_;
+    design::Button *clear_, *previous_, *next_, *open_;
     design::Button *previewPrevious_, *previewNext_;
     design::StatusLine* footer_ = nullptr;
     HistoryPolicy policy_;

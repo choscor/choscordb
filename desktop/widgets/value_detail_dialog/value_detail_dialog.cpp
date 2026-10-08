@@ -2,12 +2,12 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "models/value_preview_model.h"
 #include <QCloseEvent>
-#include <QDialogButtonBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -25,6 +25,10 @@ QString text(const rust::String& value) {
 }
 constexpr quint32 ChunkBytes = 65536;
 constexpr qsizetype InlineLimit = 8 * 1024 * 1024;
+// The value column starts at three standard table columns before content sizing.
+int initialValueColumnWidth() {
+    return 3 * design::dimension(design::Dimension::TableColumn);
+}
 } // namespace
 ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter), model_(new ValuePreviewModel(this)),
@@ -56,24 +60,28 @@ ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->horizontalHeader()->setStretchLastSection(false);
     table_->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-    auto* buttons = new QDialogButtonBox(this);
     auto* close = new design::Button(tr("Close"), this);
     close->setObjectName("valueClose");
     close->setVariant(design::ButtonVariant::Outline);
-    buttons->addButton(close, QDialogButtonBox::RejectRole);
-    buttons->addButton(retry_, QDialogButtonBox::ActionRole);
-    buttons->addButton(previous_, QDialogButtonBox::ActionRole);
-    buttons->addButton(next_, QDialogButtonBox::ActionRole);
     auto* layout = new QVBoxLayout(this);
-    auto* heading = new design::Text(tr("Value detail"), this);
-    heading->setTypographyRole(design::TypographyRole::Heading);
-    layout->addWidget(heading);
-    layout->addWidget(
-        createDescription(tr("Inspect a bounded window of a large text or binary value."), this));
-    layout->addWidget(statusLine_);
-    layout->addWidget(table_, 1);
-    layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::rejected, this, &ValueDetailDialog::reject);
+    auto* sections = new design::DialogSections(this);
+    layout->addWidget(sections);
+    auto* heading = new design::Text(tr("Value detail"), sections);
+    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    sections->headerLayout()->addWidget(heading);
+    auto* body = sections->bodyLayout();
+    body->setSpacing(design::spacing(design::Spacing::Two));
+    body->addWidget(createDescription(
+        tr("Inspect a bounded window of a large text or binary value."), sections));
+    body->addWidget(statusLine_);
+    body->addWidget(table_, 1);
+    auto* footer = sections->footerLayout();
+    footer->addWidget(retry_);
+    footer->addWidget(previous_);
+    footer->addWidget(next_);
+    footer->addStretch();
+    footer->addWidget(close);
+    connect(close, &QPushButton::clicked, this, &ValueDetailDialog::reject);
     connect(previous_, &QPushButton::clicked, this, &ValueDetailDialog::previousChunk);
     connect(retry_, &QPushButton::clicked, this, [this] { request(offset_); });
     connect(table_->verticalScrollBar(), &QScrollBar::valueChanged, this,
@@ -148,6 +156,11 @@ void ValueDetailDialog::clearValue() {
     updateActions();
     hide();
 }
+void ValueDetailDialog::showEvent(QShowEvent* event) {
+    DialogShell::showEvent(event);
+    layout()->setContentsMargins(0, 0, 0, 0);
+    layout()->setSpacing(0);
+}
 void ValueDetailDialog::closeEvent(QCloseEvent* event) {
     clearValue();
     QDialog::closeEvent(event);
@@ -162,7 +175,7 @@ void ValueDetailDialog::sizeVisibleColumns() {
     for (int row = first; row < std::min(first + 32, model_->rowCount()); ++row)
         width = std::max(width, table_->fontMetrics().horizontalAdvance(
                                     model_->data(model_->index(row, 1)).toString()) +
-                                    24);
+                                    2 * design::spacing(design::Spacing::Three));
     table_->setColumnWidth(1, width);
 }
 void ValueDetailDialog::previousChunk() {
@@ -216,7 +229,7 @@ void ValueDetailDialog::request(quint64 offset, quint32 maxBytes) {
                       .arg(total_)
                       .arg(inlineBinary_ ? tr("Hexadecimal") : tr("Escaped UTF-8 text")));
         table_->scrollToTop();
-        table_->setColumnWidth(1, 500);
+        table_->setColumnWidth(1, initialValueColumnWidth());
         sizeVisibleColumns();
         updateActions();
         return;
@@ -306,7 +319,7 @@ void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
                   .arg(total_)
                   .arg(chunkKind == "binary" ? tr("Hexadecimal") : tr("Escaped UTF-8 text")));
     table_->scrollToTop();
-    table_->setColumnWidth(1, 500);
+    table_->setColumnWidth(1, initialValueColumnWidth());
     sizeVisibleColumns();
     updateActions();
 }

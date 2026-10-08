@@ -25,6 +25,7 @@ enum class Dimension {
     ModalWidth,
     QuickSearchWidth,
     QuickSearchRow,
+    CompletionPopupWidth,
     SheetWidth,
     TableRow,
     TableColumn,

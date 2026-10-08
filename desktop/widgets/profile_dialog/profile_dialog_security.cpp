@@ -62,6 +62,7 @@ void ProfileDialog::createConnectionControls(QFormLayout* ssh, QGridLayout* grid
     sshLocalBindingWarning_ = new QLabel(
         tr("This address exposes the forwarded database port on all network interfaces."), form_);
     sshLocalBindingWarning_->setObjectName("profileSshLocalBindingWarning");
+    sshLocalBindingWarning_->setProperty("state", "warning");
     sshLocalBindingWarning_->setWordWrap(true);
     const auto updateBinding = [this] {
         const bool enabled = sshLocalBinding_->isChecked();

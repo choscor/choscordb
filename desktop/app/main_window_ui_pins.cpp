@@ -5,7 +5,6 @@
 #include "design_system/tree/navigation_tree_view.h"
 #include "widgets/sidebar_section/sidebar_section.h"
 #include <QCoreApplication>
-#include <QPalette>
 #include <QVBoxLayout>
 
 namespace choscordb {
@@ -18,14 +17,9 @@ PinnedSidebar buildPinnedSidebar(QWidget* parent, QVBoxLayout* layout) {
     section->setAccessibleName(label("Pinned shortcuts"));
     section->layout()->setSpacing(design::spacing(design::Spacing::Quarter));
     layout->addWidget(section);
-    auto* empty = new design::Text(
+    auto* empty = main_window_detail::createEmptyStateText(
         label("No pinned objects yet.\nPin a schema or object from its menu."), section);
     empty->setObjectName("pinnedEmpty");
-    empty->setWordWrap(true);
-    empty->setForegroundRole(QPalette::PlaceholderText);
-    empty->setAlignment(Qt::AlignCenter);
-    empty->setMargin(design::spacing(design::Spacing::Three));
-    empty->setTextFormat(Qt::PlainText);
     section->contentLayout()->addWidget(empty);
     auto* list = new design::NavigationTreeView(section);
     list->setObjectName("pinnedList");

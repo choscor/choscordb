@@ -90,6 +90,7 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     pixels(QStringLiteral("size.icon.default"), dimension(Dimension::Icon));
     pixels(QStringLiteral("size.icon.large"), dimension(Dimension::IconLarge));
     pixels(QStringLiteral("size.modal.width"), dimension(Dimension::ModalWidth));
+    pixels(QStringLiteral("size.completion.width"), dimension(Dimension::CompletionPopupWidth));
     pixels(QStringLiteral("size.table.row"), dimension(Dimension::TableRow));
     pixels(QStringLiteral("size.table.column"), dimension(Dimension::TableColumn));
     pixels(QStringLiteral("size.table.header"), dimension(Dimension::TableHeader));

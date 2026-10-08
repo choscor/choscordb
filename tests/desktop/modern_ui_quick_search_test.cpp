@@ -128,7 +128,7 @@ void ModernUiTest::quickSearchEmptyQueryShowsScreensAndOpenTabs() {
     bool hasTab = false;
     for (const auto& result : overlay->results()) {
         if (result.type == "Tab") {
-            QCOMPARE(result.icon, choscordb::design::Icon::File);
+            QCOMPARE(result.icon, choscordb::design::Icon::Code);
             hasTab = true;
         }
     }
@@ -691,7 +691,7 @@ void ModernUiTest::quickSearchColumnResultOpensItsTablePane() {
     input->setText("distinct_field");
     QTRY_VERIFY2(!overlay->results().isEmpty() && overlay->results().first().type == "Object",
                  qPrintable(overlay->findChild<QLabel*>("quickSearchStatus")->text()));
-    QCOMPARE(overlay->results().first().icon, choscordb::design::Icon::Table);
+    QCOMPARE(overlay->results().first().icon, choscordb::design::Icon::File);
     QVERIFY(overlay->results().first().context.contains("column"));
     overlay->findChild<QListWidget*>("quickSearchResults")->setCurrentRow(0);
     QTest::keyClick(input, Qt::Key_Return);

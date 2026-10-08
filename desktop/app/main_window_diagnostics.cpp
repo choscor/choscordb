@@ -271,7 +271,7 @@ void MainWindow::showDiagnosticsExport() {
     auto* close = new design::Button(tr("Cancel"), sections);
     close->setObjectName("diagnosticsCancel");
     close->setAccessibleName(tr("Cancel diagnostics export"));
-    close->setVariant(design::ButtonVariant::Secondary);
+    close->setVariant(design::ButtonVariant::Outline);
     sections->footerLayout()->addWidget(close);
     auto* status = dialog->createInlineStatus(sections);
     status->setObjectName("diagnosticsStatus");

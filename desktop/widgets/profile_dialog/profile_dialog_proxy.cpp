@@ -10,6 +10,7 @@ namespace choscordb {
 void ProfileDialog::createProxyControls(QFormLayout* form) {
     proxyEnabled_ = new QCheckBox(tr("Connect through a SOCKS proxy"), form_);
     proxyEnabled_->setObjectName("profileProxyEnabled");
+    proxyEnabled_->setProperty("designRole", "switch");
     form->addRow(proxyEnabled_);
     proxyFields_ = new QWidget(form_);
     auto* fields = new QFormLayout(proxyFields_);
@@ -46,12 +47,10 @@ void ProfileDialog::createProxyControls(QFormLayout* form) {
     proxySecret_ = line("profileProxySecret", 256);
     proxySecret_->setEchoMode(QLineEdit::Password);
     fields->addRow(tr("Proxy password"), validated(proxySecret_));
-    auto* help =
-        new QLabel(tr("SOCKS5 can use a username and password. SOCKS4 uses only a user ID. "
-                      "Passwords are never stored in the profile."),
-                   proxyFields_);
-    help->setWordWrap(true);
-    fields->addRow(help);
+    fields->addRow(
+        createDescription(tr("SOCKS5 can use a username and password. SOCKS4 uses only a user "
+                             "ID. Passwords are never stored in the profile."),
+                          proxyFields_));
     form->addRow(proxyFields_);
     form->setRowVisible(proxyEnabled_, false);
     form->setRowVisible(proxyFields_, false);

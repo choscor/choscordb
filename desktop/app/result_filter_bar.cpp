@@ -58,6 +58,8 @@ ResultFilterBar::ResultFilterBar(QWidget* parent) : QWidget(parent) {
     error_ = new QLabel(this);
     error_->setObjectName("resultFilterError");
     error_->setAccessibleName(tr("Filter validation"));
+    error_->setProperty("designRole", "fieldError");
+    error_->setTextFormat(Qt::PlainText);
     error_->setWordWrap(true);
     error_->hide();
     root->addWidget(error_);

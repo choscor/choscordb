@@ -1,6 +1,8 @@
 #include "widgets/profile_dialog/ssh_host_key_dialog.h"
 #include "design_system/button/button.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/status_line/status_line.h"
+#include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include <QDir>
 #include <QFileDialog>
@@ -17,7 +19,14 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
     setObjectName("sshHostKeyDialog");
     setWindowTitle(tr("Verify SSH host key"));
     const auto metrics = design::resolveMetrics(design::Density::Compact, true);
-    auto* layout = new QVBoxLayout(this);
+    auto* root = new QVBoxLayout(this);
+    auto* sections = new design::DialogSections(this);
+    root->addWidget(sections);
+    auto* heading = new design::Text(windowTitle(), sections);
+    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    sections->headerLayout()->addWidget(heading);
+    auto* layout = sections->bodyLayout();
+    layout->setSpacing(metrics.spacingMedium);
     layout->addWidget(createDescription(
         tr("Compare the SHA256 fingerprint with a trusted source before approving a key. "
            "Inspection does not change SSH trust."),
@@ -67,7 +76,7 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
     status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
     statusLine_->hide();
     layout->addWidget(statusLine_);
-    auto* actions = new QHBoxLayout;
+    auto* actions = sections->footerLayout();
     auto* cancel = new design::Button(tr("Close"), this);
     cancel->setObjectName("sshHostKeyClose");
     cancel->setVariant(design::ButtonVariant::Outline);
@@ -83,7 +92,6 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
     actions->addStretch();
     actions->addWidget(retry_);
     actions->addWidget(approve_);
-    layout->addLayout(actions);
     connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
     connect(list_, &QListWidget::currentRowChanged, this, &SshHostKeyDialog::selectCandidate);
     connect(path_, &QLineEdit::textChanged, this, &SshHostKeyDialog::updateActions);
@@ -115,6 +123,11 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
     updateActions();
     // Focusing the list can implicitly select its first row on some platforms.
     path_->setFocus();
+}
+void SshHostKeyDialog::showEvent(QShowEvent* event) {
+    DialogShell::showEvent(event);
+    layout()->setContentsMargins(0, 0, 0, 0);
+    layout()->setSpacing(0);
 }
 void SshHostKeyDialog::selectCandidate() {
     const auto row = list_->currentRow();

@@ -11,10 +11,11 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
+#include "design_system/text/text.h"
 #include "models/navigator_model.h"
 #include <QComboBox>
-#include <QDialogButtonBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
@@ -119,7 +120,14 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         DialogShell dialog(this);
         dialog.setObjectName("renameObjectDialog");
         dialog.setWindowTitle(tr("Rename %1").arg(displayKind));
-        auto* layout = new QVBoxLayout(&dialog);
+        auto* root = new QVBoxLayout(&dialog);
+        root->setContentsMargins(0, 0, 0, 0);
+        auto* sections = new design::DialogSections(&dialog);
+        root->addWidget(sections);
+        auto* heading = new design::Text(dialog.windowTitle(), sections);
+        heading->setTypographyRole(design::TypographyRole::DialogTitle);
+        sections->headerLayout()->addWidget(heading);
+        auto* layout = sections->bodyLayout();
         layout->addWidget(dialog.createDescription(
             tr("Rename %1 %2 in the same schema or database.").arg(displayKind, qualifiedName),
             &dialog));
@@ -133,20 +141,24 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         preview->setObjectName("renameObjectSql");
         preview->setAccessibleName(tr("SQL preview"));
         preview->setReadOnly(true);
+        preview->setProperty("designRole", "codePreview");
+        preview->setFont(design::resolveTypography(design::TypographyRole::Monospace));
+        preview->setFrameShape(QFrame::NoFrame);
         layout->addWidget(preview);
         auto* status = dialog.createInlineStatus(&dialog);
         status->setObjectName("renameObjectValidation");
         layout->addWidget(status);
-        auto* buttons = new QDialogButtonBox(&dialog);
+        auto* buttons = sections->footerLayout();
         auto* confirm = new design::Button(tr("Rename"), &dialog);
         confirm->setObjectName("renameObjectConfirm");
+        confirm->setDefault(true);
         auto* cancel = new design::Button(tr("Cancel"), &dialog);
         cancel->setObjectName("renameObjectCancel");
         cancel->setVariant(design::ButtonVariant::Outline);
-        buttons->addButton(confirm, QDialogButtonBox::AcceptRole);
-        buttons->addButton(cancel, QDialogButtonBox::RejectRole);
-        layout->addWidget(buttons);
-        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        buttons->addStretch();
+        buttons->addWidget(cancel);
+        buttons->addWidget(confirm);
+        connect(cancel, &QPushButton::clicked, &dialog, &QDialog::reject);
         connect(confirm, &QPushButton::clicked, &dialog, &QDialog::accept);
         const auto update = [&] {
             const auto next = ObjectActionSql::rename(driver, kind, objectId, qualifiedName,

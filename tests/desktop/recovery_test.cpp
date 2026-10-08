@@ -276,7 +276,7 @@ class RecoveryTest : public QObject {
         QCOMPARE(tabs.tabIcon(0).pixmap(16, 16).toImage(),
                  design::themedIcon(design::Icon::Eye, color, 16).pixmap(16, 16).toImage());
         QCOMPARE(tabs.tabIcon(1).pixmap(16, 16).toImage(),
-                 design::themedIcon(design::Icon::Table, color, 16).pixmap(16, 16).toImage());
+                 design::themedIcon(design::Icon::File, color, 16).pixmap(16, 16).toImage());
     }
 
     void pendingFileReadDefersCloseUntilLatestBufferCanBeSaved() {

@@ -23,7 +23,6 @@ class ResultFilterBar final : public QWidget {
     void markApplied(const QList<ResultFilterCondition>& conditions);
     void restoreApplied();
     void showValidationError(const QString& error);
-    bool hasAppliedFilters() const { return !applied_.isEmpty(); }
 
   signals:
     void applyRequested(const QList<choscordb::ResultFilterCondition>& conditions);

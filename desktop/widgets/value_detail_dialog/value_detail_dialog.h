@@ -25,6 +25,7 @@ class ValueDetailDialog final : public DialogShell {
     void clearValue();
 
   protected:
+    void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void reject() override;
 

@@ -592,14 +592,14 @@ void WorkspaceTest::mainWindowHistoryRecordsOpensDisablesAndFlushes() {
     QVERIFY(!run->isEnabled());
     target->setCurrentIndex(target->findData(connection));
     QTRY_VERIFY(run->isEnabled());
-    auto* record = window.findChild<QCheckBox*>("recordHistory");
+    auto* record = window.findChild<QAction*>("recordHistory");
     QTRY_VERIFY(record->isEnabled());
-    record->click();
+    record->trigger();
     QTRY_VERIFY(record->isEnabled());
     QVERIFY(!record->isChecked());
     executeSql("SELECT 3");
     history->refresh();
-    QTRY_VERIFY(window.findChild<QPushButton*>("refreshHistory")->isEnabled());
+    QTRY_VERIFY(window.findChild<QAction*>("refreshHistory")->isEnabled());
     QCOMPARE(model->rowCount(), 1);
     QTimer::singleShot(0, &window, [] {
         for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
@@ -609,7 +609,7 @@ void WorkspaceTest::mainWindowHistoryRecordsOpensDisablesAndFlushes() {
     history->findChild<QPushButton*>("clearHistory")->click();
     QTRY_COMPARE(model->rowCount(), 0);
     QTRY_VERIFY(record->isEnabled());
-    record->click();
+    record->trigger();
     QTRY_VERIFY(record->isEnabled());
     QVERIFY(record->isChecked());
     executeSql("SELECT 4");

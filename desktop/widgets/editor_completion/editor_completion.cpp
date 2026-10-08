@@ -1,5 +1,6 @@
 #include "editor_completion.h"
 #include "design_system/menu/embedded_popup.h"
+#include "design_system/metrics/metrics.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemView>
 #include <QCompleter>
@@ -187,7 +188,8 @@ void EditorCompletionController::launch() {
                     const int line =
                         target->SendScintilla(QsciScintilla::SCI_LINEFROMPOSITION, long(cursor));
                     const int height = target->SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, line);
-                    completer_->complete(QRect(x, y, 420, height));
+                    completer_->complete(QRect(
+                        x, y, design::dimension(design::Dimension::CompletionPopupWidth), height));
                     completer_->popup()->installEventFilter(this);
                     completer_->popup()->setCurrentIndex(
                         completer_->completionModel()->index(0, 0));

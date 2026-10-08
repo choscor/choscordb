@@ -1,8 +1,10 @@
 #pragma once
+#include "app/object_kind_icon.h"
 #include "design_system/column_row/column_row.h"
 #include "design_system/icons.h"
 #include "design_system/tabs/tab_add_corner.h"
 #include "design_system/tabs/tabs_style.h"
+#include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
 #include <QApplication>
@@ -14,6 +16,7 @@
 #include <QList>
 #include <QListWidget>
 #include <QMouseEvent>
+#include <QPalette>
 #include <QPointer>
 #include <QResizeEvent>
 #include <QScrollArea>
@@ -28,6 +31,17 @@
 #include <utility>
 
 namespace choscordb::main_window_detail {
+// Centered placeholder text shared by the start page and sidebar empty states.
+inline design::Text* createEmptyStateText(const QString& text, QWidget* parent) {
+    auto* label = new design::Text(text, parent);
+    label->setWordWrap(true);
+    label->setForegroundRole(QPalette::PlaceholderText);
+    label->setAlignment(Qt::AlignCenter);
+    label->setMargin(design::spacing(design::Spacing::Three));
+    label->setTextFormat(Qt::PlainText);
+    return label;
+}
+
 class NavigatorIconDelegate final : public design::ColumnRowDelegate {
   public:
     explicit NavigatorIconDelegate(QObject* parent = nullptr)
@@ -54,16 +68,13 @@ class NavigatorIconDelegate final : public design::ColumnRowDelegate {
                 ? (connectionIcon
                        ? connectionIcon(index.data(NavigatorModel::ConnectionRole).toULongLong())
                        : design::Icon::Database)
-            : kind == "schema" || kind == "database"  ? design::Icon::Folder
-            : kind == "view"                          ? design::Icon::Eye
-            : kind == "table"                         ? design::Icon::Grid2x2
-            : kind == "index" || kind.contains("key") ? design::Icon::Key
-                                                      : design::Icon::File;
+                : objectKindIcon(kind);
         if (option->widget) {
             const auto colors = design::resolvedThemeForWidget(*option->widget).colors;
-            option->icon = design::themedIcon(role, colors.mutedText, 14);
+            const int size = objectIconSize();
+            option->icon = design::themedIcon(role, colors.mutedText, size);
             option->features |= QStyleOptionViewItem::HasDecoration;
-            option->decorationSize = QSize(14, 14);
+            option->decorationSize = QSize(size, size);
         }
     }
 };

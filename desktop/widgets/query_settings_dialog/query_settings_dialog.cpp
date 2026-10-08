@@ -1,9 +1,9 @@
 #include "query_settings_dialog.h"
 #include "design_system/button/button.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
-#include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -23,10 +23,14 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
       connectionTimeoutSeconds_(QueryPreferences().connectionTimeoutSeconds) {
     setObjectName("querySettingsDialog");
     setWindowTitle(tr("Query settings"));
-    auto* layout = new QVBoxLayout(this);
-    auto* heading = new design::Text(tr("Query settings"), this);
-    heading->setTypographyRole(design::TypographyRole::Heading);
-    layout->addWidget(heading);
+    auto* root = new QVBoxLayout(this);
+    auto* sections = new design::DialogSections(this);
+    root->addWidget(sections);
+    auto* heading = new design::Text(tr("Query settings"), sections);
+    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    sections->headerLayout()->addWidget(heading);
+    auto* layout = sections->bodyLayout();
+    layout->setSpacing(design::spacing(design::Spacing::Two));
     auto* form = new QFormLayout;
     form->setRowWrapPolicy(QFormLayout::WrapLongRows);
     form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
@@ -49,7 +53,6 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     auto* explanation = createDescription(
         tr("Applies to new queries. Existing results keep their page size and timeout."), this);
     layout->addWidget(explanation);
-    auto* buttons = new QDialogButtonBox(this);
     apply_ = new design::Button(tr("Apply"), this);
     apply_->setObjectName("querySettingsApply");
     reset_ = new design::Button(tr("Restore defaults"), this);
@@ -58,9 +61,11 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     auto* cancel = new design::Button(tr("Cancel"), this);
     cancel->setObjectName("querySettingsCancel");
     cancel->setVariant(design::ButtonVariant::Outline);
-    buttons->addButton(apply_, QDialogButtonBox::ApplyRole);
-    buttons->addButton(reset_, QDialogButtonBox::ResetRole);
-    buttons->addButton(cancel, QDialogButtonBox::RejectRole);
+    auto* buttons = sections->footerLayout();
+    buttons->addWidget(reset_);
+    buttons->addStretch();
+    buttons->addWidget(cancel);
+    buttons->addWidget(apply_);
     layout->addStretch();
     statusLine_ = new design::StatusLine(this);
     statusLine_->setObjectName("querySettingsStatusLine");
@@ -70,8 +75,7 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     status_->setWordWrap(true);
     status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
     layout->addWidget(statusLine_);
-    layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
     connect(apply_, &QPushButton::clicked, this, &QuerySettingsDialog::apply);
     connect(reset_, &QPushButton::clicked, this, [this] {
         if (token_)
@@ -197,6 +201,11 @@ void QuerySettingsDialog::apply() {
     emit queryPreferencesSaveSubmitted(token);
     if (adapter)
         adapter->setQueryPreferences(value, token);
+}
+void QuerySettingsDialog::showEvent(QShowEvent* event) {
+    DialogShell::showEvent(event);
+    layout()->setContentsMargins(0, 0, 0, 0);
+    layout()->setSpacing(0);
 }
 void QuerySettingsDialog::setStatus(const QString& message) {
     statusLine_->setMessage(message);

@@ -34,6 +34,8 @@ SshPrivateKeyEditor::SshPrivateKeyEditor(const QString& prefix, QWidget* parent)
     buttons->addStretch();
     layout->addLayout(buttons);
     error_ = new QLabel(this);
+    error_->setProperty("designRole", "fieldError");
+    error_->setTextFormat(Qt::PlainText);
     error_->setWordWrap(true);
     layout->addWidget(error_);
     connect(pasteButton, &QPushButton::clicked, this, &SshPrivateKeyEditor::paste);

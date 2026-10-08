@@ -6,10 +6,14 @@
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_shell/dialog_shell.h"
+#include "design_system/icons.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/text/text.h"
+#include "design_system/theme.h"
 
 #include <QApplication>
 #include <QDesktopServices>
+#include <QEvent>
 #include <QFutureWatcher>
 #include <QLabel>
 #include <QMenu>
@@ -18,7 +22,6 @@
 #include <QProgressBar>
 #include <QSignalBlocker>
 #include <QStandardPaths>
-#include <QStyle>
 #include <QThreadPool>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -147,7 +150,9 @@ class NativeUpdater final : public QObject {
         auto* check = menu->addAction(tr("Check for Updates…"));
         check->setObjectName(QStringLiteral("checkForUpdates"));
         check->setMenuRole(QAction::ApplicationSpecificRole);
-        check->setIcon(window.style()->standardIcon(QStyle::SP_BrowserReload));
+        checkAction_ = check;
+        refreshCheckIcon();
+        window.installEventFilter(this);
         check->setIconVisibleInMenu(true);
         connect(check, &QAction::triggered, this, [this] { checkForUpdates(true); });
         installAction_ = menu->addAction(tr("Install Downloaded Update…"));
@@ -203,7 +208,21 @@ class NativeUpdater final : public QObject {
     }
 #endif
 
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == window_ && event->type() == QEvent::PaletteChange)
+            refreshCheckIcon();
+        return QObject::eventFilter(watched, event);
+    }
+
   private:
+    void refreshCheckIcon() {
+        if (!window_ || !checkAction_)
+            return;
+        checkAction_->setIcon(design::themedIcon(
+            design::Icon::Refresh, design::resolvedThemeForWidget(*window_).colors.foreground,
+            design::dimension(design::Dimension::Icon)));
+    }
     void loadConsent() {
         const auto directory = consentDirectory_;
         auto* watcher = new QFutureWatcher<UpdateConsentDto>(this);
@@ -490,6 +509,7 @@ class NativeUpdater final : public QObject {
     }
 
     QPointer<MainWindow> window_;
+    QPointer<QAction> checkAction_;
     QPointer<QAction> installAction_;
     QPointer<QAction> automaticAction_;
     QPointer<UpdateProgressDialog> progress_;

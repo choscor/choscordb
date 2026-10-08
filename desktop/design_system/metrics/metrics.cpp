@@ -102,6 +102,8 @@ int dimension(Dimension value) {
         return 640;
     case Dimension::QuickSearchRow:
         return 52;
+    case Dimension::CompletionPopupWidth:
+        return 420;
     case Dimension::SheetWidth:
         return 480;
     case Dimension::TableRow:

@@ -34,7 +34,7 @@ class HistoryTest : public QObject {
         choscordb::HistoryDock history(&adapter);
         history.resize(800, 600);
         history.show();
-        QTRY_VERIFY(history.findChild<QPushButton*>("refreshHistory")->isEnabled());
+        QTRY_VERIFY(history.findChild<QAction*>("refreshHistory")->isEnabled());
         auto* table = history.findChild<QTableView*>("historyTable");
         auto* footer = history.findChild<QWidget*>("historyFooter");
         QVERIFY(footer);
@@ -83,10 +83,10 @@ class HistoryTest : public QObject {
         choscordb::HistoryDock history(&adapter);
         history.resize(800, 600);
         history.show();
-        auto* refresh = history.findChild<QPushButton*>("refreshHistory");
+        auto* refresh = history.findChild<QAction*>("refreshHistory");
         QTRY_VERIFY(refresh->isEnabled());
         adapter.beginShutdown();
-        refresh->click();
+        refresh->trigger();
         auto* footer = history.findChild<QWidget*>("historyFooter");
         auto* status = history.findChild<QLabel*>("historyStatus");
         QTRY_COMPARE(footer->palette().color(QPalette::Window),
@@ -100,7 +100,7 @@ class HistoryTest : public QObject {
         choscordb::HistoryDock history(&adapter);
         history.resize(700, 600);
         history.show();
-        QTRY_VERIFY(history.findChild<QPushButton*>("refreshHistory")->isEnabled());
+        QTRY_VERIFY(history.findChild<QAction*>("refreshHistory")->isEnabled());
         auto* table = history.findChild<QTableView*>("historyTable");
         auto* model = qobject_cast<choscordb::HistoryModel*>(table->model());
         choscordb::SavedHistoryEntry entry;
@@ -109,16 +109,26 @@ class HistoryTest : public QObject {
         entry.status = "completed";
         model->setEntries({entry});
         QVERIFY(!table->horizontalHeader()->isVisible());
-        QCOMPARE(table->rowHeight(0), 62);
+        using namespace choscordb::design;
+        QCOMPARE(table->rowHeight(0), 3 * spacing(Spacing::Two) +
+                                          typographySpec(TypographyRole::Metadata).lineHeight +
+                                          dimension(Dimension::Badge));
         QCOMPARE(table->columnWidth(2), table->viewport()->width());
         auto* preview = history.findChild<QPlainTextEdit*>("historyPreview");
         QVERIFY(!preview->isVisible());
+        QCOMPARE(preview->property("designRole").toString(), QString("codePreview"));
+        QCOMPARE(preview->font().family(), resolveTypography(TypographyRole::Monospace).family());
         table->selectRow(0);
         QVERIFY(!preview->isVisible());
         auto* manage = history.findChild<QToolButton*>("historyManage");
         QVERIFY(manage);
         auto* showPreview = manage->menu()->findChild<QAction*>("historyShowPreview");
         QVERIFY(showPreview);
+        auto* record = history.findChild<QAction*>("recordHistory");
+        auto* refresh = history.findChild<QAction*>("refreshHistory");
+        QVERIFY(record && record->isCheckable());
+        QVERIFY(refresh && !refresh->isCheckable());
+        QCOMPARE(manage->menu()->actions(), QList<QAction*>({record, refresh, showPreview}));
         showPreview->trigger();
         QVERIFY(preview->isVisible());
         QCOMPARE(preview->toPlainText(), entry.sql);
@@ -133,7 +143,7 @@ class HistoryTest : public QObject {
         choscordb::HistoryDock history(&adapter);
         history.resize(800, 600);
         history.show();
-        QTRY_VERIFY(history.findChild<QPushButton*>("refreshHistory")->isEnabled());
+        QTRY_VERIFY(history.findChild<QAction*>("refreshHistory")->isEnabled());
         auto* table = history.findChild<QTableView*>("historyTable");
         auto* model = qobject_cast<choscordb::HistoryModel*>(table->model());
         choscordb::SavedHistoryEntry alpha, beta;
@@ -187,7 +197,7 @@ class HistoryTest : public QObject {
         auto* next = dock.findChild<QPushButton*>("historyNext");
         auto* previous = dock.findChild<QPushButton*>("historyPrevious");
         auto* range = dock.findChild<QLabel*>("historyRange");
-        QTRY_VERIFY(dock.findChild<QCheckBox*>("recordHistory")->isEnabled());
+        QTRY_VERIFY(dock.findChild<QAction*>("recordHistory")->isEnabled());
         QTRY_COMPARE(listed.count(), 1);
         choscordb::SavedHistoryEntry entry;
         entry.id = "one";
@@ -238,7 +248,7 @@ class HistoryTest : public QObject {
         choscordb::HistoryDock dock(&adapter);
         dock.resize(800, 600);
         dock.show();
-        QTRY_VERIFY(dock.findChild<QPushButton*>("refreshHistory")->isEnabled());
+        QTRY_VERIFY(dock.findChild<QAction*>("refreshHistory")->isEnabled());
         adapter.shutdown();
         dock.refresh();
         auto* status = dock.findChild<QLabel*>("historyStatus");
@@ -281,7 +291,7 @@ class HistoryTest : public QObject {
         dock.show();
         QTRY_VERIFY(!policies.isEmpty());
         QTRY_COMPARE(listed.count(), 1);
-        auto* record = dock.findChild<QCheckBox*>("recordHistory");
+        auto* record = dock.findChild<QAction*>("recordHistory");
         QTRY_VERIFY(record->isEnabled());
         QVERIFY(record->isChecked());
         auto* table = dock.findChild<QTableView*>("historyTable");
@@ -300,7 +310,7 @@ class HistoryTest : public QObject {
         dock.findChild<QPushButton*>("openHistoryQuery")->click();
         QCOMPARE(opened.count(), 1);
         QCOMPARE(qvariant_cast<choscordb::SavedHistoryEntry>(opened.at(0).at(0)).sql, entry.sql);
-        record->click();
+        record->trigger();
         QTRY_VERIFY(record->isEnabled());
         QVERIFY(!record->isChecked());
         // Old policy deliveries and unrelated failures cannot overwrite current state.

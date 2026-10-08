@@ -8,6 +8,7 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/status_line/status_line.h"
+#include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "navigator_sql_workspace_test.h"
@@ -180,7 +181,8 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QCOMPARE(tabs->count(), 3);
     QCOMPARE(object->property("objectId").toString(),
              model->index(0, 0, group).data(NavigatorModel::ObjectIdRole).toString());
-    QTRY_COMPARE(status->property("variant").toString(), QString("danger"));
+    QTRY_COMPARE(status->palette().color(QPalette::Window),
+                 design::resolvedThemeForWidget(*status).colors.dangerSurface);
 
     const auto renamed = model->index(0, 0, group);
     QMenu dropMenu;

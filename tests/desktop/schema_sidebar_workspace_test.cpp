@@ -88,8 +88,10 @@ void SchemaSidebarWorkspaceTest::tableAndViewIconsFollowTheNavigatorAndTabTheme(
                                   : row == 1 ? design::Icon::Eye
                                   : row == 2 ? design::Icon::Key
                                              : design::Icon::File;
-            QCOMPARE(option.icon.pixmap(14, 14).toImage(),
-                     design::themedIcon(expected, color, 14).pixmap(14, 14).toImage());
+            const int size = objectIconSize();
+            QCOMPARE(option.decorationSize, QSize(size, size));
+            QCOMPARE(option.icon.pixmap(size, size).toImage(),
+                     design::themedIcon(expected, color, size).pixmap(size, size).toImage());
         }
     };
     checkRows();
@@ -102,9 +104,10 @@ void SchemaSidebarWorkspaceTest::tableAndViewIconsFollowTheNavigatorAndTabTheme(
         for (int row = 0; row < tabs->count(); ++row) {
             const auto expected = row == 0   ? design::Icon::Grid2x2
                                   : row == 1 ? design::Icon::Eye
-                                             : design::Icon::Table;
-            QCOMPARE(tabs->tabIcon(row).pixmap(16, 16).toImage(),
-                     design::themedIcon(expected, color, 16).pixmap(16, 16).toImage());
+                                             : design::Icon::File;
+            const int size = objectIconSize();
+            QCOMPARE(tabs->tabIcon(row).pixmap(size, size).toImage(),
+                     design::themedIcon(expected, color, size).pixmap(size, size).toImage());
         }
     };
     checkTabs();

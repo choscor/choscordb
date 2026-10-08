@@ -7,8 +7,8 @@
 #include "design_system/theme.h"
 #include "models/history_model.h"
 #include <QAction>
-#include <QCheckBox>
 #include <QComboBox>
+#include <QEvent>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
@@ -23,7 +23,6 @@
 #include <QTableView>
 #include <QToolButton>
 #include <QVBoxLayout>
-#include <QWidgetAction>
 #include <atomic>
 #include <limits>
 namespace choscordb {
@@ -33,15 +32,30 @@ quint64 token() {
     return next.fetch_add(1);
 }
 constexpr quint32 pageSize = 100;
+// The table keeps the full history columns (rows, duration) that the compact
+// design::RecentHistoryRowDelegate list row does not carry, so this delegate
+// paints the wider variant with the same spacing, badge, radius and focus tokens.
 class HistoryRowDelegate final : public QStyledItemDelegate {
   public:
     using QStyledItemDelegate::QStyledItemDelegate;
+    static int rowHeight() {
+        return design::spacing(design::Spacing::Two) +
+               design::typographySpec(design::TypographyRole::Metadata).lineHeight +
+               design::spacing(design::Spacing::Two) + design::dimension(design::Dimension::Badge) +
+               design::spacing(design::Spacing::Two);
+    }
+    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex&) const override {
+        return {option.rect.width(), rowHeight()};
+    }
     void paint(QPainter* painter, const QStyleOptionViewItem& option,
                const QModelIndex& index) const override {
         if (!option.widget)
             return;
         const auto colors = design::resolvedThemeForWidget(*option.widget).colors;
         const auto bounds = option.rect;
+        const int inset = design::spacing(design::Spacing::Three);
+        const int gap = design::spacing(design::Spacing::Two);
+        const int badgeRadius = design::radius(design::Radius::Small);
         painter->save();
         painter->fillRect(bounds, option.state & QStyle::State_Selected ? colors.subtleAccent
                                                                         : colors.card);
@@ -50,18 +64,22 @@ class HistoryRowDelegate final : public QStyledItemDelegate {
         const auto sqlFont = design::resolveTypography(design::TypographyRole::Metadata);
         painter->setFont(sqlFont);
         painter->setPen(colors.text);
-        const int width = qMax(0, bounds.width() - 28);
+        const int width = qMax(0, bounds.width() - 2 * inset);
+        const QRect sqlRect(bounds.left() + inset, bounds.top() + gap, width,
+                            design::typographySpec(design::TypographyRole::Metadata).lineHeight);
         painter->drawText(
-            bounds.adjusted(14, 8, -14, -33), Qt::AlignLeft | Qt::AlignVCenter,
+            sqlRect, Qt::AlignLeft | Qt::AlignVCenter,
             QFontMetrics(sqlFont).elidedText(index.data().toString(), Qt::ElideRight, width));
         const auto small = design::resolveTypography(design::TypographyRole::Small);
         painter->setFont(small);
         const auto status = index.siblingAtColumn(4).data().toString();
-        const int badgeWidth = QFontMetrics(small).horizontalAdvance(status) + 14;
-        const QRect badge(bounds.left() + 14, bounds.top() + 34, badgeWidth, 20);
+        const int badgeWidth = QFontMetrics(small).horizontalAdvance(status) +
+                               2 * design::spacing(design::Spacing::OneHalf);
+        const QRect badge(bounds.left() + inset, sqlRect.bottom() + 1 + gap, badgeWidth,
+                          design::dimension(design::Dimension::Badge));
         painter->setPen(Qt::NoPen);
         painter->setBrush(colors.muted);
-        painter->drawRoundedRect(badge, 4, 4);
+        painter->drawRoundedRect(badge, badgeRadius, badgeRadius);
         painter->setPen(status == tr("Failed") ? colors.danger : colors.action);
         painter->drawText(badge, Qt::AlignCenter, status);
         const auto detail = QString("%1 · %2 · %3 · %4")
@@ -69,14 +87,15 @@ class HistoryRowDelegate final : public QStyledItemDelegate {
                                      index.siblingAtColumn(1).data().toString(),
                                      index.siblingAtColumn(3).data().toString(),
                                      tr("%1 rows").arg(index.siblingAtColumn(5).data().toString()));
-        const QRect detailRect(badge.right() + 10, badge.top(),
-                               qMax(0, bounds.right() - badge.right() - 24), badge.height());
+        const int detailLeft = badge.right() + 1 + design::spacing(design::Spacing::TwoHalf);
+        const QRect detailRect(detailLeft, badge.top(),
+                               qMax(0, bounds.right() + 1 - inset - detailLeft), badge.height());
         painter->setPen(colors.mutedText);
         painter->drawText(
             detailRect, Qt::AlignLeft | Qt::AlignVCenter,
             QFontMetrics(small).elidedText(detail, Qt::ElideRight, detailRect.width()));
         if (option.state & QStyle::State_HasFocus) {
-            painter->setPen(QPen(colors.focus, 2));
+            painter->setPen(QPen(colors.focus, design::focusSpec().ringWidth));
             painter->setBrush(Qt::NoBrush);
             painter->drawRect(bounds.adjusted(1, 1, -1, -1));
         }
@@ -121,21 +140,14 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     filters->addWidget(statusFilter_);
     layout->addLayout(filters);
 
-    record_ = new QCheckBox(tr("Record history"), body);
-    record_->setObjectName("recordHistory");
     clear_ = new design::Button(tr("Clear history…"), body);
     clear_->setObjectName("clearHistory");
-    refresh_ = new design::Button(tr("Refresh"), body);
-    refresh_->setObjectName("refreshHistory");
     clear_->setVariant(design::ButtonVariant::Destructive);
     clear_->setDesignIcon(design::Icon::Close);
     clear_->setAccessibleName(tr("Clear history"));
     clear_->setToolTip(tr("Clear history…"));
     clear_->setText({});
-    refresh_->setVariant(design::ButtonVariant::Outline);
-    refresh_->setDesignIcon(design::Icon::Refresh);
     clear_->setButtonSize(design::ButtonSize::IconSmall);
-    refresh_->setButtonSize(design::ButtonSize::Small);
     status_ = new design::Text({}, body);
     status_->setObjectName("historyStatus");
     model_ = new HistoryModel(this);
@@ -154,7 +166,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     for (int column = 0; column < model_->columnCount(); ++column)
         table_->setColumnHidden(column, column != 2);
     table_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    table_->verticalHeader()->setDefaultSectionSize(62);
+    table_->verticalHeader()->setDefaultSectionSize(HistoryRowDelegate::rowHeight());
     auto* content = new QSplitter(Qt::Vertical, body);
     content->setObjectName("historyContentSplitter");
     content->addWidget(table_);
@@ -194,26 +206,27 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     preview_ = new QPlainTextEdit(body);
     preview_->setObjectName("historyPreview");
     preview_->setReadOnly(true);
+    preview_->setProperty("designRole", "codePreview");
+    preview_->setFont(design::resolveTypography(design::TypographyRole::Monospace));
+    preview_->setFrameShape(QFrame::NoFrame);
     previewLayout->addWidget(preview_, 1);
     footer_ = new design::StatusLine(body);
     footer_->setObjectName("historyFooter");
     auto* manage = new QToolButton(toolbarBody);
+    manage_ = manage;
     manage->setObjectName("historyManage");
     manage->setText(tr("Manage history"));
     manage->setAccessibleName(tr("Manage history"));
     manage->setToolTip(tr("Manage history"));
-    manage->setIcon(design::themedIcon(design::Icon::ChevronDown,
-                                       design::resolvedThemeForWidget(*manage).colors.foreground,
-                                       design::dimension(design::Dimension::Icon)));
+    refreshManageIcon();
     manage->setToolButtonStyle(Qt::ToolButtonIconOnly);
     manage->setPopupMode(QToolButton::InstantPopup);
     auto* manageMenu = new QMenu(manage);
-    auto* recordAction = new QWidgetAction(manageMenu);
-    recordAction->setDefaultWidget(record_);
-    manageMenu->addAction(recordAction);
-    auto* refreshAction = new QWidgetAction(manageMenu);
-    refreshAction->setDefaultWidget(refresh_);
-    manageMenu->addAction(refreshAction);
+    record_ = manageMenu->addAction(tr("Record history"));
+    record_->setObjectName("recordHistory");
+    record_->setCheckable(true);
+    refresh_ = manageMenu->addAction(tr("Refresh"));
+    refresh_->setObjectName("refreshHistory");
     auto* previewAction = manageMenu->addAction(tr("View full query"));
     previewAction->setObjectName("historyShowPreview");
     previewAction->setCheckable(true);
@@ -272,7 +285,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     });
     connect(table_, &QTableView::activated, this, [this] { openSelection(); });
     connect(open_, &QPushButton::clicked, this, &HistoryDock::openSelection);
-    connect(refresh_, &QPushButton::clicked, this, &HistoryDock::refresh);
+    connect(refresh_, &QAction::triggered, this, &HistoryDock::refresh);
     connect(previous_, &QPushButton::clicked, this, [this] {
         failed_ = false;
         if (!visitedOffsets_.isEmpty())
@@ -282,7 +295,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
         failed_ = false;
         loadPage(offset_ + quint32(model_->rowCount()));
     });
-    connect(record_, &QCheckBox::clicked, this, [this](bool checked) {
+    connect(record_, &QAction::triggered, this, [this](bool checked) {
         if (!adapter_ || !havePolicy_ || policyToken_)
             return;
         auto proposed = policy_;
@@ -374,6 +387,18 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
                 model_->setProfileNames(std::move(names));
             });
     refresh();
+}
+void HistoryDock::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange)
+        refreshManageIcon();
+}
+void HistoryDock::refreshManageIcon() {
+    if (!manage_)
+        return;
+    manage_->setIcon(design::themedIcon(design::Icon::ChevronDown,
+                                        design::resolvedThemeForWidget(*manage_).colors.foreground,
+                                        design::dimension(design::Dimension::Icon)));
 }
 void HistoryDock::applyConfirmedPolicy(const HistoryPolicy& policy) {
     policy_ = policy;
