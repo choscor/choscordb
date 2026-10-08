@@ -70,7 +70,7 @@ class SvgIconEngine final : public QIconEngine {
     void paint(QPainter* painter, const QRect& rect, QIcon::Mode, QIcon::State) override {
         // Render into the final paint device/transform. An intermediate pixmap
         // cannot account for fractional painter scaling and softens SVG edges.
-        if (!renderer_)
+        if (!renderer_) // perf-ok: parsed once per engine, then reused.
             renderer_ = std::make_unique<QSvgRenderer>(svg_);
         renderer_->render(painter, QRectF(rect));
     }

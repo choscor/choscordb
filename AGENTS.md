@@ -42,6 +42,55 @@ For changes in `desktop/design_system/`, also follow its `AGENTS.md`.
 - Keep user-selected SQL editor fonts as user settings.
 - Use `ConfirmationDialog` for message boxes and shared dialog shells for modal
   content when their contracts fit.
+- Keep sibling screens on one pattern: `TypographyRole::DialogTitle` for dialog
+  titles, `design::DialogSections` for dialog header/body/footer, `design::Button`
+  (Outline for Cancel/Close) instead of stock `QDialogButtonBox` buttons,
+  `FieldValidation` or `designRole="fieldError"` for errors, the description role
+  for help text, `TypographyRole::Monospace` with `designRole="codePreview"` for
+  SQL previews, `design::popupContextMenu`/`execContextMenu` for menus, and
+  `design::Icon` roles instead of Qt standard icons outside macOS native menus.
+- Every value set on `designRole`, `variant`, `state`, or `designSurface` must be
+  one the design system styles. Use a non-styling property for workflow-only state.
+- Use metrics, spacing, radius, and icon-size tokens in every argument position,
+  including paint geometry, column widths, section sizes, and `themedIcon` sizes.
+  Map object kinds to icons through the shared app helper, not per-screen switches.
+
+## Large-data performance
+
+Result pages hold up to 10,000 rows; navigator trees, pins, and history can hold
+tens of thousands of nodes. Code on these paths must not scale with the page,
+selection, or tree on every paint, keystroke, or signal.
+
+- Keep paint, size-hint, `data()`, `headerData()`, `flags()`, `parent()`, and
+  highlighter paths free of bridge calls, SVG parsing, image file loads, regex
+  compilation, and linear searches. Precompute per page or cache per theme; use
+  the cached `design::themedIcon` for icons.
+- Make `parent()`/index lookup O(1) and keep id-to-node maps instead of tree walks.
+- Walk `QItemSelection` ranges; do not materialize `selectedIndexes()`. Apply bulk
+  edits per range and emit one change signal per batch.
+- Do not size result columns or rows to contents; measure a bounded sample.
+- Debounce keystroke-driven filtering and searches with a member `QTimer`, and
+  coalesce bursts of model signals with one single-shot member timer, not one
+  zero-delay timer per signal.
+- Keep navigator trees at uniform row heights, repaint only changed rects on
+  hover, and expand only known ancestors.
+- Filtering, sorting, search, and visibility policy belong in Rust; C++ applies
+  the result to the view.
+- Run `python3 scripts/ci/perf_policy.py` (`--json` for findings). Exempt a line
+  only with a reviewed `// perf-ok: <reason>` marker on it or the line above.
+
+## Dead and duplicated code
+
+- Delete code when its last production caller goes; do not keep wrappers, legacy
+  paths, unused parameters (`Q_UNUSED`), or signals with no connection for tests.
+  Move tests to the production API, or to Rust when they test policy.
+- Share helpers instead of copying them. Use `desktop/bridge/rust_text.h` for
+  `rust::String`/`QString` conversion and `desktop/bridge/request_token.h` for
+  request tokens; per-file counters with hand-picked start values collide.
+- Run `python3 scripts/ci/source_inventory.py`. It rejects sources missing from
+  CMake, headers never included, uncalled members, unconnected signals, copied
+  anonymous-namespace helpers, and stale `ui_consistency.py` list names. Record a
+  reviewed exception in its `EXCEPTIONS` map only for a deliberate seam.
 
 ## Component changes
 
@@ -60,7 +109,10 @@ For changes in `desktop/design_system/`, also follow its `AGENTS.md`.
 - [ ] Run `python3 scripts/ci/ui_consistency.py`. Use `--json` to inspect the
       deterministic per-screen source census and visual-ownership violations.
 - [ ] Run `python3 scripts/ci/ui_policy.py` and
-      `python3 scripts/ci/qss_policy.py`.
+      `python3 scripts/ci/qss_policy.py`. New audit rules accept a reviewed
+      `// ui-ok: <reason>` marker only where no design token or component fits.
+- [ ] Run `python3 scripts/ci/perf_policy.py` and
+      `python3 scripts/ci/source_inventory.py`.
 - [ ] For native UI changes, build and run relevant CTest targets. Run the full
       native suite when dependencies are present.
 - [ ] For design-system edits, follow `desktop/design_system/AGENTS.md`, including

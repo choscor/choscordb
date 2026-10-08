@@ -129,6 +129,14 @@ def ui_consistency():
     run_command([PYTHON, "scripts/ci/ui_consistency.py"])
 
 
+def perf_policy():
+    run_command([PYTHON, "scripts/ci/perf_policy.py"])
+
+
+def source_inventory():
+    run_command([PYTHON, "scripts/ci/source_inventory.py"])
+
+
 def python_lint():
     ruff = require_tool(
         "ruff", install=f"{PYTHON} -m pip install -r scripts/ci/requirements.txt"
@@ -297,6 +305,8 @@ STAGES = {
     "qss-lint": qss_lint,
     "ui-policy": ui_policy,
     "ui-consistency": ui_consistency,
+    "perf-policy": perf_policy,
+    "source-inventory": source_inventory,
     "python-lint": python_lint,
     "python-format": python_format,
     "actionlint": actionlint,
@@ -318,6 +328,8 @@ FAST_STAGES = (
     "qss-lint",
     "ui-policy",
     "ui-consistency",
+    "perf-policy",
+    "source-inventory",
     "python-lint",
     "python-format",
     "actionlint",

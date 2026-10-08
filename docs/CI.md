@@ -95,7 +95,7 @@ cargo deny --locked check
 ```
 
 The focused deterministic stages are `cpp-format`, `cpp-size`, `ui-policy`,
-`ui-consistency`, `qss-lint`, `python-lint`,
+`ui-consistency`, `perf-policy`, `source-inventory`, `qss-lint`, `python-lint`,
 `python-format`, `actionlint`, `python-tests`, `rust-format`, `rust-check`,
 `rust-clippy`, `rust-tests`, and `cargo-deny`. Native stages are
 `native-dependencies`, `native-build`, and `native-tests`. Every command prints
@@ -109,6 +109,25 @@ design-system controls. It rejects screen-owned presentation and unclassified
 leaf controls; the percentage is a lexical source estimate, not runtime or
 pixel coverage. Run `python3 scripts/ci/ui_consistency.py --json` for a
 machine-readable census.
+
+`ui-policy` also rejects literal metrics in any argument position (margins,
+column widths, section sizes, icon sizes, paint geometry), RGB and `Qt::` colors,
+raw menu popups, non-macOS `standardIcon`, stock dialog button boxes, and
+`designRole`/`variant`/`state`/`designSurface` values the design system does not
+style. A reviewed `// ui-ok: <reason>` marker on the line or the line above
+exempts one of these audit rules.
+
+`perf-policy` rejects patterns that scale with result pages, selections, deep
+navigator trees, or long pin lists: content-sized result columns, materialized
+`selectedIndexes()`, undebounced proxy filters, non-uniform or fully expanded
+trees, full-viewport hover repaints, one zero-delay timer per model signal, and
+SVG parsing, image file loads, bridge calls, regex compilation, or linear
+searches inside paint, size-hint, `data()`, or `parent()` paths. A reviewed `// perf-ok: <reason>` marker exempts one line.
+
+`source-inventory` rejects translation units missing from CMake, headers never
+included, member functions never called, signals never connected, verbatim
+anonymous-namespace helper copies, and stale names in the `ui_consistency.py`
+component lists. Reviewed exceptions live in its `EXCEPTIONS` map with a reason.
 
 Native analysis can be reproduced with the named CMake presets and targets:
 

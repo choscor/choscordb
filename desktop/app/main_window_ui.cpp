@@ -695,6 +695,7 @@ MainWindow::Ui MainWindow::buildUi() {
     // StatusLine::setContent below supplies the visible text and semantic state.
     auto* empty = new design::Text;
     empty->setObjectName("executionSummary");
+    // ui-ok: workflow state read by QueryWorkspace; StatusLine owns presentation.
     empty->setProperty("state", "disconnected");
     empty->setAccessibleName(tr("Execution status: disconnected"));
     auto* grid = new QTableView;
