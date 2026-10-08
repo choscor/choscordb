@@ -8,13 +8,13 @@ Source: User request and brainstorm decisions in this session.
 
 Make future ChoscorDB GitHub release notes easy for users to scan by version and change type. The `release-new-version` skill currently drafts a flat `CHANGELOG.md` entry, then prepares public notes in an ignored `build/` file from the changelog at the verified source commit. It requires platform requirements, relevant limitations, a versioned GitHub DMG link, and the Windows unsigned-package notice. `CHANGELOG.md` currently has version headings with ungrouped bullets. The release publisher reads a reviewed notes file and rejects a retry if its text differs from an existing draft or release.
 
-Relevant files: `.agents/skills/release-new-version/SKILL.md`, `CHANGELOG.md`, `docs/MACOS_RELEASE.md`, `docs/WINDOWS_LINUX_RELEASE.md`, and `scripts/release/publish.py`.
+Relevant files: `.claude/skills/release-new-version/SKILL.md`, `CHANGELOG.md`, `docs/MACOS_RELEASE.md`, `docs/WINDOWS_LINUX_RELEASE.md`, and `scripts/release/publish.py`.
 
 Research basis: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) recommends versioned, dated, curated, grouped changes rather than commit-log dumps. [GitHub's release-note style guide](https://docs.github.com/en/contributing/style-guide-and-content-model/style-guide) distinguishes features, changes, fixes, security fixes, and known issues, and asks writers to explain user impact. This spec adapts those conventions to the section names chosen here.
 
 ## Scope and decisions
 
-- Update the release-writing instructions in `.agents/skills/release-new-version/SKILL.md` for **GitHub release notes only**. Keep `CHANGELOG.md` as the reviewed source material and leave its existing format unchanged.
+- Update the release-writing instructions in `.claude/skills/release-new-version/SKILL.md` for **GitHub release notes only**. Keep `CHANGELOG.md` as the reviewed source material and leave its existing format unchanged.
 - Apply the format to future GitHub releases. Do not rewrite published release notes or historical changelog entries.
 - Start the notes body with the version alone as `# X.Y.Z`, followed by the intended publication date in ISO `YYYY-MM-DD` form. Verify the date immediately before creating a remote draft; if publication slips, review the date and any remote-note conflict deliberately under the existing publisher rules.
 - Under the heading, use `## Features`, `## Improvements`, and `## Fixes`, in that order, when each has entries. Omit empty sections. A release with no notable item in one category remains valid.

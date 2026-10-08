@@ -138,7 +138,7 @@ versions remain X.Y.Z. Release signature metadata contains no private key.
 
 ## GitHub Release publication
 
-The repository's [release-new-version skill](../.agents/skills/release-new-version/SKILL.md)
+The repository's [release-new-version skill](../.claude/skills/release-new-version/SKILL.md)
 coordinates notes, quality checks, all three platform packages, an exact-source
 commit tag push, the complete GitHub Release, and Pages feed deployment.
 Invoke it with a version and the intended scope

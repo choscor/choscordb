@@ -125,7 +125,7 @@ quality runner includes the consistency gate and Python tests.
 
 ## Release verification
 
-- Before preparing a release, read `.agents/skills/release-new-version/SKILL.md`
+- Before preparing a release, read `.claude/skills/release-new-version/SKILL.md`
   and `docs/testing/release-lessons.md`. Run focused Windows installer and
   production-updater configuration checks before expensive packaging or tagging.
 - Require GCC/MSVC native gates and production package smoke checks for the final

@@ -1,5 +1,6 @@
 ---
 name: release-new-version
+disable-model-invocation: true
 description: Release ChoscorDB with three verified platform packages from one tag, signed update feeds, and complete GitHub Release publication. Also resume a macOS build from its verified manifest.
 ---
 
