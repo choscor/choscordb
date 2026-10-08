@@ -60,7 +60,7 @@ Established app patterns:
 ## Technical constraints and likely affected areas
 
 - Keep the diagnostic event contract independent of Qt and Rust error message strings. Likely touch `desktop/app/main.cpp`, `desktop/app/main_window_ui.cpp`, lifecycle/workspace controllers, and selected Rust bridge/engine operation boundaries. Choose a small cross-language boundary instead of duplicating policy in Qt and Rust.
-- Respect `AGENTS.md`: app state and workflow in `desktop/app/` or `desktop/widgets/`; reuse design-system dialog/menu components and semantic styling. Inspect `desktop/design_system/README.md` before adding a component. If design-system code changes, follow its own `AGENTS.md`.
+- Respect `CLAUDE.md`: app state and workflow in `desktop/app/` or `desktop/widgets/`; reuse design-system dialog/menu components and semantic styling. Inspect `desktop/design_system/README.md` before adding a component. If design-system code changes, follow its own `CLAUDE.md`.
 - Run `python3 scripts/ci/ui_consistency.py` (inspect `--json`), `ui_policy.py`, `qss_policy.py`, and relevant native CTest targets. Run the full native suite when dependencies are present. Cover any new component construction site in the consistency census.
 - Keep private local files inside the existing application-data area with restrictive permissions where supported. Do not append diagnostics to `choscordb.sqlite` merely to reuse storage; keep retention and deletion independent from user data.
 - Validate release artifacts still retain symbol information needed privately by maintainers to interpret safe crash signatures, where platform packaging supports this; do not put private symbols or raw reports in the ZIP.

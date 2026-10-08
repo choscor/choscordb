@@ -1,7 +1,7 @@
 # C++ ownership gate
 
 Rust owns application behavior. C++ owns presentation, native UI integration,
-transient view state, and typed bridge conversion, as defined in `AGENTS.md`.
+transient view state, and typed bridge conversion, as defined in `CLAUDE.md`.
 
 ## Run it
 

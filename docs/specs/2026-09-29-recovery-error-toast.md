@@ -49,7 +49,7 @@ Keep unexpected error messages out of toolbar and header slots intended for cont
 ## Technical constraints and likely affected areas
 
 - Primary app change: `desktop/app/main_window_lifecycle.cpp`; inspect `desktop/app/main_window_ui.cpp`, `desktop/app/main_window_widgets.h`, and `desktop/app/main_window.cpp` for header composition and toast ownership. Use `desktop/design_system/toast_region/` as the shared presentation. Keep workflow state in app code and preserve object names, focus, signals, accessibility, and recovery action contracts.
-- Follow the repository's desktop UI ownership rules. Before extracting or changing a shared component, inspect `desktop/design_system/README.md` and call sites. If the toast component itself changes, follow `desktop/design_system/AGENTS.md`, including Light and Dark gallery specimen coverage and its matching test.
+- Follow the repository's desktop UI ownership rules. Before extracting or changing a shared component, inspect `desktop/design_system/README.md` and call sites. If the toast component itself changes, follow `desktop/design_system/CLAUDE.md`, including Light and Dark gallery specimen coverage and its matching test.
 - Run `python3 scripts/ci/ui_consistency.py` and inspect `--json`, plus `python3 scripts/ci/ui_policy.py` and `python3 scripts/ci/qss_policy.py`. Build and run relevant native CTest targets (`navigator-sql-workspace`, `modern-ui`, `workspace`, `recovery`); run the full native suite when dependencies are present.
 
 ## Rollout, compatibility, risks, and deferred choices

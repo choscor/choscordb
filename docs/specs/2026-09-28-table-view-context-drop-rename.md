@@ -45,7 +45,7 @@ Use the highest practical test seam for each criterion. SQLite native UI tests s
 
 ## Technical constraints and likely areas
 
-- Follow the root `AGENTS.md` UI ownership and verification checklist. For any design-system edit, follow `desktop/design_system/AGENTS.md`; prefer existing `ConfirmationDialog` and shared dialog shells. Preserve object names, accessibility, focus, and signals. New component construction must appear in the `ui_consistency.py --json` census.
+- Follow the root `CLAUDE.md` UI ownership and verification checklist. For any design-system edit, follow `desktop/design_system/CLAUDE.md`; prefer existing `ConfirmationDialog` and shared dialog shells. Preserve object names, accessibility, focus, and signals. New component construction must appear in the `ui_consistency.py --json` census.
 - Likely affected areas: `desktop/app/navigator_controller.*`, `desktop/app/main_window_navigator.cpp`, `desktop/app/main_window.cpp`, `desktop/app/query_workspace.*`, `desktop/bridge/engine_adapter.*`, `desktop/models/navigator_model.*`, object tab/recovery code, and relevant native tests. Inspect actual boundaries before choosing the implementation.
 - Respect asynchronous query completion and connection identity. Avoid modifying the general SQL editor's active draft or query result when running these object actions. Check existing connection/profile and pending-edit guards.
 - No storage migration or feature flag is required. Updated tab identity must persist through the existing recovery format. Existing context actions keep their behavior.
@@ -65,4 +65,4 @@ Use the highest practical test seam for each criterion. SQLite native UI tests s
 
 ## Fresh-session instruction
 
-Read this whole spec, inspect the current workspace and applicable `AGENTS.md` files, then invoke `$implement` with `docs/specs/2026-09-28-table-view-context-drop-rename.md`.
+Read this whole spec, inspect the current workspace and applicable `CLAUDE.md` files, then invoke `$implement` with `docs/specs/2026-09-28-table-view-context-drop-rename.md`.

@@ -52,7 +52,7 @@ This includes the Qt modal, profile bridge, Rust profile/storage/core/driver con
 
 ## Implementation constraints
 
-Follow the repository `AGENTS.md` and `desktop/design_system/AGENTS.md` when touching UI or shared metrics. Use design-system presentation, semantic roles, spacing, and switch styling; avoid screen-owned QSS and literal visual values. Check the ownership map in `desktop/design_system/README.md` before extracting any component. If shared design-system metrics or components change, update the Light/Dark preview specimen and matching preview test. Keep object names and accessibility behavior for retained fields. Update the UI consistency census if a new construction pattern needs it.
+Follow the repository `CLAUDE.md` and `desktop/design_system/CLAUDE.md` when touching UI or shared metrics. Use design-system presentation, semantic roles, spacing, and switch styling; avoid screen-owned QSS and literal visual values. Check the ownership map in `desktop/design_system/README.md` before extracting any component. If shared design-system metrics or components change, update the Light/Dark preview specimen and matching preview test. Keep object names and accessibility behavior for retained fields. Update the UI consistency census if a new construction pattern needs it.
 
 Run `python3 scripts/ci/ui_consistency.py` (and `--json` for the source census), `python3 scripts/ci/ui_policy.py`, and `python3 scripts/ci/qss_policy.py`. Build and run relevant native CTest targets and the full native suite when dependencies are available. Replace obsolete database-authentication tests with tests for the remaining public contract.
 

@@ -119,7 +119,7 @@ Use the existing real-widget/native-action seams; inspect public widget text, pa
 
 ## Constraints and risks
 
-- Follow repository AGENTS.md and desktop/design_system/AGENTS.md. Rust owns domain rules, durable state, database behavior and backend errors; C++ owns frontend transient state and presentation. This work introduces no database, pagination, execution or durable-state policy changes.
+- Follow repository CLAUDE.md and desktop/design_system/CLAUDE.md. Rust owns domain rules, durable state, database behavior and backend errors; C++ owns frontend transient state and presentation. This work introduces no database, pagination, execution or durable-state policy changes.
 - Existing public test seams include `tests/desktop/modern_ui_workspace_test.cpp`, `object_data_workspace_test.cpp`, `object_explorer_test.cpp`, `history_test.cpp`, `result_view_workspace_test.cpp`, `grid_edit_workspace_test.cpp`, and `preview_test.cpp`. Review tests depending on summary state/object names before changing wiring.
 - Replace boolean availability styling with a typed presentation-state contract or equivalent small semantic interface; do not leave parallel style authority in MainWindow/ObjectExplorer/HistoryDock.
 - Avoid unsafe callbacks while reparenting/replacing Data content or tearing down a parent window. Preserve existing activity sources, navigation guards and cancellation focus restoration.

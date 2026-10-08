@@ -48,7 +48,7 @@ Today `desktop/app/main_window_ui_pins.cpp` builds Pinned with `SidebarSection` 
 
 - Keep database/workflow state in `desktop/app/` or `desktop/widgets/`; reuse the live navigator model/controller behavior and the design system's navigation tree presentation where their contracts fit. Inspect `desktop/design_system/README.md` and call sites before extracting or changing a component. Avoid screen-owned QSS, literal visual values, or an empty wrapper subclass.
 - Likely affected areas: `desktop/app/main_window_ui_pins.*`, `main_window_pins.cpp`, `main_window_ui.*`, `main_window_navigator.cpp`, `navigator_controller.*`, and focused pinning tests. Existing tests refer to `QListWidget#pinnedList`; update them to verify behavior through the resulting public view if the widget type changes. Preserve stable object/accessibility names where practical and update the UI consistency census for any new construction pattern.
-- Follow the repository UI checklist: `python3 scripts/ci/ui_consistency.py` and `--json`, `python3 scripts/ci/ui_policy.py`, `python3 scripts/ci/qss_policy.py`, relevant native CTest targets, and the full native suite when dependencies are present. If code under `desktop/design_system/` changes, also follow its `AGENTS.md`: real Light and Dark gallery specimen, matching preview test, and design-system verification.
+- Follow the repository UI checklist: `python3 scripts/ci/ui_consistency.py` and `--json`, `python3 scripts/ci/ui_policy.py`, `python3 scripts/ci/qss_policy.py`, relevant native CTest targets, and the full native suite when dependencies are present. If code under `desktop/design_system/` changes, also follow its `CLAUDE.md`: real Light and Dark gallery specimen, matching preview test, and design-system verification.
 
 ## Rollout, compatibility, assumptions, and risks
 
@@ -56,4 +56,4 @@ Existing stored `PinRecord`s should render as expandable roots without migration
 
 ## Fresh-session instruction
 
-Read this entire spec, inspect the current workspace and applicable `AGENTS.md` files, then invoke `$implement` with `docs/specs/2026-09-29-expandable-sidebar-pins.md` and implement against the public test seams above.
+Read this entire spec, inspect the current workspace and applicable `CLAUDE.md` files, then invoke `$implement` with `docs/specs/2026-09-29-expandable-sidebar-pins.md` and implement against the public test seams above.

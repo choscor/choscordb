@@ -51,7 +51,7 @@ This spec comes from the user's two annotated app screenshots and the brainstorm
 
 ## Technical constraints and likely affected areas
 
-- Follow the root `AGENTS.md` UI rules. If design-system code changes, also follow `desktop/design_system/AGENTS.md` and its Light/Dark gallery specimen and matching test requirements.
+- Follow the root `CLAUDE.md` UI rules. If design-system code changes, also follow `desktop/design_system/CLAUDE.md` and its Light/Dark gallery specimen and matching test requirements.
 - Likely affected areas: `desktop/app/main_window_ui.cpp`, `main_window_workspace.cpp`, `main_window_lifecycle.cpp`, `main_window_navigator.cpp`, `query_workspace_view.cpp`, `query_workspace_events.cpp`, and related widget wiring/tests. Inspect current code before choosing exact boundaries.
 - Avoid parsing the display string to recover metrics. Keep data and presentation synchronized through an explicit status representation or equivalent existing public flow.
 - Run `python3 scripts/ci/ui_consistency.py` (and inspect `--json`), `python3 scripts/ci/ui_policy.py`, `python3 scripts/ci/qss_policy.py`, and relevant native CTest targets; run the full native suite when dependencies are present.

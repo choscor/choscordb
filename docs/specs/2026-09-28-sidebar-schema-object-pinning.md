@@ -54,7 +54,7 @@ The Connections sidebar currently places saved connections directly above the `S
 - Keep pin workflow and storage coordination in `desktop/app/` or `desktop/widgets/`; reuse `SidebarSection`, shared tree/list/menu styles, semantic icons, colors, typography, and spacing. Do not introduce screen-owned QSS or an empty design-system subclass. Check `desktop/design_system/README.md` and component call sites before extracting a shared component. Any new construction pattern must appear in the `python3 scripts/ci/ui_consistency.py --json` census.
 - Likely areas are `desktop/app/main_window_ui.*`, `main_window_workspace.cpp`, `main_window_navigator.cpp`, `main_window_object_actions.cpp`, `navigator_controller.*`, and `desktop/models/navigator_model.*`, plus storage integration and focused desktop tests. Inspect the current code before choosing ownership or a storage format.
 - Pin identity must survive reconnect and distinguish profiles, schemas, object kinds, parent paths, and overloaded signatures as needed. Do not rely on a live session ID or display label alone. Resolve through existing lazy metadata with bounded requests, pagination, stale-response protection, and exact identity checks. Avoid a full-catalog scan at startup. Preserve existing navigator object names, accessibility names, focus, signal, and context-menu behavior.
-- Follow the root `AGENTS.md` UI verification checklist: `ui_consistency.py` and `--json`, `ui_policy.py`, `qss_policy.py`, relevant native CTest targets, and the full native suite when dependencies are present. For changes under `desktop/design_system/`, follow its `AGENTS.md`, including real Light and Dark gallery specimens and matching tests.
+- Follow the root `CLAUDE.md` UI verification checklist: `ui_consistency.py` and `--json`, `ui_policy.py`, `qss_policy.py`, relevant native CTest targets, and the full native suite when dependencies are present. For changes under `desktop/design_system/`, follow its `CLAUDE.md`, including real Light and Dark gallery specimens and matching tests.
 
 ## Rollout, assumptions, and risks
 
@@ -66,4 +66,4 @@ The Connections sidebar currently places saved connections directly above the `S
 
 ## Fresh-session instruction
 
-Read this entire spec and inspect the current workspace, including applicable `AGENTS.md` files and any uncommitted changes. Then invoke `$implement` with `docs/specs/2026-09-28-sidebar-schema-object-pinning.md` and implement it using the public test seams above.
+Read this entire spec and inspect the current workspace, including applicable `CLAUDE.md` files and any uncommitted changes. Then invoke `$implement` with `docs/specs/2026-09-28-sidebar-schema-object-pinning.md` and implement it using the public test seams above.

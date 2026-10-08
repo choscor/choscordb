@@ -48,10 +48,10 @@ Relevant code includes `desktop/app/main_window_widgets.h`, `desktop/app/main_wi
 
 ## Technical constraints and likely affected areas
 
-- Follow the root `AGENTS.md` UI ownership rules. Reuse theme colors, typography roles, spacing tokens, and design-system presentation; do not add screen-owned QSS or visual literals. Preserve object names, accessibility names, focus, and signals.
+- Follow the root `CLAUDE.md` UI ownership rules. Reuse theme colors, typography roles, spacing tokens, and design-system presentation; do not add screen-owned QSS or visual literals. Preserve object names, accessibility names, focus, and signals.
 - The Rust bridge's metadata DTO exposes `has_column` and `column.database_type`. The navigator conversion in `NavigatorController` currently drops these fields; carry only the data needed for row presentation through an appropriate model role or existing metadata property path. Keep name and identity roles unchanged.
 - Filter hidden direct children in the navigator's visible tree path while preserving source metadata where needed for existing details, Pins, quick search, and identity verification. Do not rely on visual row absence as proof an object is missing.
-- Check `desktop/design_system/README.md` and call sites before extracting a shared component. If design-system code changes, follow `desktop/design_system/AGENTS.md`, including real Light and Dark specimens and their tests. Ensure any new UI construction pattern is counted by `python3 scripts/ci/ui_consistency.py --json`.
+- Check `desktop/design_system/README.md` and call sites before extracting a shared component. If design-system code changes, follow `desktop/design_system/CLAUDE.md`, including real Light and Dark specimens and their tests. Ensure any new UI construction pattern is counted by `python3 scripts/ci/ui_consistency.py --json`.
 - Run `python3 scripts/ci/ui_consistency.py` and `--json`, `python3 scripts/ci/ui_policy.py`, `python3 scripts/ci/qss_policy.py`, relevant native CTest targets, and the full native suite when dependencies are present.
 
 ## Rollout, compatibility, and risks
@@ -62,4 +62,4 @@ The precise delegate layout, elision policy, and model role names are implementa
 
 ## Fresh-session instruction
 
-Read this entire spec, inspect the current workspace and applicable `AGENTS.md` files, then invoke `$implement` with `docs/specs/2026-09-29-schema-object-sidebar-columns.md` using the public test seams above.
+Read this entire spec, inspect the current workspace and applicable `CLAUDE.md` files, then invoke `$implement` with `docs/specs/2026-09-29-schema-object-sidebar-columns.md` using the public test seams above.

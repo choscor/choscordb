@@ -64,7 +64,7 @@ Non-goals: immediate database Save, broadening editability, binary/deferred edit
 
 ## Constraints and risks
 
-- Follow repository `AGENTS.md`: C++/Qt owns presentation and transient draft/model interaction; Rust owns parsing, validation, eligibility and database execution. Reuse `crates/driver-api/src/edit_value.rs`, `crates/driver-api/src/grid_edit.rs` and typed bridge conversion rather than implementing type rules in C++.
+- Follow repository `CLAUDE.md`: C++/Qt owns presentation and transient draft/model interaction; Rust owns parsing, validation, eligibility and database execution. Reuse `crates/driver-api/src/edit_value.rs`, `crates/driver-api/src/grid_edit.rs` and typed bridge conversion rather than implementing type rules in C++.
 - The current `ResultTableModel::setData` only returns `bool`, conflating parsing and memory rejection. Its EditRole string equality shortcut cannot express an explicit literal `NULL` update from SQL NULL. Implementation should expose the smallest typed staging/error boundary needed to preserve the stated semantics; keep ordinary inline behavior compatible. Domain errors must originate in Rust when domain validation is required.
 - Use `desktop/design_system/README.md` ownership map: RightSheet shell, shared text-area style, semantic button/label presentation, theme colors, typography and spacing tokens. Do not add screen-owned QSS, literal visual colors or fonts, or a new empty editor subclass.
 - Likely changes: `desktop/app/query_workspace.{h,cpp}`, a compact edit-sheet workflow file if appropriate, `desktop/models/result_table_model.{h,cpp}`, Rust parse DTO/bridge only if needed for errors or typed write intent, and relevant workspace/model tests. Register any new source in the existing CMake source list. Inspect current contents and uncommitted changes before choosing exact files.
@@ -73,6 +73,6 @@ Non-goals: immediate database Save, broadening editability, binary/deferred edit
 - Run `python3 scripts/ci/cpp_ownership.py` after native/bridge changes, inspect `--json` as necessary, resolve introduced or touched findings and explicitly report remaining pre-existing failures. Also review changed C++ for backend behavior the checker cannot detect.
 - Run `python3 scripts/ci/ui_consistency.py`, `python3 scripts/ci/ui_policy.py` and `python3 scripts/ci/qss_policy.py`. Verify new construction sites in the JSON census; extend checker regression coverage only if a new construction pattern requires it.
 - Build and run relevant native CTest targets and the full native suite when dependencies are present. Run focused Rust parser/policy tests for changes to those contracts. Synchronize tests on actual eligibility/request/operation readiness rather than a single event-loop turn or idle snapshot.
-- Shared design-system changes are not expected. If required, read `desktop/design_system/AGENTS.md` and update its Light/Dark gallery specimen and corresponding test.
+- Shared design-system changes are not expected. If required, read `desktop/design_system/CLAUDE.md` and update its Light/Dark gallery specimen and corresponding test.
 
 Read this whole spec and inspect the current workspace before implementing.
