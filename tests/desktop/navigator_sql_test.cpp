@@ -16,7 +16,7 @@ class NavigatorSqlTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64 id) {
             return id == 9 ? "postgres" : id == 10 ? "mysql" : "sqlite";
         });
@@ -93,7 +93,7 @@ class NavigatorSqlTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64) { return "postgres"; });
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -113,9 +113,10 @@ class NavigatorSqlTest : public QObject {
                                      {{"temp", "pg_temp_3", "pg_temp_3", "schema", true},
                                       {"public", "public", "public", "schema", false}}));
         filter.setText("pg_temp");
+        // Filtering and searching wait for typing to pause.
+        QTRY_COMPARE(tree.model()->rowCount(), 0);
         QCoreApplication::processEvents();
         QCOMPARE(requests.count(), 2);
-        QCOMPARE(tree.model()->rowCount(), 0);
         controller.setShowSystemSchemas(true);
         QTRY_COMPARE(requests.count(), 3);
         QCOMPARE(requests.last().at(1).toString(), QString("temp"));
@@ -134,7 +135,7 @@ class NavigatorSqlTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64) { return "postgres"; });
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -172,7 +173,7 @@ class NavigatorSqlTest : public QObject {
         choscordb::EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        choscordb::NavigatorController controller(&engine, &tree, &filter, &tree);
+        choscordb::NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &choscordb::NavigatorModel::childrenRequested, &engine,
                             &choscordb::EngineAdapter::loadMetadata);
@@ -203,7 +204,7 @@ class NavigatorSqlTest : public QObject {
         choscordb::EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        choscordb::NavigatorController controller(&engine, &tree, &filter, &tree);
+        choscordb::NavigatorController controller(&engine, &tree, &filter);
         controller.addConnection(9, "First");
         controller.addConnection(10, "Second");
         QSignalSpy requested(&controller, &choscordb::NavigatorController::disconnectRequested);
@@ -251,7 +252,7 @@ class NavigatorSqlTest : public QObject {
         choscordb::EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        choscordb::NavigatorController controller(&engine, &tree, &filter, &tree);
+        choscordb::NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         // Accepted model fixtures isolate menu behavior from database I/O.
         QObject::disconnect(model, &choscordb::NavigatorModel::childrenRequested, &engine,

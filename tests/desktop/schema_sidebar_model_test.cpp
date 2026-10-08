@@ -15,7 +15,7 @@ class SchemaSidebarModelTest final : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -89,7 +89,7 @@ class SchemaSidebarModelTest final : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -150,11 +150,12 @@ class SchemaSidebarModelTest final : public QObject {
         QVERIFY(model->matchesObject(7, "table-key", "primarykey", "public.orders.customer_pk",
                                      "table"));
 
+        // The sidebar filter applies once typing pauses.
         filter.setText("customer_idx");
-        QVERIFY(!visible->mapFromSource(table).isValid());
+        QTRY_VERIFY(!visible->mapFromSource(table).isValid());
         QVERIFY(!visible->mapFromSource(model->index(1, 0, table)).isValid());
         filter.setText("customer_id");
-        QCOMPARE(visible->rowCount(visible->mapFromSource(table)), 1);
+        QTRY_COMPARE(visible->rowCount(visible->mapFromSource(table)), 1);
         QCOMPARE(visible->index(0, 0, visible->mapFromSource(table))
                      .data(NavigatorModel::ObjectIdRole)
                      .toString(),
@@ -165,7 +166,7 @@ class SchemaSidebarModelTest final : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -206,7 +207,7 @@ class SchemaSidebarModelTest final : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);

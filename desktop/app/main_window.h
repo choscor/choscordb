@@ -127,6 +127,7 @@ class MainWindow final : public QMainWindow {
     std::optional<PendingObjectRefresh> pendingObjectRefresh_;
     PinStore pinStore_;
     QList<PinRecord> pins_;
+    QHash<QString, qsizetype> pinRows_; // First pins_ row per identity key.
     QList<PinRecord> savedPins_;
     QThreadPool pinIoPool_;
     quint64 pinSaveGeneration_ = 0;

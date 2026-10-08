@@ -313,7 +313,7 @@ void NavigatorSqlWorkspaceTest::visibleConnectionsPreserveMetadataAndOrder() {
     choscordb::EngineAdapter adapter;
     QTreeView tree;
     QLineEdit filter;
-    choscordb::NavigatorController navigator(&adapter, &tree, &filter, &tree);
+    choscordb::NavigatorController navigator(&adapter, &tree, &filter);
     QObject::disconnect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &adapter,
                         &choscordb::EngineAdapter::loadMetadata);
     navigator.addConnection(11, "First");
@@ -366,7 +366,7 @@ void NavigatorSqlWorkspaceTest::searchLoadsCollapsedGroupsOnlyForSelectedConnect
     choscordb::EngineAdapter adapter;
     QTreeView tree;
     QLineEdit filter;
-    choscordb::NavigatorController navigator(&adapter, &tree, &filter, &tree);
+    choscordb::NavigatorController navigator(&adapter, &tree, &filter);
     QObject::disconnect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &adapter,
                         &choscordb::EngineAdapter::loadMetadata);
     navigator.addConnection(11, "First");
@@ -423,7 +423,7 @@ void NavigatorSqlWorkspaceTest::searchFailureKeepsRefineMessage() {
     choscordb::EngineAdapter adapter;
     QTreeView tree;
     QLineEdit filter;
-    choscordb::NavigatorController navigator(&adapter, &tree, &filter, &tree);
+    choscordb::NavigatorController navigator(&adapter, &tree, &filter);
     QObject::disconnect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &adapter,
                         &choscordb::EngineAdapter::loadMetadata);
     navigator.addConnection(11, "First");

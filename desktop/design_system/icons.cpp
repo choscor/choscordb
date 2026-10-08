@@ -3,12 +3,15 @@
 
 #include <QDebug>
 #include <QFile>
+#include <QHash>
 #include <QIconEngine>
+#include <QMutex>
 #include <QPainter>
 #include <QPixmap>
 #include <QSvgRenderer>
 #include <QXmlStreamReader>
 
+#include <memory>
 #include <utility>
 
 int qInitResources_resources();
@@ -51,6 +54,15 @@ QPixmap renderSvg(const QByteArray& svg, const QSize& logicalSize, qreal scale) 
     return result;
 }
 
+struct PixmapKey {
+    QSize size;
+    qreal scale = 1;
+    bool operator==(const PixmapKey&) const = default;
+};
+size_t qHash(const PixmapKey& key, size_t seed = 0) {
+    return qHashMulti(seed, key.size.width(), key.size.height(), key.scale);
+}
+
 class SvgIconEngine final : public QIconEngine {
   public:
     explicit SvgIconEngine(QByteArray svg) : svg_(std::move(svg)) {}
@@ -58,16 +70,25 @@ class SvgIconEngine final : public QIconEngine {
     void paint(QPainter* painter, const QRect& rect, QIcon::Mode, QIcon::State) override {
         // Render into the final paint device/transform. An intermediate pixmap
         // cannot account for fractional painter scaling and softens SVG edges.
-        QSvgRenderer renderer(svg_);
-        renderer.render(painter, QRectF(rect));
+        if (!renderer_)
+            renderer_ = std::make_unique<QSvgRenderer>(svg_);
+        renderer_->render(painter, QRectF(rect));
     }
 
-    QPixmap pixmap(const QSize& size, QIcon::Mode, QIcon::State) override {
-        return renderSvg(svg_, size, 1.0);
+    QPixmap pixmap(const QSize& size, QIcon::Mode mode, QIcon::State state) override {
+        return scaledPixmap(size, mode, state, 1.0);
     }
 
     QPixmap scaledPixmap(const QSize& size, QIcon::Mode, QIcon::State, qreal scale) override {
-        return renderSvg(svg_, size, scale);
+        // Delegates request the same few sizes for every row; rasterize each once.
+        const PixmapKey key{size, scale};
+        if (const auto found = pixmaps_.constFind(key); found != pixmaps_.cend())
+            return found.value();
+        auto rendered = renderSvg(svg_, size, scale);
+        if (pixmaps_.size() >= 16)
+            pixmaps_.clear();
+        pixmaps_.insert(key, rendered);
+        return rendered;
     }
 
     [[nodiscard]] QIconEngine* clone() const override { return new SvgIconEngine(svg_); }
@@ -76,6 +97,8 @@ class SvgIconEngine final : public QIconEngine {
 
   private:
     QByteArray svg_;
+    std::unique_ptr<QSvgRenderer> renderer_;
+    QHash<PixmapKey, QPixmap> pixmaps_;
 };
 
 bool validSvgDocument(const QByteArray& svg) {
@@ -243,8 +266,18 @@ bool iconResourceDecodes(Icon icon) {
     return validSvgDocument(themedSvg(icon, QColor(Qt::black)));
 }
 
-QIcon themedIcon(Icon icon, const QColor& color, int size) {
-    ::qInitResources_resources();
+namespace {
+struct IconKey {
+    Icon icon;
+    QRgb color;
+    int size;
+    double strokeWidth;
+    bool operator==(const IconKey&) const = default;
+};
+size_t qHash(const IconKey& key, size_t seed = 0) {
+    return qHashMulti(seed, static_cast<int>(key.icon), key.color, key.size, key.strokeWidth);
+}
+QIcon createThemedIcon(Icon icon, const QColor& color, int size) {
     if (icon == Icon::MySQL) {
         // The upstream raster includes a wordmark beneath the dolphin. Compact
         // engine badges need the dolphin alone; keep the original asset intact.
@@ -260,6 +293,25 @@ QIcon themedIcon(Icon icon, const QColor& color, int size) {
     }
     qWarning() << "Could not render required SVG icon:" << iconResourcePath(icon);
     return {};
+}
+} // namespace
+
+QIcon themedIcon(Icon icon, const QColor& color, int size) {
+    ::qInitResources_resources();
+    // Item delegates request icons per painted row. Parsing and validating the SVG
+    // each time dominates large trees, so reuse icons for identical inputs. The
+    // stroke width is part of the key because metrics can change it at run time.
+    static QMutex mutex;
+    static QHash<IconKey, QIcon> cache;
+    const IconKey key{icon, color.rgba(), size, iconStrokeWidth()};
+    const QMutexLocker locker(&mutex);
+    if (const auto found = cache.constFind(key); found != cache.cend())
+        return found.value();
+    auto created = createThemedIcon(icon, color, size);
+    if (cache.size() >= 512)
+        cache.clear();
+    cache.insert(key, created);
+    return created;
 }
 
 } // namespace choscordb::design

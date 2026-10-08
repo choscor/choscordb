@@ -27,17 +27,25 @@ void NavigationTreeView::updateHoveredIndex() {
     const QModelIndex hovered =
         hoveredPosition_.x() >= 0 ? indexAt(hoveredPosition_) : QModelIndex{};
     if (hoveredIndex_ != hovered) {
+        updateRow(hoveredIndex_);
         hoveredIndex_ = hovered;
-        viewport()->update();
+        updateRow(hoveredIndex_);
     }
+}
+
+void NavigationTreeView::updateRow(const QModelIndex& index) {
+    // The hover fill spans the viewport width, beyond the indented item rectangle.
+    const QRect item = index.isValid() ? visualRect(index) : QRect{};
+    if (item.isValid())
+        viewport()->update(QRect(0, item.top(), viewport()->width(), item.height()));
 }
 
 bool NavigationTreeView::viewportEvent(QEvent* event) {
     if (event->type() == QEvent::Leave) {
         hoveredPosition_ = {-1, -1};
         if (hoveredIndex_.isValid()) {
+            updateRow(hoveredIndex_);
             hoveredIndex_ = QModelIndex{};
-            viewport()->update();
         }
     }
     return QTreeView::viewportEvent(event);

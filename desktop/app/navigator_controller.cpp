@@ -20,27 +20,11 @@
 #include <memory>
 #include <utility>
 namespace choscordb {
-bool showsSidebarChild(const QModelIndex& index) {
-    const auto parentKind = index.parent().data(NavigatorModel::KindRole).toString();
-    if (parentKind != QLatin1String("table") && parentKind != QLatin1String("view"))
-        return true;
-    const auto kind = index.data(NavigatorModel::KindRole).toString();
-    return kind == QLatin1String("column") || kind == QLatin1String("loading") ||
-           kind == QLatin1String("error") || kind == QLatin1String("load_more");
-}
 namespace {
 QString text(const rust::String& s) {
     return QString::fromUtf8(s.data(), static_cast<qsizetype>(s.size()));
 }
-QString relationSubtype(const QVariantList& properties) {
-    for (const auto& entry : properties) {
-        const auto property = entry.toMap();
-        if (property.value(QStringLiteral("name")).toString() != QStringLiteral("Relation subtype"))
-            continue;
-        return property.value(QStringLiteral("value")).toString();
-    }
-    return {};
-}
+constexpr auto relationSubtype = &NavigatorModel::relationSubtype;
 class SelectedConnectionProxy final : public QSortFilterProxyModel {
   public:
     using QSortFilterProxyModel::QSortFilterProxyModel;
@@ -60,12 +44,9 @@ class SelectedConnectionProxy final : public QSortFilterProxyModel {
         if (!static_cast<const NavigatorModel*>(sourceModel())->isBrowsable(index) ||
             !showsSidebarChild(index))
             return false;
-        auto root = sourceModel()->index(row, 0, parent);
-        while (root.parent().isValid())
-            root = root.parent();
-        if (!ordered_.contains(root.data(NavigatorModel::ConnectionRole).toULongLong()))
+        if (!ordered_.contains(index.data(NavigatorModel::ConnectionRole).toULongLong()))
             return false;
-        if (!parent.isValid() && root.data(NavigatorModel::KindRole).toString() == "loading")
+        if (!parent.isValid() && index.data(NavigatorModel::KindRole).toString() == "loading")
             return true;
         return QSortFilterProxyModel::filterAcceptsRow(row, parent);
     }
@@ -92,44 +73,51 @@ class SelectedConnectionProxy final : public QSortFilterProxyModel {
     QList<quint64> ordered_;
 };
 } // namespace
-NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree, QLineEdit* filter,
-                                         QWidget* dialogParent)
-    : QObject(tree), model_(new NavigatorModel(this)), engine_(engine), tree_(tree),
+NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree, QLineEdit* filter)
+    : QObject(tree), model_(new NavigatorModel(this)), tree_(tree),
       proxy_(new SelectedConnectionProxy(this)), filter_(filter) {
-    Q_UNUSED(dialogParent);
     auto* proxy = proxy_;
     proxy->setSourceModel(model_);
     proxy->setRecursiveFilteringEnabled(true);
     proxy->setFilterCaseSensitivity(Qt::CaseInsensitive);
     tree->setModel(proxy);
-    connect(filter, &QLineEdit::textChanged, proxy, &QSortFilterProxyModel::setFilterFixedString);
-    connect(filter, &QLineEdit::textChanged, this, [this] {
-        ++searchGeneration_;
-        searchRequests_ = 0;
-        searchPending_ = false;
-        searchError_.clear();
-        if (filter_->text().trimmed().isEmpty()) {
-            emit searchStatusChanged({});
-            return;
-        }
-        emit searchStatusChanged(tr("Searching objects…"));
+    // Filter and search once typing pauses; clearing applies at once so reveals can map rows.
+    filterTimer_ = new QTimer(this);
+    filterTimer_->setSingleShot(true);
+    connect(filterTimer_, &QTimer::timeout, this, [this] {
+        proxy_->setFilterFixedString(filter_->text());
         advanceSearch(searchGeneration_);
     });
-    connect(model_, &NavigatorModel::completionChanged, this, [this](quint64 connection) {
-        if (filter_->text().trimmed().isEmpty() ||
-            !static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection))
-            return;
-        if (searchPending_ && connection == searchPendingConnection_ &&
-            model_->pendingRequestToken(searchPendingIndex_) != searchPendingToken_)
-            searchPending_ = false;
-        if (searchPending_)
-            return;
+    connect(filter, &QLineEdit::textChanged, this, [this](const QString& text) {
+        if (text.trimmed().isEmpty()) {
+            filterTimer_->stop();
+            proxy_->setFilterFixedString(text);
+        } else {
+            filterTimer_->start(150);
+        }
+        restartSearch(false);
+    });
+    const auto restartLater = coalescedCall(this, 200, [this] {
         const auto generation = searchGeneration_;
         QTimer::singleShot(0, this, [this, generation] { advanceSearch(generation); });
     });
-    connect(model_, &NavigatorModel::completionChanged, this, [this](quint64 connection) {
-        if (quickObjectQuery_.isEmpty() || !quickObjectConnectionValid_ ||
-            connection != quickObjectConnection_)
+    connect(model_, &NavigatorModel::completionChanged, this,
+            [this, restartLater](quint64 connection) {
+                if (filter_->text().trimmed().isEmpty() ||
+                    !static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection))
+                    return;
+                if (searchPending_ && connection == searchPendingConnection_ &&
+                    model_->pendingRequestToken(searchPendingIndex_) != searchPendingToken_) {
+                    searchRequestFinished(true, false);
+                    return;
+                }
+                if (searchPending_)
+                    return;
+                // Other metadata changes restart the search, at most once per burst of pages.
+                restartLater();
+            });
+    const auto rescanQuickObjects = [this] {
+        if (quickObjectQuery_.isEmpty() || !quickObjectConnectionValid_)
             return;
         // A refresh may have removed a previously published object. Invalidate
         // rows before the next event-loop turn, when the fresh scan runs.
@@ -139,7 +127,18 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
         emit quickObjectSearchChanged();
         const auto generation = quickObjectGeneration_;
         QTimer::singleShot(0, this, [this, generation] { advanceQuickObjectSearch(generation); });
-    });
+    };
+    connect(model_, &NavigatorModel::completionChanged, this,
+            [this, rescanQuickObjects,
+             rescanLater = coalescedCall(this, 200, rescanQuickObjects)](quint64 connection) {
+                if (connection != quickObjectConnection_)
+                    return;
+                // The scan's own request continues at once; other changes rescan per burst.
+                if (std::exchange(quickObjectAwaiting_, false))
+                    rescanQuickObjects();
+                else
+                    rescanLater();
+            });
     connect(model_, &NavigatorModel::childrenRequested, engine, &EngineAdapter::loadMetadata);
     connect(model_, &NavigatorModel::childrenPageRequested, engine,
             &EngineAdapter::loadMetadataPage);
@@ -152,15 +151,7 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
             [this](quint64 connection, const QString& parent, quint64 token, const QString& error) {
                 const bool wasPending = matchesSearchRequest(connection, parent, token);
                 const bool accepted = model_->failChildren(connection, parent, token, error);
-                if (accepted && wasPending) {
-                    searchPending_ = false;
-                    if (!filter_->text().trimmed().isEmpty()) {
-                        searchError_ = error;
-                        const auto generation = searchGeneration_;
-                        QTimer::singleShot(0, this,
-                                           [this, generation] { advanceSearch(generation); });
-                    }
-                }
+                searchRequestFinished(accepted && wasPending, true, error);
             });
     connect(
         engine, &EngineAdapter::eventReady, this,
@@ -190,24 +181,12 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
                 const bool accepted = model_->applyChildrenPage(
                     e.id, text(e.parent), e.request_token, std::move(objects), e.metadata_offset,
                     e.has_more_metadata, e.next_metadata_offset);
-                if (accepted && wasPending) {
-                    searchPending_ = false;
-                    const auto generation = searchGeneration_;
-                    QTimer::singleShot(0, this, [this, generation] { advanceSearch(generation); });
-                }
+                searchRequestFinished(accepted && wasPending, false);
             } else if (kind == "metadata_failed") {
                 const bool wasPending = matchesSearchRequest(e.id, text(e.parent), e.request_token);
                 const bool accepted =
                     model_->failChildren(e.id, text(e.parent), e.request_token, text(e.error));
-                if (accepted && wasPending) {
-                    searchPending_ = false;
-                    if (!filter_->text().trimmed().isEmpty()) {
-                        searchError_ = text(e.error);
-                        const auto generation = searchGeneration_;
-                        QTimer::singleShot(0, this,
-                                           [this, generation] { advanceSearch(generation); });
-                    }
-                }
+                searchRequestFinished(accepted && wasPending, true, text(e.error));
             }
         },
         Qt::DirectConnection);
@@ -254,16 +233,7 @@ void NavigatorController::setShowSystemSchemas(bool show) {
         else
             tree_->selectionModel()->clearCurrentIndex();
     }
-    ++searchGeneration_;
-    searchRequests_ = 0;
-    searchPending_ = false;
-    searchError_.clear();
-    if (!filter_->text().trimmed().isEmpty()) {
-        emit searchStatusChanged(tr("Searching objects…"));
-        advanceSearch(searchGeneration_);
-    } else {
-        emit searchStatusChanged({});
-    }
+    restartSearch();
     emit browsingVisibilityChanged();
 }
 void NavigatorController::setPinStateResolver(
@@ -692,14 +662,8 @@ void NavigatorController::addConnection(quint64 connection, const QString& label
         QTimer::singleShot(0, this, [this, generation] { advanceQuickObjectSearch(generation); });
     }
     if (!filter_->text().trimmed().isEmpty() &&
-        static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection)) {
-        ++searchGeneration_;
-        searchRequests_ = 0;
-        searchPending_ = false;
-        searchError_.clear();
-        emit searchStatusChanged(tr("Searching objects…"));
-        advanceSearch(searchGeneration_);
-    }
+        static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection))
+        restartSearch();
 }
 void NavigatorController::renameConnection(quint64 connection, const QString& label) {
     model_->renameConnection(connection, label);
@@ -716,16 +680,7 @@ void NavigatorController::setVisibleConnections(const QList<quint64>& orderedIds
     if (!quickObjectQuery_.isEmpty() || !quickObjectResults_.isEmpty())
         cancelQuickObjectSearch();
     emit selectedConnectionsChanged();
-    ++searchGeneration_;
-    searchRequests_ = 0;
-    searchPending_ = false;
-    searchError_.clear();
-    if (!filter_->text().trimmed().isEmpty()) {
-        emit searchStatusChanged(tr("Searching objects…"));
-        advanceSearch(searchGeneration_);
-    } else {
-        emit searchStatusChanged({});
-    }
+    restartSearch();
 }
 void NavigatorController::setSelectedConnection(quint64 connection) {
     removePendingConnection(std::numeric_limits<quint64>::max());
@@ -758,10 +713,11 @@ bool NavigatorController::isVisibleConnection(quint64 connection) const {
     return static_cast<SelectedConnectionProxy*>(proxy_)->visible().contains(connection);
 }
 void NavigatorController::startQuickObjectSearch(const QString& query,
-                                                 std::optional<quint64> connection) {
+                                                 std::optional<quint64> connection, int delayMs) {
     quickObjectQuery_ = query.trimmed();
     quickObjectResults_.clear();
     quickObjectRequests_ = 0;
+    quickObjectAwaiting_ = false;
     quickObjectIncomplete_ = !quickObjectQuery_.isEmpty();
     const auto& visible = static_cast<SelectedConnectionProxy*>(proxy_)->visible();
     quickObjectConnectionValid_ = connection ? visible.contains(*connection) : !visible.isEmpty();
@@ -774,11 +730,13 @@ void NavigatorController::startQuickObjectSearch(const QString& query,
     emit quickObjectSearchChanged();
     if (!quickObjectQuery_.isEmpty() && quickObjectConnectionValid_) {
         const auto generation = quickObjectGeneration_;
-        QTimer::singleShot(0, this, [this, generation] { advanceQuickObjectSearch(generation); });
+        QTimer::singleShot(std::max(0, delayMs), this,
+                           [this, generation] { advanceQuickObjectSearch(generation); });
     }
 }
 void NavigatorController::cancelQuickObjectSearch() {
     quickObjectQuery_.clear();
+    quickObjectAwaiting_ = false;
     quickObjectResults_.clear();
     quickObjectStatus_.clear();
     quickObjectIncomplete_ = false;
@@ -797,8 +755,9 @@ void NavigatorController::advanceQuickObjectSearch(quint64 generation) {
     const auto& visible = static_cast<SelectedConnectionProxy*>(proxy_)->visible();
     if (!visible.contains(quickObjectConnection_))
         return;
-    const auto matches = [this](const QString& candidate) {
-        return quickSearchNameScore(quickObjectQuery_, candidate).has_value();
+    const QuickSearchNeedle needle(quickObjectQuery_);
+    const auto matches = [&needle](const QString& candidate) {
+        return needle.score(candidate).has_value();
     };
     std::vector<QModelIndex> stack;
     for (int row = model_->rowCount() - 1; row >= 0; --row) {
@@ -888,6 +847,7 @@ void NavigatorController::advanceQuickObjectSearch(quint64 generation) {
             const QPersistentModelIndex requestIndex(current);
             const bool hasMore = current.data(NavigatorModel::HasMoreRole).toBool();
             ++quickObjectRequests_;
+            quickObjectAwaiting_ = true;
             quickObjectResults_ = std::move(results);
             quickObjectIncomplete_ = true;
             quickObjectStatus_ = tr("Searching objects…");
@@ -915,7 +875,32 @@ void NavigatorController::advanceQuickObjectSearch(quint64 generation) {
         quickObjectStatus_.clear();
     emit quickObjectSearchChanged();
 }
-void NavigatorController::advanceSearch(quint64 generation) {
+void NavigatorController::restartSearch(bool advance) {
+    ++searchGeneration_;
+    searchRequests_ = 0;
+    searchPending_ = false;
+    searchError_.clear();
+    resetSearch();
+    if (filter_->text().trimmed().isEmpty()) {
+        emit searchStatusChanged({});
+        return;
+    }
+    emit searchStatusChanged(tr("Searching objects…"));
+    if (advance)
+        advanceSearch(searchGeneration_);
+}
+void NavigatorController::searchRequestFinished(bool accepted, bool failed, const QString& error) {
+    if (!accepted)
+        return;
+    searchPending_ = false;
+    if (failed && filter_->text().trimmed().isEmpty())
+        return;
+    if (failed)
+        searchError_ = error;
+    const auto generation = searchGeneration_;
+    QTimer::singleShot(0, this, [this, generation] { advanceSearch(generation, true); });
+}
+void NavigatorController::advanceSearch(quint64 generation, bool resume) {
     if (generation != searchGeneration_ || searchPending_ || filter_->text().trimmed().isEmpty())
         return;
     const auto& visible = static_cast<SelectedConnectionProxy*>(proxy_)->visible();
@@ -923,43 +908,56 @@ void NavigatorController::advanceSearch(quint64 generation) {
         emit searchStatusChanged({});
         return;
     }
-    std::vector<QModelIndex> stack;
-    bool incomplete = !searchError_.isEmpty();
-    for (int row = 0; row < model_->rowCount(); ++row) {
-        const auto root = model_->index(row, 0);
-        if (visible.contains(root.data(NavigatorModel::ConnectionRole).toULongLong()))
-            stack.push_back(root);
-    }
-    std::vector<QModelIndex> matches;
-    int visited = 0;
-    while (!stack.empty()) {
-        auto current = stack.back();
-        stack.pop_back();
-        if (!model_->isBrowsable(current) || !showsSidebarChild(current))
-            continue;
-        if (++visited > 20000) {
-            emit searchStatusChanged(tr("Search incomplete: limit reached. Refine the text."));
+    // A finished request continues the paused traversal; anything else starts over.
+    if (resume && searchStateGeneration_ == generation) {
+        if (searchFinished_)
             return;
+    } else {
+        resetSearch();
+        searchStateGeneration_ = generation;
+        for (int row = 0; row < model_->rowCount(); ++row) {
+            const auto root = model_->index(row, 0);
+            if (visible.contains(root.data(NavigatorModel::ConnectionRole).toULongLong()))
+                searchStack_.push_back({root});
         }
-        const auto kind = current.data(NavigatorModel::KindRole).toString();
-        if (kind == "loading" || kind == "error")
-            incomplete = true;
-        if (current.data(Qt::DisplayRole).toString().contains(filter_->text(), Qt::CaseInsensitive))
-            matches.push_back(current);
-        if (kind != "connection" && kind != "database" && kind != "schema" && kind != "group" &&
-            kind != "table" && kind != "view")
+    }
+    const auto text = filter_->text();
+    const auto limitReached = [this] {
+        resetSearch();
+        searchStateGeneration_ = searchGeneration_;
+        searchFinished_ = true;
+        emit searchStatusChanged(tr("Search incomplete: limit reached. Refine the text."));
+    };
+    while (!searchStack_.empty()) {
+        const auto entry = std::move(searchStack_.back());
+        searchStack_.pop_back();
+        const QModelIndex current = entry.index;
+        if (!current.isValid() || !model_->isBrowsable(current))
             continue;
+        if (!entry.expandOnly) {
+            if (!showsSidebarChild(current))
+                continue;
+            if (++searchVisited_ > 20000)
+                return limitReached();
+            const auto kind = current.data(NavigatorModel::KindRole).toString();
+            if (kind == "loading" || kind == "error")
+                searchIncomplete_ = true;
+            if (current.data(Qt::DisplayRole).toString().contains(text, Qt::CaseInsensitive))
+                searchMatches_.emplace_back(current);
+            if (kind != "connection" && kind != "database" && kind != "schema" && kind != "group" &&
+                kind != "table" && kind != "view")
+                continue;
+        }
         if (!current.data(NavigatorModel::ErrorRole).toString().isEmpty())
-            incomplete = true;
+            searchIncomplete_ = true;
         if (model_->canFetchMore(current) || current.data(NavigatorModel::HasMoreRole).toBool()) {
-            if (searchRequests_ >= 256) {
-                emit searchStatusChanged(tr("Search incomplete: limit reached. Refine the text."));
-                return;
-            }
+            if (searchRequests_ >= 256)
+                return limitReached();
             ++searchRequests_;
             searchPending_ = true;
             searchPendingConnection_ = current.data(NavigatorModel::ConnectionRole).toULongLong();
             searchPendingIndex_ = current;
+            searchStack_.push_back({QPersistentModelIndex(current), true});
             if (current.data(NavigatorModel::HasMoreRole).toBool())
                 model_->requestNextPage(current);
             else
@@ -968,19 +966,26 @@ void NavigatorController::advanceSearch(quint64 generation) {
             return;
         }
         for (int row = model_->rowCount(current) - 1; row >= 0; --row)
-            stack.push_back(model_->index(row, 0, current));
+            searchStack_.push_back({model_->index(row, 0, current)});
     }
-    for (const auto& match : matches) {
-        for (auto ancestor = match.parent(); ancestor.isValid(); ancestor = ancestor.parent()) {
+    searchFinished_ = true;
+    // Expand each distinct ancestor once, even when many matches share it.
+    QSet<QModelIndex> ancestors;
+    for (const auto& match : std::exchange(searchMatches_, {})) {
+        for (auto ancestor = QModelIndex(match).parent(); ancestor.isValid();
+             ancestor = ancestor.parent()) {
+            if (ancestors.contains(ancestor))
+                break;
+            ancestors.insert(ancestor);
             const auto visibleAncestor = proxy_->mapFromSource(ancestor);
-            if (visibleAncestor.isValid())
+            if (visibleAncestor.isValid() && !tree_->isExpanded(visibleAncestor))
                 tree_->expand(visibleAncestor);
         }
     }
     if (!searchError_.isEmpty())
         emit searchStatusChanged(
             tr("Search incomplete: %1. Refine the text or retry.").arg(searchError_));
-    else if (incomplete)
+    else if (searchIncomplete_)
         emit searchStatusChanged(tr("Search incomplete. Refine the text or retry."));
     else
         emit searchStatusChanged({});

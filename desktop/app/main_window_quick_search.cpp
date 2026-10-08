@@ -29,12 +29,7 @@ quint64 nextQuickHistoryToken() {
     return ++next;
 }
 QString relationSubtype(const QVariantList& properties) {
-    for (const auto& entry : properties) {
-        const auto property = entry.toMap();
-        if (property.value(QStringLiteral("name")).toString() == QStringLiteral("Relation subtype"))
-            return property.value(QStringLiteral("value")).toString();
-    }
-    return {};
+    return NavigatorModel::relationSubtype(properties);
 }
 
 QString matchSnippet(const QString& text, qsizetype match, qsizetype length) {
@@ -178,13 +173,19 @@ void MainWindow::showQuickSearch() {
                 &MainWindow::refreshQuickSearchIfOpen);
         connect(navigatorController_, &NavigatorController::browsingVisibilityChanged, this,
                 &MainWindow::refreshQuickSearchIfOpen);
+        // Recent objects are re-verified against loaded metadata; fold page bursts.
+        const auto refreshRecentObjects = coalescedCall(quickSearch_, 250, [this] {
+            if (quickSearch_ && quickSearch_->isVisible() &&
+                quickSearch_->query().trimmed().isEmpty() && quickPendingRecentObject_.isEmpty())
+                updateQuickSearch(quickSearch_->query());
+        });
         connect(navigatorController_->model(), &NavigatorModel::completionChanged, this,
-                [this](quint64 connection) {
+                [this, refreshRecentObjects](quint64 connection) {
                     if (quickSearch_ && quickSearch_->isVisible() &&
                         quickSearch_->query().trimmed().isEmpty() &&
                         quickPendingRecentObject_.isEmpty() &&
                         quickSearchConnection() == connection)
-                        updateQuickSearch(quickSearch_->query());
+                        refreshRecentObjects();
                 });
         connect(this, &MainWindow::browsingConnectionChanged, this,
                 &MainWindow::refreshQuickSearchIfOpen);
@@ -235,12 +236,12 @@ void MainWindow::updateQuickSearch(const QString& query) {
     quickRecentStatus_.clear();
     const QString needle = query.trimmed();
     const bool empty = needle.isEmpty();
+    const QuickSearchNeedle matcher(needle);
     QList<QPair<int, design::QuickSearchResult>> ranked;
     quickTabTargets_.clear();
     for (const auto& name : {"showStart", "showSql", "showObjects", "showHistory"}) {
         if (auto* action = findChild<QAction*>(name)) {
-            const auto score =
-                empty ? std::optional<int>{0} : quickSearchNameScore(needle, action->text());
+            const auto score = empty ? std::optional<int>{0} : matcher.score(action->text());
             if (score)
                 ranked.append({*score,
                                {tr("Screen"), action->text(), tr("View"), QString::fromLatin1(name),
@@ -249,7 +250,7 @@ void MainWindow::updateQuickSearch(const QString& query) {
     }
     for (int index = 0; editors_ && index < editors_->count(); ++index) {
         const QString title = editors_->tabText(index);
-        const auto score = empty ? std::optional<int>{50} : quickSearchNameScore(needle, title);
+        const auto score = empty ? std::optional<int>{50} : matcher.score(title);
         if (!score)
             continue;
         const QString id = QStringLiteral("tab:%1").arg(index);
@@ -276,7 +277,8 @@ void MainWindow::updateQuickSearch(const QString& query) {
         if (empty)
             navigatorController_->cancelQuickObjectSearch();
         else
-            navigatorController_->startQuickObjectSearch(needle, connection);
+            // Debounced like history: each keystroke supersedes the pending scan.
+            navigatorController_->startQuickObjectSearch(needle, connection, 80);
     }
     if (empty && connection) {
         int ordinal = 0;
@@ -341,18 +343,20 @@ void MainWindow::renderQuickSearch() {
     if (!quickSearch_)
         return;
     const QString needle = quickSearch_->query().trimmed();
+    const QuickSearchNeedle matcher(needle);
     QList<QPair<int, design::QuickSearchResult>> destinations;
+    destinations.reserve(quickNameRows_.size() + quickObjectRows_.size());
     for (const auto& row : quickNameRows_) {
         const int score = needle.isEmpty() ? row.id.startsWith(QStringLiteral("tab:")) ? 50 : 0
-                                           : quickSearchNameScore(needle, row.title).value_or(99);
+                                           : matcher.score(row.title).value_or(99);
         destinations.append({score, row});
     }
     for (const auto& row : quickObjectRows_) {
-        const int score =
-            needle.isEmpty()
-                ? 80
-                : quickSearchNameScore(needle, row.title)
-                      .value_or(quickSearchNameScore(needle, row.context).value_or(99));
+        int score = 80;
+        if (!needle.isEmpty()) {
+            const auto title = matcher.score(row.title);
+            score = title ? *title : matcher.score(row.context).value_or(99);
+        }
         destinations.append({score, row});
     }
     std::sort(destinations.begin(), destinations.end(), [](const auto& left, const auto& right) {

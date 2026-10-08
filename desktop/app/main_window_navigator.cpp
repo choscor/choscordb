@@ -33,6 +33,7 @@
 #include <functional>
 #include <memory>
 #include <utility>
+#include <vector>
 
 namespace choscordb {
 
@@ -44,38 +45,55 @@ void MainWindow::connectNavigator(const Ui& ui) {
     const auto objectsEmpty = ui.objectsEmpty;
     const auto navigatorStatus = ui.navigatorStatus;
     const auto connections = ui.connections;
-    auto* navigatorController = new NavigatorController(workspace_->adapter(), tree, filter, this);
+    auto* navigatorController = new NavigatorController(workspace_->adapter(), tree, filter);
     navigatorController_ = navigatorController;
     auto* connectionsScroll = findChild<QScrollArea*>("connectionsScroll");
-    const auto revealCurrent = [tree, connectionsScroll] {
-        const auto current = tree->currentIndex();
-        if (!connectionsScroll || !current.isValid())
-            return;
-        const auto row = tree->visualRect(current);
-        const auto point = tree->viewport()->mapTo(connectionsScroll->widget(), row.center());
-        connectionsScroll->ensureVisible(point.x(), point.y(), 0, row.height());
-    };
     const auto updateTreeHeight = [this, tree] {
         const auto* model = tree->model();
         if (!model)
             return;
-        const std::function<int(const QModelIndex&)> visibleHeight =
-            [this, tree, model, &visibleHeight](const QModelIndex& parent) -> int {
-            int height = 0;
-            for (int row = 0; row < model->rowCount(parent); ++row) {
+        // Rows share one height (uniformRowHeights), so the sidebar height is the
+        // visible row count times that height; only expanded branches are walked.
+        int rows = 0;
+        std::vector<QModelIndex> pending{QModelIndex()};
+        while (!pending.empty()) {
+            const auto parent = pending.back();
+            pending.pop_back();
+            const int count = model->rowCount(parent);
+            rows += count;
+            for (int row = 0; row < count; ++row) {
                 const auto index = model->index(row, 0, parent);
-                height += std::max(theme_->metrics().navigationRowHeight,
-                                   tree->sizeHintForIndex(index).height());
                 if (tree->isExpanded(index))
-                    height += visibleHeight(index);
+                    pending.push_back(index);
             }
-            return height;
-        };
+        }
+        const int rowHeight = rows == 0
+                                  ? 0
+                                  : std::max(theme_->metrics().navigationRowHeight,
+                                             tree->sizeHintForIndex(model->index(0, 0)).height());
         tree->setFixedHeight(std::max(design::spacing(design::Spacing::Two),
-                                      visibleHeight({}) + 2 * tree->frameWidth()));
+                                      rows * rowHeight + 2 * tree->frameWidth()));
     };
-    const auto scheduleTreeHeight = [tree, updateTreeHeight] {
-        QTimer::singleShot(0, tree, updateTreeHeight);
+    // One pending recompute absorbs bursts of inserts, expansions, and filter changes.
+    auto* treeHeightTimer = new QTimer(tree);
+    treeHeightTimer->setSingleShot(true);
+    treeHeightTimer->setInterval(0);
+    connect(treeHeightTimer, &QTimer::timeout, tree, updateTreeHeight);
+    const auto scheduleTreeHeight = [treeHeightTimer] {
+        if (!treeHeightTimer->isActive())
+            treeHeightTimer->start();
+    };
+    const auto revealCurrent = [tree, connectionsScroll, treeHeightTimer, updateTreeHeight] {
+        const auto current = tree->currentIndex();
+        if (!connectionsScroll || !current.isValid())
+            return;
+        if (treeHeightTimer->isActive()) {
+            treeHeightTimer->stop();
+            updateTreeHeight();
+        }
+        const auto row = tree->visualRect(current);
+        const auto point = tree->viewport()->mapTo(connectionsScroll->widget(), row.center());
+        connectionsScroll->ensureVisible(point.x(), point.y(), 0, row.height());
     };
     new main_window_detail::SidebarWidthObserver(tree->viewport(), scheduleTreeHeight);
     const auto scheduleRevealCurrent = [tree, revealCurrent] {
@@ -87,8 +105,13 @@ void MainWindow::connectNavigator(const Ui& ui) {
     connect(treeModel, &QAbstractItemModel::modelReset, tree, scheduleTreeHeight);
     connect(treeModel, &QAbstractItemModel::layoutChanged, tree, scheduleTreeHeight);
     connect(treeModel, &QAbstractItemModel::dataChanged, tree, scheduleTreeHeight);
-    connect(tree, &QTreeView::expanded, tree, updateTreeHeight);
-    connect(tree, &QTreeView::collapsed, tree, updateTreeHeight);
+    // Expansion resizes at once so the newly shown rows are immediately hittable.
+    const auto updateTreeHeightNow = [treeHeightTimer, updateTreeHeight] {
+        treeHeightTimer->stop();
+        updateTreeHeight();
+    };
+    connect(tree, &QTreeView::expanded, tree, updateTreeHeightNow);
+    connect(tree, &QTreeView::collapsed, tree, updateTreeHeightNow);
     connect(theme_, &design::ThemeManager::metricsChanged, tree, scheduleTreeHeight);
     connect(navigatorController, &NavigatorController::selectedConnectionsChanged, tree,
             scheduleTreeHeight);
@@ -263,7 +286,9 @@ void MainWindow::connectNavigator(const Ui& ui) {
     connect(navigatorController, &NavigatorController::sqlGenerated, this, openGeneratedSql);
     openGeneratedSql_ = openGeneratedSql;
 
-    auto rebuildCompletion = [this, connections, model = navigatorController->model()] {
+    auto catalogSize = std::make_shared<qsizetype>(0);
+    auto rebuildCompletion = [this, connections, catalogSize,
+                              model = navigatorController->model()] {
         if (!connections->currentData().isValid()) {
             completion_->setCatalog(CompletionService{});
             return;
@@ -272,8 +297,9 @@ void MainWindow::connectNavigator(const Ui& ui) {
         auto snapshot =
             model->completionSnapshot(connections->currentData().toULongLong(),
                                       limits.maxMetadataEntries, limits.maxMetadataBytes);
+        *catalogSize = static_cast<qsizetype>(snapshot.objects.size());
         QList<CompletionCandidate> items;
-        items.reserve(static_cast<qsizetype>(snapshot.objects.size()));
+        items.reserve(*catalogSize);
         for (auto& object : snapshot.objects)
             items.append(
                 {std::move(object.name), std::move(object.qualifiedName), std::move(object.kind)});
@@ -281,10 +307,17 @@ void MainWindow::connectNavigator(const Ui& ui) {
     };
     connect(connections, &QComboBox::currentIndexChanged, this, rebuildCompletion);
     connect(workspace_, &QueryWorkspace::documentTargetChanged, this, rebuildCompletion);
+    // Metadata pages arrive in bursts. Small catalogs stay current on every page; large
+    // ones, whose rebuild cost grows with each page, rebuild at most once per interval.
+    const auto rebuildLoadedCompletion = coalescedCall(this, 250, rebuildCompletion);
     connect(navigatorController->model(), &NavigatorModel::completionChanged, this,
-            [connections, rebuildCompletion](quint64 id) {
-                if (id == connections->currentData().toULongLong())
+            [connections, catalogSize, rebuildCompletion, rebuildLoadedCompletion](quint64 id) {
+                if (id != connections->currentData().toULongLong())
+                    return;
+                if (*catalogSize < 2000)
                     rebuildCompletion();
+                else
+                    rebuildLoadedCompletion();
             });
     rebuildCompletion();
     connect(workspace_, &QueryWorkspace::connectionReady, navigatorController,

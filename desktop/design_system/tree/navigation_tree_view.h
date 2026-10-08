@@ -20,6 +20,7 @@ class NavigationTreeView final : public QTreeView {
 
   private:
     void updateHoveredIndex();
+    void updateRow(const QModelIndex& index);
     QPoint hoveredPosition_{-1, -1};
     QPersistentModelIndex hoveredIndex_;
 };

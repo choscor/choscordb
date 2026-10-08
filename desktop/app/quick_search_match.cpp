@@ -21,10 +21,14 @@ QStringList words(const QString& text) {
 }
 } // namespace
 
-std::optional<int> quickSearchNameScore(const QString& query, const QString& name) {
-    if (query.size() > 128 || name.size() > 1024 || !query.isValidUtf16() || !name.isValidUtf16())
+QuickSearchNeedle::QuickSearchNeedle(const QString& query)
+    : valid_(query.size() <= 128 && query.isValidUtf16()),
+      folded_(valid_ ? query.trimmed().toCaseFolded() : QString{}), words_(words(folded_)) {}
+
+std::optional<int> QuickSearchNeedle::score(const QString& name) const {
+    if (!valid_ || name.size() > 1024 || !name.isValidUtf16())
         return std::nullopt;
-    const QString needle = query.trimmed().toCaseFolded();
+    const QString& needle = folded_;
     const QString haystack = name.toCaseFolded();
     if (needle.isEmpty() || haystack.isEmpty())
         return std::nullopt;
@@ -36,7 +40,7 @@ std::optional<int> quickSearchNameScore(const QString& query, const QString& nam
     if (substring >= 0)
         return 25 + int(std::min<qsizetype>(14, substring / 4));
 
-    const auto parts = words(needle);
+    const auto& parts = words_;
     if (parts.size() > 1) {
         qsizetype position = 0;
         qsizetype gaps = 0;
@@ -74,6 +78,10 @@ std::optional<int> quickSearchNameScore(const QString& query, const QString& nam
     if (first < 0)
         return std::nullopt;
     return 70 + int(std::min<qsizetype>(29, first / 4 + (last - first) / 4));
+}
+
+std::optional<int> quickSearchNameScore(const QString& query, const QString& name) {
+    return QuickSearchNeedle(query).score(name);
 }
 
 } // namespace choscordb

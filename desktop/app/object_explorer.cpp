@@ -13,6 +13,7 @@
 #include "widgets/object_erd_widget.h"
 #include <QAction>
 #include <QEvent>
+#include <QHash>
 #include <QHeaderView>
 #include <QLabel>
 #include <QMenu>
@@ -268,7 +269,9 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     table_->setShowGrid(false);
     table_->setWordWrap(false);
     table_->setFrameShape(QFrame::NoFrame);
+    // resizeColumnsToContents() samples rows by the vertical header's precision.
     table_->horizontalHeader()->setResizeContentsPrecision(50);
+    table_->verticalHeader()->setResizeContentsPrecision(50);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     table_->horizontalHeader()->setStretchLastSection(true);
@@ -689,13 +692,28 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
     QStringList headers{tr("Name")};
     if (inspection.pane == ObjectInspectionPane::Keys)
         headers.append(tr("Kind"));
+    QHash<QString, int> columnFor;
+    for (int column = 0; column < headers.size(); ++column)
+        columnFor.insert(headers.at(column), column);
     for (const auto& row : inspection.rows)
         for (const auto& property : row.properties)
-            if (!headers.contains(property.name))
+            if (!columnFor.contains(property.name)) {
+                columnFor.insert(property.name, int(headers.size()));
                 headers.append(property.name);
+            }
     model_->setHorizontalHeaderLabels(headers);
+    // Resolve per-render presentation once rather than per row or cell.
+    const auto mutedText = design::resolvedThemeForWidget(*this).colors.mutedText;
+    const QIcon keyIcon = design::themedIcon(design::Icon::Key, mutedText, 16);
+    const QIcon fileIcon = design::themedIcon(design::Icon::File, mutedText, 16);
+    const QFont metadataFont = design::resolveTypography(design::TypographyRole::Metadata);
+    // Grow the model once, then fill cells, instead of one insertion per row.
+    const int firstRow = model_->rowCount();
+    model_->setRowCount(firstRow + int(inspection.rows.size()));
+    int modelRow = firstRow;
     for (const auto& row : inspection.rows) {
         QList<QStandardItem*> items;
+        items.reserve(headers.size());
         for (int column = 0; column < headers.size(); ++column) {
             auto* item = new QStandardItem;
             item->setEditable(false);
@@ -711,12 +729,10 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
                 });
             const auto icon = primary ? design::Icon::Key : design::Icon::File;
             items[0]->setData(static_cast<int>(icon), objectIconRole);
-            items[0]->setIcon(design::themedIcon(
-                icon, design::resolvedThemeForWidget(*this).colors.mutedText, 16));
+            items[0]->setIcon(primary ? keyIcon : fileIcon);
             for (int column = 1; column < headers.size(); ++column)
                 if (headers.at(column) == "Type" || headers.at(column) == "Default")
-                    items[column]->setFont(
-                        design::resolveTypography(design::TypographyRole::Metadata));
+                    items[column]->setFont(metadataFont);
         }
         if (inspection.pane == ObjectInspectionPane::Keys)
             items[1]->setText(row.kind == "primarykey"   ? tr("Primary key")
@@ -729,11 +745,13 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
                                : property.availability == MetadataAvailability::Unsupported
                                    ? tr("Unsupported: %1").arg(property.reason)
                                    : tr("Unavailable: %1").arg(property.reason);
-            auto* item = items[headers.indexOf(property.name)];
+            auto* item = items[columnFor.value(property.name)];
             item->setText(value);
             item->setToolTip(value);
         }
-        model_->appendRow(items);
+        for (int column = 0; column < items.size(); ++column)
+            model_->setItem(modelRow, column, items[column]);
+        ++modelRow;
     }
     table_->resizeColumnsToContents();
     for (int column = 0; column < model_->columnCount(); ++column) {

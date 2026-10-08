@@ -1,5 +1,7 @@
 #pragma once
 #include <QAbstractItemModel>
+#include <QHash>
+#include <QMultiHash>
 #include <QString>
 #include <QVariantList>
 #include <functional>
@@ -91,6 +93,8 @@ class NavigatorModel final : public QAbstractItemModel {
     // maxUtf8Bytes charges all copied strings, including object IDs.
     CompletionSnapshot completionSnapshot(quint64 connection, quint64 maxEntries,
                                           quint64 maxUtf8Bytes) const;
+    // The "Relation subtype" metadata property, or empty when absent.
+    static QString relationSubtype(const QVariantList& properties);
   signals:
     void completionChanged(quint64 connection);
     // Dispatched on the next event-loop turn so fetchMore callers cannot be
@@ -106,8 +110,15 @@ class NavigatorModel final : public QAbstractItemModel {
     Node* find(quint64 connection, const QString& id) const;
     QModelIndex indexFor(Node* node) const;
     bool isBrowsable(const Node* node) const;
+    bool hiddenBySystemSchema(const Node* node) const;
     void clearChildren(Node* node);
+    void registerNode(Node* node);
+    void unregisterSubtree(const Node* node);
     std::vector<std::unique_ptr<Node>> roots_;
+    // Loaded, non-placeholder nodes by connection and object ID. Only leaf
+    // index rows may share an ID, so lookups stay O(1) for every loaded page.
+    QHash<quint64, QMultiHash<QString, Node*>> nodesById_;
+    mutable QHash<QString, bool> unverifiedVisibleByDriver_;
     std::function<QString(quint64)> driverResolver_;
     bool showSystemSchemas_ = false;
     quint64 nextToken_ = 0;

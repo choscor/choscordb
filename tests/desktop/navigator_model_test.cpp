@@ -88,7 +88,7 @@ class NavigatorModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -130,7 +130,7 @@ class NavigatorModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64) { return QStringLiteral("postgres"); });
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -183,7 +183,7 @@ class NavigatorModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -218,7 +218,7 @@ class NavigatorModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -239,7 +239,7 @@ class NavigatorModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -274,7 +274,7 @@ class NavigatorModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -320,7 +320,7 @@ class NavigatorModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -347,7 +347,7 @@ class NavigatorModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -387,7 +387,7 @@ class NavigatorModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64) { return QStringLiteral("sqlite"); });
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -464,7 +464,7 @@ class NavigatorModelTest : public QObject {
             EngineAdapter engine;
             QTreeView tree;
             QLineEdit filter;
-            NavigatorController controller(&engine, &tree, &filter, &tree);
+            NavigatorController controller(&engine, &tree, &filter);
             controller.setDriverResolver([driver](quint64) { return driver; });
             auto* model = controller.model();
             QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -489,7 +489,7 @@ class NavigatorModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64) { return QStringLiteral("postgres"); });
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,

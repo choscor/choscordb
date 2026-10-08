@@ -1,4 +1,5 @@
 #pragma once
+#include "models/navigator_model.h"
 #include <QList>
 #include <QModelIndex>
 #include <QObject>
@@ -6,18 +7,52 @@
 #include <QPointer>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 #include <QVariant>
 #include <functional>
+#include <memory>
 #include <optional>
+#include <utility>
+#include <vector>
 class QMenu;
 class QTreeView;
 class QLineEdit;
-class QWidget;
 class QSortFilterProxyModel;
 namespace choscordb {
 class EngineAdapter;
-class NavigatorModel;
-bool showsSidebarChild(const QModelIndex& index);
+inline bool showsSidebarChild(const QModelIndex& index) {
+    const auto parentKind = index.parent().data(NavigatorModel::KindRole).toString();
+    if (parentKind != QLatin1String("table") && parentKind != QLatin1String("view"))
+        return true;
+    const auto kind = index.data(NavigatorModel::KindRole).toString();
+    return kind == QLatin1String("column") || kind == QLatin1String("loading") ||
+           kind == QLatin1String("error") || kind == QLatin1String("load_more");
+}
+// Runs `call` at once, then folds requests made within `intervalMs` into one trailing call.
+inline std::function<void()> coalescedCall(QObject* owner, int intervalMs,
+                                           std::function<void()> call) {
+    auto* timer = new QTimer(owner);
+    timer->setSingleShot(true);
+    timer->setInterval(intervalMs);
+    auto pending = std::make_shared<bool>(false);
+    auto shared = std::make_shared<std::function<void()>>(std::move(call));
+    QObject::connect(timer, &QTimer::timeout, owner, [timer, pending, shared] {
+        if (!std::exchange(*pending, false))
+            return;
+        timer->start();
+        (*shared)();
+    });
+    return [timer = QPointer<QTimer>(timer), pending, shared] {
+        if (!timer)
+            return;
+        if (timer->isActive()) {
+            *pending = true;
+            return;
+        }
+        timer->start();
+        (*shared)();
+    };
+}
 struct QuickObjectResult {
     quint64 connection = 0;
     QString objectId;
@@ -38,8 +73,7 @@ class NavigatorController final : public QObject {
     Q_OBJECT
   public:
     enum class RevealResult { Found, Unavailable, Retry };
-    NavigatorController(EngineAdapter* engine, QTreeView* tree, QLineEdit* filter,
-                        QWidget* dialogParent);
+    NavigatorController(EngineAdapter* engine, QTreeView* tree, QLineEdit* filter);
     NavigatorModel* model() const { return model_; }
     void addConnection(quint64 connection, const QString& label);
     void renameConnection(quint64 connection, const QString& label);
@@ -52,13 +86,13 @@ class NavigatorController final : public QObject {
     quint64 selectedConnection() const;
     bool isVisibleConnection(quint64 connection) const;
     bool hasSelectedConnection() const;
+    // delayMs debounces the first scan; a newer start or cancel supersedes it.
     void startQuickObjectSearch(const QString& query,
-                                std::optional<quint64> connection = std::nullopt);
+                                std::optional<quint64> connection = std::nullopt, int delayMs = 0);
     void cancelQuickObjectSearch();
     QList<QuickObjectResult> quickObjectResults() const { return quickObjectResults_; }
     QString quickObjectSearchStatus() const { return quickObjectStatus_; }
     bool quickObjectSearchIncomplete() const { return quickObjectIncomplete_; }
-    quint64 quickObjectSearchGeneration() const { return quickObjectGeneration_; }
     void setDriverResolver(std::function<QString(quint64)> resolver);
     void setPinStateResolver(std::function<std::optional<bool>(const QModelIndex&)> resolver);
     void setShowSystemSchemas(bool show);
@@ -95,7 +129,6 @@ class NavigatorController final : public QObject {
 
   private:
     NavigatorModel* model_;
-    QPointer<EngineAdapter> engine_;
     QTreeView* tree_;
     QSortFilterProxyModel* proxy_;
     QLineEdit* filter_;
@@ -108,6 +141,29 @@ class NavigatorController final : public QObject {
     QPersistentModelIndex searchPendingIndex_;
     quint64 searchPendingToken_ = 0;
     QString searchError_;
+    // Traversal state kept across metadata requests so a search resumes instead of restarting.
+    struct SearchEntry {
+        QPersistentModelIndex index;
+        bool expandOnly = false;
+    };
+    std::vector<SearchEntry> searchStack_;
+    std::vector<QPersistentModelIndex> searchMatches_;
+    quint64 searchStateGeneration_ = 0;
+    int searchVisited_ = 0;
+    bool searchIncomplete_ = false;
+    bool searchFinished_ = false;
+    QTimer* filterTimer_ = nullptr;
+    void resetSearch() {
+        searchStack_.clear();
+        searchMatches_.clear();
+        searchStateGeneration_ = 0;
+        searchVisited_ = 0;
+        searchIncomplete_ = false;
+        searchFinished_ = false;
+    }
+    void searchRequestFinished(bool accepted, bool failed, const QString& error = {});
+    // Starts a new search generation; without `advance` the caller schedules the traversal.
+    void restartSearch(bool advance = true);
     bool matchesSearchRequest(quint64 connection, const QString& parent, quint64 token) const;
     QList<QuickObjectResult> quickObjectResults_;
     QString quickObjectStatus_;
@@ -117,7 +173,8 @@ class NavigatorController final : public QObject {
     bool quickObjectConnectionValid_ = false;
     int quickObjectRequests_ = 0;
     bool quickObjectIncomplete_ = false;
-    void advanceSearch(quint64 generation);
+    bool quickObjectAwaiting_ = false;
+    void advanceSearch(quint64 generation, bool resume = false);
     void advanceQuickObjectSearch(quint64 generation);
     bool
     lookupObject(quint64 connection, const QStringList& ancestryIds, const QString& objectId,

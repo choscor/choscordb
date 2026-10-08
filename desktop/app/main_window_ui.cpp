@@ -348,7 +348,7 @@ MainWindow::Ui MainWindow::buildUi() {
     tree->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     tree->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     tree->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    tree->setUniformRowHeights(false);
+    tree->setUniformRowHeights(true); // Navigator rows share one height; avoids per-row layout.
     new SidebarWheelForwarder(connectionsScroll, pinnedList->viewport());
     new SidebarWheelForwarder(connectionsScroll, tree->viewport());
     auto* objectsEmpty = createEmptyStateText({}, objectSection);

@@ -3,6 +3,8 @@
 #include "app/pin_store.h"
 
 #include <QAbstractItemModel>
+#include <QHash>
+#include <QMultiHash>
 #include <QPersistentModelIndex>
 #include <memory>
 #include <vector>
@@ -40,13 +42,17 @@ class PinnedTreeModel final : public QAbstractItemModel {
     Entry* findRoot(const QString& key) const;
     std::vector<Entry*> findSources(const QModelIndex& sourceIndex) const;
     QModelIndex indexFor(Entry* entry) const;
-    std::unique_ptr<Entry> makeEntry(const QModelIndex& sourceIndex, Entry* parent) const;
+    std::unique_ptr<Entry> makeEntry(const QModelIndex& sourceIndex, Entry* parent, int row);
+    void unregisterSources(Entry* entry);
     void clearResolution(Entry* root);
     bool sourceRowsIncludeRoot(const QModelIndex& parent, int first, int last,
                                const Entry* root) const;
 
     NavigatorModel* source_;
     std::vector<std::unique_ptr<Entry>> roots_;
+    QHash<QString, Entry*> rootsByKey_;
+    // Mirrored entries by their source row's internal pointer, verified on lookup.
+    QMultiHash<const void*, Entry*> entriesBySource_;
     std::vector<Entry*> pendingInsertParents_;
     int pendingInsertFirst_ = -1;
     int pendingInsertLast_ = -1;

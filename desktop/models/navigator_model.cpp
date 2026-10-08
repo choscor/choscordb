@@ -14,13 +14,17 @@ struct NavigatorModel::Node {
     NavigatorObject object;
     QString error;
     Node* parent = nullptr;
+    int row = 0;
     bool placeholder = false;
+    // -1 unknown; otherwise whether this node or an ancestor is a hidden system schema.
+    mutable signed char systemSchema = -1;
     std::vector<std::unique_ptr<Node>> children;
 };
 NavigatorModel::NavigatorModel(QObject* parent) : QAbstractItemModel(parent) {}
 NavigatorModel::~NavigatorModel() = default;
 void NavigatorModel::setDriverResolver(std::function<QString(quint64)> resolver) {
     driverResolver_ = std::move(resolver);
+    unverifiedVisibleByDriver_.clear();
     for (const auto& root : roots_)
         emit completionChanged(root->connection);
 }
@@ -28,6 +32,7 @@ void NavigatorModel::setShowSystemSchemas(bool show) {
     if (showSystemSchemas_ == show)
         return;
     showSystemSchemas_ = show;
+    unverifiedVisibleByDriver_.clear();
     for (const auto& root : roots_)
         if (driverResolver_ &&
             driverResolver_(root->connection)
@@ -48,16 +53,48 @@ quint64 NavigatorModel::pendingRequestToken(const QModelIndex& index) const {
     return value && value->state == Node::Loading ? value->token : 0;
 }
 bool NavigatorModel::isBrowsable(const Node* value) const {
-    if (!value || canShowUnverifiedObject(value->connection))
+    if (!value)
         return true;
-    for (auto* ancestor = value; ancestor; ancestor = ancestor->parent) {
-        if (ancestor->object.kind != QLatin1String("schema"))
-            continue;
-        const auto& name = ancestor->object.name;
-        if (EngineAdapter::postgresSystemSchema(name))
-            return false;
+    const auto driver = driverResolver_ ? driverResolver_(value->connection) : QString{};
+    auto visible = unverifiedVisibleByDriver_.constFind(driver);
+    if (visible == unverifiedVisibleByDriver_.cend())
+        visible = unverifiedVisibleByDriver_.insert(
+            driver, EngineAdapter::navigatorObjectVisible(driver, showSystemSchemas_, {}));
+    return visible.value() || !hiddenBySystemSchema(value);
+}
+bool NavigatorModel::hiddenBySystemSchema(const Node* value) const {
+    // Names and kinds of loaded schema rows never change, so the ancestor walk is cached.
+    if (value->systemSchema < 0)
+        value->systemSchema = (value->parent && hiddenBySystemSchema(value->parent)) ||
+                              (value->object.kind == QLatin1String("schema") &&
+                               EngineAdapter::postgresSystemSchema(value->object.name));
+    return value->systemSchema > 0;
+}
+QString NavigatorModel::relationSubtype(const QVariantList& properties) {
+    for (const auto& entry : properties) {
+        const auto property = entry.toMap();
+        if (property.value(QStringLiteral("name")).toString() == QStringLiteral("Relation subtype"))
+            return property.value(QStringLiteral("value")).toString();
     }
-    return true;
+    return {};
+}
+void NavigatorModel::registerNode(Node* value) {
+    if (!value->placeholder)
+        nodesById_[value->connection].insert(value->object.id, value);
+}
+void NavigatorModel::unregisterSubtree(const Node* value) {
+    auto ids = nodesById_.find(value->connection);
+    if (ids == nodesById_.end())
+        return;
+    std::vector<const Node*> stack{value};
+    while (!stack.empty()) {
+        const auto* current = stack.back();
+        stack.pop_back();
+        if (!current->placeholder)
+            ids->remove(current->object.id, const_cast<Node*>(current));
+        for (const auto& child : current->children)
+            stack.push_back(child.get());
+    }
 }
 CompletionSnapshot NavigatorModel::completionSnapshot(quint64 connection, quint64 maxEntries,
                                                       quint64 maxUtf8Bytes) const {
@@ -158,13 +195,7 @@ NavigatorModel::Node* NavigatorModel::node(const QModelIndex& index) const {
                : nullptr;
 }
 QModelIndex NavigatorModel::indexFor(Node* value) const {
-    if (!value)
-        return {};
-    const auto& siblings = value->parent ? value->parent->children : roots_;
-    const auto it = std::find_if(siblings.begin(), siblings.end(),
-                                 [value](const auto& n) { return n.get() == value; });
-    return it == siblings.end() ? QModelIndex()
-                                : createIndex(static_cast<int>(it - siblings.begin()), 0, value);
+    return value ? createIndex(value->row, 0, value) : QModelIndex();
 }
 QModelIndex NavigatorModel::index(int row, int column, const QModelIndex& parent) const {
     if (row < 0 || column != 0 || (parent.isValid() && !node(parent)))
@@ -243,6 +274,8 @@ void NavigatorModel::clearChildren(Node* value) {
     if (value->children.empty())
         return;
     beginRemoveRows(indexFor(value), 0, static_cast<int>(value->children.size()) - 1);
+    for (const auto& child : value->children)
+        unregisterSubtree(child.get());
     value->children.clear();
     endRemoveRows();
 }
@@ -266,6 +299,7 @@ void NavigatorModel::fetchMore(const QModelIndex& parent) {
     loading->state = Node::Loaded;
     loading->object = {QString(), tr("Loading…"), QString(), QString("loading"), false};
     const auto loadingRow = static_cast<int>(value->children.size());
+    loading->row = loadingRow;
     beginInsertRows(parent, loadingRow, loadingRow);
     value->children.push_back(std::move(loading));
     endInsertRows();
@@ -286,20 +320,8 @@ void NavigatorModel::fetchMore(const QModelIndex& parent) {
     });
 }
 NavigatorModel::Node* NavigatorModel::find(quint64 connection, const QString& id) const {
-    const auto root = std::find_if(roots_.begin(), roots_.end(), [connection](const auto& n) {
-        return n->connection == connection;
-    });
-    if (root == roots_.end())
-        return nullptr;
-    auto search = [&](auto&& self, Node* value) -> Node* {
-        if (!value->placeholder && value->object.id == id)
-            return value;
-        for (const auto& child : value->children)
-            if (auto* found = self(self, child.get()))
-                return found;
-        return nullptr;
-    };
-    return search(search, root->get());
+    const auto ids = nodesById_.constFind(connection);
+    return ids == nodesById_.cend() ? nullptr : ids->value(id, nullptr);
 }
 bool NavigatorModel::addConnection(quint64 id, const QString& label) {
     if (find(id, QString()) || roots_.size() >= std::numeric_limits<int>::max())
@@ -308,7 +330,9 @@ bool NavigatorModel::addConnection(quint64 id, const QString& label) {
     value->connection = id;
     value->object = {QString(), label, QString(), QString("connection"), true};
     const auto row = static_cast<int>(roots_.size());
+    value->row = row;
     beginInsertRows({}, row, row);
+    registerNode(value.get());
     roots_.push_back(std::move(value));
     endInsertRows();
     return true;
@@ -345,7 +369,10 @@ bool NavigatorModel::removeConnection(quint64 id) {
         return false;
     const auto row = static_cast<int>(it - roots_.begin());
     beginRemoveRows({}, row, row);
+    nodesById_.remove(id);
     roots_.erase(it);
+    for (auto index = static_cast<std::size_t>(row); index < roots_.size(); ++index)
+        roots_[index]->row = static_cast<int>(index);
     endRemoveRows();
     emit completionChanged(id);
     return true;
@@ -415,8 +442,12 @@ bool NavigatorModel::applyChildrenPage(quint64 connection, const QString& parent
     if (!prepared.empty()) {
         const auto first = static_cast<int>(value->children.size());
         beginInsertRows(parentIndex, first, first + static_cast<int>(prepared.size()) - 1);
-        for (auto& child : prepared)
+        value->children.reserve(value->children.size() + prepared.size());
+        for (auto& child : prepared) {
+            child->row = static_cast<int>(value->children.size());
+            registerNode(child.get());
             value->children.push_back(std::move(child));
+        }
         endInsertRows();
     }
     emit dataChanged(parentIndex, parentIndex, {ErrorRole, ChildrenLoadedRole, HasMoreRole});
@@ -476,77 +507,38 @@ bool NavigatorModel::refreshObject(quint64 connection, const QString& objectId) 
 bool NavigatorModel::matchesObject(quint64 connection, const QString& objectId, const QString& kind,
                                    const QString& qualifiedName, const QString& parentObjectId,
                                    const QString& relationSubtype, bool requireBrowsable) const {
-    const auto root = std::find_if(roots_.begin(), roots_.end(), [connection](const auto& node) {
-        return node->connection == connection;
-    });
-    if (root == roots_.end() || objectId.isEmpty())
+    const auto ids = nodesById_.constFind(connection);
+    if (ids == nodesById_.cend() || objectId.isEmpty())
         return false;
-    constexpr size_t visitLimit = 100000;
-    std::vector<const Node*> stack{root->get()};
-    size_t visited = 0;
-    while (!stack.empty()) {
-        if (++visited > visitLimit)
-            return false;
-        const auto* value = stack.back();
-        stack.pop_back();
-        if (requireBrowsable && !isBrowsable(value))
+    for (auto it = ids->constFind(objectId); it != ids->cend() && it.key() == objectId; ++it) {
+        const auto* value = it.value();
+        if (!value->parent || value->object.kind != kind ||
+            value->object.qualifiedName != qualifiedName ||
+            value->parent->object.id != parentObjectId || (requireBrowsable && !isBrowsable(value)))
             continue;
-        if (!value->placeholder && value->parent && value->object.id == objectId &&
-            value->object.kind == kind && value->object.qualifiedName == qualifiedName &&
-            value->parent->object.id == parentObjectId) {
-            QString actualSubtype;
-            for (const auto& entry : value->object.properties) {
-                const auto property = entry.toMap();
-                if (property.value(QStringLiteral("name")).toString() ==
-                    QStringLiteral("Relation subtype")) {
-                    actualSubtype = property.value(QStringLiteral("value")).toString();
-                    break;
-                }
-            }
-            return actualSubtype == relationSubtype;
-        }
-        if (value->children.size() > visitLimit - stack.size())
-            return false;
-        for (const auto& child : value->children)
-            stack.push_back(child.get());
+        return NavigatorModel::relationSubtype(value->object.properties) == relationSubtype;
     }
     return false;
 }
 std::optional<NavigatorObjectSnapshot>
 NavigatorModel::objectSnapshot(quint64 connection, const QString& objectId) const {
-    if (objectId.isEmpty())
+    const auto ids = nodesById_.constFind(connection);
+    if (objectId.isEmpty() || ids == nodesById_.cend())
         return std::nullopt;
-    const auto root = std::find_if(roots_.begin(), roots_.end(), [connection](const auto& node) {
-        return node->connection == connection;
-    });
-    if (root == roots_.end())
-        return std::nullopt;
-    constexpr size_t visitLimit = 100000;
-    std::vector<const Node*> stack{root->get()};
     std::optional<NavigatorObjectSnapshot> snapshot;
-    size_t visited = 0;
-    while (!stack.empty()) {
-        if (++visited > visitLimit)
-            return std::nullopt;
-        const auto* current = stack.back();
-        stack.pop_back();
-        if (!isBrowsable(current))
+    for (auto it = ids->constFind(objectId); it != ids->cend() && it.key() == objectId; ++it) {
+        const auto* current = it.value();
+        if (!current->parent || !isBrowsable(current))
             continue;
-        if (!current->placeholder && current->parent && current->object.id == objectId) {
-            if (snapshot)
-                return std::nullopt;
-            snapshot = NavigatorObjectSnapshot{connection,
-                                               current->object.id,
-                                               current->object.name,
-                                               current->object.qualifiedName,
-                                               current->object.kind,
-                                               current->parent->object.id,
-                                               current->object.properties};
-        }
-        if (current->children.size() > visitLimit - stack.size())
+        if (snapshot)
             return std::nullopt;
-        for (const auto& child : current->children)
-            stack.push_back(child.get());
+        snapshot = NavigatorObjectSnapshot{connection,
+                                           current->object.id,
+                                           current->object.name,
+                                           current->object.qualifiedName,
+                                           current->object.kind,
+                                           current->parent->object.id,
+                                           current->object.properties};
     }
     return snapshot;
 }

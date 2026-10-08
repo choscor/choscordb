@@ -17,7 +17,7 @@ class NavigatorPinModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -50,7 +50,7 @@ class NavigatorPinModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -84,7 +84,7 @@ class NavigatorPinModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -137,7 +137,7 @@ class NavigatorPinModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -164,7 +164,7 @@ class NavigatorPinModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -199,7 +199,7 @@ class NavigatorPinModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -233,7 +233,7 @@ class NavigatorPinModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -274,7 +274,7 @@ class NavigatorPinModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -346,7 +346,7 @@ class NavigatorPinModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
@@ -381,7 +381,7 @@ class NavigatorPinModelTest : public QObject {
         EngineAdapter engine;
         QTreeView tree;
         QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter, &tree);
+        NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);

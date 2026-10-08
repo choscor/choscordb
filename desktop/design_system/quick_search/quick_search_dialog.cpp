@@ -19,6 +19,8 @@
 #include <QStyle>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 namespace choscordb::design {
 QuickSearchResultRow::QuickSearchResultRow(const QuickSearchResult& result, QWidget* parent)
     : QWidget(parent), iconRole_(result.icon) {
@@ -160,6 +162,16 @@ QString QuickSearchDialog::selectedResultId() const {
 }
 
 void QuickSearchDialog::setResults(const QList<QuickSearchResult>& results) {
+    const auto same = [](const QuickSearchResult& left, const QuickSearchResult& right) {
+        return left.id == right.id && left.icon == right.icon && left.type == right.type &&
+               left.title == right.title && left.context == right.context;
+    };
+    // Callers re-render on every partial result; rebuilding unchanged row widgets is wasted work.
+    if (results.size() == results_.size() && list_->count() == results_.size() &&
+        std::equal(results.cbegin(), results.cend(), results_.cbegin(), same)) {
+        updateStatus();
+        return;
+    }
     const QString selectedId = selectedResultId();
     results_ = results;
     list_->clear();
