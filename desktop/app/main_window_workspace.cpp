@@ -9,7 +9,8 @@
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/request_token.h"
+#include "bridge/rust_text.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/icons.h"
@@ -49,18 +50,12 @@
 #include <QTreeView>
 #include <QTreeWidget>
 #include <QtConcurrentRun>
-#include <atomic>
 #include <memory>
 
 namespace choscordb {
 namespace {
-QString fromRust(const rust::String& value) {
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
-}
-
-rust::Str pathView(const QByteArray& encoded) {
-    return {encoded.constData(), static_cast<size_t>(encoded.size())};
-}
+using bridge_detail::fromRust;
+using bridge_detail::utf8View;
 
 struct SavedSqlEntry {
     QString path;
@@ -80,7 +75,7 @@ SavedSqlListing loadSavedSql(const QString& root) {
         return result;
     }
     const auto encoded = root.toUtf8();
-    const auto dto = saved_sql_list_directory(pathView(encoded));
+    const auto dto = saved_sql_list_directory(utf8View(encoded));
     result.error = fromRust(dto.error);
     result.hasMore = dto.has_more;
     for (const auto& entry : dto.entries)
@@ -97,7 +92,7 @@ SavedSqlIdentity documentIdentity(const QString& path) {
     if (!path.isValidUtf16())
         return {{}, QObject::tr("Path is not valid Unicode.")};
     const auto encoded = path.toUtf8();
-    const auto dto = saved_sql_document_identity(pathView(encoded));
+    const auto dto = saved_sql_document_identity(utf8View(encoded));
     return {fromRust(dto.path), fromRust(dto.error)};
 }
 
@@ -105,7 +100,7 @@ QString prepareSavedSqlDirectory(const QString& root) {
     if (!root.isValidUtf16())
         return QObject::tr("Path is not valid Unicode.");
     const auto encoded = root.toUtf8();
-    return fromRust(saved_sql_prepare_directory(pathView(encoded)));
+    return fromRust(saved_sql_prepare_directory(utf8View(encoded)));
 }
 
 } // namespace
@@ -469,6 +464,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             return;
         // Sample only the first bounded page once. Subsequent paging
         // retains column widths the user adjusted for this result.
+        // perf-ok: configureResultTable limits the content sample to 50 rows.
         grid->resizeColumnsToContents();
         for (int column = 0; column < grid->model()->columnCount(); ++column)
             grid->setColumnWidth(column, qMax(grid->horizontalHeader()->sectionSizeHint(column),
@@ -507,8 +503,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     connect(preferences_, &EditorPreferencesController::queryPreferencesConfirmed, workspace_,
             &QueryWorkspace::applyQueryPreferences);
     const auto refreshProfiles = [this] {
-        static std::atomic<quint64> next{quint64(1) << 54};
-        profileListToken_ = next.fetch_add(1);
+        profileListToken_ = nextRequestToken();
         workspace_->adapter()->listProfiles(profileListToken_);
     };
     const auto syncVisible = [this, savedConnections, connections] {
@@ -815,7 +810,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     connect(
         workspace_->adapter(), &EngineAdapter::eventReady, this,
         [this, syncVisible, showBrowseFailure](const BridgeEvent& event) {
-            const auto kind = QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
+            const auto kind = fromRust(event.kind);
             if (kind == "connection_failed") {
                 retiredBrowseConnections_.remove(event.id);
                 for (auto it = pendingBrowseProfiles_.begin(); it != pendingBrowseProfiles_.end();
@@ -826,9 +821,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     if (reconnectingProfile_ == profileId) {
                         reconnectingProfile_.clear();
                         showStatus(
-                            tr("Could not reconnect %1: %2")
-                                .arg(it->name, QString::fromUtf8(event.error.data(),
-                                                                 qsizetype(event.error.size()))),
+                            tr("Could not reconnect %1: %2").arg(it->name, fromRust(event.error)),
                             ToastVariant::Danger, QStringLiteral("connection"));
                     }
                     const auto pending = it.value();
@@ -837,9 +830,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                         navigatorController_->removePendingConnection(pending.placeholder);
                     if (selectedProfileIds_.remove(profileId)) {
                         syncVisible();
-                        showBrowseFailure(
-                            pending.name,
-                            QString::fromUtf8(event.error.data(), qsizetype(event.error.size())));
+                        showBrowseFailure(pending.name, fromRust(event.error));
                     }
                     break;
                 }

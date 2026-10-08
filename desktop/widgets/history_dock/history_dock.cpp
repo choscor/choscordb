@@ -1,4 +1,5 @@
 #include "history_dock.h"
+#include "bridge/request_token.h"
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
@@ -23,14 +24,9 @@
 #include <QTableView>
 #include <QToolButton>
 #include <QVBoxLayout>
-#include <atomic>
 #include <limits>
 namespace choscordb {
 namespace {
-quint64 token() {
-    static std::atomic<quint64> next{quint64(1) << 60};
-    return next.fetch_add(1);
-}
 constexpr quint32 pageSize = 100;
 // The table keeps the full history columns (rows, duration) that the compact
 // design::RecentHistoryRowDelegate list row does not carry, so this delegate
@@ -305,7 +301,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
             record_->setChecked(policy_.enabled);
         }
         failed_ = false;
-        policyToken_ = token();
+        policyToken_ = nextRequestToken();
         statusText_.clear();
         updateControls();
         adapter_->setHistoryPolicy(proposed, policyToken_);
@@ -317,7 +313,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
                                                       QMessageBox::No) != QMessageBox::Yes)
             return;
         failed_ = false;
-        clearToken_ = token();
+        clearToken_ = nextRequestToken();
         statusText_.clear();
         updateControls();
         adapter_->clearHistory(clearToken_);
@@ -413,10 +409,10 @@ void HistoryDock::refresh() {
     if (!adapter_)
         return;
     failed_ = false;
-    profilesToken_ = token();
+    profilesToken_ = nextRequestToken();
     adapter_->listProfiles(profilesToken_);
     if (!policyToken_) {
-        policyToken_ = token();
+        policyToken_ = nextRequestToken();
         adapter_->getHistoryPolicy(policyToken_);
     }
     loadPage(0);
@@ -424,7 +420,7 @@ void HistoryDock::refresh() {
 void HistoryDock::loadPage(quint32 offset) {
     if (!adapter_)
         return;
-    listToken_ = token();
+    listToken_ = nextRequestToken();
     pendingOffset_ = offset;
     if (!failed_)
         statusText_.clear();

@@ -1,6 +1,6 @@
 #include "tools/preview/preview_window.h"
 
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
@@ -251,18 +251,13 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
     QObject::connect(&watcher, &QFutureWatcher<std::pair<bool, QString>>::finished, &loop,
                      &QEventLoop::quit);
     QObject::connect(owner.data(), &QObject::destroyed, &loop, &QEventLoop::quit);
-    watcher.setFuture(
-        QtConcurrent::run([path, png = std::move(png), metadata = std::move(metadata)]() mutable {
-            const auto utf8 = path.toUtf8();
-            const auto result = write_preview_capture_file(
-                rust::Str(utf8.constData(), size_t(utf8.size())),
-                rust::Slice<const uint8_t>(reinterpret_cast<const uint8_t*>(png.constData()),
-                                           size_t(png.size())),
-                std::move(metadata));
-            return std::pair<bool, QString>{
-                result.png_written,
-                QString::fromUtf8(result.error.data(), qsizetype(result.error.size()))};
-        }));
+    watcher.setFuture(QtConcurrent::run([path, png = std::move(png),
+                                         metadata = std::move(metadata)]() mutable {
+        const auto utf8 = path.toUtf8();
+        const auto result = write_preview_capture_file(
+            bridge_detail::utf8View(utf8), bridge_detail::byteView(png), std::move(metadata));
+        return std::pair<bool, QString>{result.png_written, bridge_detail::fromRust(result.error)};
+    }));
     if (!watcher.isFinished())
         loop.exec(QEventLoop::ExcludeUserInputEvents);
     if (!owner)

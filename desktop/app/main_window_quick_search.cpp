@@ -1,4 +1,5 @@
 #include "app/main_window.h"
+#include "bridge/request_token.h"
 
 #include "app/editor_preferences.h"
 #include "app/navigator_controller.h"
@@ -20,14 +21,9 @@
 #include <QTabWidget>
 #include <QTimer>
 #include <algorithm>
-#include <atomic>
 
 namespace choscordb {
 namespace {
-quint64 nextQuickHistoryToken() {
-    static std::atomic<quint64> next{quint64(1) << 59};
-    return ++next;
-}
 QString relationSubtype(const QVariantList& properties) {
     return NavigatorModel::relationSubtype(properties);
 }
@@ -89,7 +85,7 @@ void MainWindow::showQuickSearch() {
                     const bool progressed = nextOffset != 0 && nextOffset != quickHistoryCursor_;
                     if (incomplete && quickHistoryRows_.size() < 30 && progressed) {
                         quickHistoryCursor_ = nextOffset;
-                        quickHistoryToken_ = nextQuickHistoryToken();
+                        quickHistoryToken_ = nextRequestToken();
                         if (workspace_->adapter()->searchHistory(quickSearch_->query().trimmed(),
                                                                  30 - quickHistoryRows_.size(),
                                                                  quickHistoryToken_, nextOffset)) {
@@ -201,8 +197,7 @@ void MainWindow::showQuickSearch() {
             quickHistoryClearToken_ = 0;
         quickHistoryPolicyKnown_ = false;
         quickHistoryPolicyError_.clear();
-        static std::atomic<quint64> nextPolicyToken{quint64(1) << 58};
-        quickHistoryPolicyToken_ = ++nextPolicyToken;
+        quickHistoryPolicyToken_ = nextRequestToken();
         if (!workspace_->adapter()->getHistoryPolicy(quickHistoryPolicyToken_)) {
             quickHistoryPolicyToken_ = 0;
             quickHistoryPolicyError_ = tr("History recording status is unavailable.");
@@ -322,7 +317,7 @@ void MainWindow::updateQuickSearch(const QString& query) {
         QTimer::singleShot(empty ? 0 : 80, this, [this, generation, needle] {
             if (!quickSearch_ || !quickSearch_->isVisible() || generation != quickSearchGeneration_)
                 return;
-            quickHistoryToken_ = nextQuickHistoryToken();
+            quickHistoryToken_ = nextRequestToken();
             if (!workspace_->adapter()->searchHistory(needle, 30, quickHistoryToken_)) {
                 quickHistoryToken_ = 0;
                 quickHistoryPending_ = false;

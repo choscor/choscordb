@@ -1,15 +1,13 @@
 #include "bridge/cell_transport.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include "models/result_table_model.h"
 
 namespace choscordb {
 namespace {
-QString text(const rust::String& value) {
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
-}
+using bridge_detail::fromRust;
 
 QString copyError(const CopyResultDto& result) {
-    const auto code = text(result.error);
+    const auto code = fromRust(result.error);
     if (code == QLatin1String("invalid_resolution"))
         return QObject::tr("A loaded copy value is invalid.");
     if (code == QLatin1String("wrong_resolution_type"))
@@ -18,7 +16,7 @@ QString copyError(const CopyResultDto& result) {
         return QObject::tr("A loaded copy value is incomplete.");
     if (code == QLatin1String("unavailable"))
         return QObject::tr("Cannot copy unavailable %1 value: %2")
-            .arg(text(result.database_type), text(result.reason));
+            .arg(fromRust(result.database_type), fromRust(result.reason));
     if (code == QLatin1String("deferred"))
         return QObject::tr("Large values cannot be copied from the grid. Export the result to "
                            "copy the complete value.");
@@ -63,6 +61,6 @@ ResultTableModel::CopyEvaluation ResultTableModel::evaluateCopy(CopySnapshot sna
     const auto result = render_copy_tsv_policy(std::move(request));
     if (!result.error.empty())
         return {.text = {}, .error = copyError(result)};
-    return {.text = text(result.text), .error = {}};
+    return {.text = fromRust(result.text), .error = {}};
 }
 } // namespace choscordb

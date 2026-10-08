@@ -1,9 +1,11 @@
 #include "app/object_explorer.h"
 #include "app/main_window.h"
 #include "app/object_data_workspace.h"
+#include "app/object_kind_icon.h"
 #include "bridge/engine_adapter.h"
+#include "bridge/request_token.h"
+#include "bridge/rust_text.h"
 #include "bridge/template_service.h"
-#include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
 #include "design_system/menu/menu.h"
 #include "design_system/status_line/status_line.h"
@@ -32,7 +34,6 @@
 #include <QTableView>
 #include <QTextBlock>
 #include <QVBoxLayout>
-#include <atomic>
 namespace choscordb {
 namespace {
 constexpr int objectIconRole = Qt::UserRole + 1;
@@ -235,9 +236,9 @@ class ObjectColumnDelegate final : public QStyledItemDelegate {
         if (role.isValid() && option->widget) {
             option->icon = design::themedIcon(
                 static_cast<design::Icon>(role.toInt()),
-                design::resolvedThemeForWidget(*option->widget).colors.mutedText, 16);
+                design::resolvedThemeForWidget(*option->widget).colors.mutedText, objectIconSize());
             option->features |= QStyleOptionViewItem::HasDecoration;
-            option->decorationSize = QSize(16, 16);
+            option->decorationSize = QSize(objectIconSize(), objectIconSize());
         }
     }
 };
@@ -570,14 +571,12 @@ void ObjectExplorer::requestPane() {
         pages_->setCurrentIndex(0);
         const auto idBytes = object_.toUtf8();
         const auto labelBytes = label_.toUtf8();
-        const auto display = object_display_identity_policy(
-            rust::Str(idBytes.constData(), size_t(idBytes.size())),
-            rust::Str(labelBytes.constData(), size_t(labelBytes.size())));
-        const auto name = QString::fromUtf8(display.name.data(), qsizetype(display.name.size()));
-        const auto schema =
-            display.has_schema
-                ? QString::fromUtf8(display.schema.data(), qsizetype(display.schema.size()))
-                : tr("Unavailable: schema metadata was not provided");
+        const auto display = object_display_identity_policy(bridge_detail::utf8View(idBytes),
+                                                            bridge_detail::utf8View(labelBytes));
+        const auto name = bridge_detail::fromRust(display.name);
+        const auto schema = display.has_schema
+                                ? bridge_detail::fromRust(display.schema)
+                                : tr("Unavailable: schema metadata was not provided");
         const QString title = kind_ == "index"      ? tr("Index")
                               : kind_ == "sequence" ? tr("Sequence")
                                                     : tr("Function");
@@ -602,6 +601,7 @@ void ObjectExplorer::requestPane() {
             model_->appendRow({new QStandardItem(propertyData.value("name").toString()),
                                new QStandardItem(value)});
         }
+        // perf-ok: object metadata; precision limits the sample to 50 rows.
         table_->resizeColumnsToContents();
         refresh_->setEnabled(!operationBusy_);
         setStatus("loaded", tr("%1 · Details loaded").arg(label_));
@@ -622,15 +622,13 @@ void ObjectExplorer::requestPane() {
             return;
         }
         erd_->clearGraph();
-        static std::atomic<quint64> nextGraph{quint64(1) << 54};
-        requestToken_ = nextGraph.fetch_add(1);
+        requestToken_ = nextRequestToken();
         setStatus("loading", tr("%1 · Loading ERD…").arg(label_));
         adapter_->loadObjectGraph(*connection_, object_, requestToken_);
         return;
     }
     pages_->setCurrentIndex(tabs_->currentIndex() == 3 ? 1 : 0);
-    static std::atomic<quint64> next{quint64(1) << 53};
-    requestToken_ = next.fetch_add(1);
+    requestToken_ = nextRequestToken();
     setStatus("loading",
               tr("%1 · Loading %2…").arg(label_, tabs_->tabText(tabs_->currentIndex()).toLower()));
     adapter_->loadObjectInspection(*connection_, object_,
@@ -704,8 +702,8 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
     model_->setHorizontalHeaderLabels(headers);
     // Resolve per-render presentation once rather than per row or cell.
     const auto mutedText = design::resolvedThemeForWidget(*this).colors.mutedText;
-    const QIcon keyIcon = design::themedIcon(design::Icon::Key, mutedText, 16);
-    const QIcon fileIcon = design::themedIcon(design::Icon::File, mutedText, 16);
+    const QIcon keyIcon = design::themedIcon(design::Icon::Key, mutedText, objectIconSize());
+    const QIcon fileIcon = design::themedIcon(design::Icon::File, mutedText, objectIconSize());
     const QFont metadataFont = design::resolveTypography(design::TypographyRole::Metadata);
     // Grow the model once, then fill cells, instead of one insertion per row.
     const int firstRow = model_->rowCount();
@@ -753,6 +751,7 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
             model_->setItem(modelRow, column, items[column]);
         ++modelRow;
     }
+    // perf-ok: object metadata; precision limits the sample to 50 rows.
     table_->resizeColumnsToContents();
     for (int column = 0; column < model_->columnCount(); ++column) {
         table_->setColumnWidth(column, qBound(80, table_->columnWidth(column), 320));

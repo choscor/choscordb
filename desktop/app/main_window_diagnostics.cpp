@@ -3,7 +3,7 @@
 #include "app/diagnostics_service.h"
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_sections/dialog_sections.h"
@@ -50,9 +50,7 @@ struct ClearOutcome {
     DiagnosticSummary summary;
 };
 
-QString fromRust(const rust::String& value) {
-    return QString::fromUtf8(value.data(), qsizetype(value.size()));
-}
+using bridge_detail::fromRust;
 
 class DiagnosticsWorker final {
   public:
@@ -89,8 +87,8 @@ class DiagnosticsWorker final {
     DiagnosticExportResult exportZip(const QString& destination,
                                      const DiagnosticCancellation& cancellation) const {
         const auto path = destination.toUtf8();
-        const auto source = diagnostics_export_zip(
-            *backend_, rust::Str(path.constData(), size_t(path.size())), cancellation);
+        const auto source =
+            diagnostics_export_zip(*backend_, bridge_detail::utf8View(path), cancellation);
         return {.success = source.success,
                 .cancelled = source.cancelled,
                 .error = fromRust(source.error)};
@@ -352,7 +350,7 @@ void MainWindow::showDiagnosticsExport() {
             preflight->start(
                 [path] {
                     const auto bytes = path.toUtf8();
-                    return document_path_status(rust::Str(bytes.constData(), size_t(bytes.size())));
+                    return document_path_status(bridge_detail::utf8View(bytes));
                 },
                 [this, guard, dialog, destination, browse, folder, clear, save, status,
                  path](const DocumentPathStatusDto& result) {

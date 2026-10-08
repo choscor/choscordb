@@ -27,10 +27,9 @@ class DeferredAssemblerJob final {
     DeferredAssemblyOutcome append(const QString& kind, quint64 offset, quint64 totalBytes,
                                    const QByteArray& chunk, bool hasLease) {
         const auto encodedKind = kind.toUtf8();
-        const auto data = rust::Slice<const uint8_t>(
-            reinterpret_cast<const uint8_t*>(chunk.constData()), static_cast<size_t>(chunk.size()));
-        const auto dto = deferred_assembler_push(*assembler_, bridge_detail::utf8View(encodedKind),
-                                                 offset, totalBytes, data, hasLease);
+        const auto dto =
+            deferred_assembler_push(*assembler_, bridge_detail::utf8View(encodedKind), offset,
+                                    totalBytes, bridge_detail::byteView(chunk), hasLease);
         return {dto.complete,
                 dto.received_bytes,
                 text(dto.kind),

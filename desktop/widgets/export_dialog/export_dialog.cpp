@@ -1,6 +1,6 @@
 #include "widgets/export_dialog/export_dialog.h"
 #include "bridge/engine_adapter.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_sections/dialog_sections.h"
@@ -24,9 +24,7 @@
 
 namespace choscordb {
 namespace {
-QString text(const rust::String& value) {
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
-}
+using bridge_detail::fromRust;
 } // namespace
 ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter), format_(new QComboBox(this)),
@@ -261,7 +259,7 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
                 if (!adapter_ || query_ != query || submissionToken_ != token || !submitting_)
                     return;
                 if (!result.error.empty()) {
-                    finish(tr("Could not check destination: %1").arg(text(result.error)),
+                    finish(tr("Could not check destination: %1").arg(fromRust(result.error)),
                            Outcome::Failed);
                     return;
                 }
@@ -303,7 +301,7 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
             });
     watcher->setFuture(QtConcurrent::run([path] {
         const auto bytes = path.toUtf8();
-        return document_path_status(rust::Str(bytes.constData(), size_t(bytes.size())));
+        return document_path_status(bridge_detail::utf8View(bytes));
     }));
 }
 
@@ -324,7 +322,7 @@ void ExportDialog::cancel() {
 void ExportDialog::handleEvent(const BridgeEvent& value) {
     if (!export_ || *export_ != value.id || !exportQuery_ || *exportQuery_ != value.query_id)
         return;
-    const auto kind = text(value.kind);
+    const auto kind = fromRust(value.kind);
     if (kind == "export_progress") {
         if (!cancelling_)
             statusLine_->setMessage(tr("Exporting: %1 rows · %2 bytes")
@@ -337,10 +335,10 @@ void ExportDialog::handleEvent(const BridgeEvent& value) {
                    .arg(destination_->text()),
                Outcome::Success);
     } else if (kind == "export_failed") {
-        if (text(value.error_kind) == "Cancelled")
+        if (fromRust(value.error_kind) == "Cancelled")
             finish(tr("Export cancelled."), Outcome::Cancelled);
         else
-            finish(text(value.error), Outcome::Failed);
+            finish(fromRust(value.error), Outcome::Failed);
     }
 }
 void ExportDialog::finish(const QString& message, Outcome outcome) {

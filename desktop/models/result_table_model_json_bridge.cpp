@@ -1,5 +1,5 @@
 #include "bridge/cell_transport.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include "models/result_table_model.h"
 #include <algorithm>
 
@@ -11,9 +11,7 @@ rust::String transportString(const QString& value, bool& validUnicode) {
     return rust::String(bytes.constData(), static_cast<size_t>(bytes.size()));
 }
 
-QString text(const rust::String& value) {
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
-}
+using bridge_detail::fromRust;
 
 ColumnDto transportColumn(const ResultColumn& value, bool& validUnicode) {
     ColumnDto result;
@@ -79,7 +77,7 @@ QString unavailableDescription(const std::vector<ResultTableModel::Row>& rows) {
 
 QString resultError(const rust::String& code, std::size_t budget, bool cell,
                     const QString& unavailable) {
-    const auto kind = text(code);
+    const auto kind = fromRust(code);
     const auto displayBytes =
         std::min<std::size_t>(budget / sizeof(QChar) * sizeof(QChar), 16 * 1024 * 1024);
     if (kind == "deferred")
@@ -206,13 +204,13 @@ ResultTableModel::JsonViewEvaluation ResultTableModel::evaluateJsonView(JsonView
     }
     if (result.error.empty()) {
         evaluation.state = JsonViewState::Ready;
-        evaluation.json = text(result.json);
+        evaluation.json = fromRust(result.json);
         return evaluation;
     }
-    const auto status = text(readiness);
+    const auto status = fromRust(readiness);
     if (status == "unavailable")
         evaluation.state = JsonViewState::Unavailable;
-    else if (status == "needs_deferred" && text(result.error) == "deferred")
+    else if (status == "needs_deferred" && fromRust(result.error) == "deferred")
         evaluation.state = JsonViewState::NeedsDeferred;
     else
         evaluation.state = JsonViewState::Invalid;

@@ -1,4 +1,5 @@
 #include "query_settings_dialog.h"
+#include "bridge/request_token.h"
 #include "design_system/button/button.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
@@ -10,14 +11,7 @@
 #include <QPushButton>
 #include <QSpinBox>
 #include <QVBoxLayout>
-#include <atomic>
 namespace choscordb {
-namespace {
-quint64 nextToken() {
-    static std::atomic<quint64> token{quint64(1) << 54};
-    return token.fetch_add(1);
-}
-} // namespace
 QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter),
       connectionTimeoutSeconds_(QueryPreferences().connectionTimeoutSeconds) {
@@ -140,7 +134,7 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
                 updateControls();
             });
     fill(QueryPreferences{});
-    token_ = nextToken();
+    token_ = nextRequestToken();
     updateControls();
     if (adapter_) {
         statusLine_->setAvailable(true);
@@ -188,7 +182,7 @@ void QuerySettingsDialog::apply() {
         return;
     }
     saving_ = true;
-    const auto token = nextToken();
+    const auto token = nextRequestToken();
     token_ = token;
     statusLine_->setAvailable(true);
     statusLine_->setNeutral();

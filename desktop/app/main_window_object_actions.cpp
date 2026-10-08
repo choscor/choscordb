@@ -8,7 +8,7 @@
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_sections/dialog_sections.h"
@@ -26,9 +26,7 @@
 
 namespace choscordb {
 namespace {
-QString bridgeText(const rust::String& value) {
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
-}
+using bridge_detail::fromRust;
 } // namespace
 
 bool MainWindow::objectActionReady(quint64 connection, const QString& objectId, const QString& kind,
@@ -225,7 +223,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
 }
 
 void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
-    const auto eventKind = bridgeText(event.kind);
+    const auto eventKind = fromRust(event.kind);
     if ((eventKind == QStringLiteral("disconnected") ||
          eventKind == QStringLiteral("connection_failed")) &&
         pendingObjectRefresh_ && pendingObjectRefresh_->connection == event.id) {
@@ -237,12 +235,12 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
     }
     if (eventKind == QStringLiteral("metadata") || eventKind == QStringLiteral("metadata_failed")) {
         if (pendingObjectRefresh_ && pendingObjectRefresh_->connection == event.id &&
-            pendingObjectRefresh_->parentObjectId == bridgeText(event.parent) &&
+            pendingObjectRefresh_->parentObjectId == fromRust(event.parent) &&
             pendingObjectRefresh_->token == event.request_token) {
             if (eventKind == QStringLiteral("metadata_failed"))
                 showStatus(tr("Object changed, but navigator refresh failed: %1. Choose Refresh "
                               "to retry.")
-                               .arg(bridgeText(event.error)),
+                               .arg(fromRust(event.error)),
                            ToastVariant::Warning, QStringLiteral("navigator"));
             else
                 clearStatus(QStringLiteral("navigator"), tr("Refreshing navigator…"));
@@ -273,7 +271,7 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
     if (eventKind == QStringLiteral("query_failed")) {
         showStatus(tr("Could not %1 %2 %3: %4")
                        .arg(action.action, action.displayKind, action.qualifiedName,
-                            bridgeText(event.error)),
+                            fromRust(event.error)),
                    ToastVariant::Danger, QStringLiteral("navigator"));
         return;
     }

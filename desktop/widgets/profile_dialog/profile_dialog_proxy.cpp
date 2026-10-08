@@ -1,4 +1,4 @@
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -70,9 +70,8 @@ void ProfileDialog::updateProxyControls() {
 bool ProfileDialog::proxyNeedsPassword(const SavedProfile& profile) {
     const auto driver = profile.driver.toUtf8();
     const auto options = profile.proxyOptions.toUtf8();
-    return profile_proxy_needs_password_policy(
-        rust::Str(driver.constData(), size_t(driver.size())),
-        rust::Str(options.constData(), size_t(options.size())));
+    return profile_proxy_needs_password_policy(bridge_detail::utf8View(driver),
+                                               bridge_detail::utf8View(options));
 }
 void ProfileDialog::writeProxyDraft(SavedProfile& profile) const {
     profile.proxyOptions.clear();

@@ -1,17 +1,13 @@
 #include "app/diagnostics_service.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include <algorithm>
 #include <chrono>
 #include <thread>
 
 namespace choscordb {
 namespace {
-rust::Str utf8(const QByteArray& bytes) {
-    return rust::Str(bytes.constData(), static_cast<size_t>(bytes.size()));
-}
-QString text(const rust::String& value) {
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
-}
+using bridge_detail::fromRust;
+using bridge_detail::utf8View;
 } // namespace
 
 struct DiagnosticsService::State {
@@ -21,7 +17,8 @@ struct DiagnosticsService::State {
               const auto pathBytes = directory.toUtf8();
               const auto versionBytes = version.toUtf8();
               const auto buildBytes = build.toUtf8();
-              return diagnostics_new(utf8(pathBytes), utf8(versionBytes), utf8(buildBytes));
+              return diagnostics_new(utf8View(pathBytes), utf8View(versionBytes),
+                                     utf8View(buildBytes));
           }()) {}
 };
 
@@ -62,13 +59,13 @@ DiagnosticSummary DiagnosticsService::preview() {
     DiagnosticSummary result;
     result.estimatedBytes = static_cast<qint64>(source.estimated_bytes);
     for (const auto& count : source.category_counts)
-        result.categoryCounts.insert(text(count.name), static_cast<int>(count.count));
+        result.categoryCounts.insert(fromRust(count.name), static_cast<int>(count.count));
     for (const auto& count : source.duration_bucket_counts)
-        result.durationBucketCounts.insert(text(count.name), static_cast<int>(count.count));
-    result.fromUtc = QDateTime::fromString(text(source.from_utc), Qt::ISODateWithMs);
-    result.toUtc = QDateTime::fromString(text(source.to_utc), Qt::ISODateWithMs);
+        result.durationBucketCounts.insert(fromRust(count.name), static_cast<int>(count.count));
+    result.fromUtc = QDateTime::fromString(fromRust(source.from_utc), Qt::ISODateWithMs);
+    result.toUtc = QDateTime::fromString(fromRust(source.to_utc), Qt::ISODateWithMs);
     for (const auto& name : source.unavailable_categories)
-        result.unavailableCategories.append(text(name));
+        result.unavailableCategories.append(fromRust(name));
     result.droppedRecords = source.dropped_records;
     result.hasHistory = source.has_history;
     return result;
@@ -96,23 +93,24 @@ DiagnosticExportResult DiagnosticsService::exportZip(const QString& destination,
         }
     }
     const auto bytes = destination.toUtf8();
-    const auto source = diagnostics_export_zip(*state_->service, utf8(bytes), *token);
+    const auto source = diagnostics_export_zip(*state_->service, utf8View(bytes), *token);
     finished = true;
     if (watcher.joinable())
         watcher.join();
-    return {.success = source.success, .cancelled = source.cancelled, .error = text(source.error)};
+    return {
+        .success = source.success, .cancelled = source.cancelled, .error = fromRust(source.error)};
 }
 bool DiagnosticsService::clear(QString* error) {
     const auto source = diagnostics_clear(*state_->service);
     if (error)
-        *error = text(source.error);
+        *error = fromRust(source.error);
     return source.success;
 }
 QString DiagnosticsService::folderPath() const {
-    return text(diagnostics_folder_path(*state_->service));
+    return fromRust(diagnostics_folder_path(*state_->service));
 }
 QString DiagnosticsService::warning() const {
-    return text(diagnostics_warning(*state_->service));
+    return fromRust(diagnostics_warning(*state_->service));
 }
 const RustDiagnostics& DiagnosticsService::backend() const {
     return *state_->service;

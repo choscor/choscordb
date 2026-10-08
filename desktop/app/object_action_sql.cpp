@@ -1,5 +1,5 @@
 #include "app/object_action_sql.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 
 #include <QByteArray>
 #include <array>
@@ -7,9 +7,8 @@
 namespace choscordb {
 namespace {
 
-QString text(const rust::String& value) {
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
-}
+using bridge_detail::fromRust;
+using bridge_detail::utf8View;
 
 ObjectActionStatement prepare(const QString& driver, const QString& kind, const QString& objectId,
                               const QString& qualifiedName, const QString& newName,
@@ -22,16 +21,14 @@ ObjectActionStatement prepare(const QString& driver, const QString& kind, const 
         if (QString::fromUtf8(bytes[i]) != inputs[i])
             return {.error = QStringLiteral("The object action input is not valid Unicode.")};
     }
-    const auto part = [&bytes](size_t index) {
-        return rust::Str(bytes[index].constData(), static_cast<size_t>(bytes[index].size()));
-    };
+    const auto part = [&bytes](size_t index) { return utf8View(bytes[index]); };
     const auto result =
         prepare_object_action(part(0), part(1), part(2), part(3), part(4), part(5), rename);
     return {.valid = result.valid,
-            .sql = text(result.sql),
-            .error = text(result.error),
-            .newObjectId = text(result.new_object_id),
-            .newQualifiedName = text(result.new_qualified_name)};
+            .sql = fromRust(result.sql),
+            .error = fromRust(result.error),
+            .newObjectId = fromRust(result.new_object_id),
+            .newQualifiedName = fromRust(result.new_qualified_name)};
 }
 
 } // namespace

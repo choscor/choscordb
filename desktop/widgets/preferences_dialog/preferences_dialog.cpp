@@ -1,5 +1,6 @@
 #include "preferences_dialog.h"
 #include "app/appearance_controller.h"
+#include "bridge/request_token.h"
 #include "design_system/button/button.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
@@ -25,15 +26,8 @@
 #include <QStringList>
 #include <QTabWidget>
 #include <QVBoxLayout>
-#include <atomic>
 #include <limits>
 namespace choscordb {
-namespace {
-quint64 nextToken() {
-    static std::atomic<quint64> token{quint64(1) << 57};
-    return token.fetch_add(1);
-}
-} // namespace
 PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescriptor> catalog,
                                      QWidget* parent, AppearanceController* appearance)
     : DialogShell(parent), adapter_(adapter), appearance_(appearance),
@@ -420,9 +414,9 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     // The tabs are disabled during asynchronous loading. Give the modal an
     // enabled initial focus target instead of leaving Cocoa's focus empty.
     close->setFocus(Qt::OtherFocusReason);
-    token_ = nextToken();
-    queryToken_ = nextToken();
-    historyToken_ = nextToken();
+    token_ = nextRequestToken();
+    queryToken_ = nextRequestToken();
+    historyToken_ = nextRequestToken();
     if (adapter_) {
         // Startup may still have history/recovery replies awaiting Qt delivery.
         // Advance each section after its result rather than adding a burst.
@@ -554,9 +548,9 @@ void PreferencesDialog::apply() {
     setBusy(true);
     // Register every participant before submitting: shutdown/queue failures may
     // be synchronous, while success must wait for all storage acknowledgements.
-    const auto editorToken = token_ = nextToken();
-    const auto queryToken = queryToken_ = nextToken();
-    const auto historyToken = historyToken_ = nextToken();
+    const auto editorToken = token_ = nextRequestToken();
+    const auto queryToken = queryToken_ = nextRequestToken();
+    const auto historyToken = historyToken_ = nextRequestToken();
     appearancePending_ = !appearance_.isNull();
     setStatus(tr("Saving preferences…"));
     emit preferencesSaveSubmitted(editorToken);

@@ -1,5 +1,5 @@
 #include "widgets/document_io/document_io.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include <QtConcurrentRun>
 
 namespace choscordb {
@@ -7,11 +7,9 @@ namespace {
 DocumentIoResult fromDto(const DocumentIoResultDto& value) {
     return {QByteArray(reinterpret_cast<const char*>(value.bytes.data()),
                        static_cast<qsizetype>(value.bytes.size())),
-            QString::fromUtf8(value.error.data(), static_cast<qsizetype>(value.error.size()))};
+            bridge_detail::fromRust(value.error)};
 }
-rust::Str pathView(const QByteArray& path) {
-    return {path.constData(), static_cast<size_t>(path.size())};
-}
+using bridge_detail::utf8View;
 } // namespace
 
 QFuture<DocumentIoResult> DocumentIo::read(QString path) const {
@@ -19,7 +17,7 @@ QFuture<DocumentIoResult> DocumentIo::read(QString path) const {
         if (!path.isValidUtf16())
             return DocumentIoResult{{}, QObject::tr("Path is not valid Unicode.")};
         const auto encoded = path.toUtf8();
-        return fromDto(read_sql_document_file(pathView(encoded)));
+        return fromDto(read_sql_document_file(utf8View(encoded)));
     });
 }
 QFuture<DocumentIoResult> DocumentIo::readSaved(QString root, QString path) const {
@@ -28,7 +26,7 @@ QFuture<DocumentIoResult> DocumentIo::readSaved(QString root, QString path) cons
             return DocumentIoResult{{}, QObject::tr("Path is not valid Unicode.")};
         const auto encodedRoot = root.toUtf8();
         const auto encodedPath = path.toUtf8();
-        return fromDto(saved_sql_read_file(pathView(encodedRoot), pathView(encodedPath)));
+        return fromDto(saved_sql_read_file(utf8View(encodedRoot), utf8View(encodedPath)));
     });
 }
 QFuture<DocumentIoResult> DocumentIo::write(QString path, QByteArray bytes) const {
@@ -36,9 +34,7 @@ QFuture<DocumentIoResult> DocumentIo::write(QString path, QByteArray bytes) cons
         if (!path.isValidUtf16())
             return DocumentIoResult{{}, QObject::tr("Path is not valid Unicode.")};
         const auto encoded = path.toUtf8();
-        const auto data = rust::Slice<const uint8_t>(
-            reinterpret_cast<const uint8_t*>(bytes.constData()), static_cast<size_t>(bytes.size()));
-        return fromDto(write_sql_document_file(pathView(encoded), data));
+        return fromDto(write_sql_document_file(utf8View(encoded), bridge_detail::byteView(bytes)));
     });
 }
 } // namespace choscordb

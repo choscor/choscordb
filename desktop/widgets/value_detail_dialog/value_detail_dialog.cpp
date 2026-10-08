@@ -1,6 +1,6 @@
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
 #include "bridge/engine_adapter.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include "design_system/button/button.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/status_line/status_line.h"
@@ -20,9 +20,7 @@
 
 namespace choscordb {
 namespace {
-QString text(const rust::String& value) {
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
-}
+using bridge_detail::fromRust;
 constexpr quint32 ChunkBytes = 65536;
 constexpr qsizetype InlineLimit = 8 * 1024 * 1024;
 // The value column starts at three standard table columns before content sizing.
@@ -256,9 +254,9 @@ void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
     if (!loading_ || !query_ || event.id != *query_ || event.value_handle != handle_ ||
         event.chunk_offset != offset_)
         return;
-    const auto kind = text(event.kind);
+    const auto kind = fromRust(event.kind);
     if (kind == "value_chunk_failed") {
-        fail(text(event.error));
+        fail(fromRust(event.error));
         return;
     }
     if (kind != "value_chunk")
@@ -267,7 +265,7 @@ void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
         fail(tr("Invalid value chunk."));
         return;
     }
-    const auto chunkKind = text(event.chunk_kind);
+    const auto chunkKind = fromRust(event.chunk_kind);
     if (alignmentTarget_) {
         auto target = *alignmentTarget_;
         if (chunkKind == "text") {

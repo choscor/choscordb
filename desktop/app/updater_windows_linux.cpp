@@ -2,7 +2,7 @@
 #include "app/main_window.h"
 #include "app/update_metadata.h"
 #include "app/updater.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_shell/dialog_shell.h"
@@ -41,23 +41,15 @@ constexpr auto platform = "linux";
 constexpr auto architecture = "x86_64";
 #endif
 
-rust::Str utf8(const QByteArray& bytes) {
-    return {bytes.constData(), size_t(bytes.size())};
-}
-
-rust::Slice<const uint8_t> bytes(const QByteArray& value) {
-    return {reinterpret_cast<const uint8_t*>(value.constData()), size_t(value.size())};
-}
-
-QString text(const rust::String& value) {
-    return QString::fromUtf8(value.data(), qsizetype(value.size()));
-}
+using bridge_detail::byteView;
+using bridge_detail::fromRust;
+using bridge_detail::utf8View;
 
 UpdateRecord recordFromDto(const UpdateRecordDto& dto) {
     return {
-        text(dto.version), QUrl(text(dto.url)), qint64(dto.size),
+        fromRust(dto.version), QUrl(fromRust(dto.url)), qint64(dto.size),
         QByteArray(reinterpret_cast<const char*>(dto.sha256.data()), qsizetype(dto.sha256.size())),
-        text(dto.notes)};
+        fromRust(dto.notes)};
 }
 
 QByteArray updatePublicKey() {
@@ -123,7 +115,7 @@ class NativeUpdater final : public QObject {
         const auto repository = QByteArray(CHOSCORDB_UPDATE_REPOSITORY);
         const auto key = updatePublicKey();
         session_ = std::make_shared<rust::Box<RustUpdateSession>>(update_session_new(
-            utf8(feedBase), bytes(key), platform, architecture, utf8(repository)));
+            utf8View(feedBase), byteView(key), platform, architecture, utf8View(repository)));
         consentDirectory_ = applicationDataDirectory();
 #ifdef CHOSCORDB_TEST_UPDATER_MENU
         const auto testDataDirectory = qEnvironmentVariable("CHOSCORDB_TEST_UPDATE_DATA_DIR");
@@ -233,7 +225,7 @@ class NativeUpdater final : public QObject {
                 return;
             automaticAction_->setEnabled(true);
             if (!result.error.empty())
-                report(window_, tr("Automatic update checks"), text(result.error));
+                report(window_, tr("Automatic update checks"), fromRust(result.error));
             if (result.has_value) {
                 persistedConsent_ = result.value;
                 const QSignalBlocker blocker(automaticAction_);
@@ -268,10 +260,10 @@ class NativeUpdater final : public QObject {
                 rust::Vec<rust::String> legacyPaths;
                 legacyPaths.push_back(
                     rust::String(legacyIni.constData(), size_t(legacyIni.size())));
-                return update_consent_load_legacy_ini(utf8(path), std::move(legacyPaths));
+                return update_consent_load_legacy_ini(utf8View(path), std::move(legacyPaths));
             }
 #endif
-            return update_consent_load_native(utf8(path));
+            return update_consent_load_native(utf8View(path));
         }));
     }
 
@@ -296,12 +288,12 @@ class NativeUpdater final : public QObject {
                         else
                             timer_.stop();
                         if (window_)
-                            report(window_, tr("Automatic update checks"), text(error));
+                            report(window_, tr("Automatic update checks"), fromRust(error));
                     }
                 });
         watcher->setFuture(QtConcurrent::run(&consentPool_, [directory, enabled] {
             const auto path = directory.toUtf8();
-            return update_consent_save(utf8(path), enabled);
+            return update_consent_save(utf8View(path), enabled);
         }));
     }
 
@@ -330,7 +322,7 @@ class NativeUpdater final : public QObject {
         if (!testUrl.isEmpty()) {
             const auto url = testUrl.toUtf8();
             session_ = std::make_shared<rust::Box<RustUpdateSession>>(
-                update_session_new_failure_fixture(utf8(url)));
+                update_session_new_failure_fixture(utf8View(url)));
         }
 #endif
         const auto session = session_;
@@ -346,7 +338,7 @@ class NativeUpdater final : public QObject {
                 return;
             if (!result.error.empty()) {
                 if (manual_)
-                    report(window_, tr("Update check failed"), text(result.error));
+                    report(window_, tr("Update check failed"), fromRust(result.error));
                 return;
             }
             if (!result.found) {
@@ -379,7 +371,7 @@ class NativeUpdater final : public QObject {
         });
         watcher->setFuture(QtConcurrent::run([session, baseline] {
             const auto version = baseline.toUtf8();
-            return update_session_check(**session, utf8(version));
+            return update_session_check(**session, utf8View(version));
         }));
     }
 
@@ -423,7 +415,7 @@ class NativeUpdater final : public QObject {
             if (!result.success) {
                 finishDownload(false, cancelled_ || result.cancelled || result.staging_unavailable
                                           ? QString()
-                                          : text(result.error));
+                                          : fromRust(result.error));
                 if (result.staging_unavailable && !cancelled_)
                     manualDownload();
                 return;
@@ -433,7 +425,7 @@ class NativeUpdater final : public QObject {
         });
         watcher->setFuture(QtConcurrent::run([session, appimage, invoked] {
             const auto target = appimage.toUtf8(), invocation = invoked.toUtf8();
-            return update_session_download(**session, utf8(target), utf8(invocation));
+            return update_session_download(**session, utf8View(target), utf8View(invocation));
         }));
     }
 
@@ -499,11 +491,12 @@ class NativeUpdater final : public QObject {
                             installAction_->setEnabled(false);
                         }
                         window->setEnabled(true);
-                        report(window, tr("Update could not be installed"), text(result.error));
+                        report(window, tr("Update could not be installed"), fromRust(result.error));
                     });
             watcher->setFuture(QtConcurrent::run([session, appimage, invoked, parentPid] {
                 const auto target = appimage.toUtf8(), invocation = invoked.toUtf8();
-                return update_session_install(**session, utf8(target), utf8(invocation), parentPid);
+                return update_session_install(**session, utf8View(target), utf8View(invocation),
+                                              parentPid);
             }));
         });
     }
@@ -550,23 +543,22 @@ int runNativeUpdateHelper(const QStringList& arguments) {
 #ifdef Q_OS_LINUX
     rust::Vec<rust::String> values;
     values.reserve(size_t(arguments.size()));
-    for (const auto& argument : arguments) {
-        const auto value = argument.toUtf8();
-        values.push_back(rust::String(value.constData(), size_t(value.size())));
-    }
+    for (const auto& argument : arguments)
+        values.push_back(bridge_detail::toRust(argument));
     const auto key = updatePublicKey();
     const auto version = QCoreApplication::applicationVersion().toUtf8();
     const auto repo = QByteArray(CHOSCORDB_UPDATE_REPOSITORY);
     const auto target = QString::fromLocal8Bit(qgetenv("APPIMAGE")).toUtf8();
     const auto invoked = QString::fromLocal8Bit(qgetenv("ARGV0")).toUtf8();
-    const auto result = update_run_linux_helper(std::move(values), bytes(key), utf8(version),
-                                                utf8(repo), utf8(target), utf8(invoked));
+    const auto result =
+        update_run_linux_helper(std::move(values), byteView(key), utf8View(version), utf8View(repo),
+                                utf8View(target), utf8View(invoked));
     if (result.success)
         return 0;
     if (!result.manual_url.empty())
-        offerManualUpdate(QUrl(text(result.manual_url)), text(result.error));
+        offerManualUpdate(QUrl(fromRust(result.manual_url)), fromRust(result.error));
     else
-        report(nullptr, QObject::tr("Update could not be installed"), text(result.error));
+        report(nullptr, QObject::tr("Update could not be installed"), fromRust(result.error));
     return 1;
 #else
     Q_UNUSED(arguments)

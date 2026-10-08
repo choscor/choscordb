@@ -1,11 +1,12 @@
 #include "app/pin_store.h"
 
 #include "app/application_data.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include <utility>
 
 namespace choscordb {
 namespace {
+// Unlike bridge_detail::toRust, rejects lone surrogates instead of replacing them.
 rust::String toRust(const QString& value) {
     const auto utf8 = value.toUtf8();
     // A lone UTF-16 surrogate cannot cross a UTF-8 bridge losslessly. Send a
@@ -15,9 +16,8 @@ rust::String toRust(const QString& value) {
     return rust::String(utf8.constData(), size_t(utf8.size()));
 }
 
-QString fromRust(const rust::String& value) {
-    return QString::fromUtf8(value.data(), qsizetype(value.size()));
-}
+using bridge_detail::fromRust;
+using bridge_detail::utf8View;
 
 PinRecordDto toDto(const PinRecord& pin) {
     PinRecordDto dto;
@@ -78,7 +78,7 @@ QString PinStore::identityKey(const PinRecord& pin) {
 
 QList<PinRecord> PinStore::load(QString* error) const {
     const auto path = storageLocation_.toUtf8();
-    const auto result = pin_load(rust::Str(path.constData(), size_t(path.size())), profileStorage_);
+    const auto result = pin_load(utf8View(path), profileStorage_);
     setError(error, result.error);
     QList<PinRecord> pins;
     pins.reserve(qsizetype(result.pins.size()));
@@ -93,8 +93,7 @@ bool PinStore::save(const QList<PinRecord>& pins, QString* error) const {
     for (const auto& pin : pins)
         records.push_back(toDto(pin));
     const auto path = storageLocation_.toUtf8();
-    const auto result = pin_save(rust::Str(path.constData(), size_t(path.size())), profileStorage_,
-                                 std::move(records));
+    const auto result = pin_save(utf8View(path), profileStorage_, std::move(records));
     setError(error, result.error);
     return result.success;
 }

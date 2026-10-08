@@ -17,4 +17,8 @@ inline rust::String toRust(const QString& value) {
 inline rust::Str utf8View(const QByteArray& bytes) {
     return rust::Str(bytes.constData(), static_cast<size_t>(bytes.size()));
 }
+// Borrows raw bytes for a Rust byte slice; the array must outlive the call.
+inline rust::Slice<const uint8_t> byteView(const QByteArray& bytes) {
+    return {reinterpret_cast<const uint8_t*>(bytes.constData()), static_cast<size_t>(bytes.size())};
+}
 } // namespace choscordb::bridge_detail

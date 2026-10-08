@@ -1,18 +1,12 @@
 #include "query_settings.h"
+#include "bridge/request_token.h"
 #include "widgets/query_settings_dialog/query_settings_dialog.h"
 #include <QTimer>
-#include <atomic>
 namespace choscordb {
-namespace {
-quint64 nextToken() {
-    static std::atomic<quint64> token{quint64(1) << 53};
-    return token.fetch_add(1);
-}
-} // namespace
 QuerySettingsController::QuerySettingsController(EngineAdapter* adapter, QWidget* dialogParent,
                                                  QObject* parent)
     : QObject(parent), adapter_(adapter), dialogParent_(dialogParent) {
-    initialToken_ = nextToken();
+    initialToken_ = nextRequestToken();
     connect(adapter, &EngineAdapter::queryPreferencesReady, this,
             [this](quint64 token, const QueryPreferences& value) {
                 const bool initial = initialToken_ && token == initialToken_;

@@ -1,8 +1,8 @@
 #include "app/navigator_controller.h"
 #include "app/quick_search_match.h"
 #include "bridge/engine_adapter.h"
+#include "bridge/rust_text.h"
 #include "bridge/template_service.h"
-#include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/menu/menu.h"
 #include "models/navigator_model.h"
 #include <QApplication>
@@ -10,20 +10,14 @@
 #include <QItemSelectionModel>
 #include <QLineEdit>
 #include <QMenu>
-#include <QPersistentModelIndex>
 #include <QSet>
 #include <QSortFilterProxyModel>
-#include <QTimer>
 #include <QTreeView>
 #include <QVariantMap>
 #include <limits>
-#include <memory>
-#include <utility>
 namespace choscordb {
 namespace {
-QString text(const rust::String& s) {
-    return QString::fromUtf8(s.data(), static_cast<qsizetype>(s.size()));
-}
+constexpr auto text = &bridge_detail::fromRust;
 constexpr auto relationSubtype = &NavigatorModel::relationSubtype;
 class SelectedConnectionProxy final : public QSortFilterProxyModel {
   public:
@@ -351,8 +345,12 @@ bool NavigatorController::lookupObject(
     state->finished = std::move(finished);
     state->stillCurrent = std::move(stillCurrent);
     state->task = new QObject(this);
+    // Restarting an active zero-delay timer keeps at most one queued step per lookup.
+    auto* stepTimer = new QTimer(state->task);
+    stepTimer->setSingleShot(true);
+    connect(stepTimer, &QTimer::timeout, state->task, [state] { state->step(); });
     const auto weak = std::weak_ptr<State>(state);
-    state->step = [this, weak] {
+    state->step = [this, weak, stepTimer] {
         const auto state = weak.lock();
         if (!state || !state->task)
             return;
@@ -417,7 +415,7 @@ bool NavigatorController::lookupObject(
             if (state->depth < state->route.size()) {
                 state->parent = child;
                 ++state->depth;
-                QTimer::singleShot(0, state->task, [state] { state->step(); });
+                stepTimer->start();
                 return;
             }
             if (child.data(NavigatorModel::KindRole).toString() != state->kind ||
@@ -452,11 +450,11 @@ bool NavigatorController::lookupObject(
             --state->requests; // The current page is already loading.
     };
     connect(model_, &NavigatorModel::completionChanged, state->task,
-            [state](quint64 changedConnection) {
+            [state, stepTimer](quint64 changedConnection) {
                 if (state->connection == changedConnection && state->task)
-                    QTimer::singleShot(0, state->task, [state] { state->step(); });
+                    stepTimer->start();
             });
-    QTimer::singleShot(0, state->task, [state] { state->step(); });
+    stepTimer->start();
     return true;
 }
 void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex) {

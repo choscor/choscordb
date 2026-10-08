@@ -1,5 +1,5 @@
 #include "widgets/profile_dialog/profile_dialog.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_sections/dialog_sections.h"
@@ -627,8 +627,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     connect(adapter, &EngineAdapter::eventReady, this, [this](const BridgeEvent& event) {
         if (!pendingConnection_ || event.id != *pendingConnection_)
             return;
-        const auto kind =
-            QString::fromUtf8(event.kind.data(), static_cast<qsizetype>(event.kind.size()));
+        const auto kind = bridge_detail::fromRust(event.kind);
         if (kind != "connected" && kind != "connection_failed" && kind != "disconnected")
             return;
         const auto connection = *pendingConnection_;
@@ -645,13 +644,9 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
             setBusy(false,
                     tr("Connection closed before it was established. Retry the connection."));
         } else {
-            auto message =
-                QString::fromUtf8(event.error.data(), static_cast<qsizetype>(event.error.size()));
+            auto message = bridge_detail::fromRust(event.error);
             if (!event.vendor_code.empty()) {
-                message +=
-                    tr(" [Code: %1]")
-                        .arg(QString::fromUtf8(event.vendor_code.data(),
-                                               static_cast<qsizetype>(event.vendor_code.size())));
+                message += tr(" [Code: %1]").arg(bridge_detail::fromRust(event.vendor_code));
             }
             setBusy(false, message);
         }
