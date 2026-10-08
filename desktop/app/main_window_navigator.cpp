@@ -185,11 +185,8 @@ void MainWindow::connectNavigator(const Ui& ui) {
     connect(navigatorController, &NavigatorController::searchStatusChanged, navigatorStatus,
             [navigatorStatus](const QString& status) {
                 navigatorStatus->setText(status);
-                navigatorStatus->setProperty("state", status.isEmpty() ? "" : "search");
                 navigatorStatus->setAccessibleName(
                     status.isEmpty() ? QString() : tr("Navigator search status: %1").arg(status));
-                navigatorStatus->style()->unpolish(navigatorStatus);
-                navigatorStatus->style()->polish(navigatorStatus);
                 navigatorStatus->setVisible(!status.isEmpty());
             });
     auto* refreshNavigatorAction = new QAction(tr("Refresh selected object"), tree);

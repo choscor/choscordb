@@ -28,7 +28,7 @@ PinnedSidebar buildPinnedSidebar(QWidget* parent, QVBoxLayout* layout) {
         "Use the arrow to browse children; activate a pinned row to reveal its original object"));
     list->setItemDelegate(new main_window_detail::NavigatorIconDelegate(list));
     list->setHeaderHidden(true);
-    list->setUniformRowHeights(false);
+    list->setUniformRowHeights(true); // Same fixed-height delegate as the navigator.
     list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     list->setSelectionMode(QAbstractItemView::SingleSelection);
