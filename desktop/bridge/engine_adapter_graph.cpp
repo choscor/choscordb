@@ -7,27 +7,27 @@ ObjectGraph objectGraph(const ObjectGraphDto& dto) {
         dto.availability == GraphAvailabilityDto::Unsupported   ? MetadataAvailability::Unsupported
         : dto.availability == GraphAvailabilityDto::Unavailable ? MetadataAvailability::Unavailable
                                                                 : MetadataAvailability::Available;
-    graph.reason = string(dto.reason);
+    graph.reason = fromRust(dto.reason);
     for (const auto& warning : dto.warnings)
-        graph.warnings.append(string(warning));
+        graph.warnings.append(fromRust(warning));
     for (const auto& source : dto.tables) {
         ObjectGraphTable table;
-        table.id = string(source.id);
-        table.qualifiedName = string(source.qualified_name);
+        table.id = fromRust(source.id);
+        table.qualifiedName = fromRust(source.qualified_name);
         for (const auto& column : source.columns)
-            table.columns.append({string(column.name), string(column.database_type),
+            table.columns.append({fromRust(column.name), fromRust(column.database_type),
                                   column.primary_key, column.foreign_key});
         graph.tables.append(table);
     }
     for (const auto& source : dto.edges) {
         ObjectGraphEdge edge;
-        edge.id = string(source.id);
-        edge.sourceId = string(source.source_id);
-        edge.targetId = string(source.target_id);
+        edge.id = fromRust(source.id);
+        edge.sourceId = fromRust(source.source_id);
+        edge.targetId = fromRust(source.target_id);
         for (const auto& column : source.source_columns)
-            edge.sourceColumns.append(string(column));
+            edge.sourceColumns.append(fromRust(column));
         for (const auto& column : source.target_columns)
-            edge.targetColumns.append(string(column));
+            edge.targetColumns.append(fromRust(column));
         graph.edges.append(edge);
     }
     return graph;
@@ -56,7 +56,7 @@ void EngineAdapter::loadObjectGraph(quint64 connection, const QString& object,
     if (!reply.accepted) {
         d_->graphs.remove(token);
         emit objectGraphFailed(connection, object, requestToken,
-                               engine_adapter_detail::string(reply.error));
+                               engine_adapter_detail::fromRust(reply.error));
     }
 }
 } // namespace choscordb

@@ -259,8 +259,6 @@ class EngineAdapter final : public QObject {
     bool historyClearInProgress() const;
     bool getHistoryPolicy(quint64 token);
     bool setHistoryPolicy(const HistoryPolicy& policy, quint64 token);
-    bool restoreWorkspace(quint64 token);
-    bool saveWorkspace(const QList<SavedEditorDocument>& documents, quint64 token);
     bool saveWorkspaceTabs(const QList<SavedWorkspaceTab>& tabs, quint32 activeIndex,
                            quint64 token);
     bool restoreWorkspaceTabs(quint64 token);
@@ -277,8 +275,6 @@ class EngineAdapter final : public QObject {
                                 const QList<SshHopCredential>& sshHops = {},
                                 const SshPrivateKeyCredential& sshPrivateKey = {},
                                 bool saveCredentials = true);
-    void testProfileWithPassword(const SavedProfile& profile, const QString& password,
-                                 bool hasPassword, quint64 token);
     void testProfileWithSecrets(const SavedProfile& profile, const QString& databaseSecret,
                                 bool hasDatabaseSecret, const QString& sshSecret, bool hasSshSecret,
                                 quint64 token, const QString& tlsSecret = {},
@@ -303,7 +299,6 @@ class EngineAdapter final : public QObject {
     void duplicateProfile(const QString& source, const QString& id, const QString& name,
                           quint64 token);
     void deleteProfile(const QString& id, quint64 token);
-    void testProfile(const SavedProfile& profile, quint64 token);
     std::optional<quint64> connectProfile(const SavedProfile& profile);
     bool refreshSqlMode(quint64 connection, quint64 requestToken);
     void nextResultSet(quint64 query);
@@ -314,8 +309,6 @@ class EngineAdapter final : public QObject {
     bool cancelResultView(quint64 query);
     bool clearResultView(quint64 query);
     bool cancelQuery(quint64 query);
-    std::optional<quint64> startExport(quint64 query, const QString& path, const QString& format,
-                                       const QStringList& table = {}, bool postgres = false);
     std::optional<quint64> startExportDialect(quint64 query, const QString& path,
                                               const QString& format, const QStringList& table,
                                               const QString& dialect);
@@ -381,7 +374,6 @@ class EngineAdapter final : public QObject {
     void appearanceLayoutReady(quint64 token, bool hasSavedValue,
                                const choscordb::AppearanceLayout& appearance);
     void historyPolicyReady(quint64 token, const choscordb::HistoryPolicy& policy);
-    void workspaceRestored(quint64 token, const QList<choscordb::SavedEditorDocument>& documents);
     void workspaceTabsRestored(quint64 token, const QList<choscordb::SavedWorkspaceTab>& tabs,
                                quint32 activeIndex);
     void workspaceSaved(quint64 token);

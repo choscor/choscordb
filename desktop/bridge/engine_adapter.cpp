@@ -1,4 +1,5 @@
 #include "bridge/engine_adapter_p.h"
+#include "bridge/request_token.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include <QHash>
 #include <QQueue>
@@ -8,10 +9,10 @@
 #include <vector>
 namespace choscordb {
 using engine_adapter_detail::addHopCredentials;
+using engine_adapter_detail::fromRust;
 using engine_adapter_detail::objectGraph;
 using engine_adapter_detail::profileDto;
-using engine_adapter_detail::rustString;
-using engine_adapter_detail::string;
+using engine_adapter_detail::toRust;
 using engine_adapter_detail::utf8View;
 namespace {
 ProfileDto withConnectionTimeout(const SavedProfile& profile, quint32 timeout) {
@@ -21,45 +22,45 @@ ProfileDto withConnectionTimeout(const SavedProfile& profile, quint32 timeout) {
 }
 SavedProfile savedProfile(const ProfileDto& dto) {
     SavedProfile value;
-    value.groupId = string(dto.group_id);
-    value.id = string(dto.id);
-    value.name = string(dto.name);
-    value.driver = string(dto.driver);
-    value.path = string(dto.path);
+    value.groupId = fromRust(dto.group_id);
+    value.id = fromRust(dto.id);
+    value.name = fromRust(dto.name);
+    value.driver = fromRust(dto.driver);
+    value.path = fromRust(dto.path);
     value.readOnly = dto.read_only;
-    value.host = string(dto.host);
+    value.host = fromRust(dto.host);
     value.port = dto.port;
-    value.database = string(dto.database);
-    value.user = string(dto.user);
-    value.tls = dto.tls.empty() ? QStringLiteral("disable") : string(dto.tls);
-    value.rootCertificate = string(dto.root_certificate);
-    value.tlsClientIdentity = string(dto.tls_client_identity);
-    value.tlsCredentialRef = string(dto.tls_credential_ref);
-    value.proxyOptions = string(dto.proxy_options);
-    value.proxyCredentialRef = string(dto.proxy_credential_ref);
-    value.sshJumpCredentialRefs = string(dto.ssh_jump_credential_refs);
-    value.sshPrivateKeyRef = string(dto.ssh_private_key_ref);
-    value.sshJumpPrivateKeyRefs = string(dto.ssh_jump_private_key_refs);
-    value.sshOptions = string(dto.ssh_options);
-    value.credentialRef = string(dto.credential_ref);
-    value.sshCredentialRef = string(dto.ssh_credential_ref);
+    value.database = fromRust(dto.database);
+    value.user = fromRust(dto.user);
+    value.tls = dto.tls.empty() ? QStringLiteral("disable") : fromRust(dto.tls);
+    value.rootCertificate = fromRust(dto.root_certificate);
+    value.tlsClientIdentity = fromRust(dto.tls_client_identity);
+    value.tlsCredentialRef = fromRust(dto.tls_credential_ref);
+    value.proxyOptions = fromRust(dto.proxy_options);
+    value.proxyCredentialRef = fromRust(dto.proxy_credential_ref);
+    value.sshJumpCredentialRefs = fromRust(dto.ssh_jump_credential_refs);
+    value.sshPrivateKeyRef = fromRust(dto.ssh_private_key_ref);
+    value.sshJumpPrivateKeyRefs = fromRust(dto.ssh_jump_private_key_refs);
+    value.sshOptions = fromRust(dto.ssh_options);
+    value.credentialRef = fromRust(dto.credential_ref);
+    value.sshCredentialRef = fromRust(dto.ssh_credential_ref);
     value.sshEnabled = dto.ssh_enabled;
-    value.sshHost = string(dto.ssh_host);
+    value.sshHost = fromRust(dto.ssh_host);
     value.sshPort = dto.ssh_port ? dto.ssh_port : 22;
-    value.sshUser = string(dto.ssh_user);
+    value.sshUser = fromRust(dto.ssh_user);
     value.sshAuthentication = dto.ssh_authentication.empty() ? QStringLiteral("public_key")
-                                                             : string(dto.ssh_authentication);
-    value.sshIdentitySource =
-        dto.ssh_identity_source.empty() ? QStringLiteral("file") : string(dto.ssh_identity_source);
-    value.sshIdentityFile = string(dto.ssh_identity_file);
+                                                             : fromRust(dto.ssh_authentication);
+    value.sshIdentitySource = dto.ssh_identity_source.empty() ? QStringLiteral("file")
+                                                              : fromRust(dto.ssh_identity_source);
+    value.sshIdentityFile = fromRust(dto.ssh_identity_file);
     return value;
 }
 AppearanceLayout appearanceLayout(const AppearanceLayoutDto& dto) {
     return {dto.version,
-            string(dto.theme),
-            string(dto.density),
-            string(dto.accent_kind),
-            string(dto.accent),
+            fromRust(dto.theme),
+            fromRust(dto.density),
+            fromRust(dto.accent_kind),
+            fromRust(dto.accent),
             dto.navigator_width,
             dto.history_height,
             dto.editor_results_split,
@@ -71,7 +72,7 @@ AppearanceLayout appearanceLayout(const AppearanceLayoutDto& dto) {
             dto.height,
             dto.maximized,
             dto.has_screen_name,
-            string(dto.screen_name)};
+            fromRust(dto.screen_name)};
 }
 } // namespace
 EngineAdapter::Private::Private(const QString& path)
@@ -81,23 +82,23 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
     : QObject(parent), d_(std::make_unique<Private>(storagePath)) {
     trackHistoryClears();
     connect(this, &EngineAdapter::eventReady, this, [this](const BridgeEvent& event) {
-        const auto kind = string(event.kind);
+        const auto kind = fromRust(event.kind);
         if (kind == "object_graph" || kind == "object_graph_failed") {
             const auto it = d_->graphs.find(event.request_token);
             if (it != d_->graphs.end() && it->connection == event.id &&
-                it->object == string(event.object)) {
+                it->object == fromRust(event.object)) {
                 const auto request = it.value();
                 d_->graphs.erase(it);
                 if (kind == "object_graph_failed") {
-                    if (string(event.error_kind) == "Unsupported") {
+                    if (fromRust(event.error_kind) == "Unsupported") {
                         ObjectGraph graph;
                         graph.availability = MetadataAvailability::Unsupported;
-                        graph.reason = string(event.error);
+                        graph.reason = fromRust(event.error);
                         emit objectGraphReady(request.connection, request.object, request.token,
                                               graph);
                     } else {
                         emit objectGraphFailed(request.connection, request.object, request.token,
-                                               string(event.error));
+                                               fromRust(event.error));
                     }
                 } else {
                     emit objectGraphReady(request.connection, request.object, request.token,
@@ -110,25 +111,25 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             const auto it = d_->inspections.find(event.request_token);
             if (it != d_->inspections.end() && it->connection == event.id &&
                 it->object ==
-                    (kind.startsWith("ddl") ? string(event.object) : string(event.parent))) {
+                    (kind.startsWith("ddl") ? fromRust(event.object) : fromRust(event.parent))) {
                 const auto request = it.value();
                 d_->inspections.erase(it);
                 ObjectInspection result;
                 result.pane = request.pane;
                 if (kind.endsWith("_failed")) {
-                    if (string(event.error_kind) == "Unsupported") {
+                    if (fromRust(event.error_kind) == "Unsupported") {
                         result.availability = MetadataAvailability::Unsupported;
-                        result.reason = string(event.error);
+                        result.reason = fromRust(event.error);
                         emit objectInspectionReady(request.connection, request.object,
                                                    request.token, result);
                     } else {
                         emit objectInspectionFailed(request.connection, request.object,
-                                                    request.token, string(event.error));
+                                                    request.token, fromRust(event.error));
                     }
                 } else {
-                    result.ddl = string(event.ddl);
+                    result.ddl = fromRust(event.ddl);
                     for (const auto& object : event.objects) {
-                        const auto objectKind = string(object.kind);
+                        const auto objectKind = fromRust(object.kind);
                         const bool include =
                             (request.pane == ObjectInspectionPane::Columns &&
                              objectKind == "column") ||
@@ -140,12 +141,12 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                         if (!include)
                             continue;
                         ObjectInspectionRow row;
-                        row.id = string(object.id);
-                        row.name = string(object.name);
+                        row.id = fromRust(object.id);
+                        row.name = fromRust(object.name);
                         row.kind = objectKind;
                         if (object.has_column) {
                             row.properties.append({tr("Type"),
-                                                   string(object.column.database_type),
+                                                   fromRust(object.column.database_type),
                                                    MetadataAvailability::Available,
                                                    {}});
                             row.properties.append(
@@ -160,13 +161,13 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                                      : QString()});
                         }
                         for (const auto& property : object.properties) {
-                            const auto availability = string(property.availability);
+                            const auto availability = fromRust(property.availability);
                             row.properties.append(
-                                {string(property.name), string(property.value),
+                                {fromRust(property.name), fromRust(property.value),
                                  availability == "unsupported"   ? MetadataAvailability::Unsupported
                                  : availability == "unavailable" ? MetadataAvailability::Unavailable
                                                                  : MetadataAvailability::Available,
-                                 string(property.reason)});
+                                 fromRust(property.reason)});
                         }
                         result.rows.append(row);
                     }
@@ -206,8 +207,8 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
         }
         if (kind == "history_write_failed") {
             if (d_->closing)
-                d_->shutdownHistoryError = string(event.error);
-            emit historyWriteFailed(event.id, string(event.error));
+                d_->shutdownHistoryError = fromRust(event.error);
+            emit historyWriteFailed(event.id, fromRust(event.error));
         }
         if (kind == "history_flushed" && d_->shutdownToken == event.request_token) {
             d_->shutdownToken.reset();
@@ -221,12 +222,12 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                 emit shutdownReady();
             }
         }
-        const bool recoveryTerminal =
-            kind == "workspace_restored" || kind == "workspace_tabs_restored" ||
-            kind == "workspace_saved" || kind == "recovery_failed" || kind == "history_listed" ||
-            kind == "history_searched" || kind == "history_cleared" || kind == "history_policy" ||
-            kind == "history_flushed" || kind == "editor_preferences" ||
-            kind == "query_preferences" || kind == "appearance_layout";
+        const bool recoveryTerminal = kind == "workspace_tabs_restored" ||
+                                      kind == "workspace_saved" || kind == "recovery_failed" ||
+                                      kind == "history_listed" || kind == "history_searched" ||
+                                      kind == "history_cleared" || kind == "history_policy" ||
+                                      kind == "history_flushed" || kind == "editor_preferences" ||
+                                      kind == "query_preferences" || kind == "appearance_layout";
         if (recoveryTerminal && d_->activeRecovery == event.request_token) {
             const auto token = event.request_token;
             QTimer::singleShot(0, this, [this, token] {
@@ -256,19 +257,20 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             const auto& value = event.editor_preferences;
             EditorPreferences preferences;
             preferences.version = value.version;
-            preferences.fontFamily = string(value.font_family);
+            preferences.fontFamily = fromRust(value.font_family);
             preferences.fontSize = value.font_size;
             for (const auto& shortcut : value.shortcuts)
                 preferences.shortcuts.push_back(
-                    {string(shortcut.command), string(shortcut.sequence)});
+                    {fromRust(shortcut.command), fromRust(shortcut.sequence)});
             emit editorPreferencesReady(event.request_token, preferences);
         } else if (kind == "history_listed" || kind == "history_searched") {
             QList<SavedHistoryEntry> entries;
             entries.reserve(static_cast<qsizetype>(event.history.size()));
             for (const auto& h : event.history)
-                entries.push_back({string(h.id), h.has_profile ? string(h.profile_id) : QString{},
-                                   string(h.sql), h.timestamp, h.duration_ms, h.row_count,
-                                   string(h.status), h.has_row_count});
+                entries.push_back({fromRust(h.id),
+                                   h.has_profile ? fromRust(h.profile_id) : QString{},
+                                   fromRust(h.sql), h.timestamp, h.duration_ms, h.row_count,
+                                   fromRust(h.status), h.has_row_count});
             if (kind == "history_listed")
                 emit historyListed(event.request_token, entries);
             else
@@ -280,35 +282,25 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             emit historyPolicyReady(event.request_token, {event.history_policy.enabled,
                                                           event.history_policy.max_age_days,
                                                           event.history_policy.max_records});
-        else if (kind == "workspace_restored") {
-            QList<SavedEditorDocument> documents;
-            documents.reserve(static_cast<qsizetype>(event.documents.size()));
-            for (const auto& d : event.documents) {
-                documents.push_back({string(d.id), string(d.title), string(d.sql),
-                                     d.has_profile ? string(d.profile_id) : QString{},
-                                     d.has_file ? string(d.file_path) : QString{}, d.cursor_offset,
-                                     d.selection_anchor, d.modified});
-            }
-            emit workspaceRestored(event.request_token, documents);
-        } else if (kind == "workspace_tabs_restored") {
+        else if (kind == "workspace_tabs_restored") {
             QList<SavedWorkspaceTab> tabs;
             tabs.reserve(static_cast<qsizetype>(event.workspace_tabs.size()));
             for (const auto& tab : event.workspace_tabs) {
                 SavedWorkspaceTab value;
                 value.isObject = tab.is_object;
                 if (tab.is_object) {
-                    value.profileId = string(tab.profile_id);
-                    value.objectType = string(tab.object_type);
-                    value.objectId = string(tab.object_id);
-                    value.label = string(tab.label);
+                    value.profileId = fromRust(tab.profile_id);
+                    value.objectType = fromRust(tab.object_type);
+                    value.objectId = fromRust(tab.object_id);
+                    value.label = fromRust(tab.label);
                     value.pane = tab.pane;
                 } else {
                     const auto& d = tab.document;
-                    value.document = {string(d.id),
-                                      string(d.title),
-                                      string(d.sql),
-                                      d.has_profile ? string(d.profile_id) : QString{},
-                                      d.has_file ? string(d.file_path) : QString{},
+                    value.document = {fromRust(d.id),
+                                      fromRust(d.title),
+                                      fromRust(d.sql),
+                                      d.has_profile ? fromRust(d.profile_id) : QString{},
+                                      d.has_file ? fromRust(d.file_path) : QString{},
                                       d.cursor_offset,
                                       d.selection_anchor,
                                       d.modified};
@@ -319,7 +311,7 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
         } else if (kind == "workspace_saved")
             emit workspaceSaved(event.request_token);
         else if (kind == "recovery_failed")
-            emit recoveryFailed(event.request_token, string(event.error));
+            emit recoveryFailed(event.request_token, fromRust(event.error));
         else if (kind == "profiles") {
             QList<SavedProfile> profiles;
             profiles.reserve(static_cast<qsizetype>(event.profiles.size()));
@@ -328,25 +320,25 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             emit profilesReady(event.request_token, profiles);
         } else if (kind == "profile_saved" && event.profiles.size() == 1) {
             emit profileSaved(event.request_token, savedProfile(event.profiles[0]),
-                              event.warnings.empty() ? QString{} : string(event.warnings[0]));
+                              event.warnings.empty() ? QString{} : fromRust(event.warnings[0]));
         } else if (kind == "profile_deleted")
-            emit profileDeleted(event.request_token, string(event.profile_id),
-                                event.warnings.empty() ? QString{} : string(event.warnings[0]));
+            emit profileDeleted(event.request_token, fromRust(event.profile_id),
+                                event.warnings.empty() ? QString{} : fromRust(event.warnings[0]));
         else if (kind == "profile_tested")
             emit profileTested(event.request_token);
         else if (kind == "profile_failed")
             emit profileFailed(event.request_token,
-                               string(event.error) +
+                               fromRust(event.error) +
                                    (event.vendor_code.empty()
                                         ? QString{}
-                                        : tr(" [Code: %1]").arg(string(event.vendor_code))));
+                                        : tr(" [Code: %1]").arg(fromRust(event.vendor_code))));
         else if (kind == "ssh_host_keys_inspected")
             emit sshHostKeysInspected(event.request_token, engine_adapter_detail::hostKeyCandidates(
                                                                event.host_key_candidates));
         else if (kind == "ssh_host_key_approved")
-            emit sshHostKeyApproved(event.request_token, string(event.host_key_approval));
+            emit sshHostKeyApproved(event.request_token, fromRust(event.host_key_approval));
         else if (kind == "ssh_host_key_failed")
-            emit sshHostKeyOperationFailed(event.request_token, string(event.error));
+            emit sshHostKeyOperationFailed(event.request_token, fromRust(event.error));
     });
     connect(this, &EngineAdapter::recoveryFailed, this,
             [this](quint64 token, const QString& error) {
@@ -376,16 +368,16 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             if (transfer.retained && !transfer.released) {
                 auto result = shrink_page_lease(*d_->engine, id, *transfer.retained);
                 if (!result.accepted)
-                    emit commandFailed(string(result.error));
+                    emit commandFailed(fromRust(result.error));
             } else {
                 auto result = release_page_lease(*d_->engine, id);
                 if (!result.accepted)
-                    emit commandFailed(string(result.error));
+                    emit commandFailed(fromRust(result.error));
             }
         }
     });
     timer->start();
-    const auto error = string(initialization_error(*d_->engine));
+    const auto error = fromRust(initialization_error(*d_->engine));
     if (!error.isEmpty())
         QTimer::singleShot(0, this, [this, error] { emit commandFailed(error); });
 }
@@ -403,7 +395,7 @@ std::optional<quint64> EngineAdapter::connectSqlite(const QString& path, bool re
     const auto bytes = path.toUtf8();
     auto reply = connect_sqlite(*d_->engine, utf8View(bytes), readOnly);
     if (!reply.accepted) {
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
         return std::nullopt;
     }
     d_->connections.insert(reply.id);
@@ -428,7 +420,7 @@ std::optional<quint64> EngineAdapter::execute(quint64 connection, const QString&
         *d_->engine, connection, utf8View(bytes), preferences.pageSize,
         quint64(preferences.timeoutSeconds) * 1000, autoCommit, utf8View(profileBytes));
     if (!reply.accepted) {
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
         return std::nullopt;
     }
     d_->queryPaging.insert(reply.id, {connection, preferences.pageSize});
@@ -445,7 +437,7 @@ TextMatch EngineAdapter::findText(const QString& source, const QString& needle, 
     const auto result = text_find(utf8View(sourceBytes), utf8View(needleBytes), start, backwards,
                                   caseSensitive, wholeWord);
     return {result.valid, result.found, result.wrapped,
-            result.start, result.end,   string(result.error)};
+            result.start, result.end,   fromRust(result.error)};
 }
 TextReplacement EngineAdapter::replaceAllText(const QString& source, const QString& needle,
                                               const QString& replacement, bool caseSensitive,
@@ -459,7 +451,7 @@ TextReplacement EngineAdapter::replaceAllText(const QString& source, const QStri
                replacementBytes = replacement.toUtf8();
     const auto result = text_replace_all(utf8View(sourceBytes), utf8View(needleBytes),
                                          utf8View(replacementBytes), caseSensitive, wholeWord);
-    return {result.valid, string(result.text), string(result.error), result.count};
+    return {result.valid, fromRust(result.text), fromRust(result.error), result.count};
 }
 QStringList EngineAdapter::keywordCompletions(const QString& prefix) {
     if (prefix.size() > 256)
@@ -467,7 +459,7 @@ QStringList EngineAdapter::keywordCompletions(const QString& prefix) {
     const auto bytes = prefix.toUtf8();
     QStringList result;
     for (const auto& item : sql_keyword_completions(utf8View(bytes)))
-        result.append(string(item));
+        result.append(fromRust(item));
     return result;
 }
 RecoveryLimits EngineAdapter::recoveryLimits() {
@@ -499,14 +491,14 @@ void EngineAdapter::pumpRecovery() {
     const auto result = request.command();
     if (!result.accepted) {
         d_->activeRecovery.reset();
-        emit recoveryFailed(request.token, string(result.error));
+        emit recoveryFailed(request.token, fromRust(result.error));
         QTimer::singleShot(0, this, &EngineAdapter::pumpRecovery);
     }
 }
 void EngineAdapter::listProfiles(quint64 token) {
     auto result = profile_list(*d_->engine, token);
     if (!result.accepted)
-        emit profileFailed(token, string(result.error));
+        emit profileFailed(token, fromRust(result.error));
 }
 void EngineAdapter::saveProfile(const SavedProfile& profile, quint64 token) {
     saveProfileWithPassword(profile, {}, "keep", token);
@@ -528,20 +520,20 @@ void EngineAdapter::saveProfileWithSecrets(
     ProfileCredentialsDto credentials;
     credentials.save_credentials = saveCredentials;
     addHopCredentials(credentials, sshHops);
-    credentials.database = rustString(databaseSecret);
-    credentials.ssh = rustString(sshSecret);
-    credentials.ssh_private_key = rustString(sshPrivateKey.secret);
-    credentials.tls = rustString(tlsSecret);
-    credentials.proxy = rustString(proxySecret);
-    credentials.database_action = rustString(databaseAction);
-    credentials.ssh_action = rustString(sshAction);
-    credentials.ssh_private_key_action = rustString(sshPrivateKey.action);
-    credentials.tls_action = rustString(tlsAction);
-    credentials.proxy_action = rustString(proxyAction);
+    credentials.database = toRust(databaseSecret);
+    credentials.ssh = toRust(sshSecret);
+    credentials.ssh_private_key = toRust(sshPrivateKey.secret);
+    credentials.tls = toRust(tlsSecret);
+    credentials.proxy = toRust(proxySecret);
+    credentials.database_action = toRust(databaseAction);
+    credentials.ssh_action = toRust(sshAction);
+    credentials.ssh_private_key_action = toRust(sshPrivateKey.action);
+    credentials.tls_action = toRust(tlsAction);
+    credentials.proxy_action = toRust(proxyAction);
     auto result =
         profile_save_credentials(*d_->engine, profileDto(profile), std::move(credentials), token);
     if (!result.accepted)
-        emit profileFailed(token, string(result.error));
+        emit profileFailed(token, fromRust(result.error));
 }
 void EngineAdapter::duplicateProfile(const QString& source, const QString& id, const QString& name,
                                      quint64 token) {
@@ -553,7 +545,7 @@ void EngineAdapter::duplicateProfile(const QString& source, const QString& id, c
     auto result = profile_duplicate(*d_->engine, utf8View(sourceBytes), utf8View(idBytes),
                                     utf8View(nameBytes), token);
     if (!result.accepted)
-        emit profileFailed(token, string(result.error));
+        emit profileFailed(token, fromRust(result.error));
 }
 void EngineAdapter::deleteProfile(const QString& id, quint64 token) {
     if (d_->closing || d_->stopping) {
@@ -563,14 +555,7 @@ void EngineAdapter::deleteProfile(const QString& id, quint64 token) {
     const auto bytes = id.toUtf8();
     auto result = profile_delete(*d_->engine, utf8View(bytes), token);
     if (!result.accepted)
-        emit profileFailed(token, string(result.error));
-}
-void EngineAdapter::testProfile(const SavedProfile& profile, quint64 token) {
-    testProfileWithPassword(profile, {}, false, token);
-}
-void EngineAdapter::testProfileWithPassword(const SavedProfile& profile, const QString& password,
-                                            bool hasPassword, quint64 token) {
-    testProfileWithSecrets(profile, password, hasPassword, {}, false, token);
+        emit profileFailed(token, fromRust(result.error));
 }
 void EngineAdapter::testProfileWithSecrets(
     const SavedProfile& profile, const QString& databaseSecret, bool hasDatabaseSecret,
@@ -579,11 +564,11 @@ void EngineAdapter::testProfileWithSecrets(
     const QList<SshHopCredential>& sshHops, const SshPrivateKeyCredential& sshPrivateKey) {
     ProfileCredentialsDto credentials;
     addHopCredentials(credentials, sshHops);
-    credentials.database = rustString(databaseSecret);
-    credentials.ssh = rustString(sshSecret);
-    credentials.ssh_private_key = rustString(sshPrivateKey.secret);
-    credentials.tls = rustString(tlsSecret);
-    credentials.proxy = rustString(proxySecret);
+    credentials.database = toRust(databaseSecret);
+    credentials.ssh = toRust(sshSecret);
+    credentials.ssh_private_key = toRust(sshPrivateKey.secret);
+    credentials.tls = toRust(tlsSecret);
+    credentials.proxy = toRust(proxySecret);
     credentials.has_database = hasDatabaseSecret;
     credentials.has_ssh = hasSshSecret;
     credentials.has_ssh_private_key = sshPrivateKey.hasSecret;
@@ -593,7 +578,7 @@ void EngineAdapter::testProfileWithSecrets(
         *d_->engine, withConnectionTimeout(profile, d_->connectionTimeoutSeconds),
         std::move(credentials), token);
     if (!result.accepted)
-        emit profileFailed(token, string(result.error));
+        emit profileFailed(token, fromRust(result.error));
 }
 std::optional<quint64> EngineAdapter::connectProfile(const SavedProfile& profile) {
     return connectProfileWithPassword(profile, {}, false);
@@ -614,11 +599,11 @@ std::optional<quint64> EngineAdapter::connectProfileWithSecrets(
     }
     ProfileCredentialsDto credentials;
     addHopCredentials(credentials, sshHops);
-    credentials.database = rustString(databaseSecret);
-    credentials.ssh = rustString(sshSecret);
-    credentials.ssh_private_key = rustString(sshPrivateKey.secret);
-    credentials.tls = rustString(tlsSecret);
-    credentials.proxy = rustString(proxySecret);
+    credentials.database = toRust(databaseSecret);
+    credentials.ssh = toRust(sshSecret);
+    credentials.ssh_private_key = toRust(sshPrivateKey.secret);
+    credentials.tls = toRust(tlsSecret);
+    credentials.proxy = toRust(proxySecret);
     credentials.has_database = hasDatabaseSecret;
     credentials.has_ssh = hasSshSecret;
     credentials.has_ssh_private_key = sshPrivateKey.hasSecret;
@@ -628,14 +613,14 @@ std::optional<quint64> EngineAdapter::connectProfileWithSecrets(
         *d_->engine, withConnectionTimeout(profile, d_->connectionTimeoutSeconds),
         std::move(credentials));
     if (!result.accepted) {
-        emit profileConnectFailed(string(result.error));
+        emit profileConnectFailed(fromRust(result.error));
         return std::nullopt;
     }
     d_->connections.insert(result.id);
     return result.id;
 }
 bool EngineAdapter::validateConnectionProperties(const SavedProfile& profile, QString& error) {
-    error = string(validate_connection_profile(profileDto(profile)));
+    error = fromRust(validate_connection_profile(profileDto(profile)));
     return error.isEmpty();
 }
 quint32 EngineAdapter::pageSizeForQuery(quint64 query) const {
@@ -646,12 +631,12 @@ quint32 EngineAdapter::pageSizeForQuery(quint64 query) const {
 void EngineAdapter::fetchPage(quint64 query) {
     auto reply = fetch_page(*d_->engine, query, pageSizeForQuery(query));
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
 }
 void EngineAdapter::fetchPageAt(quint64 query, quint64 index) {
     auto reply = fetch_page_at(*d_->engine, query, index, pageSizeForQuery(query));
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
 }
 bool EngineAdapter::applyResultView(quint64 query, const QList<ResultFilterCondition>& filters,
                                     qint32 sortColumn, const QString& sortDirection) {
@@ -660,9 +645,9 @@ bool EngineAdapter::applyResultView(quint64 query, const QList<ResultFilterCondi
     for (const auto& filter : filters) {
         ResultFilterDto value;
         value.column = filter.column;
-        value.operation = rustString(filter.operation);
-        value.value_kind = rustString(filter.valueKind);
-        value.value = rustString(filter.value);
+        value.operation = toRust(filter.operation);
+        value.value_kind = toRust(filter.valueKind);
+        value.value = toRust(filter.value);
         values.push_back(std::move(value));
     }
     const auto direction = sortDirection.toUtf8();
@@ -670,49 +655,41 @@ bool EngineAdapter::applyResultView(quint64 query, const QList<ResultFilterCondi
                                    sortColumn < 0 ? 0u : static_cast<quint32>(sortColumn),
                                    utf8View(direction), pageSizeForQuery(query));
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
     return reply.accepted;
 }
 bool EngineAdapter::cancelResultView(quint64 query) {
     auto reply = cancel_result_view(*d_->engine, query);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
     return reply.accepted;
 }
 bool EngineAdapter::clearResultView(quint64 query) {
     auto reply = clear_result_view(*d_->engine, query);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
     return reply.accepted;
 }
 bool EngineAdapter::cancelQuery(quint64 query) {
     auto reply = cancel(*d_->engine, query);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
     return reply.accepted;
-}
-std::optional<quint64> EngineAdapter::startExport(quint64 query, const QString& path,
-                                                  const QString& format, const QStringList& table,
-                                                  bool postgres) {
-    return startExportDialect(query, path, format, table,
-                              postgres ? QStringLiteral("postgres") : QStringLiteral("sqlite"));
 }
 std::optional<quint64> EngineAdapter::startExportDialect(quint64 query, const QString& path,
                                                          const QString& format,
                                                          const QStringList& table,
                                                          const QString& dialect) {
     rust::Vec<rust::String> parts;
-    for (const auto& part : table) {
-        const auto bytes = part.toUtf8();
-        parts.push_back(rust::String(bytes.constData(), static_cast<size_t>(bytes.size())));
-    }
+    for (const auto& part : table)
+        parts.push_back(toRust(part));
     const auto destination = path.toUtf8();
     const auto encoding = format.toUtf8();
     const auto dialectBytes = dialect.toUtf8();
     auto reply = start_export_dialect(*d_->engine, query, utf8View(destination), utf8View(encoding),
                                       std::move(parts), utf8View(dialectBytes));
     if (!reply.accepted) {
-        emit exportSubmissionFailed(query, string(reply.error));
+        emit exportSubmissionFailed(query, fromRust(reply.error));
         return std::nullopt;
     }
     return reply.id;
@@ -720,24 +697,24 @@ std::optional<quint64> EngineAdapter::startExportDialect(quint64 query, const QS
 void EngineAdapter::cancelExport(quint64 id) {
     auto reply = cancel_export(*d_->engine, id);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
 }
 void EngineAdapter::loadValueChunk(quint64 query, quint64 handle, quint64 offset,
                                    quint32 maxBytes) {
     auto reply = load_value_chunk(*d_->engine, query, handle, offset, maxBytes);
     if (!reply.accepted)
-        emit valueChunkSubmissionFailed(query, handle, offset, string(reply.error));
+        emit valueChunkSubmissionFailed(query, handle, offset, fromRust(reply.error));
 }
 bool EngineAdapter::refreshSqlMode(quint64 connection, quint64 requestToken) {
     auto reply = refresh_sql_mode(*d_->engine, connection, requestToken);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
     return reply.accepted;
 }
 void EngineAdapter::nextResultSet(quint64 query) {
     auto reply = next_result_set(*d_->engine, query);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
 }
 void EngineAdapter::loadMetadataPage(quint64 connection, const QString& parent,
                                      quint64 requestToken, quint64 offset, quint32 limit) {
@@ -745,7 +722,7 @@ void EngineAdapter::loadMetadataPage(quint64 connection, const QString& parent,
     auto reply = metadata_page_request(*d_->engine, connection, utf8View(bytes), requestToken,
                                        offset, limit);
     if (!reply.accepted)
-        emit metadataSubmissionFailed(connection, parent, requestToken, string(reply.error));
+        emit metadataSubmissionFailed(connection, parent, requestToken, fromRust(reply.error));
 }
 void EngineAdapter::loadMetadata(quint64 connection, const QString& parent, quint64 requestToken) {
     loadMetadataPage(connection, parent, requestToken, 0, 1000);
@@ -767,7 +744,7 @@ std::optional<quint64> EngineAdapter::openObjectData(quint64 connection, const Q
     auto reply = open_object_data(*d_->engine, connection, utf8View(bytes), preferences.pageSize,
                                   quint64(preferences.timeoutSeconds) * 1000);
     if (!reply.accepted) {
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
         return std::nullopt;
     }
     d_->queryPaging.insert(reply.id, {connection, preferences.pageSize});
@@ -777,7 +754,7 @@ bool EngineAdapter::inspectEditTarget(quint64 connection, const QString& object,
     const auto bytes = object.toUtf8();
     auto reply = edit_target_request(*d_->engine, connection, utf8View(bytes), token);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
     return reply.accepted;
 }
 bool EngineAdapter::inspectQueryEdit(quint64 connection, const QString& sql,
@@ -785,11 +762,11 @@ bool EngineAdapter::inspectQueryEdit(quint64 connection, const QString& sql,
     const auto bytes = sql.toUtf8();
     rust::Vec<rust::String> names;
     for (const auto& name : resultColumns)
-        names.push_back(rustString(name));
+        names.push_back(toRust(name));
     auto reply =
         edit_query_request(*d_->engine, connection, utf8View(bytes), std::move(names), token);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
     return reply.accepted;
 }
 bool EngineAdapter::inspectResultCells(quint64 connection, const QString& object,
@@ -797,13 +774,13 @@ bool EngineAdapter::inspectResultCells(quint64 connection, const QString& object
                                        quint64 token) {
     rust::Vec<rust::String> names;
     for (const auto& name : resultColumns)
-        names.push_back(rustString(name));
+        names.push_back(toRust(name));
     const auto objectBytes = object.toUtf8();
     const auto sqlBytes = sql.toUtf8();
     auto reply = result_cells_request(*d_->engine, connection, utf8View(objectBytes),
                                       utf8View(sqlBytes), std::move(names), token);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
     return reply.accepted;
 }
 void EngineAdapter::loadObjectInspection(quint64 connection, const QString& object,
@@ -829,29 +806,29 @@ void EngineAdapter::loadObjectInspection(quint64 connection, const QString& obje
                      : metadata_request(*d_->engine, connection, utf8View(bytes), token);
     if (!reply.accepted) {
         d_->inspections.remove(token);
-        emit objectInspectionFailed(connection, object, requestToken, string(reply.error));
+        emit objectInspectionFailed(connection, object, requestToken, fromRust(reply.error));
     }
 }
 void EngineAdapter::objectDdl(quint64 connection, const QString& object) {
     const auto bytes = object.toUtf8();
     auto reply = object_ddl(*d_->engine, connection, utf8View(bytes));
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
 }
 void EngineAdapter::commitTransaction(quint64 connection) {
     auto reply = commit(*d_->engine, connection);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
 }
 void EngineAdapter::rollbackTransaction(quint64 connection) {
     auto reply = rollback(*d_->engine, connection);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
 }
 bool EngineAdapter::disconnectConnection(quint64 connection) {
     auto reply = choscordb::disconnect(*d_->engine, connection);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
     return reply.accepted;
 }
 void EngineAdapter::releaseQuery(quint64 query) {
@@ -859,7 +836,7 @@ void EngineAdapter::releaseQuery(quint64 query) {
     if (reply.accepted)
         d_->queryPaging.remove(query);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
 }
 void EngineAdapter::beginShutdown() {
     if (d_->closing || d_->stopping)
@@ -873,8 +850,7 @@ void EngineAdapter::beginShutdown() {
 void EngineAdapter::finishShutdown() {
     if (!d_->closing || !d_->connections.isEmpty() || d_->shutdownToken || d_->stopping)
         return;
-    static quint64 token = quint64(1) << 59;
-    d_->shutdownToken = ++token;
+    d_->shutdownToken = nextRequestToken();
     queueRecovery(
         *d_->shutdownToken,
         [this, token = *d_->shutdownToken] { return history_flush(*d_->engine, token); }, 0, true);
@@ -904,7 +880,7 @@ void EngineAdapter::releasePageLease(quint64 lease) {
     }
     auto result = release_page_lease(*d_->engine, lease);
     if (!result.accepted)
-        emit commandFailed(string(result.error));
+        emit commandFailed(fromRust(result.error));
 }
 PageMemoryUsage EngineAdapter::memoryUsage() const {
     const auto usage = memory_usage(*d_->engine);

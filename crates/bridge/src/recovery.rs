@@ -1,38 +1,5 @@
 //! Owned typed recovery transport; persistence and validation remain in core.
 use crate::{BridgeEngine, ffi, submit};
-pub fn workspace_save(
-    engine: &mut BridgeEngine,
-    documents: Vec<ffi::EditorDocumentDto>,
-    token: u64,
-) -> ffi::Submit {
-    submit(engine, |e| {
-        e.workspace_save(
-            documents
-                .into_iter()
-                .map(|d| choscordb_core::EditorDocument {
-                    id: d.id,
-                    title: d.title,
-                    sql: d.sql,
-                    profile_id: d.has_profile.then_some(d.profile_id),
-                    file_path: d.has_file.then_some(d.file_path),
-                    cursor_offset: d.cursor_offset,
-                    selection_anchor: d.selection_anchor,
-                    modified: d.modified,
-                })
-                .collect(),
-            token,
-        )
-        .map(|()| token)
-        .map_err(|e| e.to_string())
-    })
-}
-pub fn workspace_restore(engine: &mut BridgeEngine, token: u64) -> ffi::Submit {
-    submit(engine, |e| {
-        e.workspace_restore(token)
-            .map(|()| token)
-            .map_err(|e| e.to_string())
-    })
-}
 pub fn workspace_tabs_save(
     engine: &mut BridgeEngine,
     tabs: Vec<ffi::WorkspaceTabDto>,

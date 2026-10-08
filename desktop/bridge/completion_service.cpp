@@ -1,5 +1,5 @@
 #include "completion_service.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include <algorithm>
 namespace choscordb {
 namespace {
@@ -23,12 +23,10 @@ bool chargeUtf8(const QString& text, quint64& remaining) {
     }
     return true;
 }
-rust::String rustString(const QString& text) {
-    const auto bytes = text.toUtf8();
-    return rust::String(bytes.constData(), static_cast<size_t>(bytes.size()));
-}
-QString string(const rust::String& text) {
-    auto result = QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
+using bridge_detail::toRust;
+using bridge_detail::utf8View;
+QString compactText(const rust::String& text) {
+    auto result = bridge_detail::fromRust(text);
     result.squeeze();
     return result;
 }
@@ -57,9 +55,9 @@ CompletionService::CompletionService(QList<CompletionCandidate> items, bool part
         }
         remaining = budget;
         SqlCompletionDto candidate;
-        candidate.label = rustString(item.label);
-        candidate.insert_text = rustString(item.insertText);
-        candidate.kind = rustString(item.kind);
+        candidate.label = toRust(item.label);
+        candidate.insert_text = toRust(item.insertText);
+        candidate.kind = toRust(item.kind);
         metadata.push_back(std::move(candidate));
     }
     d_ = std::make_shared<const Private>(completion_catalog(std::move(metadata), partial));
@@ -79,9 +77,7 @@ CompletionPage CompletionService::complete(const QString& source, quint64 cursor
     const auto bytes = source.toUtf8();
     if (cursor > quint64(bytes.size()))
         return {};
-    const auto result =
-        complete_sql(*d_->catalog, rust::Str(bytes.constData(), static_cast<size_t>(bytes.size())),
-                     cursor, requested);
+    const auto result = complete_sql(*d_->catalog, utf8View(bytes), cursor, requested);
     CompletionPage page;
     page.valid = result.valid;
     page.partial = result.partial;
@@ -89,7 +85,8 @@ CompletionPage CompletionService::complete(const QString& source, quint64 cursor
     page.end = result.end;
     page.items.reserve(static_cast<qsizetype>(result.items.size()));
     for (const auto& item : result.items)
-        page.items.append({string(item.label), string(item.insert_text), string(item.kind)});
+        page.items.append(
+            {compactText(item.label), compactText(item.insert_text), compactText(item.kind)});
     return page;
 }
 } // namespace choscordb

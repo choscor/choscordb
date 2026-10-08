@@ -12,7 +12,6 @@ class QTableView;
 class QStandardItemModel;
 class QStackedWidget;
 class QPlainTextEdit;
-class QHBoxLayout;
 namespace choscordb {
 namespace design {
 class Text;

@@ -401,25 +401,30 @@ void WorkspaceTest::recoveryAdapterRejectsOversizeBeforeDispatch() {
     choscordb::EngineAdapter adapter;
     QSignalSpy failures(&adapter, &choscordb::EngineAdapter::recoveryFailed);
     QSignalSpy saved(&adapter, &choscordb::EngineAdapter::workspaceSaved);
-    QList<choscordb::SavedEditorDocument> documents;
-    for (int i = 0; i < 129; ++i)
-        documents.push_back({QString::number(i), "Query", "SELECT 1", {}, {}, 0, 0, false});
-    QVERIFY(!adapter.saveWorkspace(documents, 91));
+    QList<choscordb::SavedWorkspaceTab> tabs;
+    for (int i = 0; i < 129; ++i) {
+        choscordb::SavedWorkspaceTab tab;
+        tab.document = {QString::number(i), "Query", "SELECT 1", {}, {}, 0, 0, false};
+        tabs.push_back(tab);
+    }
+    QVERIFY(!adapter.saveWorkspaceTabs(tabs, 0, 91));
     QCOMPARE(failures.count(), 1);
     QCOMPARE(failures.at(0).at(0).toULongLong(), quint64(91));
-    documents = {{"valid", "Query", "SELECT 'é';", {}, {}, 10, 8, true}};
-    QVERIFY(adapter.saveWorkspace(documents, 92));
+    choscordb::SavedWorkspaceTab valid;
+    valid.document = {"valid", "Query", "SELECT 'é';", {}, {}, 10, 8, true};
+    QVERIFY(adapter.saveWorkspaceTabs({valid}, 0, 92));
     QTRY_COMPARE(saved.count(), 1);
     QCOMPARE(saved.at(0).at(0).toULongLong(), quint64(92));
-    QSignalSpy restored(&adapter, &choscordb::EngineAdapter::workspaceRestored);
-    QVERIFY(adapter.restoreWorkspace(93));
+    QSignalSpy restored(&adapter, &choscordb::EngineAdapter::workspaceTabsRestored);
+    QVERIFY(adapter.restoreWorkspaceTabs(93));
     QTRY_COMPARE(restored.count(), 1);
-    const auto result = qvariant_cast<QList<choscordb::SavedEditorDocument>>(restored.at(0).at(1));
+    const auto result = qvariant_cast<QList<choscordb::SavedWorkspaceTab>>(restored.at(0).at(1));
     QCOMPARE(result.size(), 1);
-    QCOMPARE(result[0].sql, QString("SELECT 'é';"));
-    QCOMPARE(result[0].cursorOffset, quint64(10));
-    QCOMPARE(result[0].selectionAnchor, quint64(8));
-    QVERIFY(result[0].modified);
+    QVERIFY(!result[0].isObject);
+    QCOMPARE(result[0].document.sql, QString("SELECT 'é';"));
+    QCOMPARE(result[0].document.cursorOffset, quint64(10));
+    QCOMPARE(result[0].document.selectionAnchor, quint64(8));
+    QVERIFY(result[0].document.modified);
 }
 
 void WorkspaceTest::sqlStartedTransactionRequiresCloseConfirmation() {

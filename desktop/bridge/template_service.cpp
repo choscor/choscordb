@@ -1,5 +1,5 @@
 #include "template_service.h"
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 namespace choscordb {
 namespace {
 bool charge(const QString& text, quint64& remaining) {
@@ -21,9 +21,9 @@ bool charge(const QString& text, quint64& remaining) {
     }
     return true;
 }
-QString text(const rust::String& value) {
-    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
-}
+using bridge_detail::fromRust;
+using bridge_detail::toRust;
+using bridge_detail::utf8View;
 } // namespace
 SqlTemplateLimits SqlTemplateService::limits() {
     auto value = sql_template_limits();
@@ -45,15 +45,12 @@ SqlTemplateResult SqlTemplateService::generate(const QString& kind, const QStrin
     const auto kindBytes = kind.toUtf8(), nameBytes = qualified.toUtf8();
     rust::Vec<rust::String> names;
     names.reserve(static_cast<size_t>(columns.size()));
-    for (const auto& column : columns) {
-        const auto bytes = column.toUtf8();
-        names.push_back(rust::String(bytes.constData(), static_cast<size_t>(bytes.size())));
-    }
-    const auto result = generate_sql_template(
-        rust::Str(kindBytes.constData(), static_cast<size_t>(kindBytes.size())),
-        rust::Str(nameBytes.constData(), static_cast<size_t>(nameBytes.size())), std::move(names));
+    for (const auto& column : columns)
+        names.push_back(toRust(column));
+    const auto result =
+        generate_sql_template(utf8View(kindBytes), utf8View(nameBytes), std::move(names));
     if (!result.valid)
-        return {false, {}, text(result.error)};
-    return {true, text(result.sql), {}};
+        return {false, {}, fromRust(result.error)};
+    return {true, fromRust(result.sql), {}};
 }
 } // namespace choscordb

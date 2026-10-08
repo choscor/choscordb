@@ -19,7 +19,6 @@ STOCK_CONTROLS = {
     "QDoubleSpinBox",
     "QFontComboBox",
     "QGraphicsView",
-    "QGroupBox",
     "QKeySequenceEdit",
     "QLabel",
     "QLineEdit",
@@ -42,7 +41,6 @@ DESIGN_CONTROLS = {
     "NavigationTreeView",
     "RightSheet",
     "JsonTextView",
-    "Tooltip",
 }
 DESIGN_COMPOSITES = {
     "ButtonGroup",

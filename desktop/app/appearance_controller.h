@@ -7,7 +7,6 @@ class QDockWidget;
 class QMainWindow;
 class QSplitter;
 class QTimer;
-class QWidget;
 
 namespace choscordb {
 namespace design {
@@ -17,7 +16,7 @@ class AppearanceController final : public QObject {
     Q_OBJECT
   public:
     AppearanceController(design::ThemeManager* theme, EngineAdapter* adapter, QMainWindow* window,
-                         QDockWidget* navigator, QSplitter* workspace, QWidget* history);
+                         QDockWidget* navigator, QSplitter* workspace);
     [[nodiscard]] AppearanceLayout persisted() const { return persisted_; }
     [[nodiscard]] AppearanceLayout current() const;
     [[nodiscard]] bool isReady() const { return loaded_; }
@@ -50,7 +49,6 @@ class AppearanceController final : public QObject {
     void apply(const AppearanceLayout& value, bool includeLayout);
     void scheduleSave();
     void submitSave(Request request, std::optional<AppearanceLayout> layout = std::nullopt);
-    static quint64 nextToken();
     design::ThemeManager* theme_;
     EngineAdapter* adapter_;
     QMainWindow* window_;

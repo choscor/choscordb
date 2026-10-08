@@ -4,27 +4,27 @@
 #include <utility>
 
 namespace choscordb {
-using engine_adapter_detail::rustString;
-using engine_adapter_detail::string;
+using engine_adapter_detail::fromRust;
+using engine_adapter_detail::toRust;
 using engine_adapter_detail::utf8View;
 namespace {
 GridEditRequestDto gridRequestDto(const GridEditRequest& request, bool eligibilityOnly) {
     GridEditRequestDto dto;
-    dto.driver = rustString(request.driver);
-    dto.qualified_name = rustString(request.qualifiedName);
-    dto.parameter_style = rustString(request.parameterStyle);
-    dto.reason = rustString(request.reason);
+    dto.driver = toRust(request.driver);
+    dto.qualified_name = toRust(request.qualifiedName);
+    dto.parameter_style = toRust(request.parameterStyle);
+    dto.reason = toRust(request.reason);
     dto.object_read_only = request.objectReadOnly;
     for (const auto& column : request.columns) {
         GridEditColumnDto entry;
-        entry.name = rustString(column.name);
-        entry.result_name = rustString(column.resultName);
-        entry.database_type = rustString(column.databaseType);
+        entry.name = toRust(column.name);
+        entry.result_name = toRust(column.resultName);
+        entry.database_type = toRust(column.databaseType);
         entry.key = column.key;
         entry.generated = column.generated;
-        entry.enum_source_column = rustString(column.enumSourceColumn);
+        entry.enum_source_column = toRust(column.enumSourceColumn);
         for (const auto& choice : column.enumChoices)
-            entry.enum_choices.push_back(rustString(choice));
+            entry.enum_choices.push_back(toRust(choice));
         dto.columns.push_back(std::move(entry));
     }
     for (const auto& row : request.rows) {
@@ -42,7 +42,7 @@ GridEditRequestDto gridRequestDto(const GridEditRequest& request, bool eligibili
     return dto;
 }
 Cell gridCell(const CellDto& value) {
-    const auto kind = string(value.kind);
+    const auto kind = fromRust(value.kind);
     if (kind == "null")
         return std::monostate{};
     if (kind == "boolean")
@@ -52,7 +52,7 @@ Cell gridCell(const CellDto& value) {
     if (kind == "real")
         return value.real;
     if (kind == "decimal")
-        return DecimalValue{string(value.text)};
+        return DecimalValue{fromRust(value.text)};
     if (kind == "binary") {
         QByteArray bytes;
         bytes.reserve(static_cast<qsizetype>(value.bytes.size()));
@@ -60,7 +60,7 @@ Cell gridCell(const CellDto& value) {
             bytes.append(static_cast<char>(byte));
         return bytes;
     }
-    return string(value.text);
+    return fromRust(value.text);
 }
 } // namespace
 bool EngineAdapter::applyEditBatch(quint64 connection,
@@ -69,7 +69,7 @@ bool EngineAdapter::applyEditBatch(quint64 connection,
     rust::Vec<EditStatementDto> batch;
     for (const auto& statement : statements) {
         EditStatementDto dto;
-        dto.sql = rustString(statement.sql);
+        dto.sql = toRust(statement.sql);
         dto.has_expected_rows = statement.expectedRows.has_value();
         dto.expected_rows = statement.expectedRows.value_or(0);
         if (statement.params.size() != statement.paramKinds.size()) {
@@ -84,14 +84,14 @@ bool EngineAdapter::applyEditBatch(quint64 connection,
                 emit commandFailed(tr("Deferred values cannot be bound to grid edits."));
                 return false;
             }
-            cell.kind = rustString(statement.paramKinds[i]);
+            cell.kind = toRust(statement.paramKinds[i]);
             dto.params.push_back(std::move(cell));
         }
         batch.push_back(std::move(dto));
     }
     auto reply = apply_edit_batch(*d_->engine, connection, std::move(batch), token);
     if (!reply.accepted)
-        emit commandFailed(string(reply.error));
+        emit commandFailed(fromRust(reply.error));
     return reply.accepted;
 }
 GridEditEligibility EngineAdapter::gridEditability(const GridEditRequest& request) {
@@ -105,21 +105,21 @@ GridEditEligibility EngineAdapter::gridEditability(const GridEditRequest& reques
         result.keyColumns.push_back(value != 0);
     result.canInsert = source.can_insert;
     result.canDelete = source.can_delete;
-    result.reason = string(source.reason);
+    result.reason = fromRust(source.reason);
     return result;
 }
 GridEditPlan EngineAdapter::planGridEdits(const GridEditRequest& request) {
     auto source = plan_grid_edits_policy(gridRequestDto(request, false));
     GridEditPlan result;
-    result.error = string(source.error);
+    result.error = fromRust(source.error);
     for (const auto& planned : source.statements) {
         ReviewedEditStatement statement;
-        statement.sql = string(planned.statement.sql);
+        statement.sql = fromRust(planned.statement.sql);
         if (planned.statement.has_expected_rows)
             statement.expectedRows = planned.statement.expected_rows;
         for (const auto& param : planned.statement.params) {
             statement.params.push_back(gridCell(param));
-            statement.paramKinds.push_back(string(param.kind));
+            statement.paramKinds.push_back(fromRust(param.kind));
         }
         result.statements.push_back(std::move(statement));
     }
@@ -133,8 +133,8 @@ QList<CellFilterOption> EngineAdapter::quickFilterOptions(const QString& column,
     if (!column.isValidUtf16())
         dto.kind = "invalid_unicode";
     for (const auto& item : quick_filter_options_policy(utf8View(bytes), std::move(dto)))
-        result.append({static_cast<CellFilterOperator>(item.operation), string(item.label),
-                       item.enabled, string(item.reason)});
+        result.append({static_cast<CellFilterOperator>(item.operation), fromRust(item.label),
+                       item.enabled, fromRust(item.reason)});
     return result;
 }
 CellFilterComposition EngineAdapter::composeQuickFilter(const QStringList& columns,
@@ -143,7 +143,7 @@ CellFilterComposition EngineAdapter::composeQuickFilter(const QStringList& colum
                                                         CellFilterOperator operation) {
     rust::Vec<rust::String> names;
     for (const auto& name : columns)
-        names.push_back(rustString(name));
+        names.push_back(toRust(name));
     const auto draftBytes = draft.toUtf8();
     const auto columnBytes = column.toUtf8();
     auto dto = bridge_detail::cellDto(value);
@@ -152,12 +152,12 @@ CellFilterComposition EngineAdapter::composeQuickFilter(const QStringList& colum
     const auto result =
         quick_filter_compose_policy(std::move(names), utf8View(draftBytes), utf8View(columnBytes),
                                     std::move(dto), static_cast<QuickFilterOperator>(operation));
-    return {string(result.expression), string(result.validation_error), string(result.error)};
+    return {fromRust(result.expression), fromRust(result.validation_error), fromRust(result.error)};
 }
 bool EngineAdapter::foreignKeyValueFilterable(const Cell& value) {
     auto dto = bridge_detail::cellDto(value, true);
     if (const auto* decimal = std::get_if<DecimalValue>(&value))
-        dto.text = rustString(decimal->text);
+        dto.text = toRust(decimal->text);
     return foreign_key_value_filterable_policy(std::move(dto));
 }
 std::optional<QString> EngineAdapter::foreignKeyPredicate(const QString& targetColumn,
@@ -165,7 +165,7 @@ std::optional<QString> EngineAdapter::foreignKeyPredicate(const QString& targetC
     const auto bytes = targetColumn.toUtf8();
     const auto result =
         foreign_key_predicate_policy(utf8View(bytes), bridge_detail::cellDto(value, false));
-    return result.valid ? std::optional<QString>{string(result.expression)} : std::nullopt;
+    return result.valid ? std::optional<QString>{fromRust(result.expression)} : std::nullopt;
 }
 std::optional<Cell> EngineAdapter::parseGridEditValue(const QString& databaseType,
                                                       const QString& text, QString* error) {
@@ -173,7 +173,7 @@ std::optional<Cell> EngineAdapter::parseGridEditValue(const QString& databaseTyp
     const auto textBytes = text.toUtf8();
     const auto parsed = parse_grid_edit_value_policy(utf8View(typeBytes), utf8View(textBytes));
     if (error)
-        *error = string(parsed.error);
+        *error = fromRust(parsed.error);
     return parsed.valid ? std::optional<Cell>{gridCell(parsed.cell)} : std::nullopt;
 }
 bool EngineAdapter::navigatorObjectVisible(const QString& driver, bool showSystemSchemas,

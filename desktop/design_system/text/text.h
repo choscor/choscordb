@@ -12,7 +12,6 @@ class Text final : public QLabel {
   public:
     explicit Text(const QString& text = {}, QWidget* parent = nullptr);
     void setTypographyRole(TypographyRole role);
-    [[nodiscard]] TypographyRole typographyRole() const;
     void setWeight(QFont::Weight weight);
 
     [[nodiscard]] QSize sizeHint() const override;

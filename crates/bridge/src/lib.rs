@@ -64,11 +64,10 @@ use std::{
 pub use update::{
     RustUpdateSession, update_consent_load, update_consent_load_legacy_ini,
     update_consent_load_native, update_consent_migrate, update_consent_save,
-    update_parse_signed_metadata, update_run_linux_helper, update_session_begin_check,
-    update_session_cancel, update_session_check, update_session_discard_staged,
-    update_session_download, update_session_install, update_session_new,
-    update_session_new_failure_fixture, update_session_progress,
-    update_take_windows_failure_marker, update_verify_file, update_write_readiness,
+    update_run_linux_helper, update_session_begin_check, update_session_cancel,
+    update_session_check, update_session_discard_staged, update_session_download,
+    update_session_install, update_session_new, update_session_new_failure_fixture,
+    update_session_progress, update_take_windows_failure_marker, update_write_readiness,
 };
 // SAFETY: cxx generates the unsafe ABI glue for this one declarative boundary. The bridge's
 // generated static assertions validate the shared layouts and signatures, while transport tests
@@ -769,17 +768,6 @@ pub mod ffi {
         notes: String,
     }
     #[derive(Default)]
-    struct UpdateParseDto {
-        found: bool,
-        record: UpdateRecordDto,
-        error: String,
-    }
-    #[derive(Default)]
-    struct UpdateVerifyDto {
-        success: bool,
-        error: String,
-    }
-    #[derive(Default)]
     struct UpdateCheckDto {
         found: bool,
         record: UpdateRecordDto,
@@ -878,15 +866,6 @@ pub mod ffi {
             appimage: &str,
             invoked: &str,
         ) -> UpdateHelperDto;
-        fn update_parse_signed_metadata(
-            envelope: &[u8],
-            public_key: &[u8],
-            current_version: &str,
-            platform: &str,
-            arch: &str,
-            repository: &str,
-        ) -> UpdateParseDto;
-        fn update_verify_file(path: &str, record: UpdateRecordDto) -> UpdateVerifyDto;
         fn update_write_readiness(path: &str) -> bool;
         fn pin_valid(pin: PinRecordDto) -> bool;
         fn pin_identity_key(pin: PinRecordDto) -> String;
@@ -1062,12 +1041,6 @@ pub mod ffi {
             case_sensitive: bool,
             whole_word: bool,
         ) -> TextReplacementDto;
-        fn workspace_save(
-            engine: &mut BridgeEngine,
-            documents: Vec<EditorDocumentDto>,
-            token: u64,
-        ) -> Submit;
-        fn workspace_restore(engine: &mut BridgeEngine, token: u64) -> Submit;
         fn workspace_tabs_save(
             engine: &mut BridgeEngine,
             tabs: Vec<WorkspaceTabDto>,

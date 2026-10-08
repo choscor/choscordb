@@ -195,6 +195,17 @@ fn accepts_signed_windows_installer_and_rejects_tampered_or_mismatched_feeds() {
             &key(),
             "1.2.3",
             "linux",
+            "arm64",
+            "choscor/choscordb"
+        ),
+        Err(UpdateError::VersionOrPlatformMismatch)
+    );
+    assert_eq!(
+        parse_signed_update_metadata(
+            &linux_envelope(),
+            &key(),
+            "1.2.3",
+            "linux",
             "x86_64",
             "fork/project"
         ),

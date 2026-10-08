@@ -430,16 +430,21 @@ fn recovery_transport_preserves_typed_documents_and_policy_without_connecting() 
         selection_anchor: 8,
         modified: true,
     };
-    assert!(workspace_save(&mut engine, vec![document], 700).accepted);
+    let tab = ffi::WorkspaceTabDto {
+        document,
+        ..Default::default()
+    };
+    assert!(workspace_tabs_save(&mut engine, vec![tab], 0, 700).accepted);
     assert_eq!(
         await_event(&mut engine, "workspace_saved").request_token,
         700
     );
-    assert!(workspace_restore(&mut engine, 701).accepted);
-    let restored = await_event(&mut engine, "workspace_restored");
+    assert!(workspace_tabs_restore(&mut engine, 701).accepted);
+    let restored = await_event(&mut engine, "workspace_tabs_restored");
     assert_eq!(restored.request_token, 701);
-    assert_eq!(restored.documents.len(), 1);
-    let d = &restored.documents[0];
+    assert_eq!(restored.workspace_tabs.len(), 1);
+    assert!(!restored.workspace_tabs[0].is_object);
+    let d = &restored.workspace_tabs[0].document;
     assert_eq!(d.sql, "SELECT '🦀é';");
     assert_eq!((d.cursor_offset, d.selection_anchor), (14, 8));
     assert!(d.has_profile && d.has_file && d.modified);
@@ -661,13 +666,17 @@ fn recovery_transport_rejects_invalid_offsets_and_retention_without_losing_snaps
         cursor_offset: 1,
         ..Default::default()
     };
-    assert!(!workspace_save(&mut engine, vec![bad], 800).accepted);
+    let bad = ffi::WorkspaceTabDto {
+        document: bad,
+        ..Default::default()
+    };
+    assert!(!workspace_tabs_save(&mut engine, vec![bad], 0, 800).accepted);
     assert!(!history_policy_set(&mut engine, ffi::HistoryPolicyDto::default(), 801).accepted);
     assert!(!history_list(&mut engine, 1001, 0, 802).accepted);
-    assert!(workspace_restore(&mut engine, 803).accepted);
-    let restored = await_event(&mut engine, "workspace_restored");
+    assert!(workspace_tabs_restore(&mut engine, 803).accepted);
+    let restored = await_event(&mut engine, "workspace_tabs_restored");
     assert_eq!(restored.request_token, 803);
-    assert!(restored.documents.is_empty());
+    assert!(restored.workspace_tabs.is_empty());
 }
 
 #[test]

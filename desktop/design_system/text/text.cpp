@@ -57,9 +57,6 @@ void Text::setTypographyRole(TypographyRole role) {
     updateGeometry();
     update();
 }
-TypographyRole Text::typographyRole() const {
-    return role_;
-}
 void Text::setWeight(QFont::Weight weight) {
     auto updated = font();
     updated.setWeight(weight);

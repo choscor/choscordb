@@ -1,4 +1,5 @@
 #include "app/appearance_controller.h"
+#include "bridge/request_token.h"
 #include "design_system/theme_manager.h"
 #include <QDockWidget>
 #include <QEvent>
@@ -9,7 +10,6 @@
 #include <QSplitter>
 #include <QTimer>
 #include <algorithm>
-#include <atomic>
 
 namespace choscordb {
 namespace {
@@ -29,16 +29,11 @@ design::ThemeMode themeMode(const QString& value) {
 }
 } // namespace
 
-quint64 AppearanceController::nextToken() {
-    static std::atomic<quint64> token{quint64(1) << 55};
-    return token.fetch_add(1);
-}
 AppearanceController::AppearanceController(design::ThemeManager* theme, EngineAdapter* adapter,
                                            QMainWindow* window, QDockWidget* navigator,
-                                           QSplitter* workspace, QWidget* history)
+                                           QSplitter* workspace)
     : QObject(window), theme_(theme), adapter_(adapter), window_(window), navigator_(navigator),
       workspace_(workspace), saveTimer_(new QTimer(this)) {
-    Q_UNUSED(history);
     connect(theme_, &design::ThemeManager::accessibilityPolicyChanged, this,
             &AppearanceController::accessibilityPolicyChanged);
     saveTimer_->setSingleShot(true);
@@ -127,7 +122,7 @@ AppearanceController::AppearanceController(design::ThemeManager* theme, EngineAd
                     emit flushFailed(error);
                 }
             });
-    token_ = nextToken();
+    token_ = nextRequestToken();
     request_ = Request::Load;
     adapter_->getAppearanceLayout(token_);
 }
@@ -237,7 +232,7 @@ void AppearanceController::reset() {
     if (token_)
         return;
     previewing_ = false;
-    token_ = nextToken();
+    token_ = nextRequestToken();
     request_ = Request::Reset;
     adapter_->resetAppearanceLayout(token_);
 }
@@ -270,7 +265,7 @@ void AppearanceController::resetLayout() {
 void AppearanceController::retry() {
     if (token_)
         return;
-    token_ = nextToken();
+    token_ = nextRequestToken();
     request_ = Request::Load;
     adapter_->getAppearanceLayout(token_);
 }
@@ -311,7 +306,7 @@ void AppearanceController::scheduleSave() {
 void AppearanceController::submitSave(Request request, std::optional<AppearanceLayout> layout) {
     if (!loaded_ || token_)
         return;
-    token_ = nextToken();
+    token_ = nextRequestToken();
     request_ = request;
     if (request == Request::AutomaticSave)
         dirty_ = false;

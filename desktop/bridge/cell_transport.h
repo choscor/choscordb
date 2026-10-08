@@ -1,6 +1,6 @@
 #pragma once
 
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include "models/result_table_model.h"
 
 namespace choscordb::bridge_detail {
@@ -11,8 +11,7 @@ inline CellDto cellDto(const Cell& value, bool eligibilityOnly = false,
     bool valid = true;
     const auto string = [&valid](const QString& text) {
         valid &= text.isValidUtf16();
-        const auto bytes = text.toUtf8();
-        return rust::String(bytes.constData(), static_cast<size_t>(bytes.size()));
+        return toRust(text);
     };
     if (std::holds_alternative<std::monostate>(value))
         result.kind = "null";

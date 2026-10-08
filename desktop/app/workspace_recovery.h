@@ -19,7 +19,6 @@ class WorkspaceRecoveryController final : public QObject {
                                 QObject* parent = nullptr);
     void start();
     void watchEditor(SqlEditor* editor);
-    QList<SavedEditorDocument> snapshot() const;
     QList<SavedWorkspaceTab> snapshotTabs() const;
     void setObjectFactory(std::function<QWidget*(const SavedWorkspaceTab&)> factory);
     bool isReady() const { return ready_; }
@@ -32,14 +31,11 @@ class WorkspaceRecoveryController final : public QObject {
     void requestClose();
     void cancelClose();
     void closeWithoutRecovery();
-    void restored(quint64 token, const QList<choscordb::SavedEditorDocument>& documents);
     void restoredTabs(quint64 token, const QList<choscordb::SavedWorkspaceTab>& tabs,
                       quint32 activeIndex);
     void saved(quint64 token);
     void failed(quint64 token, const QString& error);
   signals:
-    void restoreRequested(quint64 token);
-    void saveRequested(const QList<choscordb::SavedEditorDocument>& documents, quint64 token);
     void saveTabsRequested(const QList<choscordb::SavedWorkspaceTab>& tabs, quint32 activeIndex,
                            quint64 token);
     void restoreTabsRequested(quint64 token);
@@ -52,7 +48,7 @@ class WorkspaceRecoveryController final : public QObject {
   private:
     void beginRestore();
     void setEnabled(bool enabled);
-    void apply(const QList<SavedEditorDocument>& documents);
+    void clearTabs();
     void applyTabs(const QList<SavedWorkspaceTab>& tabs, quint32 activeIndex);
     QTabWidget* tabs_;
     std::function<SqlEditor*()> addEditor_;

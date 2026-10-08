@@ -1,5 +1,5 @@
 #pragma once
-#include "choscordb-bridge/src/lib.rs.h"
+#include "bridge/rust_text.h"
 #include <QByteArray>
 #include <QString>
 
@@ -29,9 +29,8 @@ class DeferredAssemblerJob final {
         const auto encodedKind = kind.toUtf8();
         const auto data = rust::Slice<const uint8_t>(
             reinterpret_cast<const uint8_t*>(chunk.constData()), static_cast<size_t>(chunk.size()));
-        const auto dto = deferred_assembler_push(
-            *assembler_, {encodedKind.constData(), static_cast<size_t>(encodedKind.size())}, offset,
-            totalBytes, data, hasLease);
+        const auto dto = deferred_assembler_push(*assembler_, bridge_detail::utf8View(encodedKind),
+                                                 offset, totalBytes, data, hasLease);
         return {dto.complete,
                 dto.received_bytes,
                 text(dto.kind),
@@ -43,15 +42,13 @@ class DeferredAssemblerJob final {
     }
 
   private:
-    static QString text(const rust::String& value) {
-        return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
-    }
+    static QString text(const rust::String& value) { return bridge_detail::fromRust(value); }
     static rust::Box<RustDeferredAssembler> start(const QString& databaseType, bool fallback,
                                                   quint64 declaredBytes, quint64 resolvedBytes,
                                                   bool json) {
         const auto encoded = databaseType.toUtf8();
-        return deferred_assembler_new({encoded.constData(), static_cast<size_t>(encoded.size())},
-                                      fallback, declaredBytes, resolvedBytes, json);
+        return deferred_assembler_new(bridge_detail::utf8View(encoded), fallback, declaredBytes,
+                                      resolvedBytes, json);
     }
     rust::Box<RustDeferredAssembler> assembler_;
 };

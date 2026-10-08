@@ -2,15 +2,15 @@
 #include <utility>
 
 namespace choscordb {
-using engine_adapter_detail::rustString;
+using engine_adapter_detail::toRust;
 namespace {
 AppearanceLayoutDto appearanceDto(const AppearanceLayout& value) {
     AppearanceLayoutDto dto;
     dto.version = value.version;
-    dto.theme = rustString(value.theme);
-    dto.density = rustString(value.density);
-    dto.accent_kind = rustString(value.accentKind);
-    dto.accent = rustString(value.accent);
+    dto.theme = toRust(value.theme);
+    dto.density = toRust(value.density);
+    dto.accent_kind = toRust(value.accentKind);
+    dto.accent = toRust(value.accent);
     dto.navigator_width = value.navigatorWidth;
     dto.editor_results_split = value.editorResultsSplit;
     dto.history_height = value.historyHeight;
@@ -22,7 +22,7 @@ AppearanceLayoutDto appearanceDto(const AppearanceLayout& value) {
     dto.height = value.height;
     dto.maximized = value.maximized;
     dto.has_screen_name = value.hasScreenName;
-    dto.screen_name = rustString(value.screenName);
+    dto.screen_name = toRust(value.screenName);
     return dto;
 }
 } // namespace
@@ -137,12 +137,12 @@ bool EngineAdapter::setEditorPreferences(const EditorPreferences& preferences, q
         [this, preferences = std::move(bounded), token] {
             EditorPreferencesDto dto;
             dto.version = preferences.version;
-            dto.font_family = rustString(preferences.fontFamily);
+            dto.font_family = toRust(preferences.fontFamily);
             dto.font_size = preferences.fontSize;
             for (const auto& shortcut : preferences.shortcuts) {
                 ShortcutOverrideDto value;
-                value.command = rustString(shortcut.command);
-                value.sequence = rustString(shortcut.sequence);
+                value.command = toRust(shortcut.command);
+                value.sequence = toRust(shortcut.sequence);
                 dto.shortcuts.push_back(std::move(value));
             }
             return editor_preferences_set(*d_->engine, std::move(dto), token);
@@ -181,9 +181,6 @@ bool EngineAdapter::resetAppearanceLayout(quint64 token) {
     return queueRecovery(token,
                          [this, token] { return appearance_layout_reset(*d_->engine, token); });
 }
-bool EngineAdapter::restoreWorkspace(quint64 token) {
-    return queueRecovery(token, [this, token] { return workspace_restore(*d_->engine, token); });
-}
 bool EngineAdapter::restoreWorkspaceTabs(quint64 token) {
     return queueRecovery(token,
                          [this, token] { return workspace_tabs_restore(*d_->engine, token); });
@@ -218,22 +215,20 @@ bool EngineAdapter::saveWorkspaceTabs(const QList<SavedWorkspaceTab>& tabs, quin
                 WorkspaceTabDto value;
                 value.is_object = tab.isObject;
                 if (tab.isObject) {
-                    value.profile_id = rustString(tab.profileId);
-                    value.object_type = rustString(tab.objectType);
-                    value.object_id = rustString(tab.objectId);
-                    value.label = rustString(tab.label);
+                    value.profile_id = toRust(tab.profileId);
+                    value.object_type = toRust(tab.objectType);
+                    value.object_id = toRust(tab.objectId);
+                    value.label = toRust(tab.label);
                     value.pane = tab.pane;
                 } else {
                     const auto& d = tab.document;
-                    value.document.id = rustString(d.id);
-                    value.document.title = rustString(d.title);
-                    const auto sql = d.sql.toUtf8();
-                    value.document.sql =
-                        rust::String(sql.constData(), static_cast<size_t>(sql.size()));
+                    value.document.id = toRust(d.id);
+                    value.document.title = toRust(d.title);
+                    value.document.sql = toRust(d.sql);
                     value.document.has_profile = !d.profileId.isEmpty();
-                    value.document.profile_id = rustString(d.profileId);
+                    value.document.profile_id = toRust(d.profileId);
                     value.document.has_file = !d.filePath.isEmpty();
-                    value.document.file_path = rustString(d.filePath);
+                    value.document.file_path = toRust(d.filePath);
                     value.document.cursor_offset = d.cursorOffset;
                     value.document.selection_anchor = d.selectionAnchor;
                     value.document.modified = d.modified;
@@ -243,68 +238,5 @@ bool EngineAdapter::saveWorkspaceTabs(const QList<SavedWorkspaceTab>& tabs, quin
             return workspace_tabs_save(*d_->engine, std::move(values), activeIndex, token);
         },
         retained);
-}
-bool EngineAdapter::saveWorkspace(const QList<SavedEditorDocument>& documents, quint64 token) {
-    // Transport guards precede CXX copies. Core additionally validates escaped
-    // serialized size and all fields against the authoritative storage contract.
-    const auto limits = recoveryLimits();
-    if (static_cast<quint64>(documents.size()) > limits.maxDocuments) {
-        emit recoveryFailed(token, tr("Workspace recovery limit reached."));
-        return false;
-    }
-    quint64 totalBytes = 0;
-    for (const auto& d : documents) {
-        for (const auto* text : {&d.id, &d.title, &d.sql, &d.profileId, &d.filePath}) {
-            const auto retained =
-                static_cast<quint64>(qMax(text->size(), text->capacity())) * sizeof(QChar);
-            if (retained > limits.maxCollectionBytes * 2 - totalBytes) {
-                emit recoveryFailed(token, tr("Workspace recovery limit reached."));
-                return false;
-            }
-            totalBytes += retained;
-        }
-    }
-    if (totalBytes > limits.maxCollectionBytes * 2) {
-        emit recoveryFailed(token, tr("Workspace recovery limit reached."));
-        return false;
-    }
-    return queueRecovery(
-        token,
-        [this, documents, token, limits]() {
-            quint64 totalBytes = 0;
-            rust::Vec<EditorDocumentDto> values;
-            values.reserve(static_cast<size_t>(documents.size()));
-            for (const auto& d : documents) {
-                if (static_cast<quint64>(d.sql.size()) > limits.maxSqlBytes || d.id.size() > 256 ||
-                    d.title.size() > 1024 || d.profileId.size() > 256 ||
-                    d.filePath.size() > 16 * 1024) {
-                    Submit rejected;
-                    rejected.error = rustString(tr("Workspace recovery limit reached."));
-                    return rejected;
-                }
-                const auto sql = d.sql.toUtf8();
-                totalBytes += static_cast<quint64>(sql.size());
-                if (static_cast<quint64>(sql.size()) > limits.maxSqlBytes ||
-                    totalBytes > limits.maxCollectionBytes) {
-                    Submit rejected;
-                    rejected.error = rustString(tr("Workspace recovery limit reached."));
-                    return rejected;
-                }
-                EditorDocumentDto value;
-                value.id = rustString(d.id);
-                value.title = rustString(d.title);
-                value.sql = rust::String(sql.constData(), static_cast<size_t>(sql.size()));
-                value.has_profile = !d.profileId.isEmpty();
-                value.profile_id = rustString(d.profileId);
-                value.has_file = !d.filePath.isEmpty();
-                value.file_path = rustString(d.filePath);
-                value.cursor_offset = d.cursorOffset;
-                value.selection_anchor = d.selectionAnchor;
-                value.modified = d.modified;
-                values.push_back(std::move(value));
-            }
-            return workspace_save(*d_->engine, std::move(values), token);
-        },
-        totalBytes);
 }
 } // namespace choscordb

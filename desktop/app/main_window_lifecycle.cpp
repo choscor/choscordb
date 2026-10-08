@@ -8,6 +8,8 @@
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
+#include "bridge/request_token.h"
+#include "bridge/rust_text.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/history_row/history_row.h"
@@ -34,7 +36,6 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QWidget>
-#include <atomic>
 
 namespace choscordb {
 namespace {
@@ -334,8 +335,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
         historyItems->clear();
         historyStatus->show();
         historyStatus->setText(tr("Loading recent history…"));
-        static std::atomic<quint64> nextToken{quint64(1) << 62};
-        sidebarHistoryToken_ = ++nextToken;
+        sidebarHistoryToken_ = nextRequestToken();
         if (!workspace_->adapter()->listHistory(50, 0, sidebarHistoryToken_))
             historyStatus->setText(tr("Could not request recent history."));
     };
@@ -403,8 +403,8 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     connect(preferences_, &EditorPreferencesController::historyPolicyConfirmed, history_,
             &HistoryDock::applyConfirmedPolicy);
     history_->hide();
-    appearance_ = new AppearanceController(theme_, workspace_->adapter(), this, navigator, splitter,
-                                           history_);
+    appearance_ =
+        new AppearanceController(theme_, workspace_->adapter(), this, navigator, splitter);
     preferences_->setAppearanceController(appearance_);
     connect(resetLayout, &QAction::triggered, appearance_, &AppearanceController::resetLayout);
     connect(appearance_, &AppearanceController::warningChanged, this,
@@ -488,8 +488,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     });
     connect(workspace_->adapter(), &EngineAdapter::eventReady, this,
             [this, sidebarPanels, refreshRecentHistory](const BridgeEvent& event) {
-                const auto kind =
-                    QString::fromUtf8(event.kind.data(), static_cast<qsizetype>(event.kind.size()));
+                const auto kind = bridge_detail::fromRust(event.kind);
                 if (history_->isVisible() && (kind == "query_finished" || kind == "query_failed"))
                     history_->refresh();
                 if (sidebarPanels->currentIndex() == 2 &&

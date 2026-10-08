@@ -2,6 +2,7 @@
 #include "app/object_explorer.h"
 #include "app/object_kind_icon.h"
 #include "app/object_tab_title.h"
+#include "bridge/request_token.h"
 #include "design_system/icons.h"
 #include "design_system/theme.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -9,14 +10,7 @@
 #include <QTabBar>
 #include <QTabWidget>
 #include <QUuid>
-#include <atomic>
 namespace choscordb {
-namespace {
-quint64 nextToken() {
-    static std::atomic<quint64> token{quint64(1) << 62};
-    return token.fetch_add(1);
-}
-} // namespace
 quint32 savedObjectPane(int paneIndex) {
     if (paneIndex == 4) // ERD is inserted before Data in the UI.
         return 5;
@@ -35,16 +29,12 @@ WorkspaceRecoveryController::WorkspaceRecoveryController(QTabWidget* tabs,
                                                          std::function<SqlEditor*()> addEditor,
                                                          QObject* parent)
     : QObject(parent), tabs_(tabs), addEditor_(std::move(addEditor)) {
-    qRegisterMetaType<QList<SavedEditorDocument>>();
     qRegisterMetaType<QList<SavedWorkspaceTab>>();
     debounce_.setSingleShot(true);
     debounce_.setInterval(350);
     connect(&debounce_, &QTimer::timeout, this, &WorkspaceRecoveryController::flush);
     connect(tabs_->tabBar(), &QTabBar::tabMoved, this, &WorkspaceRecoveryController::changed);
-    connect(tabs_, &QTabWidget::currentChanged, this, [this] {
-        if (objectFactory_)
-            changed();
-    });
+    connect(tabs_, &QTabWidget::currentChanged, this, &WorkspaceRecoveryController::changed);
     for (int i = 0; i < tabs_->count(); ++i)
         watchEditor(qobject_cast<SqlEditor*>(tabs_->widget(i)));
 }
@@ -65,11 +55,8 @@ void WorkspaceRecoveryController::beginRestore() {
     failed_ = false;
     restoring_ = true;
     setEnabled(false);
-    pending_ = nextToken();
-    if (objectFactory_)
-        emit restoreTabsRequested(pending_);
-    else
-        emit restoreRequested(pending_);
+    pending_ = nextRequestToken();
+    emit restoreTabsRequested(pending_);
 }
 void WorkspaceRecoveryController::watchEditor(SqlEditor* editor) {
     if (!editor || editor->property("recoveryWatched").toBool())
@@ -95,29 +82,6 @@ void WorkspaceRecoveryController::watchEditor(SqlEditor* editor) {
     };
     connect(editor, &SqlEditor::fileOpened, this, fileFinished);
     connect(editor, &SqlEditor::fileSaved, this, fileFinished);
-}
-QList<SavedEditorDocument> WorkspaceRecoveryController::snapshot() const {
-    QList<SavedEditorDocument> documents;
-    for (int i = 0; i < tabs_->count(); ++i) {
-        auto* editor = qobject_cast<SqlEditor*>(tabs_->widget(i));
-        if (!editor)
-            continue;
-        SavedEditorDocument document;
-        document.id = editor->property("documentId").toString();
-        document.title = tabs_->tabText(i);
-        if (document.title.endsWith(QStringLiteral(" •")))
-            document.title.chop(2);
-        document.sql = editor->text();
-        document.filePath = editor->filePath();
-        document.profileId = editor->property("profileId").toString();
-        document.modified = editor->isModified();
-        document.cursorOffset =
-            static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS));
-        document.selectionAnchor =
-            static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETANCHOR));
-        documents.append(std::move(document));
-    }
-    return documents;
 }
 QList<SavedWorkspaceTab> WorkspaceRecoveryController::snapshotTabs() const {
     QList<SavedWorkspaceTab> tabs;
@@ -150,14 +114,17 @@ QList<SavedWorkspaceTab> WorkspaceRecoveryController::snapshotTabs() const {
     }
     return tabs;
 }
-void WorkspaceRecoveryController::applyTabs(const QList<SavedWorkspaceTab>& tabs,
-                                            quint32 activeIndex) {
-    applying_ = true;
+void WorkspaceRecoveryController::clearTabs() {
     while (tabs_->count()) {
         auto* old = tabs_->widget(0);
         tabs_->removeTab(0);
         old->deleteLater();
     }
+}
+void WorkspaceRecoveryController::applyTabs(const QList<SavedWorkspaceTab>& tabs,
+                                            quint32 activeIndex) {
+    applying_ = true;
+    clearTabs();
     for (const auto& tab : tabs) {
         if (tab.isObject) {
             auto* widget = objectFactory_ ? objectFactory_(tab) : nullptr;
@@ -184,76 +151,6 @@ void WorkspaceRecoveryController::applyTabs(const QList<SavedWorkspaceTab>& tabs
     if (!tabs.isEmpty())
         tabs_->setCurrentIndex(static_cast<int>(activeIndex));
     applying_ = false;
-}
-void WorkspaceRecoveryController::apply(const QList<SavedEditorDocument>& documents) {
-    applying_ = true;
-    while (tabs_->count()) {
-        auto* old = tabs_->widget(0);
-        tabs_->removeTab(0);
-        old->deleteLater();
-    }
-    for (const auto& document : documents) {
-        auto* editor = addEditor_();
-        watchEditor(editor);
-        editor->setProperty("documentId", document.id);
-        editor->setProfileId(document.profileId);
-        editor->setProperty("documentTitle", document.title);
-        editor->restoreDocument(document.sql.toUtf8(), document.filePath, document.cursorOffset,
-                                document.selectionAnchor, document.modified);
-        tabs_->setTabText(tabs_->indexOf(editor),
-                          document.title + (document.modified ? QStringLiteral(" •") : QString()));
-    }
-    if (documents.isEmpty())
-        watchEditor(addEditor_());
-    tabs_->setCurrentIndex(0);
-    applying_ = false;
-}
-void WorkspaceRecoveryController::restored(quint64 token,
-                                           const QList<SavedEditorDocument>& documents) {
-    if (token != pending_ || !restoring_)
-        return;
-    // Validate every buffer before replacing any existing tab. The storage and
-    // bridge validate too; this protects injected or malformed native responses.
-    const auto limits = EngineAdapter::recoveryLimits();
-    quint64 total = 0;
-    QSet<QString> ids;
-    if (static_cast<quint64>(documents.size()) > limits.maxDocuments) {
-        failed(token, tr("Saved workspace has too many tabs."));
-        return;
-    }
-    for (const auto& document : documents) {
-        const auto bytes = document.sql.toUtf8();
-        total += static_cast<quint64>(bytes.size());
-        if (static_cast<quint64>(bytes.size()) > limits.maxSqlBytes ||
-            bytes.size() > DocumentIo::MaximumBytes || total > limits.maxCollectionBytes ||
-            ids.contains(document.id)) {
-            failed(token, tr("Saved workspace data exceeds limits or has duplicate document IDs."));
-            return;
-        }
-        ids.insert(document.id);
-        auto boundary = [&bytes](quint64 offset) {
-            return offset <= static_cast<quint64>(bytes.size()) &&
-                   (offset == static_cast<quint64>(bytes.size()) ||
-                    (static_cast<unsigned char>(bytes.at(static_cast<qsizetype>(offset))) & 0xc0) !=
-                        0x80);
-        };
-        if (document.id.isEmpty() || !boundary(document.cursorOffset) ||
-            !boundary(document.selectionAnchor)) {
-            failed(token, tr("Saved workspace data is invalid."));
-            return;
-        }
-    }
-    pending_ = 0;
-    restoring_ = false;
-    failed_ = false;
-    apply(documents);
-    ready_ = true;
-    dirty_ = false;
-    setEnabled(!closing_);
-    emit restoreCompleted(!documents.isEmpty());
-    emit persistenceSucceeded();
-    if (closing_)
-        flush();
 }
 void WorkspaceRecoveryController::restoredTabs(quint64 token, const QList<SavedWorkspaceTab>& tabs,
                                                quint32 activeIndex) {
@@ -354,13 +251,10 @@ void WorkspaceRecoveryController::flush() {
         emit errorOccurred(error, closing_);
         return;
     }
-    pending_ = nextToken();
+    pending_ = nextRequestToken();
     sentRevision_ = revision_;
-    if (objectFactory_)
-        emit saveTabsRequested(snapshotTabs(), static_cast<quint32>(qMax(0, tabs_->currentIndex())),
-                               pending_);
-    else
-        emit saveRequested(snapshot(), pending_);
+    emit saveTabsRequested(snapshotTabs(), static_cast<quint32>(qMax(0, tabs_->currentIndex())),
+                           pending_);
 }
 void WorkspaceRecoveryController::saved(quint64 token) {
     if (token != pending_ || restoring_)
@@ -403,7 +297,11 @@ void WorkspaceRecoveryController::startEmpty() {
         return;
     restoring_ = false;
     failed_ = false;
-    apply({});
+    applying_ = true;
+    clearTabs();
+    watchEditor(addEditor_());
+    tabs_->setCurrentIndex(0);
+    applying_ = false;
     ready_ = true;
     setEnabled(!closing_);
     changed();

@@ -21,6 +21,26 @@
 #include <QtConcurrent/QtConcurrentRun>
 #include <QtTest>
 using namespace choscordb;
+namespace {
+SavedWorkspaceTab sqlTab(const SavedEditorDocument& document) {
+    SavedWorkspaceTab tab;
+    tab.document = document;
+    return tab;
+}
+SavedWorkspaceTab sqlTab(const QString& id) {
+    SavedEditorDocument document;
+    document.id = id;
+    document.title = "Untitled";
+    return sqlTab(document);
+}
+QList<SavedEditorDocument> documentsOf(const QList<SavedWorkspaceTab>& tabs) {
+    QList<SavedEditorDocument> documents;
+    for (const auto& tab : tabs)
+        if (!tab.isObject)
+            documents.append(tab.document);
+    return documents;
+}
+} // namespace
 class RecoveryTest : public QObject {
     Q_OBJECT
   private slots:
@@ -39,7 +59,7 @@ class RecoveryTest : public QObject {
             document.cursorOffset = 10;
             document.selectionAnchor = 8;
             document.modified = true;
-            QVERIFY(adapter.saveWorkspace({document}, 1));
+            QVERIFY(adapter.saveWorkspaceTabs({sqlTab(document)}, 0, 1));
             QTRY_COMPARE(saved.count(), 1);
         }
         MainWindow window(nullptr, path);
@@ -59,7 +79,7 @@ class RecoveryTest : public QObject {
         QVERIFY(controller);
         controller->start();
         QTRY_VERIFY(controller->isReady());
-        const auto documents = controller->snapshot();
+        const auto documents = documentsOf(controller->snapshotTabs());
         QCOMPARE(documents.size(), 1);
         QCOMPARE(documents.at(0).id, QString("restarted"));
         QCOMPARE(documents.at(0).sql, QString::fromUtf8("SELECT 'é';"));
@@ -85,7 +105,7 @@ class RecoveryTest : public QObject {
         QVERIFY(restoredController);
         restoredController->start();
         QTRY_VERIFY(restoredController->isReady());
-        const auto restoredDocuments = restoredController->snapshot();
+        const auto restoredDocuments = documentsOf(restoredController->snapshotTabs());
         QCOMPARE(restoredDocuments.size(), 1);
         QCOMPARE(restoredDocuments[0].sql, updatedSql);
         QCOMPARE(restoredDocuments[0].profileId, QString("absent"));
@@ -309,11 +329,11 @@ class RecoveryTest : public QObject {
         };
         add();
         WorkspaceRecoveryController recovery(&tabs, add);
-        QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreRequested);
-        QSignalSpy saves(&recovery, &WorkspaceRecoveryController::saveRequested);
+        QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreTabsRequested);
+        QSignalSpy saves(&recovery, &WorkspaceRecoveryController::saveTabsRequested);
         QSignalSpy errors(&recovery, &WorkspaceRecoveryController::errorOccurred);
         recovery.start();
-        recovery.restored(restores.at(0).at(0).toULongLong(), {});
+        recovery.restoredTabs(restores.at(0).at(0).toULongLong(), {sqlTab("pending")}, 0);
         auto* editor = qobject_cast<SqlEditor*>(tabs.widget(0));
         editor->openFile(file.fileName());
         QVERIFY(editor->isIoBusy());
@@ -323,7 +343,8 @@ class RecoveryTest : public QObject {
         QCOMPARE(errors.count(), 0);
         release.release();
         QTRY_COMPARE(saves.count(), 1);
-        const auto documents = qvariant_cast<QList<SavedEditorDocument>>(saves.at(0).at(0));
+        const auto documents =
+            documentsOf(qvariant_cast<QList<SavedWorkspaceTab>>(saves.at(0).at(0)));
         QCOMPARE(documents.at(0).sql, QString("SELECT 'loaded';"));
         QCOMPARE(documents.at(0).filePath, file.fileName());
         QVERIFY(!documents.at(0).modified);
@@ -337,18 +358,18 @@ class RecoveryTest : public QObject {
         };
         add();
         WorkspaceRecoveryController recovery(&tabs, add);
-        QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreRequested);
-        QSignalSpy saves(&recovery, &WorkspaceRecoveryController::saveRequested);
+        QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreTabsRequested);
+        QSignalSpy saves(&recovery, &WorkspaceRecoveryController::saveTabsRequested);
         QSignalSpy errors(&recovery, &WorkspaceRecoveryController::errorOccurred);
         QSignalSpy closed(&recovery, &WorkspaceRecoveryController::closeReady);
         recovery.start();
         recovery.requestClose();
         QCOMPARE(errors.count(), 0);
         QCOMPARE(closed.count(), 0);
-        recovery.restored(restores.at(0).at(0).toULongLong(), {});
+        recovery.restoredTabs(restores.at(0).at(0).toULongLong(), {sqlTab("startup")}, 0);
         QVERIFY(!tabs.isEnabled());
         QCOMPARE(saves.count(), 1);
-        recovery.saved(saves.at(0).at(1).toULongLong());
+        recovery.saved(saves.at(0).at(2).toULongLong());
         QTRY_COMPARE(closed.count(), 1);
     }
     void invalidRestoreIsAtomicAndCancelledCloseDoesNotEmitReady() {
@@ -361,8 +382,8 @@ class RecoveryTest : public QObject {
         auto* original = add();
         original->setText("original");
         WorkspaceRecoveryController recovery(&tabs, add);
-        QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreRequested);
-        QSignalSpy saves(&recovery, &WorkspaceRecoveryController::saveRequested);
+        QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreTabsRequested);
+        QSignalSpy saves(&recovery, &WorkspaceRecoveryController::saveTabsRequested);
         QSignalSpy closed(&recovery, &WorkspaceRecoveryController::closeReady);
         QSignalSpy errors(&recovery, &WorkspaceRecoveryController::errorOccurred);
         recovery.start();
@@ -370,15 +391,16 @@ class RecoveryTest : public QObject {
         invalid.id = "same";
         invalid.title = "T";
         invalid.sql = "SELECT 1";
-        recovery.restored(restores.at(0).at(0).toULongLong(), {invalid, invalid});
+        recovery.restoredTabs(restores.at(0).at(0).toULongLong(),
+                              {sqlTab(invalid), sqlTab(invalid)}, 0);
         QCOMPARE(errors.count(), 1);
         QCOMPARE(tabs.widget(0), original);
         QCOMPARE(original->text(), QString("original"));
         recovery.retry();
-        recovery.restored(restores.at(1).at(0).toULongLong(), {});
+        recovery.restoredTabs(restores.at(1).at(0).toULongLong(), {sqlTab("valid")}, 0);
         recovery.requestClose();
         QCOMPARE(saves.count(), 1);
-        recovery.saved(saves.at(0).at(1).toULongLong());
+        recovery.saved(saves.at(0).at(2).toULongLong());
         recovery.cancelClose();
         QCoreApplication::processEvents();
         QCOMPARE(closed.count(), 0);
@@ -393,8 +415,8 @@ class RecoveryTest : public QObject {
         };
         add();
         WorkspaceRecoveryController recovery(&tabs, add);
-        QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreRequested);
-        QSignalSpy saves(&recovery, &WorkspaceRecoveryController::saveRequested);
+        QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreTabsRequested);
+        QSignalSpy saves(&recovery, &WorkspaceRecoveryController::saveTabsRequested);
         QSignalSpy closed(&recovery, &WorkspaceRecoveryController::closeReady);
         recovery.start();
         QCOMPARE(restores.count(), 1);
@@ -415,16 +437,17 @@ class RecoveryTest : public QObject {
         second.sql = "SELECT 2;";
         second.cursorOffset = 0;
         second.selectionAnchor = 0;
-        recovery.restored(token, {doc, second});
+        recovery.restoredTabs(token, {sqlTab(doc), sqlTab(second)}, 0);
         QVERIFY(tabs.isEnabled());
         auto* e = qobject_cast<SqlEditor*>(tabs.widget(0));
         QCOMPARE(e->text(), doc.sql);
         QCOMPARE(e->filePath(), doc.filePath);
         QVERIFY(e->isModified());
-        QCOMPARE(recovery.snapshot().size(), 2);
-        QCOMPARE(recovery.snapshot().at(0).id, doc.id);
-        QCOMPARE(recovery.snapshot().at(1).id, second.id);
-        QCOMPARE(recovery.snapshot().at(0).selectionAnchor, quint64(8));
+        const auto snapshot = documentsOf(recovery.snapshotTabs());
+        QCOMPARE(snapshot.size(), 2);
+        QCOMPARE(snapshot.at(0).id, doc.id);
+        QCOMPARE(snapshot.at(1).id, second.id);
+        QCOMPARE(snapshot.at(0).selectionAnchor, quint64(8));
         e->append(" -- edit");
         recovery.flush();
         QCOMPARE(saves.count(), 1);
@@ -433,11 +456,11 @@ class RecoveryTest : public QObject {
         QCOMPARE(saves.count(), 1);
         recovery.requestClose();
         QCOMPARE(closed.count(), 0);
-        recovery.saved(saves.at(0).at(1).toULongLong());
+        recovery.saved(saves.at(0).at(2).toULongLong());
         QTRY_COMPARE(saves.count(), 2);
-        auto pending = qvariant_cast<QList<SavedEditorDocument>>(saves.at(1).at(0));
+        auto pending = documentsOf(qvariant_cast<QList<SavedWorkspaceTab>>(saves.at(1).at(0)));
         QVERIFY(pending.at(0).sql.endsWith(" more"));
-        recovery.saved(saves.at(1).at(1).toULongLong());
+        recovery.saved(saves.at(1).at(2).toULongLong());
         QTRY_COMPARE(closed.count(), 1);
     }
     void failurePreservesSnapshotAndCloseWaitsForLatestAcknowledgement() {
@@ -449,8 +472,8 @@ class RecoveryTest : public QObject {
         };
         add();
         WorkspaceRecoveryController recovery(&tabs, add);
-        QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreRequested);
-        QSignalSpy saves(&recovery, &WorkspaceRecoveryController::saveRequested);
+        QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreTabsRequested);
+        QSignalSpy saves(&recovery, &WorkspaceRecoveryController::saveTabsRequested);
         QSignalSpy closed(&recovery, &WorkspaceRecoveryController::closeReady);
         recovery.start();
         auto first = restores.at(0).at(0).toULongLong();
@@ -460,22 +483,22 @@ class RecoveryTest : public QObject {
         QVERIFY(!tabs.isEnabled());
         recovery.retry();
         QCOMPARE(restores.count(), 2);
-        recovery.restored(first, {});
+        recovery.restoredTabs(first, {sqlTab("stale")}, 0);
         QVERIFY(!tabs.isEnabled());
-        recovery.restored(restores.at(1).at(0).toULongLong(), {});
+        recovery.restoredTabs(restores.at(1).at(0).toULongLong(), {sqlTab("current")}, 0);
         QVERIFY(tabs.isEnabled());
         qobject_cast<SqlEditor*>(tabs.widget(0))->setText("SELECT 1;");
         recovery.requestClose();
         QVERIFY(!tabs.isEnabled());
         QCOMPARE(closed.count(), 0);
         QCOMPARE(saves.count(), 1);
-        recovery.failed(saves.at(0).at(1).toULongLong(), "Disk full");
+        recovery.failed(saves.at(0).at(2).toULongLong(), "Disk full");
         QCOMPARE(closed.count(), 0);
         recovery.retry();
         QCOMPARE(saves.count(), 2);
-        recovery.saved(saves.at(0).at(1).toULongLong());
+        recovery.saved(saves.at(0).at(2).toULongLong());
         QCOMPARE(closed.count(), 0);
-        recovery.saved(saves.at(1).at(1).toULongLong());
+        recovery.saved(saves.at(1).at(2).toULongLong());
         QTRY_COMPARE(closed.count(), 1);
     }
 };

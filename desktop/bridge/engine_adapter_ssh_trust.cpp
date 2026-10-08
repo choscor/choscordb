@@ -7,20 +7,20 @@ QList<SshHostKeyCandidate> hostKeyCandidates(const rust::Vec<SshHostKeyCandidate
     candidates.reserve(static_cast<qsizetype>(values.size()));
     for (const auto& value : values) {
         SshHostKeyCandidate candidate;
-        const auto kind = string(value.target_kind);
+        const auto kind = fromRust(value.target_kind);
         candidate.target.kind = kind == "jump"         ? SshHostKeyTarget::Kind::JumpId
                                 : kind == "jump_index" ? SshHostKeyTarget::Kind::JumpIndex
                                                        : SshHostKeyTarget::Kind::Target;
-        candidate.target.id = string(value.target_id);
+        candidate.target.id = fromRust(value.target_id);
         candidate.target.index = static_cast<int>(value.target_index);
-        candidate.originalHost = string(value.original_host);
-        candidate.hostname = string(value.hostname);
+        candidate.originalHost = fromRust(value.original_host);
+        candidate.hostname = fromRust(value.hostname);
         candidate.port = value.port;
-        candidate.hostKeyAlias = string(value.host_key_alias);
-        candidate.keyType = string(value.key_type);
-        candidate.publicKey = string(value.public_key);
-        candidate.sha256 = string(value.sha256);
-        candidate.opaqueJson = string(value.opaque_json);
+        candidate.hostKeyAlias = fromRust(value.host_key_alias);
+        candidate.keyType = fromRust(value.key_type);
+        candidate.publicKey = fromRust(value.public_key);
+        candidate.sha256 = fromRust(value.sha256);
+        candidate.opaqueJson = fromRust(value.opaque_json);
         candidates.push_back(std::move(candidate));
     }
     return candidates;
@@ -50,7 +50,7 @@ void EngineAdapter::inspectSshHostKeys(const SavedProfile& profile, const SshHos
         target.kind == SshHostKeyTarget::Kind::JumpIndex ? static_cast<quint32>(target.index) : 0,
         token);
     if (!submitted.accepted)
-        emit sshHostKeyOperationFailed(token, engine_adapter_detail::string(submitted.error));
+        emit sshHostKeyOperationFailed(token, engine_adapter_detail::fromRust(submitted.error));
 }
 
 void EngineAdapter::approveSshHostKey(const SshHostKeyCandidate& candidate,
@@ -67,6 +67,6 @@ void EngineAdapter::approveSshHostKey(const SshHostKeyCandidate& candidate,
                              engine_adapter_detail::utf8View(fingerprintBytes),
                              engine_adapter_detail::utf8View(pathBytes), token);
     if (!submitted.accepted)
-        emit sshHostKeyOperationFailed(token, engine_adapter_detail::string(submitted.error));
+        emit sshHostKeyOperationFailed(token, engine_adapter_detail::fromRust(submitted.error));
 }
 } // namespace choscordb

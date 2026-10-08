@@ -5,7 +5,6 @@
 
 class QHBoxLayout;
 class QScrollArea;
-class QVBoxLayout;
 
 namespace choscordb::design {
 class Text;

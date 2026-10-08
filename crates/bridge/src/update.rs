@@ -1,13 +1,15 @@
 //! Typed transport for Rust-owned signed update and readiness policy.
 use crate::ffi::{
     UpdateCheckDto, UpdateConsentDto, UpdateDownloadDto, UpdateHelperDto, UpdateInstallDto,
-    UpdateParseDto, UpdateProgressDto, UpdateRecordDto, UpdateVerifyDto,
+    UpdateProgressDto, UpdateRecordDto,
 };
 #[cfg(target_os = "linux")]
 use base64::Engine as _;
+#[cfg(target_os = "linux")]
+use choscordb_update::parse_signed_update_metadata;
 use choscordb_update::{
     CheckedUpdate, InstallError, NetworkError, StagedUpdate, StagingLocation, UpdateNetworkService,
-    UpdatePreferenceStore, UpdateRecord, parse_signed_update_metadata, verify_update_file,
+    UpdatePreferenceStore, UpdateRecord,
 };
 use std::{
     path::Path,
@@ -390,65 +392,6 @@ fn record_to_dto(record: UpdateRecord) -> UpdateRecordDto {
         size: record.size,
         sha256: record.sha256.into(),
         notes: record.notes,
-    }
-}
-
-fn record_from_dto(dto: UpdateRecordDto) -> Option<UpdateRecord> {
-    if dto.size == 0 {
-        return None;
-    }
-    Some(UpdateRecord {
-        version: dto.version,
-        url: dto.url,
-        size: dto.size,
-        sha256: dto.sha256.try_into().ok()?,
-        notes: dto.notes,
-    })
-}
-
-pub fn update_parse_signed_metadata(
-    envelope: &[u8],
-    public_key: &[u8],
-    current_version: &str,
-    platform: &str,
-    arch: &str,
-    repository: &str,
-) -> UpdateParseDto {
-    match parse_signed_update_metadata(
-        envelope,
-        public_key,
-        current_version,
-        platform,
-        arch,
-        repository,
-    ) {
-        Ok(Some(record)) => UpdateParseDto {
-            found: true,
-            record: record_to_dto(record),
-            error: String::new(),
-        },
-        Ok(None) => UpdateParseDto {
-            found: false,
-            record: UpdateRecordDto::default(),
-            error: String::new(),
-        },
-        Err(error) => UpdateParseDto {
-            found: false,
-            record: UpdateRecordDto::default(),
-            error: error.to_string(),
-        },
-    }
-}
-
-pub fn update_verify_file(path: &str, record: UpdateRecordDto) -> UpdateVerifyDto {
-    let error = record_from_dto(record)
-        .ok_or(choscordb_update::UpdateError::PackageIntegrityFailed)
-        .and_then(|record| verify_update_file(Path::new(path), &record))
-        .err()
-        .map_or_else(String::new, |error| error.to_string());
-    UpdateVerifyDto {
-        success: error.is_empty(),
-        error,
     }
 }
 

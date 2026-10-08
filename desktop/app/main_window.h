@@ -20,7 +20,6 @@ namespace choscordb {
 namespace design {
 class PlatformAccessibilityMonitor;
 class ThemeManager;
-class StatusLine;
 class QuickSearchDialog;
 } // namespace design
 class SqlEditor;

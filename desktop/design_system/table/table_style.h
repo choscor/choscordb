@@ -6,7 +6,6 @@
 #include <QStyledItemDelegate>
 class QTableView;
 class QAction;
-class QComboBox;
 class QItemSelectionModel;
 class QAbstractItemModel;
 
