@@ -116,7 +116,6 @@ class QueryWorkspace final : public QObject {
     bool navigationAllowed() const { return !workInFlight() && !stopping_; }
   signals:
     void connectionReady(quint64 connection);
-    void connectionAttemptFailed(const QString& driver);
     void documentTargetChanged();
     void openQueryRequested(quint64 connection);
     void activityChanged(bool busy);
@@ -175,13 +174,14 @@ class QueryWorkspace final : public QObject {
     void handleRowJsonEvent(const BridgeEvent& event);
     void copyResult(int scope);
     void renderCopy(ResultTableModel::CopySnapshot snapshot, QPersistentModelIndex anchor,
-                    quint64 query, QModelIndexList selection, int scope, quint64 generation);
+                    quint64 query, quint64 selectionGeneration, int scope, quint64 generation);
     void requestCopyChunk();
     void handleCopyEvent(const BridgeEvent& event);
     void failCopy(const QString& error);
     void handleEvent(const BridgeEvent& event);
     bool connectionCanDisconnect(quint64 connection) const;
     void updateActions();
+    void updateSetNullAction();
     bool connectionAvailable(quint64 connection) const;
     bool queryAvailable() const;
     bool workInFlight() const;
@@ -230,7 +230,8 @@ class QueryWorkspace final : public QObject {
     quint64 rowJsonResolvedBytes_ = 0;
     struct PendingCopy {
         int scope = 0;
-        QModelIndexList selection;
+        QItemSelection selection;
+        quint64 selectionGeneration = 0;
         QPersistentModelIndex anchor;
         quint64 query = 0;
         ResultTableModel::ResolvedCells resolved;
@@ -243,6 +244,10 @@ class QueryWorkspace final : public QObject {
     };
     std::optional<PendingCopy> pendingCopy_;
     quint64 copyGeneration_ = 0;
+    // Changes whenever the grid selection or the rows it addresses change.
+    quint64 selectionGeneration_ = 0;
+    bool setNullAvailable_ = false;
+    bool editabilityReplanQueued_ = false;
     ExportDialog* export_ = nullptr;
     ProfileDialog* profiles_ = nullptr;
     QPointer<SqlEditor> resultEditor_;

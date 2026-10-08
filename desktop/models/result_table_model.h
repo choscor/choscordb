@@ -1,6 +1,7 @@
 #pragma once
 #include <QAbstractTableModel>
 #include <QByteArray>
+#include <QItemSelection>
 #include <QString>
 #include <QStringList>
 #include <cstddef>
@@ -50,14 +51,13 @@ struct ResultCellMetadata {
 class ResultTableModel final : public QAbstractTableModel {
     Q_OBJECT
   public:
-    enum class RowJsonReadiness { Ready, NeedsDeferred, Invalid };
-    enum class CellJsonReadiness { Unavailable, Ready, NeedsDeferred, Invalid };
     static constexpr int HeaderTypeRole = Qt::UserRole + 1;
     static constexpr int HeaderKeyRole = Qt::UserRole + 2;
     static constexpr int HeaderNameRole = Qt::UserRole + 3;
     static constexpr int ResultValueKindRole = Qt::UserRole + 4;
-    static constexpr int ResultDatabaseTypeRole = Qt::UserRole + 5;
-    static constexpr int ResultUnavailableReasonRole = Qt::UserRole + 6;
+    // Bounded single-line DisplayRole previews keep layout and elision cost per cell constant.
+    // EditRole and cellValue() keep the complete value.
+    static constexpr qsizetype DisplayPreviewChars = 512;
     using Row = std::vector<Cell>;
     using ResolvedCells = std::map<std::pair<int, int>, Cell>;
     enum class JsonViewScope { Cell, Row, Page };
@@ -142,44 +142,39 @@ class ResultTableModel final : public QAbstractTableModel {
     static CellEditEvaluation evaluateCellEdit(CellEditSnapshot snapshot);
     CellEditEvaluation stageCellEdit(const QModelIndex& index, CellEditEvaluation evaluation);
     bool setNull(const QModelIndex& index);
+    // Stages NULL in every editable selected cell with one dataChanged per range and a single
+    // pendingEditsChanged notification.
+    bool setNull(const QItemSelection& selection);
+    bool hasEditableCell(const QItemSelection& selection) const;
+    // Sorted, unique, in-range rows covered by the selection.
+    std::vector<int> selectedRows(const QItemSelection& selection) const;
     bool addRow();
     bool duplicateRow(int row, QString* error = nullptr);
     bool duplicateRow(int row, const std::vector<bool>& copyable, QString* error = nullptr);
     void markDeleted(const QModelIndexList& selection, bool deleted);
+    void markRowsDeleted(std::vector<int> rows, bool deleted);
     void discardEdits();
     bool hasPendingEdits() const;
     bool canInsert() const { return canInsert_; }
     bool canDelete() const { return canDelete_; }
+    bool hasInsertedRows() const { return insertedCount_ != 0; }
+    bool hasDeletedRows() const { return deletedCount_ != 0; }
     const std::vector<ResultColumn>& columns() const { return columns_; }
-    const std::vector<Row>& originalRows() const { return originalRows_; }
+    // Rows before originalRowCount() came from the page; staged inserts follow them.
+    std::size_t originalRowCount() const { return originalRowCount_; }
+    const Row& originalRow(std::size_t row) const;
     const std::vector<Row>& rows() const { return rows_; }
     const std::vector<std::vector<bool>>& touched() const { return touched_; }
     const std::vector<bool>& inserted() const { return inserted_; }
     const std::vector<bool>& deleted() const { return deleted_; }
-    // Copies a rectangle covering the selection, leaving unselected cells blank.
-    // Deferred values must be loaded before copying; failures return empty text.
-    QString copyCells(QModelIndexList selection, QString* error = nullptr) const;
-    QString copyRows(QModelIndexList selection, QString* error = nullptr) const;
-    QString copyPage(QString* error = nullptr) const;
-    QString copyCells(QModelIndexList selection, QString* error,
-                      const ResolvedCells& resolved) const;
-    QString copyRows(QModelIndexList selection, QString* error,
-                     const ResolvedCells& resolved) const;
-    QString copyPage(QString* error, const ResolvedCells& resolved) const;
-    std::optional<CopySnapshot> copySnapshot(QModelIndexList selection, int scope,
+    // Scope 0 copies a rectangle covering the selected cells, leaving unselected cells blank.
+    // Scope 1 copies every selected row; scope 2 copies the page and ignores the selection.
+    std::optional<CopySnapshot> copySnapshot(const QItemSelection& selection, int scope,
                                              const ResolvedCells& resolved = {}) const;
+    // Deferred cells that a copy of the same selection and scope must load first.
+    std::vector<std::pair<int, int>> copyDeferredCells(const QItemSelection& selection,
+                                                       int scope) const;
     static CopyEvaluation evaluateCopy(CopySnapshot snapshot);
-    // Returns a complete typed JSON object. Deferred cells require full values
-    // keyed by column index; failure clears json and sets error.
-    bool rowJson(int row, QString* json, QString* error = nullptr,
-                 const std::map<int, Cell>& resolved = {}) const;
-    RowJsonReadiness rowJsonReadiness(int row, QString* error = nullptr) const;
-    CellJsonReadiness cellJsonReadiness(const QModelIndex& index, QString* error = nullptr) const;
-    bool cellJson(const QModelIndex& index, QString* json, QString* error = nullptr,
-                  const std::optional<Cell>& resolved = {}) const;
-    bool pageJson(QString* json, QString* error = nullptr,
-                  const std::map<std::pair<int, int>, Cell>& resolved = {}) const;
-    RowJsonReadiness pageJsonReadiness(QString* error = nullptr) const;
     // Capture Qt model state on its owning thread. The returned value has no QObject references
     // and can be evaluated on a worker thread.
     std::optional<JsonViewSnapshot> jsonViewSnapshot(JsonViewScope scope, int row, int column,
@@ -190,14 +185,39 @@ class ResultTableModel final : public QAbstractTableModel {
     void pendingEditsChanged(bool pending);
 
   private:
-    bool rowJsonImpl(int row, QString* json, QString* error, const std::map<int, Cell>& resolved,
-                     bool allowDeferred, bool* unresolved) const;
-    QString copyScope(QModelIndexList selection, int scope, QString* error,
-                      const ResolvedCells& resolved = {}) const;
+    struct CopyShape {
+        std::vector<int> rows;
+        int minColumn = 0;
+        int maxColumn = -1;
+        // Scope 0 only: selected cells inside the rows x columns rectangle.
+        std::vector<bool> selected;
+        bool contains(std::size_t line, int column) const {
+            return selected.empty() ||
+                   selected[line * static_cast<std::size_t>(maxColumn - minColumn + 1) +
+                            static_cast<std::size_t>(column - minColumn)];
+        }
+    };
+    std::optional<CopyShape> copyShape(const QItemSelection& selection, int scope) const;
+    bool cellEditable(int row, int column) const;
+    void stageNull(int row, int column);
+    void markTouched(int row, int column);
+    void preserveOriginal(int row);
+    bool linkable(int row, int column) const;
+    void resetLinkCache();
+    void resetPendingCounts();
     std::vector<ResultColumn> columns_;
     std::vector<ResultCellMetadata> cellMetadata_;
     std::vector<Row> rows_;
-    std::vector<Row> originalRows_;
+    // Page originals are retained only for original rows that received a staged edit;
+    // every other original row is still identical to rows_.
+    std::map<std::size_t, Row> editedOriginals_;
+    std::size_t originalRowCount_ = 0;
+    std::size_t touchedCount_ = 0, insertedCount_ = 0, deletedCount_ = 0;
+    // Foreign-key linkability is computed once per cell and reused by painting.
+    // Slots exist only for columns with complete reference metadata.
+    std::vector<int> linkSlots_;
+    int linkColumnCount_ = 0;
+    mutable std::vector<quint8> linkCache_;
     std::vector<std::vector<bool>> touched_;
     std::vector<std::vector<std::size_t>> editBytes_;
     std::vector<bool> inserted_, deleted_, editable_;

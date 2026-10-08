@@ -376,7 +376,7 @@ void QueryWorkspace::submitResultView(const QList<ResultFilterCondition>& filter
     }
     viewBusy_ = true;
     filterBar_->setBusy(true);
-    setExecutionState(QStringLiteral("running"), tr("◷ Preparing result view…"));
+    setExecutionState(QStringLiteral("running"), tr("Preparing result view…"));
     updateActions();
 }
 

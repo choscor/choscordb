@@ -12,6 +12,88 @@
 #include <limits>
 using namespace choscordb;
 namespace {
+// Production copy path: capture a snapshot on the model thread, then evaluate it.
+QString copyScope(const ResultTableModel& model, const QModelIndexList& indexes, int scope,
+                  QString* error, const ResultTableModel::ResolvedCells& resolved) {
+    if (error)
+        error->clear();
+    QItemSelection selection;
+    for (const auto& index : indexes)
+        selection.select(index, index);
+    auto snapshot = model.copySnapshot(selection, scope, resolved);
+    if (!snapshot)
+        return {};
+    auto evaluated = ResultTableModel::evaluateCopy(std::move(*snapshot));
+    if (error)
+        *error = evaluated.error;
+    return evaluated.text;
+}
+QString copyCells(const ResultTableModel& model, const QModelIndexList& indexes,
+                  QString* error = nullptr, const ResultTableModel::ResolvedCells& resolved = {}) {
+    return copyScope(model, indexes, 0, error, resolved);
+}
+QString copyRows(const ResultTableModel& model, const QModelIndexList& indexes,
+                 QString* error = nullptr, const ResultTableModel::ResolvedCells& resolved = {}) {
+    return copyScope(model, indexes, 1, error, resolved);
+}
+QString copyPage(const ResultTableModel& model, QString* error = nullptr,
+                 const ResultTableModel::ResolvedCells& resolved = {}) {
+    return copyScope(model, {}, 2, error, resolved);
+}
+// Production JSON view path: capture a snapshot on the model thread, then evaluate it.
+ResultTableModel::JsonViewEvaluation
+evaluateJson(const ResultTableModel& model, ResultTableModel::JsonViewScope scope, int row,
+             int column, const ResultTableModel::ResolvedCells& resolved, QString* json = nullptr,
+             QString* error = nullptr) {
+    ResultTableModel::JsonViewEvaluation evaluation;
+    if (auto snapshot = model.jsonViewSnapshot(scope, row, column, resolved))
+        evaluation = ResultTableModel::evaluateJsonView(std::move(*snapshot));
+    else
+        evaluation.error = QStringLiteral("This result is no longer available.");
+    if (json)
+        *json = evaluation.json;
+    if (error)
+        *error = evaluation.error;
+    return evaluation;
+}
+bool rowJson(const ResultTableModel& model, int row, QString* json, QString* error = nullptr,
+             const std::map<int, Cell>& loaded = {}) {
+    ResultTableModel::ResolvedCells resolved;
+    for (const auto& [column, value] : loaded)
+        resolved.emplace(std::pair{row, column}, value);
+    return evaluateJson(model, ResultTableModel::JsonViewScope::Row, row, 0, resolved, json, error)
+               .state == ResultTableModel::JsonViewState::Ready;
+}
+bool cellJson(const ResultTableModel& model, const QModelIndex& index, QString* json,
+              QString* error = nullptr, const std::optional<Cell>& loaded = {}) {
+    ResultTableModel::ResolvedCells resolved;
+    if (loaded)
+        resolved.emplace(std::pair{index.row(), index.column()}, *loaded);
+    return evaluateJson(model, ResultTableModel::JsonViewScope::Cell, index.row(), index.column(),
+                        resolved, json, error)
+               .state == ResultTableModel::JsonViewState::Ready;
+}
+bool pageJson(const ResultTableModel& model, QString* json, QString* error = nullptr,
+              const ResultTableModel::ResolvedCells& resolved = {}) {
+    return evaluateJson(model, ResultTableModel::JsonViewScope::Page, 0, 0, resolved, json, error)
+               .state == ResultTableModel::JsonViewState::Ready;
+}
+ResultTableModel::JsonViewState rowJsonState(const ResultTableModel& model, int row,
+                                             QString* error = nullptr) {
+    return evaluateJson(model, ResultTableModel::JsonViewScope::Row, row, 0, {}, nullptr, error)
+        .state;
+}
+ResultTableModel::JsonViewState cellJsonState(const ResultTableModel& model,
+                                              const QModelIndex& index, QString* error = nullptr) {
+    return evaluateJson(model, ResultTableModel::JsonViewScope::Cell, index.row(), index.column(),
+                        {}, nullptr, error)
+        .state;
+}
+ResultTableModel::JsonViewState pageJsonState(const ResultTableModel& model,
+                                              QString* error = nullptr) {
+    return evaluateJson(model, ResultTableModel::JsonViewScope::Page, 0, 0, {}, nullptr, error)
+        .state;
+}
 ResultColumn column(const QString& name, const QString& databaseType) {
     ResultColumn value{};
     value.name = name;
@@ -201,15 +283,14 @@ class ResultModelTest : public QObject {
         QVERIFY(model.setPage({column("payload", "blob"), column("text", "text")},
                               {{DeferredValue{42, 70000, "binary"}, invalid}}, 0));
         QString error;
-        QCOMPARE(model.rowJsonReadiness(0, &error), ResultTableModel::RowJsonReadiness::Invalid);
+        QCOMPARE(rowJsonState(model, 0, &error), ResultTableModel::JsonViewState::Invalid);
         QVERIFY(!error.isEmpty());
         QVERIFY(model.setPage({column("payload", "blob"), column("text", "text")},
                               {{DeferredValue{42, 70000, "binary"}, QString("valid")}}, 0));
-        QCOMPARE(model.rowJsonReadiness(0, &error),
-                 ResultTableModel::RowJsonReadiness::NeedsDeferred);
-        QVERIFY(error.isEmpty());
+        QCOMPARE(rowJsonState(model, 0, &error), ResultTableModel::JsonViewState::NeedsDeferred);
+        QVERIFY(error.contains("deferred", Qt::CaseInsensitive));
         QVERIFY(model.setPage({column("text", "text")}, {{QString("valid")}}, 0));
-        QCOMPARE(model.rowJsonReadiness(0, &error), ResultTableModel::RowJsonReadiness::Ready);
+        QCOMPARE(rowJsonState(model, 0, &error), ResultTableModel::JsonViewState::Ready);
     }
     void rowJsonPreservesTypedValuesAndStagedState() {
         ResultTableModel model;
@@ -223,7 +304,7 @@ class ResultModelTest : public QObject {
         model.setEditableColumns({true, true, true, true, true, true, true, false}, true, true);
         QVERIFY(model.setData(model.index(0, 4), "true"));
         QString json, error;
-        QVERIFY(model.rowJson(0, &json, &error));
+        QVERIFY(rowJson(model, 0, &json, &error));
         QVERIFY2(error.isEmpty(), qPrintable(error));
         QCOMPARE(json, QString("{\n"
                                "  \"null\": null,\n"
@@ -253,7 +334,7 @@ class ResultModelTest : public QObject {
                                 QString("five"), QString("six")}},
                               0));
         QString json, error;
-        QVERIFY(model.rowJson(0, &json, &error));
+        QVERIFY(rowJson(model, 0, &json, &error));
         const auto parsed = QJsonDocument::fromJson(json.toUtf8());
         QVERIFY(parsed.isObject());
         const auto object = parsed.object();
@@ -266,7 +347,7 @@ class ResultModelTest : public QObject {
         QCOMPARE(object.value("column 6").toString(), QString("six"));
         QVERIFY(json.indexOf("\"name (3)\"") < json.indexOf("\"name (2)\""));
         QString again;
-        QVERIFY(model.rowJson(0, &again));
+        QVERIFY(rowJson(model, 0, &again));
         QCOMPARE(again, json);
     }
     void rowJsonMarksOmittedInsertFieldsWithoutConfusingNullAndEmpty() {
@@ -280,7 +361,7 @@ class ResultModelTest : public QObject {
         QVERIFY(model.setData(model.index(0, 2), "x"));
         QVERIFY(model.setData(model.index(0, 2), ""));
         QString json, error;
-        QVERIFY(model.rowJson(0, &json, &error));
+        QVERIFY(rowJson(model, 0, &json, &error));
         const auto object = QJsonDocument::fromJson(json.toUtf8()).object();
         QCOMPARE(object.value("omitted").toObject().value("$omitted").toBool(), true);
         QVERIFY(object.value("null").isNull());
@@ -292,13 +373,13 @@ class ResultModelTest : public QObject {
         QVERIFY(model.setPage({column("text", "text"), column("bytes", "blob")},
                               {{DeferredValue{91, 4, "text"}, DeferredValue{92, 0, "blob"}}}, 0));
         QString json = "stale", error;
-        QVERIFY(!model.rowJson(0, &json, &error));
+        QVERIFY(!rowJson(model, 0, &json, &error));
         QVERIFY(json.isEmpty());
         QVERIFY(error.contains("deferred", Qt::CaseInsensitive));
-        QVERIFY(!model.rowJson(0, &json, &error, {{0, QString("abc")}, {1, QByteArray()}}));
+        QVERIFY(!rowJson(model, 0, &json, &error, {{0, QString("abc")}, {1, QByteArray()}}));
         QVERIFY(json.isEmpty());
         QVERIFY(error.contains("incomplete", Qt::CaseInsensitive));
-        QVERIFY(model.rowJson(0, &json, &error, {{0, QString("full")}, {1, QByteArray()}}));
+        QVERIFY(rowJson(model, 0, &json, &error, {{0, QString("full")}, {1, QByteArray()}}));
         QCOMPARE(QJsonDocument::fromJson(json.toUtf8()).object().value("text").toString(),
                  QString("full"));
         QCOMPARE(QJsonDocument::fromJson(json.toUtf8())
@@ -308,12 +389,12 @@ class ResultModelTest : public QObject {
                      .value("$binary")
                      .toString(),
                  QString(""));
-        QVERIFY(!model.rowJson(5, &json, &error));
+        QVERIFY(!rowJson(model, 5, &json, &error));
         QVERIFY(json.isEmpty());
         QVERIFY(!error.isEmpty());
         QVERIFY(model.setPage({column("number", "real")},
                               {{std::numeric_limits<double>::infinity()}}, 0));
-        QVERIFY(!model.rowJson(0, &json, &error));
+        QVERIFY(!rowJson(model, 0, &json, &error));
         QVERIFY(json.isEmpty());
         QVERIFY(error.contains("non-finite", Qt::CaseInsensitive));
     }
@@ -327,7 +408,7 @@ class ResultModelTest : public QObject {
         ResultTableModel model;
         QVERIFY(model.setPage({column("payload", "text")}, {{value}}, 0));
         QString json, error;
-        QVERIFY(model.rowJson(0, &json, &error));
+        QVERIFY(rowJson(model, 0, &json, &error));
         QVERIFY2(error.isEmpty(), qPrintable(error));
         QCOMPARE(QJsonDocument::fromJson(json.toUtf8()).object().value("payload").toString(),
                  value);
@@ -343,26 +424,24 @@ class ResultModelTest : public QObject {
             {{QString(R"({"n":9223372036854775807,"n":2})"), QString("true"), QString("{broken"),
               qint64(1), QByteArray("1"), std::monostate{}, DeferredValue{91, 4, "text"}}},
             0));
-        QCOMPARE(model.cellJsonReadiness(model.index(0, 0)),
-                 ResultTableModel::CellJsonReadiness::Ready);
-        QCOMPARE(model.cellJsonReadiness(model.index(0, 1)),
-                 ResultTableModel::CellJsonReadiness::Ready);
+        QCOMPARE(cellJsonState(model, model.index(0, 0)), ResultTableModel::JsonViewState::Ready);
+        QCOMPARE(cellJsonState(model, model.index(0, 1)), ResultTableModel::JsonViewState::Ready);
         for (int column : {2, 3, 4, 5})
-            QCOMPARE(model.cellJsonReadiness(model.index(0, column)),
-                     ResultTableModel::CellJsonReadiness::Unavailable);
-        QCOMPARE(model.cellJsonReadiness(model.index(0, 6)),
-                 ResultTableModel::CellJsonReadiness::NeedsDeferred);
+            QCOMPARE(cellJsonState(model, model.index(0, column)),
+                     ResultTableModel::JsonViewState::Unavailable);
+        QCOMPARE(cellJsonState(model, model.index(0, 6)),
+                 ResultTableModel::JsonViewState::NeedsDeferred);
         QString json, error;
-        QVERIFY(model.cellJson(model.index(0, 0), &json, &error));
+        QVERIFY(cellJson(model, model.index(0, 0), &json, &error));
         QVERIFY2(error.isEmpty(), qPrintable(error));
         QVERIFY(json.contains("9223372036854775807"));
         QVERIFY(json.indexOf("\"n\"") != json.lastIndexOf("\"n\""));
-        QVERIFY(model.cellJson(model.index(0, 1), &json, &error));
+        QVERIFY(cellJson(model, model.index(0, 1), &json, &error));
         QCOMPARE(json, QString("true"));
-        QVERIFY(!model.cellJson(model.index(0, 6), &json, &error));
+        QVERIFY(!cellJson(model, model.index(0, 6), &json, &error));
         QVERIFY(json.isEmpty());
         QVERIFY(error.contains("deferred", Qt::CaseInsensitive));
-        QVERIFY(model.cellJson(model.index(0, 6), &json, &error, Cell{QString("null")}));
+        QVERIFY(cellJson(model, model.index(0, 6), &json, &error, Cell{QString("null")}));
         QCOMPARE(json, QString("null"));
     }
     void stagedMalformedJsonStaysInspectableButClearsOutput() {
@@ -373,15 +452,15 @@ class ResultModelTest : public QObject {
         QVERIFY(model.setData(model.index(0, 0), "{bad"));
         QVERIFY(model.setData(model.index(0, 1), "{bad"));
         QString error, json = "stale";
-        QCOMPARE(model.cellJsonReadiness(model.index(0, 0), &error),
-                 ResultTableModel::CellJsonReadiness::Invalid);
+        QCOMPARE(cellJsonState(model, model.index(0, 0), &error),
+                 ResultTableModel::JsonViewState::Invalid);
         QVERIFY(!error.isEmpty());
-        QCOMPARE(model.cellJsonReadiness(model.index(0, 1), &error),
-                 ResultTableModel::CellJsonReadiness::Unavailable);
-        QVERIFY(!model.cellJson(model.index(0, 0), &json, &error));
+        QCOMPARE(cellJsonState(model, model.index(0, 1), &error),
+                 ResultTableModel::JsonViewState::Unavailable);
+        QVERIFY(!cellJson(model, model.index(0, 0), &json, &error));
         QVERIFY(json.isEmpty());
         QVERIFY(!error.isEmpty());
-        QVERIFY(!model.rowJson(0, &json, &error));
+        QVERIFY(!rowJson(model, 0, &json, &error));
         QVERIFY(json.isEmpty());
     }
     void pageJsonIncludesLoadedRowsInGridOrderWithStagedValues() {
@@ -395,9 +474,9 @@ class ResultModelTest : public QObject {
         model.markDeleted({model.index(1, 0)}, true);
         QVERIFY(model.addRow());
         QVERIFY(model.setData(model.index(2, 0), "true"));
-        QCOMPARE(model.pageJsonReadiness(), ResultTableModel::RowJsonReadiness::Ready);
+        QCOMPARE(pageJsonState(model), ResultTableModel::JsonViewState::Ready);
         QString json, error;
-        QVERIFY(model.pageJson(&json, &error));
+        QVERIFY(pageJson(model, &json, &error));
         QVERIFY2(error.isEmpty(), qPrintable(error));
         QVERIFY(json.contains("9223372036854775807"));
         const auto document = QJsonDocument::fromJson(json.toUtf8());
@@ -417,15 +496,15 @@ class ResultModelTest : public QObject {
             {column("document", "json"), column("name", "text")},
             {{DeferredValue{8, 4, "text"}, QString("first")}, {QString("{}"), QString("second")}},
             0));
-        QCOMPARE(model.pageJsonReadiness(), ResultTableModel::RowJsonReadiness::NeedsDeferred);
+        QCOMPARE(pageJsonState(model), ResultTableModel::JsonViewState::NeedsDeferred);
         QString json = "stale", error;
-        QVERIFY(!model.pageJson(&json, &error));
+        QVERIFY(!pageJson(model, &json, &error));
         QVERIFY(json.isEmpty());
         QVERIFY(error.contains("deferred", Qt::CaseInsensitive));
-        QVERIFY(!model.pageJson(&json, &error, {{{0, 0}, QByteArray("null")}}));
+        QVERIFY(!pageJson(model, &json, &error, {{{0, 0}, QByteArray("null")}}));
         QVERIFY(json.isEmpty());
         QVERIFY(error.contains("invalid", Qt::CaseInsensitive));
-        QVERIFY(model.pageJson(&json, &error, {{{0, 0}, QString("null")}}));
+        QVERIFY(pageJson(model, &json, &error, {{{0, 0}, QString("null")}}));
         QCOMPARE(QJsonDocument::fromJson(json.toUtf8()).array().size(), 2);
         QVERIFY(QJsonDocument::fromJson(json.toUtf8())
                     .array()[0]
@@ -435,9 +514,9 @@ class ResultModelTest : public QObject {
 
         QVERIFY(model.setPage({column("document", "json")},
                               {{DeferredValue{8, 4, "text"}}, {QString("{bad")}}, 0));
-        QCOMPARE(model.pageJsonReadiness(&error), ResultTableModel::RowJsonReadiness::Invalid);
+        QCOMPARE(pageJsonState(model, &error), ResultTableModel::JsonViewState::Invalid);
         QVERIFY(!error.isEmpty());
-        QVERIFY(!model.pageJson(&json, &error));
+        QVERIFY(!pageJson(model, &json, &error));
         QVERIFY(json.isEmpty());
     }
     void pageJsonRejectsAggregateOutputOverBudgetWithoutPartialDocument() {
@@ -455,9 +534,9 @@ class ResultModelTest : public QObject {
                               0));
         QVERIFY(model.setByteBudget(1048576));
         QString row, json = "stale", error;
-        QVERIFY(model.rowJson(0, &row, &error));
+        QVERIFY(rowJson(model, 0, &row, &error));
         QVERIFY(!row.isEmpty());
-        QVERIFY(!model.pageJson(&json, &error));
+        QVERIFY(!pageJson(model, &json, &error));
         QVERIFY(json.isEmpty());
         QVERIFY(error.contains("1048576 bytes"));
         QVERIFY(error.contains("16 MiB"));
@@ -469,9 +548,9 @@ class ResultModelTest : public QObject {
         invalid += "\"}";
         QVERIFY(model.setPage({column("document", "jsonb")}, {{invalid}}, 0));
         QString json = "stale", error;
-        QCOMPARE(model.cellJsonReadiness(model.index(0, 0), &error),
-                 ResultTableModel::CellJsonReadiness::Invalid);
-        QVERIFY(!model.cellJson(model.index(0, 0), &json, &error));
+        QCOMPARE(cellJsonState(model, model.index(0, 0), &error),
+                 ResultTableModel::JsonViewState::Invalid);
+        QVERIFY(!cellJson(model, model.index(0, 0), &json, &error));
         QVERIFY(json.isEmpty());
         QVERIFY(!error.isEmpty());
     }
@@ -684,15 +763,15 @@ class ResultModelTest : public QObject {
                                {QString("d"), QString("e"), QString("f")},
                                {QString("g"), QString("h"), QString("i")}},
                               0));
-        QCOMPARE(model.copyCells({model.index(0, 0)}),
+        QCOMPARE(copyCells(model, {model.index(0, 0)}),
                  QString("0x") + QString::fromLatin1(binary.toHex()));
-        QCOMPARE(model.copyCells({model.index(0, 1), model.index(2, 2)}), QString("b\t\n\t\n\ti"));
+        QCOMPARE(copyCells(model, {model.index(0, 1), model.index(2, 2)}), QString("b\t\n\t\n\ti"));
     }
     void deferredCopyReportsAnError() {
         ResultTableModel model;
         QVERIFY(model.setPage({column("blob", "blob")}, {{DeferredValue{1, 500000, "blob"}}}, 0));
         QString error;
-        QVERIFY(model.copyCells({model.index(0, 0)}, &error).isEmpty());
+        QVERIFY(copyCells(model, {model.index(0, 0)}, &error).isEmpty());
         QVERIFY(!error.isEmpty());
     }
     void fallbackTextIsDistinctReadOnlyAndCopiesCompleteServerText() {
@@ -707,7 +786,7 @@ class ResultModelTest : public QObject {
         const auto fallback = model.index(0, 1);
         QCOMPARE(fallback.data(ResultTableModel::ResultValueKindRole).toString(),
                  QString("fallback_text"));
-        QCOMPARE(fallback.data(ResultTableModel::ResultDatabaseTypeRole).toString(),
+        QCOMPARE(std::get<FallbackText>(*model.cellValue(fallback)).databaseType,
                  QString("custom_type"));
         QVERIFY(fallback.data().toString().contains("fallback", Qt::CaseInsensitive));
         QVERIFY(fallback.data().toString().size() < complete.size());
@@ -715,11 +794,11 @@ class ResultModelTest : public QObject {
         QVERIFY(!(model.flags(fallback) & Qt::ItemIsEditable));
         QVERIFY(!model.setData(fallback, "changed"));
         QVERIFY(!model.setNull(fallback));
-        QCOMPARE(model.copyCells({fallback}), QStringLiteral("\"") + complete + '"');
+        QCOMPARE(copyCells(model, {fallback}), QStringLiteral("\"") + complete + '"');
         QCOMPARE(model.index(0, 2).data(ResultTableModel::ResultValueKindRole).toString(),
                  QString("fallback_text"));
         QVERIFY(model.index(0, 2).data().toString() != QString());
-        QCOMPARE(model.copyCells({model.index(0, 2)}), QString());
+        QCOMPARE(copyCells(model, {model.index(0, 2)}), QString());
     }
     void unavailableCellPreservesOtherCellsAndBlocksCopyAndUnsafeActions() {
         ResultTableModel model;
@@ -731,20 +810,20 @@ class ResultModelTest : public QObject {
         QCOMPARE(model.index(0, 0).data().toString(), QString("ok"));
         QCOMPARE(unavailable.data(ResultTableModel::ResultValueKindRole).toString(),
                  QString("unavailable"));
-        QCOMPARE(unavailable.data(ResultTableModel::ResultUnavailableReasonRole).toString(),
+        QCOMPARE(std::get<UnavailableValue>(*model.cellValue(unavailable)).reason,
                  QString("text output failed"));
         QVERIFY(unavailable.data().toString().contains("unavailable", Qt::CaseInsensitive));
         QVERIFY(unavailable.data(Qt::ToolTipRole).toString().contains("odd_type"));
         QVERIFY(!(model.flags(unavailable) & Qt::ItemIsEditable));
         QVERIFY(!model.setNull(unavailable));
         QString error;
-        QVERIFY(model.copyCells({unavailable}, &error).isEmpty());
+        QVERIFY(copyCells(model, {unavailable}, &error).isEmpty());
         QVERIFY(error.contains("odd_type"));
-        QCOMPARE(model.copyCells({model.index(0, 0)}, &error), QString("ok"));
+        QCOMPARE(copyCells(model, {model.index(0, 0)}, &error), QString("ok"));
         QVERIFY(error.isEmpty());
-        QVERIFY(model.copyRows({model.index(0, 0)}, &error).isEmpty());
+        QVERIFY(copyRows(model, {model.index(0, 0)}, &error).isEmpty());
         QVERIFY(!error.isEmpty());
-        QVERIFY(model.copyPage(&error).isEmpty());
+        QVERIFY(copyPage(model, &error).isEmpty());
         QVERIFY(!error.isEmpty());
         QVERIFY(!model.duplicateRow(0, &error));
         QVERIFY(!error.isEmpty());
@@ -771,14 +850,14 @@ class ResultModelTest : public QObject {
         QVERIFY(model.setPage({column("ordinary", "text"), column("unfamiliar", "range_type")},
                               {{QString("ordinary"), FallbackText{"[1,9)", "range_type"}}}, 0));
         QString json, error;
-        QCOMPARE(model.rowJsonReadiness(0, &error), ResultTableModel::RowJsonReadiness::Ready);
-        QVERIFY(model.rowJson(0, &json, &error));
+        QCOMPARE(rowJsonState(model, 0, &error), ResultTableModel::JsonViewState::Ready);
+        QVERIFY(rowJson(model, 0, &json, &error));
         const auto fallback =
             QJsonDocument::fromJson(json.toUtf8()).object().value("unfamiliar").toObject();
         QCOMPARE(fallback.value("fallback_text").toString(), QString("[1,9)"));
         QCOMPARE(fallback.value("database_type").toString(), QString("range_type"));
-        QCOMPARE(model.pageJsonReadiness(&error), ResultTableModel::RowJsonReadiness::Ready);
-        QVERIFY(model.pageJson(&json, &error));
+        QCOMPARE(pageJsonState(model, &error), ResultTableModel::JsonViewState::Ready);
+        QVERIFY(pageJson(model, &json, &error));
         const auto pageFallback = QJsonDocument::fromJson(json.toUtf8())
                                       .array()
                                       .at(0)
@@ -789,10 +868,10 @@ class ResultModelTest : public QObject {
         QVERIFY(model.setPage({column("ordinary", "text"), column("unfamiliar", "range_type")},
                               {{QString("ordinary"), UnavailableValue{"range_type", "failed"}}},
                               0));
-        QCOMPARE(model.rowJsonReadiness(0, &error), ResultTableModel::RowJsonReadiness::Invalid);
+        QCOMPARE(rowJsonState(model, 0, &error), ResultTableModel::JsonViewState::Invalid);
         QVERIFY(error.contains("range_type"));
-        QCOMPARE(model.pageJsonReadiness(&error), ResultTableModel::RowJsonReadiness::Invalid);
-        QVERIFY(!model.rowJson(0, &json, &error));
+        QCOMPARE(pageJsonState(model, &error), ResultTableModel::JsonViewState::Invalid);
+        QVERIFY(!rowJson(model, 0, &json, &error));
         QVERIFY(json.isEmpty());
     }
     void deferredFallbackRetainsKindAndRequiresCompleteTextForRowJson() {
@@ -804,11 +883,11 @@ class ResultModelTest : public QObject {
                  QString("deferred_fallback"));
         QVERIFY(index.data().toString().contains("fallback", Qt::CaseInsensitive));
         QCOMPARE(model.deferredValue(index)->handle, quint64(91));
-        QCOMPARE(model.rowJsonReadiness(0), ResultTableModel::RowJsonReadiness::NeedsDeferred);
+        QCOMPARE(rowJsonState(model, 0), ResultTableModel::JsonViewState::NeedsDeferred);
         QString json, error;
-        QVERIFY(!model.rowJson(0, &json, &error, {{0, QString("[1,9)")}}));
+        QVERIFY(!rowJson(model, 0, &json, &error, {{0, QString("[1,9)")}}));
         QVERIFY(!error.isEmpty());
-        QVERIFY(model.rowJson(0, &json, &error, {{0, FallbackText{"[1,9)", "range_type"}}}));
+        QVERIFY(rowJson(model, 0, &json, &error, {{0, FallbackText{"[1,9)", "range_type"}}}));
         const auto fallback =
             QJsonDocument::fromJson(json.toUtf8()).object().value("unfamiliar").toObject();
         QCOMPARE(fallback.value("fallback_text").toString(), QString("[1,9)"));
@@ -826,18 +905,18 @@ class ResultModelTest : public QObject {
             {{0, 0}, FallbackText{"[1,9)", "range_type"}},
             {{0, 1}, QByteArray::fromHex("00ff7f")},
             {{0, 2}, QString("full")}};
-        QCOMPARE(model.copyCells({model.index(0, 0)}, &error, loaded), QString("[1,9)"));
+        QCOMPARE(copyCells(model, {model.index(0, 0)}, &error, loaded), QString("[1,9)"));
         QVERIFY(error.isEmpty());
-        QCOMPARE(model.copyRows({model.index(0, 1)}, &error, loaded),
+        QCOMPARE(copyRows(model, {model.index(0, 1)}, &error, loaded),
                  QString("[1,9)\t0x00ff7f\tfull"));
-        QCOMPARE(model.copyPage(&error, loaded), QString("[1,9)\t0x00ff7f\tfull"));
-        QVERIFY(model
-                    .copyPage(&error, {{{0, 0}, FallbackText{"[1,9)", "wrong"}},
-                                       {{0, 1}, QByteArray::fromHex("00ff7f")},
-                                       {{0, 2}, QString("full")}})
+        QCOMPARE(copyPage(model, &error, loaded), QString("[1,9)\t0x00ff7f\tfull"));
+        QVERIFY(copyPage(model, &error,
+                         {{{0, 0}, FallbackText{"[1,9)", "wrong"}},
+                          {{0, 1}, QByteArray::fromHex("00ff7f")},
+                          {{0, 2}, QString("full")}})
                     .isEmpty());
         QVERIFY(!error.isEmpty());
-        QVERIFY(model.copyPage(&error, {{{0, 0}, FallbackText{"[1,9)", "range_type"}}}).isEmpty());
+        QVERIFY(copyPage(model, &error, {{{0, 0}, FallbackText{"[1,9)", "range_type"}}}).isEmpty());
         QVERIFY(!error.isEmpty());
     }
     void allocationBudgetIncludesCapacityAndRejectsAtomically() {
@@ -882,7 +961,7 @@ class ResultModelTest : public QObject {
         ResultTableModel model;
         QVERIFY(model.setPage({column("amount", "numeric"), column("note", "text")},
                               {{QString("12345678901234567890.001"), QString("a\tb\n\"c\"")}}, 0));
-        QCOMPARE(model.copyCells({model.index(0, 1), model.index(0, 0)}),
+        QCOMPARE(copyCells(model, {model.index(0, 1), model.index(0, 0)}),
                  QString("12345678901234567890.001\t\"a\tb\n\"\"c\"\"\""));
         QVERIFY(!model.setPage({column("one", "text")}, {{QString("a"), QString("b")}}, 0));
         QCOMPARE(model.columnCount(), 2);
@@ -906,7 +985,7 @@ class ResultModelTest : public QObject {
         QVERIFY(model.setPage({column("real", "double")}, std::move(rows), 0));
         for (int row = 0; row < model.rowCount(); ++row) {
             const auto index = model.index(row, 0);
-            QCOMPARE(model.copyCells({index}), index.data().toString());
+            QCOMPARE(copyCells(model, {index}), index.data().toString());
         }
     }
 };

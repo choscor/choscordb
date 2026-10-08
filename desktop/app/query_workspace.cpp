@@ -51,10 +51,11 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 &QueryWorkspace::activateForeignKey);
     widgets_.grid->horizontalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
     widgets_.grid->verticalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
-    connect(widgets_.grid->selectionModel(), &QItemSelectionModel::selectionChanged, this,
-            [this] { updateActions(); });
-    connect(widgets_.grid->selectionModel(), &QItemSelectionModel::currentChanged, this,
-            [this](const QModelIndex&, const QModelIndex&) { updateActions(); });
+    // Only Set NULL depends on the selection; the current index does not affect any action.
+    connect(widgets_.grid->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this] {
+        ++selectionGeneration_;
+        updateSetNullAction();
+    });
     setupResultViewControls();
     if (!widgets_.objectReadOnly)
         widgets_.grid->setToolTip(
@@ -124,10 +125,19 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     connect(widgets_.grid, &QTableView::activated, this, openDetail);
     connect(model_, &ResultTableModel::pendingEditsChanged, this, [this](bool) {
         ++editPolicyGeneration_;
-        if (editabilityPlanning_)
-            configureEditability();
-        else
+        if (!editabilityPlanning_) {
             updateActions();
+            return;
+        }
+        // Coalesce replanning for edits staged while eligibility is being planned.
+        if (editabilityReplanQueued_)
+            return;
+        editabilityReplanQueued_ = true;
+        QTimer::singleShot(0, this, [this] {
+            editabilityReplanQueued_ = false;
+            if (editabilityPlanning_)
+                configureEditability();
+        });
     });
     if (widgets_.addRow)
         connect(widgets_.addRow, &QPushButton::clicked, model_, &ResultTableModel::addRow);
@@ -135,30 +145,28 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         connect(widgets_.deleteRows, &QPushButton::clicked, this, [this] {
             if (!widgets_.grid->selectionModel())
                 return;
-            const auto selection = widgets_.grid->selectionModel()->selectedIndexes();
-            for (const auto& index : selection)
-                if (index.isValid() && index.model() == model_ && index.row() >= 0 &&
-                    index.row() < model_->rowCount() &&
-                    std::any_of(model_->rows()[index.row()].begin(),
-                                model_->rows()[index.row()].end(), [](const Cell& value) {
+            auto rows = model_->selectedRows(widgets_.grid->selectionModel()->selection());
+            for (const int row : rows)
+                if (std::any_of(model_->rows()[row].begin(), model_->rows()[row].end(),
+                                [](const Cell& value) {
                                     return std::holds_alternative<FallbackText>(value) ||
                                            std::holds_alternative<UnavailableValue>(value);
                                 })) {
                     message(tr("Rows with fallback or unavailable values cannot be deleted."));
                     break;
                 }
-            model_->markDeleted(selection, true);
+            model_->markRowsDeleted(std::move(rows), true);
         });
     if (widgets_.restoreRows)
         connect(widgets_.restoreRows, &QPushButton::clicked, this, [this] {
             if (widgets_.grid->selectionModel())
-                model_->markDeleted(widgets_.grid->selectionModel()->selectedIndexes(), false);
+                model_->markRowsDeleted(
+                    model_->selectedRows(widgets_.grid->selectionModel()->selection()), false);
         });
     if (widgets_.setNull)
         connect(widgets_.setNull, &QPushButton::clicked, this, [this] {
-            const auto selection = widgets_.grid->selectionModel()->selectedIndexes();
-            for (const auto& index : selection)
-                model_->setNull(index);
+            if (widgets_.grid->selectionModel())
+                model_->setNull(widgets_.grid->selectionModel()->selection());
         });
     if (widgets_.discardEdits)
         connect(widgets_.discardEdits, &QPushButton::clicked, model_,
@@ -183,11 +191,19 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 }
             });
     connect(model_, &QAbstractItemModel::modelReset, this, [this] {
+        ++selectionGeneration_;
         clearRowJson();
         pendingCopy_.reset();
     });
-    connect(model_, &QAbstractItemModel::rowsInserted, this, [this] { pendingCopy_.reset(); });
-    connect(model_, &QAbstractItemModel::rowsRemoved, this, [this] { pendingCopy_.reset(); });
+    connect(model_, &QAbstractItemModel::rowsInserted, this, [this] {
+        ++selectionGeneration_;
+        pendingCopy_.reset();
+    });
+    connect(model_, &QAbstractItemModel::rowsRemoved, this, [this] {
+        ++selectionGeneration_;
+        pendingCopy_.reset();
+    });
+    connect(model_, &QAbstractItemModel::layoutChanged, this, [this] { ++selectionGeneration_; });
     connect(model_, &QAbstractItemModel::dataChanged, this,
             [this](const QModelIndex& first, const QModelIndex& last) {
                 if (rowJsonIndex_.isValid() &&
@@ -222,7 +238,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             return;
         if (query_ && viewBusy_) {
             if (adapter_->cancelResultView(*query_)) {
-                setExecutionState(QStringLiteral("cancelling"), tr("◷ Cancelling result view…"));
+                setExecutionState(QStringLiteral("cancelling"), tr("Cancelling result view…"));
                 updateActions();
             }
             return;
@@ -231,7 +247,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             if (!adapter_->cancelQuery(*query_))
                 return;
             cancellationPending_ = true;
-            setExecutionState(QStringLiteral("cancelling"), tr("◷ Cancelling…"));
+            setExecutionState(QStringLiteral("cancelling"), tr("Cancelling…"));
             updateActions();
             widgets_.cancel->setEnabled(false);
         }
@@ -287,7 +303,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 return;
             fetching_ = true;
             busy_ = true;
-            setExecutionState(QStringLiteral("running"), tr("◷ Loading result page…"));
+            setExecutionState(QStringLiteral("running"), tr("Loading result page…"));
             updateActions();
             if (hasMore_) {
                 adapter_->fetchPageAt(*query_, currentPage_.value_or(0) + 1);
@@ -309,7 +325,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 if (!resolvePendingEdits())
                     return;
                 fetching_ = true;
-                setExecutionState(QStringLiteral("running"), tr("◷ Loading result page…"));
+                setExecutionState(QStringLiteral("running"), tr("Loading result page…"));
                 updateActions();
                 adapter_->fetchPageAt(*query_, *currentPage_ - 1);
             }
@@ -618,7 +634,7 @@ void QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
     busy_ = query_.has_value();
     executionFinished_ = !busy_;
     setExecutionState(busy_ ? QStringLiteral("queued") : QStringLiteral("failed"),
-                      busy_ ? tr("◷ Loading object data…")
+                      busy_ ? tr("Loading object data…")
                             : tr("Object read could not be submitted: %1").arg(commandError_));
     updateActions();
 }
@@ -636,7 +652,7 @@ void QueryWorkspace::invalidateResult(bool connectionLost) {
         else if (adapter_ && query_ && (busy_ || fetching_))
             cancellationPending_ = adapter_->cancelQuery(*query_);
         if (!connectionLost || widgets_.summary->property("state") != "failed")
-            setExecutionState(QStringLiteral("cancelling"), tr("◷ Cancelling…"));
+            setExecutionState(QStringLiteral("cancelling"), tr("Cancelling…"));
         updateActions();
         return;
     }
@@ -779,9 +795,7 @@ void QueryWorkspace::updateActions() {
             model_->canInsert()
                 ? widgets_.addRow->accessibleName()
                 : (editReason_.isEmpty() ? tr("This result is read only.") : editReason_));
-    const bool canRemoveRows =
-        model_->canDelete() || std::any_of(model_->inserted().begin(), model_->inserted().end(),
-                                           [](bool inserted) { return inserted; });
+    const bool canRemoveRows = model_->canDelete() || model_->hasInsertedRows();
     if (widgets_.deleteRows)
         widgets_.deleteRows->setEnabled(canRemoveRows && model_->rowCount() && !inFlight &&
                                         !editabilityPlanning_);
@@ -791,17 +805,9 @@ void QueryWorkspace::updateActions() {
                                             : editReason_);
     if (widgets_.restoreRows)
         widgets_.restoreRows->setEnabled(!inFlight && !editabilityPlanning_ &&
-                                         std::any_of(model_->deleted().begin(),
-                                                     model_->deleted().end(),
-                                                     [](bool deleted) { return deleted; }));
-    if (widgets_.setNull) {
-        const auto selection = widgets_.grid->selectionModel()->selectedIndexes();
-        widgets_.setNull->setEnabled(
-            !inFlight && !editabilityPlanning_ &&
-            std::any_of(selection.begin(), selection.end(), [this](const auto& index) {
-                return model_->flags(index) & Qt::ItemIsEditable;
-            }));
-    }
+                                         model_->hasDeletedRows());
+    setNullAvailable_ = !inFlight && !editabilityPlanning_ && displayedResult;
+    updateSetNullAction();
     if (widgets_.applyEdits)
         widgets_.applyEdits->setEnabled(
             model_->hasPendingEdits() && !inFlight && !editabilityPlanning_ &&
@@ -825,6 +831,13 @@ void QueryWorkspace::updateActions() {
             if (button)
                 button->setEnabled(false);
     }
+}
+void QueryWorkspace::updateSetNullAction() {
+    if (!widgets_.setNull)
+        return;
+    const auto* selection = widgets_.grid->selectionModel();
+    widgets_.setNull->setEnabled(setNullAvailable_ && selection &&
+                                 model_->hasEditableCell(selection->selection()));
 }
 void QueryWorkspace::execute() {
     if (widgets_.objectReadOnly)
@@ -915,7 +928,7 @@ void QueryWorkspace::execute() {
     executionFinished_ = !query_.has_value();
     cancellationPending_ = false;
     setExecutionState(busy_ ? QStringLiteral("queued") : QStringLiteral("failed"),
-                      busy_ ? tr("◷ Queued") : tr("Submission failed: %1").arg(commandError_));
+                      busy_ ? tr("Queued") : tr("Submission failed: %1").arg(commandError_));
     if (!busy_ && !commandError_.isEmpty())
         message(commandError_);
     updateActions();

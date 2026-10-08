@@ -26,7 +26,12 @@ QRect linkRect(const QRect& cell) {
 }
 
 bool hasLink(const QModelIndex& index) {
-    return index.isValid() && !index.data(ForeignKeyLinkLabelRole).toString().isEmpty();
+    if (!index.isValid())
+        return false;
+    // Producers with a cheap boolean role avoid formatting the label for every paint.
+    if (const auto link = index.data(ForeignKeyLinkRole); link.isValid())
+        return link.toBool();
+    return !index.data(ForeignKeyLinkLabelRole).toString().isEmpty();
 }
 
 QStringList choices(const QModelIndex& index) {
@@ -80,7 +85,35 @@ void ResultTableDelegate::updateLinkAction() {
     linkAction_->setToolTip(label);
 }
 
+const ResolvedTheme& ResultTableDelegate::theme(const QWidget& widget) const {
+    const auto palette = widget.palette().cacheKey();
+    if (!theme_ || themePalette_ != palette) {
+        theme_ = resolvedThemeForWidget(widget);
+        themePalette_ = palette;
+        linkPixmaps_.clear();
+    }
+    return *theme_;
+}
+
+QPixmap ResultTableDelegate::linkPixmap(const QColor& color, int size, qreal ratio) const {
+    for (const auto& cached : linkPixmaps_)
+        if (cached.color == color.rgba() && cached.size == size &&
+            qFuzzyCompare(cached.ratio, ratio))
+            return cached.pixmap;
+    // Normal and selected link glyphs, at most a few device pixel ratios.
+    if (linkPixmaps_.size() >= 4)
+        linkPixmaps_.clear();
+    auto pixmap = themedIcon(Icon::Link, color, size).pixmap(QSize(size, size), ratio);
+    linkPixmaps_.push_back({color.rgba(), size, ratio, pixmap});
+    return pixmap;
+}
+
 bool ResultTableDelegate::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == &table_ &&
+        (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange)) {
+        theme_.reset();
+        linkPixmaps_.clear();
+    }
     if (watched == &table_ && event->type() == QEvent::ChildAdded)
         QTimer::singleShot(0, this, [this] { bindSelectionModel(); });
     if (watched == table_.viewport() &&
@@ -97,7 +130,15 @@ void ResultTableDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
     // which changes the native macOS text geometry. Preserve row presentation.
     rowOption.state &= ~QStyle::State_MouseOver;
     auto* style = rowOption.widget ? rowOption.widget->style() : QApplication::style();
-    if (hasLink(index)) {
+    if (const auto change = index.data(CellChangeRole).toInt();
+        change != int(CellChange::None) && option.widget) {
+        const auto& colors = theme(*option.widget).colors;
+        rowOption.backgroundBrush = change == int(CellChange::Deleted)    ? colors.dangerSurface
+                                    : change == int(CellChange::Inserted) ? colors.successSurface
+                                                                          : colors.warningSurface;
+    }
+    const bool link = hasLink(index);
+    if (link) {
         auto fullBackground = rowOption;
         fullBackground.text.clear();
         style->drawControl(QStyle::CE_ItemViewItem, &fullBackground, painter,
@@ -105,17 +146,17 @@ void ResultTableDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
         rowOption.rect.setRight(linkRect(option.rect).left() - 1);
     }
     style->drawControl(QStyle::CE_ItemViewItem, &rowOption, painter, rowOption.widget);
-    if (!hasLink(index) || !option.widget)
+    if (!link || !option.widget)
         return;
     const QRect hit = linkRect(option.rect);
     const int iconSize = dimension(Dimension::IconSmall);
     const QRect iconRect(hit.center().x() - iconSize / 2, hit.center().y() - iconSize / 2, iconSize,
                          iconSize);
-    const auto colors = resolvedThemeForWidget(*option.widget).colors;
-    themedIcon(Icon::Link,
-               option.state & QStyle::State_Selected ? colors.selectionText : colors.action,
-               iconSize)
-        .paint(painter, iconRect);
+    const auto& colors = theme(*option.widget).colors;
+    painter->drawPixmap(
+        iconRect,
+        linkPixmap(option.state & QStyle::State_Selected ? colors.selectionText : colors.action,
+                   iconSize, painter->device() ? painter->device()->devicePixelRatioF() : 1.0));
 }
 
 QWidget* ResultTableDelegate::createEditor(QWidget* parent, const QStyleOptionViewItem& option,
@@ -204,6 +245,8 @@ ResultTableDelegate* configureResultTable(QTableView& table, bool showGrid) {
     table.setShowGrid(showGrid);
     table.setGridStyle(Qt::SolidLine);
     table.horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    // QTableView::sizeHintForColumn samples rows by the vertical header's precision.
+    table.verticalHeader()->setResizeContentsPrecision(50);
     auto* delegate = new ResultTableDelegate(table);
     table.setItemDelegate(delegate);
     return delegate;

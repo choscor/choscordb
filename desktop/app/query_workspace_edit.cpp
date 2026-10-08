@@ -2,11 +2,14 @@
 #include "app/query_workspace_p.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/button/button.h"
+#include "design_system/fonts/fonts.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/modal_panel/modal_panel.h"
-#include <QDialogButtonBox>
+#include "design_system/text/text.h"
 #include <QEventLoop>
 #include <QFutureWatcher>
-#include <QLabel>
+#include <QHBoxLayout>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -45,7 +48,7 @@ GridEditRequest editRequest(const QString& driver, const QString& qualifiedName,
         request.columns.push_back(std::move(column));
     }
     const auto& rows = model.rows();
-    const auto& originals = model.originalRows();
+    const auto originalCount = model.originalRowCount();
     const auto& touched = model.touched();
     const auto& inserted = model.inserted();
     const auto& deleted = model.deleted();
@@ -53,11 +56,11 @@ GridEditRequest editRequest(const QString& driver, const QString& qualifiedName,
         rows.size() != deleted.size())
         return request;
     for (size_t index = 0; index < rows.size(); ++index) {
-        if (!inserted[index] && index >= originals.size())
+        if (!inserted[index] && index >= originalCount)
             return request;
-        request.rows.push_back({rows[index],
-                                inserted[index] ? ResultTableModel::Row{} : originals[index],
-                                touched[index], inserted[index], deleted[index]});
+        request.rows.push_back(
+            {rows[index], inserted[index] ? ResultTableModel::Row{} : model.originalRow(index),
+             touched[index], inserted[index], deleted[index]});
     }
     return request;
 }
@@ -194,16 +197,31 @@ bool QueryWorkspace::applyStagedEdits() {
     design::ModalDialog box(widgets_.dialogParent);
     box.setWindowTitle(tr("Review grid changes"));
     auto* layout = new QVBoxLayout(&box);
-    layout->addWidget(new QLabel(tr("Statements and bound parameter values"), &box));
+    layout->setContentsMargins(
+        design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Four),
+        design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Four));
+    layout->setSpacing(design::spacing(design::Spacing::Three));
+    layout->addWidget(new design::Text(tr("Statements and bound parameter values"), &box));
     auto* preview = new QPlainTextEdit(review, &box);
     preview->setObjectName("gridEditReview");
     preview->setReadOnly(true);
+    preview->setProperty("designRole", "codePreview");
+    preview->setFont(design::resolveTypography(design::TypographyRole::Monospace));
     layout->addWidget(preview);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &box);
-    buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));
-    connect(buttons, &QDialogButtonBox::accepted, &box, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, &box, &QDialog::reject);
-    layout->addWidget(buttons);
+    auto* buttons = new QHBoxLayout;
+    buttons->addStretch();
+    auto* cancel = new design::Button(tr("Cancel"), &box);
+    cancel->setObjectName("gridEditCancel");
+    cancel->setVariant(design::ButtonVariant::Outline);
+    cancel->setAutoDefault(false);
+    auto* apply = new design::Button(tr("Apply"), &box);
+    apply->setObjectName("gridEditApply");
+    apply->setDefault(true);
+    connect(cancel, &QPushButton::clicked, &box, &QDialog::reject);
+    connect(apply, &QPushButton::clicked, &box, &QDialog::accept);
+    buttons->addWidget(cancel);
+    buttons->addWidget(apply);
+    layout->addLayout(buttons);
     if (widgets_.dialogParent)
         box.resize(widgets_.dialogParent->size() * (2.0 / 3.0));
     const auto accepted = box.exec() == QDialog::Accepted;

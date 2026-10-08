@@ -22,7 +22,6 @@
 #include <QClipboard>
 #include <QComboBox>
 #include <QDialog>
-#include <QDialogButtonBox>
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
@@ -329,10 +328,10 @@ void WorkspaceTest::mysqlGridEditsReviewBoundValuesAndPersistChanges() {
         if (!dialog || dialog->windowTitle() != "Review grid changes")
             return;
         auto* preview = dialog->findChild<QPlainTextEdit*>("gridEditReview");
-        auto* buttons = dialog->findChild<QDialogButtonBox*>();
-        if (preview && buttons) {
+        auto* apply = dialog->findChild<QPushButton*>("gridEditApply");
+        if (preview && apply) {
             review = preview->toPlainText();
-            buttons->button(QDialogButtonBox::Ok)->click();
+            apply->click();
         }
     });
     accept.start(10);

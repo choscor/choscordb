@@ -4,6 +4,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/menu/embedded_popup.h"
+#include "design_system/table/table_style.h"
 #include "models/result_table_model.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
@@ -18,14 +19,45 @@
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSignalSpy>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTimer>
 #include <QtTest>
 namespace {
+// Production copy path: capture a snapshot on the model thread, then evaluate it.
+QString copyScope(const choscordb::ResultTableModel& model, const QModelIndexList& indexes,
+                  int scope, QString* error) {
+    error->clear();
+    QItemSelection selection;
+    for (const auto& index : indexes)
+        selection.select(index, index);
+    auto snapshot = model.copySnapshot(selection, scope);
+    if (!snapshot)
+        return {};
+    auto evaluated = choscordb::ResultTableModel::evaluateCopy(std::move(*snapshot));
+    *error = evaluated.error;
+    return evaluated.text;
+}
+QString copyRows(const choscordb::ResultTableModel& model, const QModelIndexList& indexes,
+                 QString* error) {
+    return copyScope(model, indexes, 1, error);
+}
+QString copyPage(const choscordb::ResultTableModel& model, QString* error) {
+    return copyScope(model, {}, 2, error);
+}
+QString copyCells(const choscordb::ResultTableModel& model, const QModelIndexList& indexes) {
+    QString error;
+    return copyScope(model, indexes, 0, &error);
+}
 choscordb::ResultColumn column(const QString& name) {
     choscordb::ResultColumn value{};
     value.name = name;
+    return value;
+}
+choscordb::ResultColumn column(const QString& name, const QString& databaseType) {
+    auto value = column(name);
+    value.databaseType = databaseType;
     return value;
 }
 } // namespace
@@ -75,18 +107,18 @@ class ResultCopyWorkspaceTest : public QObject {
                                {qint64(3), QString("\"x\"")}},
                               0));
         QString error;
-        QCOMPARE(model.copyRows({model.index(2, 1), model.index(0, 0), model.index(2, 1)}, &error),
+        QCOMPARE(copyRows(model, {model.index(2, 1), model.index(0, 0), model.index(2, 1)}, &error),
                  QString("NULL\t\n3\t\"\"\"x\"\"\""));
         QVERIFY(error.isEmpty());
-        QCOMPARE(model.copyPage(&error), QString("NULL\t\n\"a\tb\"\t0x00ff\n3\t\"\"\"x\"\"\""));
+        QCOMPARE(copyPage(model, &error), QString("NULL\t\n\"a\tb\"\t0x00ff\n3\t\"\"\"x\"\"\""));
         QVERIFY(model.setPage({column("a")}, {{choscordb::DeferredValue{1, 90000, "text"}}}, 0));
-        QVERIFY(model.copyPage(&error).isEmpty());
+        QVERIFY(copyPage(model, &error).isEmpty());
         QVERIFY(error.contains("Export"));
         QVERIFY(model.setPage({column("a")}, {{QString(1024, QChar('"'))}}, 0));
         QVERIFY(model.setByteBudget(model.residentBytes()));
-        QVERIFY(model.copyRows({model.index(0, 0)}, &error).isEmpty());
+        QVERIFY(copyRows(model, {model.index(0, 0)}, &error).isEmpty());
         QVERIFY(!error.isEmpty());
-        QVERIFY(model.copyPage(&error).isEmpty());
+        QVERIFY(copyPage(model, &error).isEmpty());
         QVERIFY(!error.isEmpty());
     }
     void contextActionsUseCurrentSelectionAndNeverSubmitDatabaseWork() {
@@ -421,6 +453,125 @@ class ResultCopyWorkspaceTest : public QObject {
         previousChunk->click();
         QVERIFY(status->text().contains("Bytes 0"));
         QVERIFY(preview->model()->index(0, 1).data().toString().startsWith('y'));
+    }
+    void bulkSetNullStagesSelectionWithOneNotification() {
+        using namespace choscordb;
+        ResultTableModel model;
+        std::vector<ResultTableModel::Row> rows;
+        for (int row = 0; row < 1000; ++row) {
+            ResultTableModel::Row values;
+            for (int column = 0; column < 10; ++column)
+                values.push_back(column == 9 ? Cell{QByteArray("x")} : Cell{qint64(row)});
+            rows.push_back(std::move(values));
+        }
+        std::vector<ResultColumn> columns;
+        for (int column = 0; column < 10; ++column)
+            columns.push_back(::column(QString("c%1").arg(column), "integer"));
+        QVERIFY(model.setPage(columns, std::move(rows), 0));
+        std::vector<bool> editable(10, true);
+        editable[0] = false;
+        model.setEditableColumns(editable, false, false);
+        QSignalSpy pending(&model, &ResultTableModel::pendingEditsChanged);
+        QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+        QItemSelection selection(model.index(0, 0), model.index(999, 9));
+        selection.select(model.index(10, 1), model.index(20, 2));
+        QVERIFY(model.hasEditableCell(selection));
+        QVERIFY(model.setNull(selection));
+        QCOMPARE(pending.count(), 1);
+        QCOMPARE(pending.first().first().toBool(), true);
+        QCOMPARE(changed.count(), 2);
+        QCOMPARE(changed.first().at(0).toModelIndex(), model.index(0, 1));
+        QCOMPARE(changed.first().at(1).toModelIndex(), model.index(999, 8));
+        QVERIFY(model.index(999, 8).data(design::CellNullRole).toBool());
+        QVERIFY(!model.index(5, 0).data(design::CellNullRole).toBool());
+        QVERIFY(!model.index(5, 9).data(design::CellNullRole).toBool());
+        QCOMPARE(model.index(5, 8).data(design::CellChangeRole).toInt(),
+                 int(design::CellChange::Changed));
+        QCOMPARE(model.index(5, 0).data(design::CellChangeRole).toInt(),
+                 int(design::CellChange::None));
+        const QItemSelection readOnly(model.index(0, 0), model.index(999, 0));
+        QVERIFY(!model.hasEditableCell(readOnly));
+        QVERIFY(!model.setNull(readOnly));
+        QCOMPARE(pending.count(), 1);
+        model.discardEdits();
+        QVERIFY(!model.hasPendingEdits());
+        QCOMPARE(std::get<qint64>(*model.cellValue(model.index(999, 8))), qint64(999));
+    }
+    void pendingEditCountsFollowEveryStagingPath() {
+        using namespace choscordb;
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("id", "integer"), column("name", "text")},
+                              {{qint64(1), QString("a")}, {qint64(2), QString("b")}}, 0));
+        model.setEditableColumns({true, true}, true, true);
+        QVERIFY(!model.hasPendingEdits());
+        QVERIFY(model.setData(model.index(0, 1), "changed"));
+        QVERIFY(model.hasPendingEdits());
+        QVERIFY(model.setData(model.index(0, 1), "again"));
+        model.discardEdits();
+        QVERIFY(!model.hasPendingEdits());
+        QCOMPARE(model.index(0, 1).data(Qt::EditRole).toString(), QString("a"));
+        QCOMPARE(model.originalRowCount(), std::size_t(2));
+        model.markRowsDeleted({1, 1}, true);
+        QVERIFY(model.hasPendingEdits() && model.hasDeletedRows());
+        model.markRowsDeleted({1}, false);
+        QVERIFY(!model.hasPendingEdits() && !model.hasDeletedRows());
+        QVERIFY(model.addRow());
+        QVERIFY(model.hasInsertedRows());
+        QVERIFY(model.setData(model.index(2, 1), "inserted"));
+        QCOMPARE(model.selectedRows(QItemSelection(model.index(2, 0), model.index(2, 1))),
+                 std::vector<int>{2});
+        model.markRowsDeleted({2}, true);
+        QVERIFY(!model.hasInsertedRows());
+        QVERIFY(!model.hasPendingEdits());
+        QVERIFY(model.duplicateRow(0));
+        QVERIFY(model.hasPendingEdits());
+        model.markDeleted({model.index(2, 0)}, true);
+        QVERIFY(!model.hasPendingEdits());
+        QVERIFY(model.setNull(model.index(1, 1)));
+        QCOMPARE(std::get<QString>(model.originalRow(1)[1]), QString("b"));
+        QVERIFY(std::holds_alternative<std::monostate>(model.rows()[1][1]));
+        model.discardEdits();
+        QCOMPARE(model.index(1, 1).data().toString(), QString("b"));
+        QVERIFY(!model.hasPendingEdits());
+    }
+    void displayPreviewIsBoundedWhileEditValueStaysComplete() {
+        using namespace choscordb;
+        ResultTableModel model;
+        const QString longText = QString(5000, QChar('x'));
+        QVERIFY(model.setPage({column("text", "text")},
+                              {{longText}, {QString("first\nsecond\r\nthird")}, {QString("short")}},
+                              0));
+        const auto preview = model.index(0, 0).data().toString();
+        QCOMPARE(preview.size(), ResultTableModel::DisplayPreviewChars + 1);
+        QVERIFY(preview.endsWith(QChar(0x2026)));
+        QCOMPARE(model.index(0, 0).data(Qt::EditRole).toString(), longText);
+        QCOMPARE(model.index(1, 0).data().toString(), QString("first second  third"));
+        QCOMPARE(model.index(1, 0).data(Qt::EditRole).toString(),
+                 QString("first\nsecond\r\nthird"));
+        QCOMPARE(model.index(2, 0).data().toString(), QString("short"));
+        QCOMPARE(copyCells(model, {model.index(0, 0)}), longText);
+    }
+    void copySnapshotDeduplicatesOverlappingRanges() {
+        using namespace choscordb;
+        ResultTableModel model;
+        QVERIFY(model.setPage({column("a", "text"), column("b", "text"), column("c", "text")},
+                              {{QString("1"), QString("2"), DeferredValue{7, 9, "text"}},
+                               {QString("4"), QString("5"), QString("6")},
+                               {QString("7"), QString("8"), QString("9")}},
+                              0));
+        QItemSelection selection(model.index(0, 0), model.index(1, 1));
+        selection.select(model.index(1, 1), model.index(2, 1));
+        auto snapshot = model.copySnapshot(selection, 0);
+        QVERIFY(snapshot);
+        QCOMPARE(ResultTableModel::evaluateCopy(std::move(*snapshot)).text,
+                 QString("1\t2\n4\t5\n\t8"));
+        snapshot = model.copySnapshot(selection, 1);
+        QVERIFY(snapshot);
+        QCOMPARE(snapshot->rows.size(), std::size_t(3));
+        QVERIFY(model.copyDeferredCells(selection, 0).empty());
+        QCOMPARE(model.copyDeferredCells(selection, 1), (std::vector<std::pair<int, int>>{{0, 2}}));
+        QCOMPARE(model.copyDeferredCells({}, 2), (std::vector<std::pair<int, int>>{{0, 2}}));
+        QVERIFY(!model.copySnapshot({}, 0));
     }
 };
 QTEST_MAIN(ResultCopyWorkspaceTest)

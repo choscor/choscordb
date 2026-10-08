@@ -21,6 +21,7 @@ class JsonTextView final : public QPlainTextEdit {
     void showEvent(QShowEvent* event) override;
 
   private:
+    void refreshHighlighting();
     QSyntaxHighlighter* highlighter_ = nullptr;
 };
 

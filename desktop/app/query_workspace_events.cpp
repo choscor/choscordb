@@ -14,13 +14,14 @@
 #include <QSignalBlocker>
 #include <QTableView>
 #include <QVariantMap>
+#include <string_view>
 #include <utility>
 namespace choscordb {
 using query_workspace_detail::nextEditRequestToken;
 using query_workspace_detail::text;
 namespace {
 Cell cell(const CellDto& value) {
-    const auto kind = text(value.kind);
+    const std::string_view kind(value.kind.data(), value.kind.size());
     if (kind == "null")
         return std::monostate{};
     if (kind == "boolean")
@@ -247,7 +248,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         connectionAttemptStatus_.remove(e.id);
         pendingConnections_.remove(e.id);
         if (kind == "connection_failed") {
-            emit connectionAttemptFailed(connectionDrivers_.value(e.id));
             connectionProfiles_.remove(e.id);
             connectionDrivers_.remove(e.id);
             connectionSqlModes_.remove(e.id);
@@ -297,7 +297,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                     ? resultEditor_->property("resultStatus").toMap().value("state") == "failed"
                     : widgets_.summary->property("state") == "failed";
             if (!failed)
-                setExecutionState(QStringLiteral("disconnected"), tr("○ Disconnected"));
+                setExecutionState(QStringLiteral("disconnected"), tr("Disconnected"));
         }
         updateActions();
         return;
@@ -323,7 +323,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     if (kind == "result_view_progress") {
         setExecutionState(
             QStringLiteral("running"),
-            tr("◷ Preparing result view · %1 rows scanned").arg(e.result_view_scanned_rows));
+            tr("Preparing result view · %1 rows scanned").arg(e.result_view_scanned_rows));
         updateActions();
         return;
     }
@@ -342,7 +342,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         hasMore_ = false;
         adapter_->fetchPageAt(*query_, 0);
         setExecutionState(QStringLiteral("running"),
-                          tr("◷ Loading result view · %1 matching rows").arg(e.result_view_rows));
+                          tr("Loading result view · %1 matching rows").arg(e.result_view_rows));
         updateActions();
         return;
     }
@@ -390,11 +390,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         busy_ = state == "queued" || state == "running" || state == "cancelling";
         if (state == "completed" || state == "failed" || state == "disconnected")
             executionFinished_ = true;
-        const QString icon = state == "completed"      ? QStringLiteral("✓ ")
-                             : state == "failed"       ? QStringLiteral("! ")
-                             : state == "disconnected" ? QStringLiteral("○ ")
-                                                       : QStringLiteral("◷ ");
-        setExecutionState(state, icon + state);
+        setExecutionState(state, state);
         updateActions();
         if (state == "cancelling")
             widgets_.cancel->setEnabled(false);
@@ -510,8 +506,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             setExecutionState(
                 QStringLiteral("completed"),
                 e.row_count == 0 && !viewFilters_.isEmpty()
-                    ? tr("✓ No rows match the active filters · Clear filters to restore all rows")
-                    : tr("✓ Completed"),
+                    ? tr("No rows match the active filters · Clear filters to restore all rows")
+                    : tr("Completed"),
                 {completedDurationMs_ ? tr("Executed in %1 ms").arg(*completedDurationMs_)
                                       : QString{},
                  hasResultPage ? tr("Page %1").arg(e.page_index + 1) : QString{},
@@ -599,7 +595,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             rowMetric += (rowMetric.isEmpty() ? QString{} : QStringLiteral(" · ")) +
                          tr("%1 rows").arg(model_->rowCount());
         setExecutionState(
-            QStringLiteral("completed"), tr("✓ Completed"),
+            QStringLiteral("completed"), tr("Completed"),
             {tr("Executed in %1 ms").arg(e.duration_ms),
              hasResultPage ? tr("Page %1").arg(*currentPage_ + 1) : QString{}, rowMetric,
              hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024) : QString{}});
@@ -621,7 +617,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                 (e.vendor_code.empty() ? QString{} : tr(" [Code: %1]").arg(text(e.vendor_code))));
         const auto errorKind = text(e.error_kind);
         if (errorKind == "Cancelled")
-            setExecutionState(QStringLiteral("cancelled"), tr("○ Cancelled"));
+            setExecutionState(QStringLiteral("cancelled"), tr("Cancelled"));
         else
             setExecutionState(
                 QStringLiteral("failed"),

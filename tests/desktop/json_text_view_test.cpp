@@ -15,6 +15,7 @@ class JsonTextViewTest final : public QObject {
 
   private slots:
     void syntaxColorsAndCopySurviveThemeChanges();
+    void largeDocumentsStayPlain();
 };
 
 void JsonTextViewTest::syntaxColorsAndCopySurviveThemeChanges() {
@@ -74,6 +75,15 @@ void JsonTextViewTest::syntaxColorsAndCopySurviveThemeChanges() {
     editor->setPlainText(QStringLiteral("true"));
     QCOMPARE(inkAt(0), resolvedThemeForWidget(*editor).colors.jsonLiteral);
     QCOMPARE(editor->toPlainText(), QStringLiteral("true"));
+}
+
+void JsonTextViewTest::largeDocumentsStayPlain() {
+    JsonTextView editor;
+    editor.setPlainText(QStringLiteral("[true]\n") + QString(1024 * 1024, QLatin1Char(' ')));
+    QVERIFY(editor.document()->firstBlock().layout()->formats().isEmpty());
+    QCOMPARE(editor.document()->firstBlock().text(), QStringLiteral("[true]"));
+    editor.setPlainText(QStringLiteral("[true]"));
+    QVERIFY(!editor.document()->firstBlock().layout()->formats().isEmpty());
 }
 
 QTEST_MAIN(JsonTextViewTest)

@@ -5,7 +5,9 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
 #include "design_system/json_text_view/json_text_view.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/right_sheet/right_sheet.h"
+#include "design_system/text/text.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
 #include <QAction>
@@ -267,7 +269,11 @@ void QueryWorkspace::openJsonView(JsonViewMode mode, int row, int column) {
         auto* body = new QWidget(rowJsonSheet_);
         body->setAccessibleName(tr("JSON content"));
         auto* layout = new QVBoxLayout(body);
-        rowJsonStatus_ = new QLabel(body);
+        layout->setContentsMargins(
+            design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Three),
+            design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Three));
+        layout->setSpacing(design::spacing(design::Spacing::Two));
+        rowJsonStatus_ = new design::Text({}, body);
         rowJsonStatus_->setObjectName("rowJsonStatus");
         rowJsonStatus_->setAccessibleName(tr("Row JSON status"));
         rowJsonStatus_->setWordWrap(true);

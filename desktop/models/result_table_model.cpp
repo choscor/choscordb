@@ -2,9 +2,8 @@
 #include "bridge/engine_adapter.h"
 #include "design_system/table/table_style.h"
 #include <QArrayData>
-#include <QBrush>
-#include <QColor>
 #include <QFont>
+#include <QRect>
 #include <algorithm>
 #include <limits>
 #include <new>
@@ -26,19 +25,42 @@ std::optional<Cell> ResultTableModel::cellValue(const QModelIndex& index) const 
     return rows_[index.row()][index.column()];
 }
 
+const ResultTableModel::Row& ResultTableModel::originalRow(std::size_t row) const {
+    if (const auto found = editedOriginals_.find(row); found != editedOriginals_.end())
+        return found->second;
+    return rows_[row];
+}
+
+bool ResultTableModel::linkable(int row, int column) const {
+    if (row < 0 || column < 0 || row >= rowCount() || column >= columnCount() ||
+        column >= static_cast<int>(linkSlots_.size()) || linkSlots_[column] < 0 ||
+        (inserted_[row] && !touched_[row][column]))
+        return false;
+    const auto slot = static_cast<std::size_t>(row) * static_cast<std::size_t>(linkColumnCount_) +
+                      static_cast<std::size_t>(linkSlots_[column]);
+    if (slot >= linkCache_.size())
+        linkCache_.resize(rows_.size() * static_cast<std::size_t>(linkColumnCount_), 0);
+    auto& cached = linkCache_[slot];
+    // The value policy is evaluated once per cell; edits and page changes reset the slot.
+    if (cached == 0)
+        cached = EngineAdapter::foreignKeyValueFilterable(rows_[row][column]) ? 2 : 1;
+    return cached == 2;
+}
+
+void ResultTableModel::resetLinkCache() {
+    std::vector<quint8>().swap(linkCache_);
+}
+
+void ResultTableModel::resetPendingCounts() {
+    editedOriginals_.clear();
+    originalRowCount_ = rows_.size();
+    touchedCount_ = insertedCount_ = deletedCount_ = 0;
+}
+
 std::optional<ResultCellMetadata> ResultTableModel::linkedColumn(const QModelIndex& index) const {
-    if (!cellValue(index) || index.column() >= static_cast<int>(cellMetadata_.size()))
+    if (!index.isValid() || index.model() != this || !linkable(index.row(), index.column()))
         return std::nullopt;
-    const auto& metadata = cellMetadata_[index.column()];
-    const auto& value = rows_[index.row()][index.column()];
-    if (metadata.sourceColumn.isEmpty() || metadata.sourceObject.isEmpty() ||
-        metadata.targetObject.isEmpty() || metadata.targetQualifiedName.isEmpty() ||
-        metadata.targetColumn.isEmpty() ||
-        (inserted_[index.row()] && !touched_[index.row()][index.column()]))
-        return std::nullopt;
-    if (!EngineAdapter::foreignKeyValueFilterable(value))
-        return std::nullopt;
-    return metadata;
+    return cellMetadata_[index.column()];
 }
 
 int ResultTableModel::rowCount(const QModelIndex& parent) const {
@@ -52,12 +74,14 @@ QVariant ResultTableModel::data(const QModelIndex& index, int role) const {
         index.row() >= rowCount() || index.column() >= columnCount())
         return {};
     const auto& cell = rows_[index.row()][index.column()];
-    if (role == Qt::BackgroundRole && deleted_[index.row()])
-        return QBrush(QColor(255, 215, 215));
-    if (role == Qt::BackgroundRole && inserted_[index.row()])
-        return QBrush(QColor(220, 245, 220));
-    if (role == Qt::BackgroundRole && touched_[index.row()][index.column()])
-        return QBrush(QColor(255, 245, 195));
+    // The delegate maps staged-change state to theme surfaces.
+    if (role == design::CellChangeRole)
+        return deleted_[index.row()]                   ? int(design::CellChange::Deleted)
+               : inserted_[index.row()]                ? int(design::CellChange::Inserted)
+               : touched_[index.row()][index.column()] ? int(design::CellChange::Changed)
+                                                       : int(design::CellChange::None);
+    if (role == design::ForeignKeyLinkRole)
+        return linkable(index.row(), index.column());
     if (role == Qt::ToolTipRole && deleted_[index.row()])
         return tr("Pending deletion");
     if (role == Qt::ToolTipRole && inserted_[index.row()])
@@ -72,18 +96,6 @@ QVariant ResultTableModel::data(const QModelIndex& index, int role) const {
             deferred && deferred->fallback)
             return QStringLiteral("deferred_fallback");
     }
-    if (role == ResultDatabaseTypeRole) {
-        if (const auto* fallback = std::get_if<FallbackText>(&cell))
-            return fallback->databaseType;
-        if (const auto* unavailable = std::get_if<UnavailableValue>(&cell))
-            return unavailable->databaseType;
-        if (const auto* deferred = std::get_if<DeferredValue>(&cell);
-            deferred && deferred->fallback)
-            return deferred->type;
-    }
-    if (role == ResultUnavailableReasonRole)
-        if (const auto* unavailable = std::get_if<UnavailableValue>(&cell))
-            return unavailable->reason;
     if (role == Qt::ToolTipRole) {
         if (const auto* fallback = std::get_if<FallbackText>(&cell))
             return tr("Read-only server text fallback · %1").arg(fallback->databaseType);
@@ -94,9 +106,12 @@ QVariant ResultTableModel::data(const QModelIndex& index, int role) const {
             return tr("Read-only server text fallback · %1 · open to load").arg(deferred->type);
     }
     if (role == Qt::FontRole && std::holds_alternative<std::monostate>(cell)) {
-        QFont font;
-        font.setItalic(true);
-        return font;
+        static const QFont italic = [] {
+            QFont font;
+            font.setItalic(true);
+            return font;
+        }();
+        return italic;
     }
     if (role == Qt::TextAlignmentRole &&
         (std::holds_alternative<qint64>(cell) || std::holds_alternative<double>(cell) ||
@@ -127,6 +142,25 @@ QVariant ResultTableModel::data(const QModelIndex& index, int role) const {
         return {};
     if (inserted_[index.row()] && !touched_[index.row()][index.column()])
         return QString{};
+    if (role == Qt::DisplayRole)
+        if (const auto* value = std::get_if<QString>(&cell)) {
+            // Long or multi-line text is shown as a bounded single-line preview.
+            const auto isBreak = [](QChar character) {
+                return character == QLatin1Char('\n') || character == QLatin1Char('\r') ||
+                       character == QChar::LineSeparator || character == QChar::ParagraphSeparator;
+            };
+            const auto limit = std::min(value->size(), DisplayPreviewChars);
+            const auto begin = value->cbegin();
+            if (value->size() <= DisplayPreviewChars && std::none_of(begin, begin + limit, isBreak))
+                return *value;
+            QString preview = value->left(limit);
+            for (auto& character : preview)
+                if (isBreak(character))
+                    character = QLatin1Char(' ');
+            if (value->size() > DisplayPreviewChars)
+                preview += QChar(0x2026);
+            return preview;
+        }
     return std::visit(
         [](const auto& value) -> QVariant {
             using T = std::decay_t<decltype(value)>;
@@ -302,7 +336,10 @@ bool ResultTableModel::setPage(std::vector<ResultColumn> columns, std::vector<Ro
     std::vector<Row>().swap(rows_);
     columns_ = std::move(columns);
     rows_ = std::move(rows);
-    originalRows_ = rows_;
+    resetPendingCounts();
+    linkSlots_.assign(columns_.size(), -1);
+    linkColumnCount_ = 0;
+    resetLinkCache();
     touched_.assign(rows_.size(), std::vector<bool>(columns_.size(), false));
     editBytes_.assign(rows_.size(), std::vector<std::size_t>(columns_.size(), 0));
     inserted_.assign(rows_.size(), false);
@@ -333,10 +370,20 @@ bool ResultTableModel::setCellMetadata(std::vector<ResultCellMetadata> metadata)
     if (bytes > 1024 * 1024)
         return false;
     cellMetadata_ = std::move(metadata);
+    linkSlots_.assign(columns_.size(), -1);
+    linkColumnCount_ = 0;
+    for (std::size_t column = 0; column < cellMetadata_.size(); ++column) {
+        const auto& item = cellMetadata_[column];
+        if (!item.sourceColumn.isEmpty() && !item.sourceObject.isEmpty() &&
+            !item.targetObject.isEmpty() && !item.targetQualifiedName.isEmpty() &&
+            !item.targetColumn.isEmpty())
+            linkSlots_[column] = linkColumnCount_++;
+    }
+    resetLinkCache();
     if (rowCount() && columnCount())
         emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1),
                          {design::ChoiceLabelsRole, design::ChoiceNullableRole,
-                          design::ForeignKeyLinkLabelRole});
+                          design::ForeignKeyLinkLabelRole, design::ForeignKeyLinkRole});
     return true;
 }
 void ResultTableModel::setKeyColumns(std::vector<bool> keys) {
@@ -359,17 +406,38 @@ void ResultTableModel::setEditableColumns(std::vector<bool> editable, bool canIn
     if (!rows_.empty() && !columns_.empty())
         emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1));
 }
+bool ResultTableModel::cellEditable(int row, int column) const {
+    if (row < 0 || column < 0 || row >= rowCount() || column >= columnCount() || deleted_[row] ||
+        !(inserted_[row] ? insertEditable_[column] : editable_[column]))
+        return false;
+    const auto& cell = rows_[row][column];
+    return !std::holds_alternative<QByteArray>(cell) &&
+           !std::holds_alternative<DeferredValue>(cell) &&
+           !std::holds_alternative<FallbackText>(cell) &&
+           !std::holds_alternative<UnavailableValue>(cell);
+}
 Qt::ItemFlags ResultTableModel::flags(const QModelIndex& index) const {
     auto result = QAbstractTableModel::flags(index);
-    if (index.isValid() && index.row() < rowCount() && index.column() < columnCount() &&
-        !deleted_[index.row()] &&
-        (inserted_[index.row()] ? insertEditable_[index.column()] : editable_[index.column()]) &&
-        !std::holds_alternative<QByteArray>(rows_[index.row()][index.column()]) &&
-        !std::holds_alternative<DeferredValue>(rows_[index.row()][index.column()]) &&
-        !std::holds_alternative<FallbackText>(rows_[index.row()][index.column()]) &&
-        !std::holds_alternative<UnavailableValue>(rows_[index.row()][index.column()]))
+    if (index.isValid() && index.model() == this && cellEditable(index.row(), index.column()))
         result |= Qt::ItemIsEditable;
     return result;
+}
+void ResultTableModel::preserveOriginal(int row) {
+    if (static_cast<std::size_t>(row) < originalRowCount_ && !inserted_[row])
+        editedOriginals_.try_emplace(static_cast<std::size_t>(row), rows_[row]);
+}
+void ResultTableModel::markTouched(int row, int column) {
+    if (!touched_[row][column]) {
+        touched_[row][column] = true;
+        ++touchedCount_;
+    }
+    if (column < static_cast<int>(linkSlots_.size()) && linkSlots_[column] >= 0) {
+        const auto slot =
+            static_cast<std::size_t>(row) * static_cast<std::size_t>(linkColumnCount_) +
+            static_cast<std::size_t>(linkSlots_[column]);
+        if (slot < linkCache_.size())
+            linkCache_[slot] = 0;
+    }
 }
 bool ResultTableModel::setData(const QModelIndex& index, const QVariant& value, int role) {
     if (role == design::TypedNullEditRole) {
@@ -390,8 +458,9 @@ bool ResultTableModel::setData(const QModelIndex& index, const QVariant& value, 
     auto converted = EngineAdapter::parseGridEditValue(columns_[index.column()].databaseType, text);
     if (!converted)
         return false;
+    preserveOriginal(index.row());
     rows_[index.row()][index.column()] = std::move(*converted);
-    touched_[index.row()][index.column()] = true;
+    markTouched(index.row(), index.column());
     stagedBytes_ = stagedBytes_ - oldBytes + bytes;
     editBytes_[index.row()][index.column()] = bytes;
     emit dataChanged(index, index);
@@ -466,24 +535,94 @@ ResultTableModel::stageCellEdit(const QModelIndex& index, CellEditEvaluation eva
         return evaluation;
     }
     evaluation.bytes = charge.bytes;
+    preserveOriginal(index.row());
     rows_[index.row()][index.column()] = std::move(*evaluation.value);
-    touched_[index.row()][index.column()] = true;
+    markTouched(index.row(), index.column());
     stagedBytes_ = stagedBytes_ - oldBytes + evaluation.bytes;
     editBytes_[index.row()][index.column()] = evaluation.bytes;
     emit dataChanged(index, index);
     emit pendingEditsChanged(hasPendingEdits());
     return evaluation;
 }
+void ResultTableModel::stageNull(int row, int column) {
+    stagedBytes_ -= editBytes_[row][column];
+    editBytes_[row][column] = 0;
+    preserveOriginal(row);
+    rows_[row][column] = std::monostate{};
+    markTouched(row, column);
+}
 bool ResultTableModel::setNull(const QModelIndex& index) {
     if (!(flags(index) & Qt::ItemIsEditable))
         return false;
-    stagedBytes_ -= editBytes_[index.row()][index.column()];
-    editBytes_[index.row()][index.column()] = 0;
-    rows_[index.row()][index.column()] = std::monostate{};
-    touched_[index.row()][index.column()] = true;
+    stageNull(index.row(), index.column());
     emit dataChanged(index, index);
     emit pendingEditsChanged(hasPendingEdits());
     return true;
+}
+bool ResultTableModel::setNull(const QItemSelection& selection) {
+    bool changed = false;
+    for (const auto& range : selection) {
+        if (!range.isValid() || range.model() != this)
+            continue;
+        const int top = std::max(0, range.top());
+        const int bottom = std::min(rowCount() - 1, range.bottom());
+        const int left = std::max(0, range.left());
+        const int right = std::min(columnCount() - 1, range.right());
+        int firstRow = bottom + 1, lastRow = -1, firstColumn = right + 1, lastColumn = -1;
+        for (int column = left; column <= right; ++column) {
+            if (!editable_[column] && !insertEditable_[column])
+                continue;
+            for (int row = top; row <= bottom; ++row) {
+                if (!cellEditable(row, column))
+                    continue;
+                stageNull(row, column);
+                firstRow = std::min(firstRow, row);
+                lastRow = std::max(lastRow, row);
+                firstColumn = std::min(firstColumn, column);
+                lastColumn = std::max(lastColumn, column);
+            }
+        }
+        if (lastRow < 0)
+            continue;
+        changed = true;
+        emit dataChanged(index(firstRow, firstColumn), index(lastRow, lastColumn));
+    }
+    if (changed)
+        emit pendingEditsChanged(hasPendingEdits());
+    return changed;
+}
+bool ResultTableModel::hasEditableCell(const QItemSelection& selection) const {
+    for (const auto& range : selection) {
+        if (!range.isValid() || range.model() != this)
+            continue;
+        const int top = std::max(0, range.top());
+        const int bottom = std::min(rowCount() - 1, range.bottom());
+        const int right = std::min(columnCount() - 1, range.right());
+        for (int column = std::max(0, range.left()); column <= right; ++column) {
+            if (!editable_[column] && !insertEditable_[column])
+                continue;
+            for (int row = top; row <= bottom; ++row)
+                if (cellEditable(row, column))
+                    return true;
+        }
+    }
+    return false;
+}
+std::vector<int> ResultTableModel::selectedRows(const QItemSelection& selection) const {
+    std::vector<bool> selected(rows_.size(), false);
+    for (const auto& range : selection) {
+        if (!range.isValid() || range.model() != this || range.left() >= columnCount() ||
+            range.right() < 0)
+            continue;
+        const int bottom = std::min(rowCount() - 1, range.bottom());
+        for (int row = std::max(0, range.top()); row <= bottom; ++row)
+            selected[row] = true;
+    }
+    std::vector<int> rows;
+    for (std::size_t row = 0; row < selected.size(); ++row)
+        if (selected[row])
+            rows.push_back(static_cast<int>(row));
+    return rows;
 }
 bool ResultTableModel::addRow() {
     const auto bytes = columns_.size() * (sizeof(Cell) + sizeof(std::size_t)) + sizeof(Row) +
@@ -497,6 +636,8 @@ bool ResultTableModel::addRow() {
     editBytes_.emplace_back(columns_.size(), 0);
     inserted_.push_back(true);
     deleted_.push_back(false);
+    ++insertedCount_;
+    resetLinkCache();
     stagedBytes_ += bytes;
     endInsertRows();
     emit pendingEditsChanged(true);
@@ -538,11 +679,14 @@ bool ResultTableModel::duplicateRow(int row, const std::vector<bool>& copyable, 
     if (bytes > byteBudget_ - residentBytes_ - stagedBytes_)
         return fail(tr("Duplicating this row would exceed the result grid memory limit."));
     beginInsertRows({}, rowCount(), rowCount());
+    touchedCount_ += static_cast<std::size_t>(std::count(touched.begin(), touched.end(), true));
     rows_.push_back(std::move(duplicate));
     touched_.push_back(std::move(touched));
     editBytes_.emplace_back(columns_.size(), 0);
     inserted_.push_back(true);
     deleted_.push_back(false);
+    ++insertedCount_;
+    resetLinkCache();
     stagedBytes_ += bytes;
     endInsertRows();
     emit pendingEditsChanged(true);
@@ -554,6 +698,12 @@ void ResultTableModel::markDeleted(const QModelIndexList& selection, bool delete
         if (i.isValid() && i.model() == this && i.row() < rowCount())
             selectedRows.push_back(i.row());
     }
+    markRowsDeleted(std::move(selectedRows), deleted);
+}
+void ResultTableModel::markRowsDeleted(std::vector<int> selectedRows, bool deleted) {
+    selectedRows.erase(std::remove_if(selectedRows.begin(), selectedRows.end(),
+                                      [this](int row) { return row < 0 || row >= rowCount(); }),
+                       selectedRows.end());
     std::sort(selectedRows.begin(), selectedRows.end(), std::greater<int>());
     selectedRows.erase(std::unique(selectedRows.begin(), selectedRows.end()), selectedRows.end());
     for (const int row : selectedRows) {
@@ -566,6 +716,10 @@ void ResultTableModel::markDeleted(const QModelIndexList& selection, bool delete
             beginRemoveRows({}, row, row);
             stagedBytes_ -= bytes + std::accumulate(editBytes_[row].begin(), editBytes_[row].end(),
                                                     std::size_t{0});
+            touchedCount_ -= static_cast<std::size_t>(
+                std::count(touched_[row].begin(), touched_[row].end(), true));
+            --insertedCount_;
+            resetLinkCache();
             rows_.erase(rows_.begin() + row);
             touched_.erase(touched_.begin() + row);
             editBytes_.erase(editBytes_.begin() + row);
@@ -578,6 +732,8 @@ void ResultTableModel::markDeleted(const QModelIndexList& selection, bool delete
                         return std::holds_alternative<FallbackText>(cell) ||
                                std::holds_alternative<UnavailableValue>(cell);
                     }))) {
+            if (deleted_[row] != deleted)
+                deleted ? ++deletedCount_ : --deletedCount_;
             deleted_[row] = deleted;
             if (columnCount())
                 emit dataChanged(index(row, 0), index(row, columnCount() - 1));
@@ -587,7 +743,11 @@ void ResultTableModel::markDeleted(const QModelIndexList& selection, bool delete
 }
 void ResultTableModel::discardEdits() {
     beginResetModel();
-    rows_ = originalRows_;
+    rows_.resize(originalRowCount_);
+    for (auto& [row, original] : editedOriginals_)
+        rows_[row] = std::move(original);
+    resetPendingCounts();
+    resetLinkCache();
     touched_.assign(rows_.size(), std::vector<bool>(columns_.size(), false));
     editBytes_.assign(rows_.size(), std::vector<std::size_t>(columns_.size(), 0));
     inserted_.assign(rows_.size(), false);
@@ -597,52 +757,80 @@ void ResultTableModel::discardEdits() {
     emit pendingEditsChanged(false);
 }
 bool ResultTableModel::hasPendingEdits() const {
-    for (size_t r = 0; r < rows_.size(); ++r) {
-        if (inserted_[r] || deleted_[r])
-            return true;
-        for (size_t c = 0; c < columns_.size(); ++c)
-            if (touched_[r][c])
-                return true;
+    return touchedCount_ != 0 || insertedCount_ != 0 || deletedCount_ != 0;
+}
+
+std::optional<ResultTableModel::CopyShape>
+ResultTableModel::copyShape(const QItemSelection& selection, int scope) const {
+    if (rows_.empty() || columns_.empty())
+        return std::nullopt;
+    CopyShape shape;
+    shape.maxColumn = columnCount() - 1;
+    if (scope == 2) {
+        shape.rows.resize(rows_.size());
+        std::iota(shape.rows.begin(), shape.rows.end(), 0);
+        return shape;
     }
-    return false;
+    // Clip each range once; overlapping ranges are deduplicated by the masks below.
+    std::vector<QRect> ranges;
+    const QRect page(0, 0, columnCount(), rowCount());
+    for (const auto& range : selection) {
+        if (!range.isValid() || range.model() != this)
+            continue;
+        const QRect clipped =
+            QRect(QPoint(range.left(), range.top()), QPoint(range.right(), range.bottom()))
+                .intersected(page);
+        if (!clipped.isEmpty())
+            ranges.push_back(clipped);
+    }
+    if (ranges.empty())
+        return std::nullopt;
+    if (scope == 1) {
+        std::vector<bool> selected(rows_.size(), false);
+        for (const auto& range : ranges)
+            std::fill(selected.begin() + range.top(), selected.begin() + range.bottom() + 1, true);
+        for (std::size_t row = 0; row < selected.size(); ++row)
+            if (selected[row])
+                shape.rows.push_back(static_cast<int>(row));
+        return shape;
+    }
+    QRect bounds = ranges.front();
+    for (const auto& range : ranges)
+        bounds = bounds.united(range);
+    shape.minColumn = bounds.left();
+    shape.maxColumn = bounds.right();
+    shape.rows.resize(static_cast<std::size_t>(bounds.height()));
+    std::iota(shape.rows.begin(), shape.rows.end(), bounds.top());
+    const auto width = static_cast<std::size_t>(bounds.width());
+    shape.selected.assign(shape.rows.size() * width, false);
+    for (const auto& range : ranges)
+        for (int row = range.top(); row <= range.bottom(); ++row) {
+            const auto offset = static_cast<std::size_t>(row - bounds.top()) * width;
+            std::fill(shape.selected.begin() + offset + (range.left() - bounds.left()),
+                      shape.selected.begin() + offset + (range.right() - bounds.left()) + 1, true);
+        }
+    return shape;
 }
-QString ResultTableModel::copyRows(QModelIndexList selection, QString* error) const {
-    return copyScope(std::move(selection), 1, error);
-}
-QString ResultTableModel::copyPage(QString* error) const {
-    return copyScope({}, 2, error);
-}
-QString ResultTableModel::copyCells(QModelIndexList selection, QString* error) const {
-    return copyScope(std::move(selection), 0, error);
-}
-QString ResultTableModel::copyCells(QModelIndexList selection, QString* error,
-                                    const ResolvedCells& resolved) const {
-    return copyScope(std::move(selection), 0, error, resolved);
-}
-QString ResultTableModel::copyRows(QModelIndexList selection, QString* error,
-                                   const ResolvedCells& resolved) const {
-    return copyScope(std::move(selection), 1, error, resolved);
-}
-QString ResultTableModel::copyPage(QString* error, const ResolvedCells& resolved) const {
-    return copyScope({}, 2, error, resolved);
-}
-QString ResultTableModel::copyScope(QModelIndexList selection, int scope, QString* error,
-                                    const ResolvedCells& resolved) const {
-    if (error)
-        error->clear();
-    auto snapshot = copySnapshot(std::move(selection), scope, resolved);
-    if (!snapshot)
-        return {};
-    auto evaluated = evaluateCopy(std::move(*snapshot));
-    if (error)
-        *error = std::move(evaluated.error);
-    return evaluated.text;
+
+std::vector<std::pair<int, int>>
+ResultTableModel::copyDeferredCells(const QItemSelection& selection, int scope) const {
+    std::vector<std::pair<int, int>> deferred;
+    const auto shape = copyShape(selection, scope);
+    if (!shape)
+        return deferred;
+    for (std::size_t line = 0; line < shape->rows.size(); ++line)
+        for (int column = shape->minColumn; column <= shape->maxColumn; ++column)
+            if (shape->contains(line, column) &&
+                std::holds_alternative<DeferredValue>(rows_[shape->rows[line]][column]))
+                deferred.emplace_back(shape->rows[line], column);
+    return deferred;
 }
 
 std::optional<ResultTableModel::CopySnapshot>
-ResultTableModel::copySnapshot(QModelIndexList selection, int scope,
+ResultTableModel::copySnapshot(const QItemSelection& selection, int scope,
                                const ResolvedCells& resolved) const {
-    if (rows_.empty() || columns_.empty())
+    const auto shape = copyShape(selection, scope);
+    if (!shape)
         return std::nullopt;
     CopySnapshot snapshot;
     snapshot.byteBudget = byteBudget_;
@@ -653,48 +841,16 @@ ResultTableModel::copySnapshot(QModelIndexList selection, int scope,
             original = rows_[row][column];
         snapshot.resolutions.push_back({std::move(original), value});
     }
-    selection.erase(std::remove_if(selection.begin(), selection.end(),
-                                   [this](const auto& i) {
-                                       return !i.isValid() || i.model() != this ||
-                                              i.row() >= rowCount() || i.column() >= columnCount();
-                                   }),
-                    selection.end());
-    if (scope != 2 && selection.isEmpty())
-        return std::nullopt;
-    std::sort(selection.begin(), selection.end(), [](const auto& a, const auto& b) {
-        return a.row() == b.row() ? a.column() < b.column() : a.row() < b.row();
-    });
-    selection.erase(std::unique(selection.begin(), selection.end()), selection.end());
-    std::vector<int> selectedRows;
-    if (scope == 1)
-        for (const auto& i : selection)
-            if (selectedRows.empty() || selectedRows.back() != i.row())
-                selectedRows.push_back(i.row());
-    int first = scope == 2 ? 0 : selection.front().row();
-    int lines = scope == 1 ? int(selectedRows.size())
-                           : (scope == 2 ? rowCount() : selection.back().row() - first + 1);
-    int minColumn = 0, maxColumn = columnCount() - 1;
-    if (scope == 0) {
-        minColumn = maxColumn = selection.front().column();
-        for (const auto& i : selection) {
-            minColumn = std::min(minColumn, i.column());
-            maxColumn = std::max(maxColumn, i.column());
-        }
-    }
-    auto selected = selection.cbegin();
-    snapshot.rows.reserve(static_cast<std::size_t>(lines));
-    for (int line = 0; line < lines; ++line) {
-        const int row = scope == 1 ? selectedRows[line] : first + line;
+    snapshot.rows.reserve(shape->rows.size());
+    for (std::size_t line = 0; line < shape->rows.size(); ++line) {
+        const int row = shape->rows[line];
         auto& output = snapshot.rows.emplace_back();
-        output.reserve(static_cast<std::size_t>(maxColumn - minColumn + 1));
-        for (int column = minColumn; column <= maxColumn; ++column) {
-            if (scope == 0 && (selected == selection.cend() || selected->row() != row ||
-                               selected->column() != column)) {
+        output.reserve(static_cast<std::size_t>(shape->maxColumn - shape->minColumn + 1));
+        for (int column = shape->minColumn; column <= shape->maxColumn; ++column) {
+            if (!shape->contains(line, column)) {
                 output.emplace_back(std::nullopt);
                 continue;
             }
-            if (scope == 0)
-                ++selected;
             const auto found = resolved.find({row, column});
             output.emplace_back(CopyCellSnapshot{
                 rows_[row][column],

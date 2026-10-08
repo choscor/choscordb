@@ -248,6 +248,7 @@ void QueryWorkspace::openCellEditor(const QPersistentModelIndex& index) {
         cellEditSheet_->setBody(body);
         auto* cancel = new design::Button(tr("Cancel"), cellEditSheet_);
         cancel->setObjectName("cellEditCancel");
+        cancel->setVariant(design::ButtonVariant::Outline);
         cancel->setAutoDefault(false);
         cellEditSave_ = new design::Button(tr("Save"), cellEditSheet_);
         cellEditSave_->setObjectName("cellEditSave");

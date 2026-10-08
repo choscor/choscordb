@@ -22,15 +22,6 @@ QString copyAssemblyError(const QString& code) {
         return QObject::tr("The complete text value is not valid UTF-8.");
     return QObject::tr("Invalid or stale complete value chunk.");
 }
-
-QModelIndexList sortedSelection(QModelIndexList selection) {
-    std::sort(selection.begin(), selection.end(), [](const auto& left, const auto& right) {
-        return left.row() == right.row() ? left.column() < right.column()
-                                         : left.row() < right.row();
-    });
-    selection.erase(std::unique(selection.begin(), selection.end()), selection.end());
-    return selection;
-}
 } // namespace
 
 void QueryWorkspace::copyResult(int scope) {
@@ -41,49 +32,23 @@ void QueryWorkspace::copyResult(int scope) {
         message(tr("The result page is no longer available."));
         return;
     }
-    auto selection = scope == 2
-                         ? QModelIndexList{}
-                         : sortedSelection(widgets_.grid->selectionModel()->selectedIndexes());
+    auto selection = scope == 2 ? QItemSelection{} : widgets_.grid->selectionModel()->selection();
     if ((scope != 2 && selection.isEmpty()) || !model_->rowCount() || !model_->columnCount())
         return;
     PendingCopy request;
     request.scope = scope;
-    request.selection = selection;
+    request.selectionGeneration = selectionGeneration_;
     request.anchor = model_->index(0, 0);
     request.query = query_.value_or(0);
-    std::vector<std::pair<int, int>> positions;
-    if (scope == 0) {
-        for (const auto& index : selection)
-            positions.emplace_back(index.row(), index.column());
-    } else if (scope == 1) {
-        int previousRow = -1;
-        for (const auto& index : selection) {
-            if (index.row() == previousRow)
-                continue;
-            previousRow = index.row();
-            for (int column = 0; column < model_->columnCount(); ++column)
-                positions.emplace_back(index.row(), column);
-        }
-    } else {
-        for (int row = 0; row < model_->rowCount(); ++row)
-            for (int column = 0; column < model_->columnCount(); ++column)
-                positions.emplace_back(row, column);
-    }
-    for (const auto& [row, column] : positions) {
-        const auto value = model_->cellValue(model_->index(row, column));
-        if (!value)
-            return failCopy(tr("The result page changed before copying."));
-        if (std::holds_alternative<DeferredValue>(*value)) {
-            request.deferred.emplace_back(row, column);
-        }
-    }
+    request.deferred = model_->copyDeferredCells(selection, scope);
     if (request.deferred.empty()) {
         auto snapshot = model_->copySnapshot(selection, scope);
         if (snapshot)
-            renderCopy(std::move(*snapshot), request.anchor, request.query, request.selection,
-                       request.scope, copyGeneration_);
+            renderCopy(std::move(*snapshot), request.anchor, request.query,
+                       request.selectionGeneration, request.scope, copyGeneration_);
         return;
     }
+    request.selection = std::move(selection);
     if (!query_ || !queryAvailable() || !adapter_)
         return failCopy(tr("The result is no longer available for complete value loading."));
     pendingCopy_ = std::move(request);
@@ -98,26 +63,25 @@ void QueryWorkspace::failCopy(const QString& error) {
 
 void QueryWorkspace::renderCopy(ResultTableModel::CopySnapshot snapshot,
                                 QPersistentModelIndex anchor, quint64 query,
-                                QModelIndexList selection, int scope, quint64 generation) {
+                                quint64 selectionGeneration, int scope, quint64 generation) {
     auto* watcher = new QFutureWatcher<ResultTableModel::CopyEvaluation>(this);
-    connect(
-        watcher, &QFutureWatcher<ResultTableModel::CopyEvaluation>::finished, this,
-        [this, watcher, anchor, query, selection = std::move(selection), scope, generation] {
-            const auto result = watcher->result();
-            watcher->deleteLater();
-            if (generation != copyGeneration_)
-                return;
-            if (!anchor.isValid() || widgets_.grid->model() != model_ ||
-                !widgets_.grid->selectionModel() ||
-                widgets_.grid->selectionModel()->model() != model_ || query_.value_or(0) != query ||
-                (scope != 2 &&
-                 sortedSelection(widgets_.grid->selectionModel()->selectedIndexes()) != selection))
-                return failCopy(tr("The result changed before copying completed."));
-            if (!result.error.isEmpty())
-                message(result.error);
-            else
-                QApplication::clipboard()->setText(result.text);
-        });
+    connect(watcher, &QFutureWatcher<ResultTableModel::CopyEvaluation>::finished, this,
+            [this, watcher, anchor, query, selectionGeneration, scope, generation] {
+                const auto result = watcher->result();
+                watcher->deleteLater();
+                if (generation != copyGeneration_)
+                    return;
+                if (!anchor.isValid() || widgets_.grid->model() != model_ ||
+                    !widgets_.grid->selectionModel() ||
+                    widgets_.grid->selectionModel()->model() != model_ ||
+                    query_.value_or(0) != query ||
+                    (scope != 2 && selectionGeneration != selectionGeneration_))
+                    return failCopy(tr("The result changed before copying completed."));
+                if (!result.error.isEmpty())
+                    message(result.error);
+                else
+                    QApplication::clipboard()->setText(result.text);
+            });
     watcher->setFuture(QtConcurrent::run([snapshot = std::move(snapshot)]() mutable {
         return ResultTableModel::evaluateCopy(std::move(snapshot));
     }));
@@ -134,19 +98,18 @@ void QueryWorkspace::requestCopyChunk() {
         query_ != request.query || !queryAvailable() || !adapter_)
         return failCopy(tr("The result changed before copying completed."));
     if (request.next == request.deferred.size()) {
-        if (request.scope != 2 &&
-            sortedSelection(widgets_.grid->selectionModel()->selectedIndexes()) !=
-                request.selection)
+        if (request.scope != 2 && request.selectionGeneration != selectionGeneration_)
             return failCopy(tr("The selection changed before copying completed."));
         auto snapshot = model_->copySnapshot(request.selection, request.scope, request.resolved);
         const auto anchor = request.anchor;
         const auto query = request.query;
-        const auto selection = request.selection;
+        const auto selectionGeneration = request.selectionGeneration;
         const auto scope = request.scope;
         pendingCopy_.reset();
         if (!snapshot)
             return failCopy(tr("The result changed before copying completed."));
-        renderCopy(std::move(*snapshot), anchor, query, selection, scope, copyGeneration_);
+        renderCopy(std::move(*snapshot), anchor, query, selectionGeneration, scope,
+                   copyGeneration_);
         return;
     }
     const auto [row, column] = request.deferred[request.next];

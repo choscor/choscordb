@@ -454,7 +454,7 @@ class CellEditSqlWorkspaceTest : public QObject {
         QCOMPARE(model->index(1, 1).data().toString(), QString("second"));
         sheet->findChild<QPushButton*>("cellEditSave")->click();
         QTRY_VERIFY(!sheet->isVisible());
-        QCOMPARE(model->index(1, 1).data().toString(), saved);
+        QCOMPARE(model->index(1, 1).data(Qt::EditRole).toString(), saved);
         QCOMPARE(model->index(0, 1).data().toString(), QString("other staged"));
         QVERIFY(model->hasPendingEdits());
         QTRY_VERIFY(apply->isEnabled());
@@ -467,7 +467,7 @@ class CellEditSqlWorkspaceTest : public QObject {
         QString review;
         QVERIFY(reviewEdits(apply, &data, false, &review));
         QVERIFY(review.contains("UPDATE"));
-        QCOMPARE(model->index(1, 1).data().toString(), saved);
+        QCOMPARE(model->index(1, 1).data(Qt::EditRole).toString(), saved);
         QVERIFY(model->hasPendingEdits());
         execute("SELECT note FROM sheet_rows ORDER BY id");
         QCOMPARE(sqlGrid->model()->index(1, 0).data().toString(), QString("second"));
@@ -477,7 +477,7 @@ class CellEditSqlWorkspaceTest : public QObject {
         QTRY_VERIFY(!apply->isEnabled());
         execute("SELECT note FROM sheet_rows ORDER BY id");
         QCOMPARE(sqlGrid->model()->index(0, 0).data().toString(), QString("other staged"));
-        QCOMPARE(sqlGrid->model()->index(1, 0).data().toString(), saved);
+        QCOMPARE(sqlGrid->model()->index(1, 0).data(Qt::EditRole).toString(), saved);
     }
 };
 

@@ -235,7 +235,7 @@ class CellEditWorkspaceTest : public QObject {
         cursor.setPosition(3);
         text->setTextCursor(cursor);
         text->paste();
-        QCOMPARE(model->index(0, 0).data().toString(), QString("old\r\nkeep"));
+        QCOMPARE(model->index(0, 0).data(Qt::EditRole).toString(), QString("old\r\nkeep"));
         sheet->findChild<QPushButton*>("cellEditSave")->click();
         QTRY_VERIFY(!sheet->isVisible());
         QCOMPARE(std::get<QString>(*model->cellValue(model->index(0, 0))),
@@ -298,7 +298,7 @@ class CellEditWorkspaceTest : public QObject {
         QVERIFY(model->setByteBudget(ResultTableModel::DefaultBytes));
         save->click();
         QTRY_VERIFY(!sheet->isVisible());
-        QCOMPARE(model->index(0, 0).data().toString(), draft);
+        QCOMPARE(model->index(0, 0).data(Qt::EditRole).toString(), draft);
         QVERIFY(model->hasPendingEdits());
     }
     void pendingSaveCannotResurrectDismissedOrReplacedDrafts() {
@@ -391,7 +391,7 @@ class CellEditWorkspaceTest : public QObject {
             QTest::mouseClick(backdrop, Qt::LeftButton, {}, QPoint(2, 2));
         }
         QVERIFY(!sheet->isVisible());
-        QCOMPARE(model->index(1, 0).data().toString(), staged);
+        QCOMPARE(model->index(1, 0).data(Qt::EditRole).toString(), staged);
         QCOMPARE(model->index(0, 0).data().toString(), QString("unrelated"));
         QCOMPARE(grid->currentIndex(), model->index(0, 0));
         QTRY_VERIFY(grid->hasFocus());
@@ -399,7 +399,7 @@ class CellEditWorkspaceTest : public QObject {
         QCOMPARE(text->toPlainText(), staged);
         sheet->findChild<QPushButton*>("cellEditSave")->click();
         QVERIFY(!sheet->isVisible());
-        QCOMPARE(model->index(1, 0).data().toString(), staged);
+        QCOMPARE(model->index(1, 0).data(Qt::EditRole).toString(), staged);
     }
     void targetRemovalDiscardsTheDraft() {
         MainWindow window;
@@ -520,13 +520,13 @@ class CellEditWorkspaceTest : public QObject {
         QVERIFY(sheet->isVisible());
         QCOMPARE(text->toPlainText(), invalid);
         QVERIFY(!text->accessibleDescription().isEmpty());
-        QCOMPARE(model->index(1, 0).data().toString(), original);
+        QCOMPARE(model->index(1, 0).data(Qt::EditRole).toString(), original);
         text->selectAll();
         QTest::keyClicks(text, corrected);
         save->click();
         QTRY_VERIFY(!sheet->isVisible());
         QCOMPARE(model->index(0, 0).data().toString(), other);
-        QCOMPARE(model->index(1, 0).data().toString(), corrected);
+        QCOMPARE(model->index(1, 0).data(Qt::EditRole).toString(), corrected);
         QVERIFY(model->hasPendingEdits());
     }
     void clickedCellShowsCurrentMultilineDraftWithoutStaging() {
@@ -556,7 +556,8 @@ class CellEditWorkspaceTest : public QObject {
         QTest::keyClick(text, Qt::Key_End, Qt::ControlModifier);
         QTest::keyClick(text, Qt::Key_Return);
         QVERIFY(text->toPlainText().endsWith('\n'));
-        QCOMPARE(model->index(1, 0).data().toString(), QString("  first\nsecond \t\" "));
+        QCOMPARE(model->index(1, 0).data(Qt::EditRole).toString(),
+                 QString("  first\nsecond \t\" "));
         sheet->findChild<QPushButton*>("cellEditCancel")->click();
         QVERIFY(!sheet->isVisible());
         QCOMPARE(model->index(0, 0).data().toString(), QString("previous staged"));
