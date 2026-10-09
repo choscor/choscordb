@@ -19,6 +19,28 @@ exception is necessary, give the reason in the marker or exception entry.
 - Qt may collect a path from a native dialog or present a backend result. Pass
   the request to Rust for validation and execution. UI input hints do not
   replace Rust validation. Keep backend work off the UI thread.
+- Rust is the single source of defaults, limits, budgets, intervals, user-facing
+  policy messages, and persisted encodings (IDs, context strings, file names,
+  storage locations). Expose them through the bridge; do not restate them in C++.
+  C++ shows Rust's errors and does not re-check a rule before or after calling Rust.
+- Do not branch on object-kind or driver-name literals in screens, models, or
+  the bridge, whether by equality, list membership, prefix or comparison. Use
+  `EngineAdapter::objectKindTraits` or a Rust driver DTO (`driverWorkflow`,
+  `profileDriverForm`, `transactionGuard`), and add a Rust trait when new
+  behavior needs one. Kind-to-icon and kind-to-label mapping stays
+  in `desktop/app/object_kind_icon.h`.
+- Filter lists and trees with `TextFilter` (`desktop/bridge/text_filter.h`), not
+  `Qt::CaseInsensitive` matching, lowercased searches, or `QSortFilterProxyModel`
+  text filters. Rank and cap search results in Rust, as `QuickSearchNeedle::plan`
+  does; C++ shows rows in the order Rust returns.
+- Do not give display rows another meaning's kind (a folder row is not a
+  `"schema"`); add a display kind to `object_kind_icon.h` instead.
+- Never compare or search `tr()` text to decide behavior.
+- Read Rust policy through cached `EngineAdapter` accessors. Where a model's
+  `data()` or a delegate needs a trait, store it on the node or page when that
+  is built.
+- A UI-only number that equals a Rust limit needs `// ui-budget: <reason>` on
+  its line or the line above.
 - Existing C++ backend code is migration work, not precedent for new code.
   When changing it, move the affected non-frontend behavior to Rust and keep
   C++ tests focused on UI and bridge behavior. Test policy in Rust.
@@ -28,7 +50,9 @@ exception is necessary, give the reason in the marker or exception entry.
   remaining pre-existing failures explicitly. Presentation exceptions must be
   narrow, documented, and reviewed against current content.
   A passing scan enforces the implemented checks; also review changed C++ for
-  backend behavior that static rules cannot identify.
+  backend behavior that static rules cannot identify. When review finds a new
+  kind of drift, add a failing fixture to `test_cpp_ownership.py` and a rule for
+  it in the same change.
 
 ## Desktop UI ownership
 

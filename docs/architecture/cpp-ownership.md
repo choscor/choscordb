@@ -56,6 +56,33 @@ A clean report means only that the implemented checks have no unresolved finding
 | `serialization` | JSON/XML/data serialization and cryptographic APIs |
 | `domain-parsing` | Regular expression and version parsing APIs |
 | `sql-text` | SQL statement literals, including adjacent literals |
+| `translated-control-flow` | Comparisons or searches against `tr()` text |
+| `limit-revalidation` | Comparisons with fields of a Rust limits DTO (`limits.max…`) |
+| `rust-limit-literal` | Literals equal to a Rust `MAX_`/`MIN_`/`DEFAULT_` constant of 4096 or more |
+| `text-matching` | `contains`/`indexOf`/`startsWith`/`endsWith`/`compare` with `Qt::CaseInsensitive`, `toLower()`/`toCaseFolded()` followed by a search, and `QSortFilterProxyModel` text filters |
+| `object-kind-literal` | Branches on object-kind words such as `"table"` or `"connection"`: `==`/`!=`, membership in a brace list, `compare`, and `startsWith`/`endsWith`/`contains`/`indexOf` with a kind or a three-character prefix or suffix of one |
+| `driver-literal` | The same branch forms for driver names such as `"mysql"` or `"sqlite"`, matched case-insensitively |
+
+The last three rules apply to presentation, display-model and bridge code.
+Literals match plain, `u"…"`, `u8"…"`, `_s`/`_L1` suffixed and
+`QStringLiteral`/`QLatin1String[View]`/`QStringView`/`QAnyStringView`/`QString`
+wrapped forms. Use
+`TextFilter` (`desktop/bridge/text_filter.h`) for list and tree filters,
+`EngineAdapter::objectKindTraits` for kind-dependent behavior, and Rust driver
+DTOs (`driverWorkflow`, `profileDriverForm`, `transactionGuard`) for driver
+differences. Design-system and developer-tool code may map kinds and drivers to
+appearance. Kind-to-icon and kind-to-label mapping for screens lives in
+`desktop/app/object_kind_icon.h`, which carries one reviewed exception. Bridge
+event dispatch compares event kinds through a variable named `eventKind`; only
+`eventKind == "schema"` is exempt, because that event shares its word with an
+object kind. Any other kind word compared with `eventKind` is still reported.
+
+A UI-only number that equals a Rust limit (event-loop slicing, display paging)
+needs a `// ui-budget: <reason>` marker on its line or the line above. A marker
+without a reason does not count. `rust-limit-literal` scans only constants of
+4096 or more, because small numbers collide with ordinary geometry and counts;
+smaller limits (result caps, recent-item counts, history pages) still belong in
+Rust and must arrive through a DTO or cached accessor, which review enforces.
 
 `error` findings identify capabilities normally owned by Rust. `review` findings
 identify ambiguous code, such as syntax highlighting, JSON display/transport,
@@ -115,6 +142,41 @@ and approval. The current gate has **zero blocking findings and zero inventory
 errors**. These exceptions are reviewed against the current contents, not a
 baseline exemption for future code.
 
+The 2026-10-09 migration moved the remaining policy that the lexical rules could
+not see into Rust, then added rules for each class of drift it found:
+
+- object-kind traits for tabs, panes, pins, search, completion, templates, ER
+  diagrams, connection roots and repeated index rows;
+- driver workflow, profile form fields and manual-transaction guards;
+- list and tree text filtering through one Rust `TextFilter`;
+- per-query page sizes, page-lease bookkeeping and command-queue limits;
+- result, value-preview, history-preview and JSON-view messages and budgets;
+- pin edits, recovery document IDs, object-tab context encoding, saved SQL
+  location, diagnostics export names and background check intervals;
+- quick-search ranking tiers, tie-breaks, the shown-row cap, recent-object and
+  history-page limits (`QuickSearchNeedle::plan` and `limits`);
+- SQL-export table naming, system-schema visibility per driver, and which
+  metadata rows carry column details.
+
+`TextFilter` folds with Rust `to_lowercase` and trims Unicode whitespace, so it
+can differ from Qt's `Qt::CaseInsensitive` for a few characters (for example
+final sigma and title-case digraphs); every list filter now shares Rust's rule.
+Quick-search ties order titles by Unicode scalar value rather than UTF-16 code
+unit, which differs only between supplementary characters and U+E000–U+FFFF.
+
+Judgment calls kept in C++, reviewed rather than exempted:
+
+- The shutdown sequence (disconnect, history flush, window close) stays in the
+  adapter as Qt event-loop integration. Admission while closing is still checked
+  in C++; moving it means a Rust close protocol in the engine.
+- The navigator search walks loaded tree nodes in time-sliced passes and tests
+  each label with `TextFilter`; the walk is view traversal, the match is Rust's.
+- The copy and JSON-view deferred-value loaders stay separate: each is Qt
+  watcher and generation orchestration around the Rust `DeferredAssemblerJob`,
+  with different completion contracts.
+- `shortcut_catalog.cpp` compares Qt `QKeySequence` round trips. Rust validates
+  the stored document, including sequence size and NUL bytes.
+
 ## Limits and maintaining the gate
 
 This is a dependency-free lexical gate, not a C++ compiler, call-graph analyzer,
@@ -124,7 +186,10 @@ Rust revalidates UI input or that a bridge call runs off the UI thread. Macro to
 pasting, encoded strings, indirect calls, unfamiliar APIs, transitive third-party
 wrappers, dynamic CMake expressions and generated sources can evade these rules.
 Ambiguous unqualified names such as `open` and `connect` are not banned because
-they are also normal Qt UI methods. The CMake scan is lexical and does not resolve
+they are also normal Qt UI methods. The kind and driver rules see literals at the
+branch, so membership in a named container (`static const QSet<QString> kinds{…};
+kinds.contains(kind)`) and comparison with a named constant (`kind == kTable`)
+evade them; review rejects both forms the same as the literal ones. The CMake scan is lexical and does not resolve
 target dependency graphs; test-only matches need reviewed exceptions.
 
 Review changes to discovery, rules, exceptions, `.gitignore`, build configuration
