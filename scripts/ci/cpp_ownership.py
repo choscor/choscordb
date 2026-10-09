@@ -89,6 +89,104 @@ BUILD_BACKEND = re.compile(
 )
 
 
+RUST_LIMIT = re.compile(
+    r"^\s*pub(?:\([^)]*\))?\s+const\s+((?:MAX|MIN|DEFAULT)_\w+)\s*:\s*(?:u8|u16|u32|u64|u128|usize|i32|i64)\s*=\s*([\d_\s*()]+);",
+    re.M,
+)
+# Smaller values (ports, counts, milliseconds) collide with ordinary UI numbers.
+MIN_REPORTED_LIMIT = 4096
+TRANSLATED_CONTROL_FLOW = re.compile(
+    r"(?:\.(?:startsWith|endsWith|contains|compare|indexOf)\s*\(|[=!]=)\s*(?:(?:QObject|QCoreApplication|QApplication)\s*::\s*)?tr\s*\("
+)
+LIMIT_FIELD = (
+    r"(?:\w+\s*::\s*)?\w*[Ll]imits\w*(?:\s*\(\s*\))?\s*(?:\.|->)\s*(?:min|max)\w*"
+)
+LIMIT_REVALIDATION = re.compile(
+    rf"(?<![<>-])[<>]=?\s*{LIMIT_FIELD}|{LIMIT_FIELD}\s*(?:[<>]=?)(?![<>])"
+)
+# Behavior keyed by text, object kinds, or driver names belongs to Rust policy
+# (TextFilter, ObjectKindTraits, driver workflow/form DTOs). Design-system and
+# tool code may map them to presentation; screens, models and the bridge may not.
+SEMANTIC_ROLES = {"presentation", "display-model", "bridge"}
+TEXT_MATCHING = re.compile(
+    r"\b(?:contains|indexOf|startsWith|endsWith|compare)\s*\((?:[^;()]|\([^;()]*\))*?"
+    r"\bQt::CaseInsensitive\b"
+    r"|\b(?:toLower|toCaseFolded)\s*\(\s*\)\s*\.\s*(?:contains|indexOf|startsWith|endsWith)\s*\("
+    r"|\bsetFilter(?:FixedString|RegularExpression|Wildcard|CaseSensitivity)\s*\("
+)
+OBJECT_KINDS = (
+    "table|view|materialized_view|foreign_table|schema|database|catalog|column|index|"
+    "sequence|function|procedure|trigger|connection|group|primarykey|foreignkey|uniquekey"
+)
+DRIVERS = "sqlite|postgres|postgresql|mysql|mariadb"
+STRING_WRAPPER = (
+    r"(?:QStringLiteral|QLatin1String(?:View)?|QStringView|QAnyStringView|QString|"
+    r"QByteArrayLiteral|QByteArray)"
+)
+
+
+def fragments(names):
+    """Names plus their prefixes and suffixes of three or more characters."""
+    parts = set()
+    for name in names.split("|"):
+        for size in range(3, len(name) + 1):
+            parts.update({name[:size], name[-size:]})
+    return "|".join(sorted(map(re.escape, parts), key=len, reverse=True))
+
+
+def literal_comparison(names, flags=0):
+    """Branches on a listed name: equality, list membership, prefix or comparison."""
+
+    def literal(words):
+        return (
+            rf'(?:{STRING_WRAPPER}\s*\(\s*)?(?:u8|u|U|L)?"(?:{words})"'
+            r"(?:_s|_L1|_ba|_sv)?\s*\)?"
+        )
+
+    exact, partial = literal(names), literal(fragments(names))
+    call = r"(?:\.|->|::)\s*"
+    return re.compile(
+        rf"(?:[=!]=)\s*{exact}|{exact}\s*(?:[=!]=)"
+        rf'|\{{[^{{}};]*?"(?:{names})"[^{{}};]*\}}\s*{call}(?:contains|indexOf|count)\s*\('
+        rf"|{call}(?:startsWith|endsWith|contains|indexOf)\s*\(\s*{partial}"
+        rf"|{call}compare\s*\(\s*(?:[^;,()]+,\s*)?{exact}",
+        flags,
+    )
+
+
+OBJECT_KIND_LITERAL = literal_comparison(OBJECT_KINDS)
+# The bridge event "schema" shares its word with an object kind; event dispatch
+# compares it through a variable named eventKind. No other kind word is exempt.
+EVENT_KIND_SCHEMA = re.compile(r'\beventKind\s*[=!]=\s*"schema"')
+# Driver names arrive in any case ("MySQL"), so they match case-insensitively.
+DRIVER_LITERAL = literal_comparison(DRIVERS, re.IGNORECASE)
+# A UI-only budget (event-loop slicing, display paging) that happens to equal a
+# Rust limit, reviewed with its reason on the same line or the line above.
+UI_BUDGET_MARKER = re.compile(r"//\s*ui-budget:\s*\S")
+NUMBER = re.compile(r"(?<![\w.'])\d[\d']*(?:\s*\*\s*\d[\d']*)*(?![\w.'])")
+
+
+def product(text):
+    value = 1
+    for factor in re.split(r"\s*\*\s*", text.replace("'", "").replace("_", "")):
+        value *= int(factor)
+    return value
+
+
+def rust_limits(root):
+    """Large numeric Rust MAX_/MIN_/DEFAULT_ constants that C++ must not copy."""
+    limits = {}
+    for path in sorted((root / "crates").glob("*/src/**/*.rs")):
+        for match in RUST_LIMIT.finditer(path.read_text(encoding="utf-8")):
+            expression = match[2].replace("(", "").replace(")", "").strip()
+            if not re.fullmatch(r"[\d_]+(?:\s*\*\s*[\d_]+)*", expression):
+                continue
+            value = product(expression)
+            if value >= MIN_REPORTED_LIMIT:
+                limits.setdefault(value, match[1])
+    return limits
+
+
 def inventory(root):
     """Git defines the source checkout; include untracked, non-ignored additions."""
     result = subprocess.run(
@@ -147,7 +245,14 @@ def lex(source):
     return "".join(masked), "".join(comments_removed), literals, lines
 
 
-def scan(path, source):
+def role_for(path):
+    return next(
+        (role for prefix, role in ROLES.items() if path.startswith(prefix)),
+        "unclassified",
+    )
+
+
+def scan(path, source, limits=None):
     code, uncommented, literals, lines = lex(source)
     findings = []
 
@@ -165,6 +270,32 @@ def scan(path, source):
     for rule, (severity, pattern) in COMPILED.items():
         for match in pattern.finditer(code):
             add(rule, severity, match.start(), match[0])
+    for match in TRANSLATED_CONTROL_FLOW.finditer(code):
+        add("translated-control-flow", "error", match.start(), match[0])
+    for match in LIMIT_REVALIDATION.finditer(code):
+        add("limit-revalidation", "error", match.start(), match[0])
+    if role_for(path) in SEMANTIC_ROLES:
+        for rule, pattern in (
+            ("text-matching", TEXT_MATCHING),
+            ("object-kind-literal", OBJECT_KIND_LITERAL),
+            ("driver-literal", DRIVER_LITERAL),
+        ):
+            for match in pattern.finditer(uncommented):
+                around = uncommented[max(0, match.start() - 64) : match.end()]
+                if rule == "object-kind-literal" and EVENT_KIND_SCHEMA.search(around):
+                    continue
+                add(rule, "error", match.start(), match[0])
+    source_lines = source.splitlines()
+
+    def reviewed_budget(pos):
+        line = lines[pos] if lines else 1
+        nearby = source_lines[max(0, line - 2) : line]
+        return any(UI_BUDGET_MARKER.search(text) for text in nearby)
+
+    for match in NUMBER.finditer(code):
+        name = (limits or {}).get(product(match[0]))
+        if name and not reviewed_budget(match.start()):
+            add("rust-limit-literal", "error", match.start(), f"{match[0]} ({name})")
     for match in re.finditer(
         r'^\s*#\s*(?:include|import)\s*[<"]([^>"\n]+)[>"]', uncommented, re.M
     ):
@@ -192,17 +323,22 @@ def scan(path, source):
 
 def audit(root, paths, exceptions):
     files, findings, errors = [], [], []
+    limits = rust_limits(root)
     for path in sorted(set(paths)):
         native = Path(path).suffix.lower() in SUFFIXES
         cmake = Path(path).name == "CMakeLists.txt" or path.endswith(".cmake")
         if not (native or cmake):
             continue
-        role = next(
-            (role for prefix, role in ROLES.items() if path.startswith(prefix)),
-            "unclassified",
-        )
+        role = role_for(path)
         if cmake:
-            role = "build" if not path.startswith("vendor/") else "third-party"
+            # Test build files keep the test role: fixtures may link capabilities.
+            role = (
+                "third-party"
+                if path.startswith("vendor/")
+                else "test"
+                if path.startswith("tests/")
+                else "build"
+            )
         full = root / path
         if full.is_symlink():
             errors.append(
@@ -240,7 +376,10 @@ def audit(root, paths, exceptions):
                         }
                     )
         else:
-            findings.extend(scan(path, source))
+            # Design-system numbers are geometry and timing tokens, not Rust policy.
+            findings.extend(
+                scan(path, source, None if role == "design-system" else limits)
+            )
     by_path = {f["path"]: f for f in files}
     seen = set()
     for entry in exceptions:
@@ -271,7 +410,11 @@ def audit(root, paths, exceptions):
             by_path[finding["path"]]["role"] != "test" and "exception" not in finding
         )
     findings.sort(key=lambda f: (f["path"], f["line"], f["rule"]))
-    native_files = [f for f in files if f["role"] not in {"build", "third-party"}]
+    native_files = [
+        f
+        for f in files
+        if f["role"] != "third-party" and Path(f["path"]).suffix.lower() in SUFFIXES
+    ]
     summary = {
         "native_files_scanned": len(native_files),
         "native_lines_scanned": sum(f["lines"] for f in native_files),

@@ -43,6 +43,172 @@ class OwnershipTests(unittest.TestCase):
                 with self.subTest(rule=rule, source=source):
                     self.assertIn(rule, self.rules(source))
 
+    def test_translated_text_never_drives_control_flow(self):
+        for source in [
+            'if (message.startsWith(tr("Font size"))) return;',
+            'if (status == tr("Searching")) return;',
+            'bool busy = text.contains(QObject::tr("Loading"));',
+            'if (label != QCoreApplication::tr("x")) {}',
+        ]:
+            with self.subTest(source=source):
+                self.assertIn("translated-control-flow", self.rules(source))
+        self.assertNotIn(
+            "translated-control-flow",
+            self.rules('label->setText(tr("Loading")); setStatus(tr("Ready"));'),
+        )
+
+    def test_text_matching_uses_the_rust_filter(self):
+        for source in [
+            "bool m = name.contains(needle, Qt::CaseInsensitive);",
+            "bool m = item->text(0).contains(query.trimmed(), Qt::CaseInsensitive);",
+            "proxy->setFilterFixedString(text);",
+            "proxy->setFilterCaseSensitivity(Qt::CaseInsensitive);",
+            "bool m = a.compare(b, Qt::CaseInsensitive) == 0;",
+            "bool m = QString::compare(a, b, Qt::CaseInsensitive) == 0;",
+            "bool m = name.toLower().contains(needle);",
+            "bool m = title.toCaseFolded().startsWith(prefix);",
+            "int at = row.text().toLower().indexOf(query.toLower());",
+        ]:
+            with self.subTest(source=source):
+                self.assertIn("text-matching", self.rules(source))
+        self.assertNotIn(
+            "text-matching",
+            self.rules("if (ids.contains(id)) {} auto lower = label.toLower();"),
+        )
+
+    def test_object_kinds_branch_on_rust_traits(self):
+        for source in [
+            'if (kind == "table") {}',
+            'bool root = kind != QStringLiteral("connection");',
+            'if (index.data(KindRole).toString() == QLatin1String("column")) {}',
+            'if ("view" == kind_) {}',
+            'if (kind == u"table") {}',
+            'if (kind == "index"_L1) {}',
+            'if (kind != "column"_s) {}',
+            'if (kind == QLatin1StringView("schema")) {}',
+            'if (QStringView(u"view") == kind) {}',
+            'if (QStringList{"table", "view"}.contains(kind)) {}',
+            'if (QSet<QString>{QStringLiteral("index")}.contains(kind)) {}',
+            'if (kind.startsWith("foreign")) {}',
+            'if (kind.endsWith(QLatin1String("key"))) {}',
+            'if (eventKind == "table") {}',
+        ]:
+            with self.subTest(source=source):
+                self.assertIn("object-kind-literal", self.rules(source))
+        self.assertNotIn(
+            "object-kind-literal",
+            self.rules(
+                'node.kind = "table"; if (state == "running") {} '
+                'if (eventKind == "schema") {}'
+            ),
+        )
+
+    def test_driver_names_branch_on_rust_policy(self):
+        for source in [
+            'if (driver == "mysql") {}',
+            'bool tunnel = driver_->currentData() != "sqlite";',
+            'if (QStringLiteral("postgres") == driver) {}',
+            'if (driver == "MySQL") {}',
+            'if (driver == u"PostgreSQL"_s) {}',
+            'if (QStringList{"mysql", "mariadb"}.contains(driver)) {}',
+            'if (driver.startsWith("postgres")) {}',
+            'if (driver.compare("SQLite", Qt::CaseInsensitive) == 0) {}',
+        ]:
+            with self.subTest(source=source):
+                self.assertIn("driver-literal", self.rules(source))
+        self.assertNotIn(
+            "driver-literal",
+            self.rules('profile.driver = "sqlite"; QStringList names{"mysql"};'),
+        )
+
+    def test_semantic_rules_skip_design_system_and_tools(self):
+        source = 'if (driver == "sqlite" || kind == "table") {} a.contains(b, Qt::CaseInsensitive);'
+        for path in ["desktop/design_system/row.cpp", "desktop/tools/preview.cpp"]:
+            with self.subTest(path=path):
+                rules = {f["rule"] for f in policy.scan(path, source)}
+                self.assertFalse(
+                    rules & {"text-matching", "object-kind-literal", "driver-literal"}
+                )
+
+    def test_rust_limits_are_not_revalidated_in_cpp(self):
+        for source in [
+            "if (value.pageSize > limits.maxPageSize) return;",
+            "if (size < EngineAdapter::queryPreferenceLimits().minPageSize) {}",
+            "ok = limits.maxTimeoutSeconds >= value;",
+        ]:
+            with self.subTest(source=source):
+                self.assertIn("limit-revalidation", self.rules(source))
+        self.assertNotIn(
+            "limit-revalidation",
+            self.rules("spin->setRange(limits.minPageSize, limits.maxPageSize);"),
+        )
+
+    def test_copies_of_rust_limit_constants_are_reported(self):
+        limits = {16 * 1024 * 1024: "MAX_SQL_DOCUMENT_BYTES", 10_000: "MAX_PAGE_SIZE"}
+
+        def rules(source):
+            return {
+                f["rule"]
+                for f in policy.scan("desktop/app/example.cpp", source, limits)
+            }
+
+        for source in [
+            "if (bytes > 16 * 1024 * 1024) return;",
+            "if (rows.size() >= 10000) return;",
+            "constexpr int cap = 10'000;",
+        ]:
+            with self.subTest(source=source):
+                self.assertIn("rust-limit-literal", rules(source))
+        self.assertNotIn("rust-limit-literal", rules("timer.setInterval(60 * 1000);"))
+        self.assertNotIn("rust-limit-literal", rules('auto s = "10000"; // 10000'))
+        evidence = [
+            f["evidence"]
+            for f in policy.scan("desktop/app/x.cpp", "n = 10000;", limits)
+            if f["rule"] == "rust-limit-literal"
+        ]
+        self.assertEqual(evidence, ["10000 (MAX_PAGE_SIZE)"])
+
+    def test_reviewed_ui_budgets_need_a_reason(self):
+        limits = {65536: "MAX_SECRET_BYTES"}
+
+        def rules(source):
+            return {
+                f["rule"]
+                for f in policy.scan("desktop/app/example.cpp", source, limits)
+            }
+
+        self.assertNotIn(
+            "rust-limit-literal",
+            rules("int chunk = 65536; // ui-budget: preview paging window\n"),
+        )
+        self.assertNotIn(
+            "rust-limit-literal",
+            rules("// ui-budget: preview paging window\nint chunk = 65536;\n"),
+        )
+        for source in [
+            "int chunk = 65536; // ui-budget:\n",
+            "// ui-budget: preview\n\nint chunk = 65536;\n",
+        ]:
+            with self.subTest(source=source):
+                self.assertIn("rust-limit-literal", rules(source))
+
+    def test_rust_limit_constants_are_collected_from_crates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "crates/core/src"
+            source.mkdir(parents=True)
+            (source / "lib.rs").write_text(
+                "pub const MAX_BYTES: usize = 16 * 1024 * 1024;\n"
+                "pub(crate) const DEFAULT_ROWS: u32 = 10_000;\n"
+                "pub const MIN_PORT: u16 = 1;\n"
+                'pub const NAME: &str = "x";\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                policy.rust_limits(root),
+                {16 * 1024 * 1024: "MAX_BYTES", 10_000: "DEFAULT_ROWS"},
+            )
+
     def test_comments_strings_and_ui_operations_do_not_trigger_capabilities(self):
         source = """// QFile f;
 /* QSettings settings; */
@@ -118,6 +284,16 @@ QDir(root).filePath(name);
         self.assertEqual(
             {f["rule"] for f in report["findings"]}, {"storage", "backend-link"}
         )
+
+    def test_test_build_files_may_link_fixture_capabilities(self):
+        report = self.audit(
+            {
+                "tests/Tests.cmake": "target_link_libraries(fixture Qt6::Network)",
+                "CMakeLists.txt": "target_link_libraries(app Qt6::Network)",
+            }
+        )
+        blocking = {f["path"] for f in report["findings"] if f["blocking"]}
+        self.assertEqual(blocking, {"CMakeLists.txt"})
 
     def test_tests_are_visible_and_tools_are_not_exempt(self):
         report = self.audit(

@@ -1,17 +1,5 @@
 [
   {
-    "path": "desktop/design_system/icons.cpp",
-    "rule": "storage",
-    "sha256": "7406db5dba680bb8375a855a342d87715edaca956e58b9e75b7492f32820b735",
-    "reason": "QFile reads compiled :/icons resources selected by iconResourcePath in this file; no application document I/O."
-  },
-  {
-    "path": "desktop/design_system/icons.cpp",
-    "rule": "serialization",
-    "sha256": "7406db5dba680bb8375a855a342d87715edaca956e58b9e75b7492f32820b735",
-    "reason": "QXmlStreamReader checks SVG drawing elements for rendering compiled icon resources."
-  },
-  {
     "path": "desktop/design_system/style/style_resource.cpp",
     "rule": "storage",
     "sha256": "61730ee39b3a5b2052b15556d83b8f59d181d070b1350721eaf16a8f2d55ea3a",
@@ -20,32 +8,20 @@
   {
     "path": "desktop/design_system/json_text_view/json_text_view.cpp",
     "rule": "domain-parsing",
-    "sha256": "488d11169824978365cf87220e0467acc135eef5c1dc0c9fa7d5c04a1ec46b98",
+    "sha256": "863592de91e2420297112c7fcaa37d7bc27cece30dbd0ed198f0ddc4bc5eaff3",
     "reason": "Regular expressions select syntax highlighting spans; they do not validate or transform backend results."
-  },
-  {
-    "path": "desktop/app/object_explorer.cpp",
-    "rule": "domain-parsing",
-    "sha256": "04aeddea086b2ff4c51f3b5020d11a130f2d1701db3791a9a11c3d10a11c3657",
-    "reason": "Regular expressions identify SQL keywords and numbers for QTextCharFormat syntax highlighting."
-  },
-  {
-    "path": "CMakeLists.txt",
-    "rule": "backend-link",
-    "sha256": "d65758e7454d78ea377546eabeee34d1a3eba9d564d9fa93a5ece787ba1de7f6",
-    "reason": "Qt6::Network is linked only to choscordb-updater-menu-tests for its local HTTP fixture under BUILD_TESTING; no production target receives it here."
-  },
-  {
-    "path": "desktop/app/main_window_quick_search.cpp",
-    "rule": "serialization",
-    "sha256": "14c12b1fd7bab3528b7dc58cc006e5615337f5813057c3c8648bab2f372ecc71",
-    "reason": "QJsonDocument encodes a tuple into an ephemeral search-row key so distinct open UI objects do not collide. The key is neither persisted nor sent to the engine; typed fields retained in quickObjectMatches_ drive activation and Rust validates object requests."
   },
   {
     "path": "desktop/models/shortcut_catalog.cpp",
     "rule": "domain-parsing",
-    "sha256": "618d74eb893705ad1d9ec154aa528bb6bb18e6583654b05ff7726e85627965e7",
-    "reason": "QRegularExpression strips modifier names only to compare Qt QKeySequence round trips. Qt owns native key/chord parsing and action conflict feedback; Rust separately validates persisted preference bounds and command identifiers."
+    "sha256": "2f4ef57e1593a0607f3c4bb1a720cbe8eaaadfbddfe19a755183a0b14b4175ba",
+    "reason": "QRegularExpression strips modifier names only to compare Qt QKeySequence round trips. Qt owns native key/chord parsing and conflicts between catalog actions; Rust validates the stored preference document (version, font, sizes, duplicate commands)."
+  },
+  {
+    "path": "desktop/models/shortcut_catalog.cpp",
+    "rule": "text-matching",
+    "sha256": "2f4ef57e1593a0607f3c4bb1a720cbe8eaaadfbddfe19a755183a0b14b4175ba",
+    "reason": "The case-insensitive compare checks that a Qt QKeySequence PortableText round trip preserved the typed keys; it is native key parsing, not user-text filtering. Rust validates the stored preference document, including sequence size and NUL bytes."
   },
   {
     "path": "desktop/tools/preview/preview_standard.cpp",
@@ -60,21 +36,9 @@
     "reason": "The SELECT literal is synthetic content for the SQL-editor gallery specimen in Light and Dark themes. The gallery does not execute it or generate database requests."
   },
   {
-    "path": "desktop/widgets/profile_dialog/profile_dialog_security.cpp",
-    "rule": "serialization",
-    "sha256": "ea03e019b5c8209b68288c3497c26d5efd97948f48d4aefd14cf7e01af4e5f2d",
-    "reason": "QJsonDocument hydrates transient SSH form controls and SshHopEditor rows from existing bridge strings, including saved-credential placeholders. This file does not write serialized settings or authorize network operations; Rust owns profile persistence and SSH option validation."
-  },
-  {
-    "path": "desktop/widgets/profile_dialog/profile_dialog_security.cpp",
-    "rule": "domain-parsing",
-    "sha256": "ea03e019b5c8209b68288c3497c26d5efd97948f48d4aefd14cf7e01af4e5f2d",
-    "reason": "QRegularExpression detects a wildcard local-bind address solely to show a form warning. It does not accept or reject a request; Rust validates forwarding options and executes all network operations."
-  },
-  {
-    "path": "desktop/widgets/profile_dialog/profile_dialog_ssh_trust.cpp",
-    "rule": "serialization",
-    "sha256": "07a5c57e3a7dd16346b936721f10abe4d29be33dac72bed0b6d856243a461ce7",
-    "reason": "QJsonDocument reads the displayed SSH hop draft to identify the selected UI row, its known-hosts path, and preceding credential fields for an inspection request. Rust independently resolves and validates inspection targets and credentials; this file only orchestrates selection, revision guards, and approval dialogs."
+    "path": "desktop/app/object_kind_icon.h",
+    "rule": "object-kind-literal",
+    "sha256": "4375dcfca38d6584c1f1c31674b95928935e7313740f0ce20def271ad062c0dd",
+    "reason": "The shared presentation map from object kinds to icons, navigator row styles and translated labels. It chooses appearance only; behavior that depends on a kind uses Rust ObjectKindTraits through EngineAdapter::objectKindTraits."
   }
 ]
