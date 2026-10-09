@@ -8,6 +8,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Queries that page 100 rows at a time, as these tests fetch.
+fn paged() -> QueryOptions {
+    QueryOptions {
+        page_size: PageSize::new(100).unwrap(),
+        ..QueryOptions::default()
+    }
+}
 fn records(folder: &std::path::Path) -> Vec<serde_json::Value> {
     let mut records = Vec::new();
     for entry in std::fs::read_dir(folder).unwrap() {
@@ -104,11 +111,9 @@ fn query_outcome_is_captured_without_draining_its_engine_events() {
     }
     diagnostics.set_open_tabs(4);
     let query = engine
-        .execute(connection, "SELECT 1".into(), QueryOptions::default())
+        .execute(connection, "SELECT 1".into(), paged())
         .unwrap();
-    engine
-        .fetch_page(query, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page(query).unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
         if records(diagnostics.folder_path())

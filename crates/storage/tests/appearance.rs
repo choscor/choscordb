@@ -282,3 +282,15 @@ fn migration_from_the_previous_schema_is_additive() {
         .unwrap();
     assert_eq!(version, 3);
 }
+
+#[test]
+fn default_workspace_layout_is_the_shipped_desktop_layout() {
+    // The desktop restores this layout when nothing is saved and on "Reset layout";
+    // the native UI reads it from here rather than keeping its own copy.
+    let layout = WorkspaceLayout::default();
+    assert_eq!(layout.navigator_width, 260);
+    assert_eq!(layout.editor_results_split, 500);
+    assert_eq!(layout.history_height, 220);
+    assert!(layout.navigator_visible);
+    assert!(!layout.history_visible);
+}

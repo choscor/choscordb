@@ -144,8 +144,8 @@ pub struct WorkspaceLayout {
 impl Default for WorkspaceLayout {
     fn default() -> Self {
         Self {
-            navigator_width: 280,
-            editor_results_split: 600,
+            navigator_width: 260,
+            editor_results_split: 500,
             history_height: 220,
             navigator_visible: true,
             history_visible: false,

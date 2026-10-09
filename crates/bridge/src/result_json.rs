@@ -3,7 +3,8 @@ use crate::{convert, ffi};
 use choscordb_driver_api::{Column, Value};
 use choscordb_result_store::{
     JsonViewError, JsonViewReadiness, JsonViewRow, json_cell_readiness, json_page_readiness,
-    json_row_readiness, render_json_cell, render_json_page, render_json_row,
+    json_row_readiness, json_view_error_message, render_json_cell, render_json_page,
+    render_json_row,
 };
 use std::collections::BTreeMap;
 
@@ -63,14 +64,19 @@ fn error_code(error: JsonViewError) -> String {
     .into()
 }
 
-fn output(result: Result<String, JsonViewError>) -> ffi::JsonViewResultDto {
+fn output(
+    result: Result<String, JsonViewError>,
+    budget_bytes: u64,
+    cell: bool,
+) -> ffi::JsonViewResultDto {
     match result {
         Ok(json) => ffi::JsonViewResultDto {
             json,
-            error: String::new(),
+            ..Default::default()
         },
         Err(error) => ffi::JsonViewResultDto {
             error: error_code(error),
+            message: json_view_error_message(error, budget(budget_bytes), cell),
             ..Default::default()
         },
     }
@@ -141,9 +147,9 @@ pub fn render_json_cell_policy(
     valid_unicode: bool,
 ) -> ffi::JsonViewResultDto {
     if !valid_unicode || resolved.len() > 1 {
-        return output(Err(JsonViewError::InvalidInput));
+        return output(Err(JsonViewError::InvalidInput), budget_bytes, true);
     }
-    output((|| {
+    let result = (|| {
         let original = value(cell_dto)?;
         let resolved = resolved.into_iter().next().map(value).transpose()?;
         render_json_cell(
@@ -152,7 +158,8 @@ pub fn render_json_cell_policy(
             resolved.as_ref(),
             budget(budget_bytes),
         )
-    })())
+    })();
+    output(result, budget_bytes, true)
 }
 
 pub fn render_json_row_policy(
@@ -163,9 +170,9 @@ pub fn render_json_row_policy(
     valid_unicode: bool,
 ) -> ffi::JsonViewResultDto {
     if !valid_unicode {
-        return output(Err(JsonViewError::InvalidInput));
+        return output(Err(JsonViewError::InvalidInput), budget_bytes, false);
     }
-    output((|| {
+    let result = (|| {
         let columns = columns.into_iter().map(column).collect::<Vec<_>>();
         let row = row(row_dto)?;
         let mut values = BTreeMap::new();
@@ -179,7 +186,8 @@ pub fn render_json_row_policy(
             }
         }
         render_json_row(&columns, &row, &values, budget(budget_bytes))
-    })())
+    })();
+    output(result, budget_bytes, false)
 }
 
 pub fn render_json_page_policy(
@@ -190,9 +198,9 @@ pub fn render_json_page_policy(
     valid_unicode: bool,
 ) -> ffi::JsonViewResultDto {
     if !valid_unicode {
-        return output(Err(JsonViewError::InvalidInput));
+        return output(Err(JsonViewError::InvalidInput), budget_bytes, false);
     }
-    output((|| {
+    let result = (|| {
         let columns = columns.into_iter().map(column).collect::<Vec<_>>();
         let rows = rows.into_iter().map(row).collect::<Result<Vec<_>, _>>()?;
         let mut values = BTreeMap::new();
@@ -208,5 +216,6 @@ pub fn render_json_page_policy(
             }
         }
         render_json_page(&columns, &rows, &values, budget(budget_bytes))
-    })())
+    })();
+    output(result, budget_bytes, false)
 }

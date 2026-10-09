@@ -117,17 +117,18 @@ fn identity(driver: &str, object_id: &str, qualified_name: &str) -> Option<(Stri
     Some((schema.to_owned(), name.to_owned()))
 }
 
-pub fn prepare_object_action(
+/// Whether `action` applies to an object before its identity is known.
+pub fn object_action_availability(
     action: ObjectAction,
     driver: &str,
     kind: &str,
-    object_id: &str,
-    qualified_name: &str,
-    new_name: &str,
     relation_subtype: &str,
-) -> Result<ObjectActionStatement, &'static str> {
+) -> Result<(), &'static str> {
     if kind != "table" && kind != "view" {
         return Err("Only tables and views support this action.");
+    }
+    if !matches!(driver, "sqlite" | "postgres" | "mysql") {
+        return Err("This connection does not support this action.");
     }
     if !relation_subtype.is_empty()
         && !(driver == "postgres"
@@ -139,6 +140,19 @@ pub fn prepare_object_action(
     if action == ObjectAction::Rename && driver == "sqlite" && kind == "view" {
         return Err("SQLite does not support renaming views directly.");
     }
+    Ok(())
+}
+
+pub fn prepare_object_action(
+    action: ObjectAction,
+    driver: &str,
+    kind: &str,
+    object_id: &str,
+    qualified_name: &str,
+    new_name: &str,
+    relation_subtype: &str,
+) -> Result<ObjectActionStatement, &'static str> {
+    object_action_availability(action, driver, kind, relation_subtype)?;
     let (schema, old_name) = identity(driver, object_id, qualified_name)
         .ok_or("The selected object has an invalid identity.")?;
     let delimiter = if driver == "mysql" { '`' } else { '"' };

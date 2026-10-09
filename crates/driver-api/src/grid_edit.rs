@@ -485,3 +485,86 @@ pub fn plan_grid_edits(request: &GridEditRequest) -> Result<GridEditPlan, GridEd
     }
     Ok(plan)
 }
+
+fn review_literal(kind: &str, text: &str) -> String {
+    let escaped = text
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n");
+    format!("{kind} \"{escaped}\"")
+}
+
+fn review_value(value: &Value) -> String {
+    match value {
+        Value::Null => "NULL".into(),
+        Value::Bool(value) => value.to_string(),
+        Value::Integer(value) => value.to_string(),
+        Value::Real(value) => value.to_string(),
+        Value::Decimal(text) => text.clone(),
+        Value::Text(text) => review_literal("text", text),
+        Value::Date(text) => review_literal("date", text),
+        Value::Time(text) => review_literal("time", text),
+        Value::Timestamp(text) => review_literal("timestamp", text),
+        Value::Uuid(text) => review_literal("uuid", text),
+        Value::Json(text) => review_literal("json", text),
+        Value::Binary(bytes) => {
+            let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+            format!("binary 0x{hex} ({} bytes)", bytes.len())
+        }
+        // Planning rejects these as parameters; show them without their contents.
+        _ => "unavailable".into(),
+    }
+}
+
+/// The statements and bound values a user reviews before applying grid edits.
+pub fn review_text(plan: &GridEditPlan) -> String {
+    let mut review = String::new();
+    for planned in &plan.statements {
+        review.push_str(&planned.statement.sql);
+        review.push('\n');
+        for (index, value) in planned.statement.params.iter().enumerate() {
+            review.push_str(&format!(
+                "  Parameter {}: {}\n",
+                index + 1,
+                review_value(value)
+            ));
+        }
+        review.push('\n');
+    }
+    review
+}
+
+/// How a staged result cell is represented in the grid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GridCellKind {
+    Value,
+    Binary,
+    Deferred,
+    FallbackText,
+    Unavailable,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GridCellKindPolicy {
+    pub inline_editable: bool,
+    pub blocks_row_delete: bool,
+    pub blocks_row_duplicate: bool,
+    pub duplicate_requires_load: bool,
+}
+impl GridCellKind {
+    /// Only complete scalar values edit inline. Rows holding values the grid could
+    /// not represent exactly cannot be matched for delete or copied.
+    pub fn policy(self) -> GridCellKindPolicy {
+        let partial = matches!(self, Self::FallbackText | Self::Unavailable);
+        GridCellKindPolicy {
+            inline_editable: self == Self::Value,
+            blocks_row_delete: partial,
+            blocks_row_duplicate: partial,
+            duplicate_requires_load: self == Self::Deferred,
+        }
+    }
+}
+/// Why another staged row cannot be added to a page holding `rows` rows.
+pub fn grid_row_insert_error(rows: usize) -> Option<&'static str> {
+    (rows >= crate::MAX_PAGE_SIZE as usize)
+        .then_some("The visible page already has the maximum number of rows.")
+}

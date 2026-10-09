@@ -362,7 +362,7 @@ pub(crate) async fn apply_batch(conn: &mut Conn, batch: EditBatch) -> Result<Edi
     if crate::transaction_active(conn).unwrap_or(false) || autocommit != Some(1) {
         return Err(error(
             ErrorKind::InvalidInput,
-            "Commit or roll back the manual transaction before applying edits",
+            choscordb_driver_api::EDITS_NEED_NO_TRANSACTION,
         ));
     }
     // Bind and validate every statement before opening the owned transaction.

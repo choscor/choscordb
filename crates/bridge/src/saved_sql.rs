@@ -15,14 +15,22 @@ pub fn saved_sql_list_directory(root: &str) -> SavedSqlListingDto {
                 })
                 .collect(),
             has_more: listing.has_more,
+            limit: choscordb_core::MAX_SAVED_SQL_DOCUMENTS as u32,
             error: String::new(),
         },
         Err(error) => SavedSqlListingDto {
             entries: Vec::new(),
             has_more: false,
+            limit: choscordb_core::MAX_SAVED_SQL_DOCUMENTS as u32,
             error: error.to_string(),
         },
     }
+}
+
+pub fn saved_sql_root(storage_path: &str, default_data_directory: &str) -> String {
+    choscordb_core::saved_sql_root(Path::new(storage_path), Path::new(default_data_directory))
+        .to_string_lossy()
+        .into_owned()
 }
 
 pub fn saved_sql_prepare_directory(root: &str) -> String {

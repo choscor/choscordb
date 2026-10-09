@@ -403,6 +403,10 @@ pub fn update_take_windows_failure_marker() -> bool {
     choscordb_update::take_windows_install_failure_marker()
 }
 
+pub fn update_check_interval_seconds() -> u64 {
+    choscordb_update::AUTOMATIC_CHECK_INTERVAL_SECONDS
+}
+
 pub fn update_consent_load(directory: &str) -> UpdateConsentDto {
     match UpdatePreferenceStore::new(Path::new(directory)).load() {
         Ok(Some(value)) => UpdateConsentDto {

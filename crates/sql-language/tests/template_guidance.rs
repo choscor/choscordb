@@ -31,3 +31,36 @@ fn guidance_counts_toward_the_output_limit() {
         "Generated SQL exceeds the template size limit."
     );
 }
+
+#[test]
+fn navigator_templates_wait_for_the_columns_they_list() {
+    use choscordb_sql_language::{TemplateKind, template_unavailable_reason};
+    for kind in [TemplateKind::Select, TemplateKind::Delete] {
+        assert_eq!(template_unavailable_reason(kind, false, false), None);
+    }
+    let unloaded = template_unavailable_reason(TemplateKind::Insert, false, false);
+    assert!(unloaded.is_some_and(|reason| reason.contains("Load the object's columns")));
+    assert_eq!(
+        template_unavailable_reason(TemplateKind::Insert, true, false),
+        None
+    );
+    assert!(template_unavailable_reason(TemplateKind::Update, false, true).is_some());
+    let columnless = template_unavailable_reason(TemplateKind::Update, true, false);
+    assert!(columnless.is_some_and(|reason| reason.contains("column")));
+    assert_eq!(
+        template_unavailable_reason(TemplateKind::Update, true, true),
+        None
+    );
+}
+
+#[test]
+fn navigator_templates_list_columns_only_where_they_assign_values() {
+    use choscordb_sql_language::navigator_template;
+    let columns = ["id", "name"];
+    let select = navigator_template(TemplateKind::Select, "\"t\"", &columns, true).unwrap();
+    assert_eq!(select, "SELECT * FROM \"t\";");
+    let insert = navigator_template(TemplateKind::Insert, "\"t\"", &columns, true).unwrap();
+    assert!(insert.contains("(\"id\", \"name\") VALUES"), "{insert}");
+    let unloaded = navigator_template(TemplateKind::Update, "\"t\"", &[], false).unwrap_err();
+    assert!(unloaded.contains("Load the object's columns"), "{unloaded}");
+}

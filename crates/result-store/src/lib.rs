@@ -11,10 +11,11 @@ pub use copy_tsv::{CopyCell, CopyError, CopyRequest, render_copy_tsv};
 mod deferred_assembler;
 pub use deferred_assembler::{
     CompletedDeferredValue, DeferredAssembler, DeferredAssemblerError, DeferredLoadPolicy,
-    MAX_DEFERRED_CHUNK_BYTES, MAX_DEFERRED_LOAD_BYTES,
+    MAX_DEFERRED_CHUNK_BYTES, MAX_DEFERRED_LOAD_BYTES, value_detail_size_error,
 };
 mod index;
 mod json_view;
+mod value_preview;
 use choscordb_driver_api::{Column, ResultPage};
 use codec::{Decoder, Encoder};
 pub use index::INDEX_RECORD_BYTES;
@@ -25,6 +26,7 @@ use std::{
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::Path,
 };
+pub use value_preview::{PreviewRows, preview_rows, text_boundary_after, text_char_start};
 
 #[derive(thiserror::Error)]
 pub enum StoreError {

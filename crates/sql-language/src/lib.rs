@@ -1,27 +1,32 @@
 //! SQL editing services. All positions are UTF-8 byte offsets.
 mod completion;
 mod completion_context;
-pub use completion_context::completion_context;
+pub use completion_context::{completion_context, completion_source_supported};
 mod editor;
+mod highlight;
+mod history_preview;
+pub use highlight::{HighlightKind, HighlightSpan, highlight};
+pub use history_preview::{HistoryPreview, history_sql_preview};
 mod safety;
 mod scanner;
 mod search;
 pub use search::{
     MAX_SEARCH_PATTERN_BYTES, MAX_SEARCH_SOURCE_BYTES, Replacement, SearchError, SearchMatch,
-    SearchOptions, find, replace_all,
+    SearchOptions, TextFinder, find, find_all, pattern_usable, replace_all, replacement_fits,
 };
 mod templates;
 pub use completion::{
     Completion, CompletionError, CompletionKind, CompletionPage, MAX_COMPLETION_METADATA_BYTES,
-    MAX_COMPLETION_METADATA_ENTRIES, MAX_COMPLETION_PREFIX_BYTES, MAX_COMPLETION_RESULTS,
-    bounded_completions, completions,
+    MAX_COMPLETION_METADATA_ENTRIES, MAX_COMPLETION_METADATA_VISITS, MAX_COMPLETION_PREFIX_BYTES,
+    MAX_COMPLETION_RESULTS, bounded_completions, completions,
 };
 pub use editor::execution_range;
 pub use safety::{Safety, classify, parse};
 pub use scanner::statement_ranges;
 pub use templates::{
-    MAX_TEMPLATE_BYTES, MAX_TEMPLATE_COLUMNS, NameError, TemplateKind, qualified_name,
-    quote_identifier, template, template_from_qualified,
+    MAX_TEMPLATE_BYTES, MAX_TEMPLATE_COLUMNS, NameError, TemplateKind, navigator_template,
+    qualified_name, quote_identifier, template, template_from_qualified,
+    template_unavailable_reason,
 };
 
 #[cfg(test)]

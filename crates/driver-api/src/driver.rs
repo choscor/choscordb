@@ -73,6 +73,14 @@ pub struct SchemaObject {
     #[serde(default)]
     pub properties: Vec<MetadataProperty>,
 }
+impl SchemaObject {
+    /// Column metadata, reported only for column rows.
+    pub fn column_metadata(&self) -> Option<&Column> {
+        self.column
+            .as_ref()
+            .filter(|_| self.kind == ObjectKind::Column)
+    }
+}
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct QuerySummary {
     #[serde(default)]
@@ -153,6 +161,29 @@ pub struct EditQueryTarget {
     pub source_columns: Vec<String>,
     pub reason: String,
 }
+impl EditQueryTarget {
+    /// One target column per result column, in result order. A result column the
+    /// target does not own is read-only and is never a key.
+    pub fn aligned_columns(&self) -> Vec<EditColumn> {
+        self.source_columns
+            .iter()
+            .map(|name| {
+                self.target
+                    .columns
+                    .iter()
+                    .find(|column| &column.name == name)
+                    .cloned()
+                    .unwrap_or_else(|| EditColumn {
+                        name: name.clone(),
+                        database_type: String::new(),
+                        nullable: true,
+                        generated: true,
+                        key: false,
+                    })
+            })
+            .collect()
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EditColumn {
     pub name: String,
@@ -160,6 +191,13 @@ pub struct EditColumn {
     pub nullable: bool,
     pub generated: bool,
     pub key: bool,
+}
+impl EditColumn {
+    /// Whether a duplicated row copies this column's value. Keys and generated or
+    /// unnamed columns are left for the database to fill.
+    pub fn duplicable(&self) -> bool {
+        !self.key && !self.generated && !self.name.is_empty()
+    }
 }
 /// Catalog-verified presentation metadata for one result column. Empty source or
 /// target fields mean that no corresponding cell action can be offered.

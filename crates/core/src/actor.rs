@@ -352,7 +352,10 @@ async fn complete_result(current: &mut Active, events: &EventSink) {
     }
     current.history.take();
     if let Some(retained) = current.cursor.retained_bytes_after_completion()
-        && retained.saturating_add(256) <= current._source_lease.reserved_bytes()
+        && crate::lease_fits(
+            current._source_lease.reserved_bytes() as u64,
+            retained as u64,
+        )
     {
         current
             ._source_lease
@@ -732,7 +735,9 @@ pub(crate) async fn run(
                     &mut shutdown,
                 )
                 .await
-                {
+                .and_then(|columns| {
+                    choscordb_driver_api::check_result_cell_metadata(&columns).map(|()| columns)
+                }) {
                     Ok(columns) => {
                         send(
                             &events,
@@ -990,6 +995,23 @@ pub(crate) async fn run(
                     Err(error) => {
                         if let Some(history) = &mut history {
                             history.fail(error.kind).await;
+                        }
+                        // A failed statement can leave a manual transaction open;
+                        // report the session state before the failure.
+                        if !outcome.poisoned
+                            && error.kind != ErrorKind::Disconnected
+                            && let Ok(Some(active)) =
+                                metadata_operation(connection.transaction_state(), &mut shutdown)
+                                    .await
+                        {
+                            send(
+                                &events,
+                                Event::TransactionState {
+                                    connection: id,
+                                    active,
+                                },
+                            )
+                            .await;
                         }
                         failure(&events, query, error).await;
                     }

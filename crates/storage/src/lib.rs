@@ -1171,7 +1171,8 @@ impl HistoryEntry {
     }
 }
 /// Validate before queueing a snapshot. Rejection never partially replaces saved tabs.
-pub fn validate_workspace(documents: &[EditorDocument]) -> Result<()> {
+/// Validates documents and returns their encoded size.
+pub fn validate_workspace(documents: &[EditorDocument]) -> Result<usize> {
     if documents.len() > MAX_WORKSPACE_DOCUMENTS {
         return Err(StorageError::ResourceLimit);
     }
@@ -1187,7 +1188,7 @@ pub fn validate_workspace(documents: &[EditorDocument]) -> Result<()> {
             return Err(StorageError::ResourceLimit);
         }
     }
-    Ok(())
+    Ok(total)
 }
 impl WorkspaceTab {
     fn storage_id(&self) -> String {
@@ -1227,7 +1228,8 @@ impl WorkspaceTab {
         }
     }
 }
-pub fn validate_workspace_tabs(snapshot: &WorkspaceSnapshot) -> Result<()> {
+/// Validates a tab snapshot and returns its encoded size.
+pub fn validate_workspace_tabs(snapshot: &WorkspaceSnapshot) -> Result<usize> {
     if snapshot.tabs.len() > MAX_WORKSPACE_DOCUMENTS {
         return Err(StorageError::ResourceLimit);
     }
@@ -1249,7 +1251,7 @@ pub fn validate_workspace_tabs(snapshot: &WorkspaceSnapshot) -> Result<()> {
             return Err(StorageError::ResourceLimit);
         }
     }
-    Ok(())
+    Ok(total)
 }
 fn bounded_data<'a>(
     row: &'a rusqlite::Row<'_>,

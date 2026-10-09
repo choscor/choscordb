@@ -4,6 +4,13 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+/// Queries that page 100 rows at a time, as these tests fetch.
+fn paged() -> QueryOptions {
+    QueryOptions {
+        page_size: PageSize::new(100).unwrap(),
+        ..QueryOptions::default()
+    }
+}
 fn until(engine: &mut Engine, predicate: impl Fn(&Event) -> bool) -> Event {
     let end = Instant::now() + Duration::from_secs(5);
     loop {
@@ -37,18 +44,14 @@ fn execution_records_original_rows_profile_and_failure() {
         .execute_with_profile(
             connection,
             "SELECT 1 UNION ALL SELECT 2".into(),
-            QueryOptions::default(),
+            paged(),
             Some("profile".into()),
         )
         .unwrap();
     until(&mut engine, |e| matches!(e, Event::Schema { .. }));
-    engine
-        .fetch_page(query, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page(query).unwrap();
     until(&mut engine, |e| matches!(e, Event::QueryFinished { .. }));
-    engine
-        .fetch_page_at(query, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
     until(&mut engine, |e| matches!(e, Event::StoredPage { .. }));
     engine.history_list(10, 0, 1).unwrap();
     let Event::HistoryListed { entries, .. } =
@@ -61,11 +64,7 @@ fn execution_records_original_rows_profile_and_failure() {
     assert_eq!(entries[0].row_count, Some(2));
     assert_eq!(entries[0].status, HistoryStatus::Completed);
     engine
-        .execute(
-            connection,
-            "SELECT missing_column".into(),
-            QueryOptions::default(),
-        )
+        .execute(connection, "SELECT missing_column".into(), paged())
         .unwrap();
     until(&mut engine, |e| matches!(e, Event::QueryFailed { .. }));
     engine.history_list(10, 0, 2).unwrap();
@@ -219,16 +218,10 @@ fn history_storage_failure_is_redacted_and_does_not_fail_successful_query() {
         .unwrap();
     until(&mut engine, |e| matches!(e, Event::Connected { .. }));
     let query = engine
-        .execute(
-            connection,
-            "SELECT 'private-history-text'".into(),
-            QueryOptions::default(),
-        )
+        .execute(connection, "SELECT 'private-history-text'".into(), paged())
         .unwrap();
     until(&mut engine, |e| matches!(e, Event::Schema { .. }));
-    engine
-        .fetch_page(query, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page(query).unwrap();
     let mut finished = false;
     let mut failed_history = false;
     let end = Instant::now() + Duration::from_secs(5);

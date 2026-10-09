@@ -70,8 +70,8 @@ fn metadata_and_ddl_do_not_destroy_a_paged_sqlite_result() {
             },
         )
         .unwrap();
-    let q = engine.execute(c, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<250) SELECT x FROM c".into(), QueryOptions::default()).unwrap();
-    engine.fetch_page(q, PageSize::new(100).unwrap()).unwrap();
+    let q = engine.execute(c, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<250) SELECT x FROM c".into(), paged()).unwrap();
+    engine.fetch_page(q).unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut wait = |predicate: &dyn Fn(&Event) -> bool| -> Event {
         loop {
@@ -91,7 +91,7 @@ fn metadata_and_ddl_do_not_destroy_a_paged_sqlite_result() {
     engine
         .object_ddl(c, ObjectId("[\"main\",\"missing\"]".into()))
         .unwrap();
-    engine.fetch_page(q, PageSize::new(100).unwrap()).unwrap();
+    engine.fetch_page(q).unwrap();
     loop {
         if let Some(event) = engine.try_event() {
             match event {
@@ -108,6 +108,13 @@ fn metadata_and_ddl_do_not_destroy_a_paged_sqlite_result() {
     }
 }
 
+/// Queries that page 100 rows at a time.
+fn paged() -> QueryOptions {
+    QueryOptions {
+        page_size: PageSize::new(100).unwrap(),
+        ..QueryOptions::default()
+    }
+}
 fn result_event(engine: &mut Engine) -> Event {
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
@@ -133,16 +140,13 @@ fn indexed_pages_revisit_original_cursor_with_actual_row_offsets() {
             },
         )
         .unwrap();
-    let q = engine.execute(c, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<700) SELECT x FROM c".into(), QueryOptions::default()).unwrap();
-    for (index, size, offset, value) in [
-        (0, 100, 0, 1),
-        (1, 200, 100, 101),
-        (0, 100, 0, 1),
-        (2, 100, 300, 301),
-    ] {
-        engine
-            .fetch_page_at(q, index, PageSize::new(size).unwrap())
-            .unwrap();
+    let options = QueryOptions {
+        page_size: PageSize::new(MIN_PAGE_SIZE).unwrap(),
+        ..QueryOptions::default()
+    };
+    let q = engine.execute(c, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<700) SELECT x FROM c".into(), options).unwrap();
+    for (index, offset, value) in [(0, 0, 1), (1, 100, 101), (0, 0, 1), (2, 200, 201)] {
+        engine.fetch_page_at(q, index).unwrap();
         match result_event(&mut engine) {
             Event::StoredPage {
                 first_row, page, ..
@@ -175,32 +179,22 @@ fn stored_result_survives_new_writes_and_transaction_without_replaying_sql() {
         )
         .unwrap();
     let q = engine
-        .execute(
-            c,
-            "UPDATE t SET x=x+10 RETURNING x".into(),
-            QueryOptions::default(),
-        )
+        .execute(c, "UPDATE t SET x=x+10 RETURNING x".into(), paged())
         .unwrap();
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     assert!(
         matches!(result_event(&mut engine), Event::StoredPage { page, .. } if page.rows[0][0] == Value::Integer(11))
     );
     let next = engine
-        .execute(c, "UPDATE t SET x=x+100".into(), QueryOptions::default())
+        .execute(c, "UPDATE t SET x=x+100".into(), paged())
         .unwrap();
-    engine
-        .fetch_page_at(next, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(next, 0).unwrap();
     assert!(matches!(
         result_event(&mut engine),
         Event::StoredPage { .. }
     ));
     engine.commit(c).unwrap();
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     assert!(
         matches!(result_event(&mut engine), Event::StoredPage { page, .. } if page.rows[0][0] == Value::Integer(11))
     );
@@ -210,17 +204,12 @@ fn stored_result_survives_new_writes_and_transaction_without_replaying_sql() {
             .unwrap(),
         111
     );
-    engine
-        .fetch_page_at(q, 1, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 1).unwrap();
     assert!(
         matches!(result_event(&mut engine), Event::QueryFailed { error, .. } if error.kind == ErrorKind::StaleHandle)
     );
     engine.release_query(q).unwrap();
-    assert_eq!(
-        engine.fetch_page_at(q, 0, PageSize::new(100).unwrap()),
-        Err(SubmitError::StaleHandle)
-    );
+    assert_eq!(engine.fetch_page_at(q, 0), Err(SubmitError::StaleHandle));
 }
 
 #[test]
@@ -235,18 +224,12 @@ fn skipped_ordinal_does_not_advance_original_cursor() {
             },
         )
         .unwrap();
-    let q = engine
-        .execute(c, "SELECT 73".into(), QueryOptions::default())
-        .unwrap();
-    engine
-        .fetch_page_at(q, 1, PageSize::new(100).unwrap())
-        .unwrap();
+    let q = engine.execute(c, "SELECT 73".into(), paged()).unwrap();
+    engine.fetch_page_at(q, 1).unwrap();
     assert!(
         matches!(result_event(&mut engine), Event::QueryFailed { error, .. } if error.kind == ErrorKind::InvalidInput)
     );
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     assert!(
         matches!(result_event(&mut engine), Event::StoredPage { page, .. } if page.rows[0][0] == Value::Integer(73))
     );
@@ -264,15 +247,11 @@ fn archived_partial_result_exposes_only_stored_next_pages() {
             },
         )
         .unwrap();
-    let q = engine.execute(c, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<700) SELECT x FROM c".into(), QueryOptions::default()).unwrap();
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    let q = engine.execute(c, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<700) SELECT x FROM c".into(), paged()).unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     assert!(matches!(result_event(&mut engine), Event::StoredPage { page, .. } if page.has_more));
     engine.commit(c).unwrap();
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     assert!(matches!(result_event(&mut engine), Event::StoredPage { page, .. } if !page.has_more));
 }
 
@@ -293,12 +272,8 @@ fn releasing_result_removes_its_disk_files() {
             },
         )
         .unwrap();
-    let q = engine
-        .execute(c, "SELECT 73".into(), QueryOptions::default())
-        .unwrap();
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    let q = engine.execute(c, "SELECT 73".into(), paged()).unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     assert!(matches!(
         result_event(&mut engine),
         Event::StoredPage { .. }
@@ -369,29 +344,21 @@ fn disk_limit_stops_fetch_and_preserves_already_persisted_pages() {
             },
         )
         .unwrap();
-    let q = engine.execute(c, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<700) SELECT x FROM c".into(), QueryOptions::default()).unwrap();
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    let q = engine.execute(c, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<700) SELECT x FROM c".into(), paged()).unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     assert!(matches!(
         result_event(&mut engine),
         Event::StoredPage { .. }
     ));
-    engine
-        .fetch_page_at(q, 1, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 1).unwrap();
     assert!(
         matches!(result_event(&mut engine), Event::QueryFailed { error, .. } if error.kind == ErrorKind::ResourceLimit)
     );
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     assert!(
         matches!(result_event(&mut engine), Event::StoredPage { page, .. } if page.rows[0][0] == Value::Integer(1) && !page.has_more)
     );
-    engine
-        .fetch_page_at(q, 1, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 1).unwrap();
     assert!(
         matches!(result_event(&mut engine), Event::QueryFailed { error, .. } if error.kind == ErrorKind::StaleHandle)
     );
@@ -416,7 +383,7 @@ fn fetching_past_eof_preserves_deferred_values_and_stored_pages() {
             QueryOptions::default(),
         )
         .unwrap();
-    engine.fetch_page_at(q, 0, PageSize::default()).unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     let handle = match result_event(&mut engine) {
         Event::StoredPage { page, .. } => match page.rows[0][0] {
             Value::Deferred { handle, .. } => handle,
@@ -426,9 +393,9 @@ fn fetching_past_eof_preserves_deferred_values_and_stored_pages() {
     };
     for indexed in [true, false] {
         if indexed {
-            engine.fetch_page_at(q, 1, PageSize::default()).unwrap();
+            engine.fetch_page_at(q, 1).unwrap();
         } else {
-            engine.fetch_page(q, PageSize::default()).unwrap();
+            engine.fetch_page(q).unwrap();
         }
         assert!(
             matches!(result_event(&mut engine), Event::QueryFailed {error,..} if error.kind == ErrorKind::InvalidInput)
@@ -447,7 +414,7 @@ fn fetching_past_eof_preserves_deferred_values_and_stored_pages() {
             assert!(Instant::now() < deadline, "value timed out");
             std::thread::sleep(Duration::from_millis(1));
         }
-        engine.fetch_page_at(q, 0, PageSize::default()).unwrap();
+        engine.fetch_page_at(q, 0).unwrap();
         assert!(
             matches!(result_event(&mut engine), Event::StoredPage {page,..} if !page.has_more && matches!(page.rows[0][0],Value::Deferred {..}))
         );
@@ -468,9 +435,7 @@ fn million_rows_traverse_original_cursor_then_revisit_disk_pages() {
         .unwrap();
     let q = engine.execute(c, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<1000000) SELECT x FROM c".into(), QueryOptions::default()).unwrap();
     for index in (0..1000).chain([0, 999]) {
-        engine
-            .fetch_page_at(q, index, PageSize::new(1000).unwrap())
-            .unwrap();
+        engine.fetch_page_at(q, index).unwrap();
         match result_event(&mut engine) {
             Event::StoredPage {
                 first_row, page, ..
@@ -535,11 +500,11 @@ fn deferred_chunks_survive_new_sql_and_commit_and_remain_budgeted() {
             "SELECT zeroblob(200000)".into(),
             QueryOptions {
                 auto_commit: false,
-                ..Default::default()
+                ..paged()
             },
         )
         .unwrap();
-    engine.fetch_page(q, PageSize::new(100).unwrap()).unwrap();
+    engine.fetch_page(q).unwrap();
     let Event::Page { page, .. } = wait(&mut engine, |e| matches!(e, Event::Page { .. })) else {
         unreachable!()
     };
@@ -550,9 +515,7 @@ fn deferred_chunks_survive_new_sql_and_commit_and_remain_budgeted() {
     wait(&mut engine, |e| {
         matches!(e, Event::TransactionFinished { .. })
     });
-    let newer = engine
-        .execute(c, "SELECT 2".into(), QueryOptions::default())
-        .unwrap();
+    let newer = engine.execute(c, "SELECT 2".into(), paged()).unwrap();
     wait(
         &mut engine,
         |e| matches!(e, Event::Schema { query, .. } if *query == newer),
@@ -616,9 +579,8 @@ fn object_result_has_independent_pages_export_and_sql_cursor() {
             },
         )
         .unwrap();
-    let sql=engine.execute(c,"WITH RECURSIVE n(x) AS (VALUES(101) UNION ALL SELECT x+1 FROM n WHERE x<350) SELECT x FROM n".into(),QueryOptions::default()).unwrap();
-    let size = PageSize::new(100).unwrap();
-    engine.fetch_page_at(sql, 0, size).unwrap();
+    let sql=engine.execute(c,"WITH RECURSIVE n(x) AS (VALUES(101) UNION ALL SELECT x+1 FROM n WHERE x<350) SELECT x FROM n".into(),paged()).unwrap();
+    engine.fetch_page_at(sql, 0).unwrap();
     assert!(
         matches!(result_event(&mut engine),Event::StoredPage{page,..} if page.rows[0][0]==Value::Integer(101))
     );
@@ -627,16 +589,16 @@ fn object_result_has_independent_pages_export_and_sql_cursor() {
             c,
             ObjectId(r#"["main","data"]"#.into()),
             QueryOptions {
-                page_size: size,
+                page_size: PageSize::new(100).unwrap(),
                 ..Default::default()
             },
         )
         .unwrap();
-    engine.fetch_page_at(object, 0, size).unwrap();
+    engine.fetch_page_at(object, 0).unwrap();
     assert!(
         matches!(result_event(&mut engine),Event::StoredPage{query,page,..} if query==object && page.rows.len()==100 && page.rows[0][0]==Value::Integer(10))
     );
-    engine.fetch_page_at(sql, 1, size).unwrap();
+    engine.fetch_page_at(sql, 1).unwrap();
     assert!(
         matches!(result_event(&mut engine),Event::StoredPage{query,page,..} if query==sql && page.rows[0][0]==Value::Integer(201))
     );
@@ -659,7 +621,7 @@ fn object_result_has_independent_pages_export_and_sql_cursor() {
     let bytes = std::fs::read_to_string(destination).unwrap();
     assert!(bytes.contains("2500"));
     assert_eq!(bytes.lines().count(), 251);
-    engine.fetch_page_at(sql, 2, size).unwrap();
+    engine.fetch_page_at(sql, 2).unwrap();
     assert!(
         matches!(result_event(&mut engine),Event::StoredPage{query,page,..} if query==sql && page.rows[0][0]==Value::Integer(301))
     );
@@ -682,19 +644,14 @@ fn cancelling_object_read_preserves_sql_and_new_object_can_read_deferred_values(
             },
         )
         .unwrap();
-    let sql=engine.execute(c,"WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<250) SELECT x FROM n".into(),QueryOptions::default()).unwrap();
-    let size = PageSize::new(100).unwrap();
-    engine.fetch_page_at(sql, 0, size).unwrap();
+    let sql=engine.execute(c,"WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<250) SELECT x FROM n".into(),paged()).unwrap();
+    engine.fetch_page_at(sql, 0).unwrap();
     assert!(matches!(
         result_event(&mut engine),
         Event::StoredPage { .. }
     ));
     let slow = engine
-        .open_object_data(
-            c,
-            ObjectId(r#"["main","slow"]"#.into()),
-            QueryOptions::default(),
-        )
+        .open_object_data(c, ObjectId(r#"["main","slow"]"#.into()), paged())
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -706,24 +663,20 @@ fn cancelling_object_read_preserves_sql_and_new_object_can_read_deferred_values(
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(1));
     }
-    engine.fetch_page_at(slow, 0, size).unwrap();
+    engine.fetch_page_at(slow, 0).unwrap();
     std::thread::sleep(Duration::from_millis(30));
     engine.cancel(slow).unwrap();
     assert!(
         matches!(result_event(&mut engine),Event::QueryFailed{query,error} if query==slow && error.kind==ErrorKind::Cancelled)
     );
-    engine.fetch_page_at(sql, 1, size).unwrap();
+    engine.fetch_page_at(sql, 1).unwrap();
     assert!(
         matches!(result_event(&mut engine),Event::StoredPage{query,page,..} if query==sql && page.rows[0][0]==Value::Integer(101))
     );
     let object = engine
-        .open_object_data(
-            c,
-            ObjectId(r#"["main","data"]"#.into()),
-            QueryOptions::default(),
-        )
+        .open_object_data(c, ObjectId(r#"["main","data"]"#.into()), paged())
         .unwrap();
-    engine.fetch_page_at(object, 0, size).unwrap();
+    engine.fetch_page_at(object, 0).unwrap();
     let Event::StoredPage { page, .. } = result_event(&mut engine) else {
         panic!("missing object page")
     };
@@ -751,4 +704,83 @@ fn cancelling_object_read_preserves_sql_and_new_object_can_read_deferred_values(
         engine.load_value_chunk(object, handle, 0, 5),
         Err(SubmitError::StaleHandle)
     );
+}
+
+fn transaction_state_before_failure(engine: &mut Engine) -> Option<bool> {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut state = None;
+    loop {
+        match engine.try_event() {
+            Some(Event::TransactionState { active, .. }) => state = Some(active),
+            Some(Event::QueryFailed { .. }) => return state,
+            _ => {}
+        }
+        assert!(Instant::now() < deadline, "failure timed out");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn failed_statement_reports_the_transaction_it_leaves_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = Engine::new(EngineConfig::default(), vec![Arc::new(SqliteDriver)]).unwrap();
+    let c = engine
+        .connect(
+            "sqlite",
+            ConnectionOptions::Sqlite {
+                path: dir.path().join("manual.sqlite"),
+                read_only: false,
+            },
+        )
+        .unwrap();
+    let manual = QueryOptions {
+        auto_commit: false,
+        ..Default::default()
+    };
+    engine
+        .execute(c, "CREATE TABLE t(x INTEGER UNIQUE)".into(), manual.clone())
+        .unwrap();
+    engine
+        .execute(c, "INSERT INTO t VALUES (1), (1)".into(), manual)
+        .unwrap();
+    assert_eq!(transaction_state_before_failure(&mut engine), Some(true));
+
+    engine.rollback(c).unwrap();
+    engine
+        .execute(
+            c,
+            "INSERT INTO t VALUES (2), (2)".into(),
+            QueryOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(transaction_state_before_failure(&mut engine), Some(false));
+}
+
+#[test]
+fn queries_remember_the_page_size_they_started_with() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = Engine::new(EngineConfig::default(), vec![Arc::new(SqliteDriver)]).unwrap();
+    let c = engine
+        .connect(
+            "sqlite",
+            ConnectionOptions::Sqlite {
+                path: dir.path().join("paging.sqlite"),
+                read_only: false,
+            },
+        )
+        .unwrap();
+    let options = |size| QueryOptions {
+        page_size: PageSize::new(size).unwrap(),
+        ..Default::default()
+    };
+    let rows = "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<250) SELECT x FROM n";
+    for (size, expected) in [(MIN_PAGE_SIZE, 100), (MAX_PAGE_SIZE, 250)] {
+        let query = engine.execute(c, rows.into(), options(size)).unwrap();
+        // The fetch takes no size: the engine reuses the one the query started with.
+        engine.fetch_page_at(query, 0).unwrap();
+        match result_event(&mut engine) {
+            Event::StoredPage { page, .. } => assert_eq!(page.rows.len(), expected),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
 }

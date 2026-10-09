@@ -99,6 +99,22 @@ pub enum TemplateKind {
     Update,
     Delete,
 }
+
+/// Why a template cannot be generated from the navigator yet; `None` when it can.
+/// INSERT and UPDATE list the relation's columns, so those must be loaded, and
+/// UPDATE needs at least one column to assign.
+pub fn template_unavailable_reason(
+    kind: TemplateKind,
+    columns_loaded: bool,
+    has_column: bool,
+) -> Option<&'static str> {
+    match kind {
+        TemplateKind::Select | TemplateKind::Delete => None,
+        _ if !columns_loaded => Some("Load the object's columns before generating this statement."),
+        TemplateKind::Update if !has_column => Some("UPDATE needs at least one column."),
+        TemplateKind::Insert | TemplateKind::Update => None,
+    }
+}
 /// Editable SQL only; templates never execute or bind parameters.
 pub fn template(
     kind: TemplateKind,
@@ -107,6 +123,24 @@ pub fn template(
 ) -> Result<String, NameError> {
     let name = qualified_name(object)?;
     template_from_qualified(kind, &name, columns)
+}
+/// A template for a navigator relation from its loaded column names. Only INSERT
+/// and UPDATE list columns; SELECT and DELETE address the whole row.
+pub fn navigator_template(
+    kind: TemplateKind,
+    name: &str,
+    columns: &[&str],
+    columns_loaded: bool,
+) -> Result<String, String> {
+    if let Some(reason) = template_unavailable_reason(kind, columns_loaded, !columns.is_empty()) {
+        return Err(reason.into());
+    }
+    let listed = if matches!(kind, TemplateKind::Insert | TemplateKind::Update) {
+        columns
+    } else {
+        &[]
+    };
+    template_from_qualified(kind, name, listed).map_err(|error| error.to_string())
 }
 /// Accepts complete double-quoted or MySQL backtick-quoted components separated by dots.
 /// Dots within components, escaped quotes and Unicode remain unchanged.

@@ -488,3 +488,11 @@ fn lock_symlink_is_rejected_without_touching_its_target() {
     assert!(!service.start());
     assert_eq!(fs::read(target).unwrap(), b"keep user data");
 }
+
+#[test]
+fn exports_always_write_zip_archives() {
+    use choscordb_diagnostics::export_destination;
+    assert_eq!(export_destination(" /tmp/report "), "/tmp/report.zip");
+    assert_eq!(export_destination("/tmp/report.ZIP"), "/tmp/report.ZIP");
+    assert_eq!(export_destination("/tmp/report.zip"), "/tmp/report.zip");
+}

@@ -250,7 +250,6 @@ fn whole_result_view_filters_sorts_pages_and_clears_without_reexecution() {
                 column: 0,
                 direction: SortDirection::Ascending,
             }),
-            PageSize::new(100).unwrap(),
         )
         .unwrap();
     event(
@@ -258,9 +257,7 @@ fn whole_result_view_filters_sorts_pages_and_clears_without_reexecution() {
         |e| matches!(e, Event::ResultViewApplied { query: q, rows: 106 } if *q == query),
     );
 
-    engine
-        .fetch_page_at(query, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
     let first = event(
         &mut engine,
         |e| matches!(e, Event::StoredPage { query: q, .. } if *q == query),
@@ -286,9 +283,7 @@ fn whole_result_view_filters_sorts_pages_and_clears_without_reexecution() {
     assert!(page.has_more);
     drop(lease);
 
-    engine
-        .fetch_page_at(query, 1, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 1).unwrap();
     let second = event(
         &mut engine,
         |e| matches!(e, Event::StoredPage { query: q, .. } if *q == query),
@@ -331,7 +326,6 @@ fn whole_result_view_filters_sorts_pages_and_clears_without_reexecution() {
                 value: Some(Value::Integer(10)),
             }],
             None,
-            PageSize::new(100).unwrap(),
         )
         .unwrap();
     engine.cancel_result_view(query).unwrap();
@@ -339,9 +333,7 @@ fn whole_result_view_filters_sorts_pages_and_clears_without_reexecution() {
         failed_view(&mut engine).kind,
         choscordb_driver_api::ErrorKind::Cancelled
     );
-    engine
-        .fetch_page_at(query, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
     let retained = event(
         &mut engine,
         |e| matches!(e, Event::StoredPage { query: q, .. } if *q == query),
@@ -357,9 +349,7 @@ fn whole_result_view_filters_sorts_pages_and_clears_without_reexecution() {
         &mut engine,
         |e| matches!(e, Event::ResultViewApplied { query: q, rows: 206 } if *q == query),
     );
-    engine
-        .fetch_page_at(query, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
     let restored = event(
         &mut engine,
         |e| matches!(e, Event::StoredPage { query: q, .. } if *q == query),
@@ -403,15 +393,12 @@ fn descending_text_sort_is_case_insensitive_stable_and_keeps_null_last() {
                 column: 0,
                 direction: SortDirection::Descending,
             }),
-            PageSize::new(100).unwrap(),
         )
         .unwrap();
     event(&mut engine, |e| {
         matches!(e, Event::ResultViewApplied { rows: 3, .. })
     });
-    engine
-        .fetch_page_at(query, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
     let page = event(&mut engine, |e| matches!(e, Event::StoredPage { .. }));
     let Event::StoredPage { page, lease, .. } = page else {
         unreachable!()
@@ -554,7 +541,6 @@ fn sorting_a_single_fallback_cell_fails_at_the_result_view_seam() {
                 column: 0,
                 direction: SortDirection::Ascending,
             }),
-            PageSize::default(),
         )
         .unwrap();
     let error = failed_view(&mut engine);
@@ -600,7 +586,6 @@ fn external_sort_keeps_engine_buffers_within_one_page_under_tight_memory() {
                 column: 0,
                 direction: SortDirection::Descending,
             }),
-            PageSize::new(100).unwrap(),
         )
         .unwrap();
     let mut maximum_buffered = 0;
@@ -621,9 +606,7 @@ fn external_sort_keeps_engine_buffers_within_one_page_under_tight_memory() {
     }
     assert!(maximum_buffered <= 100);
     assert!(engine.memory_usage().peak_bytes <= 1024 * 1024);
-    engine
-        .fetch_page_at(query, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
     let page = event(
         &mut engine,
         |e| matches!(e, Event::StoredPage { query: q, .. } if *q == query),
@@ -658,9 +641,7 @@ fn cancelling_a_live_transform_keeps_already_stored_original_pages_readable() {
         )
         .unwrap();
     event(&mut engine, |e| matches!(e, Event::Schema { .. }));
-    engine
-        .fetch_page_at(query, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
     let first = event(
         &mut engine,
         |e| matches!(e, Event::StoredPage { query: q, .. } if *q == query),
@@ -677,7 +658,6 @@ fn cancelling_a_live_transform_keeps_already_stored_original_pages_readable() {
                 column: 0,
                 direction: SortDirection::Descending,
             }),
-            PageSize::new(100).unwrap(),
         )
         .unwrap();
     engine.cancel_result_view(query).unwrap();
@@ -685,9 +665,7 @@ fn cancelling_a_live_transform_keeps_already_stored_original_pages_readable() {
         failed_view(&mut engine).kind,
         choscordb_driver_api::ErrorKind::Cancelled
     );
-    engine
-        .fetch_page_at(query, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
     let retained = event(
         &mut engine,
         |e| matches!(e, Event::StoredPage { query: q, .. } if *q == query),
@@ -697,9 +675,7 @@ fn cancelling_a_live_transform_keeps_already_stored_original_pages_readable() {
     };
     assert_eq!(page.rows[0][0], Value::Integer(1));
     drop(lease);
-    engine
-        .fetch_page_at(query, 1, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 1).unwrap();
     let continued = event(
         &mut engine,
         |e| matches!(e, Event::StoredPage { query: q, .. } if *q == query),
@@ -780,13 +756,12 @@ fn sqlite_declared_types_compare_against_typed_filter_operands() {
                 },
             ],
             None,
-            PageSize::default(),
         )
         .unwrap();
     event(&mut engine, |event| {
         matches!(event, Event::ResultViewApplied { rows: 1, .. })
     });
-    engine.fetch_page_at(query, 0, PageSize::default()).unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
     let page = event(&mut engine, |event| {
         matches!(event, Event::StoredPage { .. })
     });
@@ -805,7 +780,6 @@ fn sqlite_declared_types_compare_against_typed_filter_operands() {
                 value: Some(Value::Json("{\"Name\":\"a\",\"n\":1}".into())),
             }],
             None,
-            PageSize::default(),
         )
         .unwrap();
     event(&mut engine, |event| {
@@ -833,7 +807,6 @@ fn sqlite_declared_types_compare_against_typed_filter_operands() {
                 column: 6,
                 direction: SortDirection::Ascending,
             }),
-            PageSize::default(),
         )
         .unwrap();
     assert_eq!(
@@ -897,7 +870,6 @@ fn aggregate_disk_budget_holds_across_success_failure_cancel_and_replacement() {
                     column: 0,
                     direction,
                 }),
-                PageSize::new(100).unwrap(),
             )
             .unwrap();
         event(&mut engine, |event| {
@@ -912,7 +884,6 @@ fn aggregate_disk_budget_holds_across_success_failure_cancel_and_replacement() {
                 column: 2,
                 direction: SortDirection::Ascending,
             }),
-            PageSize::new(100).unwrap(),
         )
         .unwrap();
     assert_eq!(
@@ -927,7 +898,6 @@ fn aggregate_disk_budget_holds_across_success_failure_cancel_and_replacement() {
                 column: 0,
                 direction: SortDirection::Ascending,
             }),
-            PageSize::new(100).unwrap(),
         )
         .unwrap();
     event(
@@ -951,7 +921,6 @@ fn aggregate_disk_budget_holds_across_success_failure_cancel_and_replacement() {
                 column: 0,
                 direction: SortDirection::Ascending,
             }),
-            PageSize::new(100).unwrap(),
         )
         .unwrap();
     event(&mut engine, |event| {
@@ -1004,7 +973,6 @@ fn delayed_inflight_cancel_reports_progress_then_preserves_cursor() {
                 column: 0,
                 direction: SortDirection::Descending,
             }),
-            PageSize::new(100).unwrap(),
         )
         .unwrap();
     let wait_started = std::time::Instant::now();
@@ -1031,9 +999,7 @@ fn delayed_inflight_cancel_reports_progress_then_preserves_cursor() {
     assert_eq!(failure.kind, choscordb_driver_api::ErrorKind::Cancelled);
     assert!(saw_progress);
     assert!(cancelled.elapsed() >= Duration::from_millis(150));
-    engine
-        .fetch_page_at(query, 1, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 1).unwrap();
     let next = event(
         &mut engine,
         |event| matches!(event, Event::StoredPage { query: q, .. } if *q == query),
@@ -1122,13 +1088,12 @@ fn temporal_filters_and_sorts_use_normalized_database_values() {
                     column,
                     direction: SortDirection::Ascending,
                 }),
-                PageSize::default(),
             )
             .unwrap();
         event(&mut engine, |event| {
             matches!(event, Event::ResultViewApplied { rows: 3, .. })
         });
-        engine.fetch_page_at(query, 0, PageSize::default()).unwrap();
+        engine.fetch_page_at(query, 0).unwrap();
         let result = event(&mut engine, |event| {
             matches!(event, Event::StoredPage { .. })
         });
@@ -1191,7 +1156,6 @@ fn empty_results_still_validate_sql_filters() {
                     value: Some(Value::Text(text.into())),
                 }],
                 None,
-                PageSize::new(100).unwrap(),
             )
             .unwrap();
         assert_eq!(
@@ -1267,7 +1231,6 @@ fn sql_predicate_rejects_oversized_intermediate_values() {
                 value: Some(Value::Text("length(zeroblob(1000000000)) > 0".into())),
             }],
             None,
-            PageSize::new(100).unwrap(),
         )
         .unwrap();
     assert!(failed_view(&mut engine).message.contains("too big"));

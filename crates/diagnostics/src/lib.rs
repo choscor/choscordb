@@ -8,6 +8,24 @@ mod service;
 mod zip;
 pub use service::Service;
 
+/// How often the desktop samples process memory for diagnostics.
+pub const MEMORY_SAMPLE_INTERVAL_SECONDS: u64 = 60;
+
+/// The archive path an export writes for a user-chosen `path`.
+pub fn export_destination(path: &str) -> String {
+    let path = path.trim();
+    let zip = path
+        .len()
+        .checked_sub(4)
+        .and_then(|start| path.get(start..))
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(".zip"));
+    if zip {
+        path.to_owned()
+    } else {
+        format!("{path}.zip")
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum EngineBoundaryEvent {
     QueryQueued(u64),

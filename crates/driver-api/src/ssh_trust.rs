@@ -185,18 +185,14 @@ pub enum SshHostKeyApproval {
     /// time. Retrying acquires the same file lock and reconciles the exact key.
     OutcomeUnknown,
 }
-/// Append exactly the explicitly approved public key. Existing host records are
-/// never replaced. The caller selects the destination file; no default is written.
-/// Cancellation prevents appends that have not started. Already issued OS I/O
-/// cannot be recalled: a timeout/error then returns OutcomeUnknown, not rejection.
-pub async fn approve_ssh_host_key(
-    candidate: &SshHostKeyCandidate,
-    expected_sha256: &str,
-    path: &Path,
-) -> Result<SshHostKeyApproval> {
-    let literal = path.to_str().ok_or_else(invalid)?;
+/// Check a known-hosts destination the user selected for an approval.
+pub fn validate_known_hosts_path(literal: &str) -> Result<()> {
+    let path = Path::new(literal);
     let normalized: std::path::PathBuf = path.components().collect();
-    if !path.is_absolute()
+    if literal.is_empty()
+        || literal.len() > 16 * 1024
+        || literal.starts_with('~')
+        || !path.is_absolute()
         || path.file_name().is_none()
         || normalized.as_os_str() != path.as_os_str()
         || path.components().any(|part| {
@@ -206,13 +202,25 @@ pub async fn approve_ssh_host_key(
             )
         })
         || literal.chars().any(char::is_control)
-        || literal.contains(['%', '$', '"', '\\'])
+        || literal.contains(['%', '$', '"', '\'', '\\'])
     {
         return Err(DriverError::new(
             ErrorKind::InvalidInput,
             "Select an absolute normalized SSH known hosts path without expansion tokens or quote characters",
         ));
     }
+    Ok(())
+}
+/// Append exactly the explicitly approved public key. Existing host records are
+/// never replaced. The caller selects the destination file; no default is written.
+/// Cancellation prevents appends that have not started. Already issued OS I/O
+/// cannot be recalled: a timeout/error then returns OutcomeUnknown, not rejection.
+pub async fn approve_ssh_host_key(
+    candidate: &SshHostKeyCandidate,
+    expected_sha256: &str,
+    path: &Path,
+) -> Result<SshHostKeyApproval> {
+    validate_known_hosts_path(path.to_str().ok_or_else(invalid)?)?;
     if expected_sha256 != candidate.sha256 {
         return Err(invalid());
     }

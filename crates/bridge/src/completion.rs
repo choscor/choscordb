@@ -6,12 +6,13 @@ pub struct CompletionCatalog {
 }
 pub fn completion_limits() -> ffi::CompletionLimitsDto {
     ffi::CompletionLimitsDto {
-        max_results: language::MAX_COMPLETION_RESULTS as u64,
-        max_prefix_bytes: language::MAX_COMPLETION_PREFIX_BYTES as u64,
         max_metadata_entries: language::MAX_COMPLETION_METADATA_ENTRIES as u64,
         max_metadata_bytes: language::MAX_COMPLETION_METADATA_BYTES as u64,
-        max_source_bytes: language::MAX_SEARCH_SOURCE_BYTES as u64,
+        max_metadata_visits: language::MAX_COMPLETION_METADATA_VISITS as u64,
     }
+}
+pub fn completion_source_supported(bytes: u64) -> bool {
+    usize::try_from(bytes).is_ok_and(language::completion_source_supported)
 }
 pub fn completion_catalog(
     items: Vec<ffi::SqlCompletionDto>,

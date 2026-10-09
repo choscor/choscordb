@@ -289,3 +289,20 @@ fn windows_saved_reader_rejects_file_and_directory_reparse_links() {
     assert!(read_saved_sql_document(&root, &file_link).is_err());
     assert!(read_saved_sql_document(&root, &dir_link.join("private.sql")).is_err());
 }
+
+#[test]
+fn saved_sql_lives_beside_the_application_database() {
+    use choscordb_core::saved_sql_root;
+    use std::path::Path;
+    assert_eq!(
+        saved_sql_root(
+            Path::new("/tmp/smoke/choscordb.sqlite"),
+            Path::new("/home/app")
+        ),
+        Path::new("/tmp/smoke/sql")
+    );
+    assert_eq!(
+        saved_sql_root(Path::new(""), Path::new("/home/app")),
+        Path::new("/home/app/sql")
+    );
+}

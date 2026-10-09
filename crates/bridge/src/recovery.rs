@@ -97,6 +97,15 @@ pub fn history_clear(engine: &mut BridgeEngine, token: u64) -> ffi::Submit {
             .map_err(|e| e.to_string())
     })
 }
+/// The retention a new profile directory starts with.
+pub fn history_policy_default() -> ffi::HistoryPolicyDto {
+    let policy = choscordb_core::HistoryPolicy::default();
+    ffi::HistoryPolicyDto {
+        enabled: policy.enabled,
+        max_age_days: policy.max_age_days,
+        max_records: policy.max_records,
+    }
+}
 pub fn history_policy_get(engine: &mut BridgeEngine, token: u64) -> ffi::Submit {
     submit(engine, |e| {
         e.history_policy_get(token)
@@ -157,18 +166,41 @@ pub(crate) fn history_entry(h: choscordb_core::HistoryEntry) -> ffi::HistoryEntr
     }
 }
 
-pub fn recovery_limits() -> ffi::RecoveryLimitsDto {
-    ffi::RecoveryLimitsDto {
-        max_documents: choscordb_core::MAX_WORKSPACE_DOCUMENTS as u64,
-        max_sql_bytes: choscordb_core::MAX_SQL_BYTES as u64,
-        max_collection_bytes: choscordb_core::MAX_COLLECTION_BYTES as u64,
-    }
-}
-
 pub fn history_flush(engine: &mut BridgeEngine, token: u64) -> ffi::Submit {
     submit(engine, |e| {
         e.history_flush(token)
             .map(|()| token)
             .map_err(|e| e.to_string())
     })
+}
+
+pub fn recovery_document_id() -> String {
+    choscordb_core::new_document_id()
+}
+
+pub fn object_tab_context(profile_id: &str, connection: u64) -> String {
+    choscordb_core::object_tab_context(profile_id, connection)
+}
+
+pub fn parse_object_tab_context(context: &str) -> ffi::ObjectTabContextDto {
+    match choscordb_core::parse_object_tab_context(context) {
+        choscordb_core::ObjectTabContext::Profile(profile_id) => ffi::ObjectTabContextDto {
+            profile_id,
+            ..Default::default()
+        },
+        choscordb_core::ObjectTabContext::Session(connection) => ffi::ObjectTabContextDto {
+            session: true,
+            connection,
+            ..Default::default()
+        },
+        choscordb_core::ObjectTabContext::Unknown => ffi::ObjectTabContextDto::default(),
+    }
+}
+
+pub fn history_sql_preview(sql: &str, max_chars: u32) -> ffi::HistoryPreviewDto {
+    let preview = choscordb_sql_language::history_sql_preview(sql, max_chars as usize);
+    ffi::HistoryPreviewDto {
+        text: preview.text,
+        truncated: preview.truncated,
+    }
 }

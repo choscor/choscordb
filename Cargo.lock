@@ -518,6 +518,7 @@ dependencies = [
 name = "choscordb-pins"
 version = "0.1.9"
 dependencies = [
+ "choscordb-driver-api",
  "rustix",
  "serde_json",
  "tempfile",

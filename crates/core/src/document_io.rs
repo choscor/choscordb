@@ -217,6 +217,15 @@ fn is_sql_path(path: &Path) -> bool {
 }
 
 /// Prepare the default saved SQL directory before opening the native save dialog.
+/// The saved-SQL folder beside the application database at `storage_path`, or in
+/// `default_data_directory` when the application runs without a database file.
+pub fn saved_sql_root(storage_path: &Path, default_data_directory: &Path) -> PathBuf {
+    match storage_path.parent() {
+        Some(directory) if !storage_path.as_os_str().is_empty() => directory.join("sql"),
+        _ => default_data_directory.join("sql"),
+    }
+}
+
 pub fn ensure_saved_sql_directory(root: &Path) -> Result<(), DocumentIoError> {
     fs::create_dir_all(root)?;
     Ok(())

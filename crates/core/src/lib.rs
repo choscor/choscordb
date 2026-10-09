@@ -6,15 +6,17 @@ mod document_io;
 pub use document_io::{
     DocumentIoError, MAX_SAVED_SQL_DOCUMENTS, MAX_SQL_DOCUMENT_BYTES, SavedSqlDocument,
     SavedSqlDocuments, document_path_exists, ensure_saved_sql_directory, list_saved_sql_documents,
-    read_saved_sql_document, read_sql_document, saved_sql_document_identity, write_sql_document,
+    read_saved_sql_document, read_sql_document, saved_sql_document_identity, saved_sql_root,
+    write_sql_document,
 };
 mod hot_cache;
 pub use hot_cache::CacheUsage;
 mod memory;
-pub use memory::{MemoryUsage, PageLease, PageMemoryConfig};
+pub use memory::{LEASE_BOOKKEEPING_BYTES, MemoryUsage, PageLease, PageMemoryConfig, lease_fits};
 mod object_action;
 pub use object_action::{
-    ObjectAction, ObjectActionStatement, object_display_identity, prepare_object_action,
+    ObjectAction, ObjectActionStatement, object_action_availability, object_display_identity,
+    prepare_object_action,
 };
 mod operation;
 mod preview_capture;
@@ -22,10 +24,16 @@ pub use preview_capture::{
     MAX_PREVIEW_CONTROLS, MAX_PREVIEW_PNG_BYTES, PreviewCapture, PreviewCaptureError,
     PreviewControl, write_preview_capture,
 };
+pub mod profile_draft;
 mod profiles;
 mod query_history;
+pub mod quick_search;
 mod recovery;
+pub mod text_filter;
 pub use profiles::{CredentialUpdate, CredentialUpdates, ProfileSecrets};
+pub use recovery::{
+    ObjectTabContext, new_document_id, object_tab_context, parse_object_tab_context,
+};
 mod protocol;
 pub mod quick_filter;
 mod result_predicate;
@@ -67,6 +75,7 @@ struct ExportSlot {
 }
 struct QuerySlot {
     connection: ConnectionId,
+    page_size: PageSize,
     cancellation: watch::Sender<bool>,
     released: watch::Sender<bool>,
     view_cancellation: watch::Sender<bool>,
@@ -75,7 +84,7 @@ pub(crate) type DiagnosticsSlot = Arc<RwLock<Option<Arc<DiagnosticsService>>>>;
 
 pub struct Engine {
     history_memory: Arc<std::sync::atomic::AtomicUsize>,
-    recovery_pending: std::sync::atomic::AtomicBool,
+    recovery: std::sync::Mutex<recovery::Queue>,
     profiles: mpsc::Sender<profiles::Command>,
     profile_tests: Arc<tokio::sync::Semaphore>,
     runtime: Option<Runtime>,
@@ -95,6 +104,13 @@ pub struct Engine {
     cache: Arc<hot_cache::HotCache>,
     diagnostics: DiagnosticsSlot,
 }
+/// Owned result bytes one result view may hold (pages, staged edits, and caches).
+pub use choscordb_result_cache::DEFAULT_RESULT_BYTES as RESULT_VIEW_BYTES;
+/// Children the navigator requests per metadata page.
+pub const METADATA_PAGE_SIZE: u32 = 1_000;
+/// The largest metadata page a single request may ask for.
+pub const MAX_METADATA_PAGE: u32 = 10_000;
+
 impl Engine {
     /// Attach local diagnostics capture to subsequent engine operations.
     pub fn set_diagnostics(&mut self, service: Arc<DiagnosticsService>) {
@@ -157,7 +173,7 @@ impl Engine {
         )?;
         Ok(Self {
             history_memory: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-            recovery_pending: std::sync::atomic::AtomicBool::new(false),
+            recovery: Default::default(),
             profiles,
             profile_tests: Arc::new(tokio::sync::Semaphore::new(config.max_connections)),
             runtime: Some(runtime),
@@ -308,6 +324,7 @@ impl Engine {
         let (view_cancellation, _) = watch::channel(false);
         let id = self.queries.insert(QuerySlot {
             connection,
+            page_size: options.page_size,
             cancellation,
             released,
             view_cancellation,
@@ -432,16 +449,11 @@ impl Engine {
             .connection;
         self.submit(owner, actor::Command::NextResult { query })
     }
-    pub fn fetch_page(
-        &self,
-        query: QueryId,
-        size: PageSize,
-    ) -> std::result::Result<(), SubmitError> {
-        let owner = self
-            .queries
-            .get(query)
-            .ok_or(SubmitError::StaleHandle)?
-            .connection;
+    /// The page size the query was started with; fetches reuse it.
+    /// Fetch the next page at the page size the query started with.
+    pub fn fetch_page(&self, query: QueryId) -> std::result::Result<(), SubmitError> {
+        let slot = self.queries.get(query).ok_or(SubmitError::StaleHandle)?;
+        let (owner, size) = (slot.connection, slot.page_size);
         self.submit(
             owner,
             actor::Command::Fetch {
@@ -462,14 +474,13 @@ impl Engine {
         query: QueryId,
         filters: Vec<FilterCondition>,
         sort: Option<ResultSort>,
-        page_size: PageSize,
     ) -> std::result::Result<(), SubmitError> {
         let slot = self
             .queries
             .get_mut(query)
             .ok_or(SubmitError::StaleHandle)?;
         slot.view_cancellation.send_replace(false);
-        let owner = slot.connection;
+        let (owner, page_size) = (slot.connection, slot.page_size);
         let cancellation = slot.view_cancellation.subscribe();
         self.submit(
             owner,
@@ -506,13 +517,9 @@ impl Engine {
         &self,
         query: QueryId,
         index: u64,
-        size: PageSize,
     ) -> std::result::Result<(), SubmitError> {
-        let owner = self
-            .queries
-            .get(query)
-            .ok_or(SubmitError::StaleHandle)?
-            .connection;
+        let slot = self.queries.get(query).ok_or(SubmitError::StaleHandle)?;
+        let (owner, size) = (slot.connection, slot.page_size);
         self.submit(
             owner,
             actor::Command::Fetch {
@@ -705,7 +712,7 @@ impl Engine {
         parent: Option<ObjectId>,
         request_token: u64,
     ) -> std::result::Result<(), SubmitError> {
-        self.load_metadata_page(connection, parent, request_token, 0, 10_000)
+        self.load_metadata_page(connection, parent, request_token, 0, MAX_METADATA_PAGE)
     }
     pub fn load_metadata_page(
         &self,
@@ -715,7 +722,7 @@ impl Engine {
         offset: u64,
         limit: u32,
     ) -> std::result::Result<(), SubmitError> {
-        if limit == 0 || limit > 10_000 {
+        if limit == 0 || limit > MAX_METADATA_PAGE {
             return Err(SubmitError::InvalidInput);
         }
         self.submit(
@@ -780,6 +787,9 @@ impl Engine {
         self.memory.usage()
     }
     pub fn try_event(&mut self) -> Option<Event> {
+        if let Some(failed) = self.take_recovery_failure() {
+            return Some(failed);
+        }
         let event = self.events.try_recv().ok()?;
         if matches!(
             &event,
@@ -797,8 +807,7 @@ impl Engine {
                 | Event::HistoryRecorded { .. }
                 | Event::RecoveryFailed { .. }
         ) {
-            self.recovery_pending
-                .store(false, std::sync::atomic::Ordering::Release);
+            self.advance_recovery();
         }
         if let Event::ExportFinished { export, .. } | Event::ExportFailed { export, .. } = &event
             && let Some(slot) = self.exports.remove(*export)

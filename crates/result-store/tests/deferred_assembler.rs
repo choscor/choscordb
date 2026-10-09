@@ -118,3 +118,12 @@ fn rejects_oversized_chunks_and_cannot_continue_after_completion() {
         DeferredAssemblerError::InvalidChunk
     );
 }
+
+#[test]
+fn value_detail_opens_values_up_to_the_load_limit() {
+    use choscordb_result_store::{MAX_DEFERRED_LOAD_BYTES, value_detail_size_error};
+    assert_eq!(value_detail_size_error(MAX_DEFERRED_LOAD_BYTES), None);
+    assert!(
+        value_detail_size_error(MAX_DEFERRED_LOAD_BYTES + 1).is_some_and(|e| e.contains("8 MiB"))
+    );
+}

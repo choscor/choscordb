@@ -22,14 +22,14 @@ fn appearance_get_set_reset_are_correlated_gated_and_persistent() {
     };
     let mut engine = Engine::new(config.clone(), vec![]).unwrap();
     engine.appearance_layout_get(1).unwrap();
-    assert_eq!(engine.appearance_layout_get(2), Err(SubmitError::QueueFull));
-    assert!(matches!(
-        event(&mut engine),
-        Event::AppearanceLayout {
-            request_token: 1,
-            appearance: None
-        }
-    ));
+    // A second request waits behind the outstanding one and is answered in order.
+    engine.appearance_layout_get(2).unwrap();
+    for token in [1, 2] {
+        assert!(matches!(
+            event(&mut engine),
+            Event::AppearanceLayout { request_token, appearance: None } if request_token == token
+        ));
+    }
 
     let expected = AppearanceLayout {
         theme: ThemeMode::Dark,

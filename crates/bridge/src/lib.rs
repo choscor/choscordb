@@ -1,7 +1,8 @@
 //! Typed, nonblocking CXX transport. Application policy remains in core services.
 mod appearance;
 pub use appearance::{
-    appearance_layout_get, appearance_layout_reset, appearance_layout_set, appearance_theme_valid,
+    appearance_layout_default, appearance_layout_get, appearance_layout_reset,
+    appearance_layout_set, appearance_theme_valid,
 };
 mod completion;
 mod convert;
@@ -25,14 +26,30 @@ pub use diagnostics::*;
 pub use document_io::{document_path_status, read_sql_document_file, write_sql_document_file};
 pub use edit_value::parse_grid_edit_value_policy;
 pub use foreign_key_filter::{foreign_key_predicate_policy, foreign_key_value_filterable_policy};
-pub use grid_edit::{grid_editability_policy, plan_grid_edits_policy};
-pub use metadata_policy::{navigator_object_visible_policy, postgres_system_schema_policy};
+pub use grid_edit::{
+    grid_cell_kind_policies, grid_editability_policy, grid_row_insert_error_policy,
+    plan_grid_edits_policy,
+};
+pub use metadata_policy::{
+    navigator_object_visible_policy, system_schema_node_policy, system_schemas_hidden_policy,
+};
 pub use result_copy::render_copy_tsv_policy;
 pub use result_json::{
     json_cell_readiness_policy, json_page_readiness_policy, json_row_readiness_policy,
     render_json_cell_policy, render_json_page_policy, render_json_row_policy,
 };
 mod preferences;
+mod profile_draft;
+mod quick_search;
+pub use profile_draft::{
+    profile_draft_credentials, profile_draft_defaults, profile_draft_normalize,
+    profile_draft_validate, profile_driver_form, profile_has_saved_credentials,
+    profile_port_for_driver,
+};
+pub use quick_search::{
+    QuickSearchQuery, TextFilterQuery, TextFinderQuery, quick_search_limits, quick_search_query,
+    text_filter_query, text_finder,
+};
 mod query_preferences;
 pub use query_preferences::{
     query_preference_limits, query_preferences_get, query_preferences_set,
@@ -42,14 +59,16 @@ pub use templates::*;
 mod object_action;
 pub use object_action::*;
 mod pins;
-pub use pins::{pin_identity_key, pin_load, pin_save, pin_valid};
+pub use pins::{
+    pin_identity_key, pin_load, pin_remove, pin_remove_profile, pin_save, pin_toggle, pin_valid,
+};
 mod preview_capture;
 pub use preview_capture::write_preview_capture_file;
 mod recovery;
 mod saved_sql;
 pub use saved_sql::{
     saved_sql_document_identity, saved_sql_list_directory, saved_sql_prepare_directory,
-    saved_sql_read_file,
+    saved_sql_read_file, saved_sql_root,
 };
 mod update;
 use choscordb_core::{Engine, EngineConfig};
@@ -62,12 +81,13 @@ use std::{
     time::Duration,
 };
 pub use update::{
-    RustUpdateSession, update_consent_load, update_consent_load_legacy_ini,
-    update_consent_load_native, update_consent_migrate, update_consent_save,
-    update_run_linux_helper, update_session_begin_check, update_session_cancel,
-    update_session_check, update_session_discard_staged, update_session_download,
-    update_session_install, update_session_new, update_session_new_failure_fixture,
-    update_session_progress, update_take_windows_failure_marker, update_write_readiness,
+    RustUpdateSession, update_check_interval_seconds, update_consent_load,
+    update_consent_load_legacy_ini, update_consent_load_native, update_consent_migrate,
+    update_consent_save, update_run_linux_helper, update_session_begin_check,
+    update_session_cancel, update_session_check, update_session_discard_staged,
+    update_session_download, update_session_install, update_session_new,
+    update_session_new_failure_fixture, update_session_progress,
+    update_take_windows_failure_marker, update_write_readiness,
 };
 // SAFETY: cxx generates the unsafe ABI glue for this one declarative boundary. The bridge's
 // generated static assertions validate the shared layouts and signatures, while transport tests
@@ -225,7 +245,23 @@ pub mod ffi {
     #[derive(Default)]
     struct GridEditPlanDto {
         statements: Vec<PlannedGridEditDto>,
+        /// The statements and bound values shown for review before apply.
+        review: String,
         error: String,
+    }
+    #[derive(Debug)]
+    enum SqlHighlightKind {
+        Keyword,
+        String,
+        Identifier,
+        Comment,
+        Number,
+    }
+    /// A highlighted range in UTF-16 code units, as Qt text positions use.
+    struct SqlHighlightSpanDto {
+        start: u32,
+        length: u32,
+        kind: SqlHighlightKind,
     }
     enum QuickFilterOperator {
         Equals,
@@ -276,6 +312,8 @@ pub mod ffi {
     struct JsonViewResultDto {
         json: String,
         error: String,
+        /// What the desktop shows for `error`.
+        message: String,
     }
     #[derive(Default)]
     struct CopyCellDto {
@@ -315,6 +353,8 @@ pub mod ffi {
         nullable: bool,
         generated: bool,
         key: bool,
+        /// Whether a duplicated row copies this column's value.
+        duplicable: bool,
     }
     #[derive(Default)]
     struct EditTargetDto {
@@ -353,6 +393,8 @@ pub mod ffi {
         has_children: bool,
         has_column: bool,
         column: ColumnDto,
+        /// A column the metadata reports as part of its table's primary key.
+        primary_key: bool,
         properties: Vec<MetadataPropertyDto>,
     }
     #[derive(Default)]
@@ -387,6 +429,23 @@ pub mod ffi {
         ssh_authentication: String,
         ssh_identity_source: String,
         ssh_identity_file: String,
+    }
+    #[derive(Default)]
+    struct ProfileSecretDraftsDto {
+        save_credentials: bool,
+        database: String,
+        database_modified: bool,
+        ssh: String,
+        ssh_modified: bool,
+        tls: String,
+        tls_modified: bool,
+        ssh_private_key: String,
+        ssh_private_key_modified: bool,
+    }
+    #[derive(Default)]
+    struct ProfileFieldErrorDto {
+        field: String,
+        message: String,
     }
     #[derive(Default)]
     struct SshHopCredentialDto {
@@ -424,21 +483,16 @@ pub mod ffi {
         sql: String,
         error: String,
     }
-    struct SqlTemplateLimitsDto {
-        max_bytes: u64,
-        max_columns: u64,
-    }
     struct SqlCompletionDto {
         label: String,
         insert_text: String,
         kind: String,
     }
+    /// How much navigator metadata one completion catalog may copy.
     struct CompletionLimitsDto {
-        max_results: u64,
-        max_prefix_bytes: u64,
         max_metadata_entries: u64,
         max_metadata_bytes: u64,
-        max_source_bytes: u64,
+        max_metadata_visits: u64,
     }
     #[derive(Default)]
     struct CompletionReplyDto {
@@ -448,6 +502,11 @@ pub mod ffi {
         end: u64,
         items: Vec<SqlCompletionDto>,
     }
+    /// A UTF-8 byte range in the searched text.
+    struct TextRangeDto {
+        start: u64,
+        end: u64,
+    }
     #[derive(Default)]
     struct TextMatchDto {
         valid: bool,
@@ -456,13 +515,109 @@ pub mod ffi {
         start: u64,
         end: u64,
         error: String,
+        error_field: TextSearchField,
     }
     #[derive(Default)]
     struct TextReplacementDto {
         valid: bool,
         text: String,
         error: String,
+        error_field: TextSearchField,
         count: u64,
+    }
+    struct ObjectKindTraitsDto {
+        opens_object_tab: bool,
+        ddl: bool,
+        relation: bool,
+        container: bool,
+        pinnable: bool,
+        navigation_anchor: bool,
+        search_descends: bool,
+        completion_candidate: bool,
+        has_detail_pane: bool,
+        detail_pane: u8,
+        connection: bool,
+        column: bool,
+        diagram: bool,
+        has_initial_pane: bool,
+        initial_pane: u8,
+        repeats_across_parents: bool,
+    }
+    /// How the desktop sequences requests for one driver.
+    struct DriverWorkflowDto {
+        inspect_after_result: bool,
+        sql_mode_before_execution: bool,
+    }
+    /// What a quick-search destination opens.
+    #[derive(Debug)]
+    enum QuickSearchDestinationKind {
+        OpenTab,
+        Command,
+        Object,
+    }
+    struct QuickSearchDestinationDto {
+        kind: QuickSearchDestinationKind,
+        group: String,
+        title: String,
+        context: String,
+        id: String,
+    }
+    /// Destination indices in display order and how many editor and history rows follow.
+    struct QuickSearchPlanDto {
+        destinations: Vec<u32>,
+        editor_rows: u32,
+        history_rows: u32,
+        more: bool,
+    }
+    struct QuickSearchLimitsDto {
+        editor_rows: u32,
+        recent_objects: u32,
+        history_rows: u32,
+    }
+    /// Which connection fields a driver uses and what their blank values mean.
+    struct ProfileDriverFormDto {
+        server: bool,
+        user_optional: bool,
+        database_selects_server: bool,
+    }
+    /// Why a manual transaction blocks an action; empty when it does not.
+    struct TransactionGuardDto {
+        apply_edits: String,
+        enable_auto_commit: String,
+    }
+    struct NavigatorSearchBudgetDto {
+        quick_visits: u32,
+        quick_requests: u32,
+        quick_results: u32,
+        filter_visits: u32,
+        filter_requests: u32,
+    }
+    /// How a staged result cell is represented in the grid.
+    #[derive(Debug)]
+    enum GridCellKind {
+        Value,
+        Binary,
+        Deferred,
+        FallbackText,
+        Unavailable,
+    }
+    struct GridCellKindPolicyDto {
+        kind: GridCellKind,
+        inline_editable: bool,
+        blocks_row_delete: bool,
+        blocks_row_duplicate: bool,
+        duplicate_requires_load: bool,
+    }
+    /// The search input an error belongs to.
+    #[derive(Debug)]
+    enum TextSearchField {
+        General,
+        Needle,
+        Replacement,
+    }
+    struct TextLimitsDto {
+        max_document_bytes: u64,
+        max_search_pattern_bytes: u64,
     }
     #[derive(Default)]
     struct ShortcutOverrideDto {
@@ -518,11 +673,6 @@ pub mod ffi {
         default_font_size: u16,
         min_font_size: u16,
         max_font_size: u16,
-    }
-    struct RecoveryLimitsDto {
-        max_documents: u64,
-        max_sql_bytes: u64,
-        max_collection_bytes: u64,
     }
     #[derive(Default)]
     struct EditorDocumentDto {
@@ -683,8 +833,8 @@ pub mod ffi {
         objects: Vec<MetadataDto>,
         committed: bool,
         edit_affected_rows: Vec<u64>,
+        /// For `edit_query`, one column per result column in result order.
         edit_target: EditTargetDto,
-        edit_source_columns: Vec<String>,
         result_cell_metadata: Vec<ResultCellMetadataDto>,
         capabilities: u64,
     }
@@ -754,6 +904,25 @@ pub mod ffi {
         pins: Vec<PinRecordDto>,
         error: String,
     }
+    struct ValuePreviewRowsDto {
+        end: u32,
+        boundaries: Vec<u32>,
+    }
+    struct HistoryPreviewDto {
+        text: String,
+        truncated: bool,
+    }
+    #[derive(Default)]
+    struct ObjectTabContextDto {
+        session: bool,
+        connection: u64,
+        profile_id: String,
+    }
+    /// A pin list edit; `pins` is the new list when `changed`.
+    struct PinChangeDto {
+        changed: bool,
+        pins: Vec<PinRecordDto>,
+    }
     #[derive(Default)]
     struct PinSaveDto {
         success: bool,
@@ -813,6 +982,8 @@ pub mod ffi {
     struct SavedSqlListingDto {
         entries: Vec<SavedSqlEntryDto>,
         has_more: bool,
+        /// Documents a listing returns at most.
+        limit: u32,
         error: String,
     }
     struct SavedSqlPathDto {
@@ -821,6 +992,7 @@ pub mod ffi {
     }
     extern "Rust" {
         fn update_consent_load(directory: &str) -> UpdateConsentDto;
+        fn update_check_interval_seconds() -> u64;
         fn update_consent_load_native(directory: &str) -> UpdateConsentDto;
         fn update_consent_load_legacy_ini(directory: &str, paths: Vec<String>) -> UpdateConsentDto;
         fn update_consent_migrate(
@@ -869,9 +1041,20 @@ pub mod ffi {
         fn update_write_readiness(path: &str) -> bool;
         fn pin_valid(pin: PinRecordDto) -> bool;
         fn pin_identity_key(pin: PinRecordDto) -> String;
+        fn pin_toggle(
+            pins: Vec<PinRecordDto>,
+            candidate: PinRecordDto,
+            unpin: bool,
+        ) -> PinChangeDto;
+        fn pin_remove(pins: Vec<PinRecordDto>, key: &str) -> PinChangeDto;
+        fn pin_remove_profile(pins: Vec<PinRecordDto>, profile_id: &str) -> PinChangeDto;
         fn pin_load(path: &str, profile_storage: bool) -> PinLoadDto;
         fn pin_save(path: &str, profile_storage: bool, pins: Vec<PinRecordDto>) -> PinSaveDto;
         fn grid_editability_policy(request: GridEditRequestDto) -> GridEditabilityDto;
+        /// One entry per GridCellKind, in declaration order.
+        fn grid_cell_kind_policies() -> Vec<GridCellKindPolicyDto>;
+        /// Why another staged row cannot be added; empty when it can.
+        fn grid_row_insert_error_policy(rows: u32) -> String;
         fn plan_grid_edits_policy(request: GridEditRequestDto) -> GridEditPlanDto;
         fn quick_filter_options_policy(column: &str, value: CellDto) -> Vec<QuickFilterOptionDto>;
         fn quick_filter_compose_policy(
@@ -892,8 +1075,12 @@ pub mod ffi {
             show_system_schemas: bool,
             qualified_name: &str,
         ) -> bool;
-        fn postgres_system_schema_policy(schema: &str) -> bool;
+        /// Whether a loaded navigator node is a hidden-by-default system schema.
+        fn system_schema_node_policy(kind: &str, name: &str) -> bool;
+        /// Whether the driver hides system schemas from the navigator under this setting.
+        fn system_schemas_hidden_policy(driver: &str, show_system_schemas: bool) -> bool;
         fn appearance_theme_valid(value: &str) -> bool;
+        fn appearance_layout_default() -> AppearanceLayoutDto;
         fn json_cell_readiness_policy(
             column: ColumnDto,
             cell: CellDto,
@@ -948,6 +1135,9 @@ pub mod ffi {
         fn diagnostics_set_open_tabs(service: &RustDiagnostics, open_tabs: i32);
         fn diagnostics_flush(service: &RustDiagnostics);
         fn diagnostics_preview(service: &RustDiagnostics) -> DiagnosticSummaryDto;
+        /// The archive path an export writes for a user-chosen path.
+        fn diagnostics_export_destination(path: &str) -> String;
+        fn diagnostics_memory_sample_interval_seconds() -> u64;
         fn diagnostics_export_zip(
             service: &RustDiagnostics,
             destination: &str,
@@ -975,6 +1165,8 @@ pub mod ffi {
         ) -> PreviewCaptureResultDto;
         fn saved_sql_list_directory(root: &str) -> SavedSqlListingDto;
         fn saved_sql_prepare_directory(root: &str) -> String;
+        /// The saved-SQL folder for the application database at `storage_path`.
+        fn saved_sql_root(storage_path: &str, default_data_directory: &str) -> String;
         fn saved_sql_document_identity(path: &str) -> SavedSqlPathDto;
         fn saved_sql_read_file(root: &str, path: &str) -> DocumentIoResultDto;
         type RustDeferredAssembler;
@@ -994,16 +1186,53 @@ pub mod ffi {
             chunk: &[u8],
             has_lease: bool,
         ) -> DeferredAssemblyDto;
+        type QuickSearchQuery;
+        fn quick_search_query(query: &str) -> Box<QuickSearchQuery>;
+        fn score(self: &QuickSearchQuery, name: &str) -> i32;
+        /// Ranks destinations and bounds the rows the palette shows.
+        fn plan(
+            self: &QuickSearchQuery,
+            destinations: &[QuickSearchDestinationDto],
+            editor_rows: u32,
+            history_rows: u32,
+        ) -> QuickSearchPlanDto;
+        fn quick_search_limits() -> QuickSearchLimitsDto;
+        /// A literal case-insensitive search compiled once for many sources.
+        type TextFinderQuery;
+        fn text_finder(needle: &str) -> Box<TextFinderQuery>;
+        fn find_all(self: &TextFinderQuery, source: &str, limit: u32) -> Vec<TextRangeDto>;
+        type TextFilterQuery;
+        fn text_filter_query(query: &str) -> Box<TextFilterQuery>;
+        fn blank(self: &TextFilterQuery) -> bool;
+        fn accepts(self: &TextFilterQuery, text: &str) -> bool;
         type BridgeEngine;
         fn new_engine() -> Box<BridgeEngine>;
         fn new_engine_with_storage(path: &str) -> Box<BridgeEngine>;
-        fn recovery_limits() -> RecoveryLimitsDto;
-        fn sql_template_limits() -> SqlTemplateLimitsDto;
+        /// A navigator template from the relation's loaded columns.
         fn generate_sql_template(
             kind: &str,
             qualified: &str,
             columns: Vec<String>,
+            columns_loaded: bool,
         ) -> SqlTemplateResultDto;
+        fn object_kind_traits_policy(kind: &str) -> ObjectKindTraitsDto;
+        /// Why a navigator SQL template cannot be generated yet; empty when it can.
+        fn sql_template_unavailable_reason(
+            kind: &str,
+            columns_loaded: bool,
+            has_column: bool,
+        ) -> String;
+        fn sidebar_child_visible_policy(parent_kind: &str, kind: &str) -> bool;
+        fn navigator_search_budget() -> NavigatorSearchBudgetDto;
+        fn driver_workflow_policy(driver: &str) -> DriverWorkflowDto;
+        fn transaction_guard_policy(transaction_active: bool) -> TransactionGuardDto;
+        /// Why drop or rename is unavailable for this object; empty when it applies.
+        fn object_action_unavailable_reason(
+            rename: bool,
+            driver: &str,
+            kind: &str,
+            relation_subtype: &str,
+        ) -> String;
         fn prepare_object_action(
             driver: &str,
             kind: &str,
@@ -1015,6 +1244,7 @@ pub mod ffi {
         ) -> ObjectActionStatementDto;
         type CompletionCatalog;
         fn completion_limits() -> CompletionLimitsDto;
+        fn completion_source_supported(bytes: u64) -> bool;
         fn completion_catalog(
             items: Vec<SqlCompletionDto>,
             partial: bool,
@@ -1026,6 +1256,7 @@ pub mod ffi {
             requested: bool,
         ) -> CompletionReplyDto;
         fn sql_keyword_completions(prefix: &str) -> Vec<String>;
+        fn sql_highlight_spans(sql: &str) -> Vec<SqlHighlightSpanDto>;
         fn text_find(
             source: &str,
             needle: &str,
@@ -1041,6 +1272,32 @@ pub mod ffi {
             case_sensitive: bool,
             whole_word: bool,
         ) -> TextReplacementDto;
+        fn text_limits() -> TextLimitsDto;
+        fn text_pattern_usable(needle: &str) -> bool;
+        /// The largest deferred-value window one chunk request may read.
+        fn value_chunk_max_bytes() -> u32;
+        /// Owned bytes one result view model may hold.
+        fn result_view_byte_budget() -> u64;
+        /// Whether a page lease can retain `payload_bytes` beyond its bookkeeping.
+        fn page_lease_fits(reserved_bytes: u64, payload_bytes: u64) -> bool;
+        /// Why a resident value cannot open in the value detail view; empty when it can.
+        fn value_detail_error(bytes: u64) -> String;
+        /// Rows of a value preview window that never split a UTF-8 character.
+        fn value_preview_rows(
+            bytes: &[u8],
+            binary: bool,
+            more_follows: bool,
+            row_bytes: u32,
+        ) -> ValuePreviewRowsDto;
+        /// The first character boundary at or after `target` in a text window.
+        fn value_text_boundary_after(window: &[u8], window_offset: u64, target: u64) -> u64;
+        /// The start of the UTF-8 character containing byte `target`.
+        fn value_text_char_start(text: &[u8], target: u64) -> u64;
+        fn text_replacement_error(
+            document_bytes: u64,
+            removed_bytes: u64,
+            added_bytes: u64,
+        ) -> String;
         fn workspace_tabs_save(
             engine: &mut BridgeEngine,
             tabs: Vec<WorkspaceTabDto>,
@@ -1079,6 +1336,14 @@ pub mod ffi {
         fn editor_preference_limits() -> EditorPreferenceLimitsDto;
         fn history_flush(engine: &mut BridgeEngine, token: u64) -> Submit;
         fn history_clear(engine: &mut BridgeEngine, token: u64) -> Submit;
+        fn history_policy_default() -> HistoryPolicyDto;
+        /// A new identity for an editor document in workspace recovery.
+        fn recovery_document_id() -> String;
+        /// A clause-per-line preview of the first `max_chars` characters of history SQL.
+        fn history_sql_preview(sql: &str, max_chars: u32) -> HistoryPreviewDto;
+        /// The recovery context of an object tab on `connection` (saved profile or session).
+        fn object_tab_context(profile_id: &str, connection: u64) -> String;
+        fn parse_object_tab_context(context: &str) -> ObjectTabContextDto;
         fn history_policy_get(engine: &mut BridgeEngine, token: u64) -> Submit;
         fn history_policy_set(
             engine: &mut BridgeEngine,
@@ -1087,6 +1352,29 @@ pub mod ffi {
         ) -> Submit;
         fn profile_list(engine: &mut BridgeEngine, token: u64) -> Submit;
         fn validate_connection_profile(profile: ProfileDto) -> String;
+        fn profile_draft_defaults(profile: ProfileDto) -> ProfileDto;
+        fn profile_draft_normalize(
+            original: ProfileDto,
+            edited: ProfileDto,
+            drafts: &ProfileSecretDraftsDto,
+        ) -> ProfileDto;
+        fn profile_draft_validate(
+            profile: ProfileDto,
+            drafts: &ProfileSecretDraftsDto,
+        ) -> ProfileFieldErrorDto;
+        fn profile_draft_credentials(
+            profile: &ProfileDto,
+            drafts: &ProfileSecretDraftsDto,
+            saving: bool,
+        ) -> ProfileCredentialsDto;
+        fn profile_port_for_driver(port: u16, driver: &str) -> u16;
+        fn profile_driver_form(driver: &str) -> ProfileDriverFormDto;
+        fn profile_has_saved_credentials(profile: &ProfileDto) -> bool;
+        fn ssh_known_hosts_path_valid(path: &str) -> bool;
+        /// Why pasted private key text cannot be used; empty when it can.
+        fn ssh_private_key_text_error(text: &str) -> String;
+        /// The longest password or passphrase a connection form accepts, in bytes.
+        fn profile_secret_max_bytes() -> u32;
         fn profile_save_credentials(
             engine: &mut BridgeEngine,
             profile: ProfileDto,
@@ -1124,7 +1412,6 @@ pub mod ffi {
         fn profile_duplicate(
             engine: &mut BridgeEngine,
             source: &str,
-            id: &str,
             name: &str,
             token: u64,
         ) -> Submit;
@@ -1258,13 +1545,13 @@ pub mod ffi {
             request_token: u64,
         ) -> Submit;
         fn next_result_set(engine: &mut BridgeEngine, query: u64) -> Submit;
+        /// Requests the next navigator page; Rust chooses the page size.
         fn metadata_page_request(
             engine: &mut BridgeEngine,
             connection: u64,
             parent: &str,
             request_token: u64,
             offset: u64,
-            limit: u32,
         ) -> Submit;
         fn metadata(engine: &mut BridgeEngine, connection: u64, parent: &str) -> Submit;
         fn load_value_chunk(
@@ -1282,31 +1569,20 @@ pub mod ffi {
             request_token: u64,
         ) -> Submit;
         fn object_ddl(engine: &mut BridgeEngine, connection: u64, object: &str) -> Submit;
-        fn fetch_page(engine: &mut BridgeEngine, query: u64, page_size: u32) -> Submit;
-        fn fetch_page_at(
-            engine: &mut BridgeEngine,
-            query: u64,
-            index: u64,
-            page_size: u32,
-        ) -> Submit;
+        /// Fetches use the page size the query started with.
+        fn fetch_page(engine: &mut BridgeEngine, query: u64) -> Submit;
+        fn fetch_page_at(engine: &mut BridgeEngine, query: u64, index: u64) -> Submit;
         fn apply_result_view(
             engine: &mut BridgeEngine,
             query: u64,
             filters: Vec<ResultFilterDto>,
             sort_column: u32,
             sort_direction: &str,
-            page_size: u32,
         ) -> Submit;
         fn cancel_result_view(engine: &mut BridgeEngine, query: u64) -> Submit;
         fn clear_result_view(engine: &mut BridgeEngine, query: u64) -> Submit;
-        fn start_export(
-            engine: &mut BridgeEngine,
-            query: u64,
-            destination: &str,
-            format: &str,
-            table: Vec<String>,
-            postgres: bool,
-        ) -> Submit;
+        /// Why `table` cannot name a SQL export target; empty when it can.
+        fn sql_export_table_error(table: Vec<String>) -> String;
         fn start_export_dialect(
             engine: &mut BridgeEngine,
             query: u64,
@@ -1327,24 +1603,15 @@ pub mod ffi {
         fn shrink_page_lease(engine: &mut BridgeEngine, lease: u64, payload_bytes: u64) -> Submit;
         fn memory_usage(engine: &BridgeEngine) -> MemoryUsageDto;
         fn cache_usage(engine: &BridgeEngine) -> CacheUsageDto;
+        /// The statement to run at `cursor` or in the selection, in `driver`'s dialect;
+        /// `sql_mode` adjusts MySQL lexing.
         fn sql_execution_range(
             sql: &str,
             cursor: u64,
             selection_start: u64,
             selection_end: u64,
-        ) -> SqlRange;
-        fn sql_execution_range_mysql_mode(
-            sql: &str,
-            cursor: u64,
-            selection_start: u64,
-            selection_end: u64,
-            mode: &str,
-        ) -> SqlRange;
-        fn sql_execution_range_mysql(
-            sql: &str,
-            cursor: u64,
-            selection_start: u64,
-            selection_end: u64,
+            driver: &str,
+            sql_mode: &str,
         ) -> SqlRange;
     }
 }
@@ -1484,6 +1751,22 @@ pub fn connect_postgres(
         .map_err(|e| e.to_string())
     })
 }
+/// Execution options within the query preference limits; 0 ms means no timeout.
+fn query_options(
+    page_size: u32,
+    timeout_ms: u64,
+    auto_commit: bool,
+) -> std::result::Result<QueryOptions, String> {
+    let page_size = PageSize::new(page_size).map_err(|e| e.message)?;
+    if timeout_ms > u64::from(choscordb_core::MAX_QUERY_TIMEOUT_SECONDS) * 1000 {
+        return Err("Query timeout exceeds the supported limit".into());
+    }
+    Ok(QueryOptions {
+        page_size,
+        timeout: (timeout_ms != 0).then(|| Duration::from_millis(timeout_ms)),
+        auto_commit,
+    })
+}
 pub fn execute(
     engine: &mut BridgeEngine,
     connection: u64,
@@ -1515,15 +1798,10 @@ pub fn execute_with_profile(
         if profile_id.len() > 256 {
             return Err("Invalid profile identifier".into());
         }
-        let page_size = PageSize::new(page_size).map_err(|e| e.message)?;
         e.execute_with_profile(
             unpack(connection),
             sql.into(),
-            QueryOptions {
-                page_size,
-                timeout: (timeout_ms != 0).then(|| Duration::from_millis(timeout_ms)),
-                auto_commit,
-            },
+            query_options(page_size, timeout_ms, auto_commit)?,
             (!profile_id.is_empty()).then(|| profile_id.to_owned()),
         )
         .map(pack)
@@ -1544,23 +1822,16 @@ pub fn metadata(engine: &mut BridgeEngine, connection: u64, parent: &str) -> ffi
         .map_err(|e| e.to_string())
     })
 }
-pub fn fetch_page(engine: &mut BridgeEngine, query: u64, page_size: u32) -> ffi::Submit {
+pub fn fetch_page(engine: &mut BridgeEngine, query: u64) -> ffi::Submit {
     submit(engine, |e| {
-        let size = PageSize::new(page_size).map_err(|e| e.message)?;
-        e.fetch_page(unpack(query), size)
+        e.fetch_page(unpack(query))
             .map(|()| query)
             .map_err(|e| e.to_string())
     })
 }
-pub fn fetch_page_at(
-    engine: &mut BridgeEngine,
-    query: u64,
-    index: u64,
-    page_size: u32,
-) -> ffi::Submit {
+pub fn fetch_page_at(engine: &mut BridgeEngine, query: u64, index: u64) -> ffi::Submit {
     submit(engine, |e| {
-        let size = PageSize::new(page_size).map_err(|e| e.message)?;
-        e.fetch_page_at(unpack(query), index, size)
+        e.fetch_page_at(unpack(query), index)
             .map(|()| query)
             .map_err(|e| e.to_string())
     })
@@ -1602,7 +1873,6 @@ pub fn apply_result_view(
     filters: Vec<ffi::ResultFilterDto>,
     sort_column: u32,
     sort_direction: &str,
-    page_size: u32,
 ) -> ffi::Submit {
     submit(engine, |e| {
         let filters = filters
@@ -1650,8 +1920,7 @@ pub fn apply_result_view(
             }),
             _ => return Err("Invalid sort direction".into()),
         };
-        let page_size = PageSize::new(page_size).map_err(|error| error.message)?;
-        e.apply_result_view(unpack(query), filters, sort, page_size)
+        e.apply_result_view(unpack(query), filters, sort)
             .map(|()| query)
             .map_err(|error| error.to_string())
     })
@@ -1717,8 +1986,14 @@ pub fn sql_execution_range(
     cursor: u64,
     selection_start: u64,
     selection_end: u64,
+    driver: &str,
+    sql_mode: &str,
 ) -> ffi::SqlRange {
+    use choscordb_sql_language as language;
     catch_unwind(|| {
+        let mysql = driver
+            .eq_ignore_ascii_case("mysql")
+            .then(|| language::MysqlSqlMode::from_sql_mode(sql_mode));
         let Ok(cursor) = usize::try_from(cursor) else {
             return ffi::SqlRange::default();
         };
@@ -1733,66 +2008,22 @@ pub fn sql_execution_range(
             };
             Some(start..end)
         };
-        let Some(range) = choscordb_sql_language::execution_range(sql, cursor, selection) else {
+        let range = match mysql {
+            Some(mode) => language::execution_range_mysql_with_mode(sql, cursor, selection, mode),
+            None => language::execution_range(sql, cursor, selection),
+        };
+        let Some(range) = range else {
             return ffi::SqlRange::default();
+        };
+        let safety = match mysql {
+            Some(mode) => language::classify_mysql_with_mode(&sql[range.clone()], mode),
+            None => language::classify(&sql[range.clone()]),
         };
         ffi::SqlRange {
             valid: true,
             start: range.start as u64,
             end: range.end as u64,
-            confirmation_required: choscordb_sql_language::classify(&sql[range.clone()])
-                == choscordb_sql_language::Safety::ConfirmationRequired,
-        }
-    })
-    .unwrap_or_default()
-}
-pub fn sql_execution_range_mysql(
-    sql: &str,
-    cursor: u64,
-    selection_start: u64,
-    selection_end: u64,
-) -> ffi::SqlRange {
-    sql_execution_range_mysql_mode(sql, cursor, selection_start, selection_end, "")
-}
-
-pub fn sql_execution_range_mysql_mode(
-    sql: &str,
-    cursor: u64,
-    selection_start: u64,
-    selection_end: u64,
-    mode: &str,
-) -> ffi::SqlRange {
-    catch_unwind(|| {
-        let Ok(cursor) = usize::try_from(cursor) else {
-            return ffi::SqlRange::default();
-        };
-        let selection = if selection_start == selection_end {
-            None
-        } else {
-            let (Ok(start), Ok(end)) = (
-                usize::try_from(selection_start),
-                usize::try_from(selection_end),
-            ) else {
-                return ffi::SqlRange::default();
-            };
-            Some(start..end)
-        };
-        let Some(range) = choscordb_sql_language::execution_range_mysql_with_mode(
-            sql,
-            cursor,
-            selection,
-            choscordb_sql_language::MysqlSqlMode::from_sql_mode(mode),
-        ) else {
-            return ffi::SqlRange::default();
-        };
-        ffi::SqlRange {
-            valid: true,
-            start: range.start as u64,
-            end: range.end as u64,
-            confirmation_required: choscordb_sql_language::classify_mysql_with_mode(
-                &sql[range.clone()],
-                choscordb_sql_language::MysqlSqlMode::from_sql_mode(mode),
-            ) == choscordb_sql_language::Safety::ConfirmationRequired,
+            confirmation_required: safety == language::Safety::ConfirmationRequired,
         }
     })
     .unwrap_or_default()
@@ -1921,6 +2152,42 @@ pub fn cache_usage(engine: &BridgeEngine) -> ffi::CacheUsageDto {
     .unwrap_or_default()
 }
 
+pub fn value_preview_rows(
+    bytes: &[u8],
+    binary: bool,
+    more_follows: bool,
+    row_bytes: u32,
+) -> ffi::ValuePreviewRowsDto {
+    let rows =
+        choscordb_result_store::preview_rows(bytes, binary, more_follows, row_bytes as usize);
+    ffi::ValuePreviewRowsDto {
+        end: rows.end as u32,
+        boundaries: rows.boundaries,
+    }
+}
+pub fn value_text_boundary_after(window: &[u8], window_offset: u64, target: u64) -> u64 {
+    choscordb_result_store::text_boundary_after(window, window_offset, target)
+}
+pub fn value_text_char_start(text: &[u8], target: u64) -> u64 {
+    usize::try_from(target).map_or(target, |target| {
+        choscordb_result_store::text_char_start(text, target) as u64
+    })
+}
+pub fn value_detail_error(bytes: u64) -> String {
+    choscordb_result_store::value_detail_size_error(bytes)
+        .unwrap_or_default()
+        .into()
+}
+pub fn page_lease_fits(reserved_bytes: u64, payload_bytes: u64) -> bool {
+    choscordb_core::lease_fits(reserved_bytes, payload_bytes)
+}
+
+pub fn result_view_byte_budget() -> u64 {
+    choscordb_core::RESULT_VIEW_BYTES as u64
+}
+pub fn value_chunk_max_bytes() -> u32 {
+    choscordb_driver_api::MAX_VALUE_CHUNK_BYTES as u32
+}
 pub fn load_value_chunk(
     engine: &mut BridgeEngine,
     query: u64,
@@ -1935,22 +2202,10 @@ pub fn load_value_chunk(
     })
 }
 
-pub fn start_export(
-    engine: &mut BridgeEngine,
-    query: u64,
-    destination: &str,
-    format: &str,
-    table: Vec<String>,
-    postgres: bool,
-) -> ffi::Submit {
-    start_export_dialect(
-        engine,
-        query,
-        destination,
-        format,
-        table,
-        if postgres { "postgres" } else { "sqlite" },
-    )
+pub fn sql_export_table_error(table: Vec<String>) -> String {
+    choscordb_core::sql_export_table_error(&table)
+        .unwrap_or_default()
+        .into()
 }
 
 pub fn start_export_dialect(
@@ -2062,6 +2317,8 @@ fn profile_with_session_timeout(
     session_timeout: Option<u32>,
 ) -> std::result::Result<choscordb_core::ConnectionProfile, String> {
     use choscordb_core::{ConnectionProfile, PostgresTls, ProfileConfiguration};
+    // Fields a caller leaves empty take the profile defaults owned by core.
+    let dto = profile_draft::profile_draft_defaults(dto);
     let ssh = if dto.driver == "sqlite" {
         None
     } else {
@@ -2220,15 +2477,16 @@ fn profile_for_save(
     dto.ssh_jump_private_key_refs.clear();
     profile(dto)
 }
+/// Copy `source` as a new profile named after `name` with a fresh id.
 pub fn profile_duplicate(
     engine: &mut BridgeEngine,
     source: &str,
-    id: &str,
     name: &str,
     token: u64,
 ) -> ffi::Submit {
+    let (id, name) = choscordb_core::profile_draft::duplicate_identity(name);
     submit(engine, |e| {
-        e.profile_duplicate(source.into(), id.into(), name.into(), token)
+        e.profile_duplicate(source.into(), id, name, token)
             .map(|()| token)
             .map_err(|e| e.to_string())
     })
@@ -2373,6 +2631,35 @@ pub fn profile_connect_secrets(
 }
 
 /// Small, immutable keyword catalog: no worker or database access is required.
+pub fn sql_highlight_spans(sql: &str) -> Vec<ffi::SqlHighlightSpanDto> {
+    use choscordb_sql_language::HighlightKind;
+    // Spans arrive in source order, so one pass converts byte offsets to UTF-16.
+    let (mut byte, mut utf16) = (0usize, 0usize);
+    let mut advance = |to: usize| {
+        utf16 += sql[byte..to].encode_utf16().count();
+        byte = to;
+        utf16 as u32
+    };
+    choscordb_sql_language::highlight(sql)
+        .into_iter()
+        .map(|span| {
+            let start = advance(span.range.start);
+            let end = advance(span.range.end);
+            ffi::SqlHighlightSpanDto {
+                start,
+                length: end - start,
+                kind: match span.kind {
+                    HighlightKind::Keyword => ffi::SqlHighlightKind::Keyword,
+                    HighlightKind::String => ffi::SqlHighlightKind::String,
+                    HighlightKind::Identifier => ffi::SqlHighlightKind::Identifier,
+                    HighlightKind::Comment => ffi::SqlHighlightKind::Comment,
+                    HighlightKind::Number => ffi::SqlHighlightKind::Number,
+                },
+            }
+        })
+        .collect()
+}
+
 pub fn sql_keyword_completions(prefix: &str) -> Vec<String> {
     if prefix.len() > 256 {
         return Vec::new();
@@ -2383,6 +2670,45 @@ pub fn sql_keyword_completions(prefix: &str) -> Vec<String> {
         .collect()
 }
 
+/// Case-insensitive matches in source order; invalid input finds nothing.
+impl Default for ffi::TextSearchField {
+    fn default() -> Self {
+        Self::General
+    }
+}
+fn search_error_field(error: choscordb_sql_language::SearchError) -> ffi::TextSearchField {
+    use choscordb_sql_language::SearchError;
+    match error {
+        SearchError::EmptyPattern | SearchError::PatternTooLarge => ffi::TextSearchField::Needle,
+        SearchError::OutputTooLarge => ffi::TextSearchField::Replacement,
+        _ => ffi::TextSearchField::General,
+    }
+}
+pub fn text_pattern_usable(needle: &str) -> bool {
+    choscordb_sql_language::pattern_usable(needle)
+}
+/// Editable SQL documents and searches share one byte limit.
+pub fn text_limits() -> ffi::TextLimitsDto {
+    ffi::TextLimitsDto {
+        max_document_bytes: choscordb_core::MAX_SQL_DOCUMENT_BYTES as u64,
+        max_search_pattern_bytes: choscordb_sql_language::MAX_SEARCH_PATTERN_BYTES as u64,
+    }
+}
+/// Why replacing one match would leave an unsupported document; empty when it fits.
+pub fn text_replacement_error(document_bytes: u64, removed_bytes: u64, added_bytes: u64) -> String {
+    let size = |value: u64| usize::try_from(value).ok();
+    let fits = match (size(document_bytes), size(removed_bytes), size(added_bytes)) {
+        (Some(document), Some(removed), Some(added)) => {
+            choscordb_sql_language::replacement_fits(document, removed, added)
+        }
+        _ => false,
+    };
+    if fits {
+        String::new()
+    } else {
+        choscordb_sql_language::SearchError::OutputTooLarge.to_string()
+    }
+}
 pub fn text_find(
     source: &str,
     needle: &str,
@@ -2415,6 +2741,7 @@ pub fn text_find(
         },
         Err(error) => ffi::TextMatchDto {
             error: error.to_string(),
+            error_field: search_error_field(error),
             ..Default::default()
         },
     }
@@ -2443,6 +2770,7 @@ pub fn text_replace_all(
         },
         Err(error) => ffi::TextReplacementDto {
             error: error.to_string(),
+            error_field: search_error_field(error),
             ..Default::default()
         },
     }
@@ -2469,15 +2797,10 @@ pub fn open_object_data(
     timeout_ms: u64,
 ) -> ffi::Submit {
     submit(engine, |e| {
-        let page_size = PageSize::new(page_size).map_err(|e| e.message)?;
         e.open_object_data(
             unpack(connection),
             ObjectId(object.into()),
-            QueryOptions {
-                page_size,
-                timeout: (timeout_ms != 0).then(|| Duration::from_millis(timeout_ms)),
-                auto_commit: false,
-            },
+            query_options(page_size, timeout_ms, false)?,
         )
         .map(pack)
         .map_err(|e| e.to_string())
@@ -2590,7 +2913,6 @@ pub fn metadata_page_request(
     parent: &str,
     request_token: u64,
     offset: u64,
-    limit: u32,
 ) -> ffi::Submit {
     submit(engine, |e| {
         e.load_metadata_page(
@@ -2598,7 +2920,7 @@ pub fn metadata_page_request(
             (!parent.is_empty()).then(|| ObjectId(parent.into())),
             request_token,
             offset,
-            limit,
+            choscordb_core::METADATA_PAGE_SIZE,
         )
         .map(|_| connection)
         .map_err(|e| e.to_string())
@@ -2914,6 +3236,19 @@ pub fn profile_inspect_ssh_host_keys(
     })
 }
 
+/// Whether the host-key review may offer approval for this destination path.
+pub fn profile_secret_max_bytes() -> u32 {
+    choscordb_core::profile_draft::MAX_FORM_SECRET_BYTES as u32
+}
+pub fn ssh_private_key_text_error(text: &str) -> String {
+    choscordb_core::profile_draft::private_key_text_error(text)
+        .unwrap_or_default()
+        .into()
+}
+pub fn ssh_known_hosts_path_valid(path: &str) -> bool {
+    choscordb_driver_api::validate_known_hosts_path(path).is_ok()
+}
+
 pub fn approve_ssh_host_key(
     engine: &mut BridgeEngine,
     candidate_json: &str,
@@ -2924,11 +3259,7 @@ pub fn approve_ssh_host_key(
     submit(engine, |e| {
         if candidate_json.len() > 32 * 1024
             || expected_sha256.len() > 128
-            || known_hosts_path.is_empty()
-            || known_hosts_path.len() > 16 * 1024
-            || !std::path::Path::new(known_hosts_path).is_absolute()
-            || known_hosts_path.starts_with('~')
-            || known_hosts_path.contains(['\0', '%', '$', '"', '\'', '\\', '\n', '\r'])
+            || choscordb_driver_api::validate_known_hosts_path(known_hosts_path).is_err()
         {
             return Err("Invalid SSH host key approval".into());
         }

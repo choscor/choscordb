@@ -1,4 +1,6 @@
-use choscordb_pins::{PinError, PinRecord, PinStore, identity_key, valid};
+use choscordb_pins::{
+    PinError, PinRecord, PinStore, identity_key, remove_pin, remove_profile_pins, toggle_pin, valid,
+};
 use std::fs;
 
 fn pin(profile: &str, id: &str) -> PinRecord {
@@ -238,4 +240,40 @@ fn identity_preserves_quoted_unicode_and_utf16_field_limit() {
     assert!(valid(&record));
     record.name.push('🙂');
     assert!(!valid(&record));
+}
+
+#[test]
+fn pinning_prepends_new_pins_and_unpinning_removes_them() {
+    let orders = pin("profile-a", "[\"main\",\"orders\"]");
+    let items = pin("profile-a", "[\"main\",\"items\"]");
+    let pinned = toggle_pin(std::slice::from_ref(&orders), items.clone(), false).unwrap();
+    assert_eq!(pinned, vec![items.clone(), orders.clone()]);
+    assert_eq!(toggle_pin(&pinned, items.clone(), false), None);
+    assert_eq!(
+        toggle_pin(&pinned, items.clone(), true),
+        Some(vec![orders.clone()])
+    );
+    assert_eq!(
+        toggle_pin(std::slice::from_ref(&orders), items.clone(), true),
+        None
+    );
+    let invalid = PinRecord {
+        kind: "loading".into(),
+        ..items
+    };
+    assert_eq!(toggle_pin(&[orders], invalid, false), None);
+}
+
+#[test]
+fn pins_are_removed_by_identity_or_profile() {
+    let orders = pin("profile-a", "[\"main\",\"orders\"]");
+    let other = pin("profile-b", "[\"main\",\"orders\"]");
+    let pins = vec![orders.clone(), other.clone()];
+    assert_eq!(
+        remove_pin(&pins, &identity_key(&orders)),
+        Some(vec![other.clone()])
+    );
+    assert_eq!(remove_pin(&pins, "missing"), None);
+    assert_eq!(remove_profile_pins(&pins, "profile-b"), Some(vec![orders]));
+    assert_eq!(remove_profile_pins(&pins, "profile-c"), None);
 }

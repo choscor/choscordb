@@ -153,6 +153,7 @@ fn edit_target(target: EditTarget) -> ffi::EditTargetDto {
             .columns
             .into_iter()
             .map(|column| ffi::EditColumnDto {
+                duplicable: column.duplicable(),
                 name: column.name,
                 database_type: column.database_type,
                 nullable: column.nullable,
@@ -252,9 +253,12 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
         } => {
             e.id = pack(connection);
             e.request_token = request_token;
-            e.edit_target = edit_target(query.target);
-            e.edit_source_columns = query.source_columns;
-            e.edit_target.reason = query.reason;
+            let columns = query.aligned_columns();
+            e.edit_target = edit_target(EditTarget {
+                columns,
+                reason: query.reason,
+                ..query.target
+            });
             "edit_query"
         }
         Event::EditQueryFailed {
@@ -711,6 +715,12 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             e.warnings = summary.warnings;
             "query_finished"
         }
+        Event::TransactionState { connection, active } => {
+            e.id = pack(connection);
+            e.has_transaction_state = true;
+            e.transaction_active = active;
+            "transaction_state"
+        }
         Event::QueryFailed { query, error: err } => {
             e.id = pack(query);
             error(&mut e, err);
@@ -732,15 +742,17 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             e.parent = parent.map(|p| p.0).unwrap_or_default();
             e.objects = objects
                 .into_iter()
-                .map(|o| ffi::MetadataDto {
+                .map(|o| (o.column_metadata().cloned(), o))
+                .map(|(metadata, o)| ffi::MetadataDto {
                     id: o.id.0,
                     parent: o.parent.map(|p| p.0).unwrap_or_default(),
                     name: o.name,
                     qualified_name: o.qualified_name,
                     kind: format!("{:?}", o.kind).to_lowercase(),
                     has_children: o.has_children,
-                    has_column: o.column.is_some(),
-                    column: o.column.map(column).unwrap_or_default(),
+                    has_column: metadata.is_some(),
+                    column: metadata.map(column).unwrap_or_default(),
+                    primary_key: choscordb_driver_api::primary_key_column(&o.properties),
                     properties: o
                         .properties
                         .into_iter()

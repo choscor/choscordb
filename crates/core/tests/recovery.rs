@@ -228,45 +228,35 @@ fn bounded_queue_backpressure_and_shutdown_are_nonblocking() {
     assert!(start.elapsed() < Duration::from_secs(1));
 }
 
+fn request_token(event: &Event) -> u64 {
+    match event {
+        Event::WorkspaceSaved { request_token }
+        | Event::WorkspaceRestored { request_token, .. }
+        | Event::HistoryListed { request_token, .. } => *request_token,
+        other => panic!("unexpected recovery event: {other:?}"),
+    }
+}
 #[test]
-fn one_recovery_payload_remains_outstanding_until_response_consumed() {
+fn recovery_requests_wait_in_order_behind_the_outstanding_payload() {
     let mut engine = Engine::new(Default::default(), vec![]).unwrap();
     engine.workspace_save(vec![document()], 1).unwrap();
-    assert_eq!(
-        engine.workspace_save(vec![document()], 2),
-        Err(SubmitError::QueueFull)
-    );
-    assert_eq!(engine.history_list(10, 0, 3), Err(SubmitError::QueueFull));
-    assert!(matches!(
-        event(&mut engine),
-        Event::WorkspaceSaved { request_token: 1 }
-    ));
+    engine.workspace_save(vec![document()], 2).unwrap();
+    engine.history_list(10, 0, 3).unwrap();
     let mut invalid = document();
     invalid.cursor_offset = u64::MAX;
     assert_eq!(
-        engine.workspace_save(vec![invalid], 7),
+        engine.workspace_save(vec![invalid], 4),
         Err(SubmitError::InvalidInput)
     );
-    engine.workspace_restore(4).unwrap();
-    let mut invalid = document();
-    invalid.cursor_offset = u64::MAX;
-    assert_eq!(
-        engine.workspace_save(vec![invalid], 8),
-        Err(SubmitError::QueueFull)
-    );
-    std::thread::sleep(Duration::from_millis(30));
-    assert_eq!(engine.workspace_restore(5), Err(SubmitError::QueueFull));
-    assert!(
-        matches!(event(&mut engine), Event::WorkspaceRestored { documents, .. } if documents == vec![document()])
-    );
-    engine.workspace_restore(6).unwrap();
-    assert!(matches!(
-        event(&mut engine),
-        Event::WorkspaceRestored {
-            request_token: 6,
-            ..
-        }
-    ));
+    for token in 5..11 {
+        engine.workspace_restore(token).unwrap();
+    }
+    // One payload is with the worker and eight wait; the next request is refused.
+    assert_eq!(engine.workspace_restore(11), Err(SubmitError::QueueFull));
+    let answered: Vec<u64> = (0..9).map(|_| request_token(&event(&mut engine))).collect();
+    assert_eq!(answered, [1, 2, 3, 5, 6, 7, 8, 9, 10]);
+    engine.workspace_restore(12).unwrap();
+    assert_eq!(request_token(&event(&mut engine)), 12);
 }
 #[test]
 fn retry_reopens_storage_after_transient_initial_failure() {
@@ -299,4 +289,36 @@ fn retry_reopens_storage_after_transient_initial_failure() {
         event(&mut engine),
         Event::WorkspaceSaved { request_token: 3 }
     ));
+}
+
+#[test]
+fn new_documents_receive_distinct_identities() {
+    let first = choscordb_core::new_document_id();
+    let second = choscordb_core::new_document_id();
+    assert_eq!(first.len(), 36, "{first}");
+    assert_ne!(first, second);
+}
+
+#[test]
+fn object_tab_contexts_round_trip_profiles_and_sessions() {
+    use choscordb_core::{ObjectTabContext, object_tab_context, parse_object_tab_context};
+    assert_eq!(object_tab_context("abc", 7), "profile:abc");
+    assert_eq!(object_tab_context("", 7), "session:7");
+    assert_eq!(
+        parse_object_tab_context("profile:abc"),
+        ObjectTabContext::Profile("abc".into())
+    );
+    assert_eq!(
+        parse_object_tab_context("session:7"),
+        ObjectTabContext::Session(7)
+    );
+    assert_eq!(
+        parse_object_tab_context("profile:"),
+        ObjectTabContext::Unknown
+    );
+    assert_eq!(
+        parse_object_tab_context("session:x"),
+        ObjectTabContext::Unknown
+    );
+    assert_eq!(parse_object_tab_context(""), ObjectTabContext::Unknown);
 }

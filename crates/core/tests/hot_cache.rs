@@ -5,6 +5,13 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+/// Queries that page 100 rows at a time, as these tests fetch.
+fn paged() -> QueryOptions {
+    QueryOptions {
+        page_size: PageSize::new(100).unwrap(),
+        ..QueryOptions::default()
+    }
+}
 fn result(engine: &mut Engine) -> Event {
     let deadline = Instant::now() + Duration::from_secs(4);
     loop {
@@ -37,12 +44,8 @@ fn hot_original_page_survives_disk_corruption() {
             },
         )
         .unwrap();
-    let q = engine
-        .execute(c, "SELECT 73".into(), QueryOptions::default())
-        .unwrap();
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    let q = engine.execute(c, "SELECT 73".into(), paged()).unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     assert!(matches!(result(&mut engine), Event::StoredPage { .. }));
     assert!(engine.cache_usage().resident_bytes > 0);
     let store = std::fs::read_dir(dir.path())
@@ -54,9 +57,7 @@ fn hot_original_page_survives_disk_corruption() {
     for file in std::fs::read_dir(store).unwrap() {
         std::fs::write(file.unwrap().path(), b"broken").unwrap();
     }
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     let event = result(&mut engine);
     assert!(
         matches!(event, Event::StoredPage {first_row: 0, ref page, ..} if page.rows == vec![vec![Value::Integer(73)]]),
@@ -98,10 +99,8 @@ fn pressure_evicts_old_pages_but_preserves_visible_copy_and_disk_fallback() {
             },
         )
         .unwrap();
-    let q = engine.execute(c, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<5000) SELECT x, printf('%0200d', x) FROM c".into(), QueryOptions::default()).unwrap();
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    let q = engine.execute(c, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<5000) SELECT x, printf('%0200d', x) FROM c".into(), paged()).unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     let Event::StoredPage {
         page: visible,
         mut lease,
@@ -112,26 +111,20 @@ fn pressure_evicts_old_pages_but_preserves_visible_copy_and_disk_fallback() {
     };
     lease.shrink_to(visible.estimated_bytes()).unwrap();
     for index in 1..30 {
-        engine
-            .fetch_page_at(q, index, PageSize::new(100).unwrap())
-            .unwrap();
+        engine.fetch_page_at(q, index).unwrap();
         assert!(matches!(result(&mut engine), Event::StoredPage {page, ..} if page.index == index));
     }
     assert_eq!(visible.rows[0][0], Value::Integer(1));
     assert!(engine.cache_usage().resident_bytes > 0);
     assert!(engine.memory_usage().peak_bytes <= 1024 * 1024);
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     assert!(
         matches!(result(&mut engine), Event::StoredPage {first_row: 0, page, ..} if page.rows == visible.rows)
     );
     assert_eq!(engine.cache_usage().misses, 1);
     // Fetch later pages again to evict the reread, then prove a miss really uses disk.
     for index in 1..30 {
-        engine
-            .fetch_page_at(q, index, PageSize::new(100).unwrap())
-            .unwrap();
+        engine.fetch_page_at(q, index).unwrap();
         assert!(matches!(result(&mut engine), Event::StoredPage { .. }));
     }
     let store = std::fs::read_dir(dir.path())
@@ -143,9 +136,7 @@ fn pressure_evicts_old_pages_but_preserves_visible_copy_and_disk_fallback() {
     for file in std::fs::read_dir(store).unwrap() {
         std::fs::write(file.unwrap().path(), b"broken").unwrap();
     }
-    engine
-        .fetch_page_at(q, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
     assert!(
         matches!(result(&mut engine), Event::QueryFailed {error, ..} if error.kind == ErrorKind::Io)
     );
@@ -187,20 +178,16 @@ fn global_cache_reclaims_across_connections_and_cancelled_pages_remain_hot() {
             },
         )
         .unwrap();
-    let q = engine.execute(first, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<5000) SELECT x, printf('%0200d', x) FROM c".into(), QueryOptions::default()).unwrap();
+    let q = engine.execute(first, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<5000) SELECT x, printf('%0200d', x) FROM c".into(), paged()).unwrap();
     for index in 0..25 {
-        engine
-            .fetch_page_at(q, index, PageSize::new(100).unwrap())
-            .unwrap();
+        engine.fetch_page_at(q, index).unwrap();
         assert!(matches!(result(&mut engine), Event::StoredPage { .. }));
     }
     engine.cancel(q).unwrap();
     assert!(
         matches!(result(&mut engine), Event::QueryFailed {error, ..} if error.kind == ErrorKind::Cancelled)
     );
-    engine
-        .fetch_page_at(q, 24, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 24).unwrap();
     assert!(matches!(result(&mut engine), Event::StoredPage {page, ..} if !page.has_more));
     assert_eq!(engine.cache_usage().hits, 1);
     let second = engine
@@ -212,20 +199,16 @@ fn global_cache_reclaims_across_connections_and_cancelled_pages_remain_hot() {
             },
         )
         .unwrap();
-    let other = engine.execute(second, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<5000) SELECT x, printf('%0200d', x) FROM c".into(), QueryOptions::default()).unwrap();
+    let other = engine.execute(second, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<5000) SELECT x, printf('%0200d', x) FROM c".into(), paged()).unwrap();
     for index in 0..25 {
-        engine
-            .fetch_page_at(other, index, PageSize::new(100).unwrap())
-            .unwrap();
+        engine.fetch_page_at(other, index).unwrap();
         assert!(matches!(result(&mut engine), Event::StoredPage { .. }));
     }
     engine.cancel(other).unwrap();
     assert!(
         matches!(result(&mut engine), Event::QueryFailed {error, ..} if error.kind == ErrorKind::Cancelled)
     );
-    engine
-        .fetch_page_at(q, 24, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(q, 24).unwrap();
     assert!(matches!(result(&mut engine), Event::StoredPage {page, ..} if !page.has_more));
     assert_eq!(engine.cache_usage().misses, 1);
     assert!(engine.memory_usage().peak_bytes <= 1024 * 1024);

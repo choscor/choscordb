@@ -1169,7 +1169,7 @@ fn load_inner(db: &Connection, parent: Option<ObjectId>) -> Result<Vec<SchemaObj
                         .map_err(normalize)?
                         .unwrap_or_else(|| "No default".into()),
                 )?;
-                budget.available(&mut obj, "Primary key position", pk)?;
+                budget.available(&mut obj, choscordb_driver_api::PRIMARY_KEY_POSITION, pk)?;
                 budget.available(
                     &mut obj,
                     "Generated",

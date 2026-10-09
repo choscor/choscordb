@@ -49,6 +49,20 @@ impl Command {
         }
     }
 }
+/// Requests that may wait behind the one payload the storage worker holds.
+pub const MAX_WAITING_RECOVERY_REQUESTS: usize = 8;
+const MAX_WAITING_RECOVERY_BYTES: usize = 2 * choscordb_storage::MAX_COLLECTION_BYTES;
+
+/// Recovery requests waiting behind the payload held by the storage worker,
+/// answered in submission order within a count and byte budget.
+#[derive(Default)]
+pub(crate) struct Queue {
+    in_flight: bool,
+    waiting: std::collections::VecDeque<(Command, usize)>,
+    bytes: usize,
+    /// Failures for waiting requests the worker could not accept.
+    failed: std::collections::VecDeque<Event>,
+}
 fn invalid(error: StorageError) -> SubmitError {
     match error {
         StorageError::ResourceLimit => SubmitError::ResourceLimit,
@@ -250,45 +264,70 @@ impl Engine {
     }
     fn submit_recovery(&self, command: Command) -> Result<(), SubmitError> {
         self.ensure_running()?;
-        // One payload across both queues, until the consumer takes its response.
-        self.recovery_pending
-            .compare_exchange(
-                false,
-                true,
-                std::sync::atomic::Ordering::AcqRel,
-                std::sync::atomic::Ordering::Acquire,
-            )
-            .map_err(|_| SubmitError::QueueFull)?;
-        let validation = match &command {
-            Command::SetAppearanceLayout(appearance, _) => appearance.validate(),
-            Command::SetQueryPreferences(preferences, _) => preferences.validate(),
-            Command::SetEditorPreferences(preferences, _) => preferences.validate(),
+        let cost = match &command {
+            Command::SetAppearanceLayout(appearance, _) => appearance.validate().map(|()| 0),
+            Command::SetQueryPreferences(preferences, _) => preferences.validate().map(|()| 0),
+            Command::SetEditorPreferences(preferences, _) => preferences.validate().map(|()| 0),
             Command::Save(documents, _) => choscordb_storage::validate_workspace(documents),
             Command::SaveTabs(snapshot, _) => choscordb_storage::validate_workspace_tabs(snapshot),
             Command::List(limit, offset, _) => {
-                choscordb_storage::validate_history_page(*limit, *offset)
+                choscordb_storage::validate_history_page(*limit, *offset).map(|()| 0)
             }
             Command::Search(query, limit, offset, _) => {
                 choscordb_storage::validate_history_search(query, *limit, *offset)
+                    .map(|()| query.len())
             }
-            Command::SetPolicy(policy, _) => policy.validate(),
-            Command::Record(entry, _) => entry.validate(),
-            _ => Ok(()),
-        };
-        if let Err(error) = validation {
-            self.recovery_pending
-                .store(false, std::sync::atomic::Ordering::Release);
-            return Err(invalid(error));
+            Command::SetPolicy(policy, _) => policy.validate().map(|()| 0),
+            Command::Record(entry, _) => entry.validate().map(|()| 0),
+            _ => Ok(0),
         }
-        if let Err(error) = self
-            .profiles
+        .map_err(invalid)?;
+        let mut queue = self.recovery_queue();
+        if queue.in_flight {
+            if queue.waiting.len() >= MAX_WAITING_RECOVERY_REQUESTS
+                || cost > MAX_WAITING_RECOVERY_BYTES - queue.bytes
+            {
+                return Err(SubmitError::QueueFull);
+            }
+            queue.bytes += cost;
+            queue.waiting.push_back((command, cost));
+            return Ok(());
+        }
+        self.profiles
             .try_send(crate::profiles::Command::Recovery(command))
-        {
-            self.recovery_pending
-                .store(false, std::sync::atomic::Ordering::Release);
-            return Err(crate::map_send(error));
-        }
+            .map_err(crate::map_send)?;
+        queue.in_flight = true;
         Ok(())
+    }
+    fn recovery_queue(&self) -> std::sync::MutexGuard<'_, Queue> {
+        self.recovery
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+    /// Hands the next waiting request to the worker once a response is consumed.
+    pub(crate) fn advance_recovery(&self) {
+        let mut queue = self.recovery_queue();
+        while let Some((command, cost)) = queue.waiting.pop_front() {
+            queue.bytes -= cost;
+            let request_token = command.token();
+            match self
+                .profiles
+                .try_send(crate::profiles::Command::Recovery(command))
+            {
+                Ok(()) => return,
+                Err(error) => queue.failed.push_back(Event::RecoveryFailed {
+                    request_token,
+                    error: DriverError::new(
+                        ErrorKind::Disconnected,
+                        crate::map_send(error).to_string(),
+                    ),
+                }),
+            }
+        }
+        queue.in_flight = false;
+    }
+    pub(crate) fn take_recovery_failure(&self) -> Option<Event> {
+        self.recovery_queue().failed.pop_front()
     }
     pub fn workspace_save(
         &self,
@@ -334,4 +373,38 @@ impl Engine {
     pub fn history_record(&self, entry: HistoryEntry, token: u64) -> Result<(), SubmitError> {
         self.submit_recovery(Command::Record(entry, token))
     }
+}
+
+/// A new identity for an editor document in workspace recovery.
+pub fn new_document_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
+/// Which connection an object tab belongs to, as recovery stores it: a saved
+/// profile, or an unsaved session connection.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ObjectTabContext {
+    Profile(String),
+    Session(u64),
+    Unknown,
+}
+
+pub fn object_tab_context(profile_id: &str, connection: u64) -> String {
+    if profile_id.is_empty() {
+        format!("session:{connection}")
+    } else {
+        format!("profile:{profile_id}")
+    }
+}
+
+pub fn parse_object_tab_context(context: &str) -> ObjectTabContext {
+    if let Some(profile) = context.strip_prefix("profile:")
+        && !profile.is_empty()
+    {
+        return ObjectTabContext::Profile(profile.into());
+    }
+    context
+        .strip_prefix("session:")
+        .and_then(|connection| connection.parse().ok())
+        .map_or(ObjectTabContext::Unknown, ObjectTabContext::Session)
 }

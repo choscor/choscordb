@@ -240,3 +240,93 @@ fn test_and_connect_validate_transient_tls_secret() {
         assert_eq!(submitted.error, "Credential exceeds the supported size");
     }
 }
+
+#[test]
+fn draft_validation_names_the_form_field_or_reports_the_profile_error() {
+    let none = ffi::ProfileSecretDraftsDto::default();
+    let mut host = draft();
+    host.host = "user@db".into();
+    let error = profile_draft_validate(host, &none);
+    assert_eq!(error.field, "host");
+    assert!(!error.message.is_empty());
+
+    let mut advanced = draft();
+    advanced.ssh_enabled = true;
+    advanced.ssh_host = "ssh.example".into();
+    advanced.ssh_port = 22;
+    advanced.ssh_user = "alice".into();
+    advanced.ssh_authentication = "agent".into();
+    advanced.ssh_options = r#"{"local_port":5433}"#.into();
+    let error = profile_draft_validate(advanced, &none);
+    assert_eq!(error.field, "");
+    assert!(
+        error.message.contains("no longer supported"),
+        "{}",
+        error.message
+    );
+
+    let valid = profile_draft_validate(draft(), &none);
+    assert_eq!((valid.field.as_str(), valid.message.as_str()), ("", ""));
+}
+
+#[test]
+fn draft_credentials_follow_save_choice_and_transport() {
+    let mut profile = draft();
+    profile.credential_ref = "saved-db".into();
+    let typed = ffi::ProfileSecretDraftsDto {
+        save_credentials: true,
+        tls: "identity".into(),
+        tls_modified: true,
+        ssh: "unused".into(),
+        ssh_modified: true,
+        ..Default::default()
+    };
+    let saved = profile_draft_credentials(&profile, &typed, true);
+    assert_eq!(saved.database_action, "keep");
+    assert_eq!(
+        (saved.tls_action.as_str(), saved.tls.as_str()),
+        ("replace", "identity")
+    );
+    // SSH is disabled, so its typed secret is neither stored nor sent.
+    assert_eq!(
+        (saved.ssh_action.as_str(), saved.ssh.as_str()),
+        ("clear", "")
+    );
+
+    let unchecked = ffi::ProfileSecretDraftsDto {
+        save_credentials: false,
+        ..typed
+    };
+    let saved = profile_draft_credentials(&profile, &unchecked, true);
+    assert_eq!(saved.database_action, "clear");
+    assert_eq!(saved.tls_action, "clear");
+
+    let tested = profile_draft_credentials(&profile, &unchecked, false);
+    assert!(tested.has_tls && !tested.has_ssh && !tested.has_database);
+    assert_eq!(tested.tls, "identity");
+}
+
+#[test]
+fn saving_a_profile_fills_the_fields_its_caller_left_empty() {
+    let mut engine = new_engine();
+    let profile = ffi::ProfileDto {
+        id: "partial".into(),
+        name: "Partial server".into(),
+        driver: "mysql".into(),
+        ..Default::default()
+    };
+    let submitted = profile_save(&mut engine, profile, 74);
+    assert!(submitted.accepted, "{}", submitted.error);
+    let saved = event(&mut engine).profiles.pop().unwrap();
+    assert_eq!(saved.host, "localhost");
+    assert_eq!(saved.port, 3306);
+    assert_eq!(saved.tls, "prefer");
+}
+
+#[test]
+fn draft_validation_reports_a_cleared_host_instead_of_defaulting_it() {
+    let none = ffi::ProfileSecretDraftsDto::default();
+    let mut cleared = draft();
+    cleared.host.clear();
+    assert_eq!(profile_draft_validate(cleared, &none).field, "host");
+}

@@ -134,7 +134,7 @@ fn query_pages_and_manual_transactions_are_sequential() {
     let q = engine
         .execute(c, "first".into(), QueryOptions::default())
         .unwrap();
-    engine.fetch_page(q, PageSize::default()).unwrap();
+    engine.fetch_page(q).unwrap();
     engine.commit(c).unwrap();
     engine.rollback(c).unwrap();
     wait_for(&mut engine, |e| {
@@ -302,7 +302,7 @@ fn completed_cursor_keeps_deferred_values_until_released() {
     let q = engine
         .execute(c, "first".into(), QueryOptions::default())
         .unwrap();
-    engine.fetch_page(q, PageSize::default()).unwrap();
+    engine.fetch_page(q).unwrap();
     wait_for(
         &mut engine,
         |e| matches!(e, Event::QueryFinished { query, .. } if *query == q),
@@ -401,4 +401,13 @@ fn metadata_refresh_and_sibling_results_preserve_request_identity_on_success_and
             }
         )
     });
+}
+
+#[test]
+fn full_command_queues_tell_the_user_to_retry() {
+    let message = choscordb_core::SubmitError::QueueFull.to_string();
+    assert!(
+        message.contains("retry after pending requests finish"),
+        "{message}"
+    );
 }

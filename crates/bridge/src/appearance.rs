@@ -7,6 +7,11 @@ fn theme(value: &str) -> Result<ThemeMode, String> {
     ThemeMode::parse_choice(value).ok_or_else(|| "Unknown appearance theme".into())
 }
 
+/// The layout the desktop applies when nothing is saved and on "Reset layout".
+pub fn appearance_layout_default() -> ffi::AppearanceLayoutDto {
+    dto(AppearanceLayout::default())
+}
+
 pub fn appearance_theme_valid(value: &str) -> bool {
     ThemeMode::parse_choice(value).is_some()
 }

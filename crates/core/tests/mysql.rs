@@ -7,6 +7,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Queries that page 100 rows at a time, as these tests fetch.
+fn paged() -> QueryOptions {
+    QueryOptions {
+        page_size: PageSize::new(100).unwrap(),
+        ..QueryOptions::default()
+    }
+}
 fn until(engine: &mut Engine, predicate: impl Fn(&Event) -> bool) -> Event {
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
@@ -72,7 +79,7 @@ fn mysql_profile_connects_streams_typed_rows_and_disconnects_through_engine() {
     );
     let query = engine.execute(connection,
         "SELECT 42 AS answer, 'hello' AS greeting, NULL AS absent UNION ALL SELECT 7, 'goodbye', NULL".into(),
-        QueryOptions::default()).unwrap();
+        paged()).unwrap();
     let Event::Schema { columns, .. } = until(
         &mut engine,
         |event| matches!(event, Event::Schema { query: id, .. } if *id == query),
@@ -86,9 +93,7 @@ fn mysql_profile_connects_streams_typed_rows_and_disconnects_through_engine() {
             .collect::<Vec<_>>(),
         ["answer", "greeting", "absent"]
     );
-    engine
-        .fetch_page(query, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page(query).unwrap();
     let Event::Page { page, .. } = until(
         &mut engine,
         |event| matches!(event, Event::Page { query: id, .. } if *id == query),
@@ -153,7 +158,7 @@ fn cancelling_slow_mysql_object_is_prompt_and_preserves_main_session() {
     runtime
         .block_on(setup.execute(
             &format!("CREATE VIEW `{view}` AS SELECT SLEEP(30) AS sleeping_value"),
-            QueryOptions::default(),
+            paged(),
         ))
         .unwrap();
     let mut engine = Engine::new(Default::default(), vec![Arc::new(MysqlDriver::new())]).unwrap();
@@ -165,16 +170,14 @@ fn cancelling_slow_mysql_object_is_prompt_and_preserves_main_session() {
         .open_object_data(
             connection,
             ObjectId(format!(r#"["choscordb_test","{view}"]"#)),
-            QueryOptions::default(),
+            paged(),
         )
         .unwrap();
     until(
         &mut engine,
         |event| matches!(event, Event::QueryState { query: id, state: QueryState::Running } if *id == query),
     );
-    engine
-        .fetch_page(query, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page(query).unwrap();
     std::thread::sleep(Duration::from_millis(100));
     let started = Instant::now();
     engine.cancel(query).unwrap();
@@ -191,15 +194,13 @@ fn cancelling_slow_mysql_object_is_prompt_and_preserves_main_session() {
         std::thread::sleep(Duration::from_millis(1));
     }
     let query = engine
-        .execute(connection, "SELECT 29".into(), QueryOptions::default())
+        .execute(connection, "SELECT 29".into(), paged())
         .unwrap();
     until(
         &mut engine,
         |event| matches!(event, Event::Schema { query: id, .. } if *id == query),
     );
-    engine
-        .fetch_page(query, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page(query).unwrap();
     let Event::Page { page, .. } = until(
         &mut engine,
         |event| matches!(event, Event::Page { query: id, .. } if *id == query),
@@ -219,7 +220,7 @@ fn cancelling_slow_mysql_object_is_prompt_and_preserves_main_session() {
         }
     }
     runtime
-        .block_on(setup.execute(&format!("DROP VIEW `{view}`"), QueryOptions::default()))
+        .block_on(setup.execute(&format!("DROP VIEW `{view}`"), paged()))
         .unwrap();
     runtime.block_on(setup.close()).unwrap();
 }
@@ -265,7 +266,7 @@ fn mysql_script_results_advance_with_new_schema_and_pages() {
             "SELECT 11 AS first_answer; SELECT 'second' AS second_answer".into(),
             QueryOptions {
                 timeout: Some(Duration::from_secs(1)),
-                ..Default::default()
+                ..paged()
             },
         )
         .unwrap();
@@ -274,9 +275,7 @@ fn mysql_script_results_advance_with_new_schema_and_pages() {
         unreachable!()
     };
     assert_eq!(columns[0].name, "first_answer");
-    engine
-        .fetch_page_at(query, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
     let Event::StoredPage { page, .. } =
         until(&mut engine, |e| matches!(e, Event::StoredPage { .. }))
     else {
@@ -296,9 +295,7 @@ fn mysql_script_results_advance_with_new_schema_and_pages() {
         unreachable!()
     };
     assert_eq!(columns[0].name, "second_answer");
-    engine
-        .fetch_page_at(query, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
     let Event::StoredPage { page, .. } =
         until(&mut engine, |e| matches!(e, Event::StoredPage { .. }))
     else {

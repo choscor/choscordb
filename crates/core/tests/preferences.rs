@@ -18,10 +18,18 @@ fn preferences_are_correlated_gated_and_survive_restart() {
     };
     let mut engine = Engine::new(config.clone(), vec![]).unwrap();
     engine.editor_preferences_get(1).unwrap();
-    assert_eq!(engine.workspace_restore(2), Err(SubmitError::QueueFull));
+    // A second request waits behind the outstanding one and is answered in order.
+    engine.workspace_restore(2).unwrap();
     assert!(
         matches!(event(&mut engine),Event::EditorPreferences{request_token:1,preferences} if preferences==EditorPreferences::default())
     );
+    assert!(matches!(
+        event(&mut engine),
+        Event::WorkspaceRestored {
+            request_token: 2,
+            ..
+        }
+    ));
     let expected = EditorPreferences {
         font_size: 22,
         ..Default::default()

@@ -169,7 +169,7 @@ fn apply_edit_batch(db: &Db, batch: EditBatch) -> Result<EditBatchSummary> {
     if !db.is_autocommit() {
         return Err(DriverError::new(
             ErrorKind::InvalidInput,
-            "Commit or roll back the active transaction before applying edits",
+            choscordb_driver_api::EDITS_NEED_NO_TRANSACTION,
         ));
     }
     let mut affected_rows = Vec::with_capacity(batch.statements.len());

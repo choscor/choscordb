@@ -185,7 +185,6 @@ fn apply(engine: &mut choscordb_core::Engine, query: Handle, predicate: &str) {
                 value: Some(Value::Text(predicate.into())),
             }],
             None,
-            PageSize::new(100).unwrap(),
         )
         .unwrap();
 }
@@ -337,9 +336,7 @@ fn safe_clicked_cell_does_not_hide_later_unsafe_rows() {
     let expression = predicate("amount", &Value::Decimal("2.5".into()), Operator::Equals).unwrap();
     apply(&mut engine, query, &expression);
     assert!(failed_view(&mut engine).message.contains("precision"));
-    engine
-        .fetch_page_at(query, 0, PageSize::new(100).unwrap())
-        .unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
     assert!(
         matches!(event(&mut engine, |event| matches!(event, Event::StoredPage { .. })), Event::StoredPage { page, .. } if page.rows.len() == 2)
     );
@@ -369,9 +366,7 @@ fn quick_filter_composition_retains_sql_expression_truth() {
         event(&mut engine, |event| {
             matches!(event, Event::ResultViewApplied { rows: 1, .. })
         });
-        engine
-            .fetch_page_at(query, 0, PageSize::new(100).unwrap())
-            .unwrap();
+        engine.fetch_page_at(query, 0).unwrap();
         let Event::StoredPage { page, .. } = event(&mut engine, |event| {
             matches!(event, Event::StoredPage { .. })
         }) else {

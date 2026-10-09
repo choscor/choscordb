@@ -63,7 +63,7 @@ impl Memory {
         self.state.lock().unwrap().usage
     }
     pub async fn acquire(self: &Arc<Self>, query: QueryId, source: bool) -> PageLease {
-        let bytes = self.raw_limit() * if source { 8 } else { 16 } + 256;
+        let bytes = self.raw_limit() * if source { 8 } else { 16 } + LEASE_BOOKKEEPING_BYTES;
         loop {
             // Register before checking bookkeeping: release cannot be lost between
             // the capacity check and awaiting the notification.
@@ -145,6 +145,16 @@ impl Memory {
         self.changed.notify_waiters();
     }
 }
+/// Bytes every page lease keeps for bookkeeping beyond its payload.
+pub const LEASE_BOOKKEEPING_BYTES: usize = 256;
+
+/// Whether a lease of `reserved_bytes` can hold `payload_bytes` plus its bookkeeping.
+pub fn lease_fits(reserved_bytes: u64, payload_bytes: u64) -> bool {
+    payload_bytes
+        .checked_add(LEASE_BOOKKEEPING_BYTES as u64)
+        .is_some_and(|bytes| bytes <= reserved_bytes)
+}
+
 /// Ownership of reserved result memory. Keep with its payload until it is freed.
 /// This is intentionally neither Copy nor Clone.
 pub struct PageLease {
@@ -157,12 +167,15 @@ impl PageLease {
     pub fn reserved_bytes(&self) -> usize {
         self.bytes
     }
-    /// Release unused conversion capacity; retains 256 bytes of bookkeeping.
+    /// Release unused conversion capacity; retains the lease bookkeeping bytes.
     pub fn shrink_to(&mut self, payload_bytes: usize) -> Result<()> {
-        let bytes = payload_bytes
-            .checked_add(256)
-            .filter(|bytes| *bytes <= self.bytes)
-            .ok_or_else(|| DriverError::new(ErrorKind::ResourceLimit, "page lease cannot grow"))?;
+        if !lease_fits(self.bytes as u64, payload_bytes as u64) {
+            return Err(DriverError::new(
+                ErrorKind::ResourceLimit,
+                "page lease cannot grow",
+            ));
+        }
+        let bytes = payload_bytes + LEASE_BOOKKEEPING_BYTES;
         self.memory
             .release(self.query, self.bytes - bytes, self.source);
         self.bytes = bytes;

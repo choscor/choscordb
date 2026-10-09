@@ -1,6 +1,6 @@
 use choscordb_driver_api::{
-    GridEditColumn, GridEditDriver, GridEditError, GridEditRequest, GridEditRow, Handle, Value,
-    grid_editability, plan_grid_edits,
+    GridCellKind, GridEditColumn, GridEditDriver, GridEditError, GridEditRequest, GridEditRow,
+    Handle, MAX_PAGE_SIZE, Value, grid_editability, grid_row_insert_error, plan_grid_edits,
 };
 
 fn column(name: &str, database_type: &str, key: bool) -> GridEditColumn {
@@ -364,4 +364,128 @@ fn mismatched_shapes_and_untrusted_table_names_never_make_sql() {
         GridEditError::InvalidIdentifier
     );
     assert!(!grid_editability(&invalid).can_insert);
+}
+
+#[test]
+fn review_text_lists_each_statement_with_its_bound_values() {
+    use choscordb_driver_api::{EditStatement, GridEditPlan, PlannedGridEdit, review_text};
+    let planned = |sql: &str, params: Vec<Value>| PlannedGridEdit {
+        statement: EditStatement {
+            sql: sql.into(),
+            params,
+            expected_rows: Some(1),
+        },
+        parameter_types: vec![],
+    };
+    let plan = GridEditPlan {
+        statements: vec![
+            planned(
+                "UPDATE t SET a = ?, b = ?, c = ? WHERE id = ?",
+                vec![
+                    Value::Text("say \"hi\"\\\nbye".into()),
+                    Value::Null,
+                    Value::Binary(vec![0xab, 0x01]),
+                    Value::Integer(7),
+                ],
+            ),
+            planned(
+                "DELETE FROM t WHERE d = ? AND r = ? AND f = ?",
+                vec![
+                    Value::Date("2024-02-29".into()),
+                    Value::Real(0.1234567891),
+                    Value::Bool(false),
+                ],
+            ),
+        ],
+    };
+    assert_eq!(
+        review_text(&plan),
+        "UPDATE t SET a = ?, b = ?, c = ? WHERE id = ?\n\
+         \x20 Parameter 1: text \"say \\\"hi\\\"\\\\\\nbye\"\n\
+         \x20 Parameter 2: NULL\n\
+         \x20 Parameter 3: binary 0xab01 (2 bytes)\n\
+         \x20 Parameter 4: 7\n\
+         \n\
+         DELETE FROM t WHERE d = ? AND r = ? AND f = ?\n\
+         \x20 Parameter 1: date \"2024-02-29\"\n\
+         \x20 Parameter 2: 0.1234567891\n\
+         \x20 Parameter 3: false\n\
+         \n"
+    );
+}
+
+#[test]
+fn only_complete_values_edit_inline_and_partial_rows_cannot_be_copied_or_deleted() {
+    let value = GridCellKind::Value.policy();
+    assert!(value.inline_editable && !value.blocks_row_delete && !value.blocks_row_duplicate);
+    for kind in [GridCellKind::Binary, GridCellKind::Deferred] {
+        let policy = kind.policy();
+        assert!(!policy.inline_editable, "{kind:?}");
+        assert!(
+            !policy.blocks_row_delete && !policy.blocks_row_duplicate,
+            "{kind:?}"
+        );
+    }
+    assert!(GridCellKind::Deferred.policy().duplicate_requires_load);
+    assert!(!GridCellKind::Binary.policy().duplicate_requires_load);
+    for kind in [GridCellKind::FallbackText, GridCellKind::Unavailable] {
+        let policy = kind.policy();
+        assert!(!policy.inline_editable && policy.blocks_row_delete && policy.blocks_row_duplicate);
+    }
+}
+
+#[test]
+fn staged_rows_stop_at_the_page_size_limit() {
+    let full = MAX_PAGE_SIZE as usize;
+    assert_eq!(grid_row_insert_error(full - 1), None);
+    assert!(grid_row_insert_error(full).is_some());
+}
+
+#[test]
+fn edit_query_columns_follow_the_result_order() {
+    use choscordb_driver_api::{EditColumn, EditQueryTarget, EditTarget};
+    let column = |name: &str, key: bool| EditColumn {
+        name: name.into(),
+        database_type: "INTEGER".into(),
+        nullable: false,
+        generated: false,
+        key,
+    };
+    let query = EditQueryTarget {
+        target: EditTarget {
+            columns: vec![column("id", true), column("name", false)],
+            ..Default::default()
+        },
+        source_columns: vec!["name".into(), "total".into(), "id".into()],
+        reason: String::new(),
+    };
+    let aligned = query.aligned_columns();
+    let summary: Vec<_> = aligned
+        .iter()
+        .map(|column| (column.name.as_str(), column.key, column.generated))
+        .collect();
+    assert_eq!(
+        summary,
+        vec![
+            ("name", false, false),
+            ("total", false, true),
+            ("id", true, false)
+        ]
+    );
+}
+
+#[test]
+fn duplicated_rows_copy_only_plain_named_columns() {
+    use choscordb_driver_api::EditColumn;
+    let column = |name: &str, key: bool, generated: bool| EditColumn {
+        name: name.into(),
+        database_type: "INTEGER".into(),
+        nullable: true,
+        generated,
+        key,
+    };
+    assert!(column("name", false, false).duplicable());
+    assert!(!column("id", true, false).duplicable());
+    assert!(!column("total", false, true).duplicable());
+    assert!(!column("", false, false).duplicable());
 }

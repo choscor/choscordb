@@ -19,6 +19,13 @@ mod ssh_identity;
 mod ssh_local;
 mod ssh_options;
 mod ssh_process;
+mod transaction;
+mod workflow;
+pub use transaction::{
+    AUTO_COMMIT_NEEDS_NO_TRANSACTION, EDITS_NEED_NO_TRANSACTION, TransactionGuard,
+    transaction_guard,
+};
+pub use workflow::{DriverWorkflow, driver_workflow};
 mod ssh_proxy;
 mod ssh_shared;
 mod ssh_trust;
@@ -34,8 +41,13 @@ pub use edit_value::*;
 pub use error::*;
 pub use foreign_key_filter::*;
 pub use grid_edit::*;
+mod object_kind;
 pub use ids::*;
 pub use metadata_policy::*;
+pub use object_kind::{
+    NAVIGATOR_SEARCH_BUDGET, NavigatorSearchBudget, ObjectKindTraits, object_kind_traits,
+    sidebar_child_visible,
+};
 pub use options::*;
 pub use socks::*;
 pub use sqlite_uri::*;

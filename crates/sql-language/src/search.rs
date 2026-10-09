@@ -20,13 +20,19 @@ pub enum SearchError {
     EmptyPattern,
     InvalidOffset,
     ResourceLimit,
+    DocumentTooLarge,
+    PatternTooLarge,
+    OutputTooLarge,
 }
 impl fmt::Display for SearchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::EmptyPattern => "Search text is empty",
+            Self::EmptyPattern => "Enter text to find.",
             Self::InvalidOffset => "Search offset is invalid",
             Self::ResourceLimit => "Search operation exceeds resource limits",
+            Self::DocumentTooLarge => "Search supports documents up to 16 MiB.",
+            Self::PatternTooLarge => "Search text exceeds 16 KiB.",
+            Self::OutputTooLarge => "Replacement output exceeds 16 MiB.",
         })
     }
 }
@@ -43,26 +49,71 @@ impl fmt::Debug for Replacement {
             .finish()
     }
 }
+/// Whether `needle` is a searchable pattern (nonempty and within the pattern limit).
+pub fn pattern_usable(needle: &str) -> bool {
+    !needle.is_empty() && needle.len() <= MAX_SEARCH_PATTERN_BYTES
+}
+/// Whether replacing `removed` bytes of a `document`-byte source with `added`
+/// bytes stays within the editable document limit.
+pub fn replacement_fits(document: usize, removed: usize, added: usize) -> bool {
+    document
+        .checked_sub(removed)
+        .and_then(|kept| kept.checked_add(added))
+        .is_some_and(|size| size <= MAX_SEARCH_SOURCE_BYTES)
+}
+/// A literal search compiled once and run against many sources.
+#[derive(Clone, Debug)]
+pub struct TextFinder {
+    regex: Regex,
+}
+
+impl TextFinder {
+    pub fn new(needle: &str, options: SearchOptions) -> Result<Self, SearchError> {
+        if needle.len() > MAX_SEARCH_PATTERN_BYTES {
+            return Err(SearchError::PatternTooLarge);
+        }
+        if needle.is_empty() {
+            return Err(SearchError::EmptyPattern);
+        }
+        let literal = regex::escape(needle);
+        let pattern = if options.whole_word {
+            format!(r"\b(?:{literal})\b")
+        } else {
+            literal
+        };
+        let regex = RegexBuilder::new(&pattern)
+            .case_insensitive(!options.case_sensitive)
+            .unicode(true)
+            .size_limit(REGEX_BYTES)
+            .dfa_size_limit(REGEX_BYTES)
+            .build()
+            .map_err(|_| SearchError::ResourceLimit)?;
+        Ok(Self { regex })
+    }
+
+    /// Up to `limit` nonoverlapping matches in `source`.
+    pub fn find_all(
+        &self,
+        source: &str,
+        limit: usize,
+    ) -> Result<Vec<std::ops::Range<usize>>, SearchError> {
+        if source.len() > MAX_SEARCH_SOURCE_BYTES {
+            return Err(SearchError::DocumentTooLarge);
+        }
+        Ok(self
+            .regex
+            .find_iter(source)
+            .take(limit)
+            .map(|found| found.range())
+            .collect())
+    }
+}
+
 fn matcher(source: &str, needle: &str, options: SearchOptions) -> Result<Regex, SearchError> {
-    if source.len() > MAX_SEARCH_SOURCE_BYTES || needle.len() > MAX_SEARCH_PATTERN_BYTES {
-        return Err(SearchError::ResourceLimit);
+    if source.len() > MAX_SEARCH_SOURCE_BYTES {
+        return Err(SearchError::DocumentTooLarge);
     }
-    if needle.is_empty() {
-        return Err(SearchError::EmptyPattern);
-    }
-    let literal = regex::escape(needle);
-    let pattern = if options.whole_word {
-        format!(r"\b(?:{literal})\b")
-    } else {
-        literal
-    };
-    RegexBuilder::new(&pattern)
-        .case_insensitive(!options.case_sensitive)
-        .unicode(true)
-        .size_limit(REGEX_BYTES)
-        .dfa_size_limit(REGEX_BYTES)
-        .build()
-        .map_err(|_| SearchError::ResourceLimit)
+    TextFinder::new(needle, options).map(|finder| finder.regex)
 }
 /// Forward starts at `start_byte` inclusively. Backward searches for a match
 /// ending at or before it. Both directions wrap once; backward includes
@@ -131,6 +182,18 @@ pub fn find(
     }
     Ok(Some(found))
 }
+/// Up to `limit` nonoverlapping matches in source order, as byte ranges.
+pub fn find_all(
+    source: &str,
+    needle: &str,
+    options: SearchOptions,
+    limit: usize,
+) -> Result<Vec<std::ops::Range<usize>>, SearchError> {
+    if source.len() > MAX_SEARCH_SOURCE_BYTES {
+        return Err(SearchError::DocumentTooLarge);
+    }
+    TextFinder::new(needle, options)?.find_all(source, limit)
+}
 /// Replaces nonoverlapping matches in the immutable input. Preflights the exact
 /// output length before allocation and never stores a match vector or rescans
 /// replacement text. Replacement syntax is entirely literal (including `$`).
@@ -151,7 +214,7 @@ pub fn replace_all(
         .checked_mul(replacement.len())
         .and_then(|added| (source.len() - removed).checked_add(added))
         .filter(|size| *size <= MAX_SEARCH_SOURCE_BYTES)
-        .ok_or(SearchError::ResourceLimit)?;
+        .ok_or(SearchError::OutputTooLarge)?;
     let mut text = String::with_capacity(size);
     let mut previous = 0;
     for m in regex.find_iter(source) {

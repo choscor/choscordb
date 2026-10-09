@@ -29,7 +29,7 @@ fn typed_transport_connects_and_streams_sqlite_without_json() {
     assert!(query.accepted, "{}", query.error);
     let schema = await_event(&mut engine, "schema");
     assert_eq!(schema.columns.len(), 4);
-    assert!(fetch_page(&mut engine, query.id, 1000).accepted);
+    assert!(fetch_page(&mut engine, query.id).accepted);
     let page = await_event(&mut engine, "page");
     assert_eq!(page.row_count, 1);
     assert_eq!(page.column_count, 4);
@@ -67,14 +67,13 @@ fn result_view_commands_transport_typed_filters_sort_pages_and_clear() {
         }],
         0,
         "ascending",
-        100,
     );
     assert!(applied.accepted, "{}", applied.error);
     assert_eq!(
         await_event(&mut engine, "result_view_applied").result_view_rows,
         106
     );
-    assert!(fetch_page_at(&mut engine, query.id, 1, 100).accepted);
+    assert!(fetch_page_at(&mut engine, query.id, 1).accepted);
     let page = await_event(&mut engine, "stored_page");
     assert_eq!(page.first_row, 100);
     assert_eq!(page.cells[0].text, "row101");
@@ -96,7 +95,6 @@ fn result_view_commands_transport_typed_filters_sort_pages_and_clear() {
         }],
         0,
         "",
-        100,
     );
     assert!(!invalid.accepted);
 }
@@ -104,10 +102,10 @@ fn result_view_commands_transport_typed_filters_sort_pages_and_clear() {
 fn invalid_inputs_return_outcomes_and_utf8_ranges_remain_bytes() {
     let mut engine = new_engine();
     assert!(!execute(&mut engine, u64::MAX, "SELECT 1", 1, 0, true).accepted);
-    let result = sql_execution_range("SELECT 'é'; SELECT 2", 15, 0, 0);
+    let result = sql_execution_range("SELECT 'é'; SELECT 2", 15, 0, 0, "sqlite", "");
     assert!(result.valid);
     assert_eq!(result.start, 13);
-    assert!(sql_execution_range("DELETE FROM users", 0, 0, 0).confirmation_required);
+    assert!(sql_execution_range("DELETE FROM users", 0, 0, 0, "sqlite", "").confirmation_required);
 }
 
 #[test]
@@ -195,7 +193,7 @@ fn transfer_leases_remain_accounted_until_explicit_release() {
         "schema allocations need a transferred reservation"
     );
     assert!(shrink_page_lease(&mut engine, schema.lease_id, 1024).accepted);
-    assert!(fetch_page_at(&mut engine, q.id, 0, 1000).accepted);
+    assert!(fetch_page_at(&mut engine, q.id, 0).accepted);
     let page = await_event(&mut engine, "stored_page");
     assert!(page.has_lease);
     let before = memory_usage(&engine).used_bytes;
@@ -228,7 +226,7 @@ fn deferred_chunks_transport_bytes_offsets_errors_and_leases() {
     assert!(q.accepted);
     let schema = await_event(&mut engine, "schema");
     assert!(release_page_lease(&mut engine, schema.lease_id).accepted);
-    assert!(fetch_page_at(&mut engine, q.id, 0, 1000).accepted);
+    assert!(fetch_page_at(&mut engine, q.id, 0).accepted);
     let page = await_event(&mut engine, "stored_page");
     let handle = page.cells[0].handle;
     let page_lease = page.lease_id;
@@ -275,16 +273,16 @@ fn export_transport_publishes_original_rows_and_retires_handle() {
     assert!(q.accepted);
     let schema = await_event(&mut engine, "schema");
     assert!(release_page_lease(&mut engine, schema.lease_id).accepted);
-    assert!(fetch_page_at(&mut engine, q.id, 0, 1000).accepted);
+    assert!(fetch_page_at(&mut engine, q.id, 0).accepted);
     let page = await_event(&mut engine, "stored_page");
     assert!(release_page_lease(&mut engine, page.lease_id).accepted);
-    let job = start_export(
+    let job = start_export_dialect(
         &mut engine,
         q.id,
         destination.to_str().unwrap(),
         "csv",
         vec![],
-        false,
+        "sqlite",
     );
     assert!(job.accepted, "{}", job.error);
     let done = await_event(&mut engine, "export_finished");
@@ -328,15 +326,14 @@ fn saved_profile_transport_persists_and_tests_without_creating_session() {
     let profile = list.profiles.pop().unwrap();
     assert!(profile_test(&mut engine, profile, 44).accepted);
     assert_eq!(await_event(&mut engine, "profile_tested").request_token, 44);
-    assert!(profile_duplicate(&mut engine, "local", "copy", "Copy", 45).accepted);
-    assert_eq!(
-        await_event(&mut engine, "profile_saved").profiles[0].id,
-        "copy"
-    );
-    assert!(profile_delete(&mut engine, "copy", 46).accepted);
+    assert!(profile_duplicate(&mut engine, "local", "Local", 45).accepted);
+    let copy = await_event(&mut engine, "profile_saved").profiles.remove(0);
+    assert_eq!(copy.name, "Local copy");
+    assert!(!copy.id.is_empty() && copy.id != "local");
+    assert!(profile_delete(&mut engine, &copy.id, 46).accepted);
     assert_eq!(
         await_event(&mut engine, "profile_deleted").profile_id,
-        "copy"
+        copy.id
     );
 }
 
@@ -756,7 +753,7 @@ fn postgres_ssh_profile_survives_save_reload_and_duplicate() {
         assert!(saved.profiles[0].ssh_enabled);
     }
     let mut engine = new_engine_with_storage(path);
-    assert!(profile_duplicate(&mut engine, "ssh", "copy", "Copy", 81).accepted);
+    assert!(profile_duplicate(&mut engine, "ssh", "Copy", 81).accepted);
     let saved = await_event(&mut engine, "profile_saved");
     let profile = &saved.profiles[0];
     assert!(profile.ssh_enabled);
@@ -834,7 +831,7 @@ fn mysql_bridge_rejects_invalid_ssh_and_invalid_tls() {
 #[test]
 fn mysql_sql_ranges_keep_escaped_quote_and_hash_comment_in_statement() {
     let sql = "SELECT 'it\\'s; intact'; # comment;\nDELETE FROM items";
-    let selected = sql_execution_range_mysql(sql, 0, 0, 0);
+    let selected = sql_execution_range(sql, 0, 0, 0, "MySQL", "");
     assert!(selected.valid);
     assert_eq!(
         &sql[selected.start as usize..selected.end as usize],
@@ -842,10 +839,27 @@ fn mysql_sql_ranges_keep_escaped_quote_and_hash_comment_in_statement() {
     );
     // The shared grammar conservatively confirms dialect-specific escaped strings.
     assert!(selected.confirmation_required);
-    assert!(!sql_execution_range_mysql("SELECT 1", 0, 0, 0).confirmation_required);
-    let selected = sql_execution_range_mysql(sql, sql.len() as u64, 0, 0);
+    assert!(!sql_execution_range("SELECT 1", 0, 0, 0, "mysql", "").confirmation_required);
+    let selected = sql_execution_range(sql, sql.len() as u64, 0, 0, "mysql", "");
     assert!(selected.valid);
     assert!(selected.confirmation_required);
+}
+
+#[test]
+fn execution_ranges_follow_the_connection_dialect() {
+    let sql = "SELECT 1 # note;\nFROM dual; SELECT 2;";
+    let mysql = sql_execution_range(sql, 0, 0, 0, "mysql", "");
+    assert!(mysql.valid);
+    assert_eq!(
+        &sql[mysql.start as usize..mysql.end as usize],
+        "SELECT 1 # note;\nFROM dual;"
+    );
+    let sqlite = sql_execution_range(sql, 0, 0, 0, "sqlite", "");
+    assert!(sqlite.valid);
+    assert_eq!(
+        &sql[sqlite.start as usize..sqlite.end as usize],
+        "SELECT 1 # note;"
+    );
 }
 
 #[test]
@@ -866,8 +880,8 @@ fn export_dialect_rejects_unknown_names() {
 #[test]
 fn mysql_sql_mode_crosses_editor_bridge() {
     let sql = "SELECT 'a\\'; SELECT 2;";
-    let default = sql_execution_range_mysql(sql, 16, 0, 0);
-    let mode = sql_execution_range_mysql_mode(sql, 16, 0, 0, "NO_BACKSLASH_ESCAPES");
+    let default = sql_execution_range(sql, 16, 0, 0, "mysql", "");
+    let mode = sql_execution_range(sql, 16, 0, 0, "mysql", "NO_BACKSLASH_ESCAPES");
     assert!(mode.valid);
     assert_eq!(&sql[mode.start as usize..mode.end as usize], "SELECT 2;");
     assert!(!default.valid || default.start != mode.start || default.end != mode.end);
@@ -948,7 +962,6 @@ fn result_filters_accept_sql_patterns_and_literal_lists() {
             }],
             0,
             "",
-            100,
         );
         assert!(applied.accepted, "{operation}: {}", applied.error);
         assert_eq!(
@@ -958,4 +971,185 @@ fn result_filters_accept_sql_patterns_and_literal_lists() {
         );
     }
     assert!(shutdown(&mut engine).accepted);
+}
+
+#[test]
+fn sql_highlight_spans_use_utf16_offsets_for_qt_text() {
+    let spans = sql_highlight_spans("SELECT 'é', 1 -- 😀\nNULL");
+    let found: Vec<_> = spans.iter().map(|s| (s.start, s.length, s.kind)).collect();
+    assert_eq!(
+        found,
+        [
+            (0, 6, ffi::SqlHighlightKind::Keyword),
+            (7, 3, ffi::SqlHighlightKind::String),
+            (12, 1, ffi::SqlHighlightKind::Number),
+            (14, 5, ffi::SqlHighlightKind::Comment),
+            (20, 4, ffi::SqlHighlightKind::Keyword),
+        ]
+    );
+}
+
+#[test]
+fn text_finder_returns_case_folded_byte_ranges_across_sources() {
+    let finder = text_finder("sElEcT é");
+    let ranges = |source| -> Vec<_> {
+        finder
+            .find_all(source, 5)
+            .iter()
+            .map(|range| (range.start, range.end))
+            .collect()
+    };
+    assert_eq!(ranges("SELECT é; select É"), [(0, 9), (11, 20)]);
+    assert_eq!(ranges("x select é"), [(2, 11)]);
+    assert!(text_finder("").find_all("abc", 5).is_empty());
+}
+
+#[test]
+fn execution_rejects_a_timeout_above_the_query_preference_limit() {
+    let mut engine = new_engine();
+    let connection = connect_sqlite(&mut engine, ":memory:", false);
+    await_event(&mut engine, "connected");
+    let limit_ms = u64::from(query_preference_limits().max_timeout_seconds) * 1000;
+    let rejected = execute_with_profile(
+        &mut engine,
+        connection.id,
+        "SELECT 1",
+        100,
+        limit_ms + 1,
+        true,
+        "",
+    );
+    assert!(!rejected.accepted);
+    assert!(rejected.error.contains("timeout"), "{}", rejected.error);
+    let accepted = execute_with_profile(
+        &mut engine,
+        connection.id,
+        "SELECT 1",
+        100,
+        limit_ms,
+        true,
+        "",
+    );
+    assert!(accepted.accepted, "{}", accepted.error);
+}
+
+#[test]
+fn new_history_retention_uses_the_storage_default() {
+    let policy = history_policy_default();
+    assert!(policy.enabled);
+    assert_eq!((policy.max_age_days, policy.max_records), (90, 10_000));
+}
+
+#[test]
+fn search_errors_name_the_input_they_belong_to() {
+    let pattern = "x".repeat(16 * 1024 + 1);
+    let found = text_find("x", &pattern, 0, false, false, false);
+    assert!(!found.valid);
+    assert_eq!(found.error_field, ffi::TextSearchField::Needle);
+    let empty = text_replace_all("x", "", "y", false, false);
+    assert_eq!(empty.error_field, ffi::TextSearchField::Needle);
+    let limits = text_limits();
+    let replacement = "y".repeat(limits.max_document_bytes as usize);
+    let grown = text_replace_all("xx", "x", &replacement, false, false);
+    assert_eq!(grown.error_field, ffi::TextSearchField::Replacement);
+    assert_eq!(limits.max_document_bytes, 16 * 1024 * 1024);
+    assert_eq!(limits.max_search_pattern_bytes, 16 * 1024);
+    assert!(text_replacement_error(limits.max_document_bytes, 1, 1).is_empty());
+    assert!(text_replacement_error(limits.max_document_bytes, 1, 2).contains("16 MiB"));
+}
+
+#[test]
+fn value_chunks_are_bounded_by_the_driver_window() {
+    assert_eq!(value_chunk_max_bytes(), 64 * 1024);
+}
+
+#[test]
+fn grid_cell_policies_cover_every_kind_in_order() {
+    let policies = grid_cell_kind_policies();
+    let kinds: Vec<_> = policies.iter().map(|p| p.kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            ffi::GridCellKind::Value,
+            ffi::GridCellKind::Binary,
+            ffi::GridCellKind::Deferred,
+            ffi::GridCellKind::FallbackText,
+            ffi::GridCellKind::Unavailable,
+        ]
+    );
+    assert!(policies[0].inline_editable && !policies[1].inline_editable);
+    assert!(policies[4].blocks_row_delete);
+    assert!(grid_row_insert_error_policy(9_999).is_empty());
+    assert!(!grid_row_insert_error_policy(10_000).is_empty());
+}
+
+#[test]
+fn object_kind_policy_crosses_the_bridge() {
+    let table = object_kind_traits_policy("table");
+    assert!(table.relation && table.opens_object_tab && table.has_detail_pane);
+    assert_eq!(table.detail_pane, 5);
+    assert!(!object_kind_traits_policy("view").has_detail_pane);
+    assert!(!sidebar_child_visible_policy("table", "index"));
+    assert!(object_kind_traits_policy("schema").search_descends);
+    assert_eq!(navigator_search_budget().filter_requests, 256);
+    assert!(object_action_unavailable_reason(false, "sqlite", "view", "").is_empty());
+    assert!(object_action_unavailable_reason(true, "sqlite", "view", "").contains("SQLite"));
+}
+
+#[test]
+fn result_views_share_the_rust_result_budget() {
+    assert_eq!(result_view_byte_budget(), 64 * 1024 * 1024);
+    assert!(page_lease_fits(1256, 1000));
+    assert!(!page_lease_fits(1255, 1000));
+}
+
+#[test]
+fn desktop_cadences_come_from_their_owning_crates() {
+    assert_eq!(update_check_interval_seconds(), 24 * 60 * 60);
+    assert_eq!(diagnostics_memory_sample_interval_seconds(), 60);
+    assert_eq!(diagnostics_export_destination("report"), "report.zip");
+}
+
+#[test]
+fn manual_transactions_explain_which_actions_wait_for_commit() {
+    let open = transaction_guard_policy(true);
+    assert!(open.apply_edits.contains("before applying grid changes"));
+    assert!(
+        open.enable_auto_commit
+            .contains("before enabling auto-commit")
+    );
+    let idle = transaction_guard_policy(false);
+    assert!(idle.apply_edits.is_empty() && idle.enable_auto_commit.is_empty());
+}
+
+#[test]
+fn list_filters_match_labels_through_the_core_filter() {
+    let filter = text_filter_query(" Order ");
+    assert!(!filter.blank());
+    assert!(filter.accepts("customer_ORDERS"));
+    assert!(!filter.accepts("customers"));
+    assert!(text_filter_query("  ").blank());
+}
+
+#[test]
+fn profile_forms_follow_the_driver() {
+    let mysql = profile_driver_form("mysql");
+    assert!(mysql.server && mysql.user_optional && mysql.database_selects_server);
+    let sqlite = profile_driver_form("sqlite");
+    assert!(!sqlite.server && !sqlite.user_optional);
+}
+
+#[test]
+fn navigator_structure_and_templates_come_from_rust() {
+    let table = object_kind_traits_policy("table");
+    assert!(table.diagram && table.has_initial_pane && table.initial_pane == 5);
+    assert!(object_kind_traits_policy("connection").connection);
+    assert!(object_kind_traits_policy("column").column);
+    assert!(object_kind_traits_policy("index").repeats_across_parents);
+    assert!(sql_template_unavailable_reason("select", false, false).is_empty());
+    assert!(sql_template_unavailable_reason("update", true, false).contains("column"));
+    assert_eq!(
+        sql_template_unavailable_reason("merge", true, true),
+        "Unknown SQL template."
+    );
 }

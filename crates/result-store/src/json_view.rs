@@ -606,3 +606,34 @@ pub fn render_json_page(
     output.push("\n]")?;
     Ok(output.finish())
 }
+
+/// The message the desktop shows when a JSON view cannot render.
+pub fn json_view_error_message(
+    error: JsonViewError,
+    display_budget_bytes: usize,
+    cell: bool,
+) -> String {
+    let scope = if cell { "cell" } else { "row" };
+    match error {
+        JsonViewError::Deferred => {
+            "Load every deferred value before viewing this row as JSON.".into()
+        }
+        JsonViewError::InvalidResolution => "A loaded row value is invalid.".into(),
+        JsonViewError::IncompleteResolution => {
+            "A loaded row value is invalid or incomplete.".into()
+        }
+        JsonViewError::NonFinite => {
+            "This row contains a non-finite number that JSON cannot represent.".into()
+        }
+        JsonViewError::DisplayLimit => format!(
+            "The JSON output exceeds {} bytes of display storage (16 MiB maximum).",
+            (display_budget_bytes / 2 * 2).min(MAX_JSON_VIEW_BYTES)
+        ),
+        JsonViewError::EncodedLimit => "The JSON output exceeds 16 MiB of encoded text.".into(),
+        JsonViewError::InvalidJson => {
+            "This JSON/JSONB value is invalid or exceeds the 16 MiB JSON limit.".into()
+        }
+        JsonViewError::Unavailable => "This row contains an unavailable value.".into(),
+        JsonViewError::InvalidInput => format!("This {scope} contains invalid JSON view input."),
+    }
+}

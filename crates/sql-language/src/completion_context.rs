@@ -2,8 +2,12 @@ use std::ops::Range;
 
 /// Locate the complete qualified identifier prefix at a UTF-8 cursor.
 /// Returns none inside SQL strings/comments or outside editing limits.
+/// Whether a document of `bytes` UTF-8 bytes can be offered completions.
+pub fn completion_source_supported(bytes: usize) -> bool {
+    bytes <= crate::MAX_SEARCH_SOURCE_BYTES
+}
 pub fn completion_context(sql: &str, cursor: usize) -> Option<Range<usize>> {
-    if sql.len() > crate::MAX_SEARCH_SOURCE_BYTES || !sql.is_char_boundary(cursor) {
+    if !completion_source_supported(sql.len()) || !sql.is_char_boundary(cursor) {
         return None;
     }
     let sql = sql.get(..cursor)?;

@@ -284,3 +284,28 @@ async fn approval_requires_a_literal_absolute_normalized_path() {
     );
     assert!(literal.is_file());
 }
+
+#[test]
+fn known_hosts_destination_must_be_a_literal_absolute_normalized_path() {
+    for path in [
+        "",
+        "relative/known_hosts",
+        ":/known_hosts",
+        "~/known_hosts",
+        "/home/%u/known_hosts",
+        "/home/${HOME}/known_hosts",
+        "/tmp/\"known\"",
+        "/tmp/it's",
+        "/tmp/back\\slash",
+        "/tmp/line\nbreak",
+        "/tmp/../etc/known_hosts",
+        "/tmp/./known_hosts",
+        "/tmp//known_hosts",
+        "/",
+    ] {
+        assert!(validate_known_hosts_path(path).is_err(), "{path:?}");
+    }
+    assert!(validate_known_hosts_path(&format!("/{}", "a".repeat(16 * 1024))).is_err());
+    assert!(validate_known_hosts_path("/tmp/explicit known hosts").is_ok());
+    assert!(validate_known_hosts_path("/Users/me/.ssh/known_hosts").is_ok());
+}

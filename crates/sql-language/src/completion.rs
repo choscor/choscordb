@@ -17,6 +17,8 @@ pub const MAX_COMPLETION_RESULTS: usize = 100;
 pub const MAX_COMPLETION_PREFIX_BYTES: usize = 256;
 pub const MAX_COMPLETION_METADATA_ENTRIES: usize = 10_000;
 pub const MAX_COMPLETION_METADATA_BYTES: usize = 8 * 1024 * 1024;
+/// Navigator nodes one completion snapshot may visit, including skipped nodes.
+pub const MAX_COMPLETION_METADATA_VISITS: usize = MAX_COMPLETION_METADATA_ENTRIES * 8 + 64;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CompletionError {
     PrefixTooLong,

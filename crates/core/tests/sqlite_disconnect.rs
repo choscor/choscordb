@@ -4,6 +4,13 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+/// Queries in this file page 100 rows at a time.
+fn paged() -> QueryOptions {
+    QueryOptions {
+        page_size: PageSize::new(100).unwrap(),
+        ..QueryOptions::default()
+    }
+}
 fn until(engine: &mut Engine, predicate: impl Fn(&Event) -> bool) {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -40,14 +47,10 @@ fn returning_stop(sql: &str, fetch: bool, cancel: bool) {
         )
         .unwrap();
     until(&mut engine, |e| matches!(e, Event::Connected { .. }));
-    let query = engine
-        .execute(connection, sql.into(), QueryOptions::default())
-        .unwrap();
+    let query = engine.execute(connection, sql.into(), paged()).unwrap();
     until(&mut engine, |e| matches!(e, Event::Schema { .. }));
     if fetch {
-        engine
-            .fetch_page(query, PageSize::new(100).unwrap())
-            .unwrap();
+        engine.fetch_page(query).unwrap();
         until(
             &mut engine,
             |e| matches!(e,Event::Page{page,..} if page.rows.len()==100 && page.has_more),
@@ -129,10 +132,7 @@ fn direct_driver_close_aborts_returning_but_normal_finish_still_commits() {
                 .await
                 .unwrap();
             let mut cursor = connection
-                .execute(
-                    "UPDATE work SET value=1 RETURNING id",
-                    QueryOptions::default(),
-                )
+                .execute("UPDATE work SET value=1 RETURNING id", paged())
                 .await
                 .unwrap();
             let page = cursor

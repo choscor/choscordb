@@ -1,5 +1,5 @@
 //! Typed transport for Rust-owned pin identity and durable storage.
-use crate::ffi::{PinLoadDto, PinRecordDto, PinSaveDto};
+use crate::ffi::{PinChangeDto, PinLoadDto, PinRecordDto, PinSaveDto};
 use choscordb_pins::{PinRecord, PinStore};
 use std::path::Path;
 
@@ -51,6 +51,40 @@ pub fn pin_identity_key(pin: PinRecordDto) -> String {
     choscordb_pins::identity_key(&to_record(pin))
 }
 
+fn change(updated: Option<Vec<PinRecord>>) -> PinChangeDto {
+    PinChangeDto {
+        changed: updated.is_some(),
+        pins: updated
+            .unwrap_or_default()
+            .into_iter()
+            .map(from_record)
+            .collect(),
+    }
+}
+
+fn records(pins: Vec<PinRecordDto>) -> Vec<PinRecord> {
+    pins.into_iter().map(to_record).collect()
+}
+
+pub fn pin_toggle(pins: Vec<PinRecordDto>, candidate: PinRecordDto, unpin: bool) -> PinChangeDto {
+    change(choscordb_pins::toggle_pin(
+        &records(pins),
+        to_record(candidate),
+        unpin,
+    ))
+}
+
+pub fn pin_remove(pins: Vec<PinRecordDto>, key: &str) -> PinChangeDto {
+    change(choscordb_pins::remove_pin(&records(pins), key))
+}
+
+pub fn pin_remove_profile(pins: Vec<PinRecordDto>, profile_id: &str) -> PinChangeDto {
+    change(choscordb_pins::remove_profile_pins(
+        &records(pins),
+        profile_id,
+    ))
+}
+
 pub fn pin_load(path: &str, profile_storage: bool) -> PinLoadDto {
     let result = store(path, profile_storage).load();
     PinLoadDto {
@@ -60,8 +94,7 @@ pub fn pin_load(path: &str, profile_storage: bool) -> PinLoadDto {
 }
 
 pub fn pin_save(path: &str, profile_storage: bool, pins: Vec<PinRecordDto>) -> PinSaveDto {
-    let records = pins.into_iter().map(to_record).collect::<Vec<_>>();
-    match store(path, profile_storage).save(&records) {
+    match store(path, profile_storage).save(&records(pins)) {
         Ok(()) => PinSaveDto {
             success: true,
             error: String::new(),

@@ -1,7 +1,8 @@
 use choscordb_driver_api::{Column, Value};
 use choscordb_result_store::{
     JsonViewError, JsonViewReadiness, JsonViewRow, MAX_JSON_VIEW_BYTES, json_cell_readiness,
-    json_page_readiness, json_row_readiness, render_json_cell, render_json_page, render_json_row,
+    json_page_readiness, json_row_readiness, json_view_error_message, render_json_cell,
+    render_json_page, render_json_row,
 };
 use std::collections::BTreeMap;
 
@@ -429,5 +430,31 @@ fn page_json_preserves_exact_decimal_values() {
     assert_eq!(
         json_page_readiness(&columns, &rows, MAX_JSON_VIEW_BYTES),
         JsonViewReadiness::Ready
+    );
+}
+
+#[test]
+fn json_view_errors_explain_the_display_budget() {
+    assert_eq!(
+        json_view_error_message(JsonViewError::DisplayLimit, 101, false),
+        "The JSON output exceeds 100 bytes of display storage (16 MiB maximum)."
+    );
+    assert_eq!(
+        json_view_error_message(JsonViewError::DisplayLimit, usize::MAX, true),
+        format!(
+            "The JSON output exceeds {MAX_JSON_VIEW_BYTES} bytes of display storage (16 MiB maximum)."
+        )
+    );
+    assert_eq!(
+        json_view_error_message(JsonViewError::InvalidInput, 0, true),
+        "This cell contains invalid JSON view input."
+    );
+    assert_eq!(
+        json_view_error_message(JsonViewError::InvalidInput, 0, false),
+        "This row contains invalid JSON view input."
+    );
+    assert_eq!(
+        json_view_error_message(JsonViewError::Deferred, 0, false),
+        "Load every deferred value before viewing this row as JSON."
     );
 }

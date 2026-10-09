@@ -31,7 +31,7 @@ impl Default for EngineConfig {
 pub enum SubmitError {
     #[error("invalid command input")]
     InvalidInput,
-    #[error("command queue is full")]
+    #[error("too many pending requests; retry after pending requests finish")]
     QueueFull,
     #[error("handle is stale")]
     StaleHandle,
@@ -54,7 +54,7 @@ pub enum QueryState {
     Disconnected,
 }
 pub type ExportId = Handle;
-pub use choscordb_export::{ExportFormat, SqlDialect};
+pub use choscordb_export::{ExportFormat, SqlDialect, sql_export_table_error};
 
 pub enum Event {
     SshHostKeysInspected {
@@ -301,6 +301,12 @@ pub enum Event {
     QueryFailed {
         query: QueryId,
         error: DriverError,
+    },
+    /// The session transaction state after a statement failed; precedes its
+    /// `QueryFailed`. A failed statement can leave a manual transaction open.
+    TransactionState {
+        connection: ConnectionId,
+        active: bool,
     },
     Metadata {
         connection: ConnectionId,

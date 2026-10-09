@@ -1,6 +1,10 @@
 //! Bounded, ordered assembly of one deferred database value.
 
 pub const MAX_DEFERRED_LOAD_BYTES: u64 = 8 * 1024 * 1024;
+/// Why a resident value of `bytes` bytes cannot open in the value detail view.
+pub fn value_detail_size_error(bytes: u64) -> Option<&'static str> {
+    (bytes > MAX_DEFERRED_LOAD_BYTES).then_some("The inline value exceeds the 8 MiB detail limit.")
+}
 pub const MAX_DEFERRED_CHUNK_BYTES: usize = 65536;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

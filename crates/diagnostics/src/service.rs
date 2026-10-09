@@ -547,7 +547,7 @@ impl Service {
             "export_days": EXPORT_DAYS,
             "day_byte_cap": MAX_DAY_BYTES,
             "archive_byte_cap": MAX_EXPORT_BYTES,
-            "memory_sample_interval_seconds": 60,
+            "memory_sample_interval_seconds": crate::MEMORY_SAMPLE_INTERVAL_SECONDS,
             "event_memory_min_interval_seconds": 5,
             "memory_interpretation": "A memory trend cannot prove an allocation leak.",
             "unclean_exit_interpretation": "An unclean exit does not identify its cause."

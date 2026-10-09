@@ -61,6 +61,33 @@ fn flags(values: Vec<bool>) -> Vec<u8> {
     values.into_iter().map(u8::from).collect()
 }
 
+pub fn grid_cell_kind_policies() -> Vec<ffi::GridCellKindPolicyDto> {
+    use choscordb_driver_api::GridCellKind as Kind;
+    [
+        (Kind::Value, ffi::GridCellKind::Value),
+        (Kind::Binary, ffi::GridCellKind::Binary),
+        (Kind::Deferred, ffi::GridCellKind::Deferred),
+        (Kind::FallbackText, ffi::GridCellKind::FallbackText),
+        (Kind::Unavailable, ffi::GridCellKind::Unavailable),
+    ]
+    .into_iter()
+    .map(|(kind, dto)| {
+        let policy = kind.policy();
+        ffi::GridCellKindPolicyDto {
+            kind: dto,
+            inline_editable: policy.inline_editable,
+            blocks_row_delete: policy.blocks_row_delete,
+            blocks_row_duplicate: policy.blocks_row_duplicate,
+            duplicate_requires_load: policy.duplicate_requires_load,
+        }
+    })
+    .collect()
+}
+pub fn grid_row_insert_error_policy(rows: u32) -> String {
+    choscordb_driver_api::grid_row_insert_error(rows as usize)
+        .unwrap_or_default()
+        .into()
+}
 pub fn grid_editability_policy(source: ffi::GridEditRequestDto) -> ffi::GridEditabilityDto {
     let Ok(request) = request(source) else {
         return ffi::GridEditabilityDto::default();
@@ -80,6 +107,7 @@ pub fn plan_grid_edits_policy(source: ffi::GridEditRequestDto) -> ffi::GridEditP
     let result = request(source).and_then(|request| plan_grid_edits(&request));
     match result {
         Ok(plan) => ffi::GridEditPlanDto {
+            review: choscordb_driver_api::review_text(&plan),
             statements: plan
                 .statements
                 .into_iter()

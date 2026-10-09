@@ -98,6 +98,12 @@ pub fn diagnostics_preview(service: &RustDiagnostics) -> ffi::DiagnosticSummaryD
         }
     })
 }
+pub fn diagnostics_export_destination(path: &str) -> String {
+    choscordb_diagnostics::export_destination(path)
+}
+pub fn diagnostics_memory_sample_interval_seconds() -> u64 {
+    choscordb_diagnostics::MEMORY_SAMPLE_INTERVAL_SECONDS
+}
 pub fn diagnostics_export_zip(
     service: &RustDiagnostics,
     destination: &str,

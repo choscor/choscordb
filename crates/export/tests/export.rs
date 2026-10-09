@@ -457,3 +457,22 @@ fn mysql_export_quotes_identifiers_and_preserves_text_in_any_sql_mode() {
         "INSERT INTO `shop`.`a``b` (`odd``name`, `payload`) VALUES (CONVERT(X'' USING utf8mb4), NULL);\n"
     );
 }
+
+#[test]
+fn sql_export_needs_a_table_with_an_optional_schema() {
+    let table = |parts: &[&str]| {
+        parts
+            .iter()
+            .map(|part| part.to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(sql_export_table_error(&table(&["orders"])), None);
+    assert_eq!(sql_export_table_error(&table(&["sales", "orders"])), None);
+    for invalid in [&[][..], &["sales", ""], &[""], &["a", "b", "c"]] {
+        assert_eq!(
+            sql_export_table_error(&table(invalid)),
+            Some(SQL_EXPORT_TABLE_REQUIRED),
+            "{invalid:?}"
+        );
+    }
+}

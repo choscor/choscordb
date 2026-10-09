@@ -1224,7 +1224,7 @@ pub(super) async fn run(
                 Command::Edit(_, reply) => {
                     let _ = reply.send(Err(DriverError::new(
                         ErrorKind::InvalidInput,
-                        "Commit or roll back the active transaction before applying edits",
+                        choscordb_driver_api::EDITS_NEED_NO_TRANSACTION,
                     )));
                 }
                 Command::EditTarget(object, reply) => {

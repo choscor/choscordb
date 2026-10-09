@@ -1,4 +1,4 @@
-use choscordb_core::{ObjectAction, prepare_object_action};
+use choscordb_core::{ObjectAction, object_action_availability, prepare_object_action};
 
 #[test]
 fn drop_uses_trusted_identity_and_quotes_each_dialect() {
@@ -273,4 +273,34 @@ fn display_identity_preserves_quoted_dots_and_escaped_delimiters() {
             "{label}"
         );
     }
+}
+
+#[test]
+fn availability_needs_no_identity_and_matches_preparation() {
+    for driver in ["sqlite", "postgres", "mysql"] {
+        for action in [ObjectAction::Drop, ObjectAction::Rename] {
+            assert_eq!(
+                object_action_availability(action, driver, "table", ""),
+                Ok(())
+            );
+        }
+    }
+    assert_eq!(
+        object_action_availability(ObjectAction::Rename, "sqlite", "view", ""),
+        Err("SQLite does not support renaming views directly.")
+    );
+    assert_eq!(
+        object_action_availability(ObjectAction::Drop, "sqlite", "view", ""),
+        Ok(())
+    );
+    assert!(object_action_availability(ObjectAction::Drop, "postgres", "index", "").is_err());
+    assert!(object_action_availability(ObjectAction::Drop, "oracle", "table", "").is_err());
+    assert_eq!(
+        object_action_availability(ObjectAction::Drop, "postgres", "view", "materialized_view"),
+        Ok(())
+    );
+    assert!(
+        object_action_availability(ObjectAction::Drop, "mysql", "view", "materialized_view")
+            .is_err()
+    );
 }

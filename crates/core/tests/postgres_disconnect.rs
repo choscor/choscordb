@@ -10,6 +10,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Queries that page 100 rows at a time, as these tests fetch.
+fn paged() -> QueryOptions {
+    QueryOptions {
+        page_size: PageSize::new(100).unwrap(),
+        ..QueryOptions::default()
+    }
+}
 fn options() -> ConnectionOptions {
     let get =
         |name| std::env::var(name).expect("repository PostgreSQL fixture environment required");
@@ -51,10 +58,7 @@ fn until(engine: &mut Engine, predicate: impl Fn(&Event) -> bool) -> Event {
     }
 }
 async fn sql(connection: &mut dyn Connection, sql: &str) -> Vec<Row> {
-    let mut cursor = connection
-        .execute(sql, QueryOptions::default())
-        .await
-        .unwrap();
+    let mut cursor = connection.execute(sql, paged()).await.unwrap();
     let mut rows = Vec::new();
     loop {
         let page = cursor
@@ -151,14 +155,10 @@ fn suspended_returning_disconnect_rolls_back_before_cursor_finalization() {
                     "INSERT INTO {table} SELECT i, 1 FROM generate_series(1001, 1300) i RETURNING id"
                 )
             };
-            let query = engine
-                .execute(connection, statement, QueryOptions::default())
-                .unwrap();
+            let query = engine.execute(connection, statement, paged()).unwrap();
             until(&mut engine, |e| matches!(e, Event::Schema { .. }));
             if fetch {
-                engine
-                    .fetch_page(query, PageSize::new(100).unwrap())
-                    .unwrap();
+                engine.fetch_page(query).unwrap();
                 let event = until(&mut engine, |e| matches!(e, Event::Page { .. }));
                 if let Event::Page { page, .. } = &event {
                     assert!(page.has_more, "regression requires a suspended portal");

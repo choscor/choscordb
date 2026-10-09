@@ -274,18 +274,6 @@ fn same_file_identity(original: &std::fs::Metadata, opened: &std::fs::Metadata) 
 }
 
 pub fn valid(pin: &PinRecord) -> bool {
-    const KINDS: [&str; 10] = [
-        "schema",
-        "table",
-        "view",
-        "index",
-        "sequence",
-        "function",
-        "column",
-        "primarykey",
-        "foreignkey",
-        "uniquekey",
-    ];
     let direct_root_schema =
         pin.kind == "schema" && pin.parent_object_id.is_empty() && pin.ancestry_ids.is_empty();
     safe_text(&pin.profile_id, true)
@@ -293,7 +281,7 @@ pub fn valid(pin: &PinRecord) -> bool {
         && safe_text(&pin.object_id, true)
         && safe_text(&pin.name, true)
         && safe_text(&pin.qualified_name, true)
-        && KINDS.contains(&pin.kind.as_str())
+        && choscordb_driver_api::object_kind_traits(&pin.kind).pinnable
         && (direct_root_schema || safe_text(&pin.parent_object_id, true))
         && safe_text(&pin.relation_subtype, false)
         && (pin.ancestry_names.is_empty() || pin.ancestry_names.len() == pin.ancestry_ids.len())
@@ -365,4 +353,45 @@ fn read_pin(value: &Value) -> Option<PinRecord> {
         unavailable: object.get("unavailable")?.as_bool()?,
     };
     valid(&pin).then_some(pin)
+}
+
+/// The pin list after pinning or unpinning `candidate`; `None` when nothing changes.
+/// New pins go first.
+pub fn toggle_pin(pins: &[PinRecord], candidate: PinRecord, unpin: bool) -> Option<Vec<PinRecord>> {
+    if !valid(&candidate) {
+        return None;
+    }
+    let key = identity_key(&candidate);
+    let existing = pins.iter().position(|pin| identity_key(pin) == key);
+    match (existing, unpin) {
+        (Some(row), true) => {
+            let mut updated = pins.to_vec();
+            updated.remove(row);
+            Some(updated)
+        }
+        (None, false) => Some(
+            std::iter::once(candidate)
+                .chain(pins.iter().cloned())
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
+/// The pin list without the pin whose identity key is `key`.
+pub fn remove_pin(pins: &[PinRecord], key: &str) -> Option<Vec<PinRecord>> {
+    let row = pins.iter().position(|pin| identity_key(pin) == key)?;
+    let mut updated = pins.to_vec();
+    updated.remove(row);
+    Some(updated)
+}
+
+/// The pin list without the pins of a deleted connection profile.
+pub fn remove_profile_pins(pins: &[PinRecord], profile_id: &str) -> Option<Vec<PinRecord>> {
+    let updated: Vec<_> = pins
+        .iter()
+        .filter(|pin| pin.profile_id != profile_id)
+        .cloned()
+        .collect();
+    (updated.len() != pins.len()).then_some(updated)
 }

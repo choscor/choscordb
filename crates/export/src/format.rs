@@ -198,6 +198,14 @@ pub(crate) fn sql(value: &Value, dialect: SqlDialect) -> Result<String> {
         }
     })
 }
+/// Why a SQL export target is incomplete.
+pub const SQL_EXPORT_TABLE_REQUIRED: &str = "Enter a table for SQL export.";
+
+/// A SQL export target is a table name with an optional schema; `None` when valid.
+pub fn sql_export_table_error(table: &[String]) -> Option<&'static str> {
+    let complete = matches!(table.len(), 1 | 2) && table.iter().all(|part| !part.is_empty());
+    (!complete).then_some(SQL_EXPORT_TABLE_REQUIRED)
+}
 pub(crate) fn header(format: &ExportFormat, columns: &[Column]) -> Result<String> {
     match format {
         ExportFormat::Csv => Ok(format!(
@@ -217,8 +225,8 @@ pub(crate) fn header(format: &ExportFormat, columns: &[Column]) -> Result<String
             serde_json::to_string(columns).map_err(|_| invalid("Invalid columns"))?
         )),
         ExportFormat::SqlInsert { table, dialect } => {
-            if table.is_empty() {
-                return Err(invalid("SQL export requires a table name"));
+            if let Some(reason) = sql_export_table_error(table) {
+                return Err(invalid(reason));
             }
             for part in table {
                 identifier(part, *dialect)?;
