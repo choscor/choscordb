@@ -9,25 +9,6 @@ namespace choscordb::design {
 
 enum class ThemeMode { System, Light, Dark };
 enum class ResolvedAppearance { Light, Dark };
-enum class AccentPreset { Cobalt, Azure, Teal, Green, Violet, Orange, Rose };
-enum class AccentKind { Preset, Custom };
-struct Accent final {
-    AccentKind kind = AccentKind::Preset;
-    AccentPreset preset = AccentPreset::Cobalt;
-    QColor customColor;
-
-    [[nodiscard]] static Accent presetColor(AccentPreset value);
-    [[nodiscard]] static Accent custom(QColor value);
-    [[nodiscard]] bool isCustom() const;
-
-    friend bool operator==(const Accent&, const Accent&) = default;
-};
-
-struct AccentValidation final {
-    bool accepted = false;
-    QString reason;
-};
-
 struct SemanticColors final {
     QColor background;
     QColor foreground;
@@ -95,14 +76,10 @@ struct SemanticColors final {
 };
 
 [[nodiscard]] double contrastRatio(const QColor& foreground, const QColor& background);
-[[nodiscard]] QColor accentSeed(const Accent& accent);
-[[nodiscard]] AccentValidation validateAccent(const Accent& accent, ResolvedAppearance appearance);
-[[nodiscard]] SemanticColors resolveColors(ResolvedAppearance appearance, const Accent& accent);
+[[nodiscard]] SemanticColors resolveColors(ResolvedAppearance appearance);
 [[nodiscard]] SemanticColors resolveForcedContrastColors(const QPalette& palette);
 
 } // namespace choscordb::design
 
 Q_DECLARE_METATYPE(choscordb::design::ThemeMode)
 Q_DECLARE_METATYPE(choscordb::design::ResolvedAppearance)
-Q_DECLARE_METATYPE(choscordb::design::AccentKind)
-Q_DECLARE_METATYPE(choscordb::design::Accent)

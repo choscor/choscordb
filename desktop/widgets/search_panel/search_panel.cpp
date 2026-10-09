@@ -34,7 +34,9 @@ SearchPanel::SearchPanel(std::function<SqlEditor*()> currentEditor, QWidget* par
     needle_ = new QLineEdit(this);
     needle_->setObjectName("searchNeedle");
     needle_->setAccessibleName(tr("Find text"));
-    needle_->setMaxLength(16 * 1024 + 1);
+    // Input hints one past Rust's limits, so Rust reports the overflow.
+    const auto& limits = EngineAdapter::textLimits();
+    needle_->setMaxLength(int(limits.maxSearchPatternBytes) + 1);
     needle_->setPlaceholderText(tr("Find text"));
     auto* previous = new design::Button(tr("Previous"), this);
     auto* next = new design::Button(tr("Next"), this);
@@ -77,7 +79,7 @@ SearchPanel::SearchPanel(std::function<SqlEditor*()> currentEditor, QWidget* par
     replacement_ = new QLineEdit(this);
     replacement_->setObjectName("searchReplacement");
     replacement_->setAccessibleName(tr("Replacement text"));
-    replacement_->setMaxLength(16 * 1024 * 1024 + 1);
+    replacement_->setMaxLength(int(limits.maxDocumentBytes) + 1);
     replacement_->setPlaceholderText(tr("Replace with"));
     auto* replace = new design::Button(tr("Replace"), this);
     replace->setObjectName("searchReplace");
@@ -125,10 +127,9 @@ SearchPanel::SearchPanel(std::function<SqlEditor*()> currentEditor, QWidget* par
 }
 void SearchPanel::showFind() {
     if (auto* editor = editable(false)) {
-        const auto start = editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONSTART);
-        const auto end = editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONEND);
-        if (end > start && end - start <= 16 * 1024)
-            needle_->setText(editor->selectedText());
+        const auto selected = editor->selectedText();
+        if (EngineAdapter::searchPatternUsable(selected))
+            needle_->setText(selected);
     }
     show();
     replacementRow_->hide();
@@ -187,10 +188,6 @@ void SearchPanel::find(bool backwards) {
         setStatus(tr("A search operation is still running."));
         return;
     }
-    if (editor->SendScintilla(QsciScintilla::SCI_GETLENGTH) > 16 * 1024 * 1024) {
-        setStatus(tr("Search supports documents up to 16 MiB."));
-        return;
-    }
     const quint64 cursor = editor->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS);
     const quint64 anchor = editor->SendScintilla(QsciScintilla::SCI_GETANCHOR);
     const quint64 revision = editor->revision();
@@ -216,7 +213,7 @@ void SearchPanel::find(bool backwards) {
                     return;
                 }
                 if (!result.valid) {
-                    needleValidation_->setError(result.error);
+                    showError(result.errorField, result.error);
                     return;
                 }
                 if (!result.found) {
@@ -253,18 +250,16 @@ void SearchPanel::replaceOne() {
         find(false);
         return;
     }
-    const auto length = editor->SendScintilla(QsciScintilla::SCI_GETLENGTH);
-    if (length > 16 * 1024 * 1024 || replacement_->text().size() > 16 * 1024 * 1024) {
-        replacementValidation_->setError(tr("Replacement output exceeds 16 MiB."));
-        return;
-    }
     if (!replacement_->text().isValidUtf16()) {
         replacementValidation_->setError(tr("Replacement input is not valid Unicode."));
         return;
     }
     const auto bytes = replacement_->text().toUtf8();
-    if (quint64(length) - (matchEnd_ - matchStart_) + quint64(bytes.size()) > 16 * 1024 * 1024) {
-        replacementValidation_->setError(tr("Replacement output exceeds 16 MiB."));
+    const auto sizeError = EngineAdapter::replacementError(
+        quint64(editor->SendScintilla(QsciScintilla::SCI_GETLENGTH)), matchEnd_ - matchStart_,
+        quint64(bytes.size()));
+    if (!sizeError.isEmpty()) {
+        replacementValidation_->setError(sizeError);
         return;
     }
     const auto start = matchStart_;
@@ -288,25 +283,16 @@ void SearchPanel::replaceAll() {
     }
     if (pending_)
         return;
-    if (editor->SendScintilla(QsciScintilla::SCI_GETLENGTH) > 16 * 1024 * 1024) {
-        setStatus(tr("Search supports documents up to 16 MiB."));
-        return;
-    }
     const quint64 revision = editor->revision(), request = ++generation_;
     QPointer<SqlEditor> target(editor);
     const auto source = editor->text(), needle = needle_->text(),
                replacement = replacement_->text();
-    if (needle.isEmpty() || !needle.isValidUtf16()) {
-        needleValidation_->setError(needle.isEmpty() ? tr("Enter text to find.")
-                                                     : tr("Search text is not valid Unicode."));
+    if (!needle.isValidUtf16()) {
+        needleValidation_->setError(tr("Search text is not valid Unicode."));
         return;
     }
     if (!replacement.isValidUtf16()) {
         replacementValidation_->setError(tr("Replacement input is not valid Unicode."));
-        return;
-    }
-    if (replacement.toUtf8().size() > 16 * 1024 * 1024) {
-        replacementValidation_->setError(tr("Replacement output exceeds 16 MiB."));
         return;
     }
     const bool caseSensitive = case_->isChecked(), wholeWord = word_->isChecked();
@@ -314,8 +300,7 @@ void SearchPanel::replaceAll() {
     setPending(true, tr("Replacing matches…"));
     auto* watcher = new QFutureWatcher<TextReplacement>(this);
     connect(watcher, &QFutureWatcher<TextReplacement>::finished, this,
-            [this, watcher, target, revision, request,
-             oversizedNeedle = needle.toUtf8().size() > 16 * 1024] {
+            [this, watcher, target, revision, request] {
                 const auto result = watcher->result();
                 watcher->deleteLater();
                 setPending(false);
@@ -325,18 +310,11 @@ void SearchPanel::replaceAll() {
                     return;
                 }
                 if (!result.valid) {
-                    if (oversizedNeedle)
-                        needleValidation_->setError(result.error);
-                    else
-                        setStatus(result.error);
+                    showError(result.errorField, result.error);
                     return;
                 }
                 if (result.count != 0) {
                     const auto bytes = result.text.toUtf8();
-                    if (bytes.size() > 16 * 1024 * 1024) {
-                        replacementValidation_->setError(tr("Replacement output exceeds 16 MiB."));
-                        return;
-                    }
                     target->SendScintilla(QsciScintilla::SCI_BEGINUNDOACTION);
                     target->SendScintilla(QsciScintilla::SCI_SETTARGETSTART, 0UL);
                     target->SendScintilla(QsciScintilla::SCI_SETTARGETEND,
@@ -357,6 +335,19 @@ void SearchPanel::replaceAll() {
     watcher->setFuture(QtConcurrent::run([source, needle, replacement, caseSensitive, wholeWord] {
         return EngineAdapter::replaceAllText(source, needle, replacement, caseSensitive, wholeWord);
     }));
+}
+void SearchPanel::showError(SearchInput field, const QString& message) {
+    switch (field) {
+    case SearchInput::Needle:
+        needleValidation_->setError(message);
+        break;
+    case SearchInput::Replacement:
+        replacementValidation_->setError(message);
+        break;
+    case SearchInput::General:
+        setStatus(message);
+        break;
+    }
 }
 void SearchPanel::setStatus(const QString& message) {
     statusLine_->setMessage(message);

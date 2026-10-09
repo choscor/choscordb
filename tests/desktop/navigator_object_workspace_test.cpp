@@ -850,6 +850,7 @@ void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWit
     QTRY_VERIFY(save->isEnabled());
     choscordb::SavedProfile profile;
     profile.id = "generated-sql-profile";
+    profile.driver = "sqlite";
     profile.name = "Generated SQL fixture";
     profile.path = ":memory:";
     profiles->saveDraft(profile);

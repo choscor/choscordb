@@ -13,7 +13,6 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollBar>
-#include <QStringDecoder>
 #include <QTableView>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -21,8 +20,6 @@
 namespace choscordb {
 namespace {
 using bridge_detail::fromRust;
-constexpr quint32 ChunkBytes = 65536;
-constexpr qsizetype InlineLimit = 8 * 1024 * 1024;
 // The value column starts at three standard table columns before content sizing.
 int initialValueColumnWidth() {
     return 3 * design::dimension(design::Dimension::TableColumn);
@@ -114,10 +111,10 @@ void ValueDetailDialog::openValue(quint64 query, quint64 handle, const QString& 
     show();
     request(0);
 }
-bool ValueDetailDialog::openInlineValue(QByteArray bytes, const QString& type, bool binary) {
+QString ValueDetailDialog::openInlineValue(QByteArray bytes, const QString& type, bool binary) {
     clearValue();
-    if (bytes.size() > InlineLimit)
-        return false;
+    if (auto error = EngineAdapter::valueDetailError(quint64(bytes.size())); !error.isEmpty())
+        return error;
     inlineBytes_ = std::move(bytes);
     inlineMode_ = true;
     inlineBinary_ = binary;
@@ -126,7 +123,7 @@ bool ValueDetailDialog::openInlineValue(QByteArray bytes, const QString& type, b
                                   : tr("Value detail — %1").arg(type.left(128)));
     show();
     request(0);
-    return true;
+    return {};
 }
 void ValueDetailDialog::dropChunk() {
     model_->clear();
@@ -147,7 +144,7 @@ void ValueDetailDialog::clearValue() {
     loading_ = false;
     dropChunk();
     offset_ = total_ = nextOffset_ = 0;
-    windowBytes_ = ChunkBytes;
+    windowBytes_ = EngineAdapter::valueChunkBytes();
     setStatus({});
     statusLine_->setBusy(false);
     retry_->hide();
@@ -182,10 +179,7 @@ void ValueDetailDialog::previousChunk() {
     auto target = offset_ > windowBytes_ ? offset_ - windowBytes_ : 0;
     if (inlineMode_) {
         if (!inlineBinary_)
-            while (target > 0 &&
-                   (static_cast<unsigned char>(inlineBytes_.at(static_cast<qsizetype>(target))) &
-                    0xc0) == 0x80)
-                --target;
+            target = value_text_char_start(bridge_detail::byteView(inlineBytes_), target);
         request(target);
         return;
     }
@@ -211,8 +205,8 @@ void ValueDetailDialog::request(quint64 offset, quint32 maxBytes) {
             fail(tr("The inline value window is invalid."));
             return;
         }
-        const auto length = static_cast<qsizetype>(
-            std::min<quint64>(std::min<quint32>(maxBytes, ChunkBytes), total_ - offset));
+        const auto length = static_cast<qsizetype>(std::min<quint64>(
+            std::min<quint32>(maxBytes, EngineAdapter::valueChunkBytes()), total_ - offset));
         if (!model_->setChunk(inlineBytes_.mid(static_cast<qsizetype>(offset), length), offset,
                               total_, inlineBinary_)) {
             fail(tr("The inline value window is invalid."));
@@ -220,7 +214,7 @@ void ValueDetailDialog::request(quint64 offset, quint32 maxBytes) {
         }
         hasChunk_ = true;
         nextOffset_ = model_->nextOffset();
-        windowBytes_ = ChunkBytes;
+        windowBytes_ = EngineAdapter::valueChunkBytes();
         setStatus(tr("Bytes %1–%2 of %3 · %4")
                       .arg(offset_)
                       .arg(nextOffset_)
@@ -261,31 +255,16 @@ void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
     }
     if (kind != "value_chunk")
         return;
-    if (!event.has_lease || event.chunk_bytes.size() > ChunkBytes) {
+    if (!event.has_lease || event.chunk_bytes.size() > EngineAdapter::valueChunkBytes()) {
         fail(tr("Invalid value chunk."));
         return;
     }
     const auto chunkKind = fromRust(event.chunk_kind);
     if (alignmentTarget_) {
         auto target = *alignmentTarget_;
-        if (chunkKind == "text") {
-            const auto relative = target - event.chunk_offset;
-            for (size_t i = 0; i < relative && i < event.chunk_bytes.size(); ++i) {
-                const auto byte = event.chunk_bytes[i];
-                const size_t length = byte >= 0xc2 && byte <= 0xdf   ? 2
-                                      : byte >= 0xe0 && byte <= 0xef ? 3
-                                      : byte >= 0xf0 && byte <= 0xf4 ? 4
-                                                                     : 1;
-                if (i + length > relative && i + length <= event.chunk_bytes.size()) {
-                    QStringDecoder decoder(QStringDecoder::Utf8);
-                    const QString decoded = decoder(QByteArrayView(
-                        reinterpret_cast<const char*>(event.chunk_bytes.data() + i), length));
-                    if (!decoder.hasError() && !decoded.isEmpty())
-                        target = event.chunk_offset + i + length;
-                    break;
-                }
-            }
-        }
+        if (chunkKind == "text")
+            target = value_text_boundary_after({event.chunk_bytes.data(), event.chunk_bytes.size()},
+                                               event.chunk_offset, target);
         alignmentTarget_.reset();
         loading_ = false;
         request(target);

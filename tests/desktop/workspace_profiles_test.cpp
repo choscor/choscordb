@@ -55,6 +55,7 @@ void WorkspaceTest::savedProfilesCreateDuplicateTestDeleteAndConnect() {
     QTRY_VERIFY(save->isEnabled());
     choscordb::SavedProfile profile;
     profile.id = "native-local";
+    profile.driver = "sqlite";
     profile.name = "Saved SQLite";
     profile.path = ":memory:";
     dialog->saveDraft(profile);
@@ -148,6 +149,7 @@ void WorkspaceTest::profileFailuresKeepDraftAndShowConnectionCodes() {
     QTRY_VERIFY(save->isEnabled());
     choscordb::SavedProfile profile;
     profile.id = "invalid-path";
+    profile.driver = "sqlite";
     profile.name = "Unsaved draft";
     name->setText(profile.name);
     save->click();

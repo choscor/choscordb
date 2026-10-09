@@ -116,9 +116,8 @@ bool QueryWorkspace::applyStagedEdits() {
     if (!queryConnection_ || workInFlight() || editabilityPlanning_ || editApplying_ ||
         editQualifiedName_.isEmpty())
         return false;
-    if (pendingTransactions_.contains(*queryConnection_) ||
-        (widgets_.transactionActive && widgets_.transactionActive(*queryConnection_))) {
-        message(tr("Commit or roll back the manual transaction before applying grid changes."));
+    if (const auto& blocked = editTransactionGuard().applyEdits; !blocked.isEmpty()) {
+        message(blocked);
         return false;
     }
     auto request = editRequest(driverForConnection(*queryConnection_), editQualifiedName_,
@@ -159,39 +158,7 @@ bool QueryWorkspace::applyStagedEdits() {
         return false;
     }
     auto batch = std::move(plan.statements);
-    QString review;
-    for (const auto& statement : batch) {
-        review += statement.sql + "\n";
-        for (size_t i = 0; i < statement.params.size(); ++i) {
-            const auto& value = statement.params[i];
-            QString shown = std::holds_alternative<std::monostate>(value) ? QStringLiteral("NULL")
-                            : std::holds_alternative<QByteArray>(value)
-                                ? QStringLiteral("binary 0x%1 (%2 bytes)")
-                                      .arg(QString::fromLatin1(std::get<QByteArray>(value).toHex()))
-                                      .arg(std::get<QByteArray>(value).size())
-                                : std::visit(
-                                      [](const auto& v) -> QString {
-                                          using T = std::decay_t<decltype(v)>;
-                                          if constexpr (std::is_same_v<T, QString>) {
-                                              QString escaped = v;
-                                              escaped.replace('\\', "\\\\");
-                                              escaped.replace('"', "\\\"");
-                                              escaped.replace('\n', "\\n");
-                                              return QStringLiteral("text \"") + escaped + '"';
-                                          } else if constexpr (std::is_same_v<T, bool>)
-                                              return v ? "true" : "false";
-                                          else if constexpr (std::is_same_v<T, DecimalValue>)
-                                              return v.text;
-                                          else if constexpr (std::is_arithmetic_v<T>)
-                                              return QString::number(v);
-                                          else
-                                              return QString{};
-                                      },
-                                      value);
-            review += tr("  Parameter %1: %2\n").arg(i + 1).arg(shown);
-        }
-        review += "\n";
-    }
+    const auto review = plan.review;
     if (batch.empty())
         return false;
     design::ModalDialog box(widgets_.dialogParent);

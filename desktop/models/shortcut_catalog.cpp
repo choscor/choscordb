@@ -2,12 +2,11 @@
 #include <QHash>
 #include <QKeySequence>
 #include <QRegularExpression>
-#include <QSet>
 namespace choscordb {
 namespace {
 bool parseSequence(const QString& text, QKeySequence& sequence) {
-    if (!text.isValidUtf16() || text.size() > 128 || text.contains(QChar(0)) ||
-        text.toUtf8().size() > 128)
+    // Rust bounds the stored sequence and rejects NUL; Qt parses only valid UTF-16.
+    if (!text.isValidUtf16())
         return false;
     sequence = QKeySequence::fromString(text, QKeySequence::PortableText);
     if (text.isEmpty())
@@ -32,41 +31,32 @@ bool parseSequence(const QString& text, QKeySequence& sequence) {
     return canonical.compare(requested, Qt::CaseInsensitive) == 0;
 }
 } // namespace
-QString shortcutValidationError(const EditorPreferences& preferences,
-                                const QList<ShortcutDescriptor>& catalog) {
-    const auto limits = EngineAdapter::editorPreferenceLimits();
-    if (preferences.version != limits.version)
-        return QObject::tr("Unsupported preferences version.");
-    if (preferences.fontSize < limits.minFontSize || preferences.fontSize > limits.maxFontSize)
-        return QObject::tr("Font size is outside the supported range.");
-    if (!preferences.fontFamily.isValidUtf16() || preferences.fontFamily.contains(QChar(0)) ||
-        preferences.fontFamily.size() > 256 || preferences.fontFamily.toUtf8().size() > 256)
-        return QObject::tr("Font family must be valid text of at most 256 UTF-8 bytes.");
+ShortcutValidation validateShortcuts(const QList<ShortcutOverride>& shortcuts,
+                                     const QList<ShortcutDescriptor>& catalog) {
     QHash<QString, qsizetype> identifiers;
     QList<QKeySequence> effective;
     for (qsizetype i = 0; i < catalog.size(); ++i) {
         if (catalog[i].id.isEmpty() || identifiers.contains(catalog[i].id))
-            return QObject::tr("The command catalog contains duplicate or empty identifiers.");
+            return {QObject::tr("The command catalog contains duplicate or empty identifiers.")};
         identifiers.insert(catalog[i].id, i);
         QKeySequence sequence;
         if (!parseSequence(catalog[i].defaultSequence, sequence))
-            return QObject::tr("Invalid default shortcut for %1.").arg(catalog[i].label);
+            return {QObject::tr("Invalid default shortcut for %1.").arg(catalog[i].label)};
         effective.append(sequence);
     }
-    QSet<QString> seen;
-    for (const auto& custom : preferences.shortcuts) {
+    QList<bool> overridden(catalog.size(), false);
+    for (const auto& custom : shortcuts) {
         const auto found = identifiers.constFind(custom.command);
         if (found == identifiers.cend())
-            return QObject::tr("Unknown command in shortcut overrides.");
-        if (seen.contains(custom.command))
-            return QObject::tr("A command has more than one shortcut override.");
-        seen.insert(custom.command);
+            return {QObject::tr("Unknown command in shortcut overrides.")};
         const auto index = found.value();
+        overridden[index] = true;
         if (!catalog[index].configurable)
-            return QObject::tr("The shortcut for %1 cannot be changed.").arg(catalog[index].label);
+            return {QObject::tr("The shortcut for %1 cannot be changed.").arg(catalog[index].label),
+                    index};
         QKeySequence sequence;
         if (!parseSequence(custom.sequence, sequence))
-            return QObject::tr("Invalid shortcut for %1.").arg(catalog[index].label);
+            return {QObject::tr("Invalid shortcut for %1.").arg(catalog[index].label), index};
         effective[index] = sequence;
     }
     for (qsizetype i = 0; i < effective.size(); ++i) {
@@ -77,8 +67,9 @@ QString shortcutValidationError(const EditorPreferences& preferences,
                 continue;
             if (effective[i].matches(effective[j]) != QKeySequence::NoMatch ||
                 effective[j].matches(effective[i]) != QKeySequence::NoMatch)
-                return QObject::tr("The shortcuts for %1 and %2 conflict.")
-                    .arg(catalog[i].label, catalog[j].label);
+                return {QObject::tr("The shortcuts for %1 and %2 conflict.")
+                            .arg(catalog[i].label, catalog[j].label),
+                        overridden[j] || !overridden[i] ? j : i};
         }
     }
     return {};

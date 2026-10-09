@@ -31,7 +31,9 @@ class PinnedTreeModel final : public QAbstractItemModel {
 
     void setPins(const QList<PinRecord>& pins);
     bool setResolved(const QString& key, const QModelIndex& verifiedSourceIndex);
-    void setStatus(const QString& key, const QString& status);
+    // Every status appears in the tooltip; a Label status also follows the name.
+    enum class StatusPlacement { TooltipOnly, Label };
+    void setStatus(const QString& key, const QString& status, StatusPlacement placement);
     QModelIndex sourceIndex(const QModelIndex& index) const;
     QString pinKey(const QModelIndex& root) const;
     bool isPinnedRoot(const QModelIndex& index) const;

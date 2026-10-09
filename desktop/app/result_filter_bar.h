@@ -13,8 +13,7 @@ class ResultFilterBar final : public QWidget {
     Q_OBJECT
   public:
     explicit ResultFilterBar(QWidget* parent = nullptr);
-    void setColumns(const std::vector<ResultColumn>& columns,
-                    const std::vector<ResultTableModel::Row>& samples = {});
+    void setColumns(const std::vector<ResultColumn>& columns);
     QList<ResultFilterCondition> conditions() const;
     bool draftMatches(const QList<ResultFilterCondition>& conditions) const;
     void setBusy(bool busy);

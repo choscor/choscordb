@@ -66,7 +66,8 @@ bool SqlEditor::viewportEvent(QEvent* event) {
 }
 bool SqlEditor::restoreDocument(const QByteArray& sql, const QString& path, quint64 cursor,
                                 quint64 anchor, bool modified) {
-    if (ioBusy_ || sql.size() > DocumentIo::MaximumBytes)
+    // Rust bounds every recovered, generated, and history document.
+    if (ioBusy_)
         return false;
     const auto boundary = [&sql](quint64 offset) {
         return offset <= static_cast<quint64>(sql.size()) &&

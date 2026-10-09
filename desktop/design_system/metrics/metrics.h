@@ -119,12 +119,10 @@ struct DesignMetrics final {
     int defaultWorkspaceHeight = 900;
     int minimumWorkspaceWidth = 960;
     int minimumWorkspaceHeight = 640;
-    int initialNavigatorWidth = 260;
     int narrowNavigatorWidth = 235;
     int objectColumnRowHeight = 33;
     int sidebarInset = 11;
     int sidebarTopInset = 9;
-    int initialEditorResultsSplit = 500;
     int initialEditorHeight = 380;
     int initialResultsHeight = 380;
     int initialHistoryHeight = 360;

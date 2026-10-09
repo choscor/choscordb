@@ -73,8 +73,7 @@ ResultFilterBar::ResultFilterBar(QWidget* parent) : QWidget(parent) {
     refreshActions();
 }
 
-void ResultFilterBar::setColumns(const std::vector<ResultColumn>& columns,
-                                 const std::vector<ResultTableModel::Row>&) {
+void ResultFilterBar::setColumns(const std::vector<ResultColumn>& columns) {
     hasColumns_ = !columns.empty();
     refreshActions();
 }

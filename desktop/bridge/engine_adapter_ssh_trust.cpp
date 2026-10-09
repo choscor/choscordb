@@ -7,12 +7,6 @@ QList<SshHostKeyCandidate> hostKeyCandidates(const rust::Vec<SshHostKeyCandidate
     candidates.reserve(static_cast<qsizetype>(values.size()));
     for (const auto& value : values) {
         SshHostKeyCandidate candidate;
-        const auto kind = fromRust(value.target_kind);
-        candidate.target.kind = kind == "jump"         ? SshHostKeyTarget::Kind::JumpId
-                                : kind == "jump_index" ? SshHostKeyTarget::Kind::JumpIndex
-                                                       : SshHostKeyTarget::Kind::Target;
-        candidate.target.id = fromRust(value.target_id);
-        candidate.target.index = static_cast<int>(value.target_index);
         candidate.originalHost = fromRust(value.original_host);
         candidate.hostname = fromRust(value.hostname);
         candidate.port = value.port;
@@ -27,30 +21,30 @@ QList<SshHostKeyCandidate> hostKeyCandidates(const rust::Vec<SshHostKeyCandidate
 }
 } // namespace engine_adapter_detail
 
-void EngineAdapter::inspectSshHostKeys(const SavedProfile& profile, const SshHostKeyTarget& target,
-                                       const QList<SshHopCredential>& precedingHopCredentials,
-                                       quint64 token) {
+void EngineAdapter::inspectSshHostKeys(const SavedProfile& profile, quint64 token) {
     if (d_->closing || d_->stopping) {
         emit sshHostKeyOperationFailed(token, tr("Workspace is closing."));
         return;
     }
-    const char* kind = target.kind == SshHostKeyTarget::Kind::Target   ? "target"
-                       : target.kind == SshHostKeyTarget::Kind::JumpId ? "jump"
-                                                                       : "jump_index";
-    if (target.kind == SshHostKeyTarget::Kind::JumpIndex && target.index < 0) {
-        emit sshHostKeyOperationFailed(token, tr("Invalid SSH hop index."));
-        return;
-    }
-    ProfileCredentialsDto credentials;
-    engine_adapter_detail::addHopCredentials(credentials, precedingHopCredentials);
-    const auto idBytes = target.id.toUtf8();
-    const auto submitted = profile_inspect_ssh_host_keys(
-        *d_->engine, engine_adapter_detail::profileDto(profile), std::move(credentials), kind,
-        engine_adapter_detail::utf8View(idBytes),
-        target.kind == SshHostKeyTarget::Kind::JumpIndex ? static_cast<quint32>(target.index) : 0,
-        token);
+    // The form inspects the final SSH server; jump hosts are no longer configurable.
+    const auto submitted =
+        profile_inspect_ssh_host_keys(*d_->engine, engine_adapter_detail::profileDto(profile),
+                                      ProfileCredentialsDto{}, "target", "", 0, token);
     if (!submitted.accepted)
         emit sshHostKeyOperationFailed(token, engine_adapter_detail::fromRust(submitted.error));
+}
+
+int EngineAdapter::profileSecretMaxBytes() {
+    return static_cast<int>(profile_secret_max_bytes());
+}
+QString EngineAdapter::sshPrivateKeyTextError(const QString& text) {
+    const auto bytes = text.toUtf8();
+    return engine_adapter_detail::fromRust(
+        ssh_private_key_text_error(engine_adapter_detail::utf8View(bytes)));
+}
+bool EngineAdapter::sshKnownHostsPathValid(const QString& path) {
+    const auto bytes = path.toUtf8();
+    return ssh_known_hosts_path_valid(engine_adapter_detail::utf8View(bytes));
 }
 
 void EngineAdapter::approveSshHostKey(const SshHostKeyCandidate& candidate,

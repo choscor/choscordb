@@ -49,7 +49,7 @@ class SearchTest : public QObject {
         auto* validation =
             dynamic_cast<choscordb::design::FieldValidation*>(needle->parentWidget());
         QVERIFY(validation);
-        QVERIFY(validation->error().contains("text to find"));
+        QTRY_VERIFY(validation->error().contains("text to find"));
     }
     void replaceAllShowsOversizedPatternErrorBelowFindField() {
         QWidget parent;
@@ -64,8 +64,8 @@ class SearchTest : public QObject {
         auto* validation =
             dynamic_cast<choscordb::design::FieldValidation*>(needle->parentWidget());
         QVERIFY(validation);
-        QTRY_VERIFY(validation->error().contains("resource limits"));
-        QVERIFY(!panel.findChild<QLabel*>("searchStatus")->text().contains("resource limits"));
+        QTRY_VERIFY(validation->error().contains("16 KiB"));
+        QVERIFY(!panel.findChild<QLabel*>("searchStatus")->text().contains("16 KiB"));
     }
     void replaceAllShowsOversizedReplacementErrorBelowReplacementField() {
         QWidget parent;
@@ -81,7 +81,7 @@ class SearchTest : public QObject {
         auto* validation =
             dynamic_cast<choscordb::design::FieldValidation*>(replacement->parentWidget());
         QVERIFY(validation);
-        QVERIFY(validation->error().contains("16 MiB"));
+        QTRY_VERIFY(validation->error().contains("16 MiB"));
         QCOMPARE(editor.text(), QString("cat"));
         QVERIFY(panel.findChild<QPushButton*>("searchReplaceAll")->isEnabled());
         QVERIFY(parent.findChild<choscordb::ToastRegion*>("toastRegion",

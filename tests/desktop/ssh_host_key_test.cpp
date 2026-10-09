@@ -29,8 +29,7 @@ void WorkspaceTest::sshHostKeyInspectionRequiresExplicitActionAndKeepsUiResponsi
     auto* save = dialog.findChild<QPushButton*>("profileSave");
     QTRY_VERIFY(save->isEnabled());
     auto* inspect = dialog.findChild<QPushButton*>("profileSshInspectHostKeys");
-    auto* inspectHop = dialog.findChild<QPushButton*>("profileSshHopInspectHostKeys");
-    QVERIFY(inspect && inspectHop);
+    QVERIFY(inspect);
     QVERIFY(!inspect->isEnabled());
     dialog.findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
     dialog.findChild<QLineEdit*>("profileName")->setText("Inspect SSH trust");
@@ -50,9 +49,7 @@ void WorkspaceTest::sshHostKeyInspectionRequiresExplicitActionAndKeepsUiResponsi
     const auto port = QString::fromUtf8(peer.readLine()).trimmed().toUShort(&portOk);
     QVERIFY(portOk && port);
     dialog.findChild<QSpinBox*>("profileSshPort")->setValue(port);
-    dialog.findChild<QSpinBox*>("profileSshTimeout")->setValue(1);
     QVERIFY(inspect->isEnabled());
-    QVERIFY(!inspectHop->isEnabled());
     QSignalSpy connections(&dialog, &choscordb::ProfileDialog::connectionSubmitted);
     QSignalSpy failures(&adapter, &choscordb::EngineAdapter::sshHostKeyOperationFailed);
     bool responsive = false;
@@ -98,14 +95,11 @@ void WorkspaceTest::sshHostKeyStaleInspectionSuccessCannotOpenApproval() {
     QVERIFY(!dialog.findChild<choscordb::SshHostKeyDialog*>());
     QVERIFY(approved.isEmpty());
     QCOMPARE(username->text(), QString("different-user"));
-    QVERIFY(dialog.findChild<QLineEdit*>("profileSshKnownHosts")->text().isEmpty());
     QVERIFY(dialog.findChild<QLabel*>("profileStatus")->text().contains("changed"));
 }
 
 void WorkspaceTest::sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint() {
     choscordb::SshHostKeyCandidate candidate;
-    candidate.target.kind = choscordb::SshHostKeyTarget::Kind::JumpId;
-    candidate.target.id = "second-hop";
     candidate.originalHost = "jump-alias";
     candidate.hostname = "2001:db8::7";
     candidate.port = 2207;
@@ -156,7 +150,6 @@ void WorkspaceTest::sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint() 
     const auto selected = qvariant_cast<choscordb::SshHostKeyCandidate>(approved.first().at(0));
     QCOMPARE(selected.opaqueJson, candidate.opaqueJson);
     QCOMPARE(selected.sha256, candidate.sha256);
-    QCOMPARE(selected.target.id, QString("second-hop"));
     QVERIFY(!approve->isEnabled());
     review.finishApproval("outcome_unknown");
     auto* status = review.findChild<QLabel*>("sshHostKeyStatus");

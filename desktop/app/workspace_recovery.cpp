@@ -2,14 +2,13 @@
 #include "app/object_explorer.h"
 #include "app/object_kind_icon.h"
 #include "app/object_tab_title.h"
+#include "bridge/engine_adapter.h"
 #include "bridge/request_token.h"
 #include "design_system/icons.h"
 #include "design_system/theme.h"
 #include "widgets/sql_editor/sql_editor.h"
-#include <QSet>
 #include <QTabBar>
 #include <QTabWidget>
-#include <QUuid>
 namespace choscordb {
 quint32 savedObjectPane(int paneIndex) {
     if (paneIndex == 4) // ERD is inserted before Data in the UI.
@@ -63,7 +62,7 @@ void WorkspaceRecoveryController::watchEditor(SqlEditor* editor) {
         return;
     editor->setProperty("recoveryWatched", true);
     if (editor->property("documentId").toString().isEmpty())
-        editor->setProperty("documentId", QUuid::createUuid().toString(QUuid::WithoutBraces));
+        editor->setProperty("documentId", EngineAdapter::newDocumentId());
     connect(editor, &SqlEditor::profileAssociationChanged, this,
             &WorkspaceRecoveryController::changed);
     connect(editor, &SqlEditor::textChanged, this, &WorkspaceRecoveryController::changed);
@@ -156,53 +155,8 @@ void WorkspaceRecoveryController::restoredTabs(quint64 token, const QList<SavedW
                                                quint32 activeIndex) {
     if (token != pending_ || !restoring_)
         return;
-    const auto limits = EngineAdapter::recoveryLimits();
-    if (static_cast<quint64>(tabs.size()) > limits.maxDocuments ||
-        (tabs.isEmpty() ? activeIndex != 0 : activeIndex >= static_cast<quint32>(tabs.size()))) {
-        failed(token, tr("Saved workspace tab order is invalid."));
-        return;
-    }
-    QSet<QString> identities;
-    quint64 total = 0;
-    for (const auto& tab : tabs) {
-        if (tab.isObject) {
-            const auto key =
-                QStringLiteral("object:%1:%2:%3").arg(tab.profileId, tab.objectType, tab.objectId);
-            if (tab.profileId.isEmpty() || tab.objectType.isEmpty() || tab.objectId.isEmpty() ||
-                tab.label.isEmpty() || tab.pane > 5 ||
-                (tab.pane == 5 && tab.objectType != QStringLiteral("table")) ||
-                identities.contains(key)) {
-                failed(token, tr("Saved object tab is invalid."));
-                return;
-            }
-            identities.insert(key);
-            total += static_cast<quint64>(tab.profileId.toUtf8().size() +
-                                          tab.objectType.toUtf8().size() +
-                                          tab.objectId.toUtf8().size() + tab.label.toUtf8().size());
-        } else {
-            const auto& d = tab.document;
-            const auto bytes = d.sql.toUtf8();
-            const auto key = QStringLiteral("sql:%1").arg(d.id);
-            auto boundary = [&bytes](quint64 offset) {
-                return offset <= static_cast<quint64>(bytes.size()) &&
-                       (offset == static_cast<quint64>(bytes.size()) ||
-                        (static_cast<unsigned char>(bytes.at(static_cast<qsizetype>(offset))) &
-                         0xc0) != 0x80);
-            };
-            if (d.id.isEmpty() || identities.contains(key) ||
-                static_cast<quint64>(bytes.size()) > limits.maxSqlBytes ||
-                !boundary(d.cursorOffset) || !boundary(d.selectionAnchor)) {
-                failed(token, tr("Saved SQL tab is invalid."));
-                return;
-            }
-            identities.insert(key);
-            total += static_cast<quint64>(bytes.size());
-        }
-        if (total > limits.maxCollectionBytes) {
-            failed(token, tr("Saved workspace exceeds recovery limits."));
-            return;
-        }
-    }
+    // Rust validates the snapshot (limits, identities, panes, cursor offsets) before
+    // emitting it; the native workspace applies what it receives.
     pending_ = 0;
     restoring_ = false;
     failed_ = false;
@@ -229,28 +183,10 @@ void WorkspaceRecoveryController::flush() {
         return;
     if (!dirty_ && !closing_)
         return;
-    const auto limits = EngineAdapter::recoveryLimits();
-    quint64 total = 0;
-    QString error;
-    if (static_cast<quint64>(tabs_->count()) > limits.maxDocuments)
-        error = tr("Workspace has too many tabs to save for recovery.");
-    for (int i = 0; error.isEmpty() && i < tabs_->count(); ++i) {
-        auto* editor = qobject_cast<SqlEditor*>(tabs_->widget(i));
-        if (!editor)
-            continue;
-        if (editor->isIoBusy())
+    // Rust enforces recovery limits on save and reports failures through failed().
+    for (int i = 0; i < tabs_->count(); ++i)
+        if (auto* editor = qobject_cast<SqlEditor*>(tabs_->widget(i)); editor && editor->isIoBusy())
             return;
-        const auto bytes =
-            static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETLENGTH));
-        total += bytes;
-        if (bytes > limits.maxSqlBytes || total > limits.maxCollectionBytes)
-            error = tr("Workspace is too large to save for recovery.");
-    }
-    if (!error.isEmpty()) {
-        failed_ = true;
-        emit errorOccurred(error, closing_);
-        return;
-    }
     pending_ = nextRequestToken();
     sentRevision_ = revision_;
     emit saveTabsRequested(snapshotTabs(), static_cast<quint32>(qMax(0, tabs_->currentIndex())),

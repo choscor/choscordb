@@ -1,59 +1,22 @@
 #include "value_preview_model.h"
+#include "bridge/engine_adapter.h"
+#include "bridge/rust_text.h"
+#include "choscordb-bridge/src/lib.rs.h"
 #include <QStringDecoder>
-#include <algorithm>
 namespace choscordb {
-namespace {
-bool continuation(char byte) {
-    return (static_cast<unsigned char>(byte) & 0xc0) == 0x80;
-}
-int sequenceSize(char byte) {
-    const auto value = static_cast<unsigned char>(byte);
-    if (value >= 0xc2 && value <= 0xdf)
-        return 2;
-    if (value >= 0xe0 && value <= 0xef)
-        return 3;
-    if (value >= 0xf0 && value <= 0xf4)
-        return 4;
-    return 1;
-}
-} // namespace
 bool ValuePreviewModel::setChunk(QByteArray bytes, quint64 offset, quint64 totalBytes,
                                  bool binary) {
-    if (bytes.size() > MaxChunkBytes || offset > totalBytes ||
+    if (quint64(bytes.size()) > EngineAdapter::valueChunkBytes() || offset > totalBytes ||
         static_cast<quint64>(bytes.size()) > totalBytes - offset)
         return false;
     // Own only the requested window, even if the caller sliced a larger allocation.
     QByteArray owned(bytes.constData(), bytes.size());
-    qsizetype begin = 0;
-    qsizetype end = owned.size();
-    if (!binary) {
-        if (offset + static_cast<quint64>(end) < totalBytes && begin < end) {
-            auto lead = end - 1;
-            while (lead > begin && continuation(owned[lead]))
-                --lead;
-            if (sequenceSize(owned[lead]) > end - lead)
-                end = lead;
-        }
-    }
-    std::vector<quint32> boundaries;
-    if (begin < end) {
-        const qsizetype width = binary ? 16 : 256;
-        boundaries.reserve(static_cast<std::size_t>((end - begin) / (binary ? 16 : 253) + 2));
-        boundaries.push_back(static_cast<quint32>(begin));
-        while (begin < end) {
-            auto next = std::min(begin + width, end);
-            if (!binary && next < end) {
-                // At most three continuation bytes belong to a valid UTF-8 character.
-                auto lead = next;
-                for (int count = 0; count < 3 && lead > begin && continuation(owned[lead]); ++count)
-                    --lead;
-                if (lead < next && sequenceSize(owned[lead]) > next - lead)
-                    next = lead;
-            }
-            boundaries.push_back(static_cast<quint32>(next));
-            begin = next;
-        }
-    }
+    // Rust splits rows without breaking UTF-8 characters and holds back a partial tail.
+    const auto rows = value_preview_rows(bridge_detail::byteView(owned), binary,
+                                         offset + static_cast<quint64>(owned.size()) < totalBytes,
+                                         binary ? 16 : 256);
+    std::vector<quint32> boundaries(rows.boundaries.begin(), rows.boundaries.end());
+    const auto end = static_cast<qsizetype>(rows.end);
     beginResetModel();
     bytes_ = std::move(owned);
     boundaries_ = std::move(boundaries);

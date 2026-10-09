@@ -23,8 +23,6 @@ class ExportDialog final : public DialogShell {
     void setQuery(quint64 query);
     void setResultViewActive(bool active);
     void clearQuery();
-    void startExportTo(const QString& path, const QString& format, const QStringList& table = {},
-                       bool postgres = false);
     void startExportToDialect(const QString& path, const QString& format, const QStringList& table,
                               const QString& dialect);
     bool isRunning() const;

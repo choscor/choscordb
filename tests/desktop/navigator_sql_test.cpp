@@ -11,6 +11,87 @@
 class NavigatorSqlTest : public QObject {
     Q_OBJECT
   private slots:
+    void unsupportedRelationSubtypesExplainWhyActionsAreUnavailable() {
+        using namespace choscordb;
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter);
+        controller.setDriverResolver([](quint64) { return QStringLiteral("mysql"); });
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        QVERIFY(model->addConnection(10, "fixture"));
+        const auto root = model->index(0, 0);
+        model->fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
+        const QVariantList subtype{
+            QVariantMap{{"name", "Relation subtype"}, {"value", "foreign_table"}}};
+        QVERIFY(model->applyChildren(
+            10, {}, requested.last().at(2).toULongLong(),
+            {{"foreign", "remote_table", "\"remote_table\"", "table", false, subtype}}));
+        QSignalSpy actions(&controller, &NavigatorController::objectActionRequested);
+        QMenu menu;
+        controller.populateContextMenu(&menu, model->index(0, 0, root));
+        auto* drop = menu.findChild<QAction*>("dropObject");
+        auto* rename = menu.findChild<QAction*>("renameObject");
+        QVERIFY(drop && !drop->isEnabled());
+        QVERIFY(rename && !rename->isEnabled());
+        QCOMPARE(drop->toolTip(), QString("The selected relation type is not supported."));
+        QCOMPARE(rename->toolTip(), QString("The selected relation type is not supported."));
+        drop->trigger();
+        rename->trigger();
+        QCOMPARE(actions.count(), 0);
+    }
+
+    void postgresRelationSubtypesKeepActionsAndReachTheRequest() {
+        using namespace choscordb;
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter);
+        controller.setDriverResolver([](quint64) { return QStringLiteral("postgres"); });
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        QVERIFY(model->addConnection(9, "fixture"));
+        const auto root = model->index(0, 0);
+        model->fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
+        const auto subtype = [](const QString& value) -> QVariantList {
+            return {QVariantMap{{"name", "Relation subtype"}, {"value", value}}};
+        };
+        QVERIFY(
+            model->applyChildren(9, {}, requested.last().at(2).toULongLong(),
+                                 {{"table", "ordinary_table", "\"ordinary_table\"", "table", false},
+                                  {"view", "ordinary_view", "\"ordinary_view\"", "view", false},
+                                  {"foreign", "remote_table", "\"remote_table\"", "table", false,
+                                   subtype("foreign_table")},
+                                  {"materialized", "cached_view", "\"cached_view\"", "view", false,
+                                   subtype("materialized_view")}}));
+        QSignalSpy actions(&controller, &NavigatorController::objectActionRequested);
+        const QStringList expectedSubtypes{QString{}, QString{}, QStringLiteral("foreign_table"),
+                                           QStringLiteral("materialized_view")};
+        for (int row = 0; row < 4; ++row) {
+            QMenu menu;
+            controller.populateContextMenu(&menu, model->index(row, 0, root));
+            auto* drop = menu.findChild<QAction*>("dropObject");
+            auto* rename = menu.findChild<QAction*>("renameObject");
+            QVERIFY(drop && drop->isEnabled());
+            QVERIFY(rename && rename->isEnabled());
+            rename->trigger();
+            QCOMPARE(actions.count(), 2 * row + 1);
+            QCOMPARE(actions.last().at(0).toString(), QString("rename"));
+            QCOMPARE(actions.last().at(7).toString(), expectedSubtypes.at(row));
+            drop->trigger();
+            QCOMPARE(actions.count(), 2 * row + 2);
+            QCOMPARE(actions.last().at(0).toString(), QString("drop"));
+            QCOMPARE(actions.last().at(7).toString(), expectedSubtypes.at(row));
+        }
+    }
+
     void postgresSystemSchemasStayOutOfTreeAndCompletionUntilEnabled() {
         using namespace choscordb;
         EngineAdapter engine;
@@ -63,13 +144,15 @@ class NavigatorSqlTest : public QObject {
         QCOMPARE(visible->index(1, 0, pgDatabase).data().toString(), QString("public"));
         QCOMPARE(visible->rowCount(mysqlDatabase), 8);
         QCOMPARE(visible->rowCount(sqliteDatabase), 8);
-        auto pgSnapshot = model->completionSnapshot(9, 100, 4096);
+        auto pgSnapshot = model->completionSnapshot(9, {100, 4096, 100 * 8 + 64});
         QCOMPARE(pgSnapshot.objects.size(), size_t(3));
-        QCOMPARE(model->completionSnapshot(10, 100, 4096).objects.size(), size_t(9));
-        QCOMPARE(model->completionSnapshot(11, 100, 4096).objects.size(), size_t(9));
+        QCOMPARE(model->completionSnapshot(10, {100, 4096, 100 * 8 + 64}).objects.size(),
+                 size_t(9));
+        QCOMPARE(model->completionSnapshot(11, {100, 4096, 100 * 8 + 64}).objects.size(),
+                 size_t(9));
         controller.setShowSystemSchemas(true);
         QCOMPARE(visible->rowCount(pgDatabase), 8);
-        QCOMPARE(model->completionSnapshot(9, 100, 4096).objects.size(), size_t(9));
+        QCOMPARE(model->completionSnapshot(9, {100, 4096, 100 * 8 + 64}).objects.size(), size_t(9));
         const auto pgRoot = model->index(0, 0);
         const auto pgSourceDatabase = model->index(0, 0, pgRoot);
         const auto catalog = model->index(0, 0, pgSourceDatabase);
@@ -78,15 +161,17 @@ class NavigatorSqlTest : public QObject {
         QVERIFY(model->applyChildren(
             9, "9-catalog", requests.last().at(2).toULongLong(),
             {{"catalog-table", "tmp_result", "pg_catalog.tmp_result", "table", false}}));
-        QCOMPARE(model->completionSnapshot(9, 100, 4096).objects.size(), size_t(10));
+        QCOMPARE(model->completionSnapshot(9, {100, 4096, 100 * 8 + 64}).objects.size(),
+                 size_t(10));
         tree.setCurrentIndex(visible->index(0, 0, pgDatabase));
         controller.setShowSystemSchemas(false);
         QCOMPARE(visible->rowCount(pgDatabase), 2);
         QCOMPARE(tree.currentIndex().data(NavigatorModel::KindRole).toString(),
                  QString("database"));
-        QCOMPARE(model->completionSnapshot(9, 100, 4096).objects.size(), size_t(3));
+        QCOMPARE(model->completionSnapshot(9, {100, 4096, 100 * 8 + 64}).objects.size(), size_t(3));
         controller.setShowSystemSchemas(true);
-        QCOMPARE(model->completionSnapshot(9, 100, 4096).objects.size(), size_t(10));
+        QCOMPARE(model->completionSnapshot(9, {100, 4096, 100 * 8 + 64}).objects.size(),
+                 size_t(10));
     }
     void searchDoesNotFetchHiddenSchemasOrResurrectLateReplies() {
         using namespace choscordb;
@@ -127,7 +212,7 @@ class NavigatorSqlTest : public QObject {
             {{"catalog-table", "tmp_result", "pg_temp_3.tmp_result", "table", false}}));
         QCoreApplication::processEvents();
         QCOMPARE(tree.model()->rowCount(), 0);
-        QCOMPARE(model->completionSnapshot(9, 100, 4096).objects.size(), size_t(2));
+        QCOMPARE(model->completionSnapshot(9, {100, 4096, 100 * 8 + 64}).objects.size(), size_t(2));
         QCOMPARE(requests.count(), 3);
     }
     void lateHiddenFailureDoesNotInterruptVisibleSearch() {
@@ -196,7 +281,6 @@ class NavigatorSqlTest : public QObject {
         QTRY_COMPARE(next.count(), 1);
         QCOMPARE(next.last().at(0).toULongLong(), quint64(9));
         QCOMPARE(next.last().at(3).toULongLong(), quint64(1));
-        QCOMPARE(next.last().at(4).toUInt(), quint32(1000));
         QCOMPARE(model->index(0, 0, root).data().toString(), QString("Alpha"));
     }
 
@@ -240,9 +324,9 @@ class NavigatorSqlTest : public QObject {
         const auto defaults = choscordb::SqlTemplateService::generate("insert", "\"t\"");
         QVERIFY(defaults.valid);
         QCOMPARE(defaults.sql, QString("INSERT INTO \"t\" DEFAULT VALUES;"));
-        const auto limits = choscordb::SqlTemplateService::limits();
+        // Rust's 1 MiB template input limit, in three-byte characters.
         QVERIFY(!choscordb::SqlTemplateService::generate(
-                     "select", QString(qsizetype(limits.maxBytes / 3 + 1), QChar(0x4e00)))
+                     "select", QString(qsizetype(1024 * 1024 / 3 + 1), QChar(0x4e00)))
                      .valid);
         QVERIFY(
             !choscordb::SqlTemplateService::generate("insert", "\"t\"", {QString(QChar(0xd800))})
@@ -271,6 +355,8 @@ class NavigatorSqlTest : public QObject {
         controller.populateContextMenu(&unloaded, table);
         QVERIFY(unloaded.findChild<QAction*>("generate_select"));
         QVERIFY(!unloaded.findChild<QAction*>("generate_insert")->isEnabled());
+        QVERIFY(!unloaded.findChild<QAction*>("generate_update")->isEnabled());
+        QVERIFY(unloaded.findChild<QAction*>("generate_update")->toolTip().contains("columns"));
         unloaded.findChild<QAction*>("generate_select")->trigger();
         QCOMPARE(generated.count(), 1);
         model->fetchMore(table);
@@ -281,17 +367,21 @@ class NavigatorSqlTest : public QObject {
         QMenu loaded;
         controller.populateContextMenu(&loaded, table);
         QVERIFY(loaded.findChild<QAction*>("generate_insert")->isEnabled());
-        loaded.findChild<QAction*>("generate_insert")->trigger();
+        QVERIFY(loaded.findChild<QAction*>("generate_update")->isEnabled());
+        loaded.findChild<QAction*>("generate_select")->trigger();
         QCOMPARE(generated.count(), 2);
+        QVERIFY(generated.last().at(1).toString().startsWith("SELECT * FROM"));
+        loaded.findChild<QAction*>("generate_insert")->trigger();
+        QCOMPARE(generated.count(), 3);
         QVERIFY(generated.last().at(1).toString().contains("\"a.b\""));
         QCOMPARE(requested.count(), 2); // Generation never fetches metadata.
         model->refresh(table);
         loaded.findChild<QAction*>("generate_insert")->trigger();
-        QCOMPARE(generated.count(), 2);
+        QCOMPARE(generated.count(), 3);
         QCOMPARE(failures.count(), 1);
         model->removeConnection(9);
         loaded.findChild<QAction*>("generate_select")->trigger();
-        QCOMPARE(generated.count(), 2);
+        QCOMPARE(generated.count(), 3);
         QCOMPARE(failures.count(), 2);
     }
 };

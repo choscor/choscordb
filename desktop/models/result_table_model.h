@@ -108,10 +108,11 @@ class ResultTableModel final : public QAbstractTableModel {
         QString error;
         std::size_t bytes = 0;
     };
-    static constexpr std::size_t DefaultBytes = 64 * 1024 * 1024;
+    // Rust's result-view budget, read once per process.
+    static std::size_t defaultBytes();
     // Budget includes owned page allocations, excluding this fixed QObject and
     // caller-owned in-flight transfers. Shared Qt buffers are charged in full.
-    explicit ResultTableModel(QObject* parent = nullptr, std::size_t byteBudget = DefaultBytes)
+    explicit ResultTableModel(QObject* parent = nullptr, std::size_t byteBudget = defaultBytes())
         : QAbstractTableModel(parent), byteBudget_(byteBudget) {}
     std::size_t residentBytes() const { return residentBytes_; }
     std::size_t byteBudget() const { return byteBudget_; }

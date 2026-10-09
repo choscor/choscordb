@@ -365,7 +365,7 @@ void WorkspaceTest::exportsOriginalResultAfterBrowsing() {
     auto* dialog = f.parent.findChild<choscordb::ExportDialog*>("exportDialog");
     QVERIFY(dialog);
     const auto destination = directory.filePath("rows.csv");
-    dialog->startExportTo(destination, "csv");
+    dialog->startExportToDialect(destination, "csv", {}, "sqlite");
     QTRY_VERIFY(f.exportResult.isEnabled());
     auto* toast =
         f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
@@ -416,7 +416,7 @@ void WorkspaceTest::exportCancellationPreservesExistingDestination() {
             }
     });
     confirmation.start();
-    dialog->startExportTo(destination, "csv");
+    dialog->startExportToDialect(destination, "csv", {}, "sqlite");
     auto* cancel = dialog->findChild<QPushButton*>("exportCancel");
     QVERIFY(cancel);
     QTRY_VERIFY(!confirmation.isActive());
@@ -441,7 +441,7 @@ void WorkspaceTest::exportFailureLeavesResultUsable() {
     f.exportResult.click();
     auto* dialog = f.parent.findChild<choscordb::ExportDialog*>("exportDialog");
     QVERIFY(dialog);
-    dialog->startExportTo(directory.filePath("missing/rows.csv"), "csv");
+    dialog->startExportToDialect(directory.filePath("missing/rows.csv"), "csv", {}, "sqlite");
     QTRY_VERIFY(!dialog->isRunning());
     auto* status = dialog->findChild<QLabel*>("exportStatus");
     QVERIFY(status && status->isVisible());

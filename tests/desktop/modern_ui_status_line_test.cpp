@@ -407,7 +407,7 @@ void ModernUiTest::embeddedDataFailureRemainsVisibleAfterDisconnectCleanup() {
                     if (running)
                         failureThenCleanup();
                 });
-        dialog->startExportTo(directory.filePath("data.csv"), "csv");
+        dialog->startExportToDialect(directory.filePath("data.csv"), "csv", {}, "sqlite");
         QTRY_VERIFY(!dialog->isRunning());
     } else {
         failureThenCleanup();

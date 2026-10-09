@@ -260,9 +260,10 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
                     openGeneratedSql_(connection, sql);
             });
     connect(explorer, &ObjectExplorer::reconnectRequested, this, [this, explorer] {
-        const auto context = explorer->property("objectProfileId").toString();
-        const bool sessionContext = context.startsWith("session:");
-        const auto profileId = context.startsWith("profile:") ? context.mid(8) : QString{};
+        const auto context =
+            EngineAdapter::parseObjectTabContext(explorer->property("objectProfileId").toString());
+        const bool sessionContext = context.session;
+        const auto profileId = context.profileId;
         auto* selector = findChild<QComboBox*>("connectionSelector");
         std::optional<quint64> target;
         if (selector) {
@@ -281,11 +282,8 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
             target = browsingConnection_;
         if (target) {
             const auto linkedProfile = workspace_->profileIdForConnection(*target);
-            const auto reboundContext = sessionContext
-                                            ? linkedProfile.isEmpty()
-                                                  ? QStringLiteral("session:%1").arg(*target)
-                                                  : QStringLiteral("profile:%1").arg(linkedProfile)
-                                            : QStringLiteral("profile:%1").arg(profileId);
+            const auto reboundContext = EngineAdapter::objectTabContext(
+                sessionContext ? linkedProfile : profileId, *target);
             for (int i = 0; i < editors_->count(); ++i) {
                 auto* existing = qobject_cast<ObjectExplorer*>(editors_->widget(i));
                 if (!existing || existing == explorer ||
@@ -339,8 +337,7 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
     if (!allowDocumentChange() || objectId.isEmpty())
         return;
     const auto profileId = workspace_->profileIdForConnection(connection);
-    const auto context = profileId.isEmpty() ? QStringLiteral("session:%1").arg(connection)
-                                             : QStringLiteral("profile:%1").arg(profileId);
+    const auto context = EngineAdapter::objectTabContext(profileId, connection);
     for (int i = 0; i < editors_->count(); ++i) {
         auto* explorer = qobject_cast<ObjectExplorer*>(editors_->widget(i));
         if (!explorer || explorer->property("objectId").toString() != objectId ||
@@ -389,9 +386,8 @@ void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
         return;
     auto* explorer = makeObjectExplorer();
     const auto profileId = workspace_->profileIdForConnection(connection);
-    explorer->setProperty("objectProfileId", profileId.isEmpty()
-                                                 ? QStringLiteral("session:%1").arg(connection)
-                                                 : QStringLiteral("profile:%1").arg(profileId));
+    explorer->setProperty("objectProfileId",
+                          EngineAdapter::objectTabContext(profileId, connection));
     explorer->setProperty("objectConnection", QVariant::fromValue<qulonglong>(connection));
     explorer->setProperty("objectId", objectId);
     explorer->setProperty("objectType", QStringLiteral("table"));

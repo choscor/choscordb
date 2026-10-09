@@ -4,6 +4,7 @@
 #include "app/object_action_sql.h"
 #include "app/object_data_workspace.h"
 #include "app/object_explorer.h"
+#include "app/object_kind_icon.h"
 #include "app/object_tab_title.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
@@ -88,10 +89,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
                            relationSubtype))
         return;
     const auto driver = workspace_->driverForConnection(connection);
-    const auto displayKind =
-        relationSubtype == QStringLiteral("materialized_view") ? tr("materialized view")
-        : relationSubtype == QStringLiteral("foreign_table")   ? tr("foreign table")
-                                                               : kind;
+    const auto displayKind = relationKindPhrase(kind, relationSubtype);
     ObjectActionStatement statement;
     QString newShortName;
     if (action == QStringLiteral("drop")) {
@@ -184,8 +182,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         return;
     }
     const auto profileId = workspace_->profileIdForConnection(connection);
-    const auto context = profileId.isEmpty() ? QStringLiteral("session:%1").arg(connection)
-                                             : QStringLiteral("profile:%1").arg(profileId);
+    const auto context = EngineAdapter::objectTabContext(profileId, connection);
     const auto query = workspace_->adapter()->execute(connection, statement.sql);
     if (!query) {
         showStatus(tr("The object action could not be submitted. Check the connection and retry."),

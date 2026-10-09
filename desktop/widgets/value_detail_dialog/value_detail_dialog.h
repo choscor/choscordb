@@ -1,4 +1,5 @@
 #pragma once
+#include "bridge/engine_adapter.h"
 #include "design_system/dialog_shell/dialog_shell.h"
 #include <QByteArray>
 #include <QPointer>
@@ -21,7 +22,8 @@ class ValueDetailDialog final : public DialogShell {
     ~ValueDetailDialog() override;
     void openValue(quint64 query, quint64 handle, const QString& type = {},
                    std::optional<quint64> length = std::nullopt);
-    bool openInlineValue(QByteArray bytes, const QString& type, bool binary);
+    // Returns why the value cannot open; empty on success.
+    QString openInlineValue(QByteArray bytes, const QString& type, bool binary);
     void clearValue();
 
   protected:
@@ -31,7 +33,7 @@ class ValueDetailDialog final : public DialogShell {
 
   private:
     void setStatus(const QString& message);
-    void request(quint64 offset, quint32 maxBytes = 65536);
+    void request(quint64 offset, quint32 maxBytes = EngineAdapter::valueChunkBytes());
     void previousChunk();
     void sizeVisibleColumns();
     void handleEvent(const BridgeEvent& event);
@@ -54,7 +56,7 @@ class ValueDetailDialog final : public DialogShell {
     quint64 offset_ = 0;
     quint64 total_ = 0;
     quint64 nextOffset_ = 0;
-    quint64 windowBytes_ = 65536;
+    quint64 windowBytes_ = EngineAdapter::valueChunkBytes();
     bool loading_ = false;
     bool hasChunk_ = false;
     std::optional<quint64> lease_;

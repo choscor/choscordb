@@ -300,8 +300,17 @@ class SecondaryDesignTest final : public QObject {
         auto* port = dialog.findChild<QSpinBox*>("profilePort");
         QCOMPARE(port->value(), 3306);
         QVERIFY(dialog.findChild<QCheckBox*>("profileSshEnabled")->isVisible());
+        auto* user = dialog.findChild<QLineEdit*>("profileUser");
+        auto* database = dialog.findChild<QLineEdit*>("profileDatabase");
+        QVERIFY(user && database);
+        QVERIFY(user->placeholderText().contains("anonymous"));
+        QVERIFY(database->placeholderText().contains("connect to the server"));
         dialog.findChild<QPushButton*>("profileDriverPostgres")->click();
         QCOMPARE(port->value(), 5432);
+        QVERIFY(dialog.findChild<QPushButton*>("profileDriverPostgres")->isChecked());
+        QVERIFY(!mysql->isChecked());
+        QCOMPARE(user->placeholderText(), QString("Database username"));
+        QVERIFY(database->placeholderText().contains("defaults to the username"));
         auto* ssh = dialog.findChild<QCheckBox*>("profileSshEnabled");
         ssh->setChecked(true);
         mysql->click();

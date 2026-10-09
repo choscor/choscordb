@@ -274,10 +274,25 @@ struct AllocationCounter {
                (add(QtHeaderBytes) && add(std::max(value.capacity(), value.size()) + 1));
     }
 };
+GridCell gridCellKind(const Cell& cell) {
+    if (std::holds_alternative<QByteArray>(cell))
+        return GridCell::Binary;
+    if (std::holds_alternative<DeferredValue>(cell))
+        return GridCell::Deferred;
+    if (std::holds_alternative<FallbackText>(cell))
+        return GridCell::FallbackText;
+    if (std::holds_alternative<UnavailableValue>(cell))
+        return GridCell::Unavailable;
+    return GridCell::Value;
+}
+const GridCellPolicy& cellPolicy(const Cell& cell) {
+    return EngineAdapter::gridCellPolicy(gridCellKind(cell));
+}
 } // namespace
 bool ResultTableModel::setPage(std::vector<ResultColumn> columns, std::vector<Row> rows,
                                quint64 firstRow) {
-    if (columns.size() > std::numeric_limits<int>::max() || rows.size() > 10000 ||
+    // Rust bounds every page to its page-size limit.
+    if (columns.size() > std::numeric_limits<int>::max() ||
         firstRow > std::numeric_limits<quint64>::max() - rows.size())
         return false;
     if (std::any_of(rows.begin(), rows.end(),
@@ -358,17 +373,7 @@ bool ResultTableModel::setPage(std::vector<ResultColumn> columns, std::vector<Ro
 bool ResultTableModel::setCellMetadata(std::vector<ResultCellMetadata> metadata) {
     if (metadata.size() != columns_.size())
         return false;
-    // Catalog labels are bounded independently of a page transfer's allocation.
-    std::size_t bytes = metadata.capacity() * sizeof(ResultCellMetadata);
-    for (const auto& item : metadata) {
-        for (const auto& string : {item.sourceColumn, item.sourceObject, item.sourceQualifiedName,
-                                   item.targetObject, item.targetQualifiedName, item.targetColumn})
-            bytes += static_cast<std::size_t>(string.size()) * sizeof(QChar);
-        for (const auto& choice : item.enumChoices)
-            bytes += static_cast<std::size_t>(choice.size()) * sizeof(QChar);
-    }
-    if (bytes > 1024 * 1024)
-        return false;
+    // Rust bounds catalog labels before they cross the bridge.
     cellMetadata_ = std::move(metadata);
     linkSlots_.assign(columns_.size(), -1);
     linkColumnCount_ = 0;
@@ -410,11 +415,7 @@ bool ResultTableModel::cellEditable(int row, int column) const {
     if (row < 0 || column < 0 || row >= rowCount() || column >= columnCount() || deleted_[row] ||
         !(inserted_[row] ? insertEditable_[column] : editable_[column]))
         return false;
-    const auto& cell = rows_[row][column];
-    return !std::holds_alternative<QByteArray>(cell) &&
-           !std::holds_alternative<DeferredValue>(cell) &&
-           !std::holds_alternative<FallbackText>(cell) &&
-           !std::holds_alternative<UnavailableValue>(cell);
+    return cellPolicy(rows_[row][column]).inlineEditable;
 }
 Qt::ItemFlags ResultTableModel::flags(const QModelIndex& index) const {
     auto result = QAbstractTableModel::flags(index);
@@ -628,7 +629,8 @@ bool ResultTableModel::addRow() {
     const auto bytes = columns_.size() * (sizeof(Cell) + sizeof(std::size_t)) + sizeof(Row) +
                        sizeof(std::vector<bool>) + sizeof(std::vector<std::size_t>) +
                        (columns_.size() + 7) / 8 + 2;
-    if (!canInsert_ || rows_.size() >= 10000 || bytes > byteBudget_ - residentBytes_ - stagedBytes_)
+    if (!canInsert_ || !EngineAdapter::gridRowInsertError(qsizetype(rows_.size())).isEmpty() ||
+        bytes > byteBudget_ - residentBytes_ - stagedBytes_)
         return false;
     beginInsertRows({}, rowCount(), rowCount());
     rows_.emplace_back(columns_.size());
@@ -656,19 +658,18 @@ bool ResultTableModel::duplicateRow(int row, const std::vector<bool>& copyable, 
     };
     if (!canInsert_ || row < 0 || row >= rowCount() || copyable.size() != columns_.size())
         return fail(tr("This result cannot insert a duplicate row."));
-    if (rows_.size() >= 10000)
-        return fail(tr("The visible page already has the maximum number of rows."));
-    if (std::any_of(rows_[row].begin(), rows_[row].end(), [](const Cell& value) {
-            return std::holds_alternative<FallbackText>(value) ||
-                   std::holds_alternative<UnavailableValue>(value);
-        }))
+    if (const auto full = EngineAdapter::gridRowInsertError(qsizetype(rows_.size()));
+        !full.isEmpty())
+        return fail(full);
+    if (std::any_of(rows_[row].begin(), rows_[row].end(),
+                    [](const Cell& value) { return cellPolicy(value).blocksRowDuplicate; }))
         return fail(tr("Rows with fallback or unavailable values cannot be duplicated."));
     Row duplicate(columns_.size());
     std::vector<bool> touched(columns_.size(), false);
     for (size_t column = 0; column < columns_.size(); ++column) {
         if (!insertEditable_[column] || !copyable[column])
             continue;
-        if (std::holds_alternative<DeferredValue>(rows_[row][column]))
+        if (cellPolicy(rows_[row][column]).duplicateRequiresLoad)
             return fail(tr("Load a complete value before duplicating this row."));
         duplicate[column] = rows_[row][column];
         touched[column] = true;
@@ -729,8 +730,7 @@ void ResultTableModel::markRowsDeleted(std::vector<int> selectedRows, bool delet
         } else if (canDelete_ &&
                    (!deleted ||
                     std::none_of(rows_[row].begin(), rows_[row].end(), [](const Cell& cell) {
-                        return std::holds_alternative<FallbackText>(cell) ||
-                               std::holds_alternative<UnavailableValue>(cell);
+                        return cellPolicy(cell).blocksRowDelete;
                     }))) {
             if (deleted_[row] != deleted)
                 deleted ? ++deletedCount_ : --deletedCount_;

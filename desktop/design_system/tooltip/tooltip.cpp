@@ -96,8 +96,7 @@ class TooltipSurface final : public QWidget {
                                 ? themeValue.value<ResolvedTheme>().colors
                                 : resolveColors(palette().color(QPalette::Window).lightness() < 128
                                                     ? ResolvedAppearance::Dark
-                                                    : ResolvedAppearance::Light,
-                                                {});
+                                                    : ResolvedAppearance::Light);
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setPen(Qt::NoPen);

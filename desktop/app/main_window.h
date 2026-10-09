@@ -10,6 +10,7 @@
 #include <QVariant>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <optional>
 class QTabWidget;
 class QStackedWidget;
@@ -23,6 +24,7 @@ class ThemeManager;
 class QuickSearchDialog;
 } // namespace design
 class SqlEditor;
+class TextFinder;
 class QueryWorkspace;
 class ObjectExplorer;
 class NavigatorController;
@@ -208,6 +210,8 @@ class MainWindow final : public QMainWindow {
     QList<design::QuickSearchResult> quickNameRows_, quickEditorRows_, quickHistoryRows_,
         quickObjectRows_;
     QHash<QString, QuickEditorMatch> quickEditorMatches_;
+    // Compiled once per query for history snippets and editor text scans.
+    std::shared_ptr<const TextFinder> quickTextFinder_;
     QHash<QString, QVariant> quickHistoryMatches_;
     QHash<QString, QVariantMap> quickObjectMatches_;
     QList<QVariantMap> quickRecentObjects_;

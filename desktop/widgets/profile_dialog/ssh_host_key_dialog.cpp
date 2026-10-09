@@ -4,7 +4,6 @@
 #include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
-#include <QDir>
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -145,12 +144,7 @@ void SshHostKeyDialog::updateActions() {
     const bool editable = valid_ && !pending_ && !approved_;
     list_->setEnabled(editable);
     path_->setEnabled(editable);
-    const auto path = path_->text();
-    bool validPath = QDir::isAbsolutePath(path) && !path.startsWith(':') && !path.startsWith('~') &&
-                     !path.contains('%') && !path.contains('$') && path.toUtf8().size() <= 16384;
-    for (const auto character : path)
-        validPath = validPath && character.category() != QChar::Other_Control && character != '"' &&
-                    character != '\\';
+    const bool validPath = EngineAdapter::sshKnownHostsPathValid(path_->text());
     approve_->setEnabled(editable && list_->currentRow() >= 0 && validPath);
     retry_->setEnabled(valid_ && approved_);
 }

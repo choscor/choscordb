@@ -8,8 +8,7 @@ class ObjectDataWorkspace final : public QWidget {
     Q_OBJECT
   public:
     explicit ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* parent = nullptr);
-    void openObject(quint64 connection, const QString& object, const QString& label,
-                    const QString& kind = QStringLiteral("table"));
+    void openObject(quint64 connection, const QString& object, const QString& label);
     void invalidate(bool connectionLost = false);
     void setInitialFilter(const QString& expression) { initialFilter_ = expression; }
     bool resolvePendingEdits();

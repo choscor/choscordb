@@ -1,4 +1,5 @@
 #include "app/pinned_tree_model.h"
+#include "bridge/engine_adapter.h"
 #include "models/navigator_model.h"
 
 #include <algorithm>
@@ -12,6 +13,7 @@ struct PinnedTreeModel::Entry {
     PinRecord pin;
     QString key;
     QString status;
+    bool statusInLabel = false;
     QPersistentModelIndex source;
     std::vector<std::unique_ptr<Entry>> children;
 };
@@ -126,8 +128,7 @@ QVariant PinnedTreeModel::data(const QModelIndex& index, int role) const {
     const auto& pin = value->pin;
     const auto status = pin.unavailable ? tr("Unavailable") : value->status;
     if (role == Qt::DisplayRole) {
-        if (status.isEmpty() || status == tr("Connected") || status == tr("Disconnected") ||
-            status == tr("Hidden"))
+        if (!pin.unavailable && (!value->statusInLabel || status.isEmpty()))
             return pin.name;
         return tr("%1 — %2").arg(pin.name, status);
     }
@@ -164,8 +165,7 @@ bool PinnedTreeModel::hasChildren(const QModelIndex& parent) const {
         return false;
     if (value->source.isValid())
         return !value->children.empty() || source_->hasChildren(value->source);
-    return value->pin.kind == QLatin1String("schema") ||
-           value->pin.kind == QLatin1String("table") || value->pin.kind == QLatin1String("view");
+    return EngineAdapter::objectKindTraits(value->pin.kind).container;
 }
 bool PinnedTreeModel::canFetchMore(const QModelIndex& parent) const {
     const auto* value = entry(parent);
@@ -238,7 +238,8 @@ bool PinnedTreeModel::setResolved(const QString& key, const QModelIndex& verifie
     QStringList ancestry;
     for (auto ancestor = verifiedSourceIndex.parent(); ancestor.isValid();
          ancestor = ancestor.parent())
-        if (ancestor.data(NavigatorModel::KindRole).toString() != QLatin1String("connection"))
+        if (!EngineAdapter::objectKindTraits(ancestor.data(NavigatorModel::KindRole).toString())
+                 .connection)
             ancestry.prepend(ancestor.data(NavigatorModel::ObjectIdRole).toString());
     if (ancestry != root->pin.ancestryIds) {
         clearResolution(root);
@@ -265,11 +266,14 @@ bool PinnedTreeModel::setResolved(const QString& key, const QModelIndex& verifie
     emit dataChanged(modelIndex, modelIndex);
     return true;
 }
-void PinnedTreeModel::setStatus(const QString& key, const QString& status) {
+void PinnedTreeModel::setStatus(const QString& key, const QString& status,
+                                StatusPlacement placement) {
     auto* root = findRoot(key);
-    if (!root || root->status == status)
+    const bool inLabel = placement == StatusPlacement::Label;
+    if (!root || (root->status == status && root->statusInLabel == inLabel))
         return;
     root->status = status;
+    root->statusInLabel = inLabel;
     const auto modelIndex = indexFor(root);
     emit dataChanged(modelIndex, modelIndex,
                      {Qt::DisplayRole, Qt::ToolTipRole, Qt::AccessibleDescriptionRole});

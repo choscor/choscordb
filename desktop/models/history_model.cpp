@@ -45,6 +45,8 @@ QVariant HistoryModel::data(const QModelIndex& index, int role) const {
         parts.append(tr("%1 rows").arg(data(index.siblingAtColumn(5), Qt::DisplayRole).toString()));
         return parts.join(QStringLiteral(". "));
     }
+    if (role == StatusRole)
+        return value->status;
     if (role == Qt::TextAlignmentRole && (index.column() == 3 || index.column() == 5))
         return int(Qt::AlignRight | Qt::AlignVCenter);
     if (role != Qt::DisplayRole)

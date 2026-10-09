@@ -485,52 +485,6 @@ class NavigatorModelTest : public QObject {
         }
     }
 
-    void postgresRelationSubtypesKeepActionsAndReachTheRequest() {
-        EngineAdapter engine;
-        QTreeView tree;
-        QLineEdit filter;
-        NavigatorController controller(&engine, &tree, &filter);
-        controller.setDriverResolver([](quint64) { return QStringLiteral("postgres"); });
-        auto* model = controller.model();
-        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
-                            &EngineAdapter::loadMetadata);
-        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
-        QVERIFY(model->addConnection(9, "fixture"));
-        const auto root = model->index(0, 0);
-        model->fetchMore(root);
-        QTRY_COMPARE(requested.count(), 1);
-        const auto subtype = [](const QString& value) -> QVariantList {
-            return {QVariantMap{{"name", "Relation subtype"}, {"value", value}}};
-        };
-        QVERIFY(
-            model->applyChildren(9, {}, requested.last().at(2).toULongLong(),
-                                 {{"table", "ordinary_table", "\"ordinary_table\"", "table", false},
-                                  {"view", "ordinary_view", "\"ordinary_view\"", "view", false},
-                                  {"foreign", "remote_table", "\"remote_table\"", "table", false,
-                                   subtype("foreign_table")},
-                                  {"materialized", "cached_view", "\"cached_view\"", "view", false,
-                                   subtype("materialized_view")}}));
-        QSignalSpy actions(&controller, &NavigatorController::objectActionRequested);
-        const QStringList expectedSubtypes{QString{}, QString{}, QStringLiteral("foreign_table"),
-                                           QStringLiteral("materialized_view")};
-        for (int row = 0; row < 4; ++row) {
-            QMenu menu;
-            controller.populateContextMenu(&menu, model->index(row, 0, root));
-            auto* drop = menu.findChild<QAction*>("dropObject");
-            auto* rename = menu.findChild<QAction*>("renameObject");
-            QVERIFY(drop && drop->isEnabled());
-            QVERIFY(rename && rename->isEnabled());
-            rename->trigger();
-            QCOMPARE(actions.count(), 2 * row + 1);
-            QCOMPARE(actions.last().at(0).toString(), QString("rename"));
-            QCOMPARE(actions.last().at(7).toString(), expectedSubtypes.at(row));
-            drop->trigger();
-            QCOMPARE(actions.count(), 2 * row + 2);
-            QCOMPARE(actions.last().at(0).toString(), QString("drop"));
-            QCOMPARE(actions.last().at(7).toString(), expectedSubtypes.at(row));
-        }
-    }
-
     void metadataPagesAppendOnlyAfterExplicitContinuation() {
         NavigatorModel model;
         QAbstractItemModelTester tester(&model,
@@ -550,11 +504,10 @@ class NavigatorModelTest : public QObject {
                  QString("load_more"));
         QVERIFY(!model.canFetchMore(root));
         QVERIFY(!root.data(NavigatorModel::ChildrenLoadedRole).toBool());
-        QVERIFY(model.completionSnapshot(1, 100, 4096).partial);
+        QVERIFY(model.completionSnapshot(1, {100, 4096, 100 * 8 + 64}).partial);
         model.requestNextPage(model.index(1, 0, root));
         QTRY_COMPARE(next.count(), 1);
         QCOMPARE(next.last().at(3).toULongLong(), quint64(1));
-        QCOMPARE(next.last().at(4).toUInt(), quint32(1000));
         QVERIFY(alpha.isValid());
         QVERIFY(model.applyChildrenPage(1, {}, next.last().at(2).toULongLong(),
                                         {{"b", "Beta", "db.Beta", "table", false}}, 1, false, 2));
@@ -563,7 +516,7 @@ class NavigatorModelTest : public QObject {
         QCOMPARE(model.rowCount(root), 2);
         QCOMPARE(model.index(1, 0, root).data().toString(), QString("Beta"));
         QVERIFY(root.data(NavigatorModel::ChildrenLoadedRole).toBool());
-        QVERIFY(!model.completionSnapshot(1, 100, 4096).partial);
+        QVERIFY(!model.completionSnapshot(1, {100, 4096, 100 * 8 + 64}).partial);
         model.requestNextPage(root);
         QCOMPARE(next.count(), 1);
     }
@@ -769,8 +722,8 @@ class NavigatorModelTest : public QObject {
         QVERIFY(model.applyChildren(
             1, "", requested.last().at(2).toULongLong(),
             {{"a", QString::fromUtf8("😀"), QString::fromUtf8("😀"), "database", false}}));
-        QVERIFY(model.completionSnapshot(1, 10, 16).objects.empty());
-        const auto exact = model.completionSnapshot(1, 10, 17);
+        QVERIFY(model.completionSnapshot(1, {10, 16, 10 * 8 + 64}).objects.empty());
+        const auto exact = model.completionSnapshot(1, {10, 17, 10 * 8 + 64});
         QCOMPARE(exact.objects.size(), size_t(1));
         QVERIFY(!exact.partial);
         model.refresh(model.index(0, 0));
@@ -780,7 +733,7 @@ class NavigatorModelTest : public QObject {
             nodes.push_back({QString::number(i), "ignored", "ignored", "index", false});
         nodes.push_back({"table", "last", "last", "table", false});
         QVERIFY(model.applyChildren(1, "", requested.last().at(2).toULongLong(), std::move(nodes)));
-        const auto bounded = model.completionSnapshot(1, 1, 4096);
+        const auto bounded = model.completionSnapshot(1, {1, 4096, 1 * 8 + 64});
         QVERIFY(bounded.objects.empty());
         QVERIFY(bounded.partial);
     }
@@ -794,7 +747,7 @@ class NavigatorModelTest : public QObject {
         auto second = model.index(1, 0);
         model.fetchMore(first);
         QTRY_COMPARE(requested.count(), 1);
-        QVERIFY(model.completionSnapshot(1, 100, 4096).objects.empty());
+        QVERIFY(model.completionSnapshot(1, {100, 4096, 100 * 8 + 64}).objects.empty());
         QVERIFY(model.applyChildren(
             1, "", requested.last().at(2).toULongLong(),
             {{"a", "alpha", "alpha", "table", true}, {"index", "index", "index", "index", false}}));
@@ -802,7 +755,7 @@ class NavigatorModelTest : public QObject {
         QTRY_COMPARE(requested.count(), 2);
         QVERIFY(model.applyChildren(2, "", requested.last().at(2).toULongLong(),
                                     {{"b", "beta", "beta", "view", false}}));
-        auto snapshot = model.completionSnapshot(1, 100, 4096);
+        auto snapshot = model.completionSnapshot(1, {100, 4096, 100 * 8 + 64});
         QCOMPARE(snapshot.objects.size(), size_t(1));
         QCOMPARE(snapshot.objects[0].name, QString("alpha"));
         QVERIFY(snapshot.partial); // Columns under the accepted table are not loaded.
@@ -813,13 +766,14 @@ class NavigatorModelTest : public QObject {
         const auto stale = requested.last().at(2).toULongLong();
         model.refresh(first);
         QTRY_COMPARE(requested.count(), 4);
-        QVERIFY(model.completionSnapshot(1, 100, 4096).objects.empty());
+        QVERIFY(model.completionSnapshot(1, {100, 4096, 100 * 8 + 64}).objects.empty());
         QCOMPARE(changed.count(), 3);
         QVERIFY(!model.applyChildren(1, "a", stale, {{"c", "col", "alpha.col", "column", false}}));
         QCOMPARE(changed.count(), 3);
         model.removeConnection(1);
         QCOMPARE(changed.count(), 4);
-        QCOMPARE(model.completionSnapshot(2, 100, 4096).objects[0].name, QString("beta"));
+        QCOMPARE(model.completionSnapshot(2, {100, 4096, 100 * 8 + 64}).objects[0].name,
+                 QString("beta"));
     }
     void completionHonorsEntriesBytesAndDoesNotRetainExcessStringCapacity() {
         NavigatorModel model;
@@ -832,11 +786,11 @@ class NavigatorModelTest : public QObject {
         QVERIFY(model.applyChildren(
             1, "", requested.last().at(2).toULongLong(),
             {{"a", bloated, "x", "table", false}, {"b", "y", "y", "view", false}}));
-        auto snapshot = model.completionSnapshot(1, 1, 4096);
+        auto snapshot = model.completionSnapshot(1, {1, 4096, 1 * 8 + 64});
         QCOMPARE(snapshot.objects.size(), size_t(1));
         QVERIFY(snapshot.partial);
         QVERIFY(snapshot.objects[0].name.capacity() < 100);
-        snapshot = model.completionSnapshot(1, 100, 1);
+        snapshot = model.completionSnapshot(1, {100, 1, 100 * 8 + 64});
         QVERIFY(snapshot.objects.empty());
         QVERIFY(snapshot.partial);
     }
@@ -861,7 +815,7 @@ class NavigatorModelTest : public QObject {
         schemas.push_back({"public", "public", "public", "schema", false});
         QVERIFY(
             model.applyChildren(1, "db", requested.last().at(2).toULongLong(), std::move(schemas)));
-        const auto snapshot = model.completionSnapshot(1, 2, 4096);
+        const auto snapshot = model.completionSnapshot(1, {2, 4096, 2 * 8 + 64});
         QCOMPARE(snapshot.objects.size(), size_t(2));
         QCOMPARE(snapshot.objects[1].name, QString("public"));
         QVERIFY(!snapshot.partial);

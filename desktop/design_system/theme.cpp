@@ -18,7 +18,7 @@ ResolvedTheme resolvedThemeForWidget(const QWidget& widget) {
     const auto appearance = widget.palette().color(QPalette::Window).lightnessF() < .5
                                 ? ResolvedAppearance::Dark
                                 : ResolvedAppearance::Light;
-    return {appearance, resolveColors(appearance, {}), false};
+    return {appearance, resolveColors(appearance), false};
 }
 
 QPalette applicationPalette(const ResolvedTheme& theme) {

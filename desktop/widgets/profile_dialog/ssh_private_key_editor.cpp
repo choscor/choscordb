@@ -1,4 +1,5 @@
 #include "widgets/profile_dialog/ssh_private_key_editor.h"
+#include "bridge/engine_adapter.h"
 #include "design_system/button/button.h"
 #include "design_system/theme.h"
 #include <QApplication>
@@ -67,8 +68,8 @@ void SshPrivateKeyEditor::refresh() {
 }
 void SshPrivateKeyEditor::paste() {
     const auto text = QApplication::clipboard()->text();
-    if (text.toUtf8().size() > 65536 || text.contains(QChar::Null)) {
-        error_->setText(tr("Private keys must be at most 64 KiB and contain no NUL characters."));
+    if (const auto error = EngineAdapter::sshPrivateKeyTextError(text); !error.isEmpty()) {
+        error_->setText(error);
         return;
     }
     value_.secret = text;

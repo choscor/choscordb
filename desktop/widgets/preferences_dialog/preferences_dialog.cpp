@@ -131,14 +131,8 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     const auto limits = EngineAdapter::editorPreferenceLimits();
     size_->setRange(limits.minFontSize, limits.maxFontSize);
     form->addRow(system_);
-    fontValidation_ = new design::FieldValidation(font_, editor);
-    sizeValidation_ = new design::FieldValidation(size_, editor);
-    form->addRow(tr("Font family"), fontValidation_);
-    form->addRow(tr("Font size"), sizeValidation_);
-    connect(font_, &QFontComboBox::currentFontChanged, fontValidation_,
-            [this] { fontValidation_->setError({}); });
-    connect(size_, &QSpinBox::valueChanged, sizeValidation_,
-            [this] { sizeValidation_->setError({}); });
+    form->addRow(tr("Font family"), font_);
+    form->addRow(tr("Font size"), size_);
     preview_ = new SqlEditor(editor);
     preview_->setObjectName("preferencesPreview");
     preview_->setText("SELECT name, count(*)\nFROM sample\nWHERE active = true\nGROUP BY name;");
@@ -331,9 +325,10 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                     return;
                 const QPointer<PreferencesDialog> guard(this);
                 token_ = 0;
-                const auto validation = shortcutValidationError(value, catalog_);
-                if (!validation.isEmpty())
-                    errors_.append(tr("SQL editor / Keyboard shortcuts: %1").arg(validation));
+                const auto validation = validateShortcuts(value.shortcuts, catalog_);
+                if (!validation.ok())
+                    errors_.append(
+                        tr("SQL editor / Keyboard shortcuts: %1").arg(validation.message));
                 else {
                     emit preferencesConfirmed(value);
                     if (!guard)
@@ -350,23 +345,12 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                     return;
                 const QPointer<PreferencesDialog> guard(this);
                 queryToken_ = 0;
-                const auto limits = EngineAdapter::queryPreferenceLimits();
-                if (value.version != limits.version || value.pageSize < limits.minPageSize ||
-                    value.pageSize > limits.maxPageSize ||
-                    value.timeoutSeconds > limits.maxTimeoutSeconds ||
-                    value.connectionTimeoutSeconds < 1 ||
-                    value.connectionTimeoutSeconds > limits.maxConnectionTimeoutSeconds)
-                    errors_.append(tr("Connections or results: stored settings are invalid. "
-                                      "Restore defaults to replace them."));
-                else {
-                    if (!saving_)
-                        fillQuery(value);
-                    else
-                        confirmedSystemSchemaVisibility_ = value.showSystemSchemas;
-                    if (!guard)
-                        return;
-                    emit queryPreferencesConfirmed(value);
-                }
+                // Rust validates stored settings and reports invalid ones as failures.
+                if (!saving_)
+                    fillQuery(value);
+                else
+                    confirmedSystemSchemaVisibility_ = value.showSystemSchemas;
+                emit queryPreferencesConfirmed(value);
                 if (guard && advanceLoad())
                     finishRequests();
             });
@@ -375,16 +359,9 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                 if (!historyToken_ || token != historyToken_)
                     return;
                 historyToken_ = 0;
-                if (!value.maxAgeDays || !value.maxRecords ||
-                    value.maxAgeDays > quint32(historyDays_->maximum()) ||
-                    value.maxRecords > quint32(historyRecords_->maximum()))
-                    errors_.append(tr("History & recovery: stored retention is outside the "
-                                      "supported range. Restore defaults to replace it."));
-                else {
-                    if (!saving_)
-                        fillHistory(value);
-                    emit historyPolicyConfirmed(value);
-                }
+                if (!saving_)
+                    fillHistory(value);
+                emit historyPolicyConfirmed(value);
                 finishRequests();
             });
     connect(adapter, &EngineAdapter::recoveryFailed, this,
@@ -493,43 +470,25 @@ void PreferencesDialog::setBusy(bool busy) {
     reset_->setEnabled(!busy);
     apply_->setEnabled(!busy && ready_ && appearanceValid_);
 }
-bool PreferencesDialog::placeValidationError(const QString& message) {
-    fontValidation_->setError({});
-    sizeValidation_->setError({});
-    for (auto* validation : sequenceValidations_)
-        validation->setError({});
-    auto* tabs = static_cast<QTabWidget*>(pages_);
-    if (message.startsWith(tr("Font size"))) {
-        tabs->setCurrentIndex(1);
-        sizeValidation_->setError(message);
-        size_->setFocus();
-        return true;
-    }
-    if (message.startsWith(tr("Font family"))) {
-        tabs->setCurrentIndex(1);
-        fontValidation_->setError(message);
-        font_->setFocus();
-        return true;
-    }
-    for (qsizetype index = 0; index < catalog_.size(); ++index) {
-        if (message.contains(catalog_[index].label)) {
-            tabs->setCurrentIndex(5);
-            sequenceValidations_[index]->setError(message);
-            sequences_[index]->setFocus();
-            return true;
-        }
-    }
-    return false;
+bool PreferencesDialog::placeValidationError(const ShortcutValidation& validation) {
+    for (auto* field : sequenceValidations_)
+        field->setError({});
+    if (validation.command < 0)
+        return false;
+    static_cast<QTabWidget*>(pages_)->setCurrentIndex(5);
+    sequenceValidations_[validation.command]->setError(validation.message);
+    sequences_[validation.command]->setFocus();
+    return true;
 }
 void PreferencesDialog::apply() {
     if (busy_ || !ready_ || !appearanceValid_ || !adapter_)
         return;
     const auto value = draft();
-    const auto error = shortcutValidationError(value, catalog_);
-    if (!error.isEmpty()) {
-        if (!placeValidationError(error)) {
+    const auto validation = validateShortcuts(value.shortcuts, catalog_);
+    if (!validation.ok()) {
+        if (!placeValidationError(validation)) {
             statusLine_->setAvailable(false);
-            setStatus(error);
+            setStatus(validation.message);
         }
         return;
     }

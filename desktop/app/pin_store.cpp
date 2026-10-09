@@ -57,6 +57,24 @@ PinRecord fromDto(const PinRecordDto& dto) {
     return pin;
 }
 
+rust::Vec<PinRecordDto> toDtos(const QList<PinRecord>& pins) {
+    rust::Vec<PinRecordDto> records;
+    records.reserve(size_t(pins.size()));
+    for (const auto& pin : pins)
+        records.push_back(toDto(pin));
+    return records;
+}
+
+std::optional<QList<PinRecord>> fromChange(const PinChangeDto& change) {
+    if (!change.changed)
+        return std::nullopt;
+    QList<PinRecord> pins;
+    pins.reserve(qsizetype(change.pins.size()));
+    for (const auto& pin : change.pins)
+        pins.append(fromDto(pin));
+    return pins;
+}
+
 void setError(QString* destination, const rust::String& error) {
     if (destination)
         *destination = fromRust(error);
@@ -87,13 +105,26 @@ QList<PinRecord> PinStore::load(QString* error) const {
     return pins;
 }
 
+std::optional<QList<PinRecord>> PinStore::toggled(const QList<PinRecord>& pins,
+                                                  const PinRecord& candidate, bool unpin) {
+    return fromChange(pin_toggle(toDtos(pins), toDto(candidate), unpin));
+}
+
+std::optional<QList<PinRecord>> PinStore::withoutPin(const QList<PinRecord>& pins,
+                                                     const QString& key) {
+    const auto bytes = key.toUtf8();
+    return fromChange(pin_remove(toDtos(pins), utf8View(bytes)));
+}
+
+std::optional<QList<PinRecord>> PinStore::withoutProfile(const QList<PinRecord>& pins,
+                                                         const QString& profileId) {
+    const auto bytes = profileId.toUtf8();
+    return fromChange(pin_remove_profile(toDtos(pins), utf8View(bytes)));
+}
+
 bool PinStore::save(const QList<PinRecord>& pins, QString* error) const {
-    rust::Vec<PinRecordDto> records;
-    records.reserve(size_t(pins.size()));
-    for (const auto& pin : pins)
-        records.push_back(toDto(pin));
     const auto path = storageLocation_.toUtf8();
-    const auto result = pin_save(utf8View(path), profileStorage_, std::move(records));
+    const auto result = pin_save(utf8View(path), profileStorage_, toDtos(pins));
     setError(error, result.error);
     return result.success;
 }

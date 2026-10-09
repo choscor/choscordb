@@ -220,8 +220,9 @@ void MainWindow::connectNavigator(const Ui& ui) {
              disconnectNavigatorAction](const QModelIndex&) {
                 const auto current = tree->currentIndex();
                 const bool canRefresh = current.isValid();
-                const bool canDisconnect =
-                    current.data(NavigatorModel::KindRole).toString() == "connection";
+                const bool canDisconnect = EngineAdapter::objectKindTraits(
+                                               current.data(NavigatorModel::KindRole).toString())
+                                               .connection;
                 refreshNavigator->setEnabled(canRefresh);
                 refreshNavigatorAction->setEnabled(canRefresh);
                 disconnectNavigatorAction->setEnabled(canDisconnect);
@@ -251,12 +252,8 @@ void MainWindow::connectNavigator(const Ui& ui) {
                        ToastVariant::Warning, QStringLiteral("navigator"));
             return;
         }
+        // Rust bounds generated SQL to the template limit.
         const auto bytes = sql.toUtf8();
-        if (!sql.isValidUtf16() || bytes.size() > DocumentIo::MaximumBytes) {
-            showStatus(tr("Generated SQL exceeds editor limits."), ToastVariant::Danger,
-                       QStringLiteral("navigator"));
-            return;
-        }
         auto* editor = addEditor();
         if (!editor)
             return;
@@ -291,9 +288,7 @@ void MainWindow::connectNavigator(const Ui& ui) {
             return;
         }
         const auto limits = CompletionService::limits();
-        auto snapshot =
-            model->completionSnapshot(connections->currentData().toULongLong(),
-                                      limits.maxMetadataEntries, limits.maxMetadataBytes);
+        auto snapshot = model->completionSnapshot(connections->currentData().toULongLong(), limits);
         *catalogSize = static_cast<qsizetype>(snapshot.objects.size());
         QList<CompletionCandidate> items;
         items.reserve(*catalogSize);
@@ -330,10 +325,9 @@ void MainWindow::connectNavigator(const Ui& ui) {
             auto* object = qobject_cast<ObjectExplorer*>(editors_->widget(i));
             if (!object || !object->needsConnection())
                 continue;
-            const auto context = object->property("objectProfileId").toString();
-            if (context != QStringLiteral("profile:%1").arg(profileId))
+            if (object->property("objectProfileId").toString() !=
+                EngineAdapter::objectTabContext(profileId, id))
                 continue;
-            object->setProperty("objectProfileId", QStringLiteral("profile:%1").arg(profileId));
             object->setProperty("objectConnection", QVariant::fromValue<qulonglong>(id));
             object->restoreObject(id, object->property("objectId").toString(),
                                   object->property("objectLabel").toString(),
@@ -350,8 +344,7 @@ void MainWindow::activateNavigatorObject(const QModelIndex& current) {
     auto object = current;
     auto kind = object.data(NavigatorModel::KindRole).toString();
     const auto selectedKind = kind;
-    while (object.isValid() && kind != "table" && kind != "view" && kind != "index" &&
-           kind != "sequence" && kind != "function" && kind != "schema" && kind != "connection") {
+    while (object.isValid() && !EngineAdapter::objectKindTraits(kind).navigationAnchor) {
         object = object.parent();
         kind = object.data(NavigatorModel::KindRole).toString();
     }
@@ -362,22 +355,16 @@ void MainWindow::activateNavigatorObject(const QModelIndex& current) {
         return;
     browsingConnection_ = connection.toULongLong();
     emit browsingConnectionChanged(*browsingConnection_);
-    if (kind == "table" || kind == "view" || kind == "index" || kind == "sequence" ||
-        kind == "function") {
+    if (EngineAdapter::objectKindTraits(kind).opensObjectTab) {
         auto* tree = findChild<QTreeView*>("databaseNavigator");
         const auto verifiedPinPane = tree ? tree->property("verifiedPinPane") : QVariant{};
         const bool verifiedPinTarget = verifiedPinPane.isValid() &&
-                                       (selectedKind == "table" || selectedKind == "view") &&
+                                       EngineAdapter::objectKindTraits(selectedKind).relation &&
                                        tree->property("verifiedPinParentId").toString() ==
                                            object.data(NavigatorModel::ObjectIdRole).toString();
-        const auto pane = verifiedPinTarget              ? verifiedPinPane.toInt()
-                          : selectedKind == "column"     ? 0
-                          : selectedKind == "index"      ? 1
-                          : selectedKind.contains("key") ? 2
-                          : selectedKind == "ddl"        ? 3
-                          : selectedKind == "data"       ? 5
-                          : selectedKind == "table"      ? 5
-                                                         : -1;
+        const auto pane = verifiedPinTarget
+                              ? verifiedPinPane.toInt()
+                              : EngineAdapter::objectKindTraits(selectedKind).detailPane;
         openObjectTab(*browsingConnection_, object.data(NavigatorModel::ObjectIdRole).toString(),
                       object.data(NavigatorModel::QualifiedNameRole).toString(), kind,
                       object.data(NavigatorModel::PropertiesRole).toList(), pane);

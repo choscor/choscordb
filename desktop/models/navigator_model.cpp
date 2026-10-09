@@ -16,6 +16,8 @@ struct NavigatorModel::Node {
     Node* parent = nullptr;
     int row = 0;
     bool placeholder = false;
+    // Set from Rust's kind traits when the node is created, so data() never asks.
+    bool column = false;
     // -1 unknown; otherwise whether this node or an ancestor is a hidden system schema.
     mutable signed char systemSchema = -1;
     std::vector<std::unique_ptr<Node>> children;
@@ -33,10 +35,10 @@ void NavigatorModel::setShowSystemSchemas(bool show) {
         return;
     showSystemSchemas_ = show;
     unverifiedVisibleByDriver_.clear();
+    // Only drivers whose objects the system-schema policy can hide change completions.
     for (const auto& root : roots_)
         if (driverResolver_ &&
-            driverResolver_(root->connection)
-                    .compare(QLatin1String("postgres"), Qt::CaseInsensitive) == 0)
+            EngineAdapter::systemSchemasHidden(driverResolver_(root->connection), false))
             emit completionChanged(root->connection);
 }
 bool NavigatorModel::isBrowsable(const QModelIndex& index) const {
@@ -59,15 +61,15 @@ bool NavigatorModel::isBrowsable(const Node* value) const {
     auto visible = unverifiedVisibleByDriver_.constFind(driver);
     if (visible == unverifiedVisibleByDriver_.cend())
         visible = unverifiedVisibleByDriver_.insert(
-            driver, EngineAdapter::navigatorObjectVisible(driver, showSystemSchemas_, {}));
+            driver, !EngineAdapter::systemSchemasHidden(driver, showSystemSchemas_));
     return visible.value() || !hiddenBySystemSchema(value);
 }
 bool NavigatorModel::hiddenBySystemSchema(const Node* value) const {
     // Names and kinds of loaded schema rows never change, so the ancestor walk is cached.
     if (value->systemSchema < 0)
-        value->systemSchema = (value->parent && hiddenBySystemSchema(value->parent)) ||
-                              (value->object.kind == QLatin1String("schema") &&
-                               EngineAdapter::postgresSystemSchema(value->object.name));
+        value->systemSchema =
+            (value->parent && hiddenBySystemSchema(value->parent)) ||
+            EngineAdapter::systemSchemaNode(value->object.kind, value->object.name);
     return value->systemSchema > 0;
 }
 QString NavigatorModel::relationSubtype(const QVariantList& properties) {
@@ -96,11 +98,12 @@ void NavigatorModel::unregisterSubtree(const Node* value) {
             stack.push_back(child.get());
     }
 }
-CompletionSnapshot NavigatorModel::completionSnapshot(quint64 connection, quint64 maxEntries,
-                                                      quint64 maxUtf8Bytes) const {
+CompletionSnapshot NavigatorModel::completionSnapshot(quint64 connection,
+                                                      const CompletionLimits& limits) const {
     CompletionSnapshot snapshot;
+    const auto maxEntries = limits.maxMetadataEntries;
     // Bound ignored nodes and root lookup as well as accepted completion entries.
-    const quint64 visitLimit = maxEntries > 12492 ? 100000 : maxEntries * 8 + 64;
+    const quint64 visitLimit = limits.maxMetadataVisits;
     quint64 visited = 0;
     const Node* root = nullptr;
     for (const auto& candidate : roots_) {
@@ -115,7 +118,7 @@ CompletionSnapshot NavigatorModel::completionSnapshot(quint64 connection, quint6
     }
     if (!root)
         return snapshot;
-    quint64 remaining = maxUtf8Bytes;
+    quint64 remaining = limits.maxMetadataBytes;
     auto charge = [](const QString& text, quint64& budget) {
         // Count UTF-8 without allocating an unbounded conversion of a stored label.
         for (qsizetype i = 0; i < text.size(); ++i) {
@@ -148,8 +151,7 @@ CompletionSnapshot NavigatorModel::completionSnapshot(quint64 connection, quint6
         if (value->object.hasChildren && (value->state != Node::Loaded || value->hasMore))
             snapshot.partial = true;
         const auto& object = value->object;
-        if (object.kind != "database" && object.kind != "schema" && object.kind != "table" &&
-            object.kind != "view" && object.kind != "column")
+        if (!EngineAdapter::objectKindTraits(object.kind).completionCandidate)
             return true;
         if (snapshot.objects.size() >= maxEntries) {
             snapshot.partial = true;
@@ -227,7 +229,7 @@ QVariant NavigatorModel::data(const QModelIndex& index, int role) const {
         return value->object.name;
     case Qt::ToolTipRole:
     case Qt::AccessibleDescriptionRole:
-        if (value->object.kind == QLatin1String("column"))
+        if (value->column)
             return value->object.databaseType.isEmpty()
                        ? value->object.name
                        : QStringLiteral("%1 — %2").arg(value->object.name,
@@ -248,8 +250,7 @@ QVariant NavigatorModel::data(const QModelIndex& index, int role) const {
     case PropertiesRole:
         return value->object.properties;
     case DatabaseTypeRole:
-        return value->object.kind == QLatin1String("column") ? value->object.databaseType
-                                                             : QString();
+        return value->column ? value->object.databaseType : QString();
     case ErrorRole:
         return value->error;
     default:
@@ -315,7 +316,7 @@ void NavigatorModel::fetchMore(const QModelIndex& parent) {
             if (current->offset == 0)
                 emit childrenRequested(connection, objectId, token);
             else
-                emit childrenPageRequested(connection, objectId, token, current->offset, 1000);
+                emit childrenPageRequested(connection, objectId, token, current->offset);
         }
     });
 }
@@ -339,7 +340,8 @@ bool NavigatorModel::addConnection(quint64 id, const QString& label) {
 }
 bool NavigatorModel::renameConnection(quint64 id, const QString& label) {
     const auto it = std::find_if(roots_.begin(), roots_.end(), [id](const auto& root) {
-        return root->connection == id && root->object.kind == "connection";
+        return root->connection == id &&
+               EngineAdapter::objectKindTraits(root->object.kind).connection;
     });
     if (it == roots_.end())
         return false;
@@ -401,10 +403,12 @@ bool NavigatorModel::applyChildrenPage(quint64 connection, const QString& parent
             ids.insert(child->object.id);
     for (const auto& object : children) {
         const auto* existing = find(connection, object.id);
-        const bool sameIndex = existing && existing->parent != value && object.kind == "index" &&
-                               existing->object.kind == "index" && !object.hasChildren &&
-                               !existing->object.hasChildren;
-        if (object.id.isEmpty() || ids.contains(object.id) || (existing && !sameIndex)) {
+        // Rust names the kinds one object may list under several parents.
+        const bool repeated = existing && existing->parent != value &&
+                              object.kind == existing->object.kind &&
+                              EngineAdapter::objectKindTraits(object.kind).repeatsAcrossParents &&
+                              !object.hasChildren && !existing->object.hasChildren;
+        if (object.id.isEmpty() || ids.contains(object.id) || (existing && !repeated)) {
             failChildren(connection, parentObjectId, token,
                          tr("Metadata object identifiers must be unique and nonempty."));
             return false;
@@ -418,6 +422,7 @@ bool NavigatorModel::applyChildrenPage(quint64 connection, const QString& parent
         child->connection = connection;
         child->parent = value;
         child->object = std::move(object);
+        child->column = EngineAdapter::objectKindTraits(child->object.kind).column;
         prepared.push_back(std::move(child));
     }
     const auto parentIndex = indexFor(value);

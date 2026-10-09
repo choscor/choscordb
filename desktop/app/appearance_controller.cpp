@@ -14,11 +14,7 @@
 namespace choscordb {
 namespace {
 AppearanceLayout defaultLayout() {
-    AppearanceLayout value;
-    const design::DesignMetrics metrics;
-    value.navigatorWidth = metrics.initialNavigatorWidth;
-    value.editorResultsSplit = metrics.initialEditorResultsSplit;
-    return value;
+    return AppearanceLayout{};
 }
 design::ThemeMode themeMode(const QString& value) {
     if (value == "dark")
@@ -355,7 +351,7 @@ bool AppearanceController::eventFilter(QObject* watched, QEvent* event) {
             const auto metrics = theme_->metrics();
             const int width = window_->width() <= metrics.narrowWorkspaceWidth
                                   ? metrics.narrowNavigatorWidth
-                                  : metrics.initialNavigatorWidth;
+                                  : static_cast<int>(defaultLayout().navigatorWidth);
             const bool wasApplying = applying_;
             applying_ = true;
             window_->resizeDocks({navigator_}, {width}, Qt::Horizontal);

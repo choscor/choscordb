@@ -43,11 +43,6 @@ void EngineAdapter::loadObjectGraph(quint64 connection, const QString& object,
         else
             ++it;
     }
-    if (d_->graphs.size() >= 64) {
-        emit objectGraphFailed(connection, object, requestToken,
-                               tr("Too many pending ER diagram requests"));
-        return;
-    }
     const auto token = d_->nextInspectionToken++;
     d_->graphs.insert(token, {connection, requestToken, object});
     const auto bytes = object.toUtf8();

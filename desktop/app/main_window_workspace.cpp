@@ -11,6 +11,7 @@
 #include "bridge/engine_adapter.h"
 #include "bridge/request_token.h"
 #include "bridge/rust_text.h"
+#include "bridge/text_filter.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/icons.h"
@@ -66,6 +67,7 @@ struct SavedSqlListing {
     QList<SavedSqlEntry> entries;
     QString error;
     bool hasMore = false;
+    quint32 limit = 0;
 };
 
 SavedSqlListing loadSavedSql(const QString& root) {
@@ -78,6 +80,7 @@ SavedSqlListing loadSavedSql(const QString& root) {
     const auto dto = saved_sql_list_directory(utf8View(encoded));
     result.error = fromRust(dto.error);
     result.hasMore = dto.has_more;
+    result.limit = dto.limit;
     for (const auto& entry : dto.entries)
         result.entries.append({fromRust(entry.path), fromRust(entry.relative_path)});
     return result;
@@ -192,17 +195,20 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         if (auto* editor = addEditor())
             editor->openFile(path);
     });
-    const auto savedDirectory = QDir(applicationDataDirectory()).filePath("sql");
+    const auto storageBytes = storagePath.toUtf8();
+    const auto defaultDataBytes = applicationDataDirectory().toUtf8();
+    const auto savedDirectory =
+        fromRust(saved_sql_root(utf8View(storageBytes), utf8View(defaultDataBytes)));
     auto filterSavedFiles = [savedFiles, savedSearch] {
-        const auto query = savedSearch->text().trimmed();
+        const TextFilter query(savedSearch->text());
         const auto filterItem = [&](const auto& self, QTreeWidgetItem* item,
                                     const QString& path) -> bool {
             const auto relativePath = path + item->text(0);
-            bool matches = relativePath.contains(query, Qt::CaseInsensitive);
+            bool matches = query.matches(relativePath);
             for (int i = 0; i < item->childCount(); ++i)
                 matches = self(self, item->child(i), relativePath + '/') || matches;
             item->setHidden(!matches);
-            if (!query.isEmpty() && matches && item->childCount())
+            if (!query.blank() && matches && item->childCount())
                 item->setExpanded(true);
             return matches;
         };
@@ -242,7 +248,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                         auto* folder = folders.value(folderPath);
                         if (!folder) {
                             folder = new QTreeWidgetItem(parent, {parts.at(i)});
-                            folder->setData(0, NavigatorModel::KindRole, "schema");
+                            folder->setData(0, NavigatorModel::KindRole, "folder");
                             folders.insert(folderPath, folder);
                         }
                         parent = folder;
@@ -254,7 +260,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 }
                 savedFiles->sortItems(0, Qt::AscendingOrder);
                 savedStatus->setText(
-                    result.hasMore ? QObject::tr("Showing the first %1 files.").arg(1000)
+                    result.hasMore ? QObject::tr("Showing the first %1 files.").arg(result.limit)
                     : result.entries.isEmpty()
                         ? QObject::tr("No saved queries yet.\nSave a query as a SQL file "
                                       "in the default folder to find it here.")
@@ -494,7 +500,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                          const QString& kind) {
                 openObjectTab(connection, object, label, kind,
                               tree->currentIndex().data(NavigatorModel::PropertiesRole).toList(),
-                              kind == QStringLiteral("table") ? 5 : -1);
+                              EngineAdapter::objectKindTraits(kind).initialPane);
             });
     connect(workspace_, &QueryWorkspace::openQueryRequested, this,
             &MainWindow::openConnectionQuery);
@@ -601,12 +607,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 auto* item = new QListWidgetItem(profile.name, savedConnections);
                 item->setData(Qt::UserRole, QVariant::fromValue(profile));
                 item->setData(design::NavigationProfileDelegate::DriverRole, profile.driver);
-                item->setIcon(
-                    design::themedIcon(profile.driver == "sqlite"     ? design::Icon::SQLite
-                                       : profile.driver == "postgres" ? design::Icon::PostgreSQL
-                                       : profile.driver == "mysql"    ? design::Icon::MySQL
-                                                                      : design::Icon::Database,
-                                       theme_->resolvedTheme().colors.mutedText, 16));
+                item->setIcon(design::themedIcon(design::driverIcon(profile.driver),
+                                                 theme_->resolvedTheme().colors.mutedText, 16));
                 item->setToolTip(profile.name);
                 if (profile.id == focused)
                     savedConnections->setCurrentItem(item, QItemSelectionModel::NoUpdate);

@@ -1,6 +1,7 @@
 #pragma once
 #include <QPointer>
 #include <QWidget>
+#include <cstdint>
 #include <functional>
 class QCheckBox;
 class QLabel;
@@ -12,6 +13,7 @@ class StatusLine;
 class FieldValidation;
 } // namespace design
 class SqlEditor;
+enum class SearchInput : uint8_t;
 class SearchPanel final : public QWidget {
     Q_OBJECT
   public:
@@ -26,6 +28,7 @@ class SearchPanel final : public QWidget {
     void hideEvent(QHideEvent* event) override;
 
   private:
+    void showError(SearchInput field, const QString& message);
     void setStatus(const QString& message);
     void find(bool backwards);
     void replaceOne();

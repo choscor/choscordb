@@ -23,6 +23,7 @@ class WorkspaceTest : public QObject {
     void recoveryAdapterRejectsOversizeBeforeDispatch();
     void sqlStartedTransactionRequiresCloseConfirmation();
     void transactionCloseRequiresExplicitChoice();
+    void manualTransactionKeepsAutoCommitOffUntilItEnds();
     void mainWindowHistoryRecordsOpensDisablesAndFlushes();
     void cancelledUpdateDoesNotInstallOnLaterNormalClose();
     void closingActiveQueryFlushesDisconnectedHistory();

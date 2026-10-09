@@ -50,8 +50,8 @@ Cell cell(const CellDto& value) {
 }
 } // namespace
 void QueryWorkspace::handleEvent(const BridgeEvent& e) {
-    const auto kind = text(e.kind);
-    if (kind == "session_sql_mode") {
+    const auto eventKind = text(e.kind);
+    if (eventKind == "session_sql_mode") {
         connectionSqlModes_.insert(e.id, text(e.sql_mode));
         if (executionModeToken_ != 0 && e.request_token == executionModeToken_ &&
             executionModeConnection_ == e.id) {
@@ -75,53 +75,40 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         }
         return;
     }
-    if ((kind == "edit_target" || kind == "edit_target_failed" || kind == "edit_query" ||
-         kind == "edit_query_failed") &&
+    if ((eventKind == "edit_target" || eventKind == "edit_target_failed" ||
+         eventKind == "edit_query" || eventKind == "edit_query_failed") &&
         e.request_token == editTargetToken_ && queryConnection_ == e.id) {
         editColumnNames_.clear();
         editKey_.clear();
         editGenerated_.clear();
+        editDuplicable_.clear();
         editQualifiedName_.clear();
-        if (kind.endsWith("_failed"))
+        if (eventKind.endsWith("_failed"))
             editReason_ = text(e.error);
         else {
             editQualifiedName_ = text(e.edit_target.qualified_name);
             editReason_ = text(e.edit_target.reason);
             editParameterStyle_ = text(e.edit_target.parameter_style);
-            if (kind == "edit_query") {
-                for (const auto& source : e.edit_source_columns) {
-                    const auto name = text(source);
-                    editColumnNames_.push_back(name);
-                    bool key = false, generated = true;
-                    for (const auto& column : e.edit_target.columns)
-                        if (name == text(column.name)) {
-                            key = column.key;
-                            generated = column.generated;
-                            break;
-                        }
-                    editKey_.push_back(key);
-                    editGenerated_.push_back(generated);
-                }
-            } else {
-                for (const auto& column : e.edit_target.columns) {
-                    editColumnNames_.push_back(text(column.name));
-                    editKey_.push_back(column.key);
-                    editGenerated_.push_back(column.generated);
-                }
+            // Rust aligns an edit query's columns to the result columns.
+            for (const auto& column : e.edit_target.columns) {
+                editColumnNames_.push_back(text(column.name));
+                editKey_.push_back(column.key);
+                editGenerated_.push_back(column.generated);
+                editDuplicable_.push_back(column.duplicable);
             }
         }
-        if (kind.startsWith("edit_query"))
+        if (eventKind.startsWith("edit_query"))
             widgets_.grid->setToolTip(editReason_);
         configureEditability();
         updateActions();
         return;
     }
-    if ((kind == "result_cells" || kind == "result_cells_failed") &&
+    if ((eventKind == "result_cells" || eventKind == "result_cells_failed") &&
         e.request_token == cellMetadataToken_ && queryConnection_ == e.id &&
         cellMetadataQuery_ == query_) {
         cellMetadataToken_ = 0;
         cellMetadata_.clear();
-        if (kind == "result_cells" && e.result_cell_metadata.size() == columns_.size()) {
+        if (eventKind == "result_cells" && e.result_cell_metadata.size() == columns_.size()) {
             cellMetadata_.reserve(e.result_cell_metadata.size());
             for (const auto& source : e.result_cell_metadata) {
                 ResultCellMetadata metadata;
@@ -144,10 +131,10 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         }
         return;
     }
-    if ((kind == "edit_applied" || kind == "edit_failed") && e.request_token == editApplyToken_ &&
-        queryConnection_ == e.id) {
+    if ((eventKind == "edit_applied" || eventKind == "edit_failed") &&
+        e.request_token == editApplyToken_ && queryConnection_ == e.id) {
         editApplying_ = false;
-        editApplied_ = kind == "edit_applied";
+        editApplied_ = eventKind == "edit_applied";
         if (editApplied_) {
             model_->discardEdits();
             quint64 total = 0;
@@ -159,7 +146,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             preserveViewOnRefresh_ = true;
             if (widgets_.objectReadOnly && queryConnection_)
                 openObjectData(*queryConnection_, objectId_, resultOrigin_,
-                               querySettings_->preferences(), objectKind_, true);
+                               querySettings_->preferences(), true);
             else if (queryConnection_ && !executedSql_.isEmpty()) {
                 if (query_)
                     adapter_->releaseQuery(*query_);
@@ -188,7 +175,16 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         updateActions();
         return;
     }
-    if (kind == "connected") {
+    if (eventKind == "transaction_state") {
+        if (e.transaction_active)
+            pendingTransactions_.insert(e.id);
+        else
+            pendingTransactions_.remove(e.id);
+        emit transactionStateChanged(e.id, e.transaction_active);
+        updateActions();
+        return;
+    }
+    if (eventKind == "connected") {
         if (e.has_transaction_state) {
             if (e.transaction_active) {
                 pendingTransactions_.insert(e.id);
@@ -224,14 +220,15 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         updateActions();
         return;
     }
-    if (kind == "connection_failed" || kind == "operation_failed" || kind == "bridge_failed") {
+    if (eventKind == "connection_failed" || eventKind == "operation_failed" ||
+        eventKind == "bridge_failed") {
         if (executionModeConnection_ == e.id) {
             executionModeToken_ = 0;
             executionModeConnection_.reset();
             executionModeEditor_.clear();
         }
         const bool connectionFailure =
-            kind == "connection_failed" && pendingConnections_.contains(e.id);
+            eventKind == "connection_failed" && pendingConnections_.contains(e.id);
         const auto failure =
             tr("Failed: %1")
                 .arg(text(e.error) + (e.vendor_code.empty()
@@ -240,14 +237,14 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         if (connectionFailure)
             setDocumentStatus(connectionAttemptEditors_.take(e.id).data(), QStringLiteral("failed"),
                               failure, pendingConnections_.value(e.id));
-        else if (kind == "operation_failed" && !widgets_.objectReadOnly &&
+        else if (eventKind == "operation_failed" && !widgets_.objectReadOnly &&
                  selectedConnection() == e.id)
             setDocumentStatus(widgets_.currentEditor(), QStringLiteral("failed"), failure, {});
-        else if (kind == "bridge_failed" && workInFlight())
+        else if (eventKind == "bridge_failed" && workInFlight())
             setExecutionState(QStringLiteral("failed"), failure);
         connectionAttemptStatus_.remove(e.id);
         pendingConnections_.remove(e.id);
-        if (kind == "connection_failed") {
+        if (eventKind == "connection_failed") {
             connectionProfiles_.remove(e.id);
             connectionDrivers_.remove(e.id);
             connectionSqlModes_.remove(e.id);
@@ -258,7 +255,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         updateActions();
         return;
     }
-    if (kind == "disconnected") {
+    if (eventKind == "disconnected") {
         if (executionModeConnection_ == e.id) {
             executionModeToken_ = 0;
             executionModeConnection_.reset();
@@ -302,7 +299,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         updateActions();
         return;
     }
-    if (kind == "transaction_finished") {
+    if (eventKind == "transaction_finished") {
         pendingTransactions_.remove(e.id);
         emit transactionStateChanged(e.id, false);
         message(e.committed ? tr("Transaction committed.") : tr("Transaction rolled back."));
@@ -320,14 +317,14 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     }
     if (!query_ || e.id != *query_)
         return;
-    if (kind == "result_view_progress") {
+    if (eventKind == "result_view_progress") {
         setExecutionState(
             QStringLiteral("running"),
             tr("Preparing result view · %1 rows scanned").arg(e.result_view_scanned_rows));
         updateActions();
         return;
     }
-    if (kind == "result_view_applied") {
+    if (eventKind == "result_view_applied") {
         referenceFilterPending_ = false;
         referenceFilterFailed_ = false;
         viewFilters_ = proposedViewFilters_;
@@ -346,7 +343,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         updateActions();
         return;
     }
-    if (kind == "result_view_failed") {
+    if (eventKind == "result_view_failed") {
         viewBusy_ = false;
         const auto failureDetail =
             text(e.error) +
@@ -379,7 +376,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         updateActions();
         return;
     }
-    if (kind == "query_state") {
+    if (eventKind == "query_state") {
         const auto state = text(e.state);
         // Terminal state notices precede their detailed outcome. Keep the
         // pending cancellation visible until that acknowledgement arrives.
@@ -394,7 +391,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         updateActions();
         if (state == "cancelling")
             widgets_.cancel->setEnabled(false);
-    } else if (kind == "schema") {
+    } else if (eventKind == "schema") {
         if (cancellationPending_ || !queryAvailable())
             return;
         clearResult();
@@ -403,8 +400,10 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             columns_.push_back(resultColumn(c));
         if (filterBar_)
             filterBar_->setColumns(columns_);
-        if (!widgets_.objectReadOnly && queryConnection_ && !executedSql_.isEmpty() &&
-            driverForConnection(*queryConnection_) != "mysql") {
+        const bool inspectNow = queryConnection_ && !EngineAdapter::driverWorkflow(
+                                                         driverForConnection(*queryConnection_))
+                                                         .inspectAfterResult;
+        if (!widgets_.objectReadOnly && inspectNow && !executedSql_.isEmpty()) {
             editTargetToken_ = nextEditRequestToken();
             editQualifiedName_.clear();
             editReason_ = tr("Checking query edit eligibility…");
@@ -414,7 +413,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                 names << column.name;
             adapter_->inspectQueryEdit(*queryConnection_, executedSql_, names, editTargetToken_);
         }
-        if (queryConnection_ && driverForConnection(*queryConnection_) != "mysql")
+        if (inspectNow)
             requestCellMetadata();
         quint64 bytes = columns_.capacity() * sizeof(ResultColumn);
         for (const auto& column : columns_)
@@ -434,7 +433,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         fetching_ = true;
         adapter_->fetchPageAt(*query_, 0);
         updateActions();
-    } else if (kind == "stored_page") {
+    } else if (eventKind == "stored_page") {
         if (cancellationPending_)
             return;
         fetching_ = false;
@@ -479,7 +478,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             if (cellMetadata_.size() == columns_.size())
                 model_->setCellMetadata(cellMetadata_);
             if (filterBar_)
-                filterBar_->setColumns(columns_, model_->rows());
+                filterBar_->setColumns(columns_);
             // setPage destroyed the old Qt buffers before we release their reservation.
             if (visibleLease_) {
                 const auto lease = *visibleLease_;
@@ -552,20 +551,22 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         }
         busy_ = false;
         updateActions();
-    } else if (kind == "query_finished") {
+    } else if (eventKind == "query_finished") {
         hasMoreResults_ = e.has_more_results;
         if (queryConnection_ && e.has_sql_mode)
             connectionSqlModes_.insert(*queryConnection_, text(e.sql_mode));
-        if (!widgets_.objectReadOnly && queryConnection_ && !executedSql_.isEmpty() &&
-            driverForConnection(*queryConnection_) == "mysql" && !hasMoreResults_) {
+        const bool inspectNow =
+            queryConnection_ && !hasMoreResults_ &&
+            EngineAdapter::driverWorkflow(driverForConnection(*queryConnection_))
+                .inspectAfterResult;
+        if (!widgets_.objectReadOnly && inspectNow && !executedSql_.isEmpty()) {
             editTargetToken_ = nextEditRequestToken();
             QStringList names;
             for (const auto& column : columns_)
                 names << column.name;
             adapter_->inspectQueryEdit(*queryConnection_, executedSql_, names, editTargetToken_);
         }
-        if (queryConnection_ && driverForConnection(*queryConnection_) == "mysql" &&
-            !hasMoreResults_)
+        if (inspectNow)
             requestCellMetadata();
         if (hasMoreResults_)
             message(tr("More results are available. Use Next result to continue."));
@@ -600,7 +601,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
              hasResultPage ? tr("Page %1").arg(*currentPage_ + 1) : QString{}, rowMetric,
              hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024) : QString{}});
         updateActions();
-    } else if (kind == "query_failed") {
+    } else if (eventKind == "query_failed") {
         if (preserveViewOnRefresh_ && viewRefreshQuery_ == query_) {
             preserveViewOnRefresh_ = false;
             viewRefreshQuery_.reset();

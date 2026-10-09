@@ -74,7 +74,7 @@ class EditorTest : public QObject {
         using namespace choscordb::design;
         choscordb::SqlEditor editor;
         editor.setPalette(applicationPalette(
-            {ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light, {}), false}));
+            {ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light), false}));
         editor.setText("MMMM\nMMMM");
         editor.resize(500, 220);
         editor.show();
@@ -184,7 +184,7 @@ class EditorTest : public QObject {
         choscordb::SqlEditor editor;
         editor.resize(400, 200);
         editor.setPalette(applicationPalette(
-            {ResolvedAppearance::Dark, resolveColors(ResolvedAppearance::Dark, {}), false}));
+            {ResolvedAppearance::Dark, resolveColors(ResolvedAppearance::Dark), false}));
         editor.show();
         QCoreApplication::processEvents();
         const int x = editor.marginWidth(0) + editor.marginWidth(1) + editor.marginWidth(2) / 2;

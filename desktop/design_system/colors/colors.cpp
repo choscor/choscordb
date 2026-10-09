@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
-#include <utility>
 
 namespace choscordb::design {
 namespace {
@@ -26,67 +24,12 @@ QColor blend(const QColor& foreground, const QColor& background, double amount) 
             channel(foreground.blue(), background.blue())};
 }
 
-struct AccessibleAccent final {
-    QColor color;
-    QColor text;
-    bool found = false;
-};
-
-AccessibleAccent accessibleAccent(const QColor& seed, const QColor& canvas, const QColor& surface) {
-    constexpr double maxAdjustment = 0.22;
-    const QColor lightText("#FFFFFF");
-    const QColor darkText("#111827");
-    AccessibleAccent best;
-    double bestDistance = std::numeric_limits<double>::max();
-    const QColor hsl = seed.toHsl();
-    for (int step = -44; step <= 44; ++step) {
-        const double difference = static_cast<double>(step) / 200.0;
-        if (std::abs(difference) > maxAdjustment) {
-            continue;
-        }
-        QColor candidate;
-        candidate.setHslF(hsl.hslHueF(), hsl.hslSaturationF(),
-                          std::clamp(hsl.lightnessF() + difference, 0.0, 1.0));
-        candidate = candidate.toRgb();
-        if (contrastRatio(candidate, canvas) < 3.0 || contrastRatio(candidate, surface) < 3.0) {
-            continue;
-        }
-        QColor foreground;
-        if (contrastRatio(lightText, candidate) >= 4.5) {
-            foreground = lightText;
-        } else if (contrastRatio(darkText, candidate) >= 4.5) {
-            foreground = darkText;
-        } else {
-            continue;
-        }
-        if (std::abs(difference) < bestDistance) {
-            best = {candidate, foreground, true};
-            bestDistance = std::abs(difference);
-        }
-    }
-    return best;
-}
-
 QColor paletteColor(const QPalette& palette, QPalette::ColorRole role, const QColor& fallback) {
     const auto value = palette.color(QPalette::Active, role);
     return value.isValid() ? value : fallback;
 }
 
 } // namespace
-
-Accent Accent::presetColor(AccentPreset value) {
-    return {.kind = AccentKind::Preset, .preset = value, .customColor = {}};
-}
-
-Accent Accent::custom(QColor value) {
-    return {.kind = AccentKind::Custom,
-            .preset = AccentPreset::Cobalt,
-            .customColor = std::move(value)};
-}
-
-bool Accent::isCustom() const {
-    return kind == AccentKind::Custom;
-}
 
 double contrastRatio(const QColor& foreground, const QColor& background) {
     if (!foreground.isValid() || !background.isValid()) {
@@ -97,51 +40,8 @@ double contrastRatio(const QColor& foreground, const QColor& background) {
     return (lighter + 0.05) / (darker + 0.05);
 }
 
-QColor accentSeed(const Accent& accent) {
-    if (accent.isCustom()) {
-        return accent.customColor;
-    }
-    switch (accent.preset) {
-    case AccentPreset::Cobalt:
-        return QColor("#2F7DD3");
-    case AccentPreset::Azure:
-        return QColor("#0077B6");
-    case AccentPreset::Teal:
-        return QColor("#087F8C");
-    case AccentPreset::Green:
-        return QColor("#2E7D32");
-    case AccentPreset::Violet:
-        return QColor("#7456C8");
-    case AccentPreset::Orange:
-        return QColor("#B85C00");
-    case AccentPreset::Rose:
-        return QColor("#B74668");
-    }
-    return QColor("#2F7DD3");
-}
-
-AccentValidation validateAccent(const Accent& accent, ResolvedAppearance appearance) {
-    const QColor seed = accentSeed(accent);
-    if (!seed.isValid()) {
-        return {false, QStringLiteral("Choose a valid RGB color.")};
-    }
-    if (seed.alpha() != 255) {
-        return {false, QStringLiteral("Accent colors must be fully opaque.")};
-    }
-    const QColor canvas =
-        appearance == ResolvedAppearance::Dark ? QColor("#111827") : QColor("#F5F7FA");
-    const QColor surface =
-        appearance == ResolvedAppearance::Dark ? QColor("#182231") : QColor("#FFFFFF");
-    if (!accessibleAccent(seed, canvas, surface).found) {
-        return {false,
-                QStringLiteral("This color cannot provide readable actions and focus indicators.")};
-    }
-    return {true, {}};
-}
-
-SemanticColors resolveColors(ResolvedAppearance appearance, const Accent&) {
-    // Final MVP :root/.dark values. Legacy accent preferences remain readable,
-    // but no longer alter the replacement appearance.
+SemanticColors resolveColors(ResolvedAppearance appearance) {
+    // Final MVP :root/.dark values.
     const bool dark = appearance == ResolvedAppearance::Dark;
     const QColor canvas(dark ? "#171d20" : "#f6f7f8");
     const QColor panel(dark ? "#20272b" : "#ffffff");

@@ -9,16 +9,6 @@
 
 namespace choscordb::design {
 namespace {
-Icon driverIcon(const QString& driver) {
-    if (driver == "postgres")
-        return Icon::PostgreSQL;
-    if (driver == "sqlite")
-        return Icon::SQLite;
-    if (driver == "mysql")
-        return Icon::MySQL;
-    return Icon::Database;
-}
-
 QString statusLabel(const QString& status) {
     if (status == "completed")
         return RecentHistoryRowDelegate::tr("Completed");

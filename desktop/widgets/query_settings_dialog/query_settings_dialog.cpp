@@ -2,7 +2,6 @@
 #include "bridge/request_token.h"
 #include "design_system/button/button.h"
 #include "design_system/dialog_sections/dialog_sections.h"
-#include "design_system/field/field.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include <QFormLayout>
@@ -37,13 +36,8 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     timeout_->setObjectName("queryTimeoutSeconds");
     timeout_->setRange(0, limits.maxTimeoutSeconds);
     timeout_->setSpecialValueText(tr("No timeout"));
-    pageSizeValidation_ = new design::FieldValidation(pageSize_, this);
-    timeoutValidation_ = new design::FieldValidation(timeout_, this);
-    form->addRow(tr("Rows per page"), pageSizeValidation_);
-    form->addRow(tr("Statement timeout (seconds)"), timeoutValidation_);
-    connect(pageSize_, &QSpinBox::valueChanged, this,
-            [this] { pageSizeValidation_->setError({}); });
-    connect(timeout_, &QSpinBox::valueChanged, this, [this] { timeoutValidation_->setError({}); });
+    form->addRow(tr("Rows per page"), pageSize_);
+    form->addRow(tr("Statement timeout (seconds)"), timeout_);
     auto* explanation = createDescription(
         tr("Applies to new queries. Existing results keep their page size and timeout."), this);
     layout->addWidget(explanation);
@@ -93,26 +87,7 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
                 }
                 token_ = 0;
                 statusLine_->setBusy(false);
-                const auto limits = EngineAdapter::queryPreferenceLimits();
-                if (value.version != limits.version || value.pageSize < limits.minPageSize ||
-                    value.pageSize > limits.maxPageSize ||
-                    value.timeoutSeconds > limits.maxTimeoutSeconds) {
-                    pageSizeValidation_->setError(
-                        value.pageSize < limits.minPageSize || value.pageSize > limits.maxPageSize
-                            ? tr("Stored page size is outside the supported range.")
-                            : QString{});
-                    timeoutValidation_->setError(
-                        value.timeoutSeconds > limits.maxTimeoutSeconds
-                            ? tr("Stored timeout is outside the supported range.")
-                            : QString{});
-                    statusLine_->setAvailable(false);
-                    setStatus(value.version != limits.version
-                                  ? tr("Stored settings version is unsupported. Restore defaults.")
-                                  : tr("Stored settings are invalid. Restore defaults."));
-                    saving_ = false;
-                    updateControls();
-                    return;
-                }
+                // Rust validates stored settings and reports invalid ones as failures.
                 fill(value);
                 ready_ = true;
                 statusLine_->setAvailable(true);
@@ -169,18 +144,6 @@ void QuerySettingsDialog::apply() {
     value.timeoutSeconds = quint32(timeout_->value());
     value.connectionTimeoutSeconds = connectionTimeoutSeconds_;
     value.showSystemSchemas = showSystemSchemas_;
-    const auto limits = EngineAdapter::queryPreferenceLimits();
-    if (value.version != limits.version || value.pageSize < limits.minPageSize ||
-        value.pageSize > limits.maxPageSize || value.timeoutSeconds > limits.maxTimeoutSeconds) {
-        pageSizeValidation_->setError(value.pageSize < limits.minPageSize ||
-                                              value.pageSize > limits.maxPageSize
-                                          ? tr("Page size is outside the supported range.")
-                                          : QString{});
-        timeoutValidation_->setError(value.timeoutSeconds > limits.maxTimeoutSeconds
-                                         ? tr("Timeout is outside the supported range.")
-                                         : QString{});
-        return;
-    }
     saving_ = true;
     const auto token = nextRequestToken();
     token_ = token;

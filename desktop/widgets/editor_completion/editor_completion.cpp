@@ -134,9 +134,10 @@ void EditorCompletionController::launch() {
         editor_->isIoBusy() || !editor_->hasFocus())
         return;
     const auto cursor = quint64(editor_->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS));
+    // Check before copying the document for the worker.
     if (cursor != quint64(editor_->SendScintilla(QsciScintilla::SCI_GETANCHOR)) ||
-        quint64(editor_->SendScintilla(QsciScintilla::SCI_GETLENGTH)) >
-            CompletionService::limits().maxSourceBytes)
+        !CompletionService::sourceSupported(
+            quint64(editor_->SendScintilla(QsciScintilla::SCI_GETLENGTH))))
         return;
     const auto source = editor_->text();
     const auto generation = generation_, revision = editor_->revision();
@@ -211,8 +212,8 @@ void EditorCompletionController::accept(const QModelIndex& index) {
     const auto insertion = index.data(Qt::UserRole).toString().toUtf8();
     const auto length = quint64(editor_->SendScintilla(QsciScintilla::SCI_GETLENGTH));
     if (shownStart_ > shownEnd_ || shownEnd_ > length ||
-        quint64(insertion.size()) >
-            CompletionService::limits().maxSourceBytes - (length - (shownEnd_ - shownStart_)))
+        !CompletionService::sourceSupported(length - (shownEnd_ - shownStart_) +
+                                            quint64(insertion.size())))
         return;
     inserting_ = true;
     editor_->beginUndoAction();

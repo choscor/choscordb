@@ -1,12 +1,43 @@
+#include "app/object_explorer.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/icons.h"
 #include <QSignalSpy>
+#include <QTableView>
 #include <QTest>
 
 using namespace choscordb;
 class ObjectInspectionAdapterTest final : public QObject {
     Q_OBJECT
   private slots:
+    void primaryKeyColumnsShowTheKeyIcon() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        auto create = adapter.execute(*connection, "CREATE TABLE keyed(note TEXT, id INTEGER, "
+                                                   "PRIMARY KEY(id))");
+        QVERIFY(create);
+        adapter.fetchPage(*create);
+        QTRY_COMPARE(finished, 1);
+        ObjectExplorer explorer(&adapter);
+        explorer.openObject(*connection, R"(["main","keyed"])", "\"main\".\"keyed\"", "table");
+        auto* model = explorer.findChild<QTableView*>("objectMetadata")->model();
+        QTRY_COMPARE(model->rowCount(), 2);
+        constexpr int iconRole = Qt::UserRole + 1;
+        QCOMPARE(model->index(0, 0).data().toString(), QString("note"));
+        QCOMPARE(model->index(0, 0).data(iconRole).toInt(), int(design::Icon::File));
+        QCOMPARE(model->index(1, 0).data().toString(), QString("id"));
+        QCOMPARE(model->index(1, 0).data(iconRole).toInt(), int(design::Icon::Key));
+    }
     void realMetadataEmptyFailureRetryAndLatestRequest() {
         EngineAdapter adapter;
         bool connected = false;

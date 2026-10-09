@@ -1,8 +1,8 @@
 #pragma once
 #include "bridge/engine_adapter.h"
 #include "design_system/dialog_shell/dialog_shell.h"
-#include "widgets/profile_dialog/ssh_hop_editor.h"
 #include "widgets/profile_dialog/ssh_private_key_editor.h"
+#include <QButtonGroup>
 #include <QHash>
 #include <QPointer>
 class QComboBox;
@@ -42,7 +42,7 @@ class ProfileDialog final : public DialogShell {
 
   private:
     void createTrustControls(QFormLayout* form);
-    void inspectHostKeys(const SshHostKeyTarget& target);
+    void inspectHostKeys();
     void updateTrustControls();
     void showTrustStatus(const QString& message, bool failure = false);
     QWidget* validated(QWidget* field);
@@ -50,18 +50,10 @@ class ProfileDialog final : public DialogShell {
     void showFieldError(QWidget* field, const QString& message);
     void createPrivateKeyControls(QFormLayout* form, QGridLayout* grid);
     void updatePrivateKeyControls();
-    SshPrivateKeyCredential privateKeyCredential(const SavedProfile& profile, bool saving) const;
-    void createProxyControls(QFormLayout* form);
-    void updateProxyControls();
-    void writeProxyDraft(SavedProfile& profile) const;
-    void setProxyDraft(const SavedProfile& profile);
-    static bool proxyNeedsPassword(const SavedProfile& profile);
     void createConnectionControls(QFormLayout* ssh, QGridLayout* grid);
-    static bool validServerHost(const QString& host);
-    bool validateSecurityDraft(const SavedProfile& profile);
-    QString sshOptionsDraft() const;
     void setSecurityDraft(const SavedProfile& profile);
-    void writeSecurityDraft(SavedProfile& profile) const;
+    ProfileSecretDrafts secretDrafts() const;
+    QWidget* fieldWidget(const QString& field) const;
     SavedProfile draft() const;
     void setDraft(const SavedProfile& profile);
     void refresh();
@@ -85,7 +77,6 @@ class ProfileDialog final : public DialogShell {
     bool preservePasswordOnRefresh_ = false;
     bool preserveSshSecretOnRefresh_ = false;
     bool preserveTlsSecretOnRefresh_ = false;
-    bool preserveProxySecretOnRefresh_ = false;
     quint64 token_ = 0;
     quint64 revision_ = 0;
     bool busy_ = false;
@@ -106,14 +97,8 @@ class ProfileDialog final : public DialogShell {
     QCheckBox* sshEnabled_;
     QLineEdit *sshHost_, *sshUser_, *sshIdentityFile_, *sshSecret_;
     QSpinBox* sshPort_;
-    QLineEdit *tlsSecret_, *sshAgentSocket_, *sshKnownHosts_;
+    QLineEdit* tlsSecret_;
     QWidget* tlsSecretField_ = nullptr;
-    QSpinBox *sshTimeout_, *sshKeepalive_, *sshKeepaliveCount_, *sshRemotePort_;
-    QLineEdit* sshRemoteHost_;
-    QCheckBox *sshLocalBinding_, *sshShareTunnels_;
-    QLineEdit* sshLocalHost_;
-    QSpinBox* sshLocalPort_;
-    QLabel* sshLocalBindingWarning_;
     QComboBox* sshIdentitySource_ = nullptr;
     QLabel *sshIdentitySourceLabel_ = nullptr, *sshIdentityFileLabel_ = nullptr,
            *sshSecretLabel_ = nullptr;
@@ -121,16 +106,8 @@ class ProfileDialog final : public DialogShell {
     std::optional<SshPrivateKeyDraft> pendingPrivateKey_;
     QPushButton* inspectSshKeys_ = nullptr;
     quint64 trustToken_ = 0, trustRevision_ = 0;
-    SshHostKeyTarget trustTarget_;
     QString trustPath_;
     QPointer<SshHostKeyDialog> trustDialog_;
-    SshHopEditor* sshHopEditor_;
-    SshHopSecrets pendingHopSecrets_;
-    QCheckBox* proxyEnabled_ = nullptr;
-    QWidget* proxyFields_ = nullptr;
-    QComboBox* proxyProtocol_ = nullptr;
-    QLineEdit *proxyHost_ = nullptr, *proxyUser_ = nullptr, *proxySecret_ = nullptr;
-    QSpinBox* proxyPort_ = nullptr;
     QLabel* status_;
     design::StatusLine* statusLine_;
     QPointer<QDialog> progressDialog_;
@@ -139,6 +116,7 @@ class ProfileDialog final : public DialogShell {
     QHash<QWidget*, design::FieldValidation*> validations_;
     design::FieldValidation* nameValidation_;
     QList<QPushButton*> actions_;
-    QPushButton *sqliteChoice_, *postgresChoice_, *mysqlChoice_;
+    // Driver choices keyed by their driver_ index.
+    QButtonGroup* driverChoices_;
 };
 } // namespace choscordb

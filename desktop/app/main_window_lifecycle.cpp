@@ -10,6 +10,7 @@
 #include "bridge/engine_adapter.h"
 #include "bridge/request_token.h"
 #include "bridge/rust_text.h"
+#include "bridge/text_filter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/history_row/history_row.h"
@@ -39,122 +40,11 @@
 
 namespace choscordb {
 namespace {
-QString formatHistorySql(const QString& sql) {
-    QString formatted;
-    bool pendingSpace = false;
-    for (qsizetype i = 0; i < sql.size();) {
-        const auto ch = sql.at(i);
-        if (ch.isSpace()) {
-            pendingSpace = true;
-            ++i;
-            continue;
-        }
-        if (ch == QLatin1Char('$')) {
-            const auto delimiterEnd = sql.indexOf(QLatin1Char('$'), i + 1);
-            if (delimiterEnd > i) {
-                const auto tag = sql.mid(i + 1, delimiterEnd - i - 1);
-                bool validTag =
-                    tag.isEmpty() || tag.at(0).isLetter() || tag.at(0) == QLatin1Char('_');
-                for (const auto character : tag)
-                    validTag =
-                        validTag && (character.isLetterOrNumber() || character == QLatin1Char('_'));
-                const auto delimiter = sql.mid(i, delimiterEnd - i + 1);
-                const auto closing = validTag ? sql.indexOf(delimiter, delimiterEnd + 1) : -1;
-                if (validTag) {
-                    if (pendingSpace && !formatted.isEmpty() &&
-                        !formatted.endsWith(QLatin1Char('\n')))
-                        formatted += QLatin1Char(' ');
-                    formatted +=
-                        closing >= 0 ? sql.mid(i, closing + delimiter.size() - i) : sql.mid(i);
-                    i = closing >= 0 ? closing + delimiter.size() : sql.size();
-                    pendingSpace = false;
-                    continue;
-                }
-            }
-        }
-        if (ch == QLatin1Char('-') && i + 1 < sql.size() && sql.at(i + 1) == QLatin1Char('-')) {
-            if (pendingSpace && !formatted.isEmpty() && !formatted.endsWith(QLatin1Char('\n')))
-                formatted += QLatin1Char(' ');
-            pendingSpace = false;
-            while (i < sql.size() && sql.at(i) != QLatin1Char('\n'))
-                formatted += sql.at(i++);
-            if (i < sql.size()) {
-                formatted += QLatin1Char('\n');
-                ++i;
-            }
-            continue;
-        }
-        if (ch == QLatin1Char('/') && i + 1 < sql.size() && sql.at(i + 1) == QLatin1Char('*')) {
-            if (pendingSpace && !formatted.isEmpty() && !formatted.endsWith(QLatin1Char('\n')))
-                formatted += QLatin1Char(' ');
-            pendingSpace = false;
-            formatted += sql.at(i++);
-            formatted += sql.at(i++);
-            while (i < sql.size()) {
-                const auto current = sql.at(i++);
-                formatted += current;
-                if (current == QLatin1Char('*') && i < sql.size() &&
-                    sql.at(i) == QLatin1Char('/')) {
-                    formatted += sql.at(i++);
-                    break;
-                }
-            }
-            continue;
-        }
-        if (ch == QLatin1Char('\'') || ch == QLatin1Char('"') || ch == QLatin1Char('`')) {
-            if (pendingSpace && !formatted.isEmpty() && !formatted.endsWith(QLatin1Char('\n')))
-                formatted += QLatin1Char(' ');
-            pendingSpace = false;
-            const auto quote = ch;
-            formatted += ch;
-            ++i;
-            while (i < sql.size()) {
-                const auto current = sql.at(i++);
-                formatted += current;
-                if (current == quote) {
-                    if (i < sql.size() && sql.at(i) == quote)
-                        formatted += sql.at(i++);
-                    else
-                        break;
-                } else if (current == QLatin1Char('\\') && i < sql.size()) {
-                    formatted += sql.at(i++);
-                }
-            }
-            continue;
-        }
-        if (ch.isLetter() || ch == QLatin1Char('_')) {
-            const auto start = i++;
-            while (i < sql.size() &&
-                   (sql.at(i).isLetterOrNumber() || sql.at(i) == QLatin1Char('_')))
-                ++i;
-            const auto word = sql.mid(start, i - start);
-            const auto upper = word.toUpper();
-            const bool clause = upper == QLatin1String("FROM") || upper == QLatin1String("WHERE") ||
-                                upper == QLatin1String("JOIN") || upper == QLatin1String("GROUP") ||
-                                upper == QLatin1String("ORDER") ||
-                                upper == QLatin1String("LIMIT") || upper == QLatin1String("HAVING");
-            const bool keyword =
-                clause || upper == QLatin1String("SELECT") || upper == QLatin1String("INSERT") ||
-                upper == QLatin1String("UPDATE") || upper == QLatin1String("DELETE") ||
-                upper == QLatin1String("INTO") || upper == QLatin1String("VALUES") ||
-                upper == QLatin1String("SET") || upper == QLatin1String("AS") ||
-                upper == QLatin1String("AND") || upper == QLatin1String("OR") ||
-                upper == QLatin1String("BY") || upper == QLatin1String("ON");
-            if (clause && !formatted.isEmpty() && !formatted.endsWith(QLatin1Char('\n')))
-                formatted += QLatin1Char('\n');
-            else if (pendingSpace && !formatted.isEmpty() && !formatted.endsWith(QLatin1Char('\n')))
-                formatted += QLatin1Char(' ');
-            formatted += keyword ? upper : word;
-            pendingSpace = false;
-            continue;
-        }
-        if (pendingSpace && !formatted.isEmpty() && !formatted.endsWith(QLatin1Char('\n')))
-            formatted += QLatin1Char(' ');
-        pendingSpace = false;
-        formatted += ch;
-        ++i;
-    }
-    return formatted.trimmed();
+QString historyPreview(const QString& sql, quint32 maxChars, bool markTruncation) {
+    const auto bytes = sql.toUtf8();
+    const auto preview = history_sql_preview(bridge_detail::utf8View(bytes), maxChars);
+    return bridge_detail::fromRust(preview.text) +
+           (markTruncation && preview.truncated ? QStringLiteral("…") : QString{});
 }
 } // namespace
 
@@ -319,13 +209,12 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     }
     history_ = new HistoryDock(workspace_->adapter(), this);
     auto filterHistory = [historyItems, historySearch] {
-        const auto query = historySearch->text().trimmed();
+        const TextFilter query(historySearch->text());
         for (int i = 0; i < historyItems->count(); ++i) {
             auto* item = historyItems->item(i);
             const auto entryData = item->data(Qt::UserRole);
             const auto entry = entryData.value<SavedHistoryEntry>();
-            item->setHidden(
-                !(item->text() + '\n' + entry.sql).contains(query, Qt::CaseInsensitive));
+            item->setHidden(!query.matches(item->text() + '\n' + entry.sql));
         }
     };
     connect(historySearch, &QLineEdit::textChanged, this, filterHistory);
@@ -351,7 +240,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                     return;
                 historyItems->clear();
                 for (const auto& entry : entries) {
-                    const auto preview = formatHistorySql(entry.sql.left(100));
+                    const auto preview = historyPreview(entry.sql, 100, false);
                     const auto when = QDateTime::fromSecsSinceEpoch(entry.timestamp)
                                           .toLocalTime()
                                           .toString(QStringLiteral("yyyy-MM-dd HH:mm"));
@@ -377,8 +266,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                     item->setData(design::RecentHistoryRowDelegate::WhenRole, when);
                     item->setData(design::RecentHistoryRowDelegate::StatusRole, entry.status);
                     item->setData(design::RecentHistoryRowDelegate::DriverRole, driver);
-                    item->setToolTip(formatHistorySql(entry.sql.left(2000)) +
-                                     (entry.sql.size() > 2000 ? QStringLiteral("…") : QString{}));
+                    item->setToolTip(historyPreview(entry.sql, 2000, true));
                 }
                 filterHistory();
                 historyStatus->setVisible(entries.isEmpty());

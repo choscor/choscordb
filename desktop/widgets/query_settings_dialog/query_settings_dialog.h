@@ -7,7 +7,6 @@ class QLabel;
 namespace choscordb {
 namespace design {
 class Button;
-class FieldValidation;
 class StatusLine;
 } // namespace design
 class QuerySettingsDialog final : public DialogShell {
@@ -33,7 +32,6 @@ class QuerySettingsDialog final : public DialogShell {
     QSpinBox *pageSize_, *timeout_;
     quint32 connectionTimeoutSeconds_;
     bool showSystemSchemas_ = false;
-    design::FieldValidation *pageSizeValidation_, *timeoutValidation_;
     design::Button *apply_, *reset_;
     quint64 token_ = 0;
     bool ready_ = false, saving_ = false;

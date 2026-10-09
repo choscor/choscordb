@@ -15,6 +15,20 @@ class AppearanceAdapterTest final : public QObject {
         for (const auto& theme : {QStringLiteral("sepia"), QStringLiteral("Dark"), QString()})
             QVERIFY(!choscordb::EngineAdapter::appearanceThemeValid(theme));
     }
+    void newSettingsStartFromThePersistedDefaults() {
+        const choscordb::AppearanceLayout layout;
+        QCOMPARE(layout.navigatorWidth, 260u);
+        QCOMPARE(layout.editorResultsSplit, quint16(500));
+        QCOMPARE(layout.historyHeight, 220u);
+        const choscordb::HistoryPolicy history;
+        QVERIFY(history.enabled);
+        QCOMPARE(history.maxAgeDays, 90u);
+        QCOMPARE(history.maxRecords, 10000u);
+        const choscordb::EditorPreferences editor;
+        QCOMPARE(editor.fontSize,
+                 choscordb::EngineAdapter::editorPreferenceLimits().defaultFontSize);
+        QVERIFY(editor.shortcuts.isEmpty());
+    }
     void exposesCorrelatedAppearanceResult() {
         choscordb::EngineAdapter adapter;
         QVERIFY(adapter.metaObject()->indexOfSignal(
@@ -70,7 +84,7 @@ class AppearanceAdapterTest final : public QObject {
         }
     }
 
-    void rejectsOversizedNativePayloadBeforeCrossingTheBridge() {
+    void rejectsOversizedScreenNameAtSubmission() {
         choscordb::EngineAdapter adapter;
         QSignalSpy failed(&adapter, &choscordb::EngineAdapter::recoveryFailed);
         choscordb::AppearanceLayout value;
@@ -81,7 +95,7 @@ class AppearanceAdapterTest final : public QObject {
         QCOMPARE(failed.at(0).at(0).toULongLong(), quint64(99));
     }
 
-    void invalidAppearancePolicyIsRejectedByRustWithoutReplacingSavedLayout() {
+    void invalidAppearanceIsRejectedAtSubmissionWithoutReplacingSavedLayout() {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
         choscordb::EngineAdapter adapter(nullptr, directory.filePath("appearance.sqlite"));
@@ -95,7 +109,7 @@ class AppearanceAdapterTest final : public QObject {
 
         auto invalid = valid;
         invalid.theme = "sepia";
-        QVERIFY(adapter.setAppearanceLayout(invalid, 202));
+        QVERIFY(!adapter.setAppearanceLayout(invalid, 202));
         QTRY_COMPARE(failed.size(), 1);
         QCOMPARE(failed.at(0).at(0).toULongLong(), quint64(202));
         QVERIFY(!failed.at(0).at(1).toString().isEmpty());
@@ -103,12 +117,12 @@ class AppearanceAdapterTest final : public QObject {
         invalid = valid;
         invalid.accentKind = "custom";
         invalid.accent = "#nothex";
-        QVERIFY(adapter.setAppearanceLayout(invalid, 203));
+        QVERIFY(!adapter.setAppearanceLayout(invalid, 203));
         QTRY_COMPARE(failed.size(), 2);
 
         invalid = valid;
         invalid.width = 100;
-        QVERIFY(adapter.setAppearanceLayout(invalid, 204));
+        QVERIFY(!adapter.setAppearanceLayout(invalid, 204));
         QTRY_COMPARE(failed.size(), 3);
 
         QVERIFY(adapter.getAppearanceLayout(205));

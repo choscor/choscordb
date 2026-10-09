@@ -213,24 +213,17 @@ void ExportDialog::start() {
     startExportToDialect(destination_->text(), format_->currentData().toString(), table,
                          dialect_->currentData().toString());
 }
-void ExportDialog::startExportTo(const QString& path, const QString& format,
-                                 const QStringList& table, bool postgres) {
-    startExportToDialect(path, format, table,
-                         postgres ? QStringLiteral("postgres") : QStringLiteral("sqlite"));
-}
 void ExportDialog::startExportToDialect(const QString& path, const QString& format,
                                         const QStringList& table, const QString& dialect) {
     if (!adapter_ || !query_ || isRunning())
         return;
-    if (path.isEmpty() || format_->findData(format) < 0 ||
-        (format == "sql" && (table.isEmpty() || table.size() > 2 || table.last().isEmpty()))) {
+    // Rust decides what names a SQL export target; Qt shows its reason on the field.
+    const auto tableError = format == "sql" ? EngineAdapter::sqlExportTableError(table) : QString{};
+    if (path.isEmpty() || format_->findData(format) < 0 || !tableError.isEmpty()) {
         destinationValidation_->setError(path.isEmpty() ? tr("Choose a destination.") : QString{});
         formatValidation_->setError(format_->findData(format) < 0 ? tr("Choose a supported format.")
                                                                   : QString{});
-        tableValidation_->setError(
-            format == "sql" && (table.isEmpty() || table.size() > 2 || table.last().isEmpty())
-                ? tr("Enter a table for SQL export.")
-                : QString{});
+        tableValidation_->setError(tableError);
         return;
     }
     const auto query = *query_;

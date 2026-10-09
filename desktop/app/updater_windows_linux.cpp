@@ -166,7 +166,7 @@ class NativeUpdater final : public QObject {
                 timer_.stop();
             }
         });
-        timer_.setInterval(24 * 60 * 60 * 1000);
+        timer_.setInterval(std::chrono::seconds(update_check_interval_seconds()));
         connect(&timer_, &QTimer::timeout, this, [this] { checkForUpdates(false); });
         progressTimer_.setInterval(50);
         connect(&progressTimer_, &QTimer::timeout, this, [this] {

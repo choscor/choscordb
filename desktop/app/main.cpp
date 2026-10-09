@@ -125,6 +125,7 @@ int main(int argc, char** argv) {
         bool validDelay = false;
         const int requestedDelay =
             qEnvironmentVariableIntValue("CHOSCORDB_TEST_SMOKE_DELAY_MS", &validDelay);
+        // ui-budget: the packaged smoke test keeps the window open for at most ten seconds.
         QTimer::singleShot(validDelay ? qBound(100, requestedDelay, 10000) : 100, &app,
                            &QApplication::quit);
     }

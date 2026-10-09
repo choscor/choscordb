@@ -17,7 +17,6 @@ class ThemeManager final : public QObject {
 
     [[nodiscard]] ThemeMode mode() const;
     [[nodiscard]] Density density() const;
-    [[nodiscard]] Accent accent() const;
     [[nodiscard]] ResolvedTheme resolvedTheme() const;
     [[nodiscard]] DesignMetrics metrics() const;
     [[nodiscard]] bool forcedContrast() const;
@@ -25,7 +24,6 @@ class ThemeManager final : public QObject {
 
     void setMode(ThemeMode mode);
     void setDensity(Density density);
-    [[nodiscard]] AccentValidation setAccent(const Accent& accent);
 
     // These hooks are fed by the platform integration layer. User choices are
     // retained while accessibility policy temporarily takes precedence.
@@ -48,7 +46,6 @@ class ThemeManager final : public QObject {
 
     ThemeMode mode_ = ThemeMode::System;
     Density density_ = Density::Compact;
-    Accent accent_;
     ResolvedAppearance systemAppearance_ = ResolvedAppearance::Light;
     QPalette systemPalette_;
     ResolvedTheme resolvedTheme_;

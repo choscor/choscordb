@@ -25,10 +25,7 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     painter->setPen(sqlite ? colors.sqliteBadgeBorder : colors.postgresBadgeBorder);
     painter->setBrush(sqlite ? colors.sqliteBadgeBackground : colors.postgresBadgeBackground);
     painter->drawRoundedRect(badge, 6, 6);
-    themedIcon(sqlite                                            ? Icon::SQLite
-               : index.data(DriverRole).toString() == "postgres" ? Icon::PostgreSQL
-               : index.data(DriverRole).toString() == "mysql"    ? Icon::MySQL
-                                                                 : Icon::Database,
+    themedIcon(driverIcon(index.data(DriverRole).toString()),
                sqlite ? colors.sqliteBadgeForeground : colors.postgresBadgeForeground, 16)
         .paint(painter, badge.adjusted(5, 6, -6, -7));
     const auto title = index.data(Qt::DisplayRole).toString().section('\n', 0, 0);

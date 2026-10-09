@@ -344,7 +344,7 @@ class PreferencesTest : public QObject {
             QVERIFY(status->text().contains("Cancelling"));
             QVERIFY(!dialog.findChild<choscordb::ToastRegion*>("progressToast"));
         });
-        dialog.startExportTo(directory.filePath("cancelled.csv"), "csv");
+        dialog.startExportToDialect(directory.filePath("cancelled.csv"), "csv", {}, "sqlite");
         QTRY_VERIFY(cancellationRequested);
         QTRY_VERIFY(!dialog.isRunning());
         QVERIFY(!dialog.isVisible());
@@ -367,7 +367,7 @@ class PreferencesTest : public QObject {
         dialog.setQuery(1);
         adapter.shutdown();
         dialog.show();
-        dialog.startExportTo(directory.filePath("failed.csv"), "csv");
+        dialog.startExportToDialect(directory.filePath("failed.csv"), "csv", {}, "sqlite");
         QTRY_VERIFY(!dialog.isRunning());
         auto* status = dialog.findChild<QLabel*>("exportStatus");
         QVERIFY(status && status->isVisible());
@@ -385,7 +385,7 @@ class PreferencesTest : public QObject {
         choscordb::ExportDialog dialog(&adapter, &owner);
         dialog.setQuery(1);
         dialog.show();
-        dialog.startExportTo(directory.filePath("cancelled.csv"), "csv");
+        dialog.startExportToDialect(directory.filePath("cancelled.csv"), "csv", {}, "sqlite");
         QVERIFY(dialog.isRunning());
         auto* loading = dialog.findChild<QLabel*>("statusLoadingIcon");
         QVERIFY(loading && loading->isVisible());
@@ -446,31 +446,49 @@ class PreferencesTest : public QObject {
         find->setKeySequence(QKeySequence("Ctrl+J", QKeySequence::PortableText));
         QCOMPARE(validation->error(), QString());
     }
+    void conflictAppearsOnTheEditedCommandWhenLabelsShareAPrefix() {
+        choscordb::EngineAdapter adapter;
+        choscordb::PreferencesDialog dialog(&adapter, {{"find", "Find", "Ctrl+F"},
+                                                       {"findNext", "Find Next", "Ctrl+G"},
+                                                       {"copy", "Copy", "Ctrl+C"}});
+        dialog.show();
+        auto* apply = dialog.findChild<QPushButton*>("preferencesApply");
+        QTRY_VERIFY(apply->isEnabled());
+        auto* find = dialog.findChild<QKeySequenceEdit*>("shortcut_find");
+        auto* findNext = dialog.findChild<QKeySequenceEdit*>("shortcut_findNext");
+        findNext->setKeySequence(QKeySequence("Ctrl+C", QKeySequence::PortableText));
+        apply->click();
+        auto* nextValidation =
+            dynamic_cast<choscordb::design::FieldValidation*>(findNext->parentWidget());
+        auto* findValidation =
+            dynamic_cast<choscordb::design::FieldValidation*>(find->parentWidget());
+        QVERIFY(nextValidation && findValidation);
+        QVERIFY(nextValidation->error().contains("conflict"));
+        QCOMPARE(findValidation->error(), QString());
+    }
     void conflictsIncludeDefaultsReservedCommandsAndPrefixes() {
         QList<choscordb::ShortcutDescriptor> catalog = {{"find", "Find", "Ctrl+F"},
                                                         {"copy", "Copy", "Ctrl+C"},
                                                         {"quit", "Quit", "Ctrl+Q", false}};
         choscordb::EditorPreferences preferences;
         preferences.shortcuts = {{"find", "Ctrl+C"}};
-        QVERIFY(!choscordb::shortcutValidationError(preferences, catalog).isEmpty());
+        QVERIFY(!choscordb::validateShortcuts(preferences.shortcuts, catalog).ok());
         preferences.shortcuts = {{"find", "Ctrl+Q, Ctrl+C"}};
-        QVERIFY(!choscordb::shortcutValidationError(preferences, catalog).isEmpty());
+        QVERIFY(!choscordb::validateShortcuts(preferences.shortcuts, catalog).ok());
         preferences.shortcuts = {{"unknown", "Ctrl+J"}};
-        QVERIFY(!choscordb::shortcutValidationError(preferences, catalog).isEmpty());
+        QVERIFY(!choscordb::validateShortcuts(preferences.shortcuts, catalog).ok());
         preferences.shortcuts = {{"find", "NotARealKey"}};
-        QVERIFY(!choscordb::shortcutValidationError(preferences, catalog).isEmpty());
+        QVERIFY(!choscordb::validateShortcuts(preferences.shortcuts, catalog).ok());
         preferences.shortcuts = {{"quit", "Ctrl+J"}};
-        QVERIFY(!choscordb::shortcutValidationError(preferences, catalog).isEmpty());
-        preferences.shortcuts = {{"find", "Ctrl+J"}, {"find", "Ctrl+K"}};
-        QVERIFY(!choscordb::shortcutValidationError(preferences, catalog).isEmpty());
+        QVERIFY(!choscordb::validateShortcuts(preferences.shortcuts, catalog).ok());
         preferences.shortcuts = {{"find", "Alt+Ctrl+X"}};
-        QVERIFY(choscordb::shortcutValidationError(preferences, catalog).isEmpty());
+        QVERIFY(choscordb::validateShortcuts(preferences.shortcuts, catalog).ok());
         preferences.shortcuts = {{"find", "Ctrl+A, "}};
-        QVERIFY(!choscordb::shortcutValidationError(preferences, catalog).isEmpty());
+        QVERIFY(!choscordb::validateShortcuts(preferences.shortcuts, catalog).ok());
         preferences.shortcuts = {{"find", "Ctrl+A, Ctrl+B, Ctrl+D, Ctrl+E, Ctrl+G"}};
-        QVERIFY(!choscordb::shortcutValidationError(preferences, catalog).isEmpty());
+        QVERIFY(!choscordb::validateShortcuts(preferences.shortcuts, catalog).ok());
         preferences.shortcuts = {{"find", ""}};
-        QVERIFY(choscordb::shortcutValidationError(preferences, catalog).isEmpty());
+        QVERIFY(choscordb::validateShortcuts(preferences.shortcuts, catalog).ok());
     }
     void draftIsSavedOnlyOnApplyAndFailureRetainsIt() {
         choscordb::EngineAdapter adapter;

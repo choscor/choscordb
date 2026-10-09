@@ -295,7 +295,7 @@ class CellEditWorkspaceTest : public QObject {
         QVERIFY(text->accessibleDescription().contains("memory budget"));
         QCOMPARE(model->index(0, 0).data().toString(), QString("original"));
         QVERIFY(!model->hasPendingEdits());
-        QVERIFY(model->setByteBudget(ResultTableModel::DefaultBytes));
+        QVERIFY(model->setByteBudget(ResultTableModel::defaultBytes()));
         save->click();
         QTRY_VERIFY(!sheet->isVisible());
         QCOMPARE(model->index(0, 0).data(Qt::EditRole).toString(), draft);

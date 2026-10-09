@@ -91,6 +91,9 @@ target_link_libraries(choscordb-diagnostics PUBLIC choscordb-rust Qt6::Core)
 choscordb_add_library(choscordb-desktop-services
   desktop/app/appearance_controller.cpp
   desktop/bridge/template_service.cpp
+  desktop/bridge/quick_search.cpp
+  desktop/bridge/text_filter.cpp
+  desktop/bridge/sql_highlight.cpp
   desktop/bridge/completion_service.cpp
   desktop/bridge/result_column_adapter.cpp
   desktop/bridge/engine_adapter.cpp
@@ -125,12 +128,10 @@ choscordb_add_library(choscordb-widgets
   desktop/widgets/profile_dialog/profile_dialog.cpp
   desktop/widgets/profile_dialog/profile_dialog_actions.cpp
   desktop/widgets/profile_dialog/profile_dialog_security.cpp
-  desktop/widgets/profile_dialog/profile_dialog_proxy.cpp
   desktop/widgets/profile_dialog/profile_dialog_ssh_trust.cpp
   desktop/widgets/profile_dialog/ssh_host_key_dialog.cpp
   desktop/widgets/profile_dialog/ssh_private_key_editor.cpp
   desktop/widgets/profile_dialog/profile_dialog_private_key.cpp
-  desktop/widgets/profile_dialog/ssh_hop_editor.cpp
 )
 target_include_directories(choscordb-widgets PUBLIC desktop)
 target_include_directories(choscordb-widgets SYSTEM PUBLIC ${QSCINTILLA_INCLUDE_DIR})
@@ -147,7 +148,6 @@ choscordb_add_library(choscordb-desktop
   desktop/app/main_window_feedback.cpp
   desktop/app/main_window_diagnostics.cpp
   desktop/app/main_window_quick_search.cpp
-  desktop/app/quick_search_match.cpp
   desktop/app/main_window_ui.cpp
   desktop/app/main_window_ui_pins.cpp
   desktop/app/main_window_workspace.cpp
@@ -171,6 +171,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/object_explorer.cpp
   desktop/app/object_action_sql.cpp
   desktop/app/navigator_controller.cpp
+  desktop/app/navigator_controller_search.cpp
 )
 target_link_libraries(choscordb-desktop PUBLIC choscordb-widgets choscordb-diagnostics)
 if(APPLE)

@@ -103,8 +103,7 @@ class QueryWorkspace final : public QObject {
     void setExternalWork(bool busy);
     void setExternalWork(QObject* source, bool busy);
     void openObjectData(quint64 connection, const QString& object, const QString& label,
-                        const QueryPreferences& preferences,
-                        const QString& kind = QStringLiteral("table"), bool preserveView = false,
+                        const QueryPreferences& preferences, bool preserveView = false,
                         const QString& initialFilter = {});
     void invalidateResult(bool connectionLost = false);
     bool hasPendingEdits() const { return model_->hasPendingEdits(); }
@@ -185,6 +184,8 @@ class QueryWorkspace final : public QObject {
     bool connectionAvailable(quint64 connection) const;
     bool queryAvailable() const;
     bool workInFlight() const;
+    // Rust's transaction rules for the connection whose result is being edited.
+    const TransactionGuard& editTransactionGuard() const;
     void message(const QString& text);
     void setExecutionState(const QString& state, const QString& detail = {},
                            const ExecutionMetrics& metrics = {});
@@ -257,11 +258,11 @@ class QueryWorkspace final : public QObject {
     QHash<quint64, QVariantMap> connectionAttemptStatus_;
     QString completedAffectedRows_;
     std::optional<quint64> completedDurationMs_;
-    QString objectKind_, objectId_;
+    QString objectId_;
     QString executedSql_, editParameterStyle_;
     QString editQualifiedName_, editReason_;
     std::vector<QString> editColumnNames_;
-    std::vector<bool> editKey_, editGenerated_;
+    std::vector<bool> editKey_, editGenerated_, editDuplicable_;
     quint64 editTargetToken_ = 0, editApplyToken_ = 0;
     quint64 editPolicyGeneration_ = 0, editabilityJobToken_ = 0;
     bool editabilityPlanning_ = false, editPlanRunning_ = false;

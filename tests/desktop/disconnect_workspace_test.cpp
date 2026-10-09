@@ -245,7 +245,7 @@ class DisconnectWorkspaceTest : public QObject {
             },
             Qt::DirectConnection);
         const auto destination = directory.filePath("rows.csv");
-        dialog->startExportTo(destination, "csv");
+        dialog->startExportToDialect(destination, "csv", {}, "sqlite");
         QTRY_VERIFY(dialog->isRunning());
         QTRY_VERIFY(exportProgress > 0); // Actual accepted export, not just destination preflight.
         QTimer::singleShot(0, &f.window, [&] {

@@ -40,15 +40,18 @@ class PinnedTreeModelTest : public QObject {
         QVERIFY(pins.hasChildren(pins.index(1, 0)));
         QVERIFY(pins.hasChildren(pins.index(2, 0)));
         QVERIFY(!pins.sourceIndex(first).isValid());
-        pins.setStatus(PinStore::identityKey(table), "Disconnected");
+        pins.setStatus(PinStore::identityKey(table), "Disconnected",
+                       PinnedTreeModel::StatusPlacement::TooltipOnly);
         const auto second = pins.index(1, 0);
         QCOMPARE(second.data(Qt::DisplayRole).toString(), QString("orders"));
         QVERIFY(second.data(Qt::ToolTipRole).toString().contains("Warehouse"));
         QVERIFY(second.data(Qt::ToolTipRole).toString().contains("Disconnected"));
         QVERIFY(second.data(Qt::AccessibleDescriptionRole).toString().contains("orders"));
-        pins.setStatus(PinStore::identityKey(table), "Loading children…");
+        pins.setStatus(PinStore::identityKey(table), "Loading children…",
+                       PinnedTreeModel::StatusPlacement::Label);
         QCOMPARE(second.data(Qt::DisplayRole).toString(), QString("orders — Loading children…"));
-        pins.setStatus(PinStore::identityKey(table), "Metadata failed. Expand to retry.");
+        pins.setStatus(PinStore::identityKey(table), "Metadata failed. Expand to retry.",
+                       PinnedTreeModel::StatusPlacement::Label);
         QCOMPARE(second.data(Qt::DisplayRole).toString(),
                  QString("orders — Metadata failed. Expand to retry."));
         auto unavailable = column;

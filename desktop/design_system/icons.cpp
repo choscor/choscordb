@@ -2,14 +2,13 @@
 #include "design_system/theme.h"
 
 #include <QDebug>
-#include <QFile>
 #include <QHash>
 #include <QIconEngine>
 #include <QMutex>
 #include <QPainter>
 #include <QPixmap>
+#include <QResource>
 #include <QSvgRenderer>
-#include <QXmlStreamReader>
 
 #include <memory>
 #include <utility>
@@ -20,11 +19,12 @@ namespace choscordb::design {
 namespace {
 
 QByteArray themedSvg(Icon icon, const QColor& color) {
-    QFile source(iconResourcePath(icon));
-    if (!source.open(QIODevice::ReadOnly)) {
+    // QResource only resolves the compiled :/icons namespace, never the filesystem.
+    QResource source(iconResourcePath(icon));
+    if (!source.isValid()) {
         return {};
     }
-    auto svg = source.readAll();
+    auto svg = source.uncompressedData();
     // Database logos retain their upstream brand colors in both themes.
     if (icon == Icon::PostgreSQL || icon == Icon::SQLite) {
         return svg;
@@ -100,30 +100,6 @@ class SvgIconEngine final : public QIconEngine {
     std::unique_ptr<QSvgRenderer> renderer_;
     QHash<PixmapKey, QPixmap> pixmaps_;
 };
-
-bool validSvgDocument(const QByteArray& svg) {
-    QXmlStreamReader reader(svg);
-    bool root = false;
-    bool drawingElement = false;
-    while (!reader.atEnd()) {
-        reader.readNext();
-        if (!reader.isStartElement()) {
-            continue;
-        }
-        if (!root) {
-            root = reader.name() == QLatin1String("svg") && !QSvgRenderer(svg).viewBoxF().isEmpty();
-        } else if (reader.name() == QLatin1String("path") ||
-                   reader.name() == QLatin1String("polygon") ||
-                   reader.name() == QLatin1String("rect") ||
-                   reader.name() == QLatin1String("circle") ||
-                   reader.name() == QLatin1String("ellipse") ||
-                   reader.name() == QLatin1String("line") ||
-                   reader.name() == QLatin1String("polyline")) {
-            drawingElement = true;
-        }
-    }
-    return !reader.hasError() && root && drawingElement;
-}
 
 } // namespace
 
@@ -259,13 +235,6 @@ QString iconResourcePath(Icon icon) {
     return {};
 }
 
-bool iconResourceDecodes(Icon icon) {
-    ::qInitResources_resources();
-    if (icon == Icon::MySQL)
-        return !QPixmap(iconResourcePath(icon)).isNull();
-    return validSvgDocument(themedSvg(icon, QColor(Qt::black)));
-}
-
 namespace {
 struct IconKey {
     Icon icon;
@@ -314,4 +283,13 @@ QIcon themedIcon(Icon icon, const QColor& color, int size) {
     return created;
 }
 
+Icon driverIcon(const QString& driver) {
+    if (driver == QLatin1String("sqlite"))
+        return Icon::SQLite;
+    if (driver == QLatin1String("postgres"))
+        return Icon::PostgreSQL;
+    if (driver == QLatin1String("mysql"))
+        return Icon::MySQL;
+    return Icon::Database;
+}
 } // namespace choscordb::design

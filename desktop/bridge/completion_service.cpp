@@ -1,28 +1,7 @@
 #include "completion_service.h"
 #include "bridge/rust_text.h"
-#include <algorithm>
 namespace choscordb {
 namespace {
-// Count before allocation, rejecting malformed surrogate pairs as well as size.
-bool chargeUtf8(const QString& text, quint64& remaining) {
-    if (quint64(text.size()) > remaining)
-        return false;
-    for (qsizetype i = 0; i < text.size(); ++i) {
-        const auto value = text[i];
-        quint64 bytes = value.unicode() < 0x80 ? 1 : value.unicode() < 0x800 ? 2 : 3;
-        if (value.isHighSurrogate()) {
-            if (i + 1 == text.size() || !text[i + 1].isLowSurrogate())
-                return false;
-            bytes = 4;
-            ++i;
-        } else if (value.isLowSurrogate())
-            return false;
-        if (bytes > remaining)
-            return false;
-        remaining -= bytes;
-    }
-    return true;
-}
 using bridge_detail::toRust;
 using bridge_detail::utf8View;
 QString compactText(const rust::String& text) {
@@ -36,24 +15,15 @@ struct CompletionService::Private {
     rust::Box<CompletionCatalog> catalog;
 };
 CompletionService::CompletionService(QList<CompletionCandidate> items, bool partial) {
-    const auto maximum = limits();
-    quint64 remaining = maximum.maxMetadataBytes;
+    // Rust bounds the catalog; conversion skips text that is not well-formed UTF-16.
     rust::Vec<SqlCompletionDto> metadata;
-    metadata.reserve(
-        static_cast<size_t>(std::min<quint64>(items.size(), maximum.maxMetadataEntries)));
-    quint64 visited = 0;
+    metadata.reserve(static_cast<size_t>(items.size()));
     for (const auto& item : items) {
-        if (visited++ == maximum.maxMetadataEntries) {
+        if (!item.label.isValidUtf16() || !item.insertText.isValidUtf16() ||
+            !item.kind.isValidUtf16()) {
             partial = true;
-            break;
+            continue;
         }
-        auto budget = remaining;
-        if (!chargeUtf8(item.label, budget) || !chargeUtf8(item.insertText, budget) ||
-            !chargeUtf8(item.kind, budget)) {
-            partial = true;
-            break;
-        }
-        remaining = budget;
         SqlCompletionDto candidate;
         candidate.label = toRust(item.label);
         candidate.insert_text = toRust(item.insertText);
@@ -62,17 +32,18 @@ CompletionService::CompletionService(QList<CompletionCandidate> items, bool part
     }
     d_ = std::make_shared<const Private>(completion_catalog(std::move(metadata), partial));
 }
+bool CompletionService::sourceSupported(quint64 bytes) {
+    return completion_source_supported(bytes);
+}
 CompletionLimits CompletionService::limits() {
     const auto value = completion_limits();
-    return {value.max_results, value.max_prefix_bytes, value.max_metadata_entries,
-            value.max_metadata_bytes, value.max_source_bytes};
+    return {value.max_metadata_entries, value.max_metadata_bytes, value.max_metadata_visits};
 }
 CompletionPage CompletionService::complete(const QString& source, quint64 cursor,
                                            bool requested) const {
     if (!d_)
         return {};
-    quint64 remaining = limits().maxSourceBytes;
-    if (!chargeUtf8(source, remaining))
+    if (!source.isValidUtf16())
         return {};
     const auto bytes = source.toUtf8();
     if (cursor > quint64(bytes.size()))

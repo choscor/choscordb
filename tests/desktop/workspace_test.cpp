@@ -234,7 +234,7 @@ void WorkspaceTest::formErrorsAppearBelowTheRelevantFields() {
 
     choscordb::ExportDialog exportDialog(&adapter);
     exportDialog.setQuery(1);
-    exportDialog.startExportTo({}, "csv");
+    exportDialog.startExportToDialect({}, "csv", {}, "sqlite");
     auto* destination = exportDialog.findChild<QLineEdit*>("exportDestination");
     auto* destinationValidation =
         dynamic_cast<choscordb::design::FieldValidation*>(destination->parentWidget());
@@ -242,6 +242,15 @@ void WorkspaceTest::formErrorsAppearBelowTheRelevantFields() {
     QVERIFY(destinationValidation->error().contains("destination"));
     destination->setText("/tmp/example.csv");
     QCOMPARE(destinationValidation->error(), QString());
+    // Rust decides what names a SQL export target: a table with an optional schema.
+    auto* tableValidation = dynamic_cast<choscordb::design::FieldValidation*>(
+        exportDialog.findChild<QLineEdit*>("exportTable")->parentWidget());
+    QVERIFY(tableValidation);
+    exportDialog.startExportToDialect("/tmp/example.sql", "sql", {"a", "b", "c"}, "sqlite");
+    QCOMPARE(tableValidation->error(), QString("Enter a table for SQL export."));
+    exportDialog.startExportToDialect("/tmp/example.sql", "sql", {"sales", ""}, "sqlite");
+    QCOMPARE(tableValidation->error(), QString("Enter a table for SQL export."));
+    QVERIFY(!exportDialog.isRunning());
 }
 
 void WorkspaceTest::newConnectionAfterSavingCreatesAnotherProfile() {
@@ -463,11 +472,34 @@ void WorkspaceTest::sqlStartedTransactionRequiresCloseConfirmation() {
     QVERIFY(f.workspace.confirmShutdown());
 }
 
+void WorkspaceTest::manualTransactionKeepsAutoCommitOffUntilItEnds() {
+    WorkspaceFixture f;
+    QTRY_VERIFY(f.run.isEnabled());
+    f.mode.setCurrentIndex(1);
+    QSignalSpy transactionState(&f.workspace, &choscordb::QueryWorkspace::transactionStateChanged);
+    f.execute("SELECT 1");
+    QTRY_VERIFY(std::any_of(transactionState.begin(), transactionState.end(),
+                            [](const auto& args) { return args.at(1).toBool(); }));
+    QTRY_VERIFY(f.run.isEnabled());
+    f.messages.clear();
+    f.mode.setCurrentIndex(0);
+    QCOMPARE(f.mode.currentIndex(), 1);
+    QVERIFY(f.messages.toPlainText().contains("Commit or roll back before enabling auto-commit."));
+    f.rollback.trigger();
+    QTRY_VERIFY(f.messages.toPlainText().contains("rolled back"));
+    QTRY_VERIFY(f.run.isEnabled());
+    f.mode.setCurrentIndex(0);
+    QCOMPARE(f.mode.currentIndex(), 0);
+}
+
 void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
     WorkspaceFixture f;
     QTRY_VERIFY(f.run.isEnabled());
     f.mode.setCurrentIndex(1);
+    QSignalSpy opened(&f.workspace, &choscordb::QueryWorkspace::transactionStateChanged);
     f.execute("SELECT 1");
+    QTRY_VERIFY(std::any_of(opened.begin(), opened.end(),
+                            [](const auto& args) { return args.at(1).toBool(); }));
     QTRY_VERIFY(f.run.isEnabled());
     bool cancelled = false;
     QTimer cancelTimer;

@@ -133,9 +133,9 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
         QVERIFY(dialog.findChild<QLineEdit*>(name)->isVisibleTo(&dialog));
     for (const char* name : {"profileSshRemoteHost", "profileSshLocalHost", "profileSshAgentSocket",
                              "profileSshKnownHosts", "profileProxyHost"})
-        QVERIFY(!dialog.findChild<QLineEdit*>(name)->isVisibleTo(&dialog));
-    QVERIFY(!dialog.findChild<QSpinBox*>("profileSshLocalPort")->isVisibleTo(&dialog));
-    QVERIFY(!dialog.findChild<QCheckBox*>("profileProxyEnabled")->isVisibleTo(&dialog));
+        QVERIFY2(!dialog.findChild<QLineEdit*>(name), name);
+    QVERIFY(!dialog.findChild<QSpinBox*>("profileSshLocalPort"));
+    QVERIFY(!dialog.findChild<QCheckBox*>("profileProxyEnabled"));
     dialog.resize(560, 440);
     QCoreApplication::processEvents();
     QVERIFY(scroll->verticalScrollBar()->maximum() > 0);
@@ -348,7 +348,7 @@ void WorkspaceTest::connectionSshFormKeepsBasicFields() {
     QVERIFY(source->isVisibleTo(&dialog));
     QVERIFY(!file->isVisibleTo(&dialog));
     QVERIFY(dialog.findChild<QWidget*>("profileSshPrivateKey")->isVisibleTo(&dialog));
-    QVERIFY(!dialog.findChild<QWidget*>("profileSshHopList")->isVisibleTo(&dialog));
+    QVERIFY(!dialog.findChild<QWidget*>("profileSshHopList"));
 }
 
 void WorkspaceTest::connectionTransportValidationRejectsIncompatibleSettings() {
@@ -602,15 +602,15 @@ void WorkspaceTest::connectionEditedEmptyPasswordSuppressesSavedReference() {
 void WorkspaceTest::connectionProxyControlsAreHidden() {
     choscordb::EngineAdapter adapter;
     choscordb::ProfileDialog dialog(&adapter);
-    QVERIFY(!dialog.findChild<QCheckBox*>("profileProxyEnabled")->isVisibleTo(&dialog));
-    QVERIFY(!dialog.findChild<QLineEdit*>("profileProxyHost")->isVisibleTo(&dialog));
+    QVERIFY(!dialog.findChild<QCheckBox*>("profileProxyEnabled"));
+    QVERIFY(!dialog.findChild<QLineEdit*>("profileProxyHost"));
 }
 
 void WorkspaceTest::connectionProxyControlsStayHiddenForServerDriver() {
     choscordb::EngineAdapter adapter;
     choscordb::ProfileDialog dialog(&adapter);
     dialog.findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
-    QVERIFY(!dialog.findChild<QCheckBox*>("profileProxyEnabled")->isVisibleTo(&dialog));
+    QVERIFY(!dialog.findChild<QCheckBox*>("profileProxyEnabled"));
 }
 
 void WorkspaceTest::connectionForwardingControlsAreHidden() {
@@ -619,6 +619,6 @@ void WorkspaceTest::connectionForwardingControlsAreHidden() {
     dialog.findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
     dialog.findChild<QCheckBox*>("profileSshEnabled")->setChecked(true);
     for (const char* name : {"profileSshRemoteHost", "profileSshLocalHost"})
-        QVERIFY(!dialog.findChild<QLineEdit*>(name)->isVisibleTo(&dialog));
-    QVERIFY(!dialog.findChild<QSpinBox*>("profileSshRemotePort")->isVisibleTo(&dialog));
+        QVERIFY2(!dialog.findChild<QLineEdit*>(name), name);
+    QVERIFY(!dialog.findChild<QSpinBox*>("profileSshRemotePort"));
 }

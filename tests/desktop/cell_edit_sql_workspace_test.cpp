@@ -207,7 +207,7 @@ class CellEditSqlWorkspaceTest : public QObject {
 
         QTRY_VERIFY(sql->navigationAllowed());
         QTRY_VERIFY(result->navigationAllowed());
-        data.openObject(connection, R"(["main","policy_view"])", "policy_view", "view");
+        data.openObject(connection, R"(["main","policy_view"])", "policy_view");
         QTRY_COMPARE(model->rowCount(), 1);
         QTRY_VERIFY(result->navigationAllowed());
         QVERIFY(!(model->index(0, 1).flags() & Qt::ItemIsEditable));

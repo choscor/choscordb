@@ -4,11 +4,14 @@
 #include <algorithm>
 
 namespace choscordb {
+std::size_t ResultTableModel::defaultBytes() {
+    static const auto bytes = static_cast<std::size_t>(result_view_byte_budget());
+    return bytes;
+}
 namespace {
 rust::String transportString(const QString& value, bool& validUnicode) {
     validUnicode &= value.isValidUtf16();
-    const auto bytes = value.toUtf8();
-    return rust::String(bytes.constData(), static_cast<size_t>(bytes.size()));
+    return bridge_detail::toRust(value);
 }
 
 using bridge_detail::fromRust;
@@ -73,33 +76,6 @@ QString unavailableDescription(const std::vector<ResultTableModel::Row>& rows) {
             return description;
     }
     return {};
-}
-
-QString resultError(const rust::String& code, std::size_t budget, bool cell,
-                    const QString& unavailable) {
-    const auto kind = fromRust(code);
-    const auto displayBytes =
-        std::min<std::size_t>(budget / sizeof(QChar) * sizeof(QChar), 16 * 1024 * 1024);
-    if (kind == "deferred")
-        return QObject::tr("Load every deferred value before viewing this row as JSON.");
-    if (kind == "invalid_resolution")
-        return QObject::tr("A loaded row value is invalid.");
-    if (kind == "incomplete_resolution")
-        return QObject::tr("A loaded row value is invalid or incomplete.");
-    if (kind == "non_finite")
-        return QObject::tr("This row contains a non-finite number that JSON cannot represent.");
-    if (kind == "display_limit")
-        return QObject::tr("The JSON output exceeds %1 bytes of display storage (16 MiB maximum).")
-            .arg(displayBytes);
-    if (kind == "encoded_limit")
-        return QObject::tr("The JSON output exceeds 16 MiB of encoded text.");
-    if (kind == "invalid_json")
-        return QObject::tr("This JSON/JSONB value is invalid or exceeds the 16 MiB JSON limit.");
-    if (kind == "unavailable")
-        return unavailable.isEmpty() ? QObject::tr("This row contains an unavailable value.")
-                                     : unavailable;
-    return cell ? QObject::tr("This cell contains invalid JSON view input.")
-                : QObject::tr("This row contains invalid JSON view input.");
 }
 
 } // namespace
@@ -214,8 +190,10 @@ ResultTableModel::JsonViewEvaluation ResultTableModel::evaluateJsonView(JsonView
         evaluation.state = JsonViewState::NeedsDeferred;
     else
         evaluation.state = JsonViewState::Invalid;
-    evaluation.error = resultError(result.error, budget, snapshot.scope == JsonViewScope::Cell,
-                                   unavailableDescription(snapshot.rows));
+    // Rust explains every error; a cell's own unavailable reason is more specific.
+    const auto unavailable =
+        fromRust(result.error) == "unavailable" ? unavailableDescription(snapshot.rows) : QString{};
+    evaluation.error = unavailable.isEmpty() ? fromRust(result.message) : unavailable;
     return evaluation;
 }
 } // namespace choscordb

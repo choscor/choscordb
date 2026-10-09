@@ -120,7 +120,8 @@ class PinningSidebarTest final : public QObject {
             const QSignalBlocker blocker(pins);
             pins->expand(root);
         }
-        pinnedModel->setStatus(PinStore::identityKey(tablePin), "Connected");
+        pinnedModel->setStatus(PinStore::identityKey(tablePin), "Connected",
+                               PinnedTreeModel::StatusPlacement::TooltipOnly);
         QTRY_VERIFY(pins->isExpanded(root));
         QCOMPARE(pinnedModel->rowCount(root), 3);
         QVERIFY(!pins->isRowHidden(0, root));
@@ -147,7 +148,8 @@ class PinningSidebarTest final : public QObject {
             pins->expand(pinnedSchema);
             pins->expand(nestedTable);
         }
-        pinnedModel->setStatus(PinStore::identityKey(schemaPin), "Connected");
+        pinnedModel->setStatus(PinStore::identityKey(schemaPin), "Connected",
+                               PinnedTreeModel::StatusPlacement::TooltipOnly);
         QTRY_VERIFY(pins->isExpanded(nestedTable));
         QCOMPARE(pinnedModel->rowCount(nestedTable), 3);
         QVERIFY(!pins->isRowHidden(0, nestedTable));

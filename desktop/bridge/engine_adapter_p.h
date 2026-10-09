@@ -46,19 +46,18 @@ inline ProfileDto profileDto(const SavedProfile& value) {
     dto.ssh_identity_file = toRust(value.sshIdentityFile);
     return dto;
 }
-inline void addHopCredentials(ProfileCredentialsDto& credentials,
-                              const QList<SshHopCredential>& sshHops) {
-    for (const auto& hop : sshHops) {
-        SshHopCredentialDto value;
-        value.id = toRust(hop.id);
-        value.secret = toRust(hop.secret);
-        value.action = toRust(hop.action);
-        value.has_secret = hop.hasSecret;
-        value.private_key = toRust(hop.privateKey);
-        value.private_key_action = toRust(hop.privateKeyAction);
-        value.has_private_key = hop.hasPrivateKey;
-        credentials.ssh_hops.push_back(std::move(value));
-    }
+inline ProfileSecretDraftsDto secretDraftsDto(const ProfileSecretDrafts& value) {
+    ProfileSecretDraftsDto dto;
+    dto.save_credentials = value.saveCredentials;
+    dto.database = toRust(value.database);
+    dto.database_modified = value.databaseModified;
+    dto.ssh = toRust(value.ssh);
+    dto.ssh_modified = value.sshModified;
+    dto.tls = toRust(value.tls);
+    dto.tls_modified = value.tlsModified;
+    dto.ssh_private_key = toRust(value.sshPrivateKey);
+    dto.ssh_private_key_modified = value.sshPrivateKeyModified;
+    return dto;
 }
 QList<SshHostKeyCandidate> hostKeyCandidates(const rust::Vec<SshHostKeyCandidateDto>& values);
 ObjectGraph objectGraph(const ObjectGraphDto& dto);
@@ -66,21 +65,8 @@ ObjectGraph objectGraph(const ObjectGraphDto& dto);
 struct EngineAdapter::Private {
     explicit Private(const QString& path);
     rust::Box<BridgeEngine> engine;
-    struct RecoveryRequest {
-        quint64 token;
-        std::function<Submit()> command;
-        quint64 bytes;
-    };
-    QQueue<RecoveryRequest> recoveryQueue;
-    std::optional<quint64> activeRecovery;
-    quint64 queuedRecoveryBytes = 0;
     QSet<quint64> pendingHistoryClears;
     QSet<quint64> connections;
-    struct QueryPaging {
-        quint64 connection;
-        quint32 pageSize;
-    };
-    QHash<quint64, QueryPaging> queryPaging;
     quint32 connectionTimeoutSeconds;
     struct InspectionRequest {
         quint64 connection, token;

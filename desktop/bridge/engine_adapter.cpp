@@ -8,10 +8,10 @@
 #include <algorithm>
 #include <vector>
 namespace choscordb {
-using engine_adapter_detail::addHopCredentials;
 using engine_adapter_detail::fromRust;
 using engine_adapter_detail::objectGraph;
 using engine_adapter_detail::profileDto;
+using engine_adapter_detail::secretDraftsDto;
 using engine_adapter_detail::toRust;
 using engine_adapter_detail::utf8View;
 namespace {
@@ -32,7 +32,7 @@ SavedProfile savedProfile(const ProfileDto& dto) {
     value.port = dto.port;
     value.database = fromRust(dto.database);
     value.user = fromRust(dto.user);
-    value.tls = dto.tls.empty() ? QStringLiteral("disable") : fromRust(dto.tls);
+    value.tls = fromRust(dto.tls);
     value.rootCertificate = fromRust(dto.root_certificate);
     value.tlsClientIdentity = fromRust(dto.tls_client_identity);
     value.tlsCredentialRef = fromRust(dto.tls_credential_ref);
@@ -46,35 +46,41 @@ SavedProfile savedProfile(const ProfileDto& dto) {
     value.sshCredentialRef = fromRust(dto.ssh_credential_ref);
     value.sshEnabled = dto.ssh_enabled;
     value.sshHost = fromRust(dto.ssh_host);
-    value.sshPort = dto.ssh_port ? dto.ssh_port : 22;
+    value.sshPort = dto.ssh_port;
     value.sshUser = fromRust(dto.ssh_user);
-    value.sshAuthentication = dto.ssh_authentication.empty() ? QStringLiteral("public_key")
-                                                             : fromRust(dto.ssh_authentication);
-    value.sshIdentitySource = dto.ssh_identity_source.empty() ? QStringLiteral("file")
-                                                              : fromRust(dto.ssh_identity_source);
+    value.sshAuthentication = fromRust(dto.ssh_authentication);
+    value.sshIdentitySource = fromRust(dto.ssh_identity_source);
     value.sshIdentityFile = fromRust(dto.ssh_identity_file);
     return value;
 }
+void assignAppearance(AppearanceLayout& value, const AppearanceLayoutDto& dto) {
+    value.version = dto.version;
+    value.theme = fromRust(dto.theme);
+    value.density = fromRust(dto.density);
+    value.accentKind = fromRust(dto.accent_kind);
+    value.accent = fromRust(dto.accent);
+    value.navigatorWidth = dto.navigator_width;
+    value.historyHeight = dto.history_height;
+    value.editorResultsSplit = dto.editor_results_split;
+    value.navigatorVisible = dto.navigator_visible;
+    value.historyVisible = dto.history_visible;
+    value.x = dto.x;
+    value.y = dto.y;
+    value.width = dto.width;
+    value.height = dto.height;
+    value.maximized = dto.maximized;
+    value.hasScreenName = dto.has_screen_name;
+    value.screenName = fromRust(dto.screen_name);
+}
 AppearanceLayout appearanceLayout(const AppearanceLayoutDto& dto) {
-    return {dto.version,
-            fromRust(dto.theme),
-            fromRust(dto.density),
-            fromRust(dto.accent_kind),
-            fromRust(dto.accent),
-            dto.navigator_width,
-            dto.history_height,
-            dto.editor_results_split,
-            dto.navigator_visible,
-            dto.history_visible,
-            dto.x,
-            dto.y,
-            dto.width,
-            dto.height,
-            dto.maximized,
-            dto.has_screen_name,
-            fromRust(dto.screen_name)};
+    AppearanceLayout value;
+    assignAppearance(value, dto);
+    return value;
 }
 } // namespace
+AppearanceLayout::AppearanceLayout() {
+    assignAppearance(*this, appearance_layout_default());
+}
 EngineAdapter::Private::Private(const QString& path)
     : engine(path.isEmpty() ? new_engine() : new_engine_with_storage(utf8View(path.toUtf8()))),
       connectionTimeoutSeconds(query_preference_limits().default_connection_timeout_seconds) {}
@@ -130,20 +136,13 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                     result.ddl = fromRust(event.ddl);
                     for (const auto& object : event.objects) {
                         const auto objectKind = fromRust(object.kind);
-                        const bool include =
-                            (request.pane == ObjectInspectionPane::Columns &&
-                             objectKind == "column") ||
-                            (request.pane == ObjectInspectionPane::Indexes &&
-                             objectKind == "index") ||
-                            (request.pane == ObjectInspectionPane::Keys &&
-                             (objectKind == "primarykey" || objectKind == "foreignkey" ||
-                              objectKind == "uniquekey"));
-                        if (!include)
+                        if (objectKindTraits(objectKind).detailPane != int(request.pane))
                             continue;
                         ObjectInspectionRow row;
                         row.id = fromRust(object.id);
                         row.name = fromRust(object.name);
                         row.kind = objectKind;
+                        row.primaryKey = object.primary_key;
                         if (object.has_column) {
                             row.properties.append({tr("Type"),
                                                    fromRust(object.column.database_type),
@@ -196,12 +195,6 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                 } else
                     ++it;
             }
-            for (auto it = d_->queryPaging.begin(); it != d_->queryPaging.end();) {
-                if (it->connection == event.id)
-                    it = d_->queryPaging.erase(it);
-                else
-                    ++it;
-            }
             if (d_->closing)
                 QTimer::singleShot(0, this, &EngineAdapter::finishShutdown);
         }
@@ -222,21 +215,6 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                 emit shutdownReady();
             }
         }
-        const bool recoveryTerminal = kind == "workspace_tabs_restored" ||
-                                      kind == "workspace_saved" || kind == "recovery_failed" ||
-                                      kind == "history_listed" || kind == "history_searched" ||
-                                      kind == "history_cleared" || kind == "history_policy" ||
-                                      kind == "history_flushed" || kind == "editor_preferences" ||
-                                      kind == "query_preferences" || kind == "appearance_layout";
-        if (recoveryTerminal && d_->activeRecovery == event.request_token) {
-            const auto token = event.request_token;
-            QTimer::singleShot(0, this, [this, token] {
-                if (d_->activeRecovery == token) {
-                    d_->activeRecovery.reset();
-                    pumpRecovery();
-                }
-            });
-        }
         if (kind == "query_preferences") {
             QueryPreferences preferences;
             preferences.version = event.query_preferences.version;
@@ -245,10 +223,8 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             preferences.connectionTimeoutSeconds =
                 event.query_preferences.connection_timeout_seconds;
             preferences.showSystemSchemas = event.query_preferences.show_system_schemas;
-            if (preferences.connectionTimeoutSeconds >= 1 &&
-                preferences.connectionTimeoutSeconds <=
-                    queryPreferenceLimits().maxConnectionTimeoutSeconds)
-                d_->connectionTimeoutSeconds = preferences.connectionTimeoutSeconds;
+            // Rust validated the stored preferences before reporting them.
+            d_->connectionTimeoutSeconds = preferences.connectionTimeoutSeconds;
             emit queryPreferencesReady(event.request_token, preferences);
         } else if (kind == "appearance_layout") {
             emit appearanceLayoutReady(event.request_token, event.has_appearance,
@@ -278,11 +254,13 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                                      event.history_next_offset);
         } else if (kind == "history_cleared")
             emit historyCleared(event.request_token);
-        else if (kind == "history_policy")
-            emit historyPolicyReady(event.request_token, {event.history_policy.enabled,
-                                                          event.history_policy.max_age_days,
-                                                          event.history_policy.max_records});
-        else if (kind == "workspace_tabs_restored") {
+        else if (kind == "history_policy") {
+            HistoryPolicy policy;
+            policy.enabled = event.history_policy.enabled;
+            policy.maxAgeDays = event.history_policy.max_age_days;
+            policy.maxRecords = event.history_policy.max_records;
+            emit historyPolicyReady(event.request_token, policy);
+        } else if (kind == "workspace_tabs_restored") {
             QList<SavedWorkspaceTab> tabs;
             tabs.reserve(static_cast<qsizetype>(event.workspace_tabs.size()));
             for (const auto& tab : event.workspace_tabs) {
@@ -408,13 +386,6 @@ std::optional<quint64> EngineAdapter::execute(quint64 connection, const QString&
         emit commandFailed(tr("Workspace is closing."));
         return std::nullopt;
     }
-    const auto limits = queryPreferenceLimits();
-    if (preferences.version != limits.version || preferences.pageSize < limits.minPageSize ||
-        preferences.pageSize > limits.maxPageSize ||
-        preferences.timeoutSeconds > limits.maxTimeoutSeconds) {
-        emit commandFailed(tr("Invalid query settings."));
-        return std::nullopt;
-    }
     const auto bytes = sql.toUtf8(), profileBytes = profileId.toUtf8();
     auto reply = choscordb::execute_with_profile(
         *d_->engine, connection, utf8View(bytes), preferences.pageSize,
@@ -423,9 +394,20 @@ std::optional<quint64> EngineAdapter::execute(quint64 connection, const QString&
         emit commandFailed(fromRust(reply.error));
         return std::nullopt;
     }
-    d_->queryPaging.insert(reply.id, {connection, preferences.pageSize});
     return reply.id;
 }
+namespace {
+SearchInput searchField(TextSearchField field) {
+    switch (field) {
+    case TextSearchField::Needle:
+        return SearchInput::Needle;
+    case TextSearchField::Replacement:
+        return SearchInput::Replacement;
+    default:
+        return SearchInput::General;
+    }
+}
+} // namespace
 TextMatch EngineAdapter::findText(const QString& source, const QString& needle, quint64 start,
                                   bool backwards, bool caseSensitive, bool wholeWord) {
     if (!source.isValidUtf16() || !needle.isValidUtf16()) {
@@ -436,8 +418,13 @@ TextMatch EngineAdapter::findText(const QString& source, const QString& needle, 
     const auto sourceBytes = source.toUtf8(), needleBytes = needle.toUtf8();
     const auto result = text_find(utf8View(sourceBytes), utf8View(needleBytes), start, backwards,
                                   caseSensitive, wholeWord);
-    return {result.valid, result.found, result.wrapped,
-            result.start, result.end,   fromRust(result.error)};
+    return {result.valid,
+            result.found,
+            result.wrapped,
+            result.start,
+            result.end,
+            fromRust(result.error),
+            searchField(result.error_field)};
 }
 TextReplacement EngineAdapter::replaceAllText(const QString& source, const QString& needle,
                                               const QString& replacement, bool caseSensitive,
@@ -451,49 +438,41 @@ TextReplacement EngineAdapter::replaceAllText(const QString& source, const QStri
                replacementBytes = replacement.toUtf8();
     const auto result = text_replace_all(utf8View(sourceBytes), utf8View(needleBytes),
                                          utf8View(replacementBytes), caseSensitive, wholeWord);
-    return {result.valid, fromRust(result.text), fromRust(result.error), result.count};
+    return {result.valid, fromRust(result.text), fromRust(result.error),
+            searchField(result.error_field), result.count};
+}
+bool EngineAdapter::searchPatternUsable(const QString& needle) {
+    const auto bytes = needle.toUtf8();
+    return needle.isValidUtf16() && text_pattern_usable(utf8View(bytes));
+}
+const TextLimits& EngineAdapter::textLimits() {
+    static const TextLimits limits = [] {
+        const auto dto = text_limits();
+        return TextLimits{dto.max_document_bytes, dto.max_search_pattern_bytes};
+    }();
+    return limits;
+}
+QString EngineAdapter::replacementError(quint64 documentBytes, quint64 removedBytes,
+                                        quint64 addedBytes) {
+    return fromRust(text_replacement_error(documentBytes, removedBytes, addedBytes));
 }
 QStringList EngineAdapter::keywordCompletions(const QString& prefix) {
-    if (prefix.size() > 256)
-        return {};
     const auto bytes = prefix.toUtf8();
     QStringList result;
     for (const auto& item : sql_keyword_completions(utf8View(bytes)))
         result.append(fromRust(item));
     return result;
 }
-RecoveryLimits EngineAdapter::recoveryLimits() {
-    const auto limits = recovery_limits();
-    return {limits.max_documents, limits.max_sql_bytes, limits.max_collection_bytes};
-}
-bool EngineAdapter::queueRecovery(quint64 token, std::function<Submit()> command, quint64 bytes,
-                                  bool duringShutdown) {
+bool EngineAdapter::submitRecovery(quint64 token, const std::function<Submit()>& command,
+                                   bool duringShutdown) {
     if (d_->stopping || (d_->closing && !duringShutdown)) {
         emit recoveryFailed(token, tr("Workspace is closed."));
         return false;
     }
-    const auto maximum = recoveryLimits().maxCollectionBytes * 2;
-    if (d_->recoveryQueue.size() >= 8 || bytes > maximum - d_->queuedRecoveryBytes) {
-        emit recoveryFailed(token, tr("Too many pending history or recovery requests."));
-        return false;
-    }
-    d_->queuedRecoveryBytes += bytes;
-    d_->recoveryQueue.enqueue({token, std::move(command), bytes});
-    pumpRecovery();
-    return true;
-}
-void EngineAdapter::pumpRecovery() {
-    if (d_->stopping || d_->activeRecovery || d_->recoveryQueue.isEmpty())
-        return;
-    auto request = d_->recoveryQueue.dequeue();
-    d_->queuedRecoveryBytes -= request.bytes;
-    d_->activeRecovery = request.token;
-    const auto result = request.command();
-    if (!result.accepted) {
-        d_->activeRecovery.reset();
-        emit recoveryFailed(request.token, fromRust(result.error));
-        QTimer::singleShot(0, this, &EngineAdapter::pumpRecovery);
-    }
+    const auto result = command();
+    if (!result.accepted)
+        emit recoveryFailed(token, fromRust(result.error));
+    return result.accepted;
 }
 void EngineAdapter::listProfiles(quint64 token) {
     auto result = profile_list(*d_->engine, token);
@@ -501,49 +480,30 @@ void EngineAdapter::listProfiles(quint64 token) {
         emit profileFailed(token, fromRust(result.error));
 }
 void EngineAdapter::saveProfile(const SavedProfile& profile, quint64 token) {
-    saveProfileWithPassword(profile, {}, "keep", token);
+    ProfileSecretDrafts secrets;
+    secrets.saveCredentials = true;
+    saveProfileDraft(profile, secrets, token);
 }
-void EngineAdapter::saveProfileWithPassword(const SavedProfile& profile, const QString& password,
-                                            const QString& action, quint64 token) {
-    saveProfileWithSecrets(profile, password, action, {}, "keep", token);
-}
-void EngineAdapter::saveProfileWithSecrets(
-    const SavedProfile& profile, const QString& databaseSecret, const QString& databaseAction,
-    const QString& sshSecret, const QString& sshAction, quint64 token, const QString& tlsSecret,
-    const QString& tlsAction, const QString& proxySecret, const QString& proxyAction,
-    const QList<SshHopCredential>& sshHops, const SshPrivateKeyCredential& sshPrivateKey,
-    bool saveCredentials) {
+void EngineAdapter::saveProfileDraft(const SavedProfile& profile,
+                                     const ProfileSecretDrafts& secrets, quint64 token) {
     if (d_->closing || d_->stopping) {
         emit profileFailed(token, tr("Workspace is closing."));
         return;
     }
-    ProfileCredentialsDto credentials;
-    credentials.save_credentials = saveCredentials;
-    addHopCredentials(credentials, sshHops);
-    credentials.database = toRust(databaseSecret);
-    credentials.ssh = toRust(sshSecret);
-    credentials.ssh_private_key = toRust(sshPrivateKey.secret);
-    credentials.tls = toRust(tlsSecret);
-    credentials.proxy = toRust(proxySecret);
-    credentials.database_action = toRust(databaseAction);
-    credentials.ssh_action = toRust(sshAction);
-    credentials.ssh_private_key_action = toRust(sshPrivateKey.action);
-    credentials.tls_action = toRust(tlsAction);
-    credentials.proxy_action = toRust(proxyAction);
+    auto dto = profileDto(profile);
+    auto credentials = profile_draft_credentials(dto, secretDraftsDto(secrets), true);
     auto result =
-        profile_save_credentials(*d_->engine, profileDto(profile), std::move(credentials), token);
+        profile_save_credentials(*d_->engine, std::move(dto), std::move(credentials), token);
     if (!result.accepted)
         emit profileFailed(token, fromRust(result.error));
 }
-void EngineAdapter::duplicateProfile(const QString& source, const QString& id, const QString& name,
-                                     quint64 token) {
+void EngineAdapter::duplicateProfile(const QString& source, const QString& name, quint64 token) {
     if (d_->closing || d_->stopping) {
         emit profileFailed(token, tr("Workspace is closing."));
         return;
     }
-    const auto sourceBytes = source.toUtf8(), idBytes = id.toUtf8(), nameBytes = name.toUtf8();
-    auto result = profile_duplicate(*d_->engine, utf8View(sourceBytes), utf8View(idBytes),
-                                    utf8View(nameBytes), token);
+    const auto sourceBytes = source.toUtf8(), nameBytes = name.toUtf8();
+    auto result = profile_duplicate(*d_->engine, utf8View(sourceBytes), utf8View(nameBytes), token);
     if (!result.accepted)
         emit profileFailed(token, fromRust(result.error));
 }
@@ -557,23 +517,10 @@ void EngineAdapter::deleteProfile(const QString& id, quint64 token) {
     if (!result.accepted)
         emit profileFailed(token, fromRust(result.error));
 }
-void EngineAdapter::testProfileWithSecrets(
-    const SavedProfile& profile, const QString& databaseSecret, bool hasDatabaseSecret,
-    const QString& sshSecret, bool hasSshSecret, quint64 token, const QString& tlsSecret,
-    bool hasTlsSecret, const QString& proxySecret, bool hasProxySecret,
-    const QList<SshHopCredential>& sshHops, const SshPrivateKeyCredential& sshPrivateKey) {
-    ProfileCredentialsDto credentials;
-    addHopCredentials(credentials, sshHops);
-    credentials.database = toRust(databaseSecret);
-    credentials.ssh = toRust(sshSecret);
-    credentials.ssh_private_key = toRust(sshPrivateKey.secret);
-    credentials.tls = toRust(tlsSecret);
-    credentials.proxy = toRust(proxySecret);
-    credentials.has_database = hasDatabaseSecret;
-    credentials.has_ssh = hasSshSecret;
-    credentials.has_ssh_private_key = sshPrivateKey.hasSecret;
-    credentials.has_tls = hasTlsSecret;
-    credentials.has_proxy = hasProxySecret;
+void EngineAdapter::testProfileDraft(const SavedProfile& profile,
+                                     const ProfileSecretDrafts& secrets, quint64 token) {
+    auto credentials =
+        profile_draft_credentials(profileDto(profile), secretDraftsDto(secrets), false);
     auto result = profile_test_credentials(
         *d_->engine, withConnectionTimeout(profile, d_->connectionTimeoutSeconds),
         std::move(credentials), token);
@@ -581,34 +528,16 @@ void EngineAdapter::testProfileWithSecrets(
         emit profileFailed(token, fromRust(result.error));
 }
 std::optional<quint64> EngineAdapter::connectProfile(const SavedProfile& profile) {
-    return connectProfileWithPassword(profile, {}, false);
+    return connectProfileDraft(profile, {});
 }
-std::optional<quint64> EngineAdapter::connectProfileWithPassword(const SavedProfile& profile,
-                                                                 const QString& password,
-                                                                 bool hasPassword) {
-    return connectProfileWithSecrets(profile, password, hasPassword, {}, false);
-}
-std::optional<quint64> EngineAdapter::connectProfileWithSecrets(
-    const SavedProfile& profile, const QString& databaseSecret, bool hasDatabaseSecret,
-    const QString& sshSecret, bool hasSshSecret, const QString& tlsSecret, bool hasTlsSecret,
-    const QString& proxySecret, bool hasProxySecret, const QList<SshHopCredential>& sshHops,
-    const SshPrivateKeyCredential& sshPrivateKey) {
+std::optional<quint64> EngineAdapter::connectProfileDraft(const SavedProfile& profile,
+                                                          const ProfileSecretDrafts& secrets) {
     if (d_->closing || d_->stopping) {
         emit profileConnectFailed(tr("Workspace is closing."));
         return std::nullopt;
     }
-    ProfileCredentialsDto credentials;
-    addHopCredentials(credentials, sshHops);
-    credentials.database = toRust(databaseSecret);
-    credentials.ssh = toRust(sshSecret);
-    credentials.ssh_private_key = toRust(sshPrivateKey.secret);
-    credentials.tls = toRust(tlsSecret);
-    credentials.proxy = toRust(proxySecret);
-    credentials.has_database = hasDatabaseSecret;
-    credentials.has_ssh = hasSshSecret;
-    credentials.has_ssh_private_key = sshPrivateKey.hasSecret;
-    credentials.has_tls = hasTlsSecret;
-    credentials.has_proxy = hasProxySecret;
+    auto credentials =
+        profile_draft_credentials(profileDto(profile), secretDraftsDto(secrets), false);
     auto result = profile_connect_credentials(
         *d_->engine, withConnectionTimeout(profile, d_->connectionTimeoutSeconds),
         std::move(credentials));
@@ -619,22 +548,39 @@ std::optional<quint64> EngineAdapter::connectProfileWithSecrets(
     d_->connections.insert(result.id);
     return result.id;
 }
-bool EngineAdapter::validateConnectionProperties(const SavedProfile& profile, QString& error) {
-    error = fromRust(validate_connection_profile(profileDto(profile)));
-    return error.isEmpty();
+SavedProfile EngineAdapter::profileDraftDefaults(const SavedProfile& profile) {
+    return savedProfile(profile_draft_defaults(profileDto(profile)));
 }
-quint32 EngineAdapter::pageSizeForQuery(quint64 query) const {
-    const auto found = d_->queryPaging.constFind(query);
-    return found == d_->queryPaging.cend() ? queryPreferenceLimits().defaultPageSize
-                                           : found->pageSize;
+SavedProfile EngineAdapter::normalizeProfileDraft(const SavedProfile& original,
+                                                  const SavedProfile& edited,
+                                                  const ProfileSecretDrafts& secrets) {
+    return savedProfile(profile_draft_normalize(profileDto(original), profileDto(edited),
+                                                secretDraftsDto(secrets)));
+}
+ProfileFieldError EngineAdapter::validateProfileDraft(const SavedProfile& profile,
+                                                      const ProfileSecretDrafts& secrets) {
+    const auto error = profile_draft_validate(profileDto(profile), secretDraftsDto(secrets));
+    return {fromRust(error.field), fromRust(error.message)};
+}
+quint16 EngineAdapter::profilePortForDriver(quint16 port, const QString& driver) {
+    const auto bytes = driver.toUtf8();
+    return profile_port_for_driver(port, utf8View(bytes));
+}
+ProfileDriverForm EngineAdapter::profileDriverForm(const QString& driver) {
+    const auto bytes = driver.toUtf8();
+    const auto form = profile_driver_form(utf8View(bytes));
+    return {form.server, form.user_optional, form.database_selects_server};
+}
+bool EngineAdapter::profileHasSavedCredentials(const SavedProfile& profile) {
+    return profile_has_saved_credentials(profileDto(profile));
 }
 void EngineAdapter::fetchPage(quint64 query) {
-    auto reply = fetch_page(*d_->engine, query, pageSizeForQuery(query));
+    auto reply = fetch_page(*d_->engine, query);
     if (!reply.accepted)
         emit commandFailed(fromRust(reply.error));
 }
 void EngineAdapter::fetchPageAt(quint64 query, quint64 index) {
-    auto reply = fetch_page_at(*d_->engine, query, index, pageSizeForQuery(query));
+    auto reply = fetch_page_at(*d_->engine, query, index);
     if (!reply.accepted)
         emit commandFailed(fromRust(reply.error));
 }
@@ -653,7 +599,7 @@ bool EngineAdapter::applyResultView(quint64 query, const QList<ResultFilterCondi
     const auto direction = sortDirection.toUtf8();
     auto reply = apply_result_view(*d_->engine, query, std::move(values),
                                    sortColumn < 0 ? 0u : static_cast<quint32>(sortColumn),
-                                   utf8View(direction), pageSizeForQuery(query));
+                                   utf8View(direction));
     if (!reply.accepted)
         emit commandFailed(fromRust(reply.error));
     return reply.accepted;
@@ -699,6 +645,13 @@ void EngineAdapter::cancelExport(quint64 id) {
     if (!reply.accepted)
         emit commandFailed(fromRust(reply.error));
 }
+QString EngineAdapter::valueDetailError(quint64 bytes) {
+    return fromRust(value_detail_error(bytes));
+}
+quint32 EngineAdapter::valueChunkBytes() {
+    static const quint32 bytes = value_chunk_max_bytes();
+    return bytes;
+}
 void EngineAdapter::loadValueChunk(quint64 query, quint64 handle, quint64 offset,
                                    quint32 maxBytes) {
     auto reply = load_value_chunk(*d_->engine, query, handle, offset, maxBytes);
@@ -717,27 +670,20 @@ void EngineAdapter::nextResultSet(quint64 query) {
         emit commandFailed(fromRust(reply.error));
 }
 void EngineAdapter::loadMetadataPage(quint64 connection, const QString& parent,
-                                     quint64 requestToken, quint64 offset, quint32 limit) {
+                                     quint64 requestToken, quint64 offset) {
     const auto bytes = parent.toUtf8();
-    auto reply = metadata_page_request(*d_->engine, connection, utf8View(bytes), requestToken,
-                                       offset, limit);
+    auto reply =
+        metadata_page_request(*d_->engine, connection, utf8View(bytes), requestToken, offset);
     if (!reply.accepted)
         emit metadataSubmissionFailed(connection, parent, requestToken, fromRust(reply.error));
 }
 void EngineAdapter::loadMetadata(quint64 connection, const QString& parent, quint64 requestToken) {
-    loadMetadataPage(connection, parent, requestToken, 0, 1000);
+    loadMetadataPage(connection, parent, requestToken, 0);
 }
 std::optional<quint64> EngineAdapter::openObjectData(quint64 connection, const QString& object,
                                                      const QueryPreferences& preferences) {
     if (d_->closing || d_->stopping) {
         emit commandFailed(tr("Workspace is closing."));
-        return std::nullopt;
-    }
-    const auto limits = queryPreferenceLimits();
-    if (preferences.version != limits.version || preferences.pageSize < limits.minPageSize ||
-        preferences.pageSize > limits.maxPageSize ||
-        preferences.timeoutSeconds > limits.maxTimeoutSeconds) {
-        emit commandFailed(tr("Invalid query settings."));
         return std::nullopt;
     }
     const auto bytes = object.toUtf8();
@@ -747,7 +693,6 @@ std::optional<quint64> EngineAdapter::openObjectData(quint64 connection, const Q
         emit commandFailed(fromRust(reply.error));
         return std::nullopt;
     }
-    d_->queryPaging.insert(reply.id, {connection, preferences.pageSize});
     return reply.id;
 }
 bool EngineAdapter::inspectEditTarget(quint64 connection, const QString& object, quint64 token) {
@@ -792,12 +737,6 @@ void EngineAdapter::loadObjectInspection(quint64 connection, const QString& obje
         else
             ++it;
     }
-    if (d_->inspections.size() >= 64) {
-        emit objectInspectionFailed(
-            connection, object, requestToken,
-            tr("Too many pending metadata requests; retry after loading completes"));
-        return;
-    }
     const auto token = d_->nextInspectionToken++;
     const auto bytes = object.toUtf8();
     d_->inspections.insert(token, {connection, requestToken, object, pane});
@@ -833,8 +772,6 @@ bool EngineAdapter::disconnectConnection(quint64 connection) {
 }
 void EngineAdapter::releaseQuery(quint64 query) {
     auto reply = release_query(*d_->engine, query);
-    if (reply.accepted)
-        d_->queryPaging.remove(query);
     if (!reply.accepted)
         emit commandFailed(fromRust(reply.error));
 }
@@ -851,22 +788,18 @@ void EngineAdapter::finishShutdown() {
     if (!d_->closing || !d_->connections.isEmpty() || d_->shutdownToken || d_->stopping)
         return;
     d_->shutdownToken = nextRequestToken();
-    queueRecovery(
+    submitRecovery(
         *d_->shutdownToken,
-        [this, token = *d_->shutdownToken] { return history_flush(*d_->engine, token); }, 0, true);
+        [this, token = *d_->shutdownToken] { return history_flush(*d_->engine, token); }, true);
 }
 void EngineAdapter::shutdown() {
     d_->stopping = true;
-    d_->recoveryQueue.clear();
-    d_->queryPaging.clear();
-    d_->queuedRecoveryBytes = 0;
-    d_->activeRecovery.reset();
     choscordb::shutdown(*d_->engine);
 }
 bool EngineAdapter::retainTransfer(quint64 lease, quint64 payloadBytes) {
     auto transfer = d_->transfers.find(lease);
     if (transfer == d_->transfers.end() || transfer->released || transfer->retained ||
-        transfer->reserved < 256 || payloadBytes > transfer->reserved - 256)
+        !page_lease_fits(transfer->reserved, payloadBytes))
         return false;
     transfer->retained = payloadBytes;
     return true;
@@ -894,10 +827,10 @@ SqlSelection EngineAdapter::executionRange(const QString& sql, quint64 cursor, q
                                            quint64 end, const QString& driver,
                                            const QString& sqlMode) {
     const auto bytes = sql.toUtf8();
-    const auto range = driver == "mysql"
-                           ? sql_execution_range_mysql_mode(utf8View(bytes), cursor, start, end,
-                                                            utf8View(sqlMode.toUtf8()))
-                           : sql_execution_range(utf8View(bytes), cursor, start, end);
+    const auto driverBytes = driver.toUtf8();
+    const auto modeBytes = sqlMode.toUtf8();
+    const auto range = sql_execution_range(utf8View(bytes), cursor, start, end,
+                                           utf8View(driverBytes), utf8View(modeBytes));
     return {range.valid, range.start, range.end, range.confirmation_required};
 }
 } // namespace choscordb

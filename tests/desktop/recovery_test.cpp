@@ -251,26 +251,28 @@ class RecoveryTest : public QObject {
             QCOMPARE(failures.count(), 0);
         }
     }
-    void erdRecoveryRejectsNonTableWithoutReplacingTabs() {
+    void duplicateObjectTabsRestoreAsSeparateTabs() {
+        // Rust persists the same object twice with independent panes; restoring that
+        // snapshot must not be rejected by the native workspace.
         QTabWidget tabs;
-        auto* original = new SqlEditor;
-        tabs.addTab(original, "Untitled");
         WorkspaceRecoveryController recovery(&tabs, [] { return new SqlEditor; });
         recovery.setObjectFactory([](const SavedWorkspaceTab&) -> QWidget* { return new QWidget; });
         QSignalSpy restores(&recovery, &WorkspaceRecoveryController::restoreTabsRequested);
         QSignalSpy errors(&recovery, &WorkspaceRecoveryController::errorOccurred);
         recovery.start();
-        SavedWorkspaceTab view;
-        view.isObject = true;
-        view.profileId = "profile:missing";
-        view.objectType = "view";
-        view.objectId = "main.summary";
-        view.label = "summary";
-        view.pane = 5;
-        recovery.restoredTabs(restores.at(0).at(0).toULongLong(), {view}, 0);
-        QCOMPARE(errors.count(), 1);
-        QCOMPARE(tabs.count(), 1);
-        QCOMPARE(tabs.widget(0), original);
+        SavedWorkspaceTab first;
+        first.isObject = true;
+        first.profileId = "profile:local";
+        first.objectType = "table";
+        first.objectId = "main.orders";
+        first.label = "orders";
+        first.pane = 0;
+        SavedWorkspaceTab second = first;
+        second.pane = 5;
+        recovery.restoredTabs(restores.at(0).at(0).toULongLong(), {first, second}, 1);
+        QCOMPARE(errors.count(), 0);
+        QCOMPARE(tabs.count(), 2);
+        QCOMPARE(tabs.currentIndex(), 1);
     }
 
     void restoredViewUsesEyeIconAndOtherKindsKeepTheirIcon() {
@@ -387,12 +389,8 @@ class RecoveryTest : public QObject {
         QSignalSpy closed(&recovery, &WorkspaceRecoveryController::closeReady);
         QSignalSpy errors(&recovery, &WorkspaceRecoveryController::errorOccurred);
         recovery.start();
-        SavedEditorDocument invalid;
-        invalid.id = "same";
-        invalid.title = "T";
-        invalid.sql = "SELECT 1";
-        recovery.restoredTabs(restores.at(0).at(0).toULongLong(),
-                              {sqlTab(invalid), sqlTab(invalid)}, 0);
+        // Rust rejects an invalid snapshot and reports the restore as failed.
+        recovery.failed(restores.at(0).at(0).toULongLong(), "Saved SQL tab is invalid.");
         QCOMPARE(errors.count(), 1);
         QCOMPARE(tabs.widget(0), original);
         QCOMPARE(original->text(), QString("original"));

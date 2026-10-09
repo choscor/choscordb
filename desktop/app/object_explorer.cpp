@@ -5,6 +5,7 @@
 #include "bridge/engine_adapter.h"
 #include "bridge/request_token.h"
 #include "bridge/rust_text.h"
+#include "bridge/sql_highlight.h"
 #include "bridge/template_service.h"
 #include "design_system/button/button.h"
 #include "design_system/menu/menu.h"
@@ -23,7 +24,6 @@
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QStandardItemModel>
@@ -34,8 +34,14 @@
 #include <QTableView>
 #include <QTextBlock>
 #include <QVBoxLayout>
+#include <algorithm>
 namespace choscordb {
 namespace {
+// Objects whose tab shows only details and DDL; unknown kinds keep the relation layout.
+bool basicObject(const QString& kind) {
+    const auto traits = EngineAdapter::objectKindTraits(kind);
+    return traits.opensObjectTab && !traits.relation;
+}
 constexpr int objectIconRole = Qt::UserRole + 1;
 class DdlEditor final : public QPlainTextEdit {
   public:
@@ -113,6 +119,16 @@ class DdlHighlighter final : public QSyntaxHighlighter {
     explicit DdlHighlighter(QPlainTextEdit* editor)
         : QSyntaxHighlighter(editor->document()), editor_(editor) {
         editor_->installEventFilter(this);
+        // Spans come from Rust once per text change; highlightBlock only paints them.
+        connect(editor_->document(), &QTextDocument::contentsChange, this,
+                [this](int, int removed, int added) {
+                    if (updating_ || (!removed && !added))
+                        return;
+                    spans_ = sqlHighlightSpans(editor_->toPlainText());
+                    updating_ = true;
+                    rehighlight();
+                    updating_ = false;
+                });
     }
 
   protected:
@@ -132,10 +148,6 @@ class DdlHighlighter final : public QSyntaxHighlighter {
         QTextCharFormat keyword;
         keyword.setForeground(readable(colors.sqlKeyword));
         keyword.setFontWeight(QFont::DemiBold);
-        static const QRegularExpression words(
-            R"(\b(?:CREATE|ALTER|DROP|TABLE|VIEW|INDEX|PRIMARY|FOREIGN|KEY|REFERENCES|CONSTRAINT|NOT|NULL|DEFAULT|UNIQUE|CHECK|ON|AS|SELECT|FROM|WHERE|INSERT|INTO|UPDATE|DELETE|BOOLEAN|INTEGER|BIGINT|TEXT|TIMESTAMP|TRUE|FALSE)\b)",
-            QRegularExpression::CaseInsensitiveOption);
-        QVector<bool> protectedText(text.size(), false);
         QTextCharFormat literal;
         literal.setForeground(readable(colors.sqlString));
         QTextCharFormat identifier;
@@ -144,88 +156,28 @@ class DdlHighlighter final : public QSyntaxHighlighter {
         comment.setForeground(readable(colors.sqlComment));
         QTextCharFormat number;
         number.setForeground(readable(colors.sqlNumber));
-        static const QRegularExpression numbers(R"(\b\d+(?:\.\d+)?\b)");
-        enum { Normal, String, Identifier, Backtick, BlockComment };
-        int state = previousBlockState();
-        if (state < Normal || state > BlockComment)
-            state = Normal;
-        for (int pos = 0; pos < text.size();) {
-            if (state == Normal && text.mid(pos, 2) == "--") {
-                setFormat(pos, text.size() - pos, comment);
-                for (int index = pos; index < text.size(); ++index)
-                    protectedText[index] = true;
-                break;
-            }
-            if (state == Normal && text.mid(pos, 2) == "/*")
-                state = BlockComment;
-            const QChar quote = text.at(pos);
-            bool openedHere = false;
-            if (state == Normal) {
-                if (quote == QLatin1Char('\'')) {
-                    state = String;
-                    openedHere = true;
-                } else if (quote == QLatin1Char('"')) {
-                    state = Identifier;
-                    openedHere = true;
-                } else if (quote == QLatin1Char('`')) {
-                    state = Backtick;
-                    openedHere = true;
-                }
-            }
-            if (state == Normal) {
-                ++pos;
-                continue;
-            }
-            const int start = pos;
-            const int segmentState = state;
-            const QChar terminator = state == String       ? QLatin1Char('\'')
-                                     : state == Identifier ? QLatin1Char('"')
-                                                           : QLatin1Char('`');
-            if (openedHere)
-                ++pos;
-            while (pos < text.size()) {
-                if (state == BlockComment && text.mid(pos, 2) == "*/") {
-                    pos += 2;
-                    state = Normal;
-                    break;
-                }
-                if (state == BlockComment) {
-                    ++pos;
-                    continue;
-                }
-                if (text.at(pos++) != terminator)
-                    continue;
-                if (pos < text.size() && text.at(pos) == terminator) {
-                    ++pos;
-                    continue;
-                }
-                state = Normal;
-                break;
-            }
-            for (int index = start; index < pos; ++index)
-                protectedText[index] = true;
-            setFormat(start, pos - start,
-                      segmentState == BlockComment ? comment
-                      : segmentState == String     ? literal
-                                                   : identifier);
-        }
-        setCurrentBlockState(state);
-        auto matches = words.globalMatch(text);
-        while (matches.hasNext()) {
-            const auto match = matches.next();
-            if (!protectedText[match.capturedStart()])
-                setFormat(match.capturedStart(), match.capturedLength(), keyword);
-        }
-        auto numericMatches = numbers.globalMatch(text);
-        while (numericMatches.hasNext()) {
-            const auto match = numericMatches.next();
-            if (!protectedText[match.capturedStart()])
-                setFormat(match.capturedStart(), match.capturedLength(), number);
+        const int blockStart = currentBlock().position();
+        const int blockEnd = blockStart + static_cast<int>(text.size());
+        auto span = std::lower_bound(spans_.begin(), spans_.end(), blockStart,
+                                     [](const SqlHighlightSpan& candidate, int position) {
+                                         return candidate.start + candidate.length <= position;
+                                     });
+        for (; span != spans_.end() && span->start < blockEnd; ++span) {
+            const int start = std::max(span->start, blockStart);
+            const int end = std::min(span->start + span->length, blockEnd);
+            const auto& format = span->kind == SqlHighlight::Keyword      ? keyword
+                                 : span->kind == SqlHighlight::String     ? literal
+                                 : span->kind == SqlHighlight::Identifier ? identifier
+                                 : span->kind == SqlHighlight::Comment    ? comment
+                                                                          : number;
+            setFormat(start - blockStart, end - start, format);
         }
     }
 
   private:
     QPlainTextEdit* editor_;
+    std::vector<SqlHighlightSpan> spans_;
+    bool updating_ = false;
 };
 class ObjectColumnDelegate final : public QStyledItemDelegate {
   public:
@@ -479,10 +431,11 @@ void ObjectExplorer::openObject(quint64 connection, const QString& object, const
     kind_ = kind;
     properties_ = properties;
     updateActions();
-    const bool basic = kind == "index" || kind == "sequence" || kind == "function";
+    const bool basic = basicObject(kind);
     tabs_->setTabText(0, basic ? tr("Details") : tr("Columns"));
     for (int i = 1; i < 6; ++i)
-        tabs_->setTabVisible(i, (!basic || i == 3) && (i != 4 || kind == "table"));
+        tabs_->setTabVisible(i, (!basic || i == 3) &&
+                                    (i != 4 || EngineAdapter::objectKindTraits(kind).diagram));
     requestToken_ = 0;
     const QSignalBlocker blocker(tabs_);
     tabs_->setCurrentIndex(0);
@@ -509,10 +462,11 @@ void ObjectExplorer::restoreObject(std::optional<quint64> connection, const QStr
     restoredInert_ = true;
     model_->clear();
     ddl_->clear();
-    const bool basic = kind == "index" || kind == "sequence" || kind == "function";
+    const bool basic = basicObject(kind);
     tabs_->setTabText(0, basic ? tr("Details") : tr("Columns"));
     for (int i = 1; i < 6; ++i)
-        tabs_->setTabVisible(i, (!basic || i == 3) && (i != 4 || kind == "table"));
+        tabs_->setTabVisible(i, (!basic || i == 3) &&
+                                    (i != 4 || EngineAdapter::objectKindTraits(kind).diagram));
     reconnect_->setEnabled(!connection_);
     updateActions();
     updateFooter();
@@ -566,8 +520,7 @@ void ObjectExplorer::requestPane() {
     ddl_->clear();
     retry_->setEnabled(false);
     refresh_->setEnabled(false);
-    if (tabs_->currentIndex() == 0 &&
-        (kind_ == "index" || kind_ == "sequence" || kind_ == "function")) {
+    if (tabs_->currentIndex() == 0 && basicObject(kind_)) {
         pages_->setCurrentIndex(0);
         const auto idBytes = object_.toUtf8();
         const auto labelBytes = label_.toUtf8();
@@ -577,9 +530,7 @@ void ObjectExplorer::requestPane() {
         const auto schema = display.has_schema
                                 ? bridge_detail::fromRust(display.schema)
                                 : tr("Unavailable: schema metadata was not provided");
-        const QString title = kind_ == "index"      ? tr("Index")
-                              : kind_ == "sequence" ? tr("Sequence")
-                                                    : tr("Function");
+        const QString title = objectKindTitle(kind_);
         model_->setHorizontalHeaderLabels({tr("Field"), tr("Value")});
         for (const auto& pair : {qMakePair(tr("Name"), name), qMakePair(tr("Kind"), title),
                                  qMakePair(tr("Schema"), schema)}) {
@@ -610,7 +561,7 @@ void ObjectExplorer::requestPane() {
     if (tabs_->currentIndex() == 5) {
         pages_->setCurrentIndex(3);
         setStatus("ready", tr("%1 · Data").arg(label_));
-        emit dataRequested(*connection_, object_, label_, kind_);
+        emit dataRequested(*connection_, object_, label_);
         updateFooter();
         return;
     }
@@ -673,18 +624,10 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
                                                         ? metrics.objectColumnRowHeight
                                                         : metrics.dataRowHeight);
     if (inspection.pane == ObjectInspectionPane::Columns) {
-        const auto limits = SqlTemplateService::limits();
-        quint64 remaining = limits.maxBytes;
-        columnsLoaded_ = quint64(inspection.rows.size()) <= limits.maxColumns;
-        for (const auto& row : inspection.rows) {
-            if (!columnsLoaded_ || quint64(row.name.size()) > remaining) {
-                columnsLoaded_ = false;
-                columns_.clear();
-                break;
-            }
-            remaining -= quint64(row.name.size());
+        // Rust rejects templates beyond its column and size limits.
+        columnsLoaded_ = true;
+        for (const auto& row : inspection.rows)
             columns_.append(row.name);
-        }
         updateActions();
     }
     QStringList headers{tr("Name")};
@@ -719,12 +662,7 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
         }
         items[0]->setText(row.name);
         if (inspection.pane == ObjectInspectionPane::Columns) {
-            const bool primary =
-                std::any_of(row.properties.begin(), row.properties.end(), [](const auto& property) {
-                    return property.name == "Primary key position" &&
-                           property.availability == MetadataAvailability::Available &&
-                           property.value.toInt() > 0;
-                });
+            const bool primary = row.primaryKey;
             const auto icon = primary ? design::Icon::Key : design::Icon::File;
             items[0]->setData(static_cast<int>(icon), objectIconRole);
             items[0]->setIcon(primary ? keyIcon : fileIcon);
@@ -733,10 +671,7 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
                     items[column]->setFont(metadataFont);
         }
         if (inspection.pane == ObjectInspectionPane::Keys)
-            items[1]->setText(row.kind == "primarykey"   ? tr("Primary key")
-                              : row.kind == "foreignkey" ? tr("Foreign key")
-                              : row.kind == "uniquekey"  ? tr("Unique key")
-                                                         : row.kind);
+            items[1]->setText(keyKindTitle(row.kind));
         for (const auto& property : row.properties) {
             const auto value = property.availability == MetadataAvailability::Available
                                    ? property.value
@@ -858,8 +793,7 @@ void ObjectExplorer::setOperationBusy(bool busy) {
         setStatus("ready", tr("%1 · %2").arg(label_, tabs_->tabText(tabs_->currentIndex())));
 }
 void ObjectExplorer::updateActions() {
-    const bool ready = connection_.has_value() && !operationBusy_ && kind_ != "index" &&
-                       kind_ != "sequence" && kind_ != "function";
+    const bool ready = connection_.has_value() && !operationBusy_ && !basicObject(kind_);
     const auto unavailable =
         !connection_     ? tr("Reconnect this object's connection to use SQL actions.")
         : operationBusy_ ? tr("Finish or cancel the active Data operation.")
@@ -869,26 +803,22 @@ void ObjectExplorer::updateActions() {
     generate_->setEnabled(ready);
     generate_->setToolTip(ready ? tr("Generate SQL without running it.") : unavailable);
     for (auto it = generationActions_.begin(); it != generationActions_.end(); ++it) {
-        const bool enabled =
-            ready && (it.key() == "select" || it.key() == "delete" ||
-                      (columnsLoaded_ && (it.key() == "insert" || !columns_.isEmpty())));
-        it.value()->setEnabled(enabled);
-        it.value()->setToolTip(
-            enabled ? QString{}
-            : ready ? tr("Load the object's columns before generating this statement.")
-                    : unavailable);
+        const auto reason =
+            SqlTemplateService::unavailableReason(it.key(), columnsLoaded_, !columns_.isEmpty());
+        it.value()->setEnabled(ready && reason.isEmpty());
+        it.value()->setToolTip(ready ? reason : unavailable);
     }
 }
 void ObjectExplorer::generateSql(const QString& kind) {
-    if (!connection_ || operationBusy_ || kind_ == "index" || kind_ == "sequence" ||
-        kind_ == "function")
+    if (!connection_ || operationBusy_ || basicObject(kind_))
         return;
-    if ((kind == "insert" || kind == "update") && !columnsLoaded_) {
-        setStatus("unavailable", tr("Load the object's columns before generating this statement."));
+    if (const auto reason =
+            SqlTemplateService::unavailableReason(kind, columnsLoaded_, !columns_.isEmpty());
+        !reason.isEmpty()) {
+        setStatus("unavailable", reason);
         return;
     }
-    const auto result = SqlTemplateService::generate(
-        kind, label_, (kind == "insert" || kind == "update") ? columns_ : QStringList{});
+    const auto result = SqlTemplateService::generate(kind, label_, columns_, columnsLoaded_);
     if (!result.valid) {
         setStatus("failed", result.error);
         return;

@@ -24,7 +24,6 @@ void ProfileDialog::createPrivateKeyControls(QFormLayout* form, QGridLayout* gri
     connect(sshIdentitySource_, &QComboBox::currentIndexChanged, this, [this] {
         if (!filling_) {
             sshPrivateKey_->setDraft({});
-            current_.sshPrivateKeyRef.clear();
             dirty_ = true;
             ++revision_;
         }
@@ -52,29 +51,5 @@ void ProfileDialog::updatePrivateKeyControls() {
     if (auto* form = qobject_cast<QFormLayout*>(sshPrivateKey_->parentWidget()->layout())) {
         form->setRowVisible(sshPrivateKey_, inlineKey);
     }
-}
-SshPrivateKeyCredential ProfileDialog::privateKeyCredential(const SavedProfile& profile,
-                                                            bool saving) const {
-    SshPrivateKeyCredential result;
-    result.action = "clear";
-    if (!profile.sshEnabled || profile.sshAuthentication != "public_key" ||
-        profile.sshIdentitySource != "inline")
-        return result;
-    const auto value = sshPrivateKey_->draft();
-    if (saving) {
-        if (saveCredentials_->isChecked()) {
-            if (value.modified || !value.secret.isEmpty()) {
-                result.action = value.secret.isEmpty() ? "clear" : "replace";
-                if (result.action == "replace")
-                    result.secret = value.secret;
-            } else if (!profile.sshPrivateKeyRef.isEmpty())
-                result.action = "keep";
-        }
-    } else {
-        result.hasSecret = value.modified || !value.secret.isEmpty();
-        if (result.hasSecret)
-            result.secret = value.secret;
-    }
-    return result;
 }
 } // namespace choscordb

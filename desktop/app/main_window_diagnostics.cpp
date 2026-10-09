@@ -186,7 +186,7 @@ void MainWindow::connectDiagnostics() {
     });
     tabCount->start();
     auto* sampler = new QTimer(this);
-    sampler->setInterval(60 * 1000);
+    sampler->setInterval(std::chrono::seconds(diagnostics_memory_sample_interval_seconds()));
     connect(sampler, &QTimer::timeout, this, [this] {
         if (diagnostics_)
             diagnostics_->sampleMemory(editors_ ? editors_->count() : 0);
@@ -341,9 +341,9 @@ void MainWindow::showDiagnosticsExport() {
         [this, dialog, destination, browse, folder, clear, save, status] {
             if (!diagnostics_)
                 return;
-            QString path = destination->text().trimmed();
-            if (!path.endsWith(QStringLiteral(".zip"), Qt::CaseInsensitive))
-                path += QStringLiteral(".zip");
+            const auto chosen = destination->text().toUtf8();
+            const QString path =
+                fromRust(diagnostics_export_destination(bridge_detail::utf8View(chosen)));
             save->setEnabled(false);
             auto* preflight = new BackgroundTask<DocumentPathStatusDto>(this);
             const QPointer<DialogShell> guard(dialog);

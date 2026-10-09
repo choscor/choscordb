@@ -36,8 +36,9 @@ class CompletionServiceTest : public QObject {
     void malformedAndOversizedInputCannotReachCompletion() {
         choscordb::CompletionService service;
         QVERIFY(!service.complete(QString(QChar(0xd800)), 0, true).valid);
-        const auto bound = choscordb::CompletionService::limits().maxSourceBytes;
-        QVERIFY(!service.complete(QString(qsizetype(bound + 1), QChar('a')), 0, true).valid);
+        // Completion accepts editor documents up to 16 MiB.
+        constexpr qsizetype bound = 16 * 1024 * 1024;
+        QVERIFY(!service.complete(QString(bound + 1, QChar('a')), 0, true).valid);
         QVERIFY(!service.complete(QString::fromUtf8("é"), 1, true).valid);
     }
 };

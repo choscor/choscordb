@@ -36,7 +36,6 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QVariantMap>
-#include <algorithm>
 namespace choscordb {
 using query_workspace_detail::nextEditRequestToken;
 using query_workspace_detail::text;
@@ -93,10 +92,11 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         if (const auto* fallback = std::get_if<FallbackText>(&*cell)) {
             if (!detail_)
                 detail_ = new ValueDetailDialog(adapter_, widgets_.dialogParent);
-            if (!detail_->openInlineValue(
+            if (const auto error = detail_->openInlineValue(
                     fallback->text.toUtf8(),
-                    tr("Server text fallback · %1").arg(fallback->databaseType), false))
-                message(tr("The inline value exceeds the 8 MiB detail limit."));
+                    tr("Server text fallback · %1").arg(fallback->databaseType), false);
+                !error.isEmpty())
+                message(error);
             return;
         }
         if (const auto* binary = std::get_if<QByteArray>(&*cell)) {
@@ -105,8 +105,10 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             const auto type =
                 model_->headerData(index.column(), Qt::Horizontal, ResultTableModel::HeaderTypeRole)
                     .toString();
-            if (!detail_->openInlineValue(*binary, tr("Binary · %1").arg(type), true))
-                message(tr("The inline value exceeds the 8 MiB detail limit."));
+            if (const auto error =
+                    detail_->openInlineValue(*binary, tr("Binary · %1").arg(type), true);
+                !error.isEmpty())
+                message(error);
             return;
         }
         if (!query_ || !queryAvailable())
@@ -143,19 +145,10 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         connect(widgets_.addRow, &QPushButton::clicked, model_, &ResultTableModel::addRow);
     if (widgets_.deleteRows)
         connect(widgets_.deleteRows, &QPushButton::clicked, this, [this] {
-            if (!widgets_.grid->selectionModel())
-                return;
-            auto rows = model_->selectedRows(widgets_.grid->selectionModel()->selection());
-            for (const int row : rows)
-                if (std::any_of(model_->rows()[row].begin(), model_->rows()[row].end(),
-                                [](const Cell& value) {
-                                    return std::holds_alternative<FallbackText>(value) ||
-                                           std::holds_alternative<UnavailableValue>(value);
-                                })) {
-                    message(tr("Rows with fallback or unavailable values cannot be deleted."));
-                    break;
-                }
-            model_->markRowsDeleted(std::move(rows), true);
+            // Rust rejects deleting rows it cannot match when the edits are planned.
+            if (widgets_.grid->selectionModel())
+                model_->markRowsDeleted(
+                    model_->selectedRows(widgets_.grid->selectionModel()->selection()), true);
         });
     if (widgets_.restoreRows)
         connect(widgets_.restoreRows, &QPushButton::clicked, this, [this] {
@@ -287,10 +280,12 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 widgets_.mode->setCurrentIndex(manualModes_.value(*c, false) ? 1 : 0);
                 return;
             }
-            if (widgets_.mode->currentIndex() == 0 && pendingTransactions_.contains(*c)) {
+            const auto& blocked =
+                EngineAdapter::transactionGuard(pendingTransactions_.contains(*c)).enableAutoCommit;
+            if (widgets_.mode->currentIndex() == 0 && !blocked.isEmpty()) {
                 const QSignalBlocker blocker(widgets_.mode);
                 widgets_.mode->setCurrentIndex(1);
-                message(tr("Commit or roll back before enabling auto-commit."));
+                message(blocked);
             } else
                 manualModes_.insert(*c, widgets_.mode->currentIndex() == 1);
         }
@@ -377,12 +372,9 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                             return;
                         QString error;
                         bool duplicated = false;
-                        if (editKey_.size() == static_cast<size_t>(model_->columnCount())) {
-                            std::vector<bool> copyable(editKey_.size());
-                            for (size_t column = 0; column < copyable.size(); ++column)
-                                copyable[column] = !editKey_[column] && !editGenerated_[column] &&
-                                                   !editColumnNames_[column].isEmpty();
-                            duplicated = model_->duplicateRow(clicked.row(), copyable, &error);
+                        if (editDuplicable_.size() == static_cast<size_t>(model_->columnCount())) {
+                            duplicated =
+                                model_->duplicateRow(clicked.row(), editDuplicable_, &error);
                         } else {
                             duplicated = model_->duplicateRow(clicked.row(), &error);
                         }
@@ -478,6 +470,13 @@ void QueryWorkspace::setExternalWork(QObject* source, bool busy) {
         disconnect(externalWorkSources_.take(source));
     }
     updateActions();
+}
+const TransactionGuard& QueryWorkspace::editTransactionGuard() const {
+    const bool active =
+        queryConnection_ &&
+        (pendingTransactions_.contains(*queryConnection_) ||
+         (widgets_.transactionActive && widgets_.transactionActive(*queryConnection_)));
+    return EngineAdapter::transactionGuard(active);
 }
 void QueryWorkspace::disconnectConnection(quint64 connection) {
     if (editPlanRunning_ || !connectionCanDisconnect(connection) ||
@@ -577,8 +576,8 @@ QueryPreferences QueryWorkspace::queryPreferences() const {
     return querySettings_->preferences();
 }
 void QueryWorkspace::openObjectData(quint64 connection, const QString& object, const QString& label,
-                                    const QueryPreferences& preferences, const QString& kind,
-                                    bool preserveView, const QString& initialFilter) {
+                                    const QueryPreferences& preferences, bool preserveView,
+                                    const QString& initialFilter) {
     if (!widgets_.objectReadOnly || !adapter_ || workInFlight() || stopping_)
         return;
     if (!resolvePendingEdits())
@@ -608,14 +607,13 @@ void QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
         widgets_.connections->addItem(label, QVariant::fromValue<qulonglong>(connection));
     }
     resultOrigin_ = label;
-    objectKind_ = kind;
     objectId_ = object;
     editQualifiedName_.clear();
-    editReason_ = kind == QStringLiteral("table") ? tr("Checking table edit eligibility…")
-                                                  : tr("Only base tables can be edited.");
+    editReason_ = tr("Checking edit eligibility…");
     editColumnNames_.clear();
     editKey_.clear();
     editGenerated_.clear();
+    editDuplicable_.clear();
     widgets_.messages->clear();
     message(tr("Object data: %1").arg(label));
     commandError_.clear();
@@ -627,7 +625,8 @@ void QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
         clearViewState();
         message(tr("The previous result view was invalidated because refresh could not start."));
     }
-    if (query_ && kind == QStringLiteral("table")) {
+    // The driver checks the catalog; a navigator label can be stale or approximate.
+    if (query_) {
         editTargetToken_ = nextEditRequestToken();
         adapter_->inspectEditTarget(connection, object, editTargetToken_);
     }
@@ -808,19 +807,13 @@ void QueryWorkspace::updateActions() {
                                          model_->hasDeletedRows());
     setNullAvailable_ = !inFlight && !editabilityPlanning_ && displayedResult;
     updateSetNullAction();
-    if (widgets_.applyEdits)
-        widgets_.applyEdits->setEnabled(
-            model_->hasPendingEdits() && !inFlight && !editabilityPlanning_ &&
-            !(queryConnection_ &&
-              (pendingTransactions_.contains(*queryConnection_) ||
-               (widgets_.transactionActive && widgets_.transactionActive(*queryConnection_)))));
-    if (widgets_.applyEdits)
-        widgets_.applyEdits->setToolTip(
-            queryConnection_ &&
-                    (pendingTransactions_.contains(*queryConnection_) ||
-                     (widgets_.transactionActive && widgets_.transactionActive(*queryConnection_)))
-                ? tr("Commit or roll back the manual transaction before applying grid changes.")
-                : widgets_.applyEdits->accessibleName());
+    if (widgets_.applyEdits) {
+        const auto& blocked = editTransactionGuard().applyEdits;
+        widgets_.applyEdits->setEnabled(model_->hasPendingEdits() && !inFlight &&
+                                        !editabilityPlanning_ && blocked.isEmpty());
+        widgets_.applyEdits->setToolTip(blocked.isEmpty() ? widgets_.applyEdits->accessibleName()
+                                                          : blocked);
+    }
     if (widgets_.discardEdits)
         widgets_.discardEdits->setEnabled(model_->hasPendingEdits() && !inFlight &&
                                           !editabilityPlanning_);
@@ -849,7 +842,8 @@ void QueryWorkspace::execute() {
         return;
     if (!resolvePendingEdits())
         return;
-    if (driverForConnection(*connection) == "mysql" && !executionModeReady_) {
+    if (EngineAdapter::driverWorkflow(driverForConnection(*connection)).sqlModeBeforeExecution &&
+        !executionModeReady_) {
         if (executionModeToken_ != 0)
             return;
         executionModeToken_ = nextEditRequestToken();
@@ -906,10 +900,6 @@ void QueryWorkspace::execute() {
                           connectionProfiles_.value(*connection), querySettings_->preferences());
     if (query_)
         editor->setProfileId(connectionProfiles_.value(*connection));
-    if (query_ && widgets_.mode->currentIndex() == 1) {
-        pendingTransactions_.insert(*connection);
-        emit transactionStateChanged(*connection, true);
-    }
     queryConnection_ = connection;
     auto title = editor->filePath().isEmpty() ? editor->property("documentTitle").toString()
                                               : QFileInfo(editor->filePath()).fileName();

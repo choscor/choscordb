@@ -41,42 +41,45 @@ struct GridEditEligibility {
 };
 struct GridEditPlan {
     std::vector<ReviewedEditStatement> statements;
+    QString review;
     QString error;
 };
 struct Submit;
-struct SshHopCredential {
-    QString id, secret, action;
-    bool hasSecret = false;
-    QString privateKey, privateKeyAction;
-    bool hasPrivateKey = false;
+// Secrets as typed in the profile form; Rust decides which apply and how each
+// is stored or sent (crates/core/src/profile_draft.rs).
+struct ProfileSecretDrafts {
+    bool saveCredentials = false;
+    QString database;
+    bool databaseModified = false;
+    QString ssh;
+    bool sshModified = false;
+    QString tls;
+    bool tlsModified = false;
+    QString sshPrivateKey;
+    bool sshPrivateKeyModified = false;
 };
-struct SshPrivateKeyCredential {
-    QString secret, action;
-    bool hasSecret = false;
-};
-struct SshHostKeyTarget {
-    enum class Kind { Target, JumpId, JumpIndex } kind = Kind::Target;
-    QString id;
-    int index = -1;
+struct ProfileFieldError {
+    QString field, message;
 };
 struct SshHostKeyCandidate {
-    SshHostKeyTarget target;
     QString originalHost, hostname, hostKeyAlias, keyType, publicKey, sha256, opaqueJson;
     quint16 port = 22;
 };
+// Mirrors the bridge ProfileDto. Defaults for new drafts come from Rust
+// (EngineAdapter::profileDraftDefaults).
 struct SavedProfile {
-    QString id, name, groupId, driver = "sqlite", path, host, database, user;
-    QString tls = "prefer", rootCertificate, credentialRef, sshCredentialRef;
+    QString id, name, groupId, driver, path, host, database, user;
+    QString tls, rootCertificate, credentialRef, sshCredentialRef;
     QString tlsClientIdentity, tlsCredentialRef, sshOptions;
     QString proxyOptions, proxyCredentialRef;
     QString sshJumpCredentialRefs;
     QString sshPrivateKeyRef, sshJumpPrivateKeyRefs;
     bool readOnly = false;
-    quint16 port = 5432;
+    quint16 port = 0;
     bool sshEnabled = false;
-    QString sshHost, sshUser, sshAuthentication = "agent", sshIdentityFile;
-    QString sshIdentitySource = "file";
-    quint16 sshPort = 22;
+    QString sshHost, sshUser, sshAuthentication, sshIdentityFile;
+    QString sshIdentitySource;
+    quint16 sshPort = 0;
 };
 struct SavedHistoryEntry {
     QString id, profileId, sql;
@@ -85,17 +88,20 @@ struct SavedHistoryEntry {
     QString status;
     bool hasRowCount = false;
 };
+// Preference records start from Rust's defaults.
 struct HistoryPolicy {
-    bool enabled = true;
-    quint32 maxAgeDays = 90, maxRecords = 10000;
+    HistoryPolicy();
+    bool enabled;
+    quint32 maxAgeDays, maxRecords;
 };
 struct ShortcutOverride {
     QString command, sequence;
 };
 struct EditorPreferences {
-    quint32 version = 1;
+    EditorPreferences();
+    quint32 version;
     QString fontFamily;
-    quint16 fontSize = 13;
+    quint16 fontSize;
     QList<ShortcutOverride> shortcuts;
 };
 struct EditorPreferenceLimits {
@@ -141,18 +147,16 @@ struct QueryPreferenceLimits {
     quint32 defaultConnectionTimeoutSeconds, maxConnectionTimeoutSeconds;
 };
 struct AppearanceLayout {
-    quint32 version = 1;
-    QString theme = "system", density = "compact", accentKind = "preset", accent = "cobalt";
-    quint32 navigatorWidth = 280, historyHeight = 220;
-    quint16 editorResultsSplit = 600;
-    bool navigatorVisible = true, historyVisible = false;
-    qint32 x = 0, y = 0;
-    quint32 width = 1280, height = 900;
-    bool maximized = false, hasScreenName = false;
+    AppearanceLayout();
+    quint32 version;
+    QString theme, density, accentKind, accent;
+    quint32 navigatorWidth, historyHeight;
+    quint16 editorResultsSplit;
+    bool navigatorVisible, historyVisible;
+    qint32 x, y;
+    quint32 width, height;
+    bool maximized, hasScreenName;
     QString screenName;
-};
-struct RecoveryLimits {
-    quint64 maxDocuments, maxSqlBytes, maxCollectionBytes;
 };
 struct SavedEditorDocument {
     QString id, title, sql, profileId, filePath;
@@ -175,15 +179,55 @@ struct PageMemoryUsage {
     quint64 source;
     quint64 peak;
 };
+// How a staged grid cell is represented; Rust owns what each kind permits.
+enum class GridCell : uint8_t { Value, Binary, Deferred, FallbackText, Unavailable };
+struct GridCellPolicy {
+    bool inlineEditable = false, blocksRowDelete = false, blocksRowDuplicate = false,
+         duplicateRequiresLoad = false;
+};
+// What the desktop may offer for a navigator object kind; Rust owns the table.
+struct ObjectKindTraits {
+    bool opensObjectTab = false, ddl = false, relation = false, container = false, pinnable = false,
+         navigationAnchor = false, searchDescends = false, completionCandidate = false;
+    // The owning object tab's pane that shows this kind; -1 when none does.
+    int detailPane = -1;
+    bool connection = false, column = false, diagram = false;
+    // The pane an object tab opens on when its object is selected; -1 for the default.
+    int initialPane = -1;
+    bool repeatsAcrossParents = false;
+};
+// How the desktop sequences requests for one driver; Rust owns the rules.
+struct DriverWorkflow {
+    bool inspectAfterResult = false, sqlModeBeforeExecution = false;
+};
+// Which connection fields a driver uses and what their blank values mean.
+struct ProfileDriverForm {
+    bool server = false, userOptional = false, databaseSelectsServer = false;
+};
+// Why an open manual transaction blocks an action; empty when it does not.
+struct TransactionGuard {
+    QString applyEdits, enableAutoCommit;
+};
+// Rust's work bounds for one navigator search pass.
+struct NavigatorSearchBudget {
+    int quickVisits = 0, quickRequests = 0, quickResults = 0, filterVisits = 0, filterRequests = 0;
+};
+// The search input a Rust search error belongs to.
+enum class SearchInput : uint8_t { General, Needle, Replacement };
 struct TextMatch {
     bool valid = false, found = false, wrapped = false;
     quint64 start = 0, end = 0;
     QString error;
+    SearchInput errorField = SearchInput::General;
 };
 struct TextReplacement {
     bool valid = false;
     QString text, error;
+    SearchInput errorField = SearchInput::General;
     quint64 count = 0;
+};
+struct TextLimits {
+    quint64 maxDocumentBytes, maxSearchPatternBytes;
 };
 struct SqlSelection {
     bool valid;
@@ -191,7 +235,8 @@ struct SqlSelection {
     quint64 end;
     bool confirmation;
 };
-enum class ObjectInspectionPane { Columns, Indexes, Keys, Ddl };
+// Values match the Rust object-kind detail panes.
+enum class ObjectInspectionPane { Columns = 0, Indexes = 1, Keys = 2, Ddl = 3 };
 enum class MetadataAvailability { Available, Unsupported, Unavailable };
 struct ObjectProperty {
     QString name, value;
@@ -200,6 +245,7 @@ struct ObjectProperty {
 };
 struct ObjectInspectionRow {
     QString id, name, kind;
+    bool primaryKey = false;
     QList<ObjectProperty> properties;
 };
 struct ObjectInspection {
@@ -237,7 +283,6 @@ class EngineAdapter final : public QObject {
     std::optional<quint64> execute(quint64 connection, const QString& sql, bool autoCommit = true,
                                    const QString& profileId = {},
                                    const QueryPreferences& preferences = {});
-    static RecoveryLimits recoveryLimits();
     static QueryPreferenceLimits queryPreferenceLimits();
     bool getQueryPreferences(quint64 token);
     bool setQueryPreferences(const QueryPreferences& preferences, quint64 token);
@@ -250,9 +295,16 @@ class EngineAdapter final : public QObject {
     static QStringList keywordCompletions(const QString& prefix);
     static TextMatch findText(const QString& source, const QString& needle, quint64 start,
                               bool backwards, bool caseSensitive, bool wholeWord);
+    // Case-insensitive matches in source order, at most `limit`.
     static TextReplacement replaceAllText(const QString& source, const QString& needle,
                                           const QString& replacement, bool caseSensitive,
                                           bool wholeWord);
+    // Rust's editable-document and search-text limits, read once per process.
+    static const TextLimits& textLimits();
+    static bool searchPatternUsable(const QString& needle);
+    // Why replacing one match would leave an unsupported document; empty when it fits.
+    static QString replacementError(quint64 documentBytes, quint64 removedBytes,
+                                    quint64 addedBytes);
     bool listHistory(quint32 limit, quint32 offset, quint64 token);
     bool searchHistory(const QString& query, quint32 limit, quint64 token, quint64 offset = 0);
     bool clearHistory(quint64 token);
@@ -264,40 +316,31 @@ class EngineAdapter final : public QObject {
     bool restoreWorkspaceTabs(quint64 token);
     void listProfiles(quint64 token);
     void saveProfile(const SavedProfile& profile, quint64 token);
-    void saveProfileWithPassword(const SavedProfile& profile, const QString& password,
-                                 const QString& action, quint64 token);
-    void saveProfileWithSecrets(const SavedProfile& profile, const QString& databaseSecret,
-                                const QString& databaseAction, const QString& sshSecret,
-                                const QString& sshAction, quint64 token,
-                                const QString& tlsSecret = {}, const QString& tlsAction = "keep",
-                                const QString& proxySecret = {},
-                                const QString& proxyAction = "keep",
-                                const QList<SshHopCredential>& sshHops = {},
-                                const SshPrivateKeyCredential& sshPrivateKey = {},
-                                bool saveCredentials = true);
-    void testProfileWithSecrets(const SavedProfile& profile, const QString& databaseSecret,
-                                bool hasDatabaseSecret, const QString& sshSecret, bool hasSshSecret,
-                                quint64 token, const QString& tlsSecret = {},
-                                bool hasTlsSecret = false, const QString& proxySecret = {},
-                                bool hasProxySecret = false,
-                                const QList<SshHopCredential>& sshHops = {},
-                                const SshPrivateKeyCredential& sshPrivateKey = {});
-    void inspectSshHostKeys(const SavedProfile& profile, const SshHostKeyTarget& target,
-                            const QList<SshHopCredential>& precedingHopCredentials, quint64 token);
+    void saveProfileDraft(const SavedProfile& profile, const ProfileSecretDrafts& secrets,
+                          quint64 token);
+    void testProfileDraft(const SavedProfile& profile, const ProfileSecretDrafts& secrets,
+                          quint64 token);
+    std::optional<quint64> connectProfileDraft(const SavedProfile& profile,
+                                               const ProfileSecretDrafts& secrets);
+    void inspectSshHostKeys(const SavedProfile& profile, quint64 token);
     void approveSshHostKey(const SshHostKeyCandidate& candidate, const QString& knownHostsPath,
                            quint64 token);
-    bool validateConnectionProperties(const SavedProfile& profile, QString& error);
-    std::optional<quint64> connectProfileWithPassword(const SavedProfile& profile,
-                                                      const QString& password, bool hasPassword);
-    std::optional<quint64>
-    connectProfileWithSecrets(const SavedProfile& profile, const QString& databaseSecret,
-                              bool hasDatabaseSecret, const QString& sshSecret, bool hasSshSecret,
-                              const QString& tlsSecret = {}, bool hasTlsSecret = false,
-                              const QString& proxySecret = {}, bool hasProxySecret = false,
-                              const QList<SshHopCredential>& sshHops = {},
-                              const SshPrivateKeyCredential& sshPrivateKey = {});
-    void duplicateProfile(const QString& source, const QString& id, const QString& name,
-                          quint64 token);
+    static SavedProfile profileDraftDefaults(const SavedProfile& profile);
+    static SavedProfile normalizeProfileDraft(const SavedProfile& original,
+                                              const SavedProfile& edited,
+                                              const ProfileSecretDrafts& secrets);
+    static ProfileFieldError validateProfileDraft(const SavedProfile& profile,
+                                                  const ProfileSecretDrafts& secrets);
+    static quint16 profilePortForDriver(quint16 port, const QString& driver);
+    static ProfileDriverForm profileDriverForm(const QString& driver);
+    static bool profileHasSavedCredentials(const SavedProfile& profile);
+    static bool sshKnownHostsPathValid(const QString& path);
+    // Why pasted private key text cannot be used; empty when it can.
+    static QString sshPrivateKeyTextError(const QString& text);
+    // Input hint for secret fields; Rust validates the draft.
+    static int profileSecretMaxBytes();
+    // Rust names the copy after `name` and assigns its id.
+    void duplicateProfile(const QString& source, const QString& name, quint64 token);
     void deleteProfile(const QString& id, quint64 token);
     std::optional<quint64> connectProfile(const SavedProfile& profile);
     bool refreshSqlMode(quint64 connection, quint64 requestToken);
@@ -313,10 +356,15 @@ class EngineAdapter final : public QObject {
                                               const QString& format, const QStringList& table,
                                               const QString& dialect);
     void cancelExport(quint64 id);
-    void loadValueChunk(quint64 query, quint64 handle, quint64 offset, quint32 maxBytes = 65536);
+    // Rust's per-request value window; a request may ask for less, never more.
+    static quint32 valueChunkBytes();
+    // Why a resident value cannot open in the value detail view; empty when it can.
+    static QString valueDetailError(quint64 bytes);
+    void loadValueChunk(quint64 query, quint64 handle, quint64 offset,
+                        quint32 maxBytes = valueChunkBytes());
     void loadMetadata(quint64 connection, const QString& parent = {}, quint64 requestToken = 0);
     void loadMetadataPage(quint64 connection, const QString& parent, quint64 requestToken,
-                          quint64 offset, quint32 limit = 1000);
+                          quint64 offset);
     std::optional<quint64> openObjectData(quint64 connection, const QString& object,
                                           const QueryPreferences& preferences = {});
     bool inspectEditTarget(quint64 connection, const QString& object, quint64 token);
@@ -338,10 +386,38 @@ class EngineAdapter final : public QObject {
                                                       const Cell& value);
     static std::optional<Cell> parseGridEditValue(const QString& databaseType, const QString& text,
                                                   QString* error = nullptr);
+    // Read once per process, so paint and flags() paths make no bridge calls.
+    static const GridCellPolicy& gridCellPolicy(GridCell kind);
+    // Why another staged row cannot be added to a page of `rows`; empty when it can.
+    static QString gridRowInsertError(qsizetype rows);
+    // Cached per kind, so filter and data() paths make one bridge call per kind.
+    static ObjectKindTraits objectKindTraits(const QString& kind);
+    // Read once per process.
+    static const NavigatorSearchBudget& navigatorSearchBudget();
+    static DriverWorkflow driverWorkflow(const QString& driver);
+    static const TransactionGuard& transactionGuard(bool transactionActive);
+    // Whether a child of `parentKind` appears in the sidebar tree (cached per pair).
+    static bool sidebarChildVisible(const QString& parentKind, const QString& kind);
+    // Why drop or rename is unavailable for this object; empty when it applies.
+    static QString objectActionUnavailableReason(bool rename, const QString& driver,
+                                                 const QString& kind, const QString& subtype);
     static bool navigatorObjectVisible(const QString& driver, bool showSystemSchemas,
                                        const QString& qualifiedName);
-    static bool postgresSystemSchema(const QString& schema);
+    static bool systemSchemaNode(const QString& kind, const QString& name);
+    // Why `table` cannot name a SQL export target; empty when it can.
+    static QString sqlExportTableError(const QStringList& table);
+    // Whether `driver` hides system schemas under `showSystemSchemas`.
+    static bool systemSchemasHidden(const QString& driver, bool showSystemSchemas);
     static bool appearanceThemeValid(const QString& theme);
+    // A new identity for an editor document in workspace recovery.
+    static QString newDocumentId();
+    // The recovery context of an object tab: its saved profile, else its session connection.
+    static QString objectTabContext(const QString& profileId, quint64 connection);
+    struct ObjectTabContext {
+        bool session = false;
+        QString profileId;
+    };
+    static ObjectTabContext parseObjectTabContext(const QString& context);
     void loadObjectInspection(quint64 connection, const QString& object, ObjectInspectionPane pane,
                               quint64 requestToken);
     void loadObjectGraph(quint64 connection, const QString& object, quint64 requestToken);
@@ -408,11 +484,10 @@ class EngineAdapter final : public QObject {
 
   private:
     void trackHistoryClears();
-    bool queueRecovery(quint64 token, std::function<Submit()> command, quint64 bytes = 0,
-                       bool duringShutdown = false);
-    void pumpRecovery();
+    // Rust queues storage requests and answers them in order.
+    bool submitRecovery(quint64 token, const std::function<Submit()>& command,
+                        bool duringShutdown = false);
     void finishShutdown();
-    quint32 pageSizeForQuery(quint64 query) const;
     struct Private;
     std::unique_ptr<Private> d_;
 };

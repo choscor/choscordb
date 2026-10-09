@@ -6,17 +6,16 @@
 #include "app/object_explorer.h"
 #include "app/object_kind_icon.h"
 #include "app/query_workspace.h"
-#include "app/quick_search_match.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
+#include "bridge/quick_search.h"
+#include "bridge/text_filter.h"
 #include "design_system/quick_search/quick_search_dialog.h"
 #include "models/navigator_model.h"
 #include "widgets/history_dock/history_dock.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QDateTime>
-#include <QJsonArray>
-#include <QJsonDocument>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTimer>
@@ -58,50 +57,51 @@ void MainWindow::showQuickSearch() {
             if (navigatorController_)
                 navigatorController_->cancelQuickObjectSearch();
         });
-        connect(workspace_->adapter(), &EngineAdapter::historySearched, this,
-                [this](quint64 token, const QList<SavedHistoryEntry>& entries, bool incomplete,
-                       quint64 nextOffset) {
-                    if (!quickSearch_ || !quickSearch_->isVisible() || token != quickHistoryToken_)
+        connect(
+            workspace_->adapter(), &EngineAdapter::historySearched, this,
+            [this](quint64 token, const QList<SavedHistoryEntry>& entries, bool incomplete,
+                   quint64 nextOffset) {
+                if (!quickSearch_ || !quickSearch_->isVisible() || token != quickHistoryToken_)
+                    return;
+                quickHistoryToken_ = 0;
+                for (const auto& entry : entries) {
+                    const QString id = QStringLiteral("history:%1").arg(entry.id);
+                    const QString when = QDateTime::fromSecsSinceEpoch(entry.timestamp)
+                                             .toLocalTime()
+                                             .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+                    const auto found = quickTextFinder_ ? quickTextFinder_->findAll(entry.sql, 1)
+                                                        : QList<TextSpan>{};
+                    const auto match = found.isEmpty() ? TextSpan{} : found.first();
+                    quickHistoryRows_.append(
+                        {tr("History"), matchSnippet(entry.sql, match.start, match.length),
+                         tr("%1 · %2 · %3 · %4")
+                             .arg(entry.profileId.isEmpty() ? tr("Unsaved connection")
+                                                            : entry.profileId,
+                                  when, entry.status, entry.id.left(8)),
+                         id, design::Icon::Refresh});
+                    quickHistoryMatches_.insert(id, QVariant::fromValue(entry));
+                }
+                const bool progressed = nextOffset != 0 && nextOffset != quickHistoryCursor_;
+                const auto historyRows = QuickSearchNeedle::limits().historyRows;
+                if (incomplete && quickHistoryRows_.size() < historyRows && progressed) {
+                    quickHistoryCursor_ = nextOffset;
+                    quickHistoryToken_ = nextRequestToken();
+                    if (workspace_->adapter()->searchHistory(quickSearch_->query().trimmed(),
+                                                             historyRows - quickHistoryRows_.size(),
+                                                             quickHistoryToken_, nextOffset)) {
+                        renderQuickSearch();
                         return;
+                    }
                     quickHistoryToken_ = 0;
-                    for (const auto& entry : entries) {
-                        const QString id = QStringLiteral("history:%1").arg(entry.id);
-                        const QString when = QDateTime::fromSecsSinceEpoch(entry.timestamp)
-                                                 .toLocalTime()
-                                                 .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
-                        const qsizetype found = entry.sql.indexOf(quickSearch_->query().trimmed(),
-                                                                  0, Qt::CaseInsensitive);
-                        quickHistoryRows_.append(
-                            {tr("History"),
-                             matchSnippet(entry.sql, qMax<qsizetype>(0, found),
-                                          quickSearch_->query().trimmed().size()),
-                             tr("%1 · %2 · %3 · %4")
-                                 .arg(entry.profileId.isEmpty() ? tr("Unsaved connection")
-                                                                : entry.profileId,
-                                      when, entry.status, entry.id.left(8)),
-                             id, design::Icon::Refresh});
-                        quickHistoryMatches_.insert(id, QVariant::fromValue(entry));
-                    }
-                    const bool progressed = nextOffset != 0 && nextOffset != quickHistoryCursor_;
-                    if (incomplete && quickHistoryRows_.size() < 30 && progressed) {
-                        quickHistoryCursor_ = nextOffset;
-                        quickHistoryToken_ = nextRequestToken();
-                        if (workspace_->adapter()->searchHistory(quickSearch_->query().trimmed(),
-                                                                 30 - quickHistoryRows_.size(),
-                                                                 quickHistoryToken_, nextOffset)) {
-                            renderQuickSearch();
-                            return;
-                        }
-                        quickHistoryToken_ = 0;
-                        quickHistoryError_ = tr("History search could not continue. Retry.");
-                    }
-                    quickHistoryPending_ = false;
-                    quickHistoryReady_ = true;
-                    quickHistoryIncomplete_ = incomplete && quickHistoryRows_.size() >= 30;
-                    if (incomplete && !progressed)
-                        quickHistoryError_ = tr("History search stopped. Retry the query.");
-                    renderQuickSearch();
-                });
+                    quickHistoryError_ = tr("History search could not continue. Retry.");
+                }
+                quickHistoryPending_ = false;
+                quickHistoryReady_ = true;
+                quickHistoryIncomplete_ = incomplete && quickHistoryRows_.size() >= historyRows;
+                if (incomplete && !progressed)
+                    quickHistoryError_ = tr("History search stopped. Retry the query.");
+                renderQuickSearch();
+            });
         connect(
             workspace_->adapter(), &EngineAdapter::recoveryFailed, this,
             [this](quint64 token, const QString& error) {
@@ -231,23 +231,16 @@ void MainWindow::updateQuickSearch(const QString& query) {
     quickRecentStatus_.clear();
     const QString needle = query.trimmed();
     const bool empty = needle.isEmpty();
-    const QuickSearchNeedle matcher(needle);
-    QList<QPair<int, design::QuickSearchResult>> ranked;
+    quickTextFinder_ = std::make_shared<const TextFinder>(needle);
+    // Rust ranks these rows and drops the ones that do not match in renderQuickSearch.
+    quickNameRows_.clear();
     quickTabTargets_.clear();
-    for (const auto& name : {"showStart", "showSql", "showObjects", "showHistory"}) {
-        if (auto* action = findChild<QAction*>(name)) {
-            const auto score = empty ? std::optional<int>{0} : matcher.score(action->text());
-            if (score)
-                ranked.append({*score,
-                               {tr("Screen"), action->text(), tr("View"), QString::fromLatin1(name),
-                                design::Icon::Square}});
-        }
-    }
+    for (const auto& name : {"showStart", "showSql", "showObjects", "showHistory"})
+        if (auto* action = findChild<QAction*>(name))
+            quickNameRows_.append({tr("Screen"), action->text(), tr("View"),
+                                   QString::fromLatin1(name), design::Icon::Square});
     for (int index = 0; editors_ && index < editors_->count(); ++index) {
         const QString title = editors_->tabText(index);
-        const auto score = empty ? std::optional<int>{50} : matcher.score(title);
-        if (!score)
-            continue;
         const QString id = QStringLiteral("tab:%1").arg(index);
         quickTabTargets_.insert(id, editors_->widget(index));
         QString context = tr("Workspace tab %1").arg(index + 1);
@@ -260,20 +253,17 @@ void MainWindow::updateQuickSearch(const QString& query) {
             qobject_cast<ObjectExplorer*>(editors_->widget(index))
                 ? objectKindIcon(editors_->widget(index)->property("objectType").toString())
                 : design::Icon::Code;
-        ranked.append({*score, {tr("Tab"), title, context, id, icon}});
+        quickNameRows_.append({tr("Tab"), title, context, id, icon});
     }
-    std::stable_sort(ranked.begin(), ranked.end(),
-                     [](const auto& left, const auto& right) { return left.first < right.first; });
-    quickNameRows_.clear();
-    for (const auto& candidate : ranked)
-        quickNameRows_.append(candidate.second);
     const auto connection = quickSearchConnection();
+    // Milliseconds of typing quiet before the navigator object search starts.
+    constexpr int quickObjectDebounceMs = 80;
     if (navigatorController_) {
         if (empty)
             navigatorController_->cancelQuickObjectSearch();
         else
             // Debounced like history: each keystroke supersedes the pending scan.
-            navigatorController_->startQuickObjectSearch(needle, connection, 80);
+            navigatorController_->startQuickObjectSearch(needle, connection, quickObjectDebounceMs);
     }
     if (empty && connection) {
         int ordinal = 0;
@@ -318,7 +308,8 @@ void MainWindow::updateQuickSearch(const QString& query) {
             if (!quickSearch_ || !quickSearch_->isVisible() || generation != quickSearchGeneration_)
                 return;
             quickHistoryToken_ = nextRequestToken();
-            if (!workspace_->adapter()->searchHistory(needle, 30, quickHistoryToken_)) {
+            if (!workspace_->adapter()->searchHistory(
+                    needle, QuickSearchNeedle::limits().historyRows, quickHistoryToken_)) {
                 quickHistoryToken_ = 0;
                 quickHistoryPending_ = false;
                 quickHistoryError_ = tr("History search is unavailable. Retry the query.");
@@ -329,9 +320,12 @@ void MainWindow::updateQuickSearch(const QString& query) {
         quickHistoryError_ = tr("History is unavailable while the workspace is recovering.");
     }
     renderQuickSearch();
+    // ui-budget: characters of open editor text one quick search reads across passes.
+    constexpr int editorScanChars = 1024 * 1024;
     if (!empty && editors_ && editors_->count() > 0)
-        QTimer::singleShot(
-            0, this, [this, generation] { scanQuickSearchEditors(generation, 0, 0, 1024 * 1024); });
+        QTimer::singleShot(0, this, [this, generation] {
+            scanQuickSearchEditors(generation, 0, 0, editorScanChars);
+        });
 }
 
 void MainWindow::renderQuickSearch() {
@@ -339,46 +333,26 @@ void MainWindow::renderQuickSearch() {
         return;
     const QString needle = quickSearch_->query().trimmed();
     const QuickSearchNeedle matcher(needle);
-    QList<QPair<int, design::QuickSearchResult>> destinations;
-    destinations.reserve(quickNameRows_.size() + quickObjectRows_.size());
-    for (const auto& row : quickNameRows_) {
-        const int score = needle.isEmpty() ? row.id.startsWith(QStringLiteral("tab:")) ? 50 : 0
-                                           : matcher.score(row.title).value_or(99);
-        destinations.append({score, row});
-    }
-    for (const auto& row : quickObjectRows_) {
-        int score = 80;
-        if (!needle.isEmpty()) {
-            const auto title = matcher.score(row.title);
-            score = title ? *title : matcher.score(row.context).value_or(99);
-        }
-        destinations.append({score, row});
-    }
-    std::sort(destinations.begin(), destinations.end(), [](const auto& left, const auto& right) {
-        if (left.first != right.first)
-            return left.first < right.first;
-        if (left.second.type != right.second.type)
-            return left.second.type < right.second.type;
-        if (left.second.title != right.second.title)
-            return left.second.title < right.second.title;
-        return left.second.id < right.second.id;
-    });
+    QList<const design::QuickSearchResult*> rows;
+    QList<QuickSearchDestination> destinations;
+    rows.reserve(quickNameRows_.size() + quickObjectRows_.size());
+    destinations.reserve(rows.capacity());
+    const auto add = [&](const design::QuickSearchResult& row, QuickSearchDestination::Kind kind) {
+        rows.append(&row);
+        destinations.append({kind, row.type, row.title, row.context, row.id});
+    };
+    for (const auto& row : quickNameRows_)
+        add(row, row.id.startsWith(QStringLiteral("tab:")) ? QuickSearchDestination::Kind::OpenTab
+                                                           : QuickSearchDestination::Kind::Command);
+    for (const auto& row : quickObjectRows_)
+        add(row, QuickSearchDestination::Kind::Object);
+    const auto plan = matcher.plan(destinations, quickEditorRows_.size(), quickHistoryRows_.size());
     QList<design::QuickSearchResult> results;
-    for (const auto& candidate : destinations) {
-        if (results.size() == 80)
-            break;
-        results.append(candidate.second);
-    }
-    for (const auto& row : quickEditorRows_) {
-        if (results.size() == 80)
-            break;
-        results.append(row);
-    }
-    for (const auto& row : quickHistoryRows_) {
-        if (results.size() == 80)
-            break;
-        results.append(row);
-    }
+    results.reserve(plan.destinations.size() + plan.editorRows + plan.historyRows);
+    for (const auto index : plan.destinations)
+        results.append(*rows[index]);
+    results.append(quickEditorRows_.mid(0, plan.editorRows));
+    results.append(quickHistoryRows_.mid(0, plan.historyRows));
     quickSearch_->setResults(results);
     quickSearch_->setLoading(quickEditorPending_ || quickHistoryPending_);
     quickSearch_->setError(quickHistoryError_);
@@ -400,9 +374,7 @@ void MainWindow::renderQuickSearch() {
         status << quickObjectStatus_;
     if (!quickRecentStatus_.isEmpty())
         status << quickRecentStatus_;
-    if (quickNameRows_.size() + quickObjectRows_.size() + quickEditorRows_.size() +
-            quickHistoryRows_.size() >
-        80)
+    if (plan.more)
         status << tr("More results exist. Refine the query.");
     quickSearch_->setStatus(status.join(QStringLiteral("  ")));
 }
@@ -448,13 +420,12 @@ void MainWindow::updateQuickObjectRows() {
                 quickSearch_->setStatus(tr("The recent object could not be opened."));
             return;
         }
-        const QString sourceStatus = navigatorController_->quickObjectSearchStatus();
-        if (sourceStatus.isEmpty() || sourceStatus.startsWith(tr("Object search incomplete"))) {
+        if (!navigatorController_->quickObjectSearching()) {
             quickPendingRecentObject_.clear();
             quickRecentStatus_ =
-                sourceStatus.isEmpty()
-                    ? tr("The recent object is no longer available.")
-                    : tr("The recent object could not be verified. Refine the search.");
+                navigatorController_->quickObjectSearchIncomplete()
+                    ? tr("The recent object could not be verified. Refine the search.")
+                    : tr("The recent object is no longer available.");
         } else {
             quickRecentStatus_ = tr("Checking the recent object…");
         }
@@ -466,17 +437,14 @@ void MainWindow::updateQuickObjectRows() {
     quickObjectStatus_ = navigatorController_->quickObjectSearchStatus();
     quickObjectIncomplete_ = navigatorController_->quickObjectSearchIncomplete();
     for (const auto& object : navigatorController_->quickObjectResults()) {
-        const QJsonArray identity{QString::number(object.connection),
-                                  object.objectId,
-                                  object.kind,
-                                  object.qualifiedName,
-                                  object.parentObjectId,
-                                  relationSubtype(object.properties)};
-        const QString id = QStringLiteral("object:") +
-                           QString::fromLatin1(QJsonDocument(identity)
-                                                   .toJson(QJsonDocument::Compact)
-                                                   .toBase64(QByteArray::Base64UrlEncoding |
-                                                             QByteArray::OmitTrailingEquals));
+        // A stable row key keeps the palette selection while results stream in.
+        QStringList identity;
+        for (const auto& part :
+             {QString::number(object.connection), object.objectId, object.kind,
+              object.qualifiedName, object.parentObjectId, relationSubtype(object.properties)})
+            identity << QString::fromLatin1(part.toUtf8().toBase64(QByteArray::Base64UrlEncoding |
+                                                                   QByteArray::OmitTrailingEquals));
+        const QString id = QStringLiteral("object:") + identity.join('.');
         quickObjectRows_.append(
             {tr("Object"), object.name,
              tr("%1 · %2 · %3").arg(object.context, object.qualifiedName, object.kind), id,
@@ -501,12 +469,13 @@ void MainWindow::updateQuickObjectRows() {
 
 void MainWindow::scanQuickSearchEditors(quint64 generation, int tabIndex, int line,
                                         int remainingChars) {
-    if (!quickSearch_ || !quickSearch_->isVisible() || generation != quickSearchGeneration_)
+    if (!quickSearch_ || !quickSearch_->isVisible() || generation != quickSearchGeneration_ ||
+        !quickTextFinder_)
         return;
-    const QString needle = quickSearch_->query().trimmed();
     int scannedLines = 0;
     int scannedChars = 0;
-    while (tabIndex < editors_->count() && remainingChars > 0 && quickEditorRows_.size() < 40) {
+    while (tabIndex < editors_->count() && remainingChars > 0 &&
+           quickEditorRows_.size() < QuickSearchNeedle::limits().editorRows) {
         auto* editor = qobject_cast<SqlEditor*>(editors_->widget(tabIndex));
         if (!editor) {
             ++tabIndex;
@@ -537,34 +506,31 @@ void MainWindow::scanQuickSearchEditors(quint64 generation, int tabIndex, int li
             break;
         }
         const QString text = editor->text(line);
-        for (qsizetype from = 0;;) {
-            const qsizetype found = text.indexOf(needle, from, Qt::CaseInsensitive);
-            if (found < 0)
-                break;
-            const int column = static_cast<int>(text.left(found).toUtf8().size());
-            const int bytes = static_cast<int>(text.mid(found, needle.size()).toUtf8().size());
+        for (const auto& match : quickTextFinder_->findAll(
+                 text, int(QuickSearchNeedle::limits().editorRows - quickEditorRows_.size()))) {
             const QString id =
                 QStringLiteral("sql:%1:%2").arg(generation).arg(quickEditorMatches_.size());
-            quickEditorMatches_.insert(id, {editor, editor->revision(), line, column, bytes});
+            quickEditorMatches_.insert(id, {editor, editor->revision(), line,
+                                            static_cast<int>(match.byteStart),
+                                            static_cast<int>(match.byteLength)});
             quickEditorRows_.append(
-                {tr("SQL text"), matchSnippet(text, found, needle.size()),
+                {tr("SQL text"), matchSnippet(text, match.start, match.length),
                  tr("%1 · line %2").arg(editors_->tabText(tabIndex)).arg(line + 1), id,
                  design::Icon::Code});
-            if (quickEditorRows_.size() == 40) {
-                quickEditorIncomplete_ = true;
-                break;
-            }
-            from = found + qMax<qsizetype>(1, needle.size());
         }
+        if (quickEditorRows_.size() == QuickSearchNeedle::limits().editorRows)
+            quickEditorIncomplete_ = true;
         ++line;
         remainingChars -= length;
         scannedChars += length;
         ++scannedLines;
+        // ui-budget: one event-loop pass reads a bounded slice so typing stays responsive.
         if (scannedLines >= 80 || scannedChars >= 16384)
             break;
     }
     renderQuickSearch();
-    if (tabIndex < editors_->count() && remainingChars > 0 && quickEditorRows_.size() < 40)
+    if (tabIndex < editors_->count() && remainingChars > 0 &&
+        quickEditorRows_.size() < QuickSearchNeedle::limits().editorRows)
         QTimer::singleShot(0, this, [this, generation, tabIndex, line, remainingChars] {
             scanQuickSearchEditors(generation, tabIndex, line, remainingChars);
         });
@@ -651,7 +617,7 @@ void MainWindow::recordQuickObjectVisit(quint64 connection, const QString& objec
          {QStringLiteral("targetPane"), -1},
          {QStringLiteral("recent"), true},
          {QStringLiteral("unverified"), !snapshot.has_value()}});
-    constexpr int recentObjectLimit = 12;
+    const auto recentObjectLimit = QuickSearchNeedle::limits().recentObjects;
     if (quickRecentObjects_.size() > recentObjectLimit) {
         quickRecentTabs_.remove(
             quickRecentObjects_.last().value(QStringLiteral("visitId")).toULongLong());

@@ -7,7 +7,6 @@ namespace choscordb {
 // One bounded byte window. Text row boundaries preserve complete UTF-8 characters.
 class ValuePreviewModel final : public QAbstractTableModel {
   public:
-    static constexpr qsizetype MaxChunkBytes = 64 * 1024;
     explicit ValuePreviewModel(QObject* parent = nullptr) : QAbstractTableModel(parent) {}
     // Text windows preserve leading continuation bytes as invalid UTF-8. A trailing
     // incomplete codepoint before EOF is omitted; nextOffset() points to its lead

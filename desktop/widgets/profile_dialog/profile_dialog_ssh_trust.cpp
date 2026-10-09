@@ -5,48 +5,14 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QLabel>
-#include <QLineEdit>
-#include <QSet>
 #include <QTimer>
-#include <QUuid>
 namespace choscordb {
-namespace {
-bool sameTarget(const SshHostKeyTarget& left, const SshHostKeyTarget& right) {
-    if (left.kind != right.kind)
-        return false;
-    switch (left.kind) {
-    case SshHostKeyTarget::Kind::Target:
-        return true;
-    case SshHostKeyTarget::Kind::JumpId:
-        return left.id == right.id;
-    case SshHostKeyTarget::Kind::JumpIndex:
-        return left.index == right.index;
-    }
-    return false;
-}
-int targetIndex(const QJsonArray& hops, const SshHostKeyTarget& target) {
-    if (target.kind == SshHostKeyTarget::Kind::Target)
-        return hops.size();
-    if (target.kind == SshHostKeyTarget::Kind::JumpIndex)
-        return target.index >= 0 && target.index < hops.size() ? target.index : -1;
-    for (int row = 0; row < hops.size(); ++row)
-        if (hops[row].toObject()["id"].toString() == target.id)
-            return row;
-    return -1;
-}
-} // namespace
 void ProfileDialog::createTrustControls(QFormLayout* form) {
     inspectSshKeys_ = new design::Button(tr("Inspect host keys…"), form_);
     inspectSshKeys_->setObjectName("profileSshInspectHostKeys");
     static_cast<design::Button*>(inspectSshKeys_)->setVariant(design::ButtonVariant::Outline);
     form->addRow(tr("Final SSH server trust"), inspectSshKeys_);
-    connect(inspectSshKeys_, &QPushButton::clicked, this, [this] { inspectHostKeys({}); });
-    connect(sshHopEditor_, &SshHopEditor::hostKeyInspectionRequested, this,
-            &ProfileDialog::inspectHostKeys);
+    connect(inspectSshKeys_, &QPushButton::clicked, this, &ProfileDialog::inspectHostKeys);
     connect(sshEnabled_, &QCheckBox::toggled, this, &ProfileDialog::updateTrustControls);
     connect(adapter_, &EngineAdapter::sshHostKeysInspected, this,
             [this](quint64 token, const QList<SshHostKeyCandidate>& candidates) {
@@ -68,12 +34,6 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                     showTrustStatus(tr("No SSH host keys were returned."));
                     return;
                 }
-                for (const auto& candidate : candidates)
-                    if (!sameTarget(candidate.target, trustTarget_)) {
-                        showTrustStatus(
-                            tr("Inspected host keys do not match the selected SSH server."));
-                        return;
-                    }
                 if (trustDialog_)
                     trustDialog_->close();
                 auto* review = new SshHostKeyDialog(candidates, trustPath_, this);
@@ -90,8 +50,7 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                 validity->start();
                 connect(review, &SshHostKeyDialog::approvalRequested, this,
                         [this, review](const SshHostKeyCandidate& candidate, const QString& path) {
-                            if (!adapter_ || trustToken_ || revision_ != trustRevision_ ||
-                                !sameTarget(candidate.target, trustTarget_)) {
+                            if (!adapter_ || trustToken_ || revision_ != trustRevision_) {
                                 review->invalidate();
                                 return;
                             }
@@ -122,18 +81,6 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                     showTrustStatus(tr("The approval request finished for the previous settings. "
                                        "Inspect the current SSH server before retrying."));
                     return;
-                }
-                if (outcome == "approved") {
-                    if (trustTarget_.kind == SshHostKeyTarget::Kind::Target)
-                        sshKnownHosts_->setText(trustPath_);
-                    else if (!sshHopEditor_->setKnownHosts(trustTarget_, trustPath_)) {
-                        if (trustDialog_)
-                            trustDialog_->invalidate();
-                        return;
-                    }
-                    dirty_ = true;
-                    ++revision_;
-                    trustRevision_ = revision_;
                 }
                 if (outcome == "approved") {
                     statusLine_->setBusy(false);
@@ -171,35 +118,17 @@ void ProfileDialog::updateTrustControls() {
     if (!inspectSshKeys_)
         return;
     const bool enabled = adapter_ && !busy_ && !trustToken_ && sshEnabled_->isChecked() &&
-                         driver_->currentData() != "sqlite";
+                         EngineAdapter::profileDriverForm(driver_->currentData().toString()).server;
     inspectSshKeys_->setEnabled(enabled);
-    sshHopEditor_->setInspectionEnabled(enabled);
 }
-void ProfileDialog::inspectHostKeys(const SshHostKeyTarget& target) {
+void ProfileDialog::inspectHostKeys() {
     if (!adapter_ || busy_ || trustToken_ || !sshEnabled_->isChecked())
         return;
     auto profile = draft();
     if (!profile.sshEnabled)
         return;
-    if (profile.id.isEmpty())
-        profile.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     if (profile.name.isEmpty())
         profile.name = tr("SSH host inspection");
-    const auto hops =
-        QJsonDocument::fromJson(profile.sshOptions.toUtf8()).object()["jump_hosts"].toArray();
-    const auto prefix = targetIndex(hops, target);
-    if (prefix < 0)
-        return;
-    QSet<QString> preceding;
-    for (int row = 0; row < prefix; ++row)
-        preceding.insert(hops[row].toObject()["id"].toString());
-    auto credentials = sshHopEditor_->credentials(false);
-    credentials.removeIf(
-        [&](const SshHopCredential& value) { return !preceding.contains(value.id); });
-    trustTarget_ = target;
-    trustPath_ = target.kind == SshHostKeyTarget::Kind::Target
-                     ? sshKnownHosts_->text()
-                     : hops[prefix].toObject()["known_hosts_file"].toString();
     trustRevision_ = revision_;
     trustToken_ = ++token_;
     updateTrustControls();
@@ -207,6 +136,6 @@ void ProfileDialog::inspectHostKeys(const SshHostKeyTarget& target) {
     statusLine_->setAvailable(true);
     statusLine_->setBusy(true);
     statusLine_->show();
-    adapter_->inspectSshHostKeys(profile, target, credentials, trustToken_);
+    adapter_->inspectSshHostKeys(profile, trustToken_);
 }
 } // namespace choscordb

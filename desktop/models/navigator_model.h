@@ -1,4 +1,5 @@
 #pragma once
+#include "bridge/completion_service.h"
 #include <QAbstractItemModel>
 #include <QHash>
 #include <QMultiHash>
@@ -90,9 +91,8 @@ class NavigatorModel final : public QAbstractItemModel {
     std::optional<NavigatorObjectSnapshot> objectSnapshot(quint64 connection,
                                                           const QString& objectId) const;
     // Accepted loaded metadata only. partial marks omitted or still-unloaded data;
-    // maxUtf8Bytes charges all copied strings, including object IDs.
-    CompletionSnapshot completionSnapshot(quint64 connection, quint64 maxEntries,
-                                          quint64 maxUtf8Bytes) const;
+    // limits.maxMetadataBytes charges all copied UTF-8 strings, including object IDs.
+    CompletionSnapshot completionSnapshot(quint64 connection, const CompletionLimits& limits) const;
     // The "Relation subtype" metadata property, or empty when absent.
     static QString relationSubtype(const QVariantList& properties);
   signals:
@@ -102,7 +102,7 @@ class NavigatorModel final : public QAbstractItemModel {
     void childrenRequested(quint64 connection, const QString& parentObjectId, quint64 requestToken);
 
     void childrenPageRequested(quint64 connection, const QString& parentObjectId,
-                               quint64 requestToken, quint64 offset, quint32 limit);
+                               quint64 requestToken, quint64 offset);
 
   private:
     struct Node;

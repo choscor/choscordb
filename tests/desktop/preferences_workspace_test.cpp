@@ -568,7 +568,7 @@ class PreferencesWorkspaceTest : public QObject {
         profile.name = "Closing profile";
         profile.path = ":memory:";
         adapter.saveProfile(profile, 501);
-        adapter.duplicateProfile(profile.id, "copy", "Copy", 502);
+        adapter.duplicateProfile(profile.id, "Copy", 502);
         adapter.deleteProfile(profile.id, 503);
         QCOMPARE(failed.count(), 3);
         for (const auto& event : failed)

@@ -20,14 +20,8 @@ class QLineEdit;
 class QSortFilterProxyModel;
 namespace choscordb {
 class EngineAdapter;
-inline bool showsSidebarChild(const QModelIndex& index) {
-    const auto parentKind = index.parent().data(NavigatorModel::KindRole).toString();
-    if (parentKind != QLatin1String("table") && parentKind != QLatin1String("view"))
-        return true;
-    const auto kind = index.data(NavigatorModel::KindRole).toString();
-    return kind == QLatin1String("column") || kind == QLatin1String("loading") ||
-           kind == QLatin1String("error") || kind == QLatin1String("load_more");
-}
+// Whether Rust shows this node in the sidebar tree rather than only in its object tab.
+bool showsSidebarChild(const QModelIndex& index);
 // Runs `call` at once, then folds requests made within `intervalMs` into one trailing call.
 inline std::function<void()> coalescedCall(QObject* owner, int intervalMs,
                                            std::function<void()> call) {
@@ -93,6 +87,7 @@ class NavigatorController final : public QObject {
     QList<QuickObjectResult> quickObjectResults() const { return quickObjectResults_; }
     QString quickObjectSearchStatus() const { return quickObjectStatus_; }
     bool quickObjectSearchIncomplete() const { return quickObjectIncomplete_; }
+    bool quickObjectSearching() const { return quickObjectSearching_; }
     void setDriverResolver(std::function<QString(quint64)> resolver);
     void setPinStateResolver(std::function<std::optional<bool>(const QModelIndex&)> resolver);
     void setShowSystemSchemas(bool show);
@@ -173,7 +168,9 @@ class NavigatorController final : public QObject {
     bool quickObjectConnectionValid_ = false;
     int quickObjectRequests_ = 0;
     bool quickObjectIncomplete_ = false;
+    bool quickObjectSearching_ = false;
     bool quickObjectAwaiting_ = false;
+    const QList<quint64>& visibleConnections() const;
     void advanceSearch(quint64 generation, bool resume = false);
     void advanceQuickObjectSearch(quint64 generation);
     bool

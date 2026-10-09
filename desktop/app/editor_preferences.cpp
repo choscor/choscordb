@@ -91,9 +91,10 @@ void EditorPreferencesController::initialize(EngineAdapter* adapter) {
     adapter_->getEditorPreferences(loadToken);
 }
 void EditorPreferencesController::apply(const EditorPreferences& value) {
-    const auto error = shortcutValidationError(value, catalog_);
-    if (!error.isEmpty()) {
-        window_->showStatus(error, ToastVariant::Danger, QStringLiteral("preferences"));
+    const auto validation = validateShortcuts(value.shortcuts, catalog_);
+    if (!validation.ok()) {
+        window_->showStatus(validation.message, ToastVariant::Danger,
+                            QStringLiteral("preferences"));
         return;
     }
     window_->clearStatus(QStringLiteral("preferences"));

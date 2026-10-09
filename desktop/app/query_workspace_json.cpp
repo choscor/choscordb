@@ -383,7 +383,7 @@ void QueryWorkspace::requestRowJsonChunk() {
     }
     rowJsonStatus_->setText(tr("Loading complete JSON values… %1 bytes")
                                 .arg(rowJsonResolvedBytes_ + rowJsonLoadingOffset_));
-    adapter_->loadValueChunk(*rowJsonQuery_, rowJsonLoadingHandle_, rowJsonLoadingOffset_, 65536);
+    adapter_->loadValueChunk(*rowJsonQuery_, rowJsonLoadingHandle_, rowJsonLoadingOffset_);
 }
 void QueryWorkspace::failRowJson(const QString& error) {
     ++rowJsonGeneration_;

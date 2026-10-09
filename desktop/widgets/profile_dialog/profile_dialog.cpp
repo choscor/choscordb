@@ -28,7 +28,6 @@
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QTimer>
-#include <QUuid>
 #include <QVBoxLayout>
 namespace choscordb {
 namespace {
@@ -123,7 +122,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     driver_->addItem(tr("MySQL"), "mysql");
     driver_->hide();
     auto* drivers = new QHBoxLayout;
-    auto* driverGroup = new QButtonGroup(this);
+    driverChoices_ = new QButtonGroup(this);
     const auto choice = [&](const QString& title, const char* object, int index) {
         auto* button = new design::Button(title, form_);
         button->setObjectName(object);
@@ -134,15 +133,14 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                                            : design::Icon::MySQL);
         button->setCheckable(true);
         button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        driverGroup->addButton(button, index);
+        driverChoices_->addButton(button, index);
         drivers->addWidget(button);
         connect(button, &QPushButton::clicked, this,
                 [this, index] { driver_->setCurrentIndex(index); });
-        return button;
     };
-    postgresChoice_ = choice(tr("PostgreSQL"), "profileDriverPostgres", 1);
-    mysqlChoice_ = choice(tr("MySQL"), "profileDriverMysql", 2);
-    sqliteChoice_ = choice(tr("SQLite"), "profileDriverSqlite", 0);
+    choice(tr("PostgreSQL"), "profileDriverPostgres", 1);
+    choice(tr("MySQL"), "profileDriverMysql", 2);
+    choice(tr("SQLite"), "profileDriverSqlite", 0);
     formLayout->addRow(drivers);
     auto line = [this](const char* object) {
         auto* edit = new QLineEdit(form_);
@@ -197,7 +195,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     port_->setRange(1, 65535);
     password_ = line("profilePassword");
     password_->setEchoMode(QLineEdit::Password);
-    password_->setMaxLength(16384);
+    password_->setMaxLength(EngineAdapter::profileSecretMaxBytes());
     password_->setPlaceholderText(tr("Optional — leave blank for passwordless authentication"));
     auto* serverFields = new QGridLayout;
     const auto serverField = [&](const QString& title, QWidget* widget, int row, int column,
@@ -262,7 +260,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     sshIdentityFile_->setPlaceholderText(tr("Optional — use SSH agent or default keys"));
     sshSecret_ = line("profileSshSecret");
     sshSecret_->setEchoMode(QLineEdit::Password);
-    sshSecret_->setMaxLength(16384);
+    sshSecret_->setMaxLength(EngineAdapter::profileSecretMaxBytes());
     sshPort_ = new QSpinBox(sshFields);
     sshPort_->setObjectName("profileSshPort");
     sshPort_->setRange(1, 65535);
@@ -322,10 +320,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                 if (!filling_) {
                     sshSecret_->clear();
                     sshSecret_->setModified(false);
-                    if (sshPrivateKey_) {
+                    if (sshPrivateKey_)
                         sshPrivateKey_->setDraft({});
-                        current_.sshPrivateKeyRef.clear();
-                    }
                 }
                 updateSshAuthentication();
                 if (!filling_) {
@@ -392,9 +388,9 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         }
     });
     connect(driver_, &QComboBox::currentIndexChanged, this, [this] {
-        if (!filling_ && driver_->currentData() != "sqlite" &&
-            (port_->value() == 5432 || port_->value() == 3306))
-            port_->setValue(driver_->currentData() == "mysql" ? 3306 : 5432);
+        if (!filling_)
+            port_->setValue(EngineAdapter::profilePortForDriver(
+                static_cast<quint16>(port_->value()), driver_->currentData().toString()));
         updateDriver();
         if (!filling_) {
             dirty_ = true;
@@ -429,8 +425,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         if (busy_ || !adapter_ || current_.id.isEmpty())
             return;
         setBusy(true, tr("Duplicating profile…"));
-        adapter_->duplicateProfile(current_.id, QUuid::createUuid().toString(QUuid::WithoutBraces),
-                                   name_->text() + tr(" copy"), ++token_);
+        adapter_->duplicateProfile(current_.id, name_->text(), ++token_);
     });
     connect(remove, &QPushButton::clicked, this, [this] {
         if (busy_ || !adapter_ || current_.id.isEmpty())
@@ -490,9 +485,6 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                 const auto sessionTlsSecret =
                     preserveTlsSecretOnRefresh_ ? tlsSecret_->text() : QString();
                 const bool tlsSecretModified = tlsSecret_->isModified();
-                const auto sessionProxySecret =
-                    preserveProxySecretOnRefresh_ ? proxySecret_->text() : QString();
-                const bool proxySecretModified = proxySecret_->isModified();
                 if (!pendingSelection_.isEmpty()) {
                     const auto id = pendingSelection_;
                     pendingSelection_.clear();
@@ -513,18 +505,9 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                     tlsSecret_->setModified(tlsSecretModified);
                     preserveTlsSecretOnRefresh_ = false;
                 }
-                if (preserveProxySecretOnRefresh_) {
-                    proxySecret_->setText(sessionProxySecret);
-                    proxySecret_->setModified(proxySecretModified);
-                    preserveProxySecretOnRefresh_ = false;
-                }
                 if (pendingPrivateKey_) {
                     sshPrivateKey_->setDraft(*pendingPrivateKey_);
                     pendingPrivateKey_.reset();
-                }
-                if (!pendingHopSecrets_.isEmpty()) {
-                    sshHopEditor_->restoreSecrets(pendingHopSecrets_);
-                    pendingHopSecrets_.clear();
                 }
                 if (connectAfterSave_) {
                     connectAfterSave_ = false;
@@ -532,64 +515,51 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                 }
                 dispatchProfileAction();
             });
-    connect(
-        adapter, &EngineAdapter::profileSaved, this,
-        [this](quint64 token, const SavedProfile& profile, const QString& warning) {
-            if (token != token_)
-                return;
-            pendingPrivateKey_ = savingDraft_ && profile.sshEnabled &&
-                                         profile.sshIdentitySource == "inline" &&
-                                         !saveCredentials_->isChecked()
-                                     ? std::optional<SshPrivateKeyDraft>(sshPrivateKey_->draft())
-                                     : std::nullopt;
-            pendingHopSecrets_ = savingDraft_ && profile.sshEnabled
-                                     ? sshHopEditor_->captureSecrets(saveCredentials_->isChecked())
-                                     : SshHopSecrets{};
-            preserveProxySecretOnRefresh_ =
-                savingDraft_ && !saveCredentials_->isChecked() && proxyNeedsPassword(profile);
-            preserveTlsSecretOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked() &&
-                                          !profile.tlsClientIdentity.isEmpty();
-            preservePasswordOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked();
-            preserveSshSecretOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked() &&
-                                          sshAuthentication_->currentData() != "agent";
-            const auto sessionPassword = preservePasswordOnRefresh_ ? password_->text() : QString();
-            const bool passwordModified = password_->isModified();
-            const auto sessionSshSecret =
-                preserveSshSecretOnRefresh_ ? sshSecret_->text() : QString();
-            const bool sshSecretModified = sshSecret_->isModified();
-            const auto sessionTlsSecret =
-                preserveTlsSecretOnRefresh_ ? tlsSecret_->text() : QString();
-            const bool tlsSecretModified = tlsSecret_->isModified();
-            const auto sessionProxySecret =
-                preserveProxySecretOnRefresh_ ? proxySecret_->text() : QString();
-            const bool proxySecretModified = proxySecret_->isModified();
-            savingDraft_ = false;
-            setDraft(profile);
-            sshHopEditor_->restoreSecrets(pendingHopSecrets_);
-            if (pendingPrivateKey_)
-                sshPrivateKey_->setDraft(*pendingPrivateKey_);
-            if (preservePasswordOnRefresh_) {
-                password_->setText(sessionPassword);
-                password_->setModified(passwordModified);
-            }
-            if (preserveSshSecretOnRefresh_) {
-                sshSecret_->setText(sessionSshSecret);
-                sshSecret_->setModified(sshSecretModified);
-            }
-            if (preserveTlsSecretOnRefresh_) {
-                tlsSecret_->setText(sessionTlsSecret);
-                tlsSecret_->setModified(tlsSecretModified);
-            }
-            if (preserveProxySecretOnRefresh_) {
-                proxySecret_->setText(sessionProxySecret);
-                proxySecret_->setModified(proxySecretModified);
-            }
-            refreshHasWarning_ = !warning.isEmpty();
-            refreshNotice_ =
-                warning.isEmpty() ? tr("Profile saved.") : tr("Profile saved. %1").arg(warning);
-            pendingSelection_ = profile.id;
-            refresh();
-        });
+    connect(adapter, &EngineAdapter::profileSaved, this,
+            [this](quint64 token, const SavedProfile& profile, const QString& warning) {
+                if (token != token_)
+                    return;
+                pendingPrivateKey_ =
+                    savingDraft_ && profile.sshEnabled && profile.sshIdentitySource == "inline" &&
+                            !saveCredentials_->isChecked()
+                        ? std::optional<SshPrivateKeyDraft>(sshPrivateKey_->draft())
+                        : std::nullopt;
+                preserveTlsSecretOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked() &&
+                                              !profile.tlsClientIdentity.isEmpty();
+                preservePasswordOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked();
+                preserveSshSecretOnRefresh_ = savingDraft_ && !saveCredentials_->isChecked() &&
+                                              sshAuthentication_->currentData() != "agent";
+                const auto sessionPassword =
+                    preservePasswordOnRefresh_ ? password_->text() : QString();
+                const bool passwordModified = password_->isModified();
+                const auto sessionSshSecret =
+                    preserveSshSecretOnRefresh_ ? sshSecret_->text() : QString();
+                const bool sshSecretModified = sshSecret_->isModified();
+                const auto sessionTlsSecret =
+                    preserveTlsSecretOnRefresh_ ? tlsSecret_->text() : QString();
+                const bool tlsSecretModified = tlsSecret_->isModified();
+                savingDraft_ = false;
+                setDraft(profile);
+                if (pendingPrivateKey_)
+                    sshPrivateKey_->setDraft(*pendingPrivateKey_);
+                if (preservePasswordOnRefresh_) {
+                    password_->setText(sessionPassword);
+                    password_->setModified(passwordModified);
+                }
+                if (preserveSshSecretOnRefresh_) {
+                    sshSecret_->setText(sessionSshSecret);
+                    sshSecret_->setModified(sshSecretModified);
+                }
+                if (preserveTlsSecretOnRefresh_) {
+                    tlsSecret_->setText(sessionTlsSecret);
+                    tlsSecret_->setModified(tlsSecretModified);
+                }
+                refreshHasWarning_ = !warning.isEmpty();
+                refreshNotice_ =
+                    warning.isEmpty() ? tr("Profile saved.") : tr("Profile saved. %1").arg(warning);
+                pendingSelection_ = profile.id;
+                refresh();
+            });
     connect(adapter, &EngineAdapter::profileDeleted, this,
             [this](quint64 token, const QString&, const QString& warning) {
                 if (token != token_)
@@ -604,10 +574,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         adapter, &EngineAdapter::profileFailed, this, [this](quint64 token, const QString& error) {
             if (token == token_) {
                 savingDraft_ = false;
-                pendingHopSecrets_.clear();
                 pendingPrivateKey_.reset();
                 preservePasswordOnRefresh_ = false;
-                preserveProxySecretOnRefresh_ = false;
                 preserveTlsSecretOnRefresh_ = false;
                 connectAfterSave_ = false;
                 setBusy(false, refreshNotice_.isEmpty()

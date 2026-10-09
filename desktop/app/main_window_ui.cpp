@@ -337,10 +337,7 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* navigatorIcons = new NavigatorIconDelegate(tree);
     navigatorIcons->connectionIcon = [this](quint64 connection) {
         const auto driver = workspace_ ? workspace_->driverForConnection(connection) : QString{};
-        return driver == "sqlite"     ? design::Icon::SQLite
-               : driver == "postgres" ? design::Icon::PostgreSQL
-               : driver == "mysql"    ? design::Icon::MySQL
-                                      : design::Icon::Database;
+        return design::driverIcon(driver);
     };
     tree->setItemDelegate(navigatorIcons);
     tree->setAccessibleName(tr("Database navigator"));
@@ -427,7 +424,7 @@ MainWindow::Ui MainWindow::buildUi() {
     new ContextualActionVisibility(navBody, {refreshNavigator});
     navigator->setWidget(navBody);
     addDockWidget(Qt::LeftDockWidgetArea, navigator);
-    resizeDocks({navigator}, {initialMetrics.initialNavigatorWidth}, Qt::Horizontal);
+    resizeDocks({navigator}, {static_cast<int>(AppearanceLayout{}.navigatorWidth)}, Qt::Horizontal);
     auto* focusConnections = viewMenu->addAction(tr("Connections"));
     connect(focusConnections, &QAction::triggered, tree, [tree] { tree->setFocus(); });
     auto* resetLayout = viewMenu->addAction(tr("Reset layout"));

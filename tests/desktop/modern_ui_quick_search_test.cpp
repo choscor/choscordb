@@ -341,7 +341,9 @@ void ModernUiTest::quickSearchFindsSavedHistoryAndOpensItWithoutExecuting() {
     QVERIFY(!overlay->isVisible());
     QCOMPARE(started, 0);
     QSignalSpy policySaved(workspace->adapter(), &choscordb::EngineAdapter::historyPolicyReady);
-    QVERIFY(workspace->adapter()->setHistoryPolicy({false, 90, 10000}, 8843));
+    choscordb::HistoryPolicy disabled;
+    disabled.enabled = false;
+    QVERIFY(workspace->adapter()->setHistoryPolicy(disabled, 8843));
     QTRY_VERIFY(!policySaved.isEmpty());
     window.findChild<QAction*>("quickSwitch")->trigger();
     input->setText("kept_history_marker");

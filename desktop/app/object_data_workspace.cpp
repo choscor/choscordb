@@ -218,13 +218,12 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
             [this](quint64, bool) { result_->refreshEditActions(); });
 }
 void ObjectDataWorkspace::openObject(quint64 connection, const QString& object,
-                                     const QString& label, const QString& kind) {
+                                     const QString& label) {
     if (!sql_ || !sql_->navigationAllowed() || !result_->navigationAllowed() || object.isEmpty())
         return;
     const auto filter = std::exchange(initialFilter_, {});
     result_->setDriverForConnection(connection, sql_->driverForConnection(connection));
-    result_->openObjectData(connection, object, label, sql_->queryPreferences(), kind, false,
-                            filter);
+    result_->openObjectData(connection, object, label, sql_->queryPreferences(), false, filter);
 }
 void ObjectDataWorkspace::invalidate(bool connectionLost) {
     if (!resolvePendingEdits())

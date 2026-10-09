@@ -4,7 +4,7 @@
 
 namespace choscordb::design {
 QList<DesignToken> designTokens(ResolvedAppearance appearance) {
-    const auto colors = resolveColors(appearance, {});
+    const auto colors = resolveColors(appearance);
     QList<DesignToken> tokens;
     const auto add = [&tokens](const QString& name, const QString& value) {
         tokens.append({name, value, QStringLiteral("desktop/design_system/tokens/tokens.cpp")});

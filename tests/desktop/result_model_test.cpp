@@ -172,7 +172,7 @@ class ResultModelTest : public QObject {
         QVERIFY(!refused.error.isEmpty());
         QCOMPARE(std::get<QString>(*model.cellValue(target)), QString("original"));
         QVERIFY(!model.hasPendingEdits());
-        QVERIFY(model.setByteBudget(ResultTableModel::DefaultBytes));
+        QVERIFY(model.setByteBudget(ResultTableModel::defaultBytes()));
         model.markDeleted({target}, true);
         const auto ineligible = model.stageCellEdit(target, evaluation);
         QCOMPARE(ineligible.state, ResultTableModel::CellEditState::Ineligible);

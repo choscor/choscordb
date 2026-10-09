@@ -182,8 +182,8 @@ void ControlStyleTest::unusedHeaderGutterUsesThemeSurface_data() {
     using namespace choscordb::design;
     QTest::addColumn<bool>("dark");
     QTest::addColumn<QColor>("expected");
-    QTest::newRow("light") << false << resolveColors(ResolvedAppearance::Light, {}).muted;
-    QTest::newRow("dark") << true << resolveColors(ResolvedAppearance::Dark, {}).muted;
+    QTest::newRow("light") << false << resolveColors(ResolvedAppearance::Light).muted;
+    QTest::newRow("dark") << true << resolveColors(ResolvedAppearance::Dark).muted;
 }
 
 void ControlStyleTest::unusedHeaderGutterUsesThemeSurface() {
@@ -191,7 +191,7 @@ void ControlStyleTest::unusedHeaderGutterUsesThemeSurface() {
     QFETCH(QColor, expected);
     using namespace choscordb::design;
     const auto appearance = dark ? ResolvedAppearance::Dark : ResolvedAppearance::Light;
-    const ResolvedTheme theme{appearance, resolveColors(appearance, {}), false};
+    const ResolvedTheme theme{appearance, resolveColors(appearance), false};
     QWidget root;
     root.setStyleSheet(controlStyleSheet(theme));
     QTableWidget table(1, 1, &root);
@@ -208,7 +208,7 @@ void ControlStyleTest::unusedHeaderGutterUsesThemeSurface() {
 void ControlStyleTest::tableHeaderColumnsHaveSeparators() {
     using namespace choscordb::design;
     const auto appearance = ResolvedAppearance::Light;
-    const ResolvedTheme theme{appearance, resolveColors(appearance, {}), false};
+    const ResolvedTheme theme{appearance, resolveColors(appearance), false};
     QWidget root;
     root.setStyleSheet(controlStyleSheet(theme));
     QTableWidget table(1, 2, &root);
@@ -228,7 +228,7 @@ void ControlStyleTest::tableHeaderColumnsHaveSeparators() {
 void ControlStyleTest::rowNumberColumnHasVerticalSeparator() {
     using namespace choscordb::design;
     const auto appearance = ResolvedAppearance::Light;
-    const ResolvedTheme theme{appearance, resolveColors(appearance, {}), false};
+    const ResolvedTheme theme{appearance, resolveColors(appearance), false};
     QWidget root;
     root.setStyleSheet(controlStyleSheet(theme));
     QTableWidget table(2, 1, &root);
@@ -363,8 +363,8 @@ void ControlStyleTest::actualTooltipHasArrowAndDismissesOnOwnerLeave() {
 
 void ControlStyleTest::menuHasRenderedTranslucentElevationOutsidePanel() {
     using namespace choscordb::design;
-    const ResolvedTheme theme{ResolvedAppearance::Light,
-                              resolveColors(ResolvedAppearance::Light, {}), false};
+    const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
+                              false};
     QWidget root;
     root.setProperty("designTheme", QVariant::fromValue(theme));
     root.setStyleSheet(controlStyleSheet(theme));
@@ -418,8 +418,8 @@ void ControlStyleTest::treeBranchesUseHollowChevronsAndNoLeafDecoration() {
 
 void ControlStyleTest::fieldKeyboardFocusPaintsOutsideWithoutMovingText() {
     using namespace choscordb::design;
-    const ResolvedTheme theme{ResolvedAppearance::Light,
-                              resolveColors(ResolvedAppearance::Light, {}), false};
+    const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
+                              false};
     QWidget root;
     root.setPalette(applicationPalette(theme));
     root.setStyleSheet(controlStyleSheet(theme));
@@ -461,8 +461,8 @@ void ControlStyleTest::keyboardFocusPrimitiveUsesContrastSafeContinuousOutline()
 
 void ControlStyleTest::badgeAndProgressUseCompactReferenceGeometry() {
     using namespace choscordb::design;
-    const ResolvedTheme theme{ResolvedAppearance::Light,
-                              resolveColors(ResolvedAppearance::Light, {}), false};
+    const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
+                              false};
     QWidget root;
     root.setFont(resolveTypography(TypographyRole::Ui));
     root.setStyleSheet(controlStyleSheet(theme));
@@ -520,8 +520,8 @@ void ControlStyleTest::initTestCase() {
 
 void ControlStyleTest::tabsToolsAndTableHeadersUseCompactPaneGeometry() {
     using namespace choscordb::design;
-    const ResolvedTheme theme{ResolvedAppearance::Light,
-                              resolveColors(ResolvedAppearance::Light, {}), false};
+    const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
+                              false};
     QWidget root;
     root.setFont(resolveTypography(TypographyRole::Ui));
     root.setStyleSheet(controlStyleSheet(theme));
@@ -547,8 +547,8 @@ void ControlStyleTest::tabsToolsAndTableHeadersUseCompactPaneGeometry() {
 
 void ControlStyleTest::toolButtonMenuPanelOpensBesideItsButton() {
     using namespace choscordb::design;
-    const ResolvedTheme theme{ResolvedAppearance::Light,
-                              resolveColors(ResolvedAppearance::Light, {}), false};
+    const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
+                              false};
     QWidget root;
     root.setStyleSheet(controlStyleSheet(theme));
     root.resize(600, 500);
@@ -572,7 +572,7 @@ void ControlStyleTest::toolButtonMenuPanelOpensBesideItsButton() {
 void ControlStyleTest::menusTabsAndScrollbarsUseSharedSurfacesAndRemainInteractive() {
     using namespace choscordb::design;
     ControlStyle style;
-    const ResolvedTheme theme{ResolvedAppearance::Dark, resolveColors(ResolvedAppearance::Dark, {}),
+    const ResolvedTheme theme{ResolvedAppearance::Dark, resolveColors(ResolvedAppearance::Dark),
                               false};
     QWidget root;
     root.setFont(resolveTypography(TypographyRole::Ui));
@@ -616,8 +616,8 @@ void ControlStyleTest::menusTabsAndScrollbarsUseSharedSurfacesAndRemainInteracti
 void ControlStyleTest::fieldsExposeInvalidBorderAndPreserveReadOnlyAndPopupInput() {
     using namespace choscordb::design;
     ControlStyle style;
-    const ResolvedTheme theme{ResolvedAppearance::Light,
-                              resolveColors(ResolvedAppearance::Light, {}), false};
+    const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
+                              false};
     QWidget root;
     root.setFont(resolveTypography(TypographyRole::Ui));
     root.setStyle(&style);

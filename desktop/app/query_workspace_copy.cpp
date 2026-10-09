@@ -145,7 +145,7 @@ void QueryWorkspace::requestCopyChunk() {
         }));
         return;
     }
-    adapter_->loadValueChunk(request.query, value->handle, request.offset, 65536);
+    adapter_->loadValueChunk(request.query, value->handle, request.offset);
 }
 
 void QueryWorkspace::handleCopyEvent(const BridgeEvent& event) {

@@ -665,9 +665,8 @@ void ModernUiTest::appearancePreviewsPersistAndRestoreAcrossRestart() {
         QSignalSpy warning(appearance, &choscordb::AppearanceController::warningChanged);
         QVERIFY(appearance->preview("dark"));
         QCOMPARE(theme->mode(), choscordb::design::ThemeMode::Dark);
-        const auto acceptedAccent = theme->accent();
         QVERIFY(!appearance->preview("sepia"));
-        QCOMPARE(theme->accent(), acceptedAccent);
+        QCOMPARE(theme->mode(), choscordb::design::ThemeMode::Dark);
         QVERIFY(!warning.isEmpty());
         QVERIFY(!warning.last().at(0).toString().isEmpty());
         QSignalSpy saved(appearance, &choscordb::AppearanceController::saveFinished);

@@ -49,7 +49,8 @@ class NavigatorIconDelegate final : public design::ColumnRowDelegate {
     std::function<design::Icon(quint64)> connectionIcon;
     void paint(QPainter* painter, const QStyleOptionViewItem& option,
                const QModelIndex& index) const override {
-        if (index.data(NavigatorModel::KindRole).toString() == QLatin1String("column")) {
+        if (navigatorRowStyle(index.data(NavigatorModel::KindRole).toString()) ==
+            NavigatorRowStyle::Column) {
             design::ColumnRowDelegate::paint(painter, option, index);
             return;
         }
@@ -58,13 +59,14 @@ class NavigatorIconDelegate final : public design::ColumnRowDelegate {
     void initStyleOption(QStyleOptionViewItem* option, const QModelIndex& index) const override {
         QStyledItemDelegate::initStyleOption(option, index);
         const auto kind = index.data(NavigatorModel::KindRole).toString();
-        if (kind == "group" || kind == "column") {
+        const auto style = navigatorRowStyle(kind);
+        if (style == NavigatorRowStyle::Group || style == NavigatorRowStyle::Column) {
             option->icon = QIcon();
             option->features &= ~QStyleOptionViewItem::HasDecoration;
             return;
         }
         const auto role =
-            kind == "connection"
+            style == NavigatorRowStyle::Connection
                 ? (connectionIcon
                        ? connectionIcon(index.data(NavigatorModel::ConnectionRole).toULongLong())
                        : design::Icon::Database)

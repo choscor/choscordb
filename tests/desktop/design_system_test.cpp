@@ -3,6 +3,7 @@
 #include "design_system/platform_accessibility.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/theme_manager.h"
+#include "icon_resource_check.h"
 
 #include <QApplication>
 #include <QDialog>
@@ -262,26 +263,20 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(resolveMetrics(Density::Comfortable, false).dialogRadius, 8);
     }
 
-    void pinnedGreenPaletteIgnoresLegacyAccent() {
+    void pinnedGreenPaletteResolvesFixedCanvasRoles() {
         using namespace choscordb::design;
-        const auto light =
-            resolveColors(ResolvedAppearance::Light, Accent::presetColor(AccentPreset::Cobalt));
-        const auto dark =
-            resolveColors(ResolvedAppearance::Dark, Accent::presetColor(AccentPreset::Rose));
+        const auto light = resolveColors(ResolvedAppearance::Light);
+        const auto dark = resolveColors(ResolvedAppearance::Dark);
         QCOMPARE(light.canvas, QColor("#f6f7f8"));
         QCOMPARE(light.text, QColor("#222b32"));
         QCOMPARE(dark.canvas, QColor("#171d20"));
         QCOMPARE(dark.surface, QColor("#20272b"));
-        QCOMPARE(light,
-                 resolveColors(ResolvedAppearance::Light, Accent::custom(QColor("#2468b2"))));
-        QCOMPARE(dark, resolveColors(ResolvedAppearance::Dark,
-                                     Accent::presetColor(AccentPreset::Cobalt)));
     }
 
     void semanticSurfaceRolesRetainReferenceDistinctions() {
         using namespace choscordb::design;
-        const auto light = resolveColors(ResolvedAppearance::Light, {});
-        const auto dark = resolveColors(ResolvedAppearance::Dark, {});
+        const auto light = resolveColors(ResolvedAppearance::Light);
+        const auto dark = resolveColors(ResolvedAppearance::Dark);
         QCOMPARE(light.background, QColor("#f6f7f8"));
         QCOMPARE(light.primary, QColor("#287f66"));
         QCOMPARE(light.secondary, QColor("#f2f2f2"));
@@ -329,58 +324,23 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(changed.count(), 1);
     }
 
-    void accentsResolveReadableComponentRoles() {
+    void paletteResolvesReadableComponentRoles() {
         using namespace choscordb::design;
-        constexpr AccentPreset presets[] = {
-            AccentPreset::Cobalt, AccentPreset::Azure,  AccentPreset::Teal, AccentPreset::Green,
-            AccentPreset::Violet, AccentPreset::Orange, AccentPreset::Rose};
         for (const auto appearance : {ResolvedAppearance::Light, ResolvedAppearance::Dark}) {
-            for (const auto preset : presets) {
-                const auto accent = Accent::presetColor(preset);
-                QVERIFY2(validateAccent(accent, appearance).accepted,
-                         qPrintable(validateAccent(accent, appearance).reason));
-                const auto colors = resolveColors(appearance, accent);
-                QVERIFY(contrastRatio(colors.actionText, colors.action) >= 4.5);
-                QVERIFY(contrastRatio(colors.actionText, colors.actionHover) >= 4.5);
-                QVERIFY(contrastRatio(colors.actionText, colors.actionPressed) >= 4.5);
-                QVERIFY(contrastRatio(colors.actionHover, colors.canvas) >= 3.0);
-                QVERIFY(contrastRatio(colors.actionPressed, colors.canvas) >= 3.0);
-                QVERIFY(contrastRatio(colors.action, colors.surface) >= 3.0);
-                QVERIFY(contrastRatio(colors.actionHover, colors.surface) >= 3.0);
-                QVERIFY(contrastRatio(colors.actionPressed, colors.surface) >= 3.0);
-                QVERIFY(contrastRatio(colors.focus, colors.canvas) >= 3.0);
-                QVERIFY(contrastRatio(colors.focus, colors.surface) >= 3.0);
-                QVERIFY(contrastRatio(colors.selectionText, colors.selection) >= 4.5);
-                QVERIFY(contrastRatio(colors.text, colors.subtleAccent) >= 4.5);
-            }
+            const auto colors = resolveColors(appearance);
+            QVERIFY(contrastRatio(colors.actionText, colors.action) >= 4.5);
+            QVERIFY(contrastRatio(colors.actionText, colors.actionHover) >= 4.5);
+            QVERIFY(contrastRatio(colors.actionText, colors.actionPressed) >= 4.5);
+            QVERIFY(contrastRatio(colors.actionHover, colors.canvas) >= 3.0);
+            QVERIFY(contrastRatio(colors.actionPressed, colors.canvas) >= 3.0);
+            QVERIFY(contrastRatio(colors.action, colors.surface) >= 3.0);
+            QVERIFY(contrastRatio(colors.actionHover, colors.surface) >= 3.0);
+            QVERIFY(contrastRatio(colors.actionPressed, colors.surface) >= 3.0);
+            QVERIFY(contrastRatio(colors.focus, colors.canvas) >= 3.0);
+            QVERIFY(contrastRatio(colors.focus, colors.surface) >= 3.0);
+            QVERIFY(contrastRatio(colors.selectionText, colors.selection) >= 4.5);
+            QVERIFY(contrastRatio(colors.text, colors.subtleAccent) >= 4.5);
         }
-    }
-
-    void inaccessibleCustomAccentKeepsTheLastValidPreview() {
-        using namespace choscordb::design;
-        ThemeManager manager;
-        const auto valid = Accent::custom(QColor("#2468B2"));
-        QVERIFY(manager.setAccent(valid).accepted);
-        const auto lastValidTheme = manager.resolvedTheme();
-        QSignalSpy changed(&manager, &ThemeManager::themeChanged);
-
-        const auto malformed = manager.setAccent(Accent::custom(QColor{}));
-        QVERIFY(!malformed.accepted);
-        QVERIFY(!malformed.reason.isEmpty());
-        QCOMPARE(manager.accent(), valid);
-
-        const auto invalid = manager.setAccent(Accent::custom(QColor("#FFFFFF")));
-        QVERIFY(!invalid.accepted);
-        QVERIFY(!invalid.reason.isEmpty());
-        QCOMPARE(manager.accent(), valid);
-        QCOMPARE(manager.resolvedTheme(), lastValidTheme);
-        QCOMPARE(changed.count(), 0);
-
-        ThemeManager darkManager;
-        darkManager.setMode(ThemeMode::Dark);
-        const auto themeFragile = darkManager.setAccent(Accent::custom(QColor("#FFFFFF")));
-        QVERIFY(!themeFragile.accepted);
-        QVERIFY(!themeFragile.reason.isEmpty());
     }
 
     void accessibilityPoliciesOverrideRenderingWithoutDeletingChoices() {
@@ -388,8 +348,6 @@ class DesignSystemTest final : public QObject {
         ThemeManager manager;
         manager.setMode(ThemeMode::Dark);
         manager.setDensity(Density::Comfortable);
-        const auto chosenAccent = Accent::presetColor(AccentPreset::Rose);
-        QVERIFY(manager.setAccent(chosenAccent).accepted);
 
         QPalette highContrast;
         highContrast.setColor(QPalette::Window, QColor("#000000"));
@@ -405,7 +363,6 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(manager.resolvedTheme().colors.canvas, QColor("#000000"));
         QCOMPARE(manager.resolvedTheme().colors.focus, QColor("#FFFF00"));
         QCOMPARE(manager.mode(), ThemeMode::Dark);
-        QCOMPARE(manager.accent(), chosenAccent);
 
         highContrast.setColor(QPalette::Highlight, QColor("#00FFFF"));
         manager.setSystemPalette(highContrast);
@@ -421,7 +378,6 @@ class DesignSystemTest final : public QObject {
         manager.setForcedContrast(false);
         QVERIFY(!manager.resolvedTheme().forcedContrast);
         QCOMPARE(manager.mode(), ThemeMode::Dark);
-        QCOMPARE(manager.accent(), chosenAccent);
     }
 
     void platformAccessibilityReaderProducesBoundedBooleanPolicy() {
@@ -503,7 +459,7 @@ class DesignSystemTest final : public QObject {
         for (const auto role : {Icon::AppMark, Icon::Run, Icon::Cancel, Icon::Add}) {
             QVERIFY(iconResourcePath(role).startsWith(":/icons/"));
             QVERIFY(QFile::exists(iconResourcePath(role)));
-            QVERIFY(iconResourceDecodes(role));
+            QVERIFY(choscordb::test::iconResourceDecodes(role));
             QVERIFY(!themedIcon(role, QColor("#2F7DD3"), 16).isNull());
             QVERIFY(!themedIcon(role, QColor("#2F7DD3"), 20).isNull());
             const auto highDpi = themedIcon(role, QColor("#2F7DD3"), 16).pixmap(QSize(16, 16), 2.0);

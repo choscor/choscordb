@@ -279,6 +279,7 @@ void NavigatorSqlWorkspaceTest::objectActionKeepsOtherSessionTabWithSameProfile(
     SavedProfile profile;
     profile.id = QStringLiteral("shared-profile");
     profile.name = QStringLiteral("Shared database");
+    profile.driver = QStringLiteral("sqlite");
     profile.path = storage.filePath("shared.sqlite");
     QSignalSpy connected(workspace, &QueryWorkspace::connectionReady);
     const auto first = workspace->connectSavedProfile(profile);

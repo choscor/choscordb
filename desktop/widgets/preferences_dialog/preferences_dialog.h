@@ -50,7 +50,7 @@ class PreferencesDialog final : public DialogShell {
     void fillQuery(const QueryPreferences& value);
     void fillHistory(const HistoryPolicy& value);
     bool advanceLoad();
-    bool placeValidationError(const QString& message);
+    bool placeValidationError(const ShortcutValidation& validation);
     design::StatusLine* statusLine_;
     QLabel* status_;
     QPointer<EngineAdapter> adapter_;
@@ -58,7 +58,6 @@ class PreferencesDialog final : public DialogShell {
     QList<ShortcutDescriptor> catalog_;
     QList<QKeySequenceEdit*> sequences_;
     QList<design::FieldValidation*> sequenceValidations_;
-    design::FieldValidation *fontValidation_, *sizeValidation_;
     QFontComboBox* font_;
     QCheckBox* system_;
     QSpinBox* size_;

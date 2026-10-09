@@ -1,4 +1,5 @@
 #include "design_system/icons.h"
+#include "icon_resource_check.h"
 
 #include <QCryptographicHash>
 #include <QFile>
@@ -111,7 +112,7 @@ class IconsTest final : public QObject {
                                         [](const auto& entry) { return entry.name == "grid-2x2"; });
         QVERIFY(found != catalog.cend());
         QCOMPARE(iconResourcePath(found->role), QString(":/icons/grid-2x2.svg"));
-        QVERIFY(iconResourceDecodes(found->role));
+        QVERIFY(choscordb::test::iconResourceDecodes(found->role));
         for (const QColor color : {QColor("#171717"), QColor("#fafafa")}) {
             const auto actual =
                 themedIcon(found->role, color, 24).pixmap(QSize(24, 24), 2.0).toImage();
@@ -156,7 +157,7 @@ class IconsTest final : public QObject {
                 const auto pixmap = icon.pixmap(QSize(20, 20), 2.0);
                 QCOMPARE(pixmap.devicePixelRatio(), 2.0);
                 QCOMPARE(pixmap.size(), QSize(40, 40));
-                QVERIFY(iconResourceDecodes(role));
+                QVERIFY(choscordb::test::iconResourceDecodes(role));
                 const auto image = pixmap.toImage();
                 bool hasStroke = false;
                 for (int y = 0; y < image.height(); ++y) {
@@ -179,7 +180,7 @@ class IconsTest final : public QObject {
         using namespace choscordb::design;
         QList<QImage> images;
         for (const auto role : {Icon::PostgreSQL, Icon::SQLite}) {
-            QVERIFY(iconResourceDecodes(role));
+            QVERIFY(choscordb::test::iconResourceDecodes(role));
             const auto light = themedIcon(role, Qt::black, 32).pixmap(QSize(32, 32), 2.0);
             const auto dark = themedIcon(role, Qt::white, 32).pixmap(QSize(32, 32), 2.0);
             QCOMPARE(light.devicePixelRatio(), 2.0);
@@ -204,7 +205,7 @@ class IconsTest final : public QObject {
         const auto found = std::find_if(catalog.cbegin(), catalog.cend(),
                                         [](const auto& entry) { return entry.name == "mysql"; });
         QVERIFY(found != catalog.cend());
-        QVERIFY(iconResourceDecodes(found->role));
+        QVERIFY(choscordb::test::iconResourceDecodes(found->role));
         QCOMPARE(iconResourcePath(found->role), QString(":/icons/mysql.png"));
         const auto light = themedIcon(found->role, Qt::black, 32).pixmap(QSize(32, 32), 2.0);
         const auto dark = themedIcon(found->role, Qt::white, 32).pixmap(QSize(32, 32), 2.0);
@@ -231,7 +232,7 @@ class IconsTest final : public QObject {
 
     void appIdentityKeepsWhitePawAndOrangeGradientAcrossThemes() {
         using namespace choscordb::design;
-        QVERIFY(iconResourceDecodes(Icon::AppMark));
+        QVERIFY(choscordb::test::iconResourceDecodes(Icon::AppMark));
         const auto dark = themedIcon(Icon::AppMark, QColor("#171717"), 128)
                               .pixmap(QSize(128, 128), 2.0)
                               .toImage();
@@ -277,6 +278,13 @@ class IconsTest final : public QObject {
         QCOMPARE(names.removeDuplicates(), 0);
     }
 
+    void driversMapToTheirLogos() {
+        QCOMPARE(choscordb::design::driverIcon("sqlite"), choscordb::design::Icon::SQLite);
+        QCOMPARE(choscordb::design::driverIcon("postgres"), choscordb::design::Icon::PostgreSQL);
+        QCOMPARE(choscordb::design::driverIcon("mysql"), choscordb::design::Icon::MySQL);
+        QCOMPARE(choscordb::design::driverIcon("oracle"), choscordb::design::Icon::Database);
+        QCOMPARE(choscordb::design::driverIcon({}), choscordb::design::Icon::Database);
+    }
     void applicationIconAssetsAreAvailableOffline() {
         using namespace choscordb::design;
         // Load the resource collection through the public icon API.

@@ -193,3 +193,22 @@ void NavigatorSqlWorkspaceTest::savedPanelRejectsFileReplacedBySymlink() {
     QVERIFY(QFile::remove(path));
 #endif
 }
+
+void NavigatorSqlWorkspaceTest::savedPanelUsesTheFolderBesideTheApplicationDatabase() {
+    QTemporaryDir storage;
+    QVERIFY(storage.isValid());
+    QVERIFY(QDir().mkpath(storage.filePath("sql")));
+    QFile file(storage.filePath("sql/beside-database.sql"));
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QCOMPARE(file.write("SELECT 7;"), qint64(9));
+    file.close();
+    choscordb::MainWindow window(nullptr, storage.filePath("workspace.sqlite"));
+    window.show();
+    if (auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>())
+        QTRY_VERIFY(recovery->isReady());
+    window.findChild<QPushButton*>("sidebarSaved")->click();
+    auto* list = window.findChild<QTreeWidget*>("sidebarSavedFiles");
+    QVERIFY(list);
+    QTRY_COMPARE(
+        list->findItems("beside-database.sql", Qt::MatchExactly | Qt::MatchRecursive).size(), 1);
+}

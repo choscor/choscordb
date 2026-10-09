@@ -1,5 +1,6 @@
 #include "history_dock.h"
 #include "bridge/request_token.h"
+#include "bridge/text_filter.h"
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
@@ -27,6 +28,8 @@
 #include <limits>
 namespace choscordb {
 namespace {
+// ui-budget: characters of SQL the preview pane shows per page; it is display paging only.
+constexpr qsizetype PreviewChars = 65536;
 constexpr quint32 pageSize = 100;
 // The table keeps the full history columns (rows, duration) that the compact
 // design::RecentHistoryRowDelegate list row does not carry, so this delegate
@@ -76,7 +79,9 @@ class HistoryRowDelegate final : public QStyledItemDelegate {
         painter->setPen(Qt::NoPen);
         painter->setBrush(colors.muted);
         painter->drawRoundedRect(badge, badgeRadius, badgeRadius);
-        painter->setPen(status == tr("Failed") ? colors.danger : colors.action);
+        const bool failed =
+            index.data(HistoryModel::StatusRole).toString() == QLatin1String("failed");
+        painter->setPen(failed ? colors.danger : colors.action);
         painter->drawText(badge, Qt::AlignCenter, status);
         const auto detail = QString("%1 · %2 · %3 · %4")
                                 .arg(index.siblingAtColumn(0).data().toString(),
@@ -435,12 +440,12 @@ void HistoryDock::selectEntry() {
 }
 void HistoryDock::renderPreview() {
     const auto* entry = model_->entry(table_->currentIndex().row());
-    QString text = entry ? entry->sql.mid(previewOffset_, 65536) : QString{};
+    QString text = entry ? entry->sql.mid(previewOffset_, PreviewChars) : QString{};
     if (!text.isEmpty() && text.back().isHighSurrogate())
         text.chop(1);
     previewLength_ = text.size();
     preview_->setPlainText(text);
-    const bool partial = entry && entry->sql.size() > 65536;
+    const bool partial = entry && entry->sql.size() > PreviewChars;
     if (partial) {
         previewStatus_->setText(
             tr("Preview truncated to part %1. Use Earlier text / Later text to read all SQL.")
@@ -455,14 +460,14 @@ void HistoryDock::renderPreview() {
                              previewOffset_ + previewLength_ < entry->sql.size());
 }
 void HistoryDock::applyFilter() {
-    const auto needle = search_->text().trimmed();
+    const TextFilter needle(search_->text());
     const auto status = statusFilter_->currentData().toString();
     for (int row = 0; row < model_->rowCount(); ++row) {
         QStringList visible;
         for (int column = 0; column < model_->columnCount(); ++column)
             visible.append(model_->index(row, column).data().toString());
         const auto* entry = model_->entry(row);
-        const bool matches = visible.join(' ').contains(needle, Qt::CaseInsensitive) &&
+        const bool matches = needle.matches(visible.join(' ')) &&
                              (status.isEmpty() || (entry && entry->status == status));
         table_->setRowHidden(row, !matches);
     }

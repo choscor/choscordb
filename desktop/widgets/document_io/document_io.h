@@ -13,8 +13,6 @@ class DocumentIo final : public QObject {
     Q_OBJECT
   public:
     using QObject::QObject;
-    // Editor input hint; Rust validates the limit for every read and write.
-    static constexpr qint64 MaximumBytes = 16 * 1024 * 1024;
     QFuture<DocumentIoResult> read(QString path) const;
     QFuture<DocumentIoResult> readSaved(QString root, QString path) const;
     QFuture<DocumentIoResult> write(QString path, QByteArray bytes) const;

@@ -19,9 +19,6 @@ ThemeMode ThemeManager::mode() const {
 Density ThemeManager::density() const {
     return density_;
 }
-Accent ThemeManager::accent() const {
-    return accent_;
-}
 ResolvedTheme ThemeManager::resolvedTheme() const {
     return resolvedTheme_;
 }
@@ -53,26 +50,6 @@ void ThemeManager::setDensity(Density density) {
         applyTo(*application_);
     }
     emit metricsChanged(metrics_);
-}
-
-AccentValidation ThemeManager::setAccent(const Accent& accent) {
-    const auto appearance =
-        mode_ == ThemeMode::System
-            ? systemAppearance_
-            : (mode_ == ThemeMode::Dark ? ResolvedAppearance::Dark : ResolvedAppearance::Light);
-    auto validation = validateAccent(accent, appearance);
-    if (validation.accepted && accent.isCustom()) {
-        const auto otherAppearance = appearance == ResolvedAppearance::Light
-                                         ? ResolvedAppearance::Dark
-                                         : ResolvedAppearance::Light;
-        validation = validateAccent(accent, otherAppearance);
-    }
-    if (!validation.accepted || accent_ == accent) {
-        return validation;
-    }
-    accent_ = accent;
-    refreshTheme();
-    return validation;
 }
 
 void ThemeManager::setSystemAppearance(ResolvedAppearance appearance) {
@@ -154,7 +131,7 @@ ResolvedTheme ThemeManager::resolveTheme() const {
             : (mode_ == ThemeMode::Dark ? ResolvedAppearance::Dark : ResolvedAppearance::Light);
     return {appearance,
             forcedContrast_ ? resolveForcedContrastColors(systemPalette_)
-                            : resolveColors(appearance, accent_),
+                            : resolveColors(appearance),
             forcedContrast_};
 }
 
