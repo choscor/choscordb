@@ -209,12 +209,12 @@ void SqlEditor::applyPalette() {
     const auto readable = [&](const QColor& color) {
         return design::contrastRatio(color, base) >= 4.5 ? color : foreground;
     };
-    lexer()->setColor(readable(colors.sqlKeyword), QsciLexerSQL::Keyword);
-    lexer()->setColor(readable(colors.sqlString), QsciLexerSQL::SingleQuotedString);
-    lexer()->setColor(readable(colors.sqlNumber), QsciLexerSQL::Number);
+    lexer()->setColor(readable(colors.codeKeyword), QsciLexerSQL::Keyword);
+    lexer()->setColor(readable(colors.codeString), QsciLexerSQL::SingleQuotedString);
+    lexer()->setColor(readable(colors.codeNumber), QsciLexerSQL::Number);
     for (const auto style :
          {QsciLexerSQL::Comment, QsciLexerSQL::CommentLine, QsciLexerSQL::CommentDoc})
-        lexer()->setColor(readable(colors.sqlComment), style);
+        lexer()->setColor(readable(colors.codeComment), style);
     setMarginsBackgroundColor(palette().color(QPalette::AlternateBase));
     setMarginsForegroundColor(foreground);
     setFoldMarginColors(base, base);

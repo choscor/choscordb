@@ -21,7 +21,7 @@ class TabEndCap final : public QWidget {
   protected:
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
-        painter.fillRect(rect(), resolvedThemeForWidget(*this).colors.muted);
+        painter.fillRect(rect(), resolvedThemeForWidget(*this).colors.surfaceRaised);
     }
 
   private:
@@ -63,7 +63,7 @@ class TabAddCorner final : public QWidget {
 
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
-        painter.fillRect(rect(), resolvedThemeForWidget(*this).colors.muted);
+        painter.fillRect(rect(), resolvedThemeForWidget(*this).colors.surfaceRaised);
     }
 
   private:

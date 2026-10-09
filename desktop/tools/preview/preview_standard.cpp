@@ -196,7 +196,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         auto* model = new QStandardItemModel(tree);
         auto* parent = new QStandardItem("Navigation group");
         auto* child = new QStandardItem("Nested item");
-        child->setIcon(themedIcon(Icon::Table, resolvedThemeForWidget(*host).colors.mutedText,
+        child->setIcon(themedIcon(Icon::Table, resolvedThemeForWidget(*host).colors.fgMuted,
                                   dimension(Dimension::IconSmall)));
         parent->appendRow(child);
         model->appendRow(parent);
@@ -263,7 +263,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         for (int i = 0; i < 8; ++i) {
             const auto icon = i >= 1 && i <= 3 ? Icon::Table : Icon::Code;
             tabs->addTab(new QLabel("Neutral document chrome", tabs),
-                         themedIcon(icon, resolvedThemeForWidget(*host).colors.mutedText, 16),
+                         themedIcon(icon, resolvedThemeForWidget(*host).colors.fgMuted, 16),
                          i == 0   ? "Untitled query 1"
                          : i == 1 ? "orders"
                          : i == 2 ? "customers"
@@ -320,8 +320,8 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         splitter->setObjectName("previewEditorResultsSplit");
         splitter->addWidget(new QPlainTextEdit("SELECT 1;", splitter));
         splitter->addWidget(new QLabel("Results · drag to resize", splitter));
-        const DesignMetrics metrics;
-        splitter->setSizes({metrics.initialEditorHeight, metrics.initialResultsHeight});
+        splitter->setSizes(
+            {layoutMetrics().initialEditorHeight, layoutMetrics().initialResultsHeight});
         splitter->setStretchFactor(0, 1);
         splitter->setStretchFactor(1, 1);
         layout->addWidget(splitter, 1);

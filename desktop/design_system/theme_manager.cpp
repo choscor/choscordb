@@ -6,8 +6,7 @@
 
 namespace choscordb::design {
 
-ThemeManager::ThemeManager(QObject* parent)
-    : QObject(parent), metrics_(resolveMetrics(density_, false)) {
+ThemeManager::ThemeManager(QObject* parent) : QObject(parent) {
     // resolveTheme reads accessibility policy members declared after the theme.
     // Resolve only after all member initializers have established that policy.
     resolvedTheme_ = resolveTheme();
@@ -16,14 +15,8 @@ ThemeManager::ThemeManager(QObject* parent)
 ThemeMode ThemeManager::mode() const {
     return mode_;
 }
-Density ThemeManager::density() const {
-    return density_;
-}
 ResolvedTheme ThemeManager::resolvedTheme() const {
     return resolvedTheme_;
-}
-DesignMetrics ThemeManager::metrics() const {
-    return metrics_;
 }
 bool ThemeManager::forcedContrast() const {
     return forcedContrast_;
@@ -38,18 +31,6 @@ void ThemeManager::setMode(ThemeMode mode) {
     }
     mode_ = mode;
     refreshTheme();
-}
-
-void ThemeManager::setDensity(Density density) {
-    if (density_ == density) {
-        return;
-    }
-    density_ = density;
-    metrics_ = resolveMetrics(density_, reducedMotion_);
-    if (application_ != nullptr) {
-        applyTo(*application_);
-    }
-    emit metricsChanged(metrics_);
 }
 
 void ThemeManager::setSystemAppearance(ResolvedAppearance appearance) {
@@ -86,11 +67,6 @@ void ThemeManager::setReducedMotion(bool enabled) {
         return;
     }
     reducedMotion_ = enabled;
-    metrics_ = resolveMetrics(density_, reducedMotion_);
-    if (application_ != nullptr) {
-        applyTo(*application_);
-    }
-    emit metricsChanged(metrics_);
     emit accessibilityPolicyChanged(forcedContrast_, reducedMotion_);
 }
 
@@ -99,14 +75,14 @@ void ThemeManager::applyTo(QApplication& application) const {
     application.setProperty("forcedContrast", resolvedTheme_.forcedContrast);
     application.setFont(resolveTypography(TypographyRole::Ui));
     application.setPalette(applicationPalette(resolvedTheme_));
-    application.setStyleSheet(applicationStyleSheet(resolvedTheme_, metrics_));
+    application.setStyleSheet(applicationStyleSheet(resolvedTheme_));
 }
 
 void ThemeManager::applyTo(QWidget& topLevelWidget) const {
     topLevelWidget.setProperty("designTheme", QVariant::fromValue(resolvedTheme_));
     topLevelWidget.setProperty("forcedContrast", resolvedTheme_.forcedContrast);
     topLevelWidget.setFont(resolveTypography(TypographyRole::Ui));
-    topLevelWidget.setStyleSheet(applicationStyleSheet(resolvedTheme_, metrics_));
+    topLevelWidget.setStyleSheet(applicationStyleSheet(resolvedTheme_));
     // Replacing an existing QSS can restore its cached base palette. Apply the
     // resolved palette afterward so scoped themes also update background paper.
     topLevelWidget.setPalette(applicationPalette(resolvedTheme_));

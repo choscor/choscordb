@@ -22,7 +22,7 @@ class FooterSurface final : public QWidget {
   protected:
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
-        painter.fillRect(rect(), resolvedThemeForWidget(*this).colors.muted);
+        painter.fillRect(rect(), resolvedThemeForWidget(*this).colors.surfaceRaised);
     }
 };
 } // namespace
@@ -110,7 +110,7 @@ void RightSheet::open() {
 void RightSheet::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     const auto colors = resolvedThemeForWidget(*this).colors;
-    painter.fillRect(rect(), colors.popover);
+    painter.fillRect(rect(), colors.surface);
     painter.setPen(colors.border);
     painter.drawLine(0, 0, 0, height());
 }

@@ -70,7 +70,6 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     const auto margin = design::spacing(design::Spacing::Four);
     resize(design::dialogInitialSize(design::DialogSize::Profiles)
                .boundedTo(available - QSize(margin * 2, margin * 2)));
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* outer = new QVBoxLayout(this);
     auto* sections = new design::DialogSections(this);
     sections->setObjectName("profileSections");
@@ -111,7 +110,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     sections->bodyLayout()->addWidget(formScroll);
     auto* formLayout = new QFormLayout(form_);
     formLayout->setContentsMargins(0, 0, design::spacing(design::Spacing::Three),
-                                   metrics.spacingMedium);
+                                   design::spacing(design::Spacing::Two));
     formLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
     formLayout->addRow(
         createDescription(tr("Connect to a server or open a local database file."), form_));

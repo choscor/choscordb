@@ -1,0 +1,5 @@
+QWidget#dialogSectionsFooter {
+  background-color: @surface-raised;
+  border-bottom-left-radius: @p1-radius-8;
+  border-bottom-right-radius: @p1-radius-8;
+}

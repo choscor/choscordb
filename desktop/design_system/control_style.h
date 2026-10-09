@@ -1,6 +1,6 @@
 #pragma once
 
-#include "design_system/style/control_stylesheet.h"
+#include "design_system/style/stylesheet.h"
 
 #include <QFocusFrame>
 #include <QPointer>

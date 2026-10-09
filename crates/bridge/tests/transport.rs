@@ -574,18 +574,14 @@ fn appearance_transport_preserves_typed_values_missing_and_reset() {
     let missing = await_event(&mut engine, "appearance_layout");
     assert_eq!(missing.request_token, 900);
     assert!(!missing.has_appearance);
-    assert_eq!(missing.appearance_layout.version, 1);
+    assert_eq!(missing.appearance_layout.version, 2);
     assert_eq!(missing.appearance_layout.theme, "system");
-    assert_eq!(missing.appearance_layout.density, "compact");
     assert_eq!(missing.appearance_layout.width, 1280);
     assert_eq!(missing.appearance_layout.height, 900);
 
     let expected = ffi::AppearanceLayoutDto {
-        version: 1,
+        version: 2,
         theme: "dark".into(),
-        density: "comfortable".into(),
-        accent_kind: "custom".into(),
-        accent: "#1267A8".into(),
         navigator_width: 312,
         editor_results_split: 575,
         history_height: 244,
@@ -604,16 +600,13 @@ fn appearance_transport_preserves_typed_values_missing_and_reset() {
     assert_eq!(saved.request_token, 901);
     assert!(saved.has_appearance);
     assert_eq!(saved.appearance_layout.theme, "dark");
-    assert_eq!(saved.appearance_layout.density, "comfortable");
-    assert_eq!(saved.appearance_layout.accent_kind, "custom");
-    assert_eq!(saved.appearance_layout.accent, "#1267A8");
     assert_eq!(saved.appearance_layout.navigator_width, 312);
     assert_eq!(saved.appearance_layout.editor_results_split, 575);
     assert_eq!(saved.appearance_layout.x, -720);
     assert_eq!(saved.appearance_layout.screen_name, "Left display");
 
     let invalid = ffi::AppearanceLayoutDto {
-        version: 1,
+        version: 2,
         theme: "sepia".into(),
         ..Default::default()
     };

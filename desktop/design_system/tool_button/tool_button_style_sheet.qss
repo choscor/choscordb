@@ -1,13 +1,13 @@
 QToolButton {
   icon-size: 12px;
-  min-height: @toolHeight;
-  max-height: @toolHeight;
+  min-height: @tool-height;
+  max-height: @tool-height;
   border: 1px solid transparent;
-  border-radius: @controlRadius;
+  border-radius: @radius-md;
   padding: 0 9px;
-  font-size: 11px;
+  font-size: @font-small;
   background: transparent;
-  color: @foreground;
+  color: @fg;
 }
 
 QToolButton[iconOnly="true"] {
@@ -17,26 +17,26 @@ QToolButton[iconOnly="true"] {
 }
 
 QToolButton:hover, QToolButton:checked {
-  background: @muted;
-  color: @foreground;
+  background: @surface-raised;
+  color: @fg;
 }
 
 QToolButton:pressed {
-  background: @muted;
-  color: @foreground;
+  background: @surface-raised;
+  color: @fg;
 }
 
 QToolButton:disabled {
-  color: @disabled;
+  color: @fg-disabled;
 }
 
 QToolButton[designRole="menuButton"] {
   padding-right: 21px;
-  background: @field;
+  background: @surface;
 }
 
 QToolButton[designRole="menuButton"]:hover, QToolButton[designRole="menuButton"]:pressed, QToolButton[designRole="menuButton"]:checked {
-  background: @muted;
+  background: @surface-raised;
 }
 
 QToolButton[designRole="menuButton"]::menu-indicator {

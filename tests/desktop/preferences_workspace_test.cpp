@@ -398,15 +398,12 @@ class PreferencesWorkspaceTest : public QObject {
         QCOMPARE(theme->mode(), choscordb::design::ThemeMode::System);
     }
 
-    void themeOnlyApplyRetainsLegacyAppearanceAndGeometry() {
+    void themeOnlyApplyRetainsGeometry() {
         using namespace choscordb;
         QTemporaryDir directory;
         const auto path = directory.filePath("legacy.sqlite");
         AppearanceLayout legacy;
         legacy.theme = "dark";
-        legacy.density = "comfortable";
-        legacy.accentKind = "custom";
-        legacy.accent = "#FFFFFF";
         legacy.width = 1100;
         legacy.height = 760;
         legacy.navigatorWidth = 300;
@@ -423,8 +420,6 @@ class PreferencesWorkspaceTest : public QObject {
             auto* appearance = window.findChild<AppearanceController*>();
             auto* theme = window.findChild<design::ThemeManager*>();
             QTRY_VERIFY(appearance->isReady());
-            QCOMPARE(appearance->current().accent, QString("#FFFFFF"));
-            QCOMPARE(appearance->current().density, QString("comfortable"));
             QCOMPARE(appearance->persisted().editorResultsSplit, quint16(600));
             QCOMPARE(window.size(), QSize(1100, 760));
             window.findChild<QAction*>("preferences")->trigger();
@@ -439,9 +434,6 @@ class PreferencesWorkspaceTest : public QObject {
             QTRY_COMPARE(saved.count(), 1);
             QVERIFY(saved.first().first().toBool());
             QCOMPARE(appearance->persisted().theme, QString("light"));
-            QCOMPARE(appearance->persisted().accent, QString("#FFFFFF"));
-            QCOMPARE(appearance->persisted().accentKind, QString("custom"));
-            QCOMPARE(appearance->persisted().density, QString("comfortable"));
             QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
             window.findChild<QAction*>("preferences")->trigger();
             dialog = window.findChild<QDialog*>("preferencesDialog");
@@ -459,9 +451,6 @@ class PreferencesWorkspaceTest : public QObject {
         QTRY_COMPARE(loaded.count(), 1);
         const auto value = qvariant_cast<AppearanceLayout>(loaded.first().at(2));
         QCOMPARE(value.theme, QString("light"));
-        QCOMPARE(value.density, QString("comfortable"));
-        QCOMPARE(value.accentKind, QString("custom"));
-        QCOMPARE(value.accent, QString("#FFFFFF"));
         QCOMPARE(value.width, quint32(1100));
         QCOMPARE(value.height, quint32(760));
     }

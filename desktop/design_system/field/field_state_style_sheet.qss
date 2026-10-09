@@ -1,19 +1,19 @@
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QPlainTextEdit:focus, QTextEdit:focus, QKeySequenceEdit:focus {
-  border-color: @focus;
+  border-color: @ring;
 }
 
 QLineEdit:read-only:focus {
-  border-color: @input;
+  border-color: @border;
 }
 
 QLineEdit[invalid="true"], QComboBox[invalid="true"], QSpinBox[invalid="true"], QDoubleSpinBox[invalid="true"], QPlainTextEdit[invalid="true"], QTextEdit[invalid="true"], QKeySequenceEdit[invalid="true"] {
-  border-color: @destructive;
+  border-color: @p1-destructive;
 }
 
 QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QPlainTextEdit:disabled, QTextEdit:disabled {
-  color: @disabled;
+  color: @fg-disabled;
 }
 
 QLabel[designRole="fieldError"] {
-  font-size: 11px;
+  font-size: @font-small;
 }

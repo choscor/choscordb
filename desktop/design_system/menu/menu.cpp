@@ -49,7 +49,7 @@ void blurAlpha(std::vector<int>& alpha, int width, int height, int radius) {
 } // namespace
 int menuShadowMargin() {
     int margin = 0;
-    for (const auto& layer : elevation(Elevation::Medium))
+    for (const auto& layer : elevation(Elevation::Popover))
         margin = qMax(margin,
                       layer.blur * 2 + qMax(qAbs(layer.x), qAbs(layer.y)) + qMax(0, layer.spread));
     return margin;
@@ -84,7 +84,7 @@ class MenuShadowEffect final : public QGraphicsEffect {
             QImage shadowImage(sourceImage.size(), QImage::Format_ARGB32_Premultiplied);
             shadowImage.fill(Qt::transparent);
             const qreal scale = source.devicePixelRatio();
-            for (const auto& layer : elevation(Elevation::Medium)) {
+            for (const auto& layer : elevation(Elevation::Popover)) {
                 std::vector<int> alpha(width * height);
                 const int dx = qRound(layer.x * scale);
                 const int dy = qRound(layer.y * scale);

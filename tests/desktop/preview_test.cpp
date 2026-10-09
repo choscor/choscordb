@@ -177,7 +177,7 @@ void PreviewTest::recentHistoryRowsUseSharedDelegateInBothThemes() {
         QTest::mouseMove(list->viewport(), row.center());
         QCoreApplication::processEvents();
         QCOMPARE(list->viewport()->grab().toImage().pixelColor(row.right() - 5, row.center().y()),
-                 choscordb::design::resolvedThemeForWidget(*list).colors.muted);
+                 choscordb::design::resolvedThemeForWidget(*list).colors.surfaceRaised);
         const auto colors = choscordb::design::resolvedThemeForWidget(*list).colors;
         const auto image = list->viewport()->grab().toImage();
         int successPixels = 0;
@@ -249,7 +249,10 @@ void PreviewTest::toastPortalIsPresentInBothThemes() {
             host->styleSheet()
                 .section(QStringLiteral("QLabel#toastRegion[variant=\"success\"]"), 1)
                 .section('}', 0, 0);
-        QVERIFY2(successRule.contains(QStringLiteral("background-color: %1").arg(expectedSurface)),
+        QVERIFY2(successRule.contains(QStringLiteral("background-color: rgba(%1,%2,%3,255)")
+                                          .arg(QColor(expectedSurface).red())
+                                          .arg(QColor(expectedSurface).green())
+                                          .arg(QColor(expectedSurface).blue())),
                  qPrintable(successRule));
         auto* scroll = host->findChild<QScrollArea*>("previewContentScroll");
         auto* toast = host->findChild<choscordb::ToastRegion*>("toastRegion");
@@ -462,7 +465,7 @@ void PreviewTest::galleryOpenKeepsOverlayInsideWindow() {
         }
         const auto pixel = capture.toImage().pixelColor(qRound(5 * capture.devicePixelRatio()),
                                                         qRound(5 * capture.devicePixelRatio()));
-        const auto expected = choscordb::design::resolvedThemeForWidget(*dialog).colors.popover;
+        const auto expected = choscordb::design::resolvedThemeForWidget(*dialog).colors.surface;
         QVERIFY2(qAbs(pixel.red() - expected.red()) < 10 &&
                      qAbs(pixel.green() - expected.green()) < 10 &&
                      qAbs(pixel.blue() - expected.blue()) < 10,
@@ -861,7 +864,7 @@ void PreviewTest::statusLineSpecimenUsesSharedSurfaceInBothThemes() {
         auto* neutral = host->findChild<StatusLine*>("previewStatusNeutral");
         QVERIFY(available && unavailable && neutral);
         QCOMPARE(neutral->palette().color(QPalette::Window),
-                 resolvedThemeForWidget(*host).colors.muted);
+                 resolvedThemeForWidget(*host).colors.surfaceRaised);
         QCOMPARE(neutral->height(), available->height());
         QCOMPARE(unavailable->height(), available->height());
         QVERIFY(available->findChild<QPushButton*>("previewStatusNext"));

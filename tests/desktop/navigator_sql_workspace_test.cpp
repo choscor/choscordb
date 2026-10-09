@@ -360,7 +360,7 @@ void NavigatorSqlWorkspaceTest::sqlToolbarInsetsControls() {
     const auto colors = choscordb::design::resolvedThemeForWidget(*controls).colors;
     const auto sample =
         controls->mapTo(&window, QPoint(controls->width() - 70, controls->height() / 2));
-    QCOMPARE(window.grab().toImage().pixelColor(sample), colors.muted);
+    QCOMPARE(window.grab().toImage().pixelColor(sample), colors.surfaceRaised);
 }
 
 void NavigatorSqlWorkspaceTest::tabContextMenuFollowsCursor() {
@@ -614,7 +614,7 @@ void NavigatorSqlWorkspaceTest::workspaceTabsUseContentWidth() {
     QVERIFY(addPosition().x() - tabs->tabBar()->tabRect(0).right() <= 6);
     window.resize(1280, 800);
     QCoreApplication::processEvents();
-    const auto stripColor = choscordb::design::resolvedThemeForWidget(*tabs).colors.muted;
+    const auto stripColor = choscordb::design::resolvedThemeForWidget(*tabs).colors.surfaceRaised;
     const auto cornerColor = [tabs, addButton] {
         const auto image = tabs->grab().toImage();
         const auto point = addButton->mapTo(tabs, QPoint(1, addButton->height() / 2));

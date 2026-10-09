@@ -211,9 +211,9 @@ class NativeUpdater final : public QObject {
     void refreshCheckIcon() {
         if (!window_ || !checkAction_)
             return;
-        checkAction_->setIcon(design::themedIcon(
-            design::Icon::Refresh, design::resolvedThemeForWidget(*window_).colors.foreground,
-            design::dimension(design::Dimension::Icon)));
+        checkAction_->setIcon(design::themedIcon(design::Icon::Refresh,
+                                                 design::resolvedThemeForWidget(*window_).colors.fg,
+                                                 design::dimension(design::Dimension::Icon)));
     }
     void loadConsent() {
         const auto directory = consentDirectory_;

@@ -3,25 +3,6 @@
 #include <utility>
 
 namespace choscordb::design {
-DesignMetrics resolveMetrics(Density, bool reducedMotion) {
-    DesignMetrics metrics;
-    metrics.controlHeight = dimension(Dimension::Button);
-    metrics.dataRowHeight = dimension(Dimension::TableRow);
-    metrics.navigationRowHeight = dimension(Dimension::NavigationRow);
-    metrics.iconSmall = dimension(Dimension::Icon);
-    metrics.iconLarge = dimension(Dimension::IconLarge);
-    metrics.spacingSmall = spacing(Spacing::One);
-    metrics.spacingMedium = spacing(Spacing::Two);
-    metrics.spacingLarge = spacing(Spacing::Four);
-    metrics.controlRadius = radius(Radius::Large);
-    metrics.popoverRadius = radius(Radius::TwoExtraLarge);
-    metrics.dialogRadius = radius(Radius::ExtraLarge);
-    metrics.separatorWidth = focusSpec().borderWidth;
-    metrics.animationDurationMs = motionSpec(Motion::Interaction, reducedMotion).durationMs;
-    metrics.animationsEnabled = !reducedMotion;
-    return metrics;
-}
-
 QSize dialogInitialSize(DialogSize size) {
     switch (size) {
     case DialogSize::Short:
@@ -112,6 +93,12 @@ int dimension(Dimension value) {
         return 160;
     case Dimension::TableHeader:
         return 30;
+    case Dimension::Row:
+        return 35;
+    case Dimension::GridHeader:
+        return 34;
+    case Dimension::Toolbar:
+        return 35;
     case Dimension::NavigationRow:
         return 33;
     case Dimension::PaneTab:
@@ -147,22 +134,14 @@ int radius(Radius value) {
         return 8;
     case Radius::TwoExtraLarge:
         return 10;
-    case Radius::ThreeExtraLarge:
-        return 12;
-    case Radius::FourExtraLarge:
-        return 14;
     }
     return 0;
 }
 
 QList<ShadowLayer> elevation(Elevation value) {
     switch (value) {
-    case Elevation::None:
-        return {};
-    case Elevation::Medium:
+    case Elevation::Popover:
         return {{0, 12, 40, 0, 0.15, QColor("#182c32")}};
-    case Elevation::Large:
-        return {{0, 16, 50, 0, 0.063, QColor("#243d35")}};
     case Elevation::Dialog:
         return {{0, 25, 90, 0, 0.2, QColor("#132b38")}};
     }

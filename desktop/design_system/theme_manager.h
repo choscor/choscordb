@@ -16,14 +16,11 @@ class ThemeManager final : public QObject {
     explicit ThemeManager(QObject* parent = nullptr);
 
     [[nodiscard]] ThemeMode mode() const;
-    [[nodiscard]] Density density() const;
     [[nodiscard]] ResolvedTheme resolvedTheme() const;
-    [[nodiscard]] DesignMetrics metrics() const;
     [[nodiscard]] bool forcedContrast() const;
     [[nodiscard]] bool reducedMotion() const;
 
     void setMode(ThemeMode mode);
-    void setDensity(Density density);
 
     // These hooks are fed by the platform integration layer. User choices are
     // retained while accessibility policy temporarily takes precedence.
@@ -37,7 +34,6 @@ class ThemeManager final : public QObject {
 
   signals:
     void themeChanged(const choscordb::design::ResolvedTheme& theme);
-    void metricsChanged(const choscordb::design::DesignMetrics& metrics);
     void accessibilityPolicyChanged(bool forcedContrast, bool reducedMotion);
 
   private:
@@ -45,11 +41,9 @@ class ThemeManager final : public QObject {
     void refreshTheme();
 
     ThemeMode mode_ = ThemeMode::System;
-    Density density_ = Density::Compact;
     ResolvedAppearance systemAppearance_ = ResolvedAppearance::Light;
     QPalette systemPalette_;
     ResolvedTheme resolvedTheme_;
-    DesignMetrics metrics_;
     bool forcedContrast_ = false;
     bool reducedMotion_ = false;
     QApplication* application_ = nullptr;

@@ -1,8 +1,8 @@
 QToolTip {
-  background: @foreground;
-  color: @background;
+  background: @fg;
+  color: @bg;
   border: 0;
-  border-radius: 8px;
+  border-radius: @p1-radius-8;
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: @font-dense;
 }

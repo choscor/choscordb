@@ -1,0 +1,5 @@
+QDockWidget::title {
+  min-height: @toolbar-height;
+  padding-left: @space-2;
+  color: @fg;
+}

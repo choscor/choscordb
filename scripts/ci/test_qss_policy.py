@@ -94,6 +94,91 @@ class QssPolicyTest(unittest.TestCase):
             self.assertTrue(any("inline QSS" in item for item in found))
             self.assertTrue(any("incorrect styles.qrc alias" in item for item in found))
 
+    def _component(self, root, files):
+        design = root / "desktop/design_system"
+        resources = root / "desktop/resources"
+        resources.mkdir(parents=True)
+        entries = "".join(
+            f'<file alias="{name}">../design_system/{name}</file>' for name in files
+        )
+        (resources / "styles.qrc").write_text(
+            f'<RCC><qresource prefix="/styles">{entries}</qresource></RCC>',
+            encoding="utf-8",
+        )
+        for name, content in files.items():
+            path = design / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+
+    def test_rejects_positional_placeholders_and_literal_sizes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._component(
+                root,
+                {
+                    "button/button_style_sheet.qss": "QPushButton {\n"
+                    "  color: %1;\n"
+                    "  font-size: 12px;\n"
+                    "  border-top-left-radius: 5px;\n"
+                    "  border-radius: 0;\n"
+                    "}\n"
+                },
+            )
+            found = qss_policy.violations(root)
+            self.assertTrue(any("positional placeholder" in item for item in found))
+            self.assertTrue(any("literal font-size" in item for item in found))
+            self.assertTrue(
+                any("literal border-top-left-radius" in item for item in found)
+            )
+            self.assertFalse(any("literal border-radius" in item for item in found))
+
+    def test_accepts_named_tokens(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._component(
+                root,
+                {
+                    "button/button_style_sheet.qss": "QPushButton {\n"
+                    "  color: @fg;\n"
+                    "  font-size: @font-dense;\n"
+                    "  border-radius: @radius-md;\n"
+                    "}\n"
+                },
+            )
+            self.assertEqual(qss_policy.violations(root), [])
+
+    def test_rejects_selector_property_defined_in_two_cascade_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._component(
+                root,
+                {
+                    "field/field_style_sheet.qss": "QLineEdit, QComboBox {\n"
+                    "  min-height: @control;\n"
+                    "}\n",
+                    "select/select_style_sheet.qss": "QComboBox {\n"
+                    "  min-height: @control;\n"
+                    "  padding-right: @space-1;\n"
+                    "}\n",
+                    "select/popup_style_sheet.qss": "QComboBox {\n"
+                    "  min-height: @control;\n"
+                    "}\n",
+                },
+            )
+            style = root / "desktop/design_system/style"
+            style.mkdir(parents=True)
+            (style / "stylesheet.cpp").write_text(
+                "constexpr std::array sharedCascade = {\n"
+                '    u"field/field_style_sheet.qss",\n'
+                '    u"select/select_style_sheet.qss",\n'
+                "};\n",
+                encoding="utf-8",
+            )
+            found = qss_policy.violations(root)
+            self.assertEqual(len(found), 1, found)
+            self.assertIn("QComboBox { min-height }", found[0])
+            self.assertIn("select/select_style_sheet.qss", found[0])
+
 
 if __name__ == "__main__":
     unittest.main()

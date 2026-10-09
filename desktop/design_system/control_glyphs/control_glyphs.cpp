@@ -47,7 +47,7 @@ class ControlGlyphOverlay final : public QWidget {
         auto color = owner->palette().color(QPalette::ButtonText);
         const auto themeValue = scopedThemeValue(owner);
         if (themeValue.canConvert<ResolvedTheme>()) {
-            color = themeValue.value<ResolvedTheme>().colors.foreground;
+            color = themeValue.value<ResolvedTheme>().colors.fg;
         }
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);

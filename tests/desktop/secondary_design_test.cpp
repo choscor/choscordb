@@ -434,15 +434,15 @@ class SecondaryDesignTest final : public QObject {
                                     qRound(4 * image.devicePixelRatio()));
         };
         QCOMPARE(surface(), QColor("#ffffff"));
-        QCOMPARE(footerColor(), theme.resolvedTheme().colors.muted);
+        QCOMPARE(footerColor(), theme.resolvedTheme().colors.surfaceRaised);
         theme.setMode(design::ThemeMode::Dark);
         theme.applyTo(dialog);
         QTRY_COMPARE(surface(), QColor("#20272b"));
-        QTRY_COMPARE(footerColor(), theme.resolvedTheme().colors.muted);
+        QTRY_COMPARE(footerColor(), theme.resolvedTheme().colors.surfaceRaised);
         theme.setMode(design::ThemeMode::Light);
         theme.applyTo(dialog);
         QCOMPARE(surface(), QColor("#ffffff"));
-        QCOMPARE(footerColor(), theme.resolvedTheme().colors.muted);
+        QCOMPARE(footerColor(), theme.resolvedTheme().colors.surfaceRaised);
     }
 
     void connectionDriverChoicesPreserveEachDraft() {

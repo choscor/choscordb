@@ -74,7 +74,7 @@ void SchemaSidebarWorkspaceTest::tableAndViewIconsFollowTheNavigatorAndTabTheme(
     QVERIFY2(firstRow.height() <= 24,
              qPrintable(QStringLiteral("Navigation row is %1 px high").arg(firstRow.height())));
     const auto checkRows = [&] {
-        const auto color = theme->resolvedTheme().colors.mutedText;
+        const auto color = theme->resolvedTheme().colors.fgMuted;
         for (int row = 0; row < 4; ++row) {
             const auto index = proxy->index(row, 0, visibleRoot);
             QCOMPARE(index.data(NavigatorModel::KindRole).toString(),
@@ -100,7 +100,7 @@ void SchemaSidebarWorkspaceTest::tableAndViewIconsFollowTheNavigatorAndTabTheme(
     emit window.objectContextSelected(11, "main.rebuild", "rebuild", "function");
     QCOMPARE(tabs->count(), 3);
     const auto checkTabs = [&] {
-        const auto color = theme->resolvedTheme().colors.mutedText;
+        const auto color = theme->resolvedTheme().colors.fgMuted;
         for (int row = 0; row < tabs->count(); ++row) {
             const auto expected = row == 0   ? design::Icon::Grid2x2
                                   : row == 1 ? design::Icon::Eye
@@ -202,7 +202,7 @@ void SchemaSidebarWorkspaceTest::columnRowsShowDeclaredTypesWithoutLosingTheirNa
         QPainter painter(&detailStrip);
         tree->itemDelegate()->paint(&painter, paintOption, longTypeRow);
         painter.end();
-        const auto muted = theme->resolvedTheme().colors.mutedText;
+        const auto muted = theme->resolvedTheme().colors.fgMuted;
         int mutedPixels = 0;
         for (int y = 0; y < detailStrip.height(); ++y)
             for (int x = 0; x < detailStrip.width(); ++x)

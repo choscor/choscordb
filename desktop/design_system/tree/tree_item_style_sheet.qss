@@ -1,11 +1,11 @@
 QTreeView::item {
-  min-height: @navigationLineHeight;
+  min-height: @row-line-height;
   padding: 3px 3px;
   border-radius: 0px;
 }
 
 QTreeView[designNavigationTree="true"]::item {
-  min-height: @navigationItemMinHeight;
-  padding: @navigationItemPadding 3px;
+  min-height: @nav-item-min-height;
+  padding: @nav-item-padding 3px;
   margin: 0px;
 }

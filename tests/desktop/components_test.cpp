@@ -36,9 +36,9 @@ class ComponentsTest final : public QObject {
             button.setChecked(true);
             const auto selected = button.grab().toImage();
             const auto colors = resolvedThemeForWidget(button).colors;
-            QCOMPARE(selected.pixelColor(20, 14), colors.muted);
+            QCOMPARE(selected.pixelColor(20, 14), colors.surfaceRaised);
             button.setChecked(false);
-            QVERIFY(button.grab().toImage().pixelColor(20, 14) != colors.muted);
+            QVERIFY(button.grab().toImage().pixelColor(20, 14) != colors.surfaceRaised);
         }
     }
     void paneTabsHaveSquareCornersWhileDocumentTabsRetainTheirShape() {
@@ -61,7 +61,7 @@ class ComponentsTest final : public QObject {
         const auto colors = resolvedThemeForWidget(tabs).colors;
         int topOfFill = rect.top();
         while (topOfFill < rect.top() + 10 &&
-               image.pixelColor(rect.left() + 8, topOfFill) == colors.muted)
+               image.pixelColor(rect.left() + 8, topOfFill) == colors.surfaceRaised)
             ++topOfFill;
         QVERIFY(topOfFill < rect.top() + 10);
         QCOMPARE(image.pixelColor(rect.left() + 8, topOfFill), colors.surface);
@@ -73,11 +73,11 @@ class ComponentsTest final : public QObject {
         const auto documentRect = tabs.tabRect(1);
         int documentTop = documentRect.top();
         while (documentTop < documentRect.top() + 10 &&
-               image.pixelColor(documentRect.left() + 8, documentTop) == colors.muted)
+               image.pixelColor(documentRect.left() + 8, documentTop) == colors.surfaceRaised)
             ++documentTop;
         QVERIFY(documentTop < documentRect.top() + 10);
-        QCOMPARE(image.pixelColor(documentRect.left() + 8, documentTop), colors.mutedText);
-        QCOMPARE(image.pixelColor(documentRect.left() + 1, documentTop), colors.muted);
+        QCOMPARE(image.pixelColor(documentRect.left() + 8, documentTop), colors.fgMuted);
+        QCOMPARE(image.pixelColor(documentRect.left() + 1, documentTop), colors.surfaceRaised);
     }
     void sidebarTreeSelectionHasNeutralRoundedFill() {
         using namespace choscordb::design;
@@ -107,10 +107,10 @@ class ComponentsTest final : public QObject {
             const auto rect = tree.visualRect(model.index(0, 0));
             const auto image = tree.viewport()->grab().toImage();
             const auto colors = resolvedThemeForWidget(tree).colors;
-            QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()), colors.muted);
-            QCOMPARE(image.pixelColor(6, rect.center().y()), colors.muted);
-            QCOMPARE(image.pixelColor(10, rect.top() + 3), colors.muted);
-            QVERIFY(image.pixelColor(6, rect.top() + 1) != colors.muted);
+            QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()), colors.surfaceRaised);
+            QCOMPARE(image.pixelColor(6, rect.center().y()), colors.surfaceRaised);
+            QCOMPARE(image.pixelColor(10, rect.top() + 3), colors.surfaceRaised);
+            QVERIFY(image.pixelColor(6, rect.top() + 1) != colors.surfaceRaised);
             const auto hoverRect = tree.visualRect(model.index(1, 0));
             QVERIFY(tree.viewport()->hasMouseTracking());
             QTest::mouseMove(tree.viewport(), QPoint(1, 1));
@@ -118,7 +118,7 @@ class ComponentsTest final : public QObject {
             QCoreApplication::processEvents();
             const auto hovered = tree.viewport()->grab().toImage();
             QCOMPARE(hovered.pixelColor(hoverRect.right() - 8, hoverRect.center().y()),
-                     colors.muted);
+                     colors.surfaceRaised);
             tree.verticalScrollBar()->setValue(tree.verticalScrollBar()->value() + 2);
             QCoreApplication::processEvents();
             const auto underPointer = tree.indexAt(hoverRect.center());
@@ -127,7 +127,7 @@ class ComponentsTest final : public QObject {
             const auto scrolled = tree.viewport()->grab().toImage();
             QCOMPARE(scrolled.pixelColor(tree.visualRect(underPointer).right() - 8,
                                          hoverRect.center().y()),
-                     colors.muted);
+                     colors.surfaceRaised);
         }
     }
     void sidebarTreeLeaveFromBlankSpaceDoesNotLeaveStaleHover() {
@@ -159,7 +159,7 @@ class ComponentsTest final : public QObject {
         QVERIFY(row.isValid());
         const auto image = tree.viewport()->grab().toImage();
         QVERIFY(image.pixelColor(tree.visualRect(row).right() - 8, blank.y()) !=
-                resolvedThemeForWidget(tree).colors.muted);
+                resolvedThemeForWidget(tree).colors.surfaceRaised);
     }
     void sidebarSavedFilesSelectionUsesNeutralFill() {
         using namespace choscordb::design;
@@ -187,7 +187,7 @@ class ComponentsTest final : public QObject {
             const auto rect = tree.visualItemRect(item);
             const auto image = tree.viewport()->grab().toImage();
             QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()),
-                     resolvedThemeForWidget(tree).colors.muted);
+                     resolvedThemeForWidget(tree).colors.surfaceRaised);
         }
     }
     void selectedConnectionRowUsesNeutralColors() {
@@ -213,7 +213,7 @@ class ComponentsTest final : public QObject {
             const auto row = list.visualItemRect(item);
             const auto image = list.viewport()->grab().toImage();
             const auto colors = resolvedThemeForWidget(list).colors;
-            QCOMPARE(image.pixelColor(row.left() + 3, row.center().y()), colors.sidebarAccent);
+            QCOMPARE(image.pixelColor(row.left() + 3, row.center().y()), colors.selection);
         }
     }
     void connectionRowsAreCompactAndShowOnlyCenteredNames() {
@@ -236,7 +236,7 @@ class ComponentsTest final : public QObject {
             const auto row = list.visualItemRect(item);
             QVERIFY(row.height() <= 36);
             const auto withDetail = list.viewport()->grab(row).toImage();
-            const auto ink = resolvedThemeForWidget(list).colors.text;
+            const auto ink = resolvedThemeForWidget(list).colors.fg;
             int inkTop = withDetail.height();
             int inkBottom = -1;
             for (int y = 0; y < withDetail.height(); ++y)
@@ -275,7 +275,7 @@ class ComponentsTest final : public QObject {
             QPainter painter(&image);
             style.drawPrimitive(QStyle::PE_IndicatorBranch, &branch, &painter, &tree);
             painter.end();
-            const auto muted = resolvedThemeForWidget(tree).colors.mutedText;
+            const auto muted = resolvedThemeForWidget(tree).colors.fgMuted;
             int inkPixels = 0;
             for (int y = 0; y < image.height(); ++y)
                 for (int x = 0; x < image.width(); ++x) {

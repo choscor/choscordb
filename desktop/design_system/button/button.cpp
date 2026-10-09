@@ -48,8 +48,8 @@ void Button::setIcon(const QIcon& icon) {
 void Button::setDesignIcon(Icon role) {
     designIcon_ = role;
     paintedIcon_ = {};
-    QPushButton::setIcon(themedIcon(role, resolvedThemeForWidget(*this).colors.foreground,
-                                    dimension(Dimension::Icon)));
+    QPushButton::setIcon(
+        themedIcon(role, resolvedThemeForWidget(*this).colors.fg, dimension(Dimension::Icon)));
     setButtonSize(size_);
 }
 void Button::setVariant(ButtonVariant variant) {
@@ -99,7 +99,7 @@ QSize Button::sizeHint() const {
                            dimension(Dimension::ButtonLarge)};
     const bool hasLeading = loading_ || !icon().isNull() || size_ >= ButtonSize::IconExtraSmall;
     const int height = context_ == ButtonContext::Choice
-                           ? DesignMetrics{}.connectionDriverHeight
+                           ? layoutMetrics().connectionDriverHeight
                            : heights[index] + (hasLeading ? (index == 0   ? 0
                                                              : index == 1 ? 1
                                                                           : 3)
@@ -139,7 +139,7 @@ void Button::paintEvent(QPaintEvent*) {
     const auto& colors = theme.colors;
     const bool hover = state.testFlag(QStyle::State_MouseOver);
     QColor background = Qt::transparent;
-    QColor foreground = colors.foreground;
+    QColor foreground = colors.fg;
     QColor border = Qt::transparent;
     auto alpha = [](QColor color, qreal opacity) {
         color.setAlphaF(color.alphaF() * opacity);
@@ -148,24 +148,27 @@ void Button::paintEvent(QPaintEvent*) {
     switch (variant_) {
     case ButtonVariant::Default:
         background = colors.primary;
-        foreground = colors.primaryForeground;
+        foreground = colors.primaryFg;
         break;
     case ButtonVariant::Secondary:
-        background = colors.secondary;
-        foreground = colors.secondaryForeground;
+        background = colors.surfaceRaised;
+        foreground = colors.fg;
         if (hover)
-            background = colors.accent;
+            background = colors.selection;
         break;
     case ButtonVariant::Outline:
-        background = hover ? colors.muted : colors.surface;
-        border = dark ? colors.input : colors.border;
+        background = hover ? colors.surfaceRaised : colors.surface;
+        border = dark ? colors.border : colors.border;
         break;
     case ButtonVariant::Ghost:
         if (hover || state.testFlag(QStyle::State_On))
-            background = alpha(colors.muted, dark ? .5 : 1.);
+            background = alpha(colors.surfaceRaised, dark ? .5 : 1.);
         break;
     case ButtonVariant::Destructive:
-        background = alpha(colors.destructive, (dark ? .2 : .1) + (hover ? .1 : 0.));
+        background = alpha(legacyColors(theme.colors, theme.appearance == ResolvedAppearance::Dark,
+                                        theme.forcedContrast)
+                               .destructive,
+                           (dark ? .2 : .1) + (hover ? .1 : 0.));
         foreground = colors.danger;
         break;
     case ButtonVariant::Link:
@@ -173,12 +176,14 @@ void Button::paintEvent(QPaintEvent*) {
         break;
     }
     if (context_ == ButtonContext::SidebarTab && isChecked()) {
-        background = colors.muted;
-        foreground = colors.sidebarForeground;
+        background = colors.surfaceRaised;
+        foreground = colors.fg;
     }
     if (context_ == ButtonContext::Choice && isChecked()) {
-        background = colors.subtleAccent;
-        foreground = colors.sidebarAccentForeground;
+        background = colors.selection;
+        foreground = legacyColors(theme.colors, theme.appearance == ResolvedAppearance::Dark,
+                                  theme.forcedContrast)
+                         .navigationFg;
         border = colors.primary;
     }
     if (context_ == ButtonContext::TabAction && hover) {
@@ -227,9 +232,8 @@ void Button::paintEvent(QPaintEvent*) {
     } else
         painter.drawRoundedRect(panel, radius, radius);
     if (focus) {
-        painter.setPen(
-            QPen(variant_ == ButtonVariant::Default ? colors.primaryForeground : colors.focus,
-                 focusSpec().borderWidth));
+        painter.setPen(QPen(variant_ == ButtonVariant::Default ? colors.primaryFg : colors.ring,
+                            focusSpec().borderWidth));
         painter.setBrush(Qt::NoBrush);
         painter.drawRoundedRect(panel.adjusted(1, 1, -1, -1), radius, radius);
     }

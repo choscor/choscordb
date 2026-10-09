@@ -7,7 +7,10 @@ use crate::{Result, Storage, StorageError};
 use rusqlite::{TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 
-pub const APPEARANCE_LAYOUT_VERSION: u32 = 1;
+pub const APPEARANCE_LAYOUT_VERSION: u32 = 2;
+/// Version 1 also persisted `density` and `accent`; loading drops them.
+const LEGACY_APPEARANCE_LAYOUT_VERSION: u64 = 1;
+const LEGACY_APPEARANCE_FIELDS: [&str; 2] = ["density", "accent"];
 pub const MAX_APPEARANCE_LAYOUT_BYTES: usize = 4096;
 pub const MAX_SCREEN_NAME_BYTES: usize = 256;
 pub const MIN_WINDOW_WIDTH: u32 = 960;
@@ -33,100 +36,6 @@ impl ThemeMode {
             "dark" => Some(Self::Dark),
             _ => None,
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Density {
-    #[default]
-    Compact,
-    Comfortable,
-}
-
-impl Density {
-    pub fn parse_choice(value: &str) -> Option<Self> {
-        match value {
-            "compact" => Some(Self::Compact),
-            "comfortable" => Some(Self::Comfortable),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AccentPreset {
-    #[default]
-    Cobalt,
-    Azure,
-    Violet,
-    Teal,
-    Green,
-    Orange,
-    Rose,
-}
-
-impl AccentPreset {
-    pub fn parse_choice(value: &str) -> Option<Self> {
-        match value {
-            "cobalt" => Some(Self::Cobalt),
-            "azure" => Some(Self::Azure),
-            "violet" => Some(Self::Violet),
-            "teal" => Some(Self::Teal),
-            "green" => Some(Self::Green),
-            "orange" => Some(Self::Orange),
-            "rose" => Some(Self::Rose),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AppearanceChoiceError {
-    UnknownAccentPreset,
-    UnknownAccentKind,
-}
-
-impl std::fmt::Display for AppearanceChoiceError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
-            Self::UnknownAccentPreset => "Unknown appearance accent preset",
-            Self::UnknownAccentKind => "Unknown appearance accent kind",
-        })
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
-pub enum Accent {
-    Preset(AccentPreset),
-    Custom(String),
-}
-
-impl Accent {
-    pub fn parse_choice(
-        kind: &str,
-        value: String,
-    ) -> std::result::Result<Self, AppearanceChoiceError> {
-        match kind {
-            "preset" => AccentPreset::parse_choice(&value)
-                .map(Self::Preset)
-                .ok_or(AppearanceChoiceError::UnknownAccentPreset),
-            "custom" => Ok(Self::Custom(value)),
-            _ => Err(AppearanceChoiceError::UnknownAccentKind),
-        }
-    }
-}
-
-impl Default for Accent {
-    fn default() -> Self {
-        Self::Preset(AccentPreset::Cobalt)
     }
 }
 
@@ -184,8 +93,6 @@ impl Default for WindowGeometry {
 pub struct AppearanceLayout {
     pub version: u32,
     pub theme: ThemeMode,
-    pub density: Density,
-    pub accent: Accent,
     pub layout: WorkspaceLayout,
     pub geometry: WindowGeometry,
 }
@@ -196,7 +103,6 @@ impl AppearanceLayout {
             || !(96..=2048).contains(&self.layout.navigator_width)
             || !(100..=900).contains(&self.layout.editor_results_split)
             || !(80..=4096).contains(&self.layout.history_height)
-            || matches!(&self.accent, Accent::Custom(value) if !valid_hex_color(value))
             || !self.geometry.is_valid()
         {
             return Err(StorageError::InvalidAppearance);
@@ -228,8 +134,6 @@ impl Default for AppearanceLayout {
         Self {
             version: APPEARANCE_LAYOUT_VERSION,
             theme: ThemeMode::default(),
-            density: Density::default(),
-            accent: Accent::default(),
             layout: WorkspaceLayout::default(),
             geometry: WindowGeometry::default(),
         }
@@ -253,13 +157,19 @@ impl Storage {
         if encoded.len() > MAX_APPEARANCE_LAYOUT_BYTES {
             return Err(StorageError::CorruptAppearance);
         }
-        let raw: serde_json::Value =
+        let mut raw: serde_json::Value =
             serde_json::from_str(encoded).map_err(|_| StorageError::CorruptAppearance)?;
         let version = raw
             .get("version")
             .and_then(serde_json::Value::as_u64)
             .ok_or(StorageError::CorruptAppearance)?;
-        if version != u64::from(APPEARANCE_LAYOUT_VERSION) {
+        if version == LEGACY_APPEARANCE_LAYOUT_VERSION {
+            let object = raw.as_object_mut().ok_or(StorageError::CorruptAppearance)?;
+            for field in LEGACY_APPEARANCE_FIELDS {
+                object.remove(field);
+            }
+            object.insert("version".into(), APPEARANCE_LAYOUT_VERSION.into());
+        } else if version != u64::from(APPEARANCE_LAYOUT_VERSION) {
             return Err(StorageError::UnsupportedAppearanceVersion(version));
         }
         let mut value: AppearanceLayout =
@@ -302,12 +212,4 @@ impl Storage {
         tx.commit()?;
         Ok(())
     }
-}
-
-fn valid_hex_color(value: &str) -> bool {
-    value.len() == 7
-        && value.starts_with('#')
-        && value.as_bytes()[1..]
-            .iter()
-            .all(|byte| byte.is_ascii_hexdigit())
 }

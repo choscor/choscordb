@@ -103,7 +103,7 @@ void PreviewTest::workspaceToolbarSpecimenUsesMutedSurfaceInBothThemes() {
         const auto sample =
             toolbar->mapTo(surface, QPoint(toolbar->width() - 20, toolbar->height() / 2));
         QCOMPARE(surface->grab().toImage().pixelColor(sample),
-                 choscordb::design::resolvedThemeForWidget(*toolbar).colors.muted);
+                 choscordb::design::resolvedThemeForWidget(*toolbar).colors.surfaceRaised);
     }
 }
 
@@ -558,9 +558,9 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
         const auto regularRow = list->visualItemRect(list->item(2));
         const auto image = list->viewport()->grab().toImage();
         QCOMPARE(image.pixelColor(firstSelectedRow.right() - 30, firstSelectedRow.center().y()),
-                 colors.sidebarAccent);
+                 colors.selection);
         QCOMPARE(image.pixelColor(selectedRow.right() - 30, selectedRow.center().y()),
-                 colors.sidebarAccent);
+                 colors.selection);
         QCOMPARE(image.pixelColor(regularRow.right() - 30, regularRow.center().y()),
                  colors.sidebar);
         QVERIFY(list->visualItemRect(list->item(1)).bottom() < list->viewport()->height());
@@ -732,7 +732,8 @@ void PreviewTest::rightSheetSpecimenUsesModalBoundaryInBothThemes() {
         QCOMPARE(footer->accessibleName(), QString("Sheet actions"));
         QCOMPARE(footer->geometry().bottom(), sheet->rect().bottom());
         const auto footerColor = footer->grab(QRect(1, 1, 1, 1)).toImage().pixelColor(0, 0);
-        QCOMPARE(footerColor, choscordb::design::resolvedThemeForWidget(*sheet).colors.muted);
+        QCOMPARE(footerColor,
+                 choscordb::design::resolvedThemeForWidget(*sheet).colors.surfaceRaised);
         QSignalSpy backgroundClicks(open, &QPushButton::clicked);
         QTest::mouseClick(open, Qt::LeftButton);
         QCOMPARE(backgroundClicks.count(), 0);
@@ -830,7 +831,7 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         QVERIFY(corner->addButton()->isVisible());
         QCOMPARE(corner->addButton()->variant(), choscordb::design::ButtonVariant::Ghost);
         QCOMPARE(corner->grab().toImage().pixelColor(1, corner->height() / 2),
-                 choscordb::design::resolvedThemeForWidget(*corner).colors.muted);
+                 choscordb::design::resolvedThemeForWidget(*corner).colors.surfaceRaised);
         QCOMPARE(tabs->tabText(0), QString("Untitled query 1"));
         QCOMPARE(tabs->tabText(1), QString("orders"));
         QCOMPARE(tabs->tabText(2), QString("customers"));
@@ -860,10 +861,10 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         tabs->setTabText(0, {});
         tabs->setTabIcon(0, {});
         const auto withoutIcon = tabs->tabBar()->grab().toImage();
-        tabs->setTabIcon(0, choscordb::design::themedIcon(
-                                choscordb::design::Icon::Table,
-                                choscordb::design::resolvedThemeForWidget(*tabs).colors.mutedText,
-                                16));
+        tabs->setTabIcon(0,
+                         choscordb::design::themedIcon(
+                             choscordb::design::Icon::Table,
+                             choscordb::design::resolvedThemeForWidget(*tabs).colors.fgMuted, 16));
         const auto withTableIcon = tabs->tabBar()->grab().toImage();
         int iconPixels = 0;
         for (int y = selected.center().y() - 8; y <= selected.center().y() + 8; ++y)
@@ -885,7 +886,7 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         const auto addPoint = corner->addButton()->mapTo(tabs, QPoint(1, 2));
         QVERIFY(addPoint.x() - tabs->tabBar()->tabRect(0).right() <= 6);
         QCOMPARE(tabs->grab().toImage().pixelColor(addPoint),
-                 choscordb::design::resolvedThemeForWidget(*tabs).colors.muted);
+                 choscordb::design::resolvedThemeForWidget(*tabs).colors.surfaceRaised);
         const QPoint hoverLocal(5, corner->addButton()->height() / 2);
         const auto hoverPoint = corner->addButton()->mapTo(tabs, hoverLocal);
         const auto normalImage = tabs->grab().toImage();

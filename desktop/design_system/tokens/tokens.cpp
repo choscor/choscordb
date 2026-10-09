@@ -13,51 +13,9 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
         add(QStringLiteral("color.") + name,
             value.alpha() == 255 ? value.name() : value.name(QColor::HexArgb));
     };
-    color(QStringLiteral("background"), colors.background);
-    color(QStringLiteral("foreground"), colors.foreground);
-    color(QStringLiteral("card"), colors.card);
-    color(QStringLiteral("card-foreground"), colors.cardForeground);
-    color(QStringLiteral("popover"), colors.popover);
-    color(QStringLiteral("popover-foreground"), colors.popoverForeground);
-    color(QStringLiteral("primary"), colors.primary);
-    color(QStringLiteral("primary-foreground"), colors.primaryForeground);
-    color(QStringLiteral("secondary"), colors.secondary);
-    color(QStringLiteral("secondary-foreground"), colors.secondaryForeground);
-    color(QStringLiteral("muted"), colors.muted);
-    color(QStringLiteral("muted-foreground"), colors.mutedForeground);
-    color(QStringLiteral("accent"), colors.accent);
-    color(QStringLiteral("accent-foreground"), colors.accentForeground);
-    color(QStringLiteral("destructive"), colors.destructive);
-    color(QStringLiteral("border"), colors.border);
-    color(QStringLiteral("input"), colors.input);
-    color(QStringLiteral("ring"), colors.ring);
-    color(QStringLiteral("sidebar"), colors.sidebar);
-    color(QStringLiteral("sidebar-foreground"), colors.sidebarForeground);
-    color(QStringLiteral("sidebar-primary"), colors.sidebarPrimary);
-    color(QStringLiteral("sidebar-primary-foreground"), colors.sidebarPrimaryForeground);
-    color(QStringLiteral("sidebar-accent"), colors.sidebarAccent);
-    color(QStringLiteral("sidebar-accent-foreground"), colors.sidebarAccentForeground);
-    color(QStringLiteral("sidebar-border"), colors.sidebarBorder);
-    color(QStringLiteral("sidebar-ring"), colors.sidebarRing);
-    color(QStringLiteral("focus"), colors.focus);
-    color(QStringLiteral("success"), colors.success);
-    color(QStringLiteral("warning"), colors.warning);
-    color(QStringLiteral("danger"), colors.danger);
-    color(QStringLiteral("neutral"), colors.neutral);
-    color(QStringLiteral("backdrop"), colors.backdrop);
+    for (const auto& [name, value] : colorTokens(colors))
+        color(name, value);
     add(QStringLiteral("backdrop.blur"), QString::number(backdropBlurRadius()) + "px");
-    color(QStringLiteral("switch-track"), colors.switchTrack);
-    color(QStringLiteral("switch-thumb"), colors.switchThumb);
-    color(QStringLiteral("json-key"), colors.jsonKey);
-    color(QStringLiteral("json-string"), colors.jsonString);
-    color(QStringLiteral("json-number"), colors.jsonNumber);
-    color(QStringLiteral("json-literal"), colors.jsonLiteral);
-    color(QStringLiteral("sqlite-badge-background"), colors.sqliteBadgeBackground);
-    color(QStringLiteral("sqlite-badge-foreground"), colors.sqliteBadgeForeground);
-    color(QStringLiteral("sqlite-badge-border"), colors.sqliteBadgeBorder);
-    color(QStringLiteral("postgres-badge-background"), colors.postgresBadgeBackground);
-    color(QStringLiteral("postgres-badge-foreground"), colors.postgresBadgeForeground);
-    color(QStringLiteral("postgres-badge-border"), colors.postgresBadgeBorder);
 
     const auto pixels = [&add](const QString& name, int value) {
         add(name, QString::number(value) + QStringLiteral("px"));
@@ -77,8 +35,6 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     pixels(QStringLiteral("radius.lg"), radius(Radius::Large));
     pixels(QStringLiteral("radius.xl"), radius(Radius::ExtraLarge));
     pixels(QStringLiteral("radius.2xl"), radius(Radius::TwoExtraLarge));
-    pixels(QStringLiteral("radius.3xl"), radius(Radius::ThreeExtraLarge));
-    pixels(QStringLiteral("radius.4xl"), radius(Radius::FourExtraLarge));
     pixels(QStringLiteral("size.button.xs"), dimension(Dimension::ButtonExtraSmall));
     pixels(QStringLiteral("size.button.sm"), dimension(Dimension::ButtonSmall));
     pixels(QStringLiteral("size.button.default"), dimension(Dimension::Button));
@@ -127,8 +83,7 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
         add(prefix + QStringLiteral(".easing"), spec.easing);
     }
     for (const auto& [name, role] :
-         {std::pair{"md", Elevation::Medium}, std::pair{"lg", Elevation::Large},
-          std::pair{"dialog", Elevation::Dialog}}) {
+         {std::pair{"popover", Elevation::Popover}, std::pair{"dialog", Elevation::Dialog}}) {
         const auto layers = elevation(role);
         for (qsizetype i = 0; i < layers.size(); ++i) {
             const auto prefix = QStringLiteral("elevation.%1%2.")

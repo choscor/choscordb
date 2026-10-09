@@ -1,5 +1,5 @@
 QLabel[statusLineState="neutral"] {
-  color: @neutral;
+  color: @fg-muted;
 }
 QLabel[statusLineState="success"] {
   color: @success;

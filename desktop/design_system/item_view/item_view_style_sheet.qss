@@ -1,5 +1,5 @@
 QWidget[designSurface="subtle"] {
-  background: @accent;
+  background: @selection;
 }
 
 QWidget[designSurface="sidebar"] {
@@ -9,8 +9,8 @@ QWidget[designSurface="sidebar"] {
 /* A softly layered navigator surface, shared by all three sidebar panes. */
 QWidget#navigatorBody {
   background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                              stop:0 @sidebarGlassTop, stop:0.56 @sidebarGlassTop,
-                              stop:1 @sidebarGlassBottom);
+                              stop:0 @sidebar-glass-top, stop:0.56 @sidebar-glass-top,
+                              stop:1 @sidebar-glass-bottom);
   border-right: 1px solid @border;
 }
 
@@ -28,20 +28,20 @@ QListWidget#sidebarHistoryItems {
 }
 
 QWidget[designSurface="panel"] {
-  background: @field;
+  background: @surface;
 }
 
 QWidget[designSurface="muted"] {
-  background: @muted;
+  background: @surface-raised;
 }
 
 QTableView, QTreeView, QListView {
-  background: @field;
-  alternate-background-color: @muted;
-  color: @foreground;
+  background: @surface;
+  alternate-background-color: @surface-raised;
+  color: @fg;
   border: 0;
   gridline-color: @border;
-  selection-background-color: @accent;
-  selection-color: @foreground;
+  selection-background-color: @selection;
+  selection-color: @fg;
   outline: 0;
 }

@@ -687,7 +687,6 @@ void ModernUiTest::appearancePreviewsPersistAndRestoreAcrossRestart() {
         QCOMPARE(theme->mode(), choscordb::design::ThemeMode::Dark);
         appearance->reset();
         QTRY_COMPARE(theme->mode(), choscordb::design::ThemeMode::System);
-        QCOMPARE(theme->density(), choscordb::design::Density::Compact);
     }
 }
 
@@ -724,5 +723,4 @@ void ModernUiTest::preferencesUseSectionNavigationAndCancelableLivePreview() {
     theme->setForcedContrast(false);
     dialog->reject();
     QCOMPARE(theme->mode(), choscordb::design::ThemeMode::System);
-    QCOMPARE(theme->density(), choscordb::design::Density::Compact);
 }

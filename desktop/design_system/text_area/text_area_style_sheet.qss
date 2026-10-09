@@ -1,9 +1,9 @@
 QPlainTextEdit, QTextEdit {
-  border: 1px solid @input;
-  border-radius: @controlRadius;
+  border: 1px solid @border;
+  border-radius: @radius-md;
   padding: 8px;
-  background: @field;
-  color: @foreground;
+  background: @surface;
+  color: @fg;
 }
 
 QPlainTextEdit[designRole="codePreview"] {

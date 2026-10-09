@@ -1,7 +1,5 @@
 use crate::{BridgeEngine, ffi, submit};
-use choscordb_core::{
-    Accent, AccentPreset, AppearanceLayout, Density, ThemeMode, WindowGeometry, WorkspaceLayout,
-};
+use choscordb_core::{AppearanceLayout, ThemeMode, WindowGeometry, WorkspaceLayout};
 
 fn theme(value: &str) -> Result<ThemeMode, String> {
     ThemeMode::parse_choice(value).ok_or_else(|| "Unknown appearance theme".into())
@@ -16,31 +14,7 @@ pub fn appearance_theme_valid(value: &str) -> bool {
     ThemeMode::parse_choice(value).is_some()
 }
 
-fn density(value: &str) -> Result<Density, String> {
-    Density::parse_choice(value).ok_or_else(|| "Unknown appearance density".into())
-}
-
-fn accent(kind: &str, value: String) -> Result<Accent, String> {
-    Accent::parse_choice(kind, value).map_err(|error| error.to_string())
-}
-
 pub(crate) fn dto(value: AppearanceLayout) -> ffi::AppearanceLayoutDto {
-    let (accent_kind, accent): (&str, String) = match value.accent {
-        Accent::Preset(value) => (
-            "preset",
-            match value {
-                AccentPreset::Cobalt => "cobalt",
-                AccentPreset::Azure => "azure",
-                AccentPreset::Violet => "violet",
-                AccentPreset::Teal => "teal",
-                AccentPreset::Green => "green",
-                AccentPreset::Orange => "orange",
-                AccentPreset::Rose => "rose",
-            }
-            .into(),
-        ),
-        Accent::Custom(value) => ("custom", value),
-    };
     ffi::AppearanceLayoutDto {
         version: value.version,
         theme: match value.theme {
@@ -49,13 +23,6 @@ pub(crate) fn dto(value: AppearanceLayout) -> ffi::AppearanceLayoutDto {
             ThemeMode::Dark => "dark",
         }
         .into(),
-        density: match value.density {
-            Density::Compact => "compact",
-            Density::Comfortable => "comfortable",
-        }
-        .into(),
-        accent_kind: accent_kind.into(),
-        accent,
         navigator_width: value.layout.navigator_width,
         editor_results_split: value.layout.editor_results_split,
         history_height: value.layout.history_height,
@@ -75,8 +42,6 @@ fn model(value: ffi::AppearanceLayoutDto) -> Result<AppearanceLayout, String> {
     Ok(AppearanceLayout {
         version: value.version,
         theme: theme(&value.theme)?,
-        density: density(&value.density)?,
-        accent: accent(&value.accent_kind, value.accent)?,
         layout: WorkspaceLayout {
             navigator_width: value.navigator_width,
             editor_results_split: value.editor_results_split,

@@ -193,7 +193,6 @@ void MainWindow::initializePins(const Ui& ui) {
                 pinnedModel_->setResolved(key, {});
                 renderPins();
             });
-    connect(theme_, &design::ThemeManager::metricsChanged, pinnedList_, schedulePinnedGeometry);
     schedulePinnedGeometry();
     auto* loadWatcher = new QFutureWatcher<std::pair<QList<PinRecord>, QString>>(this);
     connect(loadWatcher, &QFutureWatcher<std::pair<QList<PinRecord>, QString>>::finished, this,

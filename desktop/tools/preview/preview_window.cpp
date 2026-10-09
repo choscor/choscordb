@@ -168,7 +168,7 @@ class IconDisplay final : public QLabel {
   protected:
     void paintEvent(QPaintEvent*) override {
         const auto colors = resolvedThemeForWidget(*this).colors;
-        const auto color = dimmed_ ? colors.disabled : colors.foreground;
+        const auto color = dimmed_ ? colors.fgDisabled : colors.fg;
         if (icon_.isNull() || color_ != color) {
             icon_ = themedIcon(role_, color, size_);
             color_ = color;
@@ -469,7 +469,7 @@ void populateMenu(QWidget* host, QVBoxLayout* layout) {
         host, &QWidget::customContextMenuRequested, menu,
         [host, menu](const QPoint& point) { popupContextMenu(*menu, host->mapToGlobal(point)); });
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(menu));
-    menu->addAction(themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.foreground, 16),
+    menu->addAction(themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.fg, 16),
                     "Primary action")
         ->setShortcut(QKeySequence("Ctrl+Return"));
     auto* toggle = menu->addAction("Wrap text");
@@ -515,7 +515,7 @@ void populateFields(QWidget* host, QVBoxLayout* layout) {
         if (state == "password") {
             field->setEchoMode(QLineEdit::Password);
             field->setText("synthetic-password");
-            const auto iconColor = resolvedThemeForWidget(*host).colors.foreground;
+            const auto iconColor = resolvedThemeForWidget(*host).colors.fg;
             auto* toggle =
                 field->addAction(themedIcon(Icon::Eye, iconColor, 16), QLineEdit::TrailingPosition);
             toggle->setObjectName("field-password-toggle");
@@ -636,8 +636,7 @@ void populateButtons(QWidget* host, QVBoxLayout* layout) {
         auto* button = new Button(size.first.startsWith("icon") ? QString{} : size.first, host);
         button->setObjectName("button-size-" + size.first);
         button->setAccessibleName("Add · " + size.first);
-        button->setIcon(
-            themedIcon(Icon::Add, resolvedThemeForWidget(*host).colors.primaryForeground, 16));
+        button->setIcon(themedIcon(Icon::Add, resolvedThemeForWidget(*host).colors.primaryFg, 16));
         button->setButtonSize(size.second);
         sizeGrid->addWidget(button, i / 4, i % 4);
     }

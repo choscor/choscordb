@@ -2,7 +2,6 @@
 
 #include "design_system/icons.h"
 #include "design_system/metrics/metrics.h"
-#include "design_system/style/style_resource.h"
 #include "design_system/theme.h"
 
 #include <QAbstractItemView>
@@ -155,8 +154,8 @@ void ResultTableDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
     const auto& colors = theme(*option.widget).colors;
     painter->drawPixmap(
         iconRect,
-        linkPixmap(option.state & QStyle::State_Selected ? colors.selectionText : colors.action,
-                   iconSize, painter->device() ? painter->device()->devicePixelRatioF() : 1.0));
+        linkPixmap(option.state & QStyle::State_Selected ? colors.fg : colors.primary, iconSize,
+                   painter->device() ? painter->device()->devicePixelRatioF() : 1.0));
 }
 
 QWidget* ResultTableDelegate::createEditor(QWidget* parent, const QStyleOptionViewItem& option,
@@ -231,14 +230,6 @@ bool ResultTableDelegate::helpEvent(QHelpEvent* event, QAbstractItemView* view,
         return true;
     }
     return QStyledItemDelegate::helpEvent(event, view, option, index);
-}
-
-QString tableStyleSheet() {
-    return loadStyleSheet(QStringLiteral("table/table_style_sheet.qss"));
-}
-
-QString tableItemStyleSheet() {
-    return loadStyleSheet(QStringLiteral("table/table_item_style_sheet.qss"));
 }
 
 ResultTableDelegate* configureResultTable(QTableView& table, bool showGrid) {

@@ -83,15 +83,13 @@ void QuickSearchResultRow::refreshAppearance() {
     refreshing_ = true;
     const auto colors = resolvedThemeForWidget(*this).colors;
     auto titlePalette = titleLabel_->palette();
-    titlePalette.setColor(QPalette::WindowText,
-                          selected_ ? colors.accentForeground : colors.foreground);
+    titlePalette.setColor(QPalette::WindowText, selected_ ? colors.fg : colors.fg);
     titleLabel_->setPalette(titlePalette);
     auto detailPalette = detailLabel_->palette();
-    detailPalette.setColor(QPalette::WindowText,
-                           selected_ ? colors.accentForeground : colors.mutedText);
+    detailPalette.setColor(QPalette::WindowText, selected_ ? colors.fg : colors.fgMuted);
     detailLabel_->setPalette(detailPalette);
     const int size = dimension(Dimension::IconSmall);
-    iconLabel_->setPixmap(themedIcon(iconRole_, colors.mutedText, size).pixmap(size, size));
+    iconLabel_->setPixmap(themedIcon(iconRole_, colors.fgMuted, size).pixmap(size, size));
     refreshing_ = false;
 }
 
@@ -145,10 +143,6 @@ QuickSearchDialog::QuickSearchDialog(QWidget* parent)
 }
 
 QuickSearchDialog::~QuickSearchDialog() = default;
-
-QString quickSearchStyleSheet() {
-    return loadStyleSheet(QStringLiteral("quick_search/quick_search_style_sheet.qss"));
-}
 
 QString QuickSearchDialog::query() const {
     return input_->text();

@@ -265,17 +265,17 @@ void ObjectErdWidget::render() {
     if (graph_.tables.isEmpty())
         return;
     const auto colors = design::resolvedThemeForWidget(*this).colors;
-    view_->setBackgroundBrush(colors.canvas);
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
+    view_->setBackgroundBrush(colors.bg);
     const QFont headerFont = design::resolveTypography(design::TypographyRole::Heading);
     const QFont rowFont = design::resolveTypography(design::TypographyRole::Metadata);
     const QFontMetrics headerMeasure(headerFont), rowMeasure(rowFont);
-    const qreal pad = metrics.spacingMedium;
-    const qreal rowHeight = qMax(metrics.dataRowHeight, rowMeasure.height() + metrics.spacingSmall);
-    const qreal headerHeight =
-        qMax(metrics.controlHeight, headerMeasure.height() + metrics.spacingMedium);
-    const qreal gap = metrics.spacingLarge * 6;
-    const qreal minWidth = metrics.controlHeight * 7;
+    const qreal pad = design::spacing(design::Spacing::Two);
+    const qreal rowHeight = qMax(design::dimension(design::Dimension::TableRow),
+                                 rowMeasure.height() + design::spacing(design::Spacing::One));
+    const qreal headerHeight = qMax(design::dimension(design::Dimension::Button),
+                                    headerMeasure.height() + design::spacing(design::Spacing::Two));
+    const qreal gap = design::spacing(design::Spacing::Four) * 6;
+    const qreal minWidth = design::dimension(design::Dimension::Button) * 7;
     struct Placement {
         QRectF rect;
         QHash<QString, qreal> columnY;
@@ -312,8 +312,9 @@ void ObjectErdWidget::render() {
             neighborHeight += headerHeight + qMax(1, table.columns.size()) * rowHeight;
         }
     horizontalWidth_ = centerWidth + neighborWidth + gap;
-    denseLayout_ =
-        ordered.size() > 6 || neighborHeight > qMax(centerHeight * 3, metrics.controlHeight * 18.0);
+    denseLayout_ = ordered.size() > 6 ||
+                   neighborHeight >
+                       qMax(centerHeight * 3, design::dimension(design::Dimension::Button) * 18.0);
     stacked_ = !denseLayout_ && view_->viewport()->width() < horizontalWidth_;
     const auto place = [&](const ObjectGraphTable& table, qreal x, qreal y) {
         Placement placement;
@@ -327,8 +328,9 @@ void ObjectErdWidget::render() {
     if (denseLayout_) {
         // A bounded-height lane keeps a large one-hop neighborhood near its center.
         // Lane membership depends only on graph data, so resizing cannot shuffle tables.
-        const qreal rowGap = metrics.spacingLarge * 2;
-        const qreal laneHeight = qMax(centerHeight * 2, metrics.controlHeight * 18.0);
+        const qreal rowGap = design::spacing(design::Spacing::Four) * 2;
+        const qreal laneHeight =
+            qMax(centerHeight * 2, design::dimension(design::Dimension::Button) * 18.0);
         QList<ObjectGraphTable> left, right;
         for (const auto& table : ordered) {
             if (table.id == selectedId_)
@@ -382,14 +384,14 @@ void ObjectErdWidget::render() {
                 if (stacked_) {
                     x = (centerWidth - width) / 2;
                     y = stackedY;
-                    stackedY += height + metrics.spacingLarge * 2;
+                    stackedY += height + design::spacing(design::Spacing::Four) * 2;
                 } else {
                     const bool onRight =
                         outgoing.contains(table.id) || !incoming.contains(table.id);
                     x = onRight ? centerWidth + gap : -gap - width;
                     auto& nextY = onRight ? rightY : leftY;
                     y = nextY;
-                    nextY += height + metrics.spacingLarge * 2;
+                    nextY += height + design::spacing(design::Spacing::Four) * 2;
                 }
             }
             place(table, x, y);
@@ -419,10 +421,10 @@ void ObjectErdWidget::render() {
         const QString pair = edge.sourceId + QChar(0) + edge.targetId;
         const int parallelNumber = parallel.value(pair);
         parallel.insert(pair, parallelNumber + 1);
-        const qreal separation =
-            parallelNumber == 0
-                ? 0
-                : (parallelNumber % 2 ? 1 : -1) * ((parallelNumber + 1) / 2) * metrics.spacingLarge;
+        const qreal separation = parallelNumber == 0
+                                     ? 0
+                                     : (parallelNumber % 2 ? 1 : -1) * ((parallelNumber + 1) / 2) *
+                                           design::spacing(design::Spacing::Four);
         const auto& source = placed[edge.sourceId];
         const auto& target = placed[edge.targetId];
         const int count = qMax(1, edge.sourceColumns.size());
@@ -444,8 +446,8 @@ void ObjectErdWidget::render() {
                               ty);
             QPainterPath path(start);
             if (self) {
-                const qreal loop =
-                    gap / 2 + index * metrics.spacingMedium + parallelNumber * metrics.spacingLarge;
+                const qreal loop = gap / 2 + index * design::spacing(design::Spacing::Two) +
+                                   parallelNumber * design::spacing(design::Spacing::Four);
                 path.cubicTo(QPointF(start.x() + loop, start.y() - rowHeight),
                              QPointF(end.x() + loop, end.y() + rowHeight), end);
             } else if (denseLayout_ && qAbs(end.x() - start.x()) > gap * 1.5) {
@@ -453,7 +455,7 @@ void ObjectErdWidget::render() {
                 // Cross above or below the lanes so distant links do not cut through boxes.
                 const qreal firstX = start.x() + (toRight ? gap / 2 : -gap / 2);
                 const qreal lastX = end.x() + (toRight ? -gap / 2 : gap / 2);
-                const qreal detour = gap / 2 + (routed / 2) * metrics.spacingSmall;
+                const qreal detour = gap / 2 + (routed / 2) * design::spacing(design::Spacing::One);
                 const qreal railY = routed % 2 ? bottom + detour : top - detour;
                 ++routed;
                 path.lineTo(firstX, sy);
@@ -466,7 +468,8 @@ void ObjectErdWidget::render() {
                 path.cubicTo(QPointF(bend, start.y() + separation),
                              QPointF(bend, end.y() + separation), end);
             }
-            auto* line = scene_->addPath(path, QPen(colors.action, metrics.separatorWidth + 1));
+            auto* line =
+                scene_->addPath(path, QPen(colors.primary, design::focusSpec().borderWidth + 1));
             line->setToolTip(
                 tr("%1: %2.%3 → %4.%5")
                     .arg(edge.id, edge.sourceId,
@@ -476,19 +479,21 @@ void ObjectErdWidget::render() {
             line->setData(tableIdRole, QVariant{});
             const qreal direction = self || end.x() < start.x() ? 1 : -1;
             QPainterPath arrow(end);
-            arrow.lineTo(end + QPointF(direction * metrics.spacingMedium, -metrics.spacingSmall));
+            arrow.lineTo(end + QPointF(direction * design::spacing(design::Spacing::Two),
+                                       -design::spacing(design::Spacing::One)));
             arrow.moveTo(end);
-            arrow.lineTo(end + QPointF(direction * metrics.spacingMedium, metrics.spacingSmall));
-            scene_->addPath(arrow, QPen(colors.action, metrics.separatorWidth + 1));
+            arrow.lineTo(end + QPointF(direction * design::spacing(design::Spacing::Two),
+                                       design::spacing(design::Spacing::One)));
+            scene_->addPath(arrow, QPen(colors.primary, design::focusSpec().borderWidth + 1));
         }
     }
     for (const auto& table : ordered) {
         const auto placement = placed.value(table.id);
         const bool central = table.id == selectedId_;
-        auto* box = scene_->addRect(
-            placement.rect,
-            QPen(central ? colors.primary : colors.border, central ? 2 : metrics.separatorWidth),
-            QBrush(central ? colors.subtleAccent : colors.elevatedSurface));
+        auto* box = scene_->addRect(placement.rect,
+                                    QPen(central ? colors.primary : colors.border,
+                                         central ? 2 : design::focusSpec().borderWidth),
+                                    QBrush(central ? colors.selection : colors.surfaceRaised));
         box->setData(tableIdRole, table.id);
         box->setData(tableNameRole, table.qualifiedName);
         box->setToolTip(tr("Open %1").arg(table.qualifiedName));
@@ -502,17 +507,17 @@ void ObjectErdWidget::render() {
             text->setPos(x, y);
             text->setToolTip(value);
         };
-        addText(table.qualifiedName, headerFont, colors.text, placement.rect.x() + pad,
+        addText(table.qualifiedName, headerFont, colors.fg, placement.rect.x() + pad,
                 placement.rect.y() + (headerHeight - headerMeasure.height()) / 2);
         for (int row = 0; row < table.columns.size(); ++row) {
             const auto& column = table.columns.at(row);
             const qreal y = placement.rect.y() + headerHeight + row * rowHeight;
-            addText(marker(column), rowFont, colors.action, placement.rect.x() + pad,
+            addText(marker(column), rowFont, colors.primary, placement.rect.x() + pad,
                     y + (rowHeight - rowMeasure.height()) / 2);
-            addText(column.name, rowFont, colors.text, placement.rect.x() + pad * 7,
+            addText(column.name, rowFont, colors.fg, placement.rect.x() + pad * 7,
                     y + (rowHeight - rowMeasure.height()) / 2);
             const qreal typeWidth = rowMeasure.horizontalAdvance(column.databaseType);
-            addText(column.databaseType, rowFont, colors.mutedText,
+            addText(column.databaseType, rowFont, colors.fgMuted,
                     placement.rect.right() - pad - typeWidth,
                     y + (rowHeight - rowMeasure.height()) / 2);
         }

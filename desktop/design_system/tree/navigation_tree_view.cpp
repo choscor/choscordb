@@ -62,13 +62,13 @@ void NavigationTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& 
 
     const auto theme = resolvedThemeForWidget(*this);
     const auto& colors = theme.colors;
-    const qreal gap = DesignMetrics{}.navigationHighlightGap;
+    const qreal gap = layoutMetrics().navigationHighlightGap;
     const QRectF highlight(5, option.rect.top() + gap / 2, viewport()->width() - 10,
                            option.rect.height() - gap);
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
-    painter->setPen(theme.forcedContrast && selected ? QPen(colors.focus, 2) : QPen(Qt::NoPen));
-    painter->setBrush(colors.muted);
+    painter->setPen(theme.forcedContrast && selected ? QPen(colors.ring, 2) : QPen(Qt::NoPen));
+    painter->setBrush(colors.surfaceRaised);
     painter->drawRoundedRect(highlight, 5, 5);
     painter->restore();
 
@@ -84,8 +84,8 @@ void NavigationTreeView::drawBranches(QPainter* painter, const QRect& rect,
         painter->setRenderHint(QPainter::Antialiasing);
         painter->setClipRect(rect);
         painter->setPen(Qt::NoPen);
-        painter->setBrush(resolvedThemeForWidget(*this).colors.muted);
-        const qreal gap = DesignMetrics{}.navigationHighlightGap;
+        painter->setBrush(resolvedThemeForWidget(*this).colors.surfaceRaised);
+        const qreal gap = layoutMetrics().navigationHighlightGap;
         painter->drawRoundedRect(
             QRectF(5, rect.top() + gap / 2, viewport()->width() - 10, rect.height() - gap), 5, 5);
         painter->restore();

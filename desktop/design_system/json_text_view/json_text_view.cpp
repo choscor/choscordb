@@ -25,9 +25,9 @@ class JsonSyntaxHighlighter final : public QSyntaxHighlighter {
     explicit JsonSyntaxHighlighter(QTextDocument* document) : QSyntaxHighlighter(document) {}
 
     // Returns whether the token colors changed.
-    bool setColors(const SemanticColors& colors) {
-        const std::array<QColor, 4> next{colors.jsonKey, colors.jsonString, colors.jsonLiteral,
-                                         colors.jsonNumber};
+    bool setColors(const Colors& colors) {
+        const std::array<QColor, 4> next{colors.codeKeyword, colors.codeString, colors.codeComment,
+                                         colors.codeNumber};
         if (resolved_ && next == colors_)
             return false;
         colors_ = next;

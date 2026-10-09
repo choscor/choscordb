@@ -39,7 +39,7 @@
 #include <QTreeWidget>
 #include <QtTest>
 
-void ControlStyleTest::scopedDarkButtonsAndTextSelectionUseSemanticColors() {
+void ControlStyleTest::scopedDarkButtonsAndTextSelectionUseColors() {
     using namespace choscordb::design;
     QWidget root;
     ThemeManager theme;
@@ -182,8 +182,8 @@ void ControlStyleTest::unusedHeaderGutterUsesThemeSurface_data() {
     using namespace choscordb::design;
     QTest::addColumn<bool>("dark");
     QTest::addColumn<QColor>("expected");
-    QTest::newRow("light") << false << resolveColors(ResolvedAppearance::Light).muted;
-    QTest::newRow("dark") << true << resolveColors(ResolvedAppearance::Dark).muted;
+    QTest::newRow("light") << false << resolveColors(ResolvedAppearance::Light).surfaceRaised;
+    QTest::newRow("dark") << true << resolveColors(ResolvedAppearance::Dark).surfaceRaised;
 }
 
 void ControlStyleTest::unusedHeaderGutterUsesThemeSurface() {
@@ -193,7 +193,7 @@ void ControlStyleTest::unusedHeaderGutterUsesThemeSurface() {
     const auto appearance = dark ? ResolvedAppearance::Dark : ResolvedAppearance::Light;
     const ResolvedTheme theme{appearance, resolveColors(appearance), false};
     QWidget root;
-    root.setStyleSheet(controlStyleSheet(theme));
+    root.setStyleSheet(applicationStyleSheet(theme));
     QTableWidget table(1, 1, &root);
     table.setHorizontalHeaderLabels({"Value"});
     table.resize(240, 200);
@@ -210,7 +210,7 @@ void ControlStyleTest::tableHeaderColumnsHaveSeparators() {
     const auto appearance = ResolvedAppearance::Light;
     const ResolvedTheme theme{appearance, resolveColors(appearance), false};
     QWidget root;
-    root.setStyleSheet(controlStyleSheet(theme));
+    root.setStyleSheet(applicationStyleSheet(theme));
     QTableWidget table(1, 2, &root);
     table.setHorizontalHeaderLabels({"id · int8", "value · text"});
     table.setColumnWidth(0, 100);
@@ -230,7 +230,7 @@ void ControlStyleTest::rowNumberColumnHasVerticalSeparator() {
     const auto appearance = ResolvedAppearance::Light;
     const ResolvedTheme theme{appearance, resolveColors(appearance), false};
     QWidget root;
-    root.setStyleSheet(controlStyleSheet(theme));
+    root.setStyleSheet(applicationStyleSheet(theme));
     QTableWidget table(2, 1, &root);
     table.resize(240, 160);
     root.resize(260, 180);
@@ -367,7 +367,7 @@ void ControlStyleTest::menuHasRenderedTranslucentElevationOutsidePanel() {
                               false};
     QWidget root;
     root.setProperty("designTheme", QVariant::fromValue(theme));
-    root.setStyleSheet(controlStyleSheet(theme));
+    root.setStyleSheet(applicationStyleSheet(theme));
     root.resize(640, 400);
     root.show();
     QMenu menu(&root);
@@ -422,7 +422,7 @@ void ControlStyleTest::fieldKeyboardFocusPaintsOutsideWithoutMovingText() {
                               false};
     QWidget root;
     root.setPalette(applicationPalette(theme));
-    root.setStyleSheet(controlStyleSheet(theme));
+    root.setStyleSheet(applicationStyleSheet(theme));
     QLineEdit field("Stable text", &root);
     field.setGeometry(40, 40, 160, 32);
     root.resize(240, 120);
@@ -465,7 +465,7 @@ void ControlStyleTest::badgeAndProgressUseCompactReferenceGeometry() {
                               false};
     QWidget root;
     root.setFont(resolveTypography(TypographyRole::Ui));
-    root.setStyleSheet(controlStyleSheet(theme));
+    root.setStyleSheet(applicationStyleSheet(theme));
     QLabel badge("Connected", &root);
     badge.setProperty("designRole", "badge");
     badge.setProperty("variant", "default");
@@ -524,7 +524,7 @@ void ControlStyleTest::tabsToolsAndTableHeadersUseCompactPaneGeometry() {
                               false};
     QWidget root;
     root.setFont(resolveTypography(TypographyRole::Ui));
-    root.setStyleSheet(controlStyleSheet(theme));
+    root.setStyleSheet(applicationStyleSheet(theme));
     QTabBar tabs(&root);
     tabs.addTab("Results");
     tabs.addTab("Messages");
@@ -550,7 +550,7 @@ void ControlStyleTest::toolButtonMenuPanelOpensBesideItsButton() {
     const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
                               false};
     QWidget root;
-    root.setStyleSheet(controlStyleSheet(theme));
+    root.setStyleSheet(applicationStyleSheet(theme));
     root.resize(600, 500);
     root.move(100, 100);
     QToolButton button(&root);
@@ -579,7 +579,7 @@ void ControlStyleTest::menusTabsAndScrollbarsUseSharedSurfacesAndRemainInteracti
     root.setStyle(&style);
     root.setPalette(applicationPalette(theme));
     root.setProperty("designTheme", QVariant::fromValue(theme));
-    root.setStyleSheet(controlStyleSheet(theme));
+    root.setStyleSheet(applicationStyleSheet(theme));
     QScrollBar scroll(Qt::Vertical, &root);
     scroll.setRange(0, 100);
     scroll.resize(scroll.sizeHint().width(), 100);
@@ -622,7 +622,7 @@ void ControlStyleTest::fieldsExposeInvalidBorderAndPreserveReadOnlyAndPopupInput
     root.setFont(resolveTypography(TypographyRole::Ui));
     root.setStyle(&style);
     root.setPalette(applicationPalette(theme));
-    root.setStyleSheet(controlStyleSheet(theme));
+    root.setStyleSheet(applicationStyleSheet(theme));
     QLineEdit field("Original", &root);
     field.setGeometry(10, 10, 160, 32);
     field.setProperty("invalid", true);

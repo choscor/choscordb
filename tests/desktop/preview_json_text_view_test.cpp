@@ -46,7 +46,7 @@ void PreviewTest::jsonTextViewSpecimenColorsSyntaxInBothThemes() {
             for (const auto& range : target.layout()->formats())
                 if (position >= range.start && position < range.start + range.length)
                     return range.format.foreground().color();
-            return colors.text;
+            return colors.fg;
         };
         const auto key = inkAt(block, 3);
         const auto punctuation = inkAt(block, 7);

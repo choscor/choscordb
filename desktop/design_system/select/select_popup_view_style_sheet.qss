@@ -1,0 +1,26 @@
+QAbstractItemView {
+  border: 1px solid @border;
+  background: @surface;
+  color: @fg;
+  outline: 0;
+  padding: 4px;
+  border-radius: @radius-md;
+  selection-background-color: @selection;
+  selection-color: @fg;
+}
+QAbstractItemView::item {
+  min-height: 21px;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: @radius-sm;
+}
+QAbstractItemView::item:selected {
+  background: @selection;
+  color: @fg;
+}
+QAbstractItemView::item:hover:!selected {
+  background: @surface-raised;
+}
+QAbstractItemView::item:disabled {
+  color: @fg-disabled;
+}

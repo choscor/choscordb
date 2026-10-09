@@ -100,7 +100,7 @@ class TooltipSurface final : public QWidget {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setPen(Qt::NoPen);
-        painter.setBrush(colors.foreground);
+        painter.setBrush(colors.fg);
         const QRectF body(0, below_ ? 6 : 0, width(), height() - 6);
         painter.drawRoundedRect(body, 8, 8);
         QPainterPath arrow;
@@ -110,7 +110,7 @@ class TooltipSurface final : public QWidget {
         arrow.lineTo(arrowX_ + 5, base);
         arrow.closeSubpath();
         painter.drawPath(arrow);
-        painter.setPen(colors.background);
+        painter.setPen(colors.bg);
         painter.setClipRect(body.adjusted(12, 6, -12, -6));
         textLayout_.draw(&painter, QPointF(12, body.top() + 6));
     }

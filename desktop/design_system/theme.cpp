@@ -24,25 +24,25 @@ ResolvedTheme resolvedThemeForWidget(const QWidget& widget) {
 QPalette applicationPalette(const ResolvedTheme& theme) {
     const auto& colors = theme.colors;
     QPalette palette;
-    palette.setColor(QPalette::Window, colors.canvas);
-    palette.setColor(QPalette::WindowText, colors.text);
+    palette.setColor(QPalette::Window, colors.bg);
+    palette.setColor(QPalette::WindowText, colors.fg);
     palette.setColor(QPalette::Base, colors.surface);
-    palette.setColor(QPalette::AlternateBase, colors.elevatedSurface);
-    palette.setColor(QPalette::Text, colors.text);
+    palette.setColor(QPalette::AlternateBase, colors.surfaceRaised);
+    palette.setColor(QPalette::Text, colors.fg);
     palette.setColor(QPalette::Button, colors.surface);
-    palette.setColor(QPalette::ButtonText, colors.text);
+    palette.setColor(QPalette::ButtonText, colors.fg);
     palette.setColor(QPalette::Highlight, colors.selection);
-    palette.setColor(QPalette::HighlightedText, colors.selectionText);
+    palette.setColor(QPalette::HighlightedText, colors.fg);
     palette.setColor(QPalette::Link, colors.primary);
     palette.setColor(QPalette::Accent, colors.primary);
-    palette.setColor(QPalette::Mid, colors.input);
-    palette.setColor(QPalette::Dark, colors.focus);
+    palette.setColor(QPalette::Mid, colors.border);
+    palette.setColor(QPalette::Dark, colors.ring);
     palette.setColor(QPalette::LinkVisited, colors.success);
-    palette.setColor(QPalette::PlaceholderText, colors.mutedText);
+    palette.setColor(QPalette::PlaceholderText, colors.fgMuted);
     palette.setColor(QPalette::BrightText, colors.danger);
-    palette.setColor(QPalette::Disabled, QPalette::WindowText, colors.disabled);
-    palette.setColor(QPalette::Disabled, QPalette::Text, colors.disabled);
-    palette.setColor(QPalette::Disabled, QPalette::ButtonText, colors.disabled);
+    palette.setColor(QPalette::Disabled, QPalette::WindowText, colors.fgDisabled);
+    palette.setColor(QPalette::Disabled, QPalette::Text, colors.fgDisabled);
+    palette.setColor(QPalette::Disabled, QPalette::ButtonText, colors.fgDisabled);
     return palette;
 }
 

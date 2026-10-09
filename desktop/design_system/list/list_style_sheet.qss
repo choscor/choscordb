@@ -5,7 +5,7 @@ QListView::item {
 }
 
 QListView[designNavigationItem="true"]::item {
-  min-height: @navigationLineHeight;
+  min-height: @row-line-height;
   margin: 2px 5px;
   padding: 1px 3px;
 }

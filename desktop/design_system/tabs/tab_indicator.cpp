@@ -16,7 +16,7 @@ bool drawTabIndicator(QStyle::PrimitiveElement element, const QStyleOption* opti
     if (element == QStyle::PE_IndicatorTabClose) {
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing);
-        const auto color = widget ? resolvedThemeForWidget(*widget).colors.foreground
+        const auto color = widget ? resolvedThemeForWidget(*widget).colors.fg
                                   : option->palette.color(QPalette::ButtonText);
         painter->setOpacity(option->state.testFlag(QStyle::State_Enabled) ? 0.7 : 0.35);
         painter->translate(QRectF(option->rect).center());

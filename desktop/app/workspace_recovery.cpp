@@ -130,7 +130,7 @@ void WorkspaceRecoveryController::applyTabs(const QList<SavedWorkspaceTab>& tabs
             if (widget && tabs_->indexOf(widget) < 0) {
                 const auto icon = design::themedIcon(
                     objectKindIcon(tab.objectType),
-                    design::resolvedThemeForWidget(*tabs_).colors.mutedText, objectIconSize());
+                    design::resolvedThemeForWidget(*tabs_).colors.fgMuted, objectIconSize());
                 tabs_->addTab(widget, icon, objectTabTitle(tab.objectId, tab.label));
             }
         } else {

@@ -1,6 +1,6 @@
 #include "design_system/select/select_popup.h"
 #include "design_system/menu/embedded_popup.h"
-#include "design_system/style/style_resource.h"
+#include "design_system/style/stylesheet.h"
 #include "design_system/theme.h"
 #include <QAbstractItemDelegate>
 #include <QAbstractItemView>
@@ -153,7 +153,6 @@ void prepareComboPopup(QComboBox& combo) {
         view->setItemDelegate(new NormalFontPopupDelegate(view->itemDelegate(), view));
     auto* popup = view->parentWidget();
     const auto theme = resolvedThemeForWidget(combo);
-    const auto& colors = theme.colors;
     popup->setObjectName("designComboPopup");
     popup->setWindowFlag(Qt::NoDropShadowWindowHint);
     popup->setAttribute(Qt::WA_TranslucentBackground);
@@ -162,8 +161,7 @@ void prepareComboPopup(QComboBox& combo) {
     // Qt deliberately excludes its private combo container from inherited QSS.
     // Keep the container borderless so its frame does not double the view's
     // visible border. Retain the native list/delegate for custom models.
-    popup->setStyleSheet(
-        loadStyleSheet(QStringLiteral("select/popup.qss")).arg(colors.popover.name()));
+    popup->setStyleSheet(themedStyleSheet(u"select/select_popup_style_sheet.qss", theme));
     embedPopup(popup, &combo);
     if (!popup->property("designPopupContentFit").toBool()) {
         new PopupContentFitFilter(&combo, popup);
@@ -171,10 +169,7 @@ void prepareComboPopup(QComboBox& combo) {
     }
     view->setAttribute(Qt::WA_MacShowFocusRect, false);
     view->setPalette(applicationPalette(theme));
-    view->setStyleSheet(loadStyleSheet(QStringLiteral("select/popup_view.qss"))
-                            .arg(colors.popover.name(), colors.foreground.name(),
-                                 colors.accent.name(), colors.muted.name(), colors.disabled.name(),
-                                 colors.border.name()));
+    view->setStyleSheet(themedStyleSheet(u"select/select_popup_view_style_sheet.qss", theme));
 }
 
 } // namespace choscordb::design::detail

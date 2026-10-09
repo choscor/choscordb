@@ -24,13 +24,13 @@ SearchPanel::SearchPanel(std::function<SqlEditor*()> currentEditor, QWidget* par
     : QWidget(parent), currentEditor_(std::move(currentEditor)) {
     setObjectName("searchPanel");
     setAccessibleName(tr("Search and replace"));
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
-                               metrics.spacingSmall);
-    layout->setSpacing(metrics.spacingMedium);
+    layout->setContentsMargins(
+        design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One),
+        design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One));
+    layout->setSpacing(design::spacing(design::Spacing::Two));
     auto* first = new QHBoxLayout;
-    first->setSpacing(metrics.spacingMedium);
+    first->setSpacing(design::spacing(design::Spacing::Two));
     needle_ = new QLineEdit(this);
     needle_->setObjectName("searchNeedle");
     needle_->setAccessibleName(tr("Find text"));
@@ -67,14 +67,14 @@ SearchPanel::SearchPanel(std::function<SqlEditor*()> currentEditor, QWidget* par
     first->addWidget(close);
     layout->addLayout(first);
     auto* options = new QHBoxLayout;
-    options->setSpacing(metrics.spacingLarge);
+    options->setSpacing(design::spacing(design::Spacing::Four));
     options->addWidget(case_);
     options->addWidget(word_);
     options->addStretch();
     layout->addLayout(options);
     replacementRow_ = new QWidget(this);
     auto* second = new QHBoxLayout(replacementRow_);
-    second->setSpacing(metrics.spacingMedium);
+    second->setSpacing(design::spacing(design::Spacing::Two));
     second->setContentsMargins(0, 0, 0, 0);
     replacement_ = new QLineEdit(this);
     replacement_->setObjectName("searchReplacement");

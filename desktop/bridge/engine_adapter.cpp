@@ -56,9 +56,6 @@ SavedProfile savedProfile(const ProfileDto& dto) {
 void assignAppearance(AppearanceLayout& value, const AppearanceLayoutDto& dto) {
     value.version = dto.version;
     value.theme = fromRust(dto.theme);
-    value.density = fromRust(dto.density);
-    value.accentKind = fromRust(dto.accent_kind);
-    value.accent = fromRust(dto.accent);
     value.navigatorWidth = dto.navigator_width;
     value.historyHeight = dto.history_height;
     value.editorResultsSplit = dto.editor_results_split;

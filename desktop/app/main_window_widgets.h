@@ -74,7 +74,7 @@ class NavigatorIconDelegate final : public design::ColumnRowDelegate {
         if (option->widget) {
             const auto colors = design::resolvedThemeForWidget(*option->widget).colors;
             const int size = objectIconSize();
-            option->icon = design::themedIcon(role, colors.mutedText, size);
+            option->icon = design::themedIcon(role, colors.fgMuted, size);
             option->features |= QStyleOptionViewItem::HasDecoration;
             option->decorationSize = QSize(size, size);
         }
@@ -170,7 +170,7 @@ class SidebarWidthObserver final : public QObject {
 
 class SidebarConnectionListScroll final : public QObject {
   public:
-    SidebarConnectionListScroll(QListWidget* list, QScrollArea* scroll, design::ThemeManager* theme)
+    SidebarConnectionListScroll(QListWidget* list, QScrollArea* scroll)
         : QObject(list), list_(list), scroll_(scroll) {
         list->installEventFilter(this);
         const auto updateHeight = [list] {
@@ -188,7 +188,6 @@ class SidebarConnectionListScroll final : public QObject {
         connect(model, &QAbstractItemModel::modelReset, this, scheduleHeight);
         connect(model, &QAbstractItemModel::layoutChanged, this, scheduleHeight);
         connect(model, &QAbstractItemModel::dataChanged, this, scheduleHeight);
-        connect(theme, &design::ThemeManager::metricsChanged, this, scheduleHeight);
         scheduleHeight();
         const auto revealCurrent = [list, scroll] {
             auto* item = list->currentItem();

@@ -39,7 +39,6 @@ AppearanceController::AppearanceController(design::ThemeManager* theme, EngineAd
     connect(navigator_, &QDockWidget::visibilityChanged, this, [this] { scheduleSave(); });
     navigator_->installEventFilter(this);
     connect(theme_, &design::ThemeManager::themeChanged, this, [this] { scheduleSave(); });
-    connect(theme_, &design::ThemeManager::metricsChanged, this, [this] { scheduleSave(); });
     window_->installEventFilter(this);
     connect(adapter_, &EngineAdapter::appearanceLayoutReady, this,
             [this](quint64 token, bool hasSaved, const AppearanceLayout& value) {
@@ -139,7 +138,7 @@ AppearanceLayout AppearanceController::current() const {
     // Obsolete choices remain byte-compatible in storage, but no longer
     // participate in rendering or theme-only edits.
     result.navigatorWidth = static_cast<quint32>(
-        std::max(navigator_->width(), theme_->metrics().minimumNavigatorWidth));
+        std::max(navigator_->width(), design::layoutMetrics().minimumNavigatorWidth));
     const auto sizes = workspace_->sizes();
     const int total = sizes.size() >= 2 ? sizes[0] + sizes[1] : 0;
     if (total > 0)
@@ -151,10 +150,10 @@ AppearanceLayout AppearanceController::current() const {
     const auto geometry = window_->normalGeometry();
     result.x = geometry.x();
     result.y = geometry.y();
-    result.width =
-        static_cast<quint32>(std::max(geometry.width(), theme_->metrics().minimumWorkspaceWidth));
-    result.height =
-        static_cast<quint32>(std::max(geometry.height(), theme_->metrics().minimumWorkspaceHeight));
+    result.width = static_cast<quint32>(
+        std::max(geometry.width(), design::layoutMetrics().minimumWorkspaceWidth));
+    result.height = static_cast<quint32>(
+        std::max(geometry.height(), design::layoutMetrics().minimumWorkspaceHeight));
     result.maximized = window_->isMaximized();
     if (const auto* screen = window_->screen(); screen && !screen->name().isEmpty()) {
         result.hasScreenName = true;
@@ -338,7 +337,7 @@ bool AppearanceController::eventFilter(QObject* watched, QEvent* event) {
         const auto dock = navigator_->geometry();
         if (mouse->button() == Qt::LeftButton && mouse->position().y() >= dock.top() &&
             mouse->position().y() <= dock.bottom() && mouse->position().x() >= dock.right() &&
-            mouse->position().x() <= dock.right() + theme_->metrics().spacingLarge)
+            mouse->position().x() <= dock.right() + design::spacing(design::Spacing::Four))
             defaultSidebar_ = false;
     }
     if (defaultSidebar_ && loaded_ && !applying_ && !sidebarResizePending_ && watched == window_ &&
@@ -348,9 +347,8 @@ bool AppearanceController::eventFilter(QObject* watched, QEvent* event) {
             sidebarResizePending_ = false;
             if (!defaultSidebar_)
                 return;
-            const auto metrics = theme_->metrics();
-            const int width = window_->width() <= metrics.narrowWorkspaceWidth
-                                  ? metrics.narrowNavigatorWidth
+            const int width = window_->width() <= design::layoutMetrics().narrowWorkspaceWidth
+                                  ? design::layoutMetrics().narrowNavigatorWidth
                                   : static_cast<int>(defaultLayout().navigatorWidth);
             const bool wasApplying = applying_;
             applying_ = true;

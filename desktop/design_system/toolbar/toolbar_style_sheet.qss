@@ -1,7 +1,8 @@
 QToolBar {
-  spacing: 4px;
+  min-height: @toolbar-height;
+  spacing: @space-1;
   border: 0;
-  background: @background;
+  background: @bg;
 }
 
 QToolBar[designToolbarVariant="workspace"] {
@@ -9,7 +10,7 @@ QToolBar[designToolbarVariant="workspace"] {
 }
 
 QWidget[designToolbarSurface="workspace"] {
-  background: @muted;
+  background: @surface-raised;
 }
 
 QToolBar::separator {
