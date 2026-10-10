@@ -4,6 +4,7 @@
 #include "design_system/tree/navigation_tree_view.h"
 #include "preview_test.h"
 #include "tools/preview/preview_window.h"
+#include <QLabel>
 #include <QListWidget>
 #include <QStyleOptionViewItem>
 #include <QTreeView>
@@ -189,5 +190,50 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
         QVERIFY(list->item(1)->isSelected());
         QVERIFY(!list->item(2)->isSelected());
         QVERIFY(list->visualItemRect(list->item(1)).height() <= 36);
+    }
+}
+
+void PreviewTest::driverBadgeAndConnectionTileUseNeutralTokensInBothThemes() {
+    using namespace choscordb::design;
+    PreviewWindow window;
+    QVERIFY(window.selectSpecimen("feedback"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        const auto colors = resolvedThemeForWidget(*host).colors;
+        auto* logo = host->findChild<QLabel*>("previewDriverLogo");
+        auto* badge = host->findChild<QLabel*>("previewDriverBadge");
+        QVERIFY(logo && badge);
+        QVERIFY(!logo->pixmap().isNull());
+        QCOMPARE(badge->property("variant").toString(), QString("driver"));
+        const auto image = badge->grab().toImage();
+        const auto scale = image.devicePixelRatio();
+        QCOMPARE(image.pixelColor(qRound(badge->width() / 2 * scale), qRound(2 * scale)),
+                 colors.surfaceRaised);
+    }
+    QVERIFY(window.selectSpecimen("navigation-profile-row"));
+    QCoreApplication::processEvents();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        const auto colors = resolvedThemeForWidget(*host).colors;
+        auto* list = host->findChild<QListWidget*>("previewNavigationProfiles");
+        QVERIFY(list);
+        for (int row = 0; row < list->count(); ++row) {
+            const auto rect = list->visualItemRect(list->item(row));
+            const auto image = list->viewport()->grab(rect).toImage();
+            const auto scale = image.devicePixelRatio();
+            // Tile padding is neutral; the logo inside it is drawn unmodified.
+            QCOMPARE(image.pixelColor(qRound(11 * scale), qRound(22 * scale)),
+                     colors.surfaceRaised);
+            int logoPixels = 0;
+            for (int y = 8; y < 20; ++y)
+                for (int x = 15; x < 27; ++x)
+                    logoPixels += image.pixelColor(qRound(x * scale), qRound(y * scale)) !=
+                                  colors.surfaceRaised;
+            QVERIFY(logoPixels > 0);
+        }
     }
 }

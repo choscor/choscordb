@@ -87,6 +87,7 @@ class PreviewTest final : public QObject {
     void componentFamiliesAreRendered();
     void dialogSectionsPreviewUsesRealComponentInBothThemes();
     void navigationProfileRowsShowRegularAndSelectedStates();
+    void driverBadgeAndConnectionTileUseNeutralTokensInBothThemes();
     void dockSpecimenRendersThemedTitleAndButtons();
     void navigationTreeTogglesAndRenamesFromMenu();
 };

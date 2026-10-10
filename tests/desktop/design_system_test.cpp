@@ -295,7 +295,7 @@ class DesignSystemTest final : public QObject {
             QCOMPARE(spacing(value) % 2, 0);
     }
 
-    void pinnedGreenPaletteResolvesFixedCanvasRoles() {
+    void pinnedPaletteResolvesFixedCanvasRoles() {
         using namespace choscordb::design;
         const auto light = resolveColors(ResolvedAppearance::Light);
         const auto dark = resolveColors(ResolvedAppearance::Dark);
@@ -346,6 +346,111 @@ class DesignSystemTest final : public QObject {
             QVERIFY(contrastRatio(colors.ring, colors.surface) >= 3.0);
             QVERIFY(contrastRatio(colors.fg, colors.selection) >= 4.5);
             QVERIFY(contrastRatio(colors.fg, colors.selection) >= 4.5);
+        }
+    }
+
+    void colorVocabularyIsExactlyTheSpecifiedSet() {
+        using namespace choscordb::design;
+        const QStringList expected{"bg",
+                                   "surface",
+                                   "surface-raised",
+                                   "sidebar",
+                                   "fg",
+                                   "fg-muted",
+                                   "fg-disabled",
+                                   "border",
+                                   "primary",
+                                   "primary-hover",
+                                   "primary-pressed",
+                                   "primary-fg",
+                                   "selection",
+                                   "ring",
+                                   "success",
+                                   "success-surface",
+                                   "warning",
+                                   "warning-surface",
+                                   "danger",
+                                   "danger-surface",
+                                   "backdrop",
+                                   "switch-track",
+                                   "code-keyword",
+                                   "code-string",
+                                   "code-number",
+                                   "code-comment"};
+        QPalette contrast;
+        contrast.setColor(QPalette::Window, Qt::black);
+        contrast.setColor(QPalette::WindowText, Qt::white);
+        contrast.setColor(QPalette::Base, Qt::black);
+        contrast.setColor(QPalette::Text, Qt::white);
+        contrast.setColor(QPalette::Highlight, Qt::cyan);
+        contrast.setColor(QPalette::HighlightedText, Qt::black);
+        for (const auto& colors :
+             {resolveColors(ResolvedAppearance::Light), resolveColors(ResolvedAppearance::Dark),
+              resolveForcedContrastColors(contrast)}) {
+            QStringList names;
+            for (const auto& [name, value] : colorTokens(colors)) {
+                names.append(name);
+                QVERIFY2(value.isValid(), qPrintable(name));
+            }
+            QCOMPARE(names, expected);
+        }
+        QStringList catalog;
+        for (const auto& token : designTokens(ResolvedAppearance::Light))
+            if (token.name.startsWith(QStringLiteral("color.")))
+                catalog.append(token.name.mid(6));
+        QCOMPARE(catalog, expected);
+    }
+
+    void textAndFocusPairsMeetContrastFloors() {
+        using namespace choscordb::design;
+        for (const auto appearance : {ResolvedAppearance::Light, ResolvedAppearance::Dark}) {
+            const auto c = resolveColors(appearance);
+            const QList<std::tuple<const char*, QColor, QColor>> text{
+                {"fg/bg", c.fg, c.bg},
+                {"fg/surface", c.fg, c.surface},
+                {"fg/surface-raised", c.fg, c.surfaceRaised},
+                {"fg/selection", c.fg, c.selection},
+                {"fg-muted/bg", c.fgMuted, c.bg},
+                {"fg-muted/surface", c.fgMuted, c.surface},
+                {"fg-muted/surface-raised", c.fgMuted, c.surfaceRaised},
+                {"primary-fg/primary", c.primaryFg, c.primary},
+                {"primary-fg/primary-hover", c.primaryFg, c.primaryHover},
+                {"primary-fg/primary-pressed", c.primaryFg, c.primaryPressed},
+                {"primary/surface", c.primary, c.surface},
+                {"success/success-surface", c.success, c.successSurface},
+                {"success/surface", c.success, c.surface},
+                {"warning/warning-surface", c.warning, c.warningSurface},
+                {"warning/surface", c.warning, c.surface},
+                {"danger/danger-surface", c.danger, c.dangerSurface},
+                {"danger/surface", c.danger, c.surface},
+                {"code-keyword/surface", c.codeKeyword, c.surface},
+                {"code-string/surface", c.codeString, c.surface},
+                {"code-number/surface", c.codeNumber, c.surface},
+                {"code-comment/surface", c.codeComment, c.surface}};
+            for (const auto& [name, foreground, background] : text)
+                QVERIFY2(contrastRatio(foreground, background) >= 4.5, name);
+            QVERIFY(contrastRatio(c.ring, c.bg) >= 3.0);
+            QVERIFY(contrastRatio(c.ring, c.surface) >= 3.0);
+        }
+    }
+
+    void orangeBrandReservesGreenForSuccess() {
+        using namespace choscordb::design;
+        const auto light = resolveColors(ResolvedAppearance::Light);
+        const auto dark = resolveColors(ResolvedAppearance::Dark);
+        QCOMPARE(light.primary, QColor("#c2410c"));
+        QCOMPARE(dark.primary, QColor("#ff8a18"));
+        for (const auto& colors : {light, dark}) {
+            QCOMPARE(colors.ring, colors.primary);
+            QCOMPARE(colors.codeString, colors.primary);
+            for (const auto& [name, value] : colorTokens(colors)) {
+                if (name == QStringLiteral("success") || name == QStringLiteral("success-surface"))
+                    continue;
+                const int hue = value.hsvHue();
+                QVERIFY2(hue < 90 || hue > 170, qPrintable(name));
+            }
+            const int successHue = colors.success.hsvHue();
+            QVERIFY(successHue >= 90 && successHue <= 170);
         }
     }
 
