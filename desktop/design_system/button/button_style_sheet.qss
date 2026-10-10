@@ -8,8 +8,8 @@ QPushButton {
   font-weight: 400;
 }
 
-QPushButton:hover {
-  border-color: @ring;
+QPushButton:hover, QPushButton:pressed {
+  background-color: @surface-raised;
 }
 
 QPushButton:default, QPushButton:checked {
@@ -38,10 +38,14 @@ QPushButton[primary="true"], QToolButton[primary="true"] {
   border-color: @primary;
 }
 
-QPushButton:pressed {
+QPushButton[primary="true"]:hover {
+  background-color: @primary-hover;
+  border-color: @primary-hover;
+}
+
+QPushButton[primary="true"]:pressed {
   background-color: @primary-pressed;
   border-color: @primary-pressed;
-  color: @primary-fg;
 }
 
 QPushButton:disabled {
@@ -53,6 +57,14 @@ QPushButton[variant="default"] {
   color: @primary-fg;
   border-color: transparent;
   font-weight: 400;
+}
+
+QPushButton[variant="default"]:hover {
+  background: @primary-hover;
+}
+
+QPushButton[variant="default"]:pressed {
+  background: @primary-pressed;
 }
 
 QPushButton[variant="outline"] {

@@ -10,7 +10,7 @@ bool drawMenuIndicator(QStyle::PrimitiveElement element, const QStyleOption* opt
         const auto color = option->palette.color(option->state.testFlag(QStyle::State_Selected)
                                                      ? QPalette::HighlightedText
                                                      : QPalette::ButtonText);
-        themedIcon(Icon::Check, color, 16).paint(painter, option->rect);
+        themedIcon(Icon::Check, color, dimension(Dimension::Icon)).paint(painter, option->rect);
         return true;
     }
     return false;

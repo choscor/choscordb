@@ -4,6 +4,7 @@
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/history_row/history_row.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
@@ -76,12 +77,12 @@ class HistoryRowDelegate final : public QStyledItemDelegate {
                                2 * design::spacing(design::Spacing::OneHalf);
         const QRect badge(bounds.left() + inset, sqlRect.bottom() + 1 + gap, badgeWidth,
                           design::dimension(design::Dimension::Badge));
+        const auto tint =
+            design::historyStatusTint(colors, index.data(HistoryModel::StatusRole).toString());
         painter->setPen(Qt::NoPen);
-        painter->setBrush(colors.surfaceRaised);
+        painter->setBrush(tint.surface);
         painter->drawRoundedRect(badge, badgeRadius, badgeRadius);
-        const bool failed =
-            index.data(HistoryModel::StatusRole).toString() == QLatin1String("failed");
-        painter->setPen(failed ? colors.danger : colors.primary);
+        painter->setPen(tint.ink);
         painter->drawText(badge, Qt::AlignCenter, status);
         const auto detail = QString("%1 · %2 · %3 · %4")
                                 .arg(index.siblingAtColumn(0).data().toString(),

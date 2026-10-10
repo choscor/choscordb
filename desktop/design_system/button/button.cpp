@@ -132,6 +132,7 @@ void Button::paintEvent(QPaintEvent*) {
     const bool dark = theme.appearance == ResolvedAppearance::Dark;
     const auto& colors = theme.colors;
     const bool hover = state.testFlag(QStyle::State_MouseOver);
+    const bool pressed = state.testFlag(QStyle::State_Sunken);
     QColor background = Qt::transparent;
     QColor foreground = colors.fg;
     QColor border = Qt::transparent;
@@ -141,40 +142,36 @@ void Button::paintEvent(QPaintEvent*) {
     };
     switch (variant_) {
     case ButtonVariant::Default:
-        background = colors.primary;
+        background = pressed ? colors.primaryPressed : hover ? colors.primaryHover : colors.primary;
         foreground = colors.primaryFg;
         break;
     case ButtonVariant::Secondary:
-        background = colors.surfaceRaised;
-        foreground = colors.fg;
-        if (hover)
-            background = colors.selection;
+        // Secondary already rests on surface-raised; hover steps to the border tone.
+        background = hover || pressed ? colors.border : colors.surfaceRaised;
         break;
     case ButtonVariant::Outline:
-        background = hover ? colors.surfaceRaised : colors.surface;
-        border = dark ? colors.border : colors.border;
+        background = hover || pressed ? colors.surfaceRaised : colors.surface;
+        border = colors.border;
         break;
     case ButtonVariant::Ghost:
-        if (hover || state.testFlag(QStyle::State_On))
-            background = alpha(colors.surfaceRaised, dark ? .5 : 1.);
+        if (hover || pressed)
+            background = colors.surfaceRaised;
         break;
     case ButtonVariant::Destructive:
-        background = alpha(colors.danger, (dark ? .2 : .1) + (hover ? .1 : 0.));
+        background = alpha(colors.danger, (dark ? .2 : .1) + (hover || pressed ? .1 : 0.));
         foreground = colors.danger;
         break;
     case ButtonVariant::Link:
         foreground = colors.primary;
         break;
     }
-    if (context_ == ButtonContext::SidebarTab && isChecked()) {
-        background = colors.surfaceRaised;
-        foreground = colors.fg;
-    }
-    if (context_ == ButtonContext::Choice && isChecked()) {
+    // Checked toggles, segments and choices are selected rows of a set.
+    if (isChecked() && variant_ != ButtonVariant::Default) {
         background = colors.selection;
         foreground = colors.fg;
-        border = colors.primary;
     }
+    if (context_ == ButtonContext::Choice && isChecked())
+        border = colors.primary;
     if (context_ == ButtonContext::TabAction && hover) {
         background = Qt::transparent;
         foreground = colors.primary;

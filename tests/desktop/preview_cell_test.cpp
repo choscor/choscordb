@@ -1,4 +1,5 @@
 #include "design_system/table/table_style.h"
+#include "design_system/theme.h"
 #include "preview_test.h"
 #include "tools/preview/preview_window.h"
 #include <QAction>
@@ -10,7 +11,7 @@
 #include <QTableWidget>
 #include <QtTest>
 
-void PreviewTest::tableHoverPreservesBackgroundInBothThemes() {
+void PreviewTest::tableHoverUsesRaisedSurfaceInBothThemes() {
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen("tables"));
     window.show();
@@ -21,14 +22,15 @@ void PreviewTest::tableHoverPreservesBackgroundInBothThemes() {
         auto* table = host->findChild<QTableWidget*>();
         QVERIFY(table);
         table->setMouseTracking(true);
+        table->clearSelection();
+        const auto raised = choscordb::design::resolvedThemeForWidget(*table).colors.surfaceRaised;
         for (int row = 0; row < 2; ++row) {
             const auto cell = table->visualItemRect(table->item(row, 0));
-            const auto before = table->viewport()->grab().toImage();
             QTest::mouseMove(table->viewport(), cell.center());
             QCoreApplication::processEvents();
             const auto after = table->viewport()->grab().toImage();
-            const auto sample = cell.topLeft() + QPoint(3, 3);
-            QCOMPARE(after.pixelColor(sample), before.pixelColor(sample));
+            const auto sample = (cell.topLeft() + QPoint(3, 3)) * after.devicePixelRatio();
+            QCOMPARE(after.pixelColor(sample), raised);
         }
     }
 }

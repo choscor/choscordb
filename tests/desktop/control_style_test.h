@@ -40,6 +40,7 @@ class ControlStyleTest final : public QObject {
     void navigationRowsUseCompactGeometry();
     void treeHoverFillsSquareRowCorners();
     void listSelectionFillsSquareRowCorners();
+    void rowsAndMenusShareOneSelectionAndHoverModel();
     void validationStateUpdatesAnAlreadyVisibleField();
     void tableRowsHonorReferenceLineBoxAndPadding();
     void unusedHeaderGutterUsesThemeSurface_data();

@@ -3,17 +3,15 @@ QTableView::item:selected, QListView::item:selected {
   color: @fg;
 }
 
-QListView::item:hover {
-  background: @selection;
+QTableView::item:hover:!selected, QListView::item:hover:!selected {
+  background: @surface-raised;
 }
 
 QListView[designSurface="sidebar"]::item:selected {
-  background: @surface-raised;
-  color: @fg;
   border-radius: @radius-md;
 }
 
-QListView[designNavigationItem="true"]::item:hover {
+QListView[designNavigationItem="true"]::item:hover:!selected {
   background: @surface-raised;
   color: @fg;
   border-radius: @radius-md;

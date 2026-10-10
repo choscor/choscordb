@@ -141,6 +141,66 @@ void ControlStyleTest::listSelectionFillsSquareRowCorners() {
              QColor("#fde4d3"));
 }
 
+void ControlStyleTest::rowsAndMenusShareOneSelectionAndHoverModel() {
+    using namespace choscordb::design;
+    QWidget root;
+    ThemeManager theme;
+    theme.setMode(ThemeMode::Light);
+    theme.applyTo(root);
+    const auto colors = theme.resolvedTheme().colors;
+    QTreeWidget tree(&root);
+    tree.setHeaderHidden(true);
+    tree.addTopLevelItems({new QTreeWidgetItem({"customers"}), new QTreeWidgetItem({"orders"})});
+    tree.setCurrentItem(tree.topLevelItem(0));
+    tree.setGeometry(0, 0, 300, 90);
+    QListWidget list(&root);
+    list.addItems({"Connections", "Query history"});
+    list.setCurrentRow(0);
+    list.setGeometry(0, 100, 300, 90);
+    QTableWidget table(2, 1, &root);
+    table.setItem(0, 0, new QTableWidgetItem("1"));
+    table.setItem(1, 0, new QTableWidgetItem("2"));
+    table.setCurrentCell(0, 0);
+    table.setGeometry(0, 200, 300, 120);
+    root.resize(320, 340);
+    root.show();
+    QCoreApplication::processEvents();
+    const auto fillAt = [](QAbstractItemView& view, const QRect& row) {
+        const auto image = view.viewport()->grab().toImage();
+        const auto scale = image.devicePixelRatio();
+        return image.pixelColor(qRound((row.right() - 2) * scale),
+                                qRound(row.center().y() * scale));
+    };
+    const auto hover = [](QAbstractItemView& view, const QRect& row) {
+        QTest::mouseMove(view.viewport(), QPoint(row.center().x(), row.bottom() + 40));
+        QTest::mouseMove(view.viewport(), QPoint(row.right() - 2, row.center().y()));
+    };
+    const auto treeHovered = tree.visualItemRect(tree.topLevelItem(1));
+    QCOMPARE(fillAt(tree, tree.visualItemRect(tree.topLevelItem(0))), colors.selection);
+    hover(tree, treeHovered);
+    QTRY_COMPARE_WITH_TIMEOUT(fillAt(tree, treeHovered), colors.surfaceRaised, 1000);
+    const auto listHovered = list.visualItemRect(list.item(1));
+    QCOMPARE(fillAt(list, list.visualItemRect(list.item(0))), colors.selection);
+    hover(list, listHovered);
+    QTRY_COMPARE_WITH_TIMEOUT(fillAt(list, listHovered), colors.surfaceRaised, 1000);
+    const auto tableHovered = table.visualItemRect(table.item(1, 0));
+    QCOMPARE(fillAt(table, table.visualItemRect(table.item(0, 0))), colors.selection);
+    hover(table, tableHovered);
+    QTRY_COMPARE_WITH_TIMEOUT(fillAt(table, tableHovered), colors.surfaceRaised, 1000);
+
+    QMenu menu(&root);
+    auto* action = menu.addAction("Copy synthetic value");
+    menu.popup(root.mapToGlobal(QPoint(20, 20)));
+    QTRY_VERIFY(menu.isVisible());
+    menu.setActiveAction(action);
+    const auto item = menu.actionGeometry(action);
+    const auto image = menu.grab().toImage();
+    const auto scale = image.devicePixelRatio();
+    QCOMPARE(image.pixelColor(qRound((item.left() + 4) * scale), qRound(item.center().y() * scale)),
+             colors.surfaceRaised);
+    menu.close();
+}
+
 void ControlStyleTest::validationStateUpdatesAnAlreadyVisibleField() {
     using namespace choscordb::design;
     QWidget root;

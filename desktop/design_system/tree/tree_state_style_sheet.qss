@@ -5,12 +5,6 @@ QTreeView::item:hover {
 QTreeView::item:selected {
   background: @selection;
   color: @fg;
-  font-weight: 600;
-}
-
-QTreeView[designSurface="sidebar"]::item:selected {
-  background: @surface-raised;
-  color: @fg;
 }
 
 /* NavigationTreeView paints its own rounded row fill. */

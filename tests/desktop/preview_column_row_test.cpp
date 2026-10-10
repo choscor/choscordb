@@ -142,7 +142,7 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
         const auto treeImage = tree->viewport()->grab().toImage();
         QVERIFY(parentRow.left() > 6);
         QCOMPARE(treeImage.pixelColor(parentRow.left() - 1, parentRow.bottom() - 4),
-                 choscordb::design::resolvedThemeForWidget(*tree).colors.surfaceRaised);
+                 choscordb::design::resolvedThemeForWidget(*tree).colors.selection);
         const auto branchInk = choscordb::design::resolvedThemeForWidget(*tree).colors.fgMuted;
         bool hasMutedBranch = false;
         for (int y = parentRow.top(); y <= parentRow.bottom(); ++y)

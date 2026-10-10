@@ -8,6 +8,16 @@
 #include <QStyleOptionViewItem>
 
 namespace choscordb::design {
+StatusTint historyStatusTint(const Colors& colors, QStringView status) {
+    if (status == u"completed")
+        return {colors.success, colors.successSurface};
+    if (status == u"failed" || status == u"disconnected")
+        return {colors.danger, colors.dangerSurface};
+    if (status == u"cancelled")
+        return {colors.warning, colors.warningSurface};
+    return {colors.fgMuted, colors.surfaceRaised};
+}
+
 namespace {
 QString statusLabel(const QString& status) {
     if (status == "completed")
@@ -45,8 +55,10 @@ void RecentHistoryRowDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(selected ? colors.border : Qt::transparent);
-    painter->setBrush((selected || hovered) ? colors.surfaceRaised : colors.sidebar);
-    painter->drawRoundedRect(bounds, radius(Radius::Small), radius(Radius::Small));
+    painter->setBrush(selected  ? colors.selection
+                      : hovered ? colors.surfaceRaised
+                                : colors.sidebar);
+    painter->drawRoundedRect(bounds, radius(Radius::Medium), radius(Radius::Medium));
 
     const QFont sqlFont = resolveTypography(TypographyRole::Metadata);
     const QFontMetrics sqlMetrics(sqlFont);
@@ -69,23 +81,11 @@ void RecentHistoryRowDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     const int badgeWidth = detailMetrics.horizontalAdvance(status) + 2 * inset;
     const int badgeLeft = bounds.right() - inset - badgeWidth;
     const QRect badge(badgeLeft, dateY - lineGap, badgeWidth, detailMetrics.height() + 2 * lineGap);
-    QColor badgeInk = colors.fgMuted;
-    QColor badgeSurface = colors.surfaceRaised;
-    const auto rawStatus = index.data(StatusRole).toString();
-    if (rawStatus == "completed") {
-        badgeInk = colors.success;
-        badgeSurface = colors.successSurface;
-    } else if (rawStatus == "failed" || rawStatus == "disconnected") {
-        badgeInk = colors.danger;
-        badgeSurface = colors.dangerSurface;
-    } else if (rawStatus == "cancelled") {
-        badgeInk = colors.warning;
-        badgeSurface = colors.warningSurface;
-    }
+    const auto tint = historyStatusTint(colors, index.data(StatusRole).toString());
     painter->setPen(Qt::NoPen);
-    painter->setBrush(badgeSurface);
+    painter->setBrush(tint.surface);
     painter->drawRoundedRect(badge, radius(Radius::Small), radius(Radius::Small));
-    painter->setPen(badgeInk);
+    painter->setPen(tint.ink);
     painter->drawText(badge, Qt::AlignCenter, status);
 
     const int iconSize = dimension(Dimension::IconSmall);
@@ -107,8 +107,8 @@ void RecentHistoryRowDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     if (option.state & QStyle::State_HasFocus) {
         painter->setPen(QPen(colors.ring, focusSpec().borderWidth));
         painter->setBrush(Qt::NoBrush);
-        painter->drawRoundedRect(bounds.adjusted(1, 1, -1, -1), radius(Radius::Small),
-                                 radius(Radius::Small));
+        painter->drawRoundedRect(bounds.adjusted(1, 1, -1, -1), radius(Radius::Medium),
+                                 radius(Radius::Medium));
     }
     painter->restore();
 }
