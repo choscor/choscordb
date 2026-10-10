@@ -9,40 +9,36 @@
 namespace choscordb::design {
 
 enum class DialogSize { Short, Export, Preferences, Profiles, Detail, Ddl };
-enum class Spacing { Quarter, Half, One, OneHalf, Two, TwoHalf, Three, Four, Six, Eight };
+enum class Spacing { Half, One, OneHalf, Two, Three, Four, Six, Eight };
+// The compact scale, in logical pixels on a 4px grid. Controls share one
+// height per size; every data row and header is Row/Header high.
 enum class Dimension {
-    ButtonExtraSmall,
-    ButtonSmall,
-    Button,
-    ButtonLarge,
-    Input,
-    Selector,
+    ControlExtraSmall,
+    ControlSmall,
+    Control,
     Checkbox,
     IconSmall,
     Icon,
-    IconLarge,
     ModalWidth,
     QuickSearchWidth,
     QuickSearchRow,
     CompletionPopupWidth,
     SheetWidth,
-    TableRow,
     TableColumn,
-    TableHeader,
     Row,
-    GridHeader,
+    Header,
+    Tab,
+    DocumentTabWidth,
     Toolbar,
-    NavigationRow,
-    PaneTab,
-    DocumentTab,
     Progress,
+    Scrollbar,
     ToastProgress,
     Badge,
     SwitchWidth,
     SwitchHeight,
     SwitchThumb
 };
-enum class Radius { Small, Medium, Large, ExtraLarge, TwoExtraLarge };
+enum class Radius { Small, Medium, Large };
 enum class Elevation { Popover, Dialog };
 enum class Motion { Interaction, Popup };
 
@@ -92,7 +88,6 @@ struct LayoutMetrics final {
     int minimumWorkspaceWidth = 960;
     int minimumWorkspaceHeight = 640;
     int narrowNavigatorWidth = 235;
-    int objectColumnRowHeight = 33;
     int sidebarInset = 11;
     int sidebarTopInset = 9;
     int initialEditorHeight = 380;

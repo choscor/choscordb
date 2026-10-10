@@ -270,12 +270,12 @@ void ObjectErdWidget::render() {
     const QFont rowFont = design::resolveTypography(design::TypographyRole::Metadata);
     const QFontMetrics headerMeasure(headerFont), rowMeasure(rowFont);
     const qreal pad = design::spacing(design::Spacing::Two);
-    const qreal rowHeight = qMax(design::dimension(design::Dimension::TableRow),
+    const qreal rowHeight = qMax(design::dimension(design::Dimension::Row),
                                  rowMeasure.height() + design::spacing(design::Spacing::One));
-    const qreal headerHeight = qMax(design::dimension(design::Dimension::Button),
+    const qreal headerHeight = qMax(design::dimension(design::Dimension::Control),
                                     headerMeasure.height() + design::spacing(design::Spacing::Two));
     const qreal gap = design::spacing(design::Spacing::Four) * 6;
-    const qreal minWidth = design::dimension(design::Dimension::Button) * 7;
+    const qreal minWidth = design::dimension(design::Dimension::Control) * 7;
     struct Placement {
         QRectF rect;
         QHash<QString, qreal> columnY;
@@ -314,7 +314,7 @@ void ObjectErdWidget::render() {
     horizontalWidth_ = centerWidth + neighborWidth + gap;
     denseLayout_ = ordered.size() > 6 ||
                    neighborHeight >
-                       qMax(centerHeight * 3, design::dimension(design::Dimension::Button) * 18.0);
+                       qMax(centerHeight * 3, design::dimension(design::Dimension::Control) * 18.0);
     stacked_ = !denseLayout_ && view_->viewport()->width() < horizontalWidth_;
     const auto place = [&](const ObjectGraphTable& table, qreal x, qreal y) {
         Placement placement;
@@ -330,7 +330,7 @@ void ObjectErdWidget::render() {
         // Lane membership depends only on graph data, so resizing cannot shuffle tables.
         const qreal rowGap = design::spacing(design::Spacing::Four) * 2;
         const qreal laneHeight =
-            qMax(centerHeight * 2, design::dimension(design::Dimension::Button) * 18.0);
+            qMax(centerHeight * 2, design::dimension(design::Dimension::Control) * 18.0);
         QList<ObjectGraphTable> left, right;
         for (const auto& table : ordered) {
             if (table.id == selectedId_)

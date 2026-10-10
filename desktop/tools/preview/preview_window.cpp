@@ -627,23 +627,20 @@ void populateButtons(QWidget* host, QVBoxLayout* layout) {
     }
     layout->addLayout(grid);
     layout->addWidget(new QLabel("Reference text and icon sizes", host));
-    const QList<QPair<QString, ButtonSize>> sizes = {{"xs", ButtonSize::ExtraSmall},
-                                                     {"sm", ButtonSize::Small},
-                                                     {"default", ButtonSize::Default},
-                                                     {"lg", ButtonSize::Large},
-                                                     {"icon-xs", ButtonSize::IconExtraSmall},
-                                                     {"icon-sm", ButtonSize::IconSmall},
-                                                     {"icon", ButtonSize::Icon},
-                                                     {"icon-lg", ButtonSize::IconLarge}};
+    const QList<QPair<QString, ButtonSize>> sizes = {
+        {"xs", ButtonSize::ExtraSmall},     {"sm", ButtonSize::Small},
+        {"default", ButtonSize::Default},   {"icon-xs", ButtonSize::IconExtraSmall},
+        {"icon-sm", ButtonSize::IconSmall}, {"icon", ButtonSize::Icon}};
     auto* sizeGrid = new QGridLayout;
     for (int i = 0; i < sizes.size(); ++i) {
         const auto& size = sizes[i];
         auto* button = new Button(size.first.startsWith("icon") ? QString{} : size.first, host);
         button->setObjectName("button-size-" + size.first);
         button->setAccessibleName("Add · " + size.first);
-        button->setIcon(themedIcon(Icon::Add, resolvedThemeForWidget(*host).colors.primaryFg, 16));
+        button->setIcon(themedIcon(Icon::Add, resolvedThemeForWidget(*host).colors.primaryFg,
+                                   dimension(Dimension::Icon)));
         button->setButtonSize(size.second);
-        sizeGrid->addWidget(button, i / 4, i % 4);
+        sizeGrid->addWidget(button, i / 3, i % 3);
     }
     layout->addLayout(sizeGrid);
     auto* longLabel = new Button("Truy vấn dữ liệu · 日本語 · Long constrained label", host);

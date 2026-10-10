@@ -31,8 +31,6 @@ double iconStrokeWidth() {
 
 int spacing(Spacing value) {
     switch (value) {
-    case Spacing::Quarter:
-        return 1;
     case Spacing::Half:
         return 2;
     case Spacing::One:
@@ -41,8 +39,6 @@ int spacing(Spacing value) {
         return 6;
     case Spacing::Two:
         return 8;
-    case Spacing::TwoHalf:
-        return 10;
     case Spacing::Three:
         return 12;
     case Spacing::Four:
@@ -57,56 +53,44 @@ int spacing(Spacing value) {
 
 int dimension(Dimension value) {
     switch (value) {
-    case Dimension::ButtonExtraSmall:
-        return 25;
-    case Dimension::ButtonSmall:
-        return 29;
-    case Dimension::Button:
-        return 33;
-    case Dimension::ButtonLarge:
-        return 37;
-    case Dimension::Input:
-        return 31;
-    case Dimension::Selector:
-        return 33;
+    case Dimension::ControlExtraSmall:
+        return 24;
+    case Dimension::ControlSmall:
+        return 28;
+    case Dimension::Control:
+        return 32;
     case Dimension::Checkbox:
         return 16;
     case Dimension::IconSmall:
         return 12;
     case Dimension::Icon:
-        return 18;
-    case Dimension::IconLarge:
-        return 20;
+        return 16;
     case Dimension::ModalWidth:
         return 700;
     case Dimension::QuickSearchWidth:
         return 640;
     case Dimension::QuickSearchRow:
-        return 52;
+        return 44;
     case Dimension::CompletionPopupWidth:
         return 420;
     case Dimension::SheetWidth:
         return 480;
-    case Dimension::TableRow:
-        return 29;
     case Dimension::TableColumn:
         return 160;
-    case Dimension::TableHeader:
-        return 30;
     case Dimension::Row:
-        return 35;
-    case Dimension::GridHeader:
-        return 34;
+        return 28;
+    case Dimension::Header:
+        return 28;
+    case Dimension::Tab:
+        return 32;
+    case Dimension::DocumentTabWidth:
+        return 124;
     case Dimension::Toolbar:
-        return 35;
-    case Dimension::NavigationRow:
-        return 33;
-    case Dimension::PaneTab:
-        return 35;
-    case Dimension::DocumentTab:
-        return 33;
+        return 32;
     case Dimension::Progress:
-        return 5;
+        return 4;
+    case Dimension::Scrollbar:
+        return 10;
     case Dimension::ToastProgress:
         return 82;
     case Dimension::Badge:
@@ -114,25 +98,22 @@ int dimension(Dimension value) {
     case Dimension::SwitchWidth:
         return 32;
     case Dimension::SwitchHeight:
-        return 19;
+        return 18;
     case Dimension::SwitchThumb:
-        return 13;
+        return 12;
     }
     return 0;
 }
 
 int radius(Radius value) {
-    // Final compact MVP surfaces, in CSS pixels / Qt logical pixels.
+    // Small: badges, kbd, menu items, progress. Medium: controls, rows,
+    // toasts, tooltips. Large: menus, popovers, dialogs, sheets.
     switch (value) {
     case Radius::Small:
         return 4;
     case Radius::Medium:
-        return 5;
+        return 6;
     case Radius::Large:
-        return 7;
-    case Radius::ExtraLarge:
-        return 8;
-    case Radius::TwoExtraLarge:
         return 10;
     }
     return 0;

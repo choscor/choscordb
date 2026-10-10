@@ -1,5 +1,5 @@
 QDialog[appDialog="true"] {
-  border-radius: @p1-radius-8;
+  border-radius: @radius-lg;
 }
 
 QDialog[appDialog="true"] QLabel[dialogDescription="true"] {

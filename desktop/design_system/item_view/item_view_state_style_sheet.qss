@@ -10,11 +10,11 @@ QListView::item:hover {
 QListView[designSurface="sidebar"]::item:selected {
   background: @surface-raised;
   color: @fg;
-  border-radius: @p1-radius-5;
+  border-radius: @radius-md;
 }
 
 QListView[designNavigationItem="true"]::item:hover {
   background: @surface-raised;
   color: @fg;
-  border-radius: @p1-radius-5;
+  border-radius: @radius-md;
 }

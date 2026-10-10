@@ -539,7 +539,7 @@ MainWindow::Ui MainWindow::buildUi() {
         toolbar->setIconSize(QSize(design::dimension(design::Dimension::Icon),
                                    design::dimension(design::Dimension::Icon)));
         setWindowIcon(design::themedIcon(design::Icon::AppMark, resolved.colors.primary,
-                                         design::dimension(design::Dimension::IconLarge)));
+                                         design::dimension(design::Dimension::Control)));
         run->setIcon(design::themedIcon(design::Icon::Run, resolved.colors.fg,
                                         design::dimension(design::Dimension::Icon)));
         cancel->setIcon(design::themedIcon(design::Icon::Cancel, resolved.colors.fg,
@@ -709,7 +709,7 @@ MainWindow::Ui MainWindow::buildUi() {
     grid->horizontalHeader()->setResizeContentsPrecision(50);
     grid->verticalHeader()->setResizeContentsPrecision(50);
     grid->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::Row));
-    grid->horizontalHeader()->setFixedHeight(design::dimension(design::Dimension::GridHeader));
+    grid->horizontalHeader()->setFixedHeight(design::dimension(design::Dimension::Header));
     resultLayout->addWidget(grid, 1);
     auto* resultFooter = new design::StatusLine;
     resultFooter->setObjectName("sqlResultFooter");
@@ -848,7 +848,7 @@ MainWindow::Ui MainWindow::buildUi() {
     startIcon->setObjectName("startDatabaseIcon");
     startIcon->setAlignment(Qt::AlignCenter);
     const auto colorStartIcon = [this, startIcon] {
-        const int size = design::dimension(design::Dimension::IconLarge) * 3 / 2;
+        const int size = design::dimension(design::Dimension::Control);
         startIcon->setPixmap(
             design::themedIcon(design::Icon::Database, theme_->resolvedTheme().colors.fgMuted, size)
                 .pixmap(size, size));

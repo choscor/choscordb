@@ -8,16 +8,8 @@
 namespace choscordb::design {
 enum class ButtonContext { Standard, EditorAction, Choice, SidebarTab, TabAction };
 enum class ButtonVariant { Default, Secondary, Outline, Ghost, Destructive, Link };
-enum class ButtonSize {
-    ExtraSmall,
-    Small,
-    Default,
-    Large,
-    IconExtraSmall,
-    IconSmall,
-    Icon,
-    IconLarge
-};
+// Text sizes, then the square icon-only sizes in the same order.
+enum class ButtonSize { ExtraSmall, Small, Default, IconExtraSmall, IconSmall, Icon };
 
 // Keeps Qt's action, shortcut, accessibility and toggle semantics.
 class Button : public QPushButton {

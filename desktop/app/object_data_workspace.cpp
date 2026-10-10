@@ -46,7 +46,7 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     table->setWordWrap(false);
     table->setFrameShape(QFrame::NoFrame);
     table->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::Row));
-    table->horizontalHeader()->setFixedHeight(design::dimension(design::Dimension::GridHeader));
+    table->horizontalHeader()->setFixedHeight(design::dimension(design::Dimension::Header));
     table->horizontalHeader()->setDefaultSectionSize(
         design::dimension(design::Dimension::TableColumn));
     table->horizontalHeader()->setStretchLastSection(false);
@@ -56,7 +56,7 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     messages->setAccessibleName(tr("Object data diagnostics"));
     messages->setReadOnly(true);
     messages->setMaximumBlockCount(1000);
-    messages->setMaximumHeight(design::dimension(design::Dimension::TableRow) * 3);
+    messages->setMaximumHeight(design::dimension(design::Dimension::Row) * 3);
     messages->hide();
     layout->addWidget(messages);
     auto* statusLine = new design::StatusLine(this);

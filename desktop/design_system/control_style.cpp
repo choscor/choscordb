@@ -142,7 +142,7 @@ int ControlStyle::pixelMetric(PixelMetric metric, const QStyleOption* option,
     if (metric == PM_SubMenuOverlap && qobject_cast<const QMenu*>(widget))
         return spacing(Spacing::One) - detail::menuShadowMargin();
     if (metric == PM_HeaderDefaultSectionSizeVertical)
-        return dimension(Dimension::TableRow);
+        return dimension(Dimension::Row);
     if (metric == PM_FocusFrameHMargin || metric == PM_FocusFrameVMargin) {
         // Qt adds one pixel to this metric when laying out item text.
         if (metric == PM_FocusFrameHMargin && widget &&

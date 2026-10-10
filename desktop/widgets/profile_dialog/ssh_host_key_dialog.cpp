@@ -32,7 +32,7 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
     list_ = new QListWidget(this);
     list_->setObjectName("sshHostKeyCandidates");
     list_->setAccessibleName(tr("Inspected SSH host keys"));
-    list_->setMaximumHeight(design::dimension(design::Dimension::TableRow) * 4);
+    list_->setMaximumHeight(design::dimension(design::Dimension::Row) * 4);
     for (const auto& candidate : candidates_)
         list_->addItem(candidate.keyType + " — " + candidate.sha256);
     list_->setCurrentRow(-1);

@@ -576,9 +576,9 @@ void PreviewTest::narrowGalleryKeepsNavigationAndActionsReachable() {
     QVERIFY(light);
     auto* scroll = light->findChild<QScrollArea*>("previewContentScroll");
     QVERIFY2(scroll, "Overflow must scroll inside the specimen at the minimum window size.");
-    auto* last = light->findChild<QPushButton*>("button-size-icon-lg");
+    auto* last = light->findChild<QPushButton*>("button-size-icon");
     QVERIFY(last);
-    auto* previous = light->findChild<QPushButton*>("button-size-icon");
+    auto* previous = light->findChild<QPushButton*>("button-size-icon-sm");
     QVERIFY(previous);
     previous->setFocus(Qt::TabFocusReason);
     QTRY_VERIFY(previous->hasFocus());

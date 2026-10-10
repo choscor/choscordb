@@ -413,7 +413,7 @@ void StatusLine::refreshAppearance() {
             label->style()->polish(label);
         }
     }
-    message_->setMaximumHeight(dimension(Dimension::TableRow) * 3);
+    message_->setMaximumHeight(dimension(Dimension::Row) * 3);
     loading_->setPixmap(themedIcon(Icon::Loader, colors.fgMuted, dimension(Dimension::Icon))
                             .pixmap(dimension(Dimension::Icon), dimension(Dimension::Icon)));
     if (configured_)

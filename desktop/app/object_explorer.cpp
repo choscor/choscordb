@@ -618,10 +618,7 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
         setStatus("loaded", tr("%1 · DDL loaded").arg(label_));
         return;
     }
-    table_->verticalHeader()->setDefaultSectionSize(
-        inspection.pane == ObjectInspectionPane::Columns
-            ? design::layoutMetrics().objectColumnRowHeight
-            : design::dimension(design::Dimension::TableRow));
+    table_->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::Row));
     if (inspection.pane == ObjectInspectionPane::Columns) {
         // Rust rejects templates beyond its column and size limits.
         columnsLoaded_ = true;

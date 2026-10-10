@@ -74,11 +74,6 @@ QHash<QString, QString> styleTokens(const ResolvedTheme& theme) {
     QHash<QString, QString> tokens;
     for (const auto& [name, value] : colorTokens(colors))
         tokens.insert(name, cssColor(value));
-    tokens.insert(QStringLiteral("p1-radius-2"), pixels(2));
-    tokens.insert(QStringLiteral("p1-radius-5"), pixels(radius(Radius::Medium)));
-    tokens.insert(QStringLiteral("p1-radius-6"), pixels(6));
-    tokens.insert(QStringLiteral("p1-radius-8"), pixels(radius(Radius::ExtraLarge)));
-
     // Destructive fills tint `danger`; hover adds 10%.
     tokens.insert(QStringLiteral("destructive-tint"),
                   cssColor(withAlpha(colors.danger, dark ? 0.2 : 0.1)));
@@ -91,27 +86,29 @@ QHash<QString, QString> styleTokens(const ResolvedTheme& theme) {
     tokens.insert(QStringLiteral("shadow-margin"), pixels(detail::menuShadowMargin()));
 
     tokens.insert(QStringLiteral("radius-sm"), pixels(radius(Radius::Small)));
-    tokens.insert(QStringLiteral("radius-md"), pixels(radius(Radius::Large)));
-    tokens.insert(QStringLiteral("radius-lg"), pixels(radius(Radius::TwoExtraLarge)));
-    tokens.insert(QStringLiteral("scrollbar-radius"), pixels(5));
+    tokens.insert(QStringLiteral("radius-md"), pixels(radius(Radius::Medium)));
+    tokens.insert(QStringLiteral("radius-lg"), pixels(radius(Radius::Large)));
+    tokens.insert(QStringLiteral("space-half"), pixels(spacing(Spacing::Half)));
     tokens.insert(QStringLiteral("space-1"), pixels(spacing(Spacing::One)));
     tokens.insert(QStringLiteral("space-2"), pixels(spacing(Spacing::Two)));
 
-    // Stylesheet min-heights exclude the 1px borders that Qt adds around them.
-    tokens.insert(QStringLiteral("button-height"), pixels(dimension(Dimension::Button) - 2));
-    tokens.insert(QStringLiteral("field-height"), pixels(dimension(Dimension::Input) - 2));
-    tokens.insert(QStringLiteral("select-height"), pixels(dimension(Dimension::Selector) - 2));
-    tokens.insert(QStringLiteral("tool-height"), pixels(dimension(Dimension::ButtonSmall) - 2));
-    tokens.insert(QStringLiteral("pane-tab-height"), pixels(dimension(Dimension::PaneTab) - 3));
-    tokens.insert(QStringLiteral("document-tab-height"),
-                  pixels(dimension(Dimension::DocumentTab) - 2));
-    tokens.insert(QStringLiteral("header-height"), pixels(dimension(Dimension::TableHeader) - 1));
-    tokens.insert(QStringLiteral("row-line-height"),
-                  pixels(dimension(Dimension::NavigationRow) - 11));
-    tokens.insert(QStringLiteral("nav-item-min-height"), pixels(18));
-    tokens.insert(QStringLiteral("nav-item-padding"), pixels(spacing(Spacing::Half)));
+    // Stylesheet heights exclude the borders and margins that Qt adds around
+    // them, so the rendered box matches the Dimension.
+    tokens.insert(QStringLiteral("control-height"), pixels(dimension(Dimension::Control) - 2));
+    tokens.insert(QStringLiteral("tool-height"), pixels(dimension(Dimension::ControlSmall) - 2));
+    tokens.insert(QStringLiteral("pane-tab-height"), pixels(dimension(Dimension::Tab) - 3));
+    tokens.insert(QStringLiteral("document-tab-height"), pixels(dimension(Dimension::Tab) - 2));
+    tokens.insert(QStringLiteral("document-tab-width"),
+                  pixels(dimension(Dimension::DocumentTabWidth)));
+    tokens.insert(QStringLiteral("header-height"), pixels(dimension(Dimension::Header) - 1));
+    // Item rows add 3px padding above and below, or 1px padding and 2px margin.
+    tokens.insert(QStringLiteral("row-line-height"), pixels(dimension(Dimension::Row) - 6));
+    tokens.insert(QStringLiteral("nav-item-min-height"),
+                  pixels(dimension(Dimension::Row) - 2 * spacing(Spacing::Half)));
     tokens.insert(QStringLiteral("progress-height"), pixels(dimension(Dimension::Progress)));
-    tokens.insert(QStringLiteral("toolbar-height"), pixels(35));
+    tokens.insert(QStringLiteral("scrollbar-size"), pixels(dimension(Dimension::Scrollbar)));
+    tokens.insert(QStringLiteral("scrollbar-radius"), pixels(dimension(Dimension::Scrollbar) / 2));
+    tokens.insert(QStringLiteral("toolbar-height"), pixels(dimension(Dimension::Toolbar)));
 
     tokens.insert(QStringLiteral("font-caption"),
                   pixels(typographySpec(TypographyRole::SectionCaption).pixelSize));

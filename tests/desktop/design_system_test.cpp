@@ -253,9 +253,9 @@ class DesignSystemTest final : public QObject {
             return QString{};
         };
         QCOMPARE(value("color.bg"), QString("#f6f7f8"));
-        QCOMPARE(value("radius.lg"), QString("7px"));
-        QCOMPARE(value("radius.xl"), QString("8px"));
-        QCOMPARE(value("spacing.2.5"), QString("10px"));
+        QCOMPARE(value("radius.md"), QString("6px"));
+        QCOMPARE(value("radius.lg"), QString("10px"));
+        QCOMPARE(value("size.row"), QString("28px"));
         QCOMPARE(value("focus.width"), QString("2px"));
         QCOMPARE(value("motion.popup"), QString("100ms"));
         QCOMPARE(value("typography.ui.lineHeight"), QString("18px"));
@@ -266,8 +266,33 @@ class DesignSystemTest final : public QObject {
                     QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("../../" + token.source)),
                 qPrintable(token.source));
         }
-        QCOMPARE(radius(Radius::Large), 7);
-        QCOMPARE(radius(Radius::ExtraLarge), 8);
+    }
+
+    void compactScaleUsesTheFourPixelGrid() {
+        using namespace choscordb::design;
+        QCOMPARE(dimension(Dimension::ControlExtraSmall), 24);
+        QCOMPARE(dimension(Dimension::ControlSmall), 28);
+        QCOMPARE(dimension(Dimension::Control), 32);
+        QCOMPARE(dimension(Dimension::Row), 28);
+        QCOMPARE(dimension(Dimension::Header), 28);
+        QCOMPARE(dimension(Dimension::Tab), 32);
+        QCOMPARE(dimension(Dimension::Toolbar), 32);
+        QCOMPARE(dimension(Dimension::QuickSearchRow), 44);
+        QCOMPARE(dimension(Dimension::IconSmall), 12);
+        QCOMPARE(dimension(Dimension::Icon), 16);
+        QCOMPARE(dimension(Dimension::Checkbox), 16);
+        QCOMPARE(dimension(Dimension::SwitchWidth), 32);
+        QCOMPARE(dimension(Dimension::SwitchHeight), 18);
+        QCOMPARE(dimension(Dimension::SwitchThumb), 12);
+        QCOMPARE(dimension(Dimension::Progress), 4);
+        QCOMPARE(dimension(Dimension::Scrollbar), 10);
+        QCOMPARE(dimension(Dimension::DocumentTabWidth), 124);
+        QCOMPARE(radius(Radius::Small), 4);
+        QCOMPARE(radius(Radius::Medium), 6);
+        QCOMPARE(radius(Radius::Large), 10);
+        for (const auto value : {Spacing::Half, Spacing::One, Spacing::OneHalf, Spacing::Two,
+                                 Spacing::Three, Spacing::Four, Spacing::Six, Spacing::Eight})
+            QCOMPARE(spacing(value) % 2, 0);
     }
 
     void pinnedGreenPaletteResolvesFixedCanvasRoles() {
@@ -372,7 +397,7 @@ class DesignSystemTest final : public QObject {
         ThemeManager manager;
         manager.installOn(qApp);
         QCOMPARE(qApp->palette().color(QPalette::Window), manager.resolvedTheme().colors.bg);
-        QVERIFY(qApp->styleSheet().contains(QStringLiteral("min-height: 31px")));
+        QVERIFY(qApp->styleSheet().contains(QStringLiteral("min-height: 30px")));
         QVERIFY(!qApp->styleSheet().contains('%'));
         QVERIFY(!qApp->styleSheet().contains('@'));
         QVERIFY(qApp->styleSheet().contains(QStringLiteral("QLabel[state=\"error\"]")));

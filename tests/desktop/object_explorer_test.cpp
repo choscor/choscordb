@@ -960,7 +960,8 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(values.contains("No"));
         QVERIFY(values.contains("TEXT"));
         QCOMPARE(table->editTriggers(), QAbstractItemView::NoEditTriggers);
-        QCOMPARE(table->rowHeight(0), 33);
+        QCOMPARE(table->rowHeight(0),
+                 choscordb::design::dimension(choscordb::design::Dimension::Row));
         QVERIFY(!table->verticalHeader()->isVisible());
         QVERIFY(
             !qvariant_cast<QIcon>(table->model()->index(0, 0).data(Qt::DecorationRole)).isNull());

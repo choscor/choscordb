@@ -2,7 +2,7 @@ QToolTip {
   background: @fg;
   color: @bg;
   border: 0;
-  border-radius: @p1-radius-8;
+  border-radius: @radius-md;
   padding: 6px 12px;
   font-size: @font-dense;
 }

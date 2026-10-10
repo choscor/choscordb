@@ -134,7 +134,7 @@ class Backdrop final : public QWidget {
             shadow_.fill(Qt::transparent);
             QPainter shadowPainter(&shadow_);
             QPainterPath path;
-            path.addRoundedRect(panel, radius(Radius::ExtraLarge), radius(Radius::ExtraLarge));
+            path.addRoundedRect(panel, radius(Radius::Large), radius(Radius::Large));
             QPainterPath outside;
             outside.addRect(rect());
             // QGraphicsDropShadowEffect includes its source in the scene render.
@@ -396,7 +396,7 @@ void paintDialogSurface(QWidget& widget, bool drawBorder) {
     const auto& colors = theme.colors;
     painter.setBrush(colors.surface);
     painter.setPen(drawBorder ? QPen(colors.border, 1) : Qt::NoPen);
-    const auto cornerRadius = radius(Radius::ExtraLarge);
+    const auto cornerRadius = radius(Radius::Large);
     const auto bounds =
         drawBorder ? QRectF(widget.rect()).adjusted(.5, .5, -.5, -.5) : QRectF(widget.rect());
     painter.drawRoundedRect(bounds, cornerRadius, cornerRadius);

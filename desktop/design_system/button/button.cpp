@@ -11,11 +11,11 @@
 namespace choscordb::design {
 namespace {
 int buttonPadding(ButtonSize size, ButtonContext context) {
-    const int index = static_cast<int>(size) % 4;
-    return context == ButtonContext::EditorAction ? 12 : index == 0 ? 6 : index == 1 ? 9 : 12;
+    const int index = static_cast<int>(size) % 3;
+    return context == ButtonContext::EditorAction ? 12 : index == 0 ? 6 : index == 1 ? 8 : 12;
 }
 QFont buttonFont(ButtonSize size, ButtonContext context) {
-    const int index = static_cast<int>(size) % 4;
+    const int index = static_cast<int>(size) % 3;
     const auto role = context == ButtonContext::EditorAction ? TypographyRole::Field
                       : index == 0                           ? TypographyRole::SectionCaption
                       : index == 1                           ? TypographyRole::Small
@@ -93,17 +93,11 @@ bool Button::isLoading() const {
     return loading_;
 }
 QSize Button::sizeHint() const {
-    const int index = static_cast<int>(size_) % 4;
-    const int heights[] = {dimension(Dimension::ButtonExtraSmall),
-                           dimension(Dimension::ButtonSmall), dimension(Dimension::Button),
-                           dimension(Dimension::ButtonLarge)};
-    const bool hasLeading = loading_ || !icon().isNull() || size_ >= ButtonSize::IconExtraSmall;
-    const int height = context_ == ButtonContext::Choice
-                           ? layoutMetrics().connectionDriverHeight
-                           : heights[index] + (hasLeading ? (index == 0   ? 0
-                                                             : index == 1 ? 1
-                                                                          : 3)
-                                                          : 0);
+    const int index = static_cast<int>(size_) % 3;
+    const int heights[] = {dimension(Dimension::ControlExtraSmall),
+                           dimension(Dimension::ControlSmall), dimension(Dimension::Control)};
+    const int height =
+        context_ == ButtonContext::Choice ? layoutMetrics().connectionDriverHeight : heights[index];
     if (size_ >= ButtonSize::IconExtraSmall)
         return {height, height};
     const int padding = buttonPadding(size_, context_);
@@ -191,7 +185,7 @@ void Button::paintEvent(QPaintEvent*) {
         painter.setOpacity(.4);
     const bool focus = state.testFlag(QStyle::State_HasFocus);
     QRectF panel = QRectF(rect()).adjusted(.5, .5, -.5, -.5);
-    const int radius = design::radius(Radius::Large);
+    const int radius = design::radius(Radius::Medium);
     painter.setBrush(background);
     painter.setPen(QPen(border, 1));
     if (property("groupFirst").isValid()) {
@@ -233,7 +227,7 @@ void Button::paintEvent(QPaintEvent*) {
         painter.drawRoundedRect(panel.adjusted(1, 1, -1, -1), radius, radius);
     }
     auto textFont = buttonFont(size_, context_);
-    const int index = static_cast<int>(size_) % 4;
+    const int index = static_cast<int>(size_) % 3;
     textFont.setUnderline(variant_ == ButtonVariant::Link && hover);
     painter.setFont(textFont);
     painter.setPen(foreground);

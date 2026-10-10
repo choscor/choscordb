@@ -413,8 +413,8 @@ void ControlStyleTest::closableDocumentTabsUseCompactHeight() {
     tabs.addTab("A much longer history query title");
     root.show();
     QCoreApplication::processEvents();
-    QCOMPARE(tabs.sizeHint().height(), 33);
-    QCOMPARE(tabs.tabRect(0).height(), 33);
+    QCOMPARE(tabs.sizeHint().height(), 32);
+    QCOMPARE(tabs.tabRect(0).height(), 32);
     const auto side = static_cast<QTabBar::ButtonPosition>(
         tabs.style()->styleHint(QStyle::SH_TabBar_CloseButtonPosition));
     auto* close = tabs.tabButton(0, side);
@@ -456,7 +456,7 @@ void ControlStyleTest::referenceSwitchMovesItsThumbAndKeepsKeyboardSemantics() {
     QStyleOptionButton option;
     option.initFrom(&toggle);
     auto indicator = toggle.style()->subElementRect(QStyle::SE_CheckBoxIndicator, &option, &toggle);
-    QCOMPARE(indicator.size(), QSize(32, 19));
+    QCOMPARE(indicator.size(), QSize(32, 18));
     const auto unchecked = toggle.grab().toImage();
     QCOMPARE(unchecked.pixelColor(indicator.left() + 9, indicator.top() + 9), QColor(Qt::white));
     QTest::keyClick(&toggle, Qt::Key_Space);

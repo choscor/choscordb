@@ -88,7 +88,7 @@ class HistoryRowDelegate final : public QStyledItemDelegate {
                                      index.siblingAtColumn(1).data().toString(),
                                      index.siblingAtColumn(3).data().toString(),
                                      tr("%1 rows").arg(index.siblingAtColumn(5).data().toString()));
-        const int detailLeft = badge.right() + 1 + design::spacing(design::Spacing::TwoHalf);
+        const int detailLeft = badge.right() + 1 + design::spacing(design::Spacing::Two);
         const QRect detailRect(detailLeft, badge.top(),
                                qMax(0, bounds.right() + 1 - inset - detailLeft), badge.height());
         painter->setPen(colors.fgMuted);

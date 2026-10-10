@@ -2,11 +2,11 @@ QProgressBar {
   min-height: @progress-height;
   max-height: @progress-height;
   border: 0;
-  border-radius: @p1-radius-2;
+  border-radius: @radius-sm;
   background: @surface-raised;
 }
 
 QProgressBar::chunk {
-  border-radius: @p1-radius-2;
+  border-radius: @radius-sm;
   background: @primary;
 }

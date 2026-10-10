@@ -1,5 +1,5 @@
 QComboBox {
-  min-height: @select-height;
+  min-height: @control-height;
   padding-right: 4px;
 }
 
@@ -28,5 +28,5 @@ QComboBox QAbstractItemView {
 QComboBox QAbstractItemView::item {
   min-height: 20px;
   padding: 4px 6px;
-  border-radius: @p1-radius-6;
+  border-radius: @radius-sm;
 }

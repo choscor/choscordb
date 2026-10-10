@@ -41,7 +41,7 @@ class ComponentsTest final : public QObject {
             QVERIFY(button.grab().toImage().pixelColor(20, 14) != colors.surfaceRaised);
         }
     }
-    void paneTabsHaveSquareCornersWhileDocumentTabsRetainTheirShape() {
+    void paneAndDocumentTabsHaveSquareCorners() {
         using namespace choscordb::design;
         QWidget root;
         ThemeManager theme;
@@ -77,7 +77,7 @@ class ComponentsTest final : public QObject {
             ++documentTop;
         QVERIFY(documentTop < documentRect.top() + 10);
         QCOMPARE(image.pixelColor(documentRect.left() + 8, documentTop), colors.fgMuted);
-        QCOMPARE(image.pixelColor(documentRect.left() + 1, documentTop), colors.surfaceRaised);
+        QCOMPARE(image.pixelColor(documentRect.left() + 1, documentTop), colors.fgMuted);
     }
     void sidebarTreeSelectionHasNeutralRoundedFill() {
         using namespace choscordb::design;
@@ -350,10 +350,10 @@ class ComponentsTest final : public QObject {
         button.setButtonContext(ButtonContext::EditorAction);
         QCOMPARE(button.font().pixelSize(), 12);
         QCOMPARE(button.font().letterSpacing(), 0.0);
-        QCOMPARE(button.height(), 29);
+        QCOMPARE(button.height(), 28);
         QVERIFY(button.sizeHint().width() >= footerWidth + 6);
         button.setDesignIcon(Icon::Run);
-        QCOMPARE(button.height(), 30);
+        QCOMPARE(button.height(), 28);
     }
     void primaryPressDoesNotShiftReferenceGeometry() {
         using namespace choscordb::design;
@@ -378,20 +378,20 @@ class ComponentsTest final : public QObject {
         using namespace choscordb::design;
         Button button("Run");
         button.setButtonSize(ButtonSize::Small);
-        QCOMPARE(button.height(), 29);
+        QCOMPARE(button.height(), 28);
         button.setDesignIcon(Icon::Run);
-        QCOMPARE(button.height(), 30);
+        QCOMPARE(button.height(), 28);
         button.resize(75, button.height());
         button.show();
         QSignalSpy clicked(&button, &QPushButton::clicked);
         QTest::mouseClick(&button, Qt::LeftButton);
         QCOMPARE(clicked.count(), 1);
         button.setButtonSize(ButtonSize::Default);
-        QCOMPARE(button.height(), 36);
+        QCOMPARE(button.height(), 32);
         Button customIcon("Run");
         customIcon.setButtonSize(ButtonSize::Small);
-        customIcon.setIcon(themedIcon(Icon::Run, Qt::black, 18));
-        QCOMPARE(customIcon.height(), 30);
+        customIcon.setIcon(themedIcon(Icon::Run, Qt::black, 16));
+        QCOMPARE(customIcon.height(), 28);
     }
     void semanticButtonIconFollowsLiveThemeAndVariant() {
         using namespace choscordb::design;
@@ -404,14 +404,14 @@ class ComponentsTest final : public QObject {
         button.setButtonSize(ButtonSize::Icon);
         button.setDesignIcon(Icon::Add);
         const auto light = button.grab().toImage();
-        QVERIFY(light.pixelColor(18, 18).lightness() < 100);
+        QVERIFY(light.pixelColor(16, 16).lightness() < 100);
         theme.setMode(ThemeMode::Dark);
         theme.applyTo(host);
         const auto dark = button.grab().toImage();
-        QVERIFY(dark.pixelColor(18, 18).lightness() > 180);
+        QVERIFY(dark.pixelColor(16, 16).lightness() > 180);
         button.setVariant(ButtonVariant::Default);
         const auto primary = button.grab().toImage();
-        QVERIFY(primary.pixelColor(18, 18).lightness() < 100);
+        QVERIFY(primary.pixelColor(16, 16).lightness() < 100);
     }
     void destructiveTextRemainsReadableOnItsTintedSurface() {
         using namespace choscordb::design;
@@ -460,9 +460,10 @@ class ComponentsTest final : public QObject {
         Button button("Save");
         const int normalWidth = button.sizeHint().width();
         button.setLoading(true);
-        QCOMPARE(button.sizeHint().width(), normalWidth + 22);
+        QCOMPARE(button.sizeHint().width(),
+                 normalWidth + dimension(Dimension::Icon) + spacing(Spacing::One));
         button.setButtonSize(ButtonSize::Icon);
-        QCOMPARE(button.sizeHint(), QSize(36, 36));
+        QCOMPARE(button.sizeHint(), QSize(32, 32));
     }
     void mouseFocusDoesNotPaintTheKeyboardRing() {
         using namespace choscordb::design;
@@ -487,7 +488,7 @@ class ComponentsTest final : public QObject {
         button.setFocus(Qt::TabFocusReason);
         QTRY_VERIFY(button.hasFocus());
         QVERIFY(button.grab().toImage() != normal);
-        QCOMPARE(button.size(), QSize(100, 33));
+        QCOMPARE(button.size(), QSize(100, 32));
     }
     void groupedActionsAreJoinedAndKeyboardAccessible() {
         using namespace choscordb::design;
@@ -547,7 +548,7 @@ class ComponentsTest final : public QObject {
         host.resize(300, 80);
         host.show();
         QCoreApplication::processEvents();
-        QCOMPARE(button.size(), QSize(36, 36));
+        QCOMPARE(button.size(), QSize(32, 32));
         button.setButtonSize(ButtonSize::Default);
         button.setText("A wider text action");
         QCoreApplication::processEvents();
@@ -624,17 +625,18 @@ class ComponentsTest final : public QObject {
     void buttonsHaveReferenceSizes() {
         using namespace choscordb::design;
         Button button("Save");
-        QCOMPARE(button.sizeHint().height(), 33);
+        QCOMPARE(button.sizeHint().height(), 32);
         button.setButtonSize(ButtonSize::ExtraSmall);
-        QCOMPARE(button.sizeHint().height(), 25);
+        QCOMPARE(button.sizeHint().height(), 24);
         button.setButtonSize(ButtonSize::Small);
-        QCOMPARE(button.sizeHint().height(), 29);
-        button.setButtonSize(ButtonSize::Large);
-        QCOMPARE(button.sizeHint().height(), 37);
+        QCOMPARE(button.sizeHint().height(), 28);
+        // A leading icon does not change the control height.
+        button.setDesignIcon(Icon::Add);
+        QCOMPARE(button.sizeHint().height(), 28);
+        button.setButtonSize(ButtonSize::IconExtraSmall);
+        QCOMPARE(button.sizeHint(), QSize(24, 24));
         button.setButtonSize(ButtonSize::Icon);
-        QCOMPARE(button.sizeHint(), QSize(36, 36));
-        button.setButtonSize(ButtonSize::IconLarge);
-        QCOMPARE(button.sizeHint(), QSize(40, 40));
+        QCOMPARE(button.sizeHint(), QSize(32, 32));
     }
 };
 QTEST_MAIN(ComponentsTest)

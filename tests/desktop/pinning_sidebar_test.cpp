@@ -275,7 +275,7 @@ class PinningSidebarTest final : public QObject {
                 auto* connectionSection = savedCaption->parentWidget();
                 QCOMPARE(section->geometry().top() - (connectionSection->geometry().bottom() + 1),
                          16);
-                QCOMPARE(pinGap, 1);
+                QCOMPARE(pinGap, 2);
                 QCOMPARE(caption->height(), caption->sizeHint().height());
                 QCOMPARE(objectSection->geometry().top() - (section->geometry().bottom() + 1), 16);
             }

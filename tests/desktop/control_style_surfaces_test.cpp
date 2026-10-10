@@ -48,7 +48,7 @@ void ControlStyleTest::scopedDarkButtonsAndTextSelectionUseColors() {
     QPushButton button("MMMM", &root);
     button.resize(120, 32);
     const auto image = button.grab().toImage();
-    QCOMPARE(button.height(), 33);
+    QCOMPARE(button.height(), 32);
     int brightText = 0;
     for (int y = 6; y < 26; ++y)
         for (int x = 15; x < 105; ++x)
@@ -175,7 +175,7 @@ void ControlStyleTest::tableRowsHonorReferenceLineBoxAndPadding() {
     theme.applyTo(root);
     QTableWidget table(3, 2, &root);
     table.ensurePolished();
-    QCOMPARE(table.verticalHeader()->defaultSectionSize(), 29);
+    QCOMPARE(table.verticalHeader()->defaultSectionSize(), 28);
 }
 
 void ControlStyleTest::unusedHeaderGutterUsesThemeSurface_data() {
@@ -480,7 +480,7 @@ void ControlStyleTest::badgeAndProgressUseCompactReferenceGeometry() {
     progress.resize(180, progress.sizeHint().height());
     QCOMPARE(badge.height(), 20);
     QCOMPARE(badge.grab().toImage().pixelColor(badge.width() / 2, 2), QColor("#fde4d3"));
-    QCOMPARE(progress.height(), 5);
+    QCOMPARE(progress.height(), 4);
     QCOMPARE(progress.grab().toImage().pixelColor(20, 2), QColor("#c2410c"));
     QCOMPARE(progress.grab().toImage().pixelColor(160, 2), QColor("#eef1f2"));
 }
@@ -537,10 +537,10 @@ void ControlStyleTest::tabsToolsAndTableHeadersUseCompactPaneGeometry() {
     table.move(0, 100);
     root.resize(300, 300);
     root.show();
-    QCOMPARE(tabs.sizeHint().height(), 35);
+    QCOMPARE(tabs.sizeHint().height(), 32);
     tool.resize(tool.sizeHint());
-    QCOMPARE(tool.height(), 29);
-    QCOMPARE(table.horizontalHeader()->height(), 30);
+    QCOMPARE(tool.height(), 28);
+    QCOMPARE(table.horizontalHeader()->height(), 28);
     QTest::mouseClick(&tool, Qt::LeftButton);
     QVERIFY(tool.isChecked());
 }
@@ -635,7 +635,7 @@ void ControlStyleTest::fieldsExposeInvalidBorderAndPreserveReadOnlyAndPopupInput
     QTest::keyClicks(&field, "changed");
     QCOMPARE(field.text(), QString("Original"));
     QCOMPARE(field.grab().toImage().pixelColor(80, 0), QColor("#b42336"));
-    QCOMPARE(combo.sizeHint().height(), 33);
+    QCOMPARE(combo.sizeHint().height(), 32);
     combo.showPopup();
     QVERIFY(combo.view()->isVisible());
     QTest::keyClick(combo.view(), Qt::Key_Down);

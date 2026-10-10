@@ -39,7 +39,8 @@ void PreviewTest::columnRowSpecimenUsesRealDelegateInBothThemes() {
         const auto id = pinned->model()->index(0, 0);
         const auto next = pinned->model()->index(1, 0);
         QCOMPARE(pinned->visualRect(next).top(), pinned->visualRect(id).bottom() + 1);
-        QVERIFY(pinned->visualRect(id).height() <= 24);
+        QCOMPARE(pinned->visualRect(id).height(),
+                 choscordb::design::dimension(choscordb::design::Dimension::Row));
         QCOMPARE(id.data().toString(), QString("id"));
         QCOMPARE(id.data(Qt::UserRole + 1).toString(), QString("bigint"));
         QCOMPARE(pinned->visualRect(id).height(),
@@ -136,7 +137,8 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
             tree->style()->pixelMetric(QStyle::PM_FocusFrameHMargin, &item, tree) + 1;
         QCOMPARE(textRect.left() + textInset - iconRect.right() - 1, 2);
         const auto parentRow = tree->visualRect(tree->model()->index(0, 0));
-        QCOMPARE(parentRow.height(), 22);
+        QCOMPARE(parentRow.height(),
+                 choscordb::design::dimension(choscordb::design::Dimension::Row));
         const auto treeImage = tree->viewport()->grab().toImage();
         QVERIFY(parentRow.left() > 6);
         QCOMPARE(treeImage.pixelColor(parentRow.left() - 1, parentRow.bottom() - 4),
@@ -150,7 +152,7 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
         const auto child = tree->model()->index(0, 0, tree->model()->index(0, 0));
         const auto row = tree->visualRect(child);
         QVERIFY(row.isValid());
-        QCOMPARE(row.height(), 22);
+        QCOMPARE(row.height(), choscordb::design::dimension(choscordb::design::Dimension::Row));
         QTest::mouseMove(tree->viewport(), QPoint(1, 1));
         QTest::mouseMove(tree->viewport(), row.center());
         QCoreApplication::processEvents();

@@ -19,7 +19,7 @@ SshPrivateKeyEditor::SshPrivateKeyEditor(const QString& prefix, QWidget* parent)
     preview_->setAccessibleName(tr("Private key (contents hidden)"));
     preview_->setReadOnly(true);
     preview_->setUndoRedoEnabled(false);
-    preview_->setMaximumHeight(design::dimension(design::Dimension::TableRow) * 4);
+    preview_->setMaximumHeight(design::dimension(design::Dimension::Row) * 4);
     preview_->installEventFilter(this);
     layout->addWidget(preview_);
     auto* buttons = new QHBoxLayout;

@@ -152,12 +152,12 @@ void ModernUiTest::startListsRealSavedProfilesAndConnectsWithoutExecuting() {
     QTRY_COMPARE(profiles->count(), 1);
     QCOMPARE(profiles->item(0)->text(), QString("Start SQLite"));
     const auto rowHeight = profiles->visualItemRect(profiles->item(0)).height();
-    QVERIFY(rowHeight >= 32 && rowHeight <= 36);
+    QCOMPARE(rowHeight, choscordb::design::dimension(choscordb::design::Dimension::Row));
     QVERIFY(profiles->height() < 100);
     QVERIFY(!profiles->item(0)->icon().isNull());
     auto* startIcon = window.findChild<QLabel*>("startDatabaseIcon");
     QVERIFY(startIcon);
-    QCOMPARE(startIcon->pixmap().deviceIndependentSize(), QSizeF(30, 30));
+    QCOMPARE(startIcon->pixmap().deviceIndependentSize(), QSizeF(32, 32));
     int queued = 0;
     connect(
         workspace->adapter(), &choscordb::EngineAdapter::eventReady, &window,
@@ -273,11 +273,12 @@ void ModernUiTest::sqlCompositionKeepsTabsFirstAndPinsResultActions() {
     QVERIFY(toolbar->mapTo(sql, toolbar->rect().bottomLeft()).y() <=
             grid->mapTo(sql, QPoint()).y());
     QCOMPARE(grid->mapTo(sql, QPoint()).x(), 0);
-    QCOMPARE(tabs->tabBar()->tabRect(0).height(), 33);
+    QCOMPARE(tabs->tabBar()->tabRect(0).height(),
+             choscordb::design::dimension(choscordb::design::Dimension::Tab));
     QVERIFY(tabs->tabBar()->height() > tabs->tabBar()->tabRect(0).height());
     QVERIFY(!tabs->tabIcon(0).isNull());
-    QCOMPARE(grid->verticalHeader()->defaultSectionSize(), 35);
-    QCOMPARE(grid->horizontalHeader()->height(), 34);
+    QCOMPARE(grid->verticalHeader()->defaultSectionSize(), 28);
+    QCOMPARE(grid->horizontalHeader()->height(), 28);
     QVERIFY(grid->showGrid());
     QVERIFY(!grid->wordWrap());
     QVERIFY(!grid->horizontalHeader()->stretchLastSection());
@@ -407,11 +408,11 @@ void ModernUiTest::workspaceUsesApprovedButtonGeometryAndIcons() {
         QVERIFY2(qobject_cast<choscordb::design::Button*>(button), qPrintable(name));
         QVERIFY(button->text().isEmpty());
         QVERIFY(!button->icon().isNull());
-        QCOMPARE(button->sizeHint(), QSize(30, 30));
+        QCOMPARE(button->sizeHint(), QSize(28, 28));
     }
     QVERIFY(!window.findChild<QPushButton*>("navigatorDisconnect"));
     const QList<QPair<QString, int>> actions{
-        {"previousPage", 30}, {"nextPage", 30}, {"exportResult", 30}};
+        {"previousPage", 28}, {"nextPage", 28}, {"exportResult", 28}};
     for (const auto& [name, height] : actions) {
         auto* button = window.findChild<QPushButton*>(name);
         QVERIFY(button);

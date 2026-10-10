@@ -319,9 +319,10 @@ void PreviewTest::buttonsUseProductionVariantsAndStates() {
     QCOMPARE(smallest->font().pixelSize(),
              typographySpec(TypographyRole::SectionCaption).pixelSize);
     QCOMPARE(pressed->font().pixelSize(), typographySpec(TypographyRole::Ui).pixelSize);
-    auto* largest = light->findChild<Button*>("button-size-icon-lg");
+    auto* largest = light->findChild<Button*>("button-size-icon");
     QVERIFY(largest);
-    QCOMPARE(largest->buttonSize(), ButtonSize::IconLarge);
+    QCOMPARE(largest->buttonSize(), ButtonSize::Icon);
+    QCOMPARE(largest->size(), QSize(dimension(Dimension::Control), dimension(Dimension::Control)));
 }
 
 void PreviewTest::individualSpecimensAreSelectableAndSearchable() {
@@ -556,6 +557,9 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
         const auto firstSelectedRow = list->visualItemRect(list->item(0));
         const auto selectedRow = list->visualItemRect(list->item(1));
         const auto regularRow = list->visualItemRect(list->item(2));
+        // Sample resting rows, wherever an earlier test left the pointer.
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(list->viewport(), &leave);
         const auto image = list->viewport()->grab().toImage();
         QCOMPARE(image.pixelColor(firstSelectedRow.right() - 30, firstSelectedRow.center().y()),
                  colors.selection);
@@ -575,7 +579,7 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
                      .pixelSize(),
                  10);
         const auto height = list->visualItemRect(list->item(0)).height();
-        QVERIFY(height >= 32 && height <= 36);
+        QCOMPARE(height, choscordb::design::dimension(choscordb::design::Dimension::Row));
     }
 }
 
@@ -623,7 +627,8 @@ void PreviewTest::navigationTreeTogglesAndRenamesFromMenu() {
         const auto root = specimen->model()->index(0, 0);
         const auto child = specimen->model()->index(0, 0, root);
         QVERIFY(specimen->visualRect(root).height() >= 18);
-        QVERIFY(specimen->visualRect(root).height() <= 24);
+        QCOMPARE(specimen->visualRect(root).height(),
+                 choscordb::design::dimension(choscordb::design::Dimension::Row));
         QVERIFY(specimen->visualRect(child).left() - specimen->visualRect(root).left() <= 20);
     }
     const auto group = tree->model()->index(0, 0);

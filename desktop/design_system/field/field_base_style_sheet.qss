@@ -1,5 +1,5 @@
 QLineEdit, QSpinBox, QDoubleSpinBox, QKeySequenceEdit {
-  min-height: @field-height;
+  min-height: @control-height;
 }
 
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QKeySequenceEdit {

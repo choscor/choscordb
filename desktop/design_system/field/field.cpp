@@ -82,7 +82,7 @@ class FieldFocusFrame final : public QFocusFrame {
         }
         painter.setPen(QPen(color, focusSpec().ringWidth));
         painter.setBrush(Qt::NoBrush);
-        const auto rounding = radius(Radius::Large);
+        const auto rounding = radius(Radius::Medium);
         painter.drawRoundedRect(QRectF(rect()).adjusted(1.5, 1.5, -1.5, -1.5), rounding, rounding);
     }
 };

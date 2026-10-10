@@ -30,6 +30,7 @@ class WorkspaceTest : public QObject {
     void mainWindowSearchActionsTrackCurrentTabAndUndo();
     void mainWindowRunsRealQuery();
     void connectsExecutesPagesAndCopies();
+    void resultGridUsesCompactRowsAndHeader();
     void revisitsPreviousPageWithoutReexecutingQuery();
     void byteLimitedPagesUseStoredRowOffsets();
     void transactionKeepsAlreadyStoredNextPageAccessible();

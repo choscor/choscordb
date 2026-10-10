@@ -69,7 +69,7 @@ void MainWindow::connectNavigator(const Ui& ui) {
         }
         const int rowHeight = rows == 0
                                   ? 0
-                                  : std::max(design::dimension(design::Dimension::NavigationRow),
+                                  : std::max(design::dimension(design::Dimension::Row),
                                              tree->sizeHintForIndex(model->index(0, 0)).height());
         tree->setFixedHeight(std::max(design::spacing(design::Spacing::Two),
                                       rows * rowHeight + 2 * tree->frameWidth()));

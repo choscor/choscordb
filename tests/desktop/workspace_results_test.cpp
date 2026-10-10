@@ -8,6 +8,7 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/field/field.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/history_model.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -27,6 +28,7 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
+#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -67,6 +69,17 @@ void WorkspaceTest::connectsExecutesPagesAndCopies() {
 #endif
     QTRY_COMPARE(QApplication::clipboard()->text(), QString("1001"));
     f.workspace.shutdown();
+}
+
+void WorkspaceTest::resultGridUsesCompactRowsAndHeader() {
+    choscordb::MainWindow window;
+    auto* grid = window.findChild<QTableView*>("queryResults");
+    QVERIFY(grid);
+    QCOMPARE(grid->verticalHeader()->defaultSectionSize(),
+             choscordb::design::dimension(choscordb::design::Dimension::Row));
+    QCOMPARE(grid->verticalHeader()->defaultSectionSize(), 28);
+    QCOMPARE(grid->horizontalHeader()->height(),
+             choscordb::design::dimension(choscordb::design::Dimension::Header));
 }
 
 void WorkspaceTest::revisitsPreviousPageWithoutReexecutingQuery() {

@@ -71,7 +71,7 @@ void SchemaSidebarWorkspaceTest::tableAndViewIconsFollowTheNavigatorAndTabTheme(
     const auto secondRow = tree->visualRect(proxy->index(1, 0, visibleRoot));
     QVERIFY(firstRow.isValid() && secondRow.isValid());
     QCOMPARE(secondRow.top(), firstRow.bottom() + 1);
-    QVERIFY2(firstRow.height() <= 24,
+    QVERIFY2(firstRow.height() == choscordb::design::dimension(choscordb::design::Dimension::Row),
              qPrintable(QStringLiteral("Navigation row is %1 px high").arg(firstRow.height())));
     const auto checkRows = [&] {
         const auto color = theme->resolvedTheme().colors.fgMuted;
