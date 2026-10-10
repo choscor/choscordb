@@ -2,7 +2,7 @@ QLabel[designRole="badge"] {
   min-height: 18px;
   max-height: 18px;
   border: 1px solid transparent;
-  border-radius: @p1-radius-5;
+  border-radius: @radius-sm;
   padding: 0 7px;
   font-size: @font-caption;
   font-weight: 400;
@@ -24,4 +24,10 @@ QLabel[designRole="badge"][variant="outline"] {
 QLabel[designRole="badge"][variant="destructive"] {
   background: @destructive-tint;
   color: @danger;
+}
+
+QLabel[designRole="badge"][variant="driver"] {
+  background: @surface-raised;
+  color: @fg;
+  border-color: @border;
 }

@@ -26,13 +26,13 @@
   {
     "path": "desktop/tools/preview/preview_standard.cpp",
     "rule": "sql-text",
-    "sha256": "7a27d6edae722ff283ce82a4fc40931df9e62bbf45776ae0ff6d30998eb3d9ef",
+    "sha256": "72d2b7d611e4d7ec3d66cd3440e812cafc70b614a3d491dcce9ea6b30c85c4cd",
     "reason": "The CREATE TABLE literal populates a synthetic read-only SQL-editor specimen. This developer gallery does not execute it or derive application SQL from it."
   },
   {
     "path": "desktop/tools/preview/preview_window.cpp",
     "rule": "sql-text",
-    "sha256": "3e74fa3a87d0a456251d3a05622476b00271dad5a3da7063e4dee50e0ecd6994",
+    "sha256": "818f852d7d54d1da4ac5ce3bce0128d5eb346aba8010f4e9e9bd21867c50a64e",
     "reason": "The SELECT literal is synthetic content for the SQL-editor gallery specimen in Light and Dark themes. The gallery does not execute it or generate database requests."
   },
   {

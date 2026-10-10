@@ -63,7 +63,7 @@ void ControlStyleTest::scopedDarkButtonsAndTextSelectionUseColors() {
     field.setFocus();
     field.selectAll();
     QCoreApplication::processEvents();
-    QCOMPARE(field.palette().color(QPalette::Active, QPalette::Highlight), QColor("#65b493"));
+    QCOMPARE(field.palette().color(QPalette::Active, QPalette::Highlight), QColor("#ff8a18"));
     const auto selected = field.grab().toImage();
     int selectedInk = 0;
     for (int y = 8; y < 24; ++y)
@@ -89,13 +89,13 @@ void ControlStyleTest::navigationRowsUseCompactGeometry() {
     tree.setCurrentItem(tree.topLevelItem(0));
     const auto row = tree.visualItemRect(tree.topLevelItem(0));
     QCOMPARE(tree.viewport()->grab().toImage().pixelColor(row.right() - 12, row.center().y()),
-             QColor("#ccebdc"));
+             QColor("#fde4d3"));
     QTest::keyClick(&tree, Qt::Key_Down);
     QCOMPARE(tree.currentItem()->text(0), QString("Second connection"));
     const auto secondRow = tree.visualItemRect(tree.currentItem());
     QCOMPARE(tree.viewport()->grab().toImage().pixelColor(secondRow.right() - 12,
                                                           secondRow.center().y()),
-             QColor("#ccebdc"));
+             QColor("#fde4d3"));
 }
 
 void ControlStyleTest::treeHoverFillsSquareRowCorners() {
@@ -119,7 +119,7 @@ void ControlStyleTest::treeHoverFillsSquareRowCorners() {
                                   return image.pixelColor(qRound(row.right() * scale),
                                                           qRound(row.top() * scale));
                               }()),
-                              QColor("#f2f2f2"), 1000);
+                              QColor("#eef1f2"), 1000);
 }
 
 void ControlStyleTest::listSelectionFillsSquareRowCorners() {
@@ -138,7 +138,7 @@ void ControlStyleTest::listSelectionFillsSquareRowCorners() {
     const auto image = list.viewport()->grab().toImage();
     const auto scale = image.devicePixelRatio();
     QCOMPARE(image.pixelColor(qRound(row.right() * scale), qRound(row.top() * scale)),
-             QColor("#ccebdc"));
+             QColor("#fde4d3"));
 }
 
 void ControlStyleTest::validationStateUpdatesAnAlreadyVisibleField() {
@@ -156,16 +156,16 @@ void ControlStyleTest::validationStateUpdatesAnAlreadyVisibleField() {
     field.clearFocus();
     field.setFocus(Qt::TabFocusReason);
     QCoreApplication::processEvents();
-    QCOMPARE(root.grab().toImage().pixelColor(38, 55), QColor("#287f66"));
+    QCOMPARE(root.grab().toImage().pixelColor(38, 55), QColor("#c2410c"));
     const auto original = field.grab().toImage().pixelColor(0, 16);
     field.setProperty("invalid", true);
     QCoreApplication::processEvents();
-    QCOMPARE(field.grab().toImage().pixelColor(0, 16), QColor("#c45d58"));
-    QCOMPARE(root.grab().toImage().pixelColor(38, 55), QColor("#c45d58"));
+    QCOMPARE(field.grab().toImage().pixelColor(0, 16), QColor("#b42336"));
+    QCOMPARE(root.grab().toImage().pixelColor(38, 55), QColor("#b42336"));
     field.setProperty("invalid", false);
     QCoreApplication::processEvents();
     QCOMPARE(field.grab().toImage().pixelColor(0, 16), original);
-    QCOMPARE(root.grab().toImage().pixelColor(38, 55), QColor("#287f66"));
+    QCOMPARE(root.grab().toImage().pixelColor(38, 55), QColor("#c2410c"));
 }
 
 void ControlStyleTest::tableRowsHonorReferenceLineBoxAndPadding() {
@@ -433,7 +433,7 @@ void ControlStyleTest::fieldKeyboardFocusPaintsOutsideWithoutMovingText() {
     field.setFocus(Qt::TabFocusReason);
     QApplication::processEvents();
     QVERIFY(field.hasFocus());
-    QCOMPARE(root.grab().toImage().pixelColor(38, 55), QColor("#287f66"));
+    QCOMPARE(root.grab().toImage().pixelColor(38, 55), QColor("#c2410c"));
     QCOMPARE(field.geometry(), QRect(40, 40, 160, 32));
     field.clearFocus();
     QApplication::processEvents();
@@ -448,14 +448,14 @@ void ControlStyleTest::keyboardFocusPrimitiveUsesContrastSafeContinuousOutline()
     option.rect = QRect(0, 0, 40, 24);
     option.state =
         QStyle::State_Enabled | QStyle::State_HasFocus | QStyle::State_KeyboardFocusChange;
-    option.palette.setColor(QPalette::Dark, QColor("#287f66"));
+    option.palette.setColor(QPalette::Dark, QColor("#c2410c"));
     QImage image(40, 24, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::white);
     QPainter painter(&image);
     style.drawPrimitive(QStyle::PE_FrameFocusRect, &option, &painter, &checkbox);
     painter.end();
-    QCOMPARE(image.pixelColor(20, 1), QColor("#287f66"));
-    QCOMPARE(image.pixelColor(21, 1), QColor("#287f66"));
+    QCOMPARE(image.pixelColor(20, 1), QColor("#c2410c"));
+    QCOMPARE(image.pixelColor(21, 1), QColor("#c2410c"));
     QCOMPARE(image.pixelColor(20, 12), QColor(Qt::white));
 }
 
@@ -479,10 +479,10 @@ void ControlStyleTest::badgeAndProgressUseCompactReferenceGeometry() {
     badge.resize(badge.sizeHint());
     progress.resize(180, progress.sizeHint().height());
     QCOMPARE(badge.height(), 20);
-    QCOMPARE(badge.grab().toImage().pixelColor(badge.width() / 2, 2), QColor("#ccebdc"));
+    QCOMPARE(badge.grab().toImage().pixelColor(badge.width() / 2, 2), QColor("#fde4d3"));
     QCOMPARE(progress.height(), 5);
-    QCOMPARE(progress.grab().toImage().pixelColor(20, 2), QColor("#287f66"));
-    QCOMPARE(progress.grab().toImage().pixelColor(160, 2), QColor("#f2f2f2"));
+    QCOMPARE(progress.grab().toImage().pixelColor(20, 2), QColor("#c2410c"));
+    QCOMPARE(progress.grab().toImage().pixelColor(160, 2), QColor("#eef1f2"));
 }
 
 void ControlStyleTest::applicationInstallationUsesProductionControlStyle() {
@@ -634,7 +634,7 @@ void ControlStyleTest::fieldsExposeInvalidBorderAndPreserveReadOnlyAndPopupInput
     root.show();
     QTest::keyClicks(&field, "changed");
     QCOMPARE(field.text(), QString("Original"));
-    QCOMPARE(field.grab().toImage().pixelColor(80, 0), QColor("#c45d58"));
+    QCOMPARE(field.grab().toImage().pixelColor(80, 0), QColor("#b42336"));
     QCOMPARE(combo.sizeHint().height(), 33);
     combo.showPopup();
     QVERIFY(combo.view()->isVisible());
@@ -650,9 +650,9 @@ void ControlStyleTest::checkedAndMixedIndicatorsRenderSemanticFill() {
     box.setStyle(&style);
     QPalette palette;
     palette.setColor(QPalette::Window, QColor("#ffffff"));
-    palette.setColor(QPalette::Accent, QColor("#287f66"));
+    palette.setColor(QPalette::Accent, QColor("#c2410c"));
     palette.setColor(QPalette::HighlightedText, QColor("#ffffff"));
-    palette.setColor(QPalette::Mid, QColor("#65b493"));
+    palette.setColor(QPalette::Mid, QColor("#ff8a18"));
     box.setPalette(palette);
     box.resize(140, 32);
     box.setTristate(true);
@@ -663,7 +663,7 @@ void ControlStyleTest::checkedAndMixedIndicatorsRenderSemanticFill() {
     option.initFrom(&box);
     const auto indicator = box.style()->subElementRect(QStyle::SE_CheckBoxIndicator, &option, &box);
     const auto mixed = box.grab().toImage();
-    QCOMPARE(mixed.pixelColor(indicator.center().x(), indicator.top() + 3), QColor("#287f66"));
+    QCOMPARE(mixed.pixelColor(indicator.center().x(), indicator.top() + 3), QColor("#c2410c"));
     QCOMPARE(mixed.pixelColor(indicator.center()), QColor("#ffffff"));
     box.setCheckState(Qt::Unchecked);
     const auto unchecked = box.grab().toImage();
@@ -678,9 +678,9 @@ void ControlStyleTest::checkedRadioUsesCheckboxAccentAndSize() {
     radio.setStyle(&style);
     QPalette palette;
     palette.setColor(QPalette::Window, Qt::white);
-    palette.setColor(QPalette::Accent, QColor("#287f66"));
+    palette.setColor(QPalette::Accent, QColor("#c2410c"));
     palette.setColor(QPalette::HighlightedText, Qt::white);
-    palette.setColor(QPalette::Mid, QColor("#65b493"));
+    palette.setColor(QPalette::Mid, QColor("#ff8a18"));
     radio.setPalette(palette);
     radio.resize(150, 32);
     radio.setChecked(true);
@@ -691,18 +691,18 @@ void ControlStyleTest::checkedRadioUsesCheckboxAccentAndSize() {
         radio.style()->subElementRect(QStyle::SE_RadioButtonIndicator, &option, &radio);
     QCOMPARE(indicator.size(), QSize(18, 18));
     const auto image = radio.grab().toImage();
-    QCOMPARE(image.pixelColor(indicator.center().x(), indicator.top() + 3), QColor("#287f66"));
+    QCOMPARE(image.pixelColor(indicator.center().x(), indicator.top() + 3), QColor("#c2410c"));
     QCOMPARE(image.pixelColor(indicator.center()), QColor(Qt::white));
 }
 
-void ControlStyleTest::disabledCheckedIndicatorUsesMutedGreenOutlineAndCheck() {
+void ControlStyleTest::disabledCheckedIndicatorUsesMutedPrimaryOutlineAndCheck() {
     choscordb::design::ControlStyle style;
     QCheckBox box;
     QStyleOptionButton option;
     option.initFrom(&box);
     option.rect = QRect(0, 0, 16, 16);
     option.state = QStyle::State_On;
-    option.palette.setColor(QPalette::Accent, QColor("#287f66"));
+    option.palette.setColor(QPalette::Accent, QColor("#c2410c"));
     option.palette.setColor(QPalette::HighlightedText, Qt::white);
     QImage image(16, 16, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::white);
@@ -710,11 +710,12 @@ void ControlStyleTest::disabledCheckedIndicatorUsesMutedGreenOutlineAndCheck() {
     style.drawPrimitive(QStyle::PE_IndicatorCheckBox, &option, &painter, &box);
     painter.end();
     QCOMPARE(image.pixelColor(8, 3), QColor(Qt::white));
+    // The orange primary keeps its hue when muted: red leads, blue trails.
     const auto outline = image.pixelColor(8, 0);
-    QVERIFY(outline.green() > outline.red());
+    QVERIFY(outline.red() > outline.green());
     QVERIFY(outline.green() > outline.blue());
     const auto check = image.pixelColor(6, 10);
-    QVERIFY(check.green() > check.red());
+    QVERIFY(check.red() > check.green());
     QVERIFY(check.green() > check.blue());
 }
 

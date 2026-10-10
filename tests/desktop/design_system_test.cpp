@@ -168,11 +168,9 @@ class DesignSystemTest final : public QObject {
         for (const auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
             manager.setMode(mode);
             const auto sheet = applicationStyleSheet(manager.resolvedTheme());
-            const auto expected = mode == ThemeMode::Light
-                                      ? QStringList{css(manager.resolvedTheme().colors.success),
-                                                    css(QColor("#fff3d6")), css(QColor("#fdecea"))}
-                                      : QStringList{css(manager.resolvedTheme().colors.success),
-                                                    css(QColor("#473b22")), css(QColor("#492d2b"))};
+            const auto& colors = manager.resolvedTheme().colors;
+            const QStringList expected{css(colors.successSurface), css(colors.warningSurface),
+                                       css(colors.dangerSurface)};
             int index = 0;
             for (const auto* variant : {"success", "warning", "danger"}) {
                 const auto selector =
@@ -287,15 +285,14 @@ class DesignSystemTest final : public QObject {
         const auto light = resolveColors(ResolvedAppearance::Light);
         const auto dark = resolveColors(ResolvedAppearance::Dark);
         QCOMPARE(light.bg, QColor("#f6f7f8"));
-        QCOMPARE(light.primary, QColor("#287f66"));
-        QCOMPARE(light.surfaceRaised, QColor("#f2f2f2"));
-        QCOMPARE(light.ring, QColor("#287f66"));
+        QCOMPARE(light.primary, QColor("#c2410c"));
+        QCOMPARE(light.surfaceRaised, QColor("#eef1f2"));
+        QCOMPARE(light.ring, QColor("#c2410c"));
         QCOMPARE(dark.bg, QColor("#171d20"));
         QCOMPARE(dark.surface, QColor("#20272b"));
-        QCOMPARE(dark.surfaceRaised, QColor("#303030"));
+        QCOMPARE(dark.surfaceRaised, QColor("#283135"));
         QCOMPARE(dark.border, QColor("#343e43"));
-        QCOMPARE(dark.border, QColor("#343e43"));
-        QCOMPARE(dark.primary, QColor("#65b493"));
+        QCOMPARE(dark.primary, QColor("#ff8a18"));
     }
 
     void layoutMetricsKeepWindowDefaults() {

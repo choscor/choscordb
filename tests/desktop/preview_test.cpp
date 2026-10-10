@@ -243,8 +243,8 @@ void PreviewTest::toastPortalIsPresentInBothThemes() {
         auto* host = window.findChild<QWidget*>(name);
         QVERIFY(host);
         const auto expectedSurface = QString::fromLatin1(name) == QStringLiteral("previewLight")
-                                         ? QStringLiteral("#287f66")
-                                         : QStringLiteral("#65b493");
+                                         ? QStringLiteral("#e7f3eb")
+                                         : QStringLiteral("#213a2b");
         const auto successRule =
             host->styleSheet()
                 .section(QStringLiteral("QLabel#toastRegion[variant=\"success\"]"), 1)
@@ -315,7 +315,7 @@ void PreviewTest::progressToastHasPersistentIndicatorInBothThemes() {
         QVERIFY(progress->findChild<QProgressBar*>()->height() >= 8);
         QVERIFY(progress->findChild<QProgressBar*>()->geometry().top() >= 60);
         QCOMPARE(progress->grab().toImage().pixelColor(3, progress->height() / 2),
-                 choscordb::design::resolvedThemeForWidget(*progress).colors.warningSurface);
+                 choscordb::design::resolvedThemeForWidget(*progress).colors.surfaceRaised);
         QVERIFY(!progress->findChild<QTimer*>()->isActive());
         QCOMPARE(progress->geometry().right(), progress->parentWidget()->width() - 17);
         QCOMPARE(progress->geometry().bottom(), progress->parentWidget()->height() - 17);

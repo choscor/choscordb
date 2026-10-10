@@ -308,8 +308,8 @@ class ComponentsTest final : public QObject {
         QTest::addColumn<bool>("native");
         QTest::newRow("light") << false << QColor("#ffffff") << false;
         QTest::newRow("native-light") << false << QColor("#ffffff") << true;
-        QTest::newRow("dark") << true << QColor("#12231b") << false;
-        QTest::newRow("native-dark") << true << QColor("#12231b") << true;
+        QTest::newRow("dark") << true << QColor("#1f1206") << false;
+        QTest::newRow("native-dark") << true << QColor("#1f1206") << true;
     }
     void primaryKeyboardFocusContrastsWithTheActionFill() {
         QFETCH(bool, dark);
@@ -611,15 +611,15 @@ class ComponentsTest final : public QObject {
         button.resize(100, 32);
         host.show();
         QCoreApplication::processEvents();
-        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#287f66"));
+        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#c2410c"));
         button.setVariant(ButtonVariant::Secondary);
-        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#f2f2f2"));
+        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#eef1f2"));
         button.setVariant(ButtonVariant::Outline);
         QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#ffffff"));
         theme.setMode(ThemeMode::Dark);
         theme.applyTo(host);
         button.setVariant(ButtonVariant::Default);
-        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#65b493"));
+        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#ff8a18"));
     }
     void buttonsHaveReferenceSizes() {
         using namespace choscordb::design;

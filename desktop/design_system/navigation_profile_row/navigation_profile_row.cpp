@@ -13,8 +13,6 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
         return;
     const auto theme = resolvedThemeForWidget(*option.widget);
     const auto& colors = theme.colors;
-    const auto legacy =
-        legacyColors(colors, theme.appearance == ResolvedAppearance::Dark, theme.forcedContrast);
     const bool selected = option.state & QStyle::State_Selected;
     const bool hovered = option.state & QStyle::State_MouseOver;
     const auto bounds = option.rect.adjusted(1, 0, -1, 0);
@@ -26,12 +24,11 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
                                 : colors.sidebar);
     painter->drawRoundedRect(bounds, 6, 6);
     const QRect badge(bounds.left() + 7, bounds.center().y() - 13, 26, 27);
-    const bool sqlite = index.data(DriverRole).toString() == "sqlite";
-    painter->setPen(sqlite ? legacy.sqliteBadgeBorder : legacy.postgresBadgeBorder);
-    painter->setBrush(sqlite ? legacy.sqliteBadgeFill : legacy.postgresBadgeFill);
+    // One neutral tile beside the unmodified driver logo.
+    painter->setPen(colors.border);
+    painter->setBrush(colors.surfaceRaised);
     painter->drawRoundedRect(badge, 6, 6);
-    themedIcon(driverIcon(index.data(DriverRole).toString()),
-               sqlite ? legacy.sqliteBadgeFg : legacy.postgresBadgeFg, 16)
+    themedIcon(driverIcon(index.data(DriverRole).toString()), colors.fg, 16)
         .paint(painter, badge.adjusted(5, 6, -6, -7));
     const auto title = index.data(Qt::DisplayRole).toString().section('\n', 0, 0);
     const int textLeft = badge.right() + 8;

@@ -446,9 +446,9 @@ class ObjectExplorerTest final : public QObject {
             return QColor{};
         };
         QCOMPARE(colorAt(0), QColor("#885da7"));
-        QCOMPARE(colorAt(7), QColor("#287f66"));
-        QCOMPARE(colorAt(12), QColor("#936b3f"));
-        QCOMPARE(colorAt(16), QColor("#6f7879"));
+        QCOMPARE(colorAt(7), QColor("#c2410c"));
+        QCOMPARE(colorAt(12), QColor("#2f6aa3"));
+        QCOMPARE(colorAt(16), QColor("#68737a"));
     }
     void ddlRecolorsWithThemeAndKeepsCommentNumbersMuted() {
         EngineAdapter adapter;
@@ -466,7 +466,7 @@ class ObjectExplorerTest final : public QObject {
                     return range.format.foreground().color();
             return QColor{};
         };
-        QCOMPARE(colorAt(14), QColor("#6f7879"));
+        QCOMPARE(colorAt(14), QColor("#68737a"));
         theme.setMode(design::ThemeMode::Dark);
         theme.applyTo(explorer);
         QCOMPARE(colorAt(0), QColor("#a984c8"));

@@ -7,7 +7,7 @@ QLineEdit:read-only:focus {
 }
 
 QLineEdit[invalid="true"], QComboBox[invalid="true"], QSpinBox[invalid="true"], QDoubleSpinBox[invalid="true"], QPlainTextEdit[invalid="true"], QTextEdit[invalid="true"], QKeySequenceEdit[invalid="true"] {
-  border-color: @p1-destructive;
+  border-color: @danger;
 }
 
 QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QPlainTextEdit:disabled, QTextEdit:disabled {

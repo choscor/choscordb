@@ -74,23 +74,16 @@ QHash<QString, QString> styleTokens(const ResolvedTheme& theme) {
     QHash<QString, QString> tokens;
     for (const auto& [name, value] : colorTokens(colors))
         tokens.insert(name, cssColor(value));
-    // Phase 1 of the compact design system keeps today's rendering; these
-    // values are removed when the visual refresh lands.
-    const auto legacy = legacyColors(colors, dark, theme.forcedContrast);
-    const QColor destructive = legacy.destructive;
-    tokens.insert(QStringLiteral("p1-destructive"), cssColor(destructive));
-    tokens.insert(QStringLiteral("p1-navigation-fg"), cssColor(legacy.navigationFg));
-    tokens.insert(QStringLiteral("p1-toast-success-fg"),
-                  cssColor(theme.forcedContrast ? colors.bg : colors.primaryFg));
     tokens.insert(QStringLiteral("p1-radius-2"), pixels(2));
     tokens.insert(QStringLiteral("p1-radius-5"), pixels(radius(Radius::Medium)));
     tokens.insert(QStringLiteral("p1-radius-6"), pixels(6));
     tokens.insert(QStringLiteral("p1-radius-8"), pixels(radius(Radius::ExtraLarge)));
 
+    // Destructive fills tint `danger`; hover adds 10%.
     tokens.insert(QStringLiteral("destructive-tint"),
-                  cssColor(withAlpha(destructive, dark ? 0.2 : 0.1)));
+                  cssColor(withAlpha(colors.danger, dark ? 0.2 : 0.1)));
     tokens.insert(QStringLiteral("destructive-hover"),
-                  cssColor(withAlpha(destructive, dark ? 0.3 : 0.2)));
+                  cssColor(withAlpha(colors.danger, dark ? 0.3 : 0.2)));
     tokens.insert(QStringLiteral("sidebar-glass-top"),
                   cssColor(withAlpha(colors.sidebar, 232 / 255.0)));
     tokens.insert(QStringLiteral("sidebar-glass-bottom"),

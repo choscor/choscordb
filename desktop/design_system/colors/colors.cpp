@@ -41,37 +41,39 @@ double contrastRatio(const QColor& foreground, const QColor& background) {
 }
 
 Colors resolveColors(ResolvedAppearance appearance) {
+    // Orange brand from the app mark on cool blue-slate neutrals; green is
+    // reserved for success. Every text pair is at least 4.5:1 (WCAG 2).
     const bool dark = appearance == ResolvedAppearance::Dark;
     const QColor surface(dark ? "#20272b" : "#ffffff");
     const QColor fg(dark ? "#e0e8e8" : "#222b32");
-    const QColor primary(dark ? "#65b493" : "#287f66");
+    const QColor primary(dark ? "#ff8a18" : "#c2410c");
     return {
         .bg = QColor(dark ? "#171d20" : "#f6f7f8"),
         .surface = surface,
-        .surfaceRaised = QColor(dark ? "#303030" : "#f2f2f2"),
+        .surfaceRaised = QColor(dark ? "#283135" : "#eef1f2"),
         .sidebar = QColor(dark ? "#1c2428" : "#fafbfb"),
         .fg = fg,
-        .fgMuted = QColor(dark ? "#8e9da3" : "#626e75"),
+        .fgMuted = QColor(dark ? "#93a2a8" : "#5f6b72"),
         .fgDisabled = blend(fg, surface, 0.4),
-        .border = QColor(dark ? "#343e43" : "#e7ebed"),
+        .border = QColor(dark ? "#343e43" : "#e3e7ea"),
         .primary = primary,
-        .primaryHover = primary,
-        .primaryPressed = primary,
-        .primaryFg = QColor(dark ? "#12231b" : "#ffffff"),
-        .selection = QColor(dark ? "#254b38" : "#ccebdc"),
+        .primaryHover = QColor(dark ? "#ff9b3d" : "#ad3a0b"),
+        .primaryPressed = QColor(dark ? "#f07800" : "#9a330a"),
+        .primaryFg = QColor(dark ? "#1f1206" : "#ffffff"),
+        .selection = QColor(dark ? "#4a2c14" : "#fde4d3"),
         .ring = primary,
-        .success = primary,
-        .successSurface = QColor(dark ? "#283e34" : "#eaf4ef"),
-        .warning = QColor(dark ? "#e0bb72" : "#805d24"),
-        .warningSurface = QColor(dark ? "#473b22" : "#fff3d6"),
-        .danger = QColor(dark ? "#e58c85" : "#a5413d"),
-        .dangerSurface = QColor(dark ? "#492d2b" : "#fdecea"),
+        .success = QColor(dark ? "#6cc08b" : "#2b7a4b"),
+        .successSurface = QColor(dark ? "#213a2b" : "#e7f3eb"),
+        .warning = QColor(dark ? "#e8c35a" : "#7d5a00"),
+        .warningSurface = QColor(dark ? "#3d3418" : "#fff4d1"),
+        .danger = QColor(dark ? "#f2878f" : "#b42336"),
+        .dangerSurface = QColor(dark ? "#4a2228" : "#fceaec"),
         .backdrop = QColor(25, 44, 54, 80),
         .switchTrack = QColor(dark ? "#465359" : "#d8dfe0"),
         .codeKeyword = QColor(dark ? "#a984c8" : "#885da7"),
         .codeString = primary,
-        .codeNumber = QColor(dark ? "#b3834f" : "#936b3f"),
-        .codeComment = QColor(dark ? "#9ca6a7" : "#6f7879"),
+        .codeNumber = QColor(dark ? "#7fa8d6" : "#2f6aa3"),
+        .codeComment = QColor(dark ? "#9ca6a7" : "#68737a"),
     };
 }
 
@@ -112,16 +114,6 @@ Colors resolveForcedContrastColors(const QPalette& palette) {
 
 QColor switchThumb(const Colors& colors, ResolvedAppearance appearance) {
     return appearance == ResolvedAppearance::Dark ? QColor("#ffffff") : colors.surface;
-}
-
-LegacyColors legacyColors(const Colors& colors, bool dark, bool forcedContrast) {
-    if (forcedContrast)
-        return {colors.fg, colors.fg,      colors.surface, colors.fg,
-                colors.fg, colors.surface, colors.fg,      colors.fg};
-    return {QColor("#c45d58"), dark ? colors.primary : QColor("#24765e"),
-            QColor("#f6f0e6"), QColor("#eae1d3"),
-            QColor("#ad8a51"), QColor("#edf3f9"),
-            QColor("#dce7ef"), QColor("#6288ab")};
 }
 
 QList<std::pair<QString, QColor>> colorTokens(const Colors& colors) {

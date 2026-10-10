@@ -64,6 +64,6 @@ class ControlStyleTest final : public QObject {
     void fieldsExposeInvalidBorderAndPreserveReadOnlyAndPopupInput();
     void checkedAndMixedIndicatorsRenderSemanticFill();
     void checkedRadioUsesCheckboxAccentAndSize();
-    void disabledCheckedIndicatorUsesMutedGreenOutlineAndCheck();
+    void disabledCheckedIndicatorUsesMutedPrimaryOutlineAndCheck();
     void checkboxUsesReferenceGeometryAndKeyboardMixedState();
 };

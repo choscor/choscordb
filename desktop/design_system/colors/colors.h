@@ -50,15 +50,6 @@ struct Colors final {
 // The switch thumb is computed rather than a role: `surface` in Light and
 // white in Dark.
 [[nodiscard]] QColor switchThumb(const Colors& colors, ResolvedAppearance appearance);
-// Phase 1 of the compact design system keeps today's rendering for colors that
-// have no role. The visual refresh deletes these.
-struct LegacyColors final {
-    QColor destructive;
-    QColor navigationFg;
-    QColor sqliteBadgeFill, sqliteBadgeBorder, sqliteBadgeFg;
-    QColor postgresBadgeFill, postgresBadgeBorder, postgresBadgeFg;
-};
-[[nodiscard]] LegacyColors legacyColors(const Colors& colors, bool dark, bool forcedContrast);
 // Every color role with its kebab-case token name, in catalog order.
 [[nodiscard]] QList<std::pair<QString, QColor>> colorTokens(const Colors& colors);
 

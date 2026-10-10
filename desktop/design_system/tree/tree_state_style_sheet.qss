@@ -4,7 +4,7 @@ QTreeView::item:hover {
 
 QTreeView::item:selected {
   background: @selection;
-  color: @p1-navigation-fg;
+  color: @fg;
   font-weight: 600;
 }
 

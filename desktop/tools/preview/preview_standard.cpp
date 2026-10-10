@@ -407,6 +407,30 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
             QString("Storage could not finish. Retry after checking permissions. ").repeated(20));
         layout->addWidget(detail);
     } else if (id == "feedback") {
+        auto* badges = new QHBoxLayout;
+        badges->setSpacing(spacing(Spacing::Two));
+        for (const auto* variant : {"default", "secondary", "outline", "destructive"}) {
+            auto* badge = new QLabel(QString::fromLatin1(variant), host);
+            badge->setObjectName(QStringLiteral("previewBadge_%1").arg(variant));
+            badge->setProperty("designRole", "badge");
+            if (QLatin1String(variant) != QLatin1String("default"))
+                badge->setProperty("variant", variant);
+            badges->addWidget(badge);
+        }
+        // A driver is named by one neutral badge beside its unmodified logo.
+        auto* logo = new QLabel(host);
+        logo->setObjectName("previewDriverLogo");
+        logo->setPixmap(themedIcon(Icon::PostgreSQL, resolvedThemeForWidget(*host).colors.fg,
+                                   dimension(Dimension::Icon))
+                            .pixmap(dimension(Dimension::Icon), dimension(Dimension::Icon)));
+        badges->addWidget(logo);
+        auto* driver = new QLabel("PostgreSQL", host);
+        driver->setObjectName("previewDriverBadge");
+        driver->setProperty("designRole", "badge");
+        driver->setProperty("variant", "driver");
+        badges->addWidget(driver);
+        badges->addStretch();
+        layout->addLayout(badges);
         auto* viewport = host->parentWidget();
         auto* toast = new choscordb::ToastRegion;
         toast->attachTo(viewport);

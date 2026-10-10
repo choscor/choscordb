@@ -801,8 +801,8 @@ void PreviewTest::dialogSectionsHaveMutedPaddedFooterInBothThemes() {
         const auto footerColor = footer->grab().toImage().pixelColor(20, footer->height() / 2);
         const auto bodyColor = body->grab().toImage().pixelColor(20, body->height() - 10);
         QVERIFY(footerColor != bodyColor);
-        QVERIFY(qAbs(footerColor.red() - footerColor.green()) <= 2);
-        QVERIFY(qAbs(footerColor.green() - footerColor.blue()) <= 2);
+        QCOMPARE(footerColor,
+                 choscordb::design::resolvedThemeForWidget(*footer).colors.surfaceRaised);
         dialog->reject();
     }
 }

@@ -129,7 +129,7 @@ class SecondaryDesignTest final : public QObject {
         QCOMPARE(footerCapture.toImage().pixelColor(
                      QPoint(preferences.width() / 2, preferences.height() - 5) *
                      footerCapture.devicePixelRatio()),
-                 QColor("#f2f2f2"));
+                 QColor("#eef1f2"));
         QCOMPARE(preferences.height(), 412);
         auto* tabs = preferences.findChild<QTabWidget*>("preferencesSections");
         QCOMPARE(tabs->mapTo(&preferences, QPoint{}).x(), 0);
@@ -467,7 +467,7 @@ class SecondaryDesignTest final : public QObject {
         const auto selectedImage = sqlite->grab().toImage();
         QCOMPARE(selectedImage.pixelColor(selectedImage.width() / 2,
                                           qRound(6 * sqlite->devicePixelRatioF())),
-                 QColor("#ccebdc"));
+                 QColor("#fde4d3"));
         auto* path = dialog.findChild<QLineEdit*>("profilePath");
         auto* host = dialog.findChild<QLineEdit*>("profileHost");
         path->setText("/tmp/分析.db");
@@ -511,7 +511,7 @@ class SecondaryDesignTest final : public QObject {
         QImage rendered(connect->size(), QImage::Format_ARGB32_Premultiplied);
         rendered.fill(Qt::transparent);
         connect->render(&rendered);
-        QCOMPARE(rendered.pixelColor(rendered.width() / 2, 6), QColor("#287f66"));
+        QCOMPARE(rendered.pixelColor(rendered.width() / 2, 6), QColor("#c2410c"));
         QVERIFY(dialog.isModal());
         dialog.findChild<QLineEdit*>("profileName")->setText("Analysis");
         dialog.findChild<QLineEdit*>("profilePath")->setText(":memory:");

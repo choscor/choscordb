@@ -72,6 +72,17 @@
 namespace choscordb::design {
 void applySpecimenTheme(QWidget& host);
 namespace {
+// Dialogs open in the window overlay, outside the themed host, so each one
+// takes the host's theme, stylesheet and palette itself.
+void applyHostTheme(QWidget& surface, const QWidget& host) {
+    for (auto* ancestor = &host; ancestor; ancestor = ancestor->parentWidget()) {
+        if (auto* manager =
+                ancestor->findChild<ThemeManager*>(QString{}, Qt::FindDirectChildrenOnly)) {
+            manager->applyTo(surface);
+            return;
+        }
+    }
+}
 struct Specimen {
     QString section;
     QString id;
@@ -140,7 +151,7 @@ QList<Specimen> specimens() {
         {"Components", "confirmations", "Destructive confirmations",
          "desktop/design_system/confirmation_dialog/confirmation_dialog.cpp"},
         {"Components", "menus", "Menus and submenus", "desktop/design_system/menu/menu.cpp"},
-        {"Components", "feedback", "Toasts, pinned failures, and dismiss buttons",
+        {"Components", "feedback", "Badges, toasts, pinned failures, and dismiss buttons",
          "desktop/design_system/toast_region/toast_region.cpp"},
     };
 }
@@ -253,8 +264,7 @@ void populateRightSheet(QWidget* host, QVBoxLayout* layout) {
     layout->addWidget(open);
     auto* sheet = new RightSheet(host);
     sheet->setObjectName("previewRightSheet");
-    sheet->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
-    sheet->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
+    applyHostTheme(*sheet, *host);
     sheet->setTitle("Example details");
     auto* body = new JsonTextView(sheet);
     body->setObjectName("previewRightSheetContent");
@@ -279,8 +289,7 @@ void populateQuickSearch(QWidget* host, QVBoxLayout* layout) {
     layout->addWidget(open);
     auto* dialog = new QuickSearchDialog(host);
     dialog->setObjectName("previewQuickSearchDialog");
-    dialog->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
-    dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
+    applyHostTheme(*dialog, *host);
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
     QObject::connect(dialog, &QuickSearchDialog::queryChanged, dialog, [dialog](const QString&) {
         dialog->setResults(
@@ -305,8 +314,7 @@ void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     dialog->setEdgeToEdgeContent(true);
     dialog->setObjectName("previewDialogSectionsModal");
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
-    dialog->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
-    dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
+    applyHostTheme(*dialog, *host);
     dialog->resize(560, 440);
     auto* root = new QVBoxLayout(dialog);
     root->setContentsMargins(0, 0, 0, 0);
@@ -395,9 +403,7 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
             host);
         confirmation->setObjectName("previewActualDialog");
         open->setProperty("previewSurface", QVariant::fromValue<QObject*>(confirmation));
-        confirmation->setProperty("designTheme",
-                                  QVariant::fromValue(resolvedThemeForWidget(*host)));
-        confirmation->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
+        applyHostTheme(*confirmation, *host);
         auto* affirmative = confirmation->addButton("Delete", QMessageBox::DestructiveRole);
         confirmation->setDefaultButton(QMessageBox::Cancel);
         confirmation->setEscapeButton(QMessageBox::Cancel);
@@ -414,8 +420,7 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
     QDialog* dialog = modeless ? static_cast<QDialog*>(new choscordb::DialogShell(host))
                                : static_cast<QDialog*>(new ModalDialog(host));
     dialog->setAttribute(Qt::WA_WindowPropagation);
-    dialog->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
-    dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
+    applyHostTheme(*dialog, *host);
     dialog->setObjectName("previewActualDialog");
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
     dialog->setWindowTitle("Synthetic component preview");

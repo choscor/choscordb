@@ -77,11 +77,8 @@ class FieldFocusFrame final : public QFocusFrame {
         }
         if (themeValue.canConvert<ResolvedTheme>()) {
             const auto theme = themeValue.value<ResolvedTheme>();
-            color = widget()->property("invalid").toBool()
-                        ? legacyColors(theme.colors, theme.appearance == ResolvedAppearance::Dark,
-                                       theme.forcedContrast)
-                              .destructive
-                        : theme.colors.ring;
+            color =
+                widget()->property("invalid").toBool() ? theme.colors.danger : theme.colors.ring;
         }
         painter.setPen(QPen(color, focusSpec().ringWidth));
         painter.setBrush(Qt::NoBrush);

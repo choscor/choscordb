@@ -495,7 +495,9 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     const auto capture = window.grab();
     const auto scale = capture.devicePixelRatioF();
     QCOMPARE(capture.toImage().pixelColor(qRound(sample.x() * scale), qRound(sample.y() * scale)),
-             window.findChild<choscordb::design::ThemeManager*>()->resolvedTheme().colors.success);
+             window.findChild<choscordb::design::ThemeManager*>()
+                 ->resolvedTheme()
+                 .colors.successSurface);
     QVERIFY(resetLayout);
     auto* run = window.findChild<QAction*>("runStatement");
     QVERIFY(run);

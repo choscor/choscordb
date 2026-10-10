@@ -165,10 +165,7 @@ void Button::paintEvent(QPaintEvent*) {
             background = alpha(colors.surfaceRaised, dark ? .5 : 1.);
         break;
     case ButtonVariant::Destructive:
-        background = alpha(legacyColors(theme.colors, theme.appearance == ResolvedAppearance::Dark,
-                                        theme.forcedContrast)
-                               .destructive,
-                           (dark ? .2 : .1) + (hover ? .1 : 0.));
+        background = alpha(colors.danger, (dark ? .2 : .1) + (hover ? .1 : 0.));
         foreground = colors.danger;
         break;
     case ButtonVariant::Link:
@@ -181,9 +178,7 @@ void Button::paintEvent(QPaintEvent*) {
     }
     if (context_ == ButtonContext::Choice && isChecked()) {
         background = colors.selection;
-        foreground = legacyColors(theme.colors, theme.appearance == ResolvedAppearance::Dark,
-                                  theme.forcedContrast)
-                         .navigationFg;
+        foreground = colors.fg;
         border = colors.primary;
     }
     if (context_ == ButtonContext::TabAction && hover) {

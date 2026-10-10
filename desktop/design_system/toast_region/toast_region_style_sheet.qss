@@ -1,26 +1,27 @@
 QLabel#toastRegion, QLabel#progressToast {
-  background-color: @warning-surface;
-  color: @fg;
+  background-color: @surface-raised;
+  color: @fg-muted;
   border: 1px solid @border;
-  border-radius: @radius-lg;
+  border-radius: @radius-md;
   padding: @space-2;
 }
 
 QLabel#toastRegion[variant="success"] {
-  background-color: @success;
-  color: @p1-toast-success-fg;
+  background-color: @success-surface;
+  color: @success;
 }
 
 QLabel#toastRegion[variant="warning"] {
   background-color: @warning-surface;
+  color: @warning;
 }
 
 QLabel#toastRegion[variant="danger"] {
   background-color: @danger-surface;
+  color: @danger;
 }
 
 QLabel#toastRegion[variant="progress"], QLabel#progressToast[variant="progress"] {
-  background-color: @warning-surface;
   padding-top: @space-1;
 }
 
@@ -46,7 +47,7 @@ QToolButton#toastDismiss {
 }
 
 QToolButton#toastDismiss:hover {
-  background: @selection;
+  background: @border;
 }
 
 QToolButton#toastDismiss:focus {
