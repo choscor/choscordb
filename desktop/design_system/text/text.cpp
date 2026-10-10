@@ -49,7 +49,7 @@ QSize measure(const QString& text, const QFont& font, int lineHeight, int width,
 Text::Text(const QString& text, QWidget* parent) : QLabel(text, parent) {
     setTextFormat(Qt::PlainText);
     setTextInteractionFlags(Qt::NoTextInteraction);
-    setTypographyRole(TypographyRole::Ui);
+    setTypographyRole(TypographyRole::Body);
 }
 void Text::setTypographyRole(TypographyRole role) {
     role_ = role;

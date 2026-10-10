@@ -29,10 +29,13 @@ void ControlStyle::polish(QWidget* widget) {
         tabs->setDrawBase(false);
     if (qobject_cast<QLineEdit*>(widget) || qobject_cast<QComboBox*>(widget) ||
         qobject_cast<QAbstractSpinBox*>(widget) || qobject_cast<QKeySequenceEdit*>(widget)) {
-        widget->setFont(resolveTypography(TypographyRole::Field));
+        // Field values use Dense at medium weight; placeholders stay regular.
+        auto fieldFont = resolveTypography(TypographyRole::Dense);
+        fieldFont.setWeight(QFont::Medium);
+        widget->setFont(fieldFont);
         if (auto* line = qobject_cast<QLineEdit*>(widget)) {
-            const auto updateFont = [line] {
-                auto font = resolveTypography(TypographyRole::Field);
+            const auto updateFont = [line, fieldFont] {
+                auto font = fieldFont;
                 if (line->text().isEmpty() && !line->placeholderText().isEmpty())
                     font.setWeight(QFont::Normal);
                 line->setFont(font);

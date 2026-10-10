@@ -45,13 +45,13 @@ QuickSearchResultRow::QuickSearchResultRow(const QuickSearchResult& result, QWid
     titleLabel_ = new QLabel(result.title, this);
     titleLabel_->setObjectName("quickSearchResultTitle");
     titleLabel_->setTextFormat(Qt::PlainText);
-    titleLabel_->setFont(resolveTypography(TypographyRole::Ui));
+    titleLabel_->setFont(resolveTypography(TypographyRole::Body));
     titleLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     text->addWidget(titleLabel_);
     detailLabel_ = new QLabel(result.context, this);
     detailLabel_->setObjectName("quickSearchResultDetail");
     detailLabel_->setTextFormat(Qt::PlainText);
-    detailLabel_->setFont(resolveTypography(TypographyRole::NavigationDetail));
+    detailLabel_->setFont(resolveTypography(TypographyRole::Small));
     detailLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     text->addWidget(detailLabel_);
     layout->addLayout(text, 1);

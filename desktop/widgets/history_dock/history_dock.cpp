@@ -181,7 +181,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     auto* previewToolbar = new QHBoxLayout;
     previewStatus_ = new design::Text({}, previewBody);
     previewStatus_->setObjectName("historyPreviewStatus");
-    previewStatus_->setTypographyRole(design::TypographyRole::Ui);
+    previewStatus_->setTypographyRole(design::TypographyRole::Body);
     previewStatus_->setTextFormat(Qt::PlainText);
     previewStatus_->setWordWrap(true);
     previewStatus_->setTextInteractionFlags(Qt::TextSelectableByMouse |
@@ -208,7 +208,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     preview_->setObjectName("historyPreview");
     preview_->setReadOnly(true);
     preview_->setProperty("designRole", "codePreview");
-    preview_->setFont(design::resolveTypography(design::TypographyRole::Monospace));
+    preview_->setFont(design::resolveTypography(design::TypographyRole::Mono));
     preview_->setFrameShape(QFrame::NoFrame);
     previewLayout->addWidget(preview_, 1);
     footer_ = new design::StatusLine(body);

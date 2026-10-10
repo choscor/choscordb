@@ -16,10 +16,10 @@ int buttonPadding(ButtonSize size, ButtonContext context) {
 }
 QFont buttonFont(ButtonSize size, ButtonContext context) {
     const int index = static_cast<int>(size) % 3;
-    const auto role = context == ButtonContext::EditorAction ? TypographyRole::Field
-                      : index == 0                           ? TypographyRole::SectionCaption
+    const auto role = context == ButtonContext::EditorAction ? TypographyRole::Dense
+                      : index == 0                           ? TypographyRole::Caption
                       : index == 1                           ? TypographyRole::Small
-                                                             : TypographyRole::Ui;
+                                                             : TypographyRole::Body;
     auto font = resolveTypography(role);
     font.setLetterSpacing(QFont::AbsoluteSpacing, 0);
     font.setWeight(QFont::Normal);

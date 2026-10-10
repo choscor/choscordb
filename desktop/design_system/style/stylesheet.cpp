@@ -111,13 +111,13 @@ QHash<QString, QString> styleTokens(const ResolvedTheme& theme) {
     tokens.insert(QStringLiteral("toolbar-height"), pixels(dimension(Dimension::Toolbar)));
 
     tokens.insert(QStringLiteral("font-caption"),
-                  pixels(typographySpec(TypographyRole::SectionCaption).pixelSize));
+                  pixels(typographySpec(TypographyRole::Caption).pixelSize));
     tokens.insert(QStringLiteral("font-small"),
                   pixels(typographySpec(TypographyRole::Small).pixelSize));
     tokens.insert(QStringLiteral("font-dense"),
-                  pixels(typographySpec(TypographyRole::Field).pixelSize));
+                  pixels(typographySpec(TypographyRole::Dense).pixelSize));
     tokens.insert(QStringLiteral("font-title"),
-                  pixels(typographySpec(TypographyRole::Heading).pixelSize));
+                  pixels(typographySpec(TypographyRole::Title).pixelSize));
     return tokens;
 }
 } // namespace

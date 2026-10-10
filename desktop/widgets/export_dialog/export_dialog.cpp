@@ -84,7 +84,7 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     headerLayout->setContentsMargins(design::spacing(design::Spacing::Four), 0,
                                      design::spacing(design::Spacing::Four), 0);
     auto* heading = new design::Text(tr("Export results"), header);
-    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    heading->setTypographyRole(design::TypographyRole::Title);
     headerLayout->addWidget(heading);
     headerLayout->addStretch();
     auto* dismiss = new design::Button({}, header);

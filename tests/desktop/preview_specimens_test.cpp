@@ -316,9 +316,8 @@ void PreviewTest::buttonsUseProductionVariantsAndStates() {
     auto* smallest = light->findChild<Button*>("button-size-xs");
     QVERIFY(smallest);
     QCOMPARE(smallest->buttonSize(), ButtonSize::ExtraSmall);
-    QCOMPARE(smallest->font().pixelSize(),
-             typographySpec(TypographyRole::SectionCaption).pixelSize);
-    QCOMPARE(pressed->font().pixelSize(), typographySpec(TypographyRole::Ui).pixelSize);
+    QCOMPARE(smallest->font().pixelSize(), typographySpec(TypographyRole::Caption).pixelSize);
+    QCOMPARE(pressed->font().pixelSize(), typographySpec(TypographyRole::Body).pixelSize);
     auto* largest = light->findChild<Button*>("button-size-icon");
     QVERIFY(largest);
     QCOMPARE(largest->buttonSize(), ButtonSize::Icon);
@@ -574,10 +573,9 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
                      .toString(),
                  QString("postgres"));
         QVERIFY(dynamic_cast<choscordb::design::NavigationProfileDelegate*>(list->itemDelegate()));
-        QCOMPARE(choscordb::design::resolveTypography(
-                     choscordb::design::TypographyRole::NavigationDetail)
+        QCOMPARE(choscordb::design::resolveTypography(choscordb::design::TypographyRole::Small)
                      .pixelSize(),
-                 10);
+                 11);
         const auto height = list->visualItemRect(list->item(0)).height();
         QCOMPARE(height, choscordb::design::dimension(choscordb::design::Dimension::Row));
     }

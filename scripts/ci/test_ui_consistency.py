@@ -67,7 +67,7 @@ class UiConsistencyTest(unittest.TestCase):
         with temporary:
             (root / "desktop/app/main_window_ui.cpp").write_text(
                 "QFont label(userFamily);\n"
-                "label.setFont(design::resolveTypography(design::TypographyRole::Ui));\n"
+                "label.setFont(design::resolveTypography(design::TypographyRole::Body));\n"
                 "label.setPalette(design::applicationPalette(theme));\n",
                 encoding="utf-8",
             )

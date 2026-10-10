@@ -41,7 +41,8 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     const int checkSize = dimension(Dimension::IconSmall);
     const int textLeft = tile.right() + 1 + inset;
     const int textWidth = qMax(0, bounds.right() - textLeft - checkSize - 2 * inset);
-    auto titleFont = resolveTypography(TypographyRole::Field);
+    auto titleFont = resolveTypography(TypographyRole::Dense);
+    titleFont.setWeight(QFont::Medium);
     painter->setFont(titleFont);
     painter->setPen(colors.fg);
     painter->drawText(QRect(textLeft, bounds.top(), textWidth, bounds.height()),

@@ -15,7 +15,7 @@ class SidebarSection final : public QWidget {
         auto* header = new QHBoxLayout;
         header->setSpacing(design::spacing(design::Spacing::One));
         title_ = new design::Text(title.toUpper(), this);
-        title_->setTypographyRole(design::TypographyRole::SectionCaption);
+        title_->setTypographyRole(design::TypographyRole::Caption);
         title_->setForegroundRole(QPalette::PlaceholderText);
         header->addWidget(title_);
         header->addStretch();

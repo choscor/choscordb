@@ -187,8 +187,7 @@ void SchemaSidebarWorkspaceTest::columnRowsShowDeclaredTypesWithoutLosingTheirNa
         QCOMPARE(shortRect.height(), blankRect.height());
         QCOMPARE(longRect.height(), blankRect.height());
         QCOMPARE(longTypeRect.height(), blankRect.height());
-        const QFontMetrics detailMetrics(
-            design::resolveTypography(design::TypographyRole::NavigationDetail));
+        const QFontMetrics detailMetrics(design::resolveTypography(design::TypographyRole::Small));
         QVERIFY(detailMetrics.horizontalAdvance(longType.databaseType) > longTypeRect.width());
         // Paint the same delegate at high resolution so small antialiased
         // glyphs have interior pixels for the exact semantic-color assertion.

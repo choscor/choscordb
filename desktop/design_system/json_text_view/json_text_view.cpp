@@ -77,7 +77,7 @@ JsonTextView::JsonTextView(QWidget* parent) : QPlainTextEdit(parent) {
     setReadOnly(true);
     setProperty("designRole", "codePreview");
     setFrameShape(QFrame::NoFrame);
-    setFont(resolveTypography(TypographyRole::Monospace));
+    setFont(resolveTypography(TypographyRole::Mono));
     auto* highlighter = new JsonSyntaxHighlighter(document());
     highlighter->setColors(resolvedThemeForWidget(*this).colors);
     highlighter_ = highlighter;

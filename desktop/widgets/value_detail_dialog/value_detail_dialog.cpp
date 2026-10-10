@@ -62,7 +62,7 @@ ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     auto* sections = new design::DialogSections(this);
     layout->addWidget(sections);
     auto* heading = new design::Text(tr("Value detail"), sections);
-    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    heading->setTypographyRole(design::TypographyRole::Title);
     sections->headerLayout()->addWidget(heading);
     auto* body = sections->bodyLayout();
     body->setSpacing(design::spacing(design::Spacing::Two));

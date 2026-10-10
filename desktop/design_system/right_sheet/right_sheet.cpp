@@ -49,7 +49,7 @@ RightSheet::RightSheet(QWidget* owner)
     title_ = new Text({}, header);
     title_->setObjectName(QStringLiteral("rightSheetTitle"));
     title_->setAccessibleName(tr("Sheet title"));
-    title_->setTypographyRole(TypographyRole::DialogTitle);
+    title_->setTypographyRole(TypographyRole::Title);
     heading->addWidget(title_, 1);
     auto* close = new Button({}, header);
     close->setObjectName(QStringLiteral("rightSheetClose"));

@@ -152,7 +152,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         code->setPlainText("CREATE TABLE example (id INTEGER PRIMARY KEY);");
         code->setReadOnly(true);
         code->setFrameShape(QFrame::NoFrame);
-        code->setFont(resolveTypography(TypographyRole::Monospace));
+        code->setFont(resolveTypography(TypographyRole::Mono));
         layout->addWidget(code, 1);
         auto* richText = new QTextEdit(host);
         configureRichTextArea(*richText);

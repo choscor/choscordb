@@ -30,7 +30,7 @@ void ColumnRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opt
     option.widget->style()->drawControl(QStyle::CE_ItemViewItem, &item, painter, option.widget);
 
     const auto colors = resolvedThemeForWidget(*option.widget).colors;
-    const auto detailFont = resolveTypography(TypographyRole::NavigationDetail);
+    const auto detailFont = resolveTypography(TypographyRole::Small);
     const auto nameFont = detailFont;
     const QFontMetrics nameMetrics(nameFont);
     const QFontMetrics detailMetrics(detailFont);

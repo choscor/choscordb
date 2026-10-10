@@ -62,12 +62,9 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     add(QStringLiteral("focus.referenceOpacity"),
         QString::number(focusSpec().referenceRingOpacity));
     for (const auto& [name, role] :
-         {std::pair{"ui", TypographyRole::Ui}, std::pair{"small", TypographyRole::Small},
-          std::pair{"heading", TypographyRole::Heading}, std::pair{"base", TypographyRole::Base},
-          std::pair{"dialogTitle", TypographyRole::DialogTitle},
-          std::pair{"monospace", TypographyRole::Monospace},
-          std::pair{"field", TypographyRole::Field},
-          std::pair{"sectionCaption", TypographyRole::SectionCaption},
+         {std::pair{"caption", TypographyRole::Caption}, std::pair{"small", TypographyRole::Small},
+          std::pair{"dense", TypographyRole::Dense}, std::pair{"body", TypographyRole::Body},
+          std::pair{"title", TypographyRole::Title}, std::pair{"mono", TypographyRole::Mono},
           std::pair{"metadata", TypographyRole::Metadata}}) {
         const auto spec = typographySpec(role);
         const auto prefix = QStringLiteral("typography.%1.").arg(QLatin1String(name));

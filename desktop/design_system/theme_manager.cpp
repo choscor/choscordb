@@ -73,7 +73,7 @@ void ThemeManager::setReducedMotion(bool enabled) {
 void ThemeManager::applyTo(QApplication& application) const {
     application.setProperty("designTheme", QVariant::fromValue(resolvedTheme_));
     application.setProperty("forcedContrast", resolvedTheme_.forcedContrast);
-    application.setFont(resolveTypography(TypographyRole::Ui));
+    application.setFont(resolveTypography(TypographyRole::Body));
     application.setPalette(applicationPalette(resolvedTheme_));
     application.setStyleSheet(applicationStyleSheet(resolvedTheme_));
 }
@@ -81,7 +81,7 @@ void ThemeManager::applyTo(QApplication& application) const {
 void ThemeManager::applyTo(QWidget& topLevelWidget) const {
     topLevelWidget.setProperty("designTheme", QVariant::fromValue(resolvedTheme_));
     topLevelWidget.setProperty("forcedContrast", resolvedTheme_.forcedContrast);
-    topLevelWidget.setFont(resolveTypography(TypographyRole::Ui));
+    topLevelWidget.setFont(resolveTypography(TypographyRole::Body));
     topLevelWidget.setStyleSheet(applicationStyleSheet(resolvedTheme_));
     // Replacing an existing QSS can restore its cached base palette. Apply the
     // resolved palette afterward so scoped themes also update background paper.

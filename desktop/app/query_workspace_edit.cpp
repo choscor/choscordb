@@ -173,7 +173,7 @@ bool QueryWorkspace::applyStagedEdits() {
     preview->setObjectName("gridEditReview");
     preview->setReadOnly(true);
     preview->setProperty("designRole", "codePreview");
-    preview->setFont(design::resolveTypography(design::TypographyRole::Monospace));
+    preview->setFont(design::resolveTypography(design::TypographyRole::Mono));
     layout->addWidget(preview);
     auto* buttons = new QHBoxLayout;
     buttons->addStretch();

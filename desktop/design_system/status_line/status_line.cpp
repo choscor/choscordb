@@ -26,7 +26,7 @@
 namespace choscordb::design {
 
 StatusLine::StatusLine(QWidget* parent) : QWidget(parent) {
-    setFont(resolveTypography(TypographyRole::Ui));
+    setFont(resolveTypography(TypographyRole::Body));
     content_ = new QHBoxLayout(this);
     content_->setContentsMargins(spacing(Spacing::Two), spacing(Spacing::One),
                                  spacing(Spacing::Two), spacing(Spacing::One));

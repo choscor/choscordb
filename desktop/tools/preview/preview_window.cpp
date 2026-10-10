@@ -219,9 +219,9 @@ void populateIcons(QWidget* host, QVBoxLayout* layout) {
     layout->addStretch();
 }
 void populateTypography(QWidget* host, QVBoxLayout* layout) {
-    for (const auto role : {TypographyRole::Heading, TypographyRole::DialogTitle,
-                            TypographyRole::Base, TypographyRole::Ui, TypographyRole::Small,
-                            TypographyRole::Field, TypographyRole::Monospace}) {
+    for (const auto role :
+         {TypographyRole::Title, TypographyRole::Body, TypographyRole::Dense, TypographyRole::Small,
+          TypographyRole::Caption, TypographyRole::Mono, TypographyRole::Metadata}) {
         const auto spec = typographySpec(role);
         auto* text = new Text("ChoscorDB · Truy vấn dữ liệu · 日本語 · Ελληνικά · 🙂", host);
         text->setTypographyRole(role);
@@ -323,7 +323,7 @@ void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     sections->setObjectName("previewDialogSections");
     root->addWidget(sections);
     auto* heading = new Text("New connection", sections);
-    heading->setTypographyRole(TypographyRole::DialogTitle);
+    heading->setTypographyRole(TypographyRole::Title);
     sections->headerLayout()->addWidget(heading);
     sections->headerLayout()->addStretch();
     auto* close = new Button({}, sections);
@@ -426,7 +426,7 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
     dialog->setWindowTitle("Synthetic component preview");
     auto* content = new QVBoxLayout(dialog);
     auto* heading = new Text(destructive ? "Delete synthetic record?" : "Panel details", dialog);
-    heading->setTypographyRole(TypographyRole::DialogTitle);
+    heading->setTypographyRole(TypographyRole::Title);
     content->addWidget(heading);
     auto* description =
         new Text(destructive ? "This preview records your choice only. No data is changed."
@@ -735,7 +735,7 @@ PreviewWindow::PreviewWindow(QWidget* parent) : QMainWindow(parent) {
         theme->setMode(host == light_ ? ThemeMode::Light : ThemeMode::Dark);
         theme->setReducedMotion(true);
         theme->applyTo(*host);
-        host->setFont(resolveTypography(TypographyRole::Ui));
+        host->setFont(resolveTypography(TypographyRole::Body));
         (void)new QVBoxLayout(host);
         panes->addWidget(host);
     }

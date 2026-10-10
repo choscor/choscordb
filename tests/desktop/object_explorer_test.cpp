@@ -433,7 +433,7 @@ class ObjectExplorerTest final : public QObject {
         auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
         QVERIFY(ddl);
         QCOMPARE(ddl->font().family(),
-                 design::resolveTypography(design::TypographyRole::Monospace).family());
+                 design::resolveTypography(design::TypographyRole::Mono).family());
         QCOMPARE(ddl->font().pixelSize(), 13);
         QCOMPARE(ddl->frameShape(), QFrame::NoFrame);
         ddl->setPlainText("SELECT 'x', 42; -- note");

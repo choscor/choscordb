@@ -30,7 +30,7 @@ class KeywordApis final : public QsciAbstractAPIs {
 SqlEditor::SqlEditor(QWidget* parent) : QsciScintilla(parent) {
     setUtf8(true);
     setAccessibleName(tr("SQL editor"));
-    const auto font = design::resolveTypography(design::TypographyRole::Monospace);
+    const auto font = design::resolveTypography(design::TypographyRole::Mono);
     setMarginType(0, QsciScintilla::NumberMargin);
     updateLineNumberMargin();
     setBraceMatching(QsciScintilla::SloppyBraceMatch);
@@ -114,7 +114,7 @@ void SqlEditor::setEditorFont(const QFont& requestedFont) {
     setExtraAscent(0);
     setExtraDescent(0);
     const auto naturalHeight = SendScintilla(SCI_TEXTHEIGHT, 0UL);
-    const auto lineHeight = design::typographySpec(design::TypographyRole::Monospace).lineHeight;
+    const auto lineHeight = design::typographySpec(design::TypographyRole::Mono).lineHeight;
     const auto padding = qMax(0, lineHeight - static_cast<int>(naturalHeight));
     setExtraAscent(padding / 2);
     setExtraDescent(padding - padding / 2);

@@ -38,7 +38,7 @@ class ProfileProgressDialog final : public DialogShell {
         setWindowTitle(tr("Profiles"));
         auto* content = new QVBoxLayout(this);
         auto* heading = new design::Text(tr("Profiles"), this);
-        heading->setTypographyRole(design::TypographyRole::DialogTitle);
+        heading->setTypographyRole(design::TypographyRole::Title);
         content->addWidget(heading);
         message_ = createDescription({}, this);
         message_->setObjectName("profileProgressMessage");
@@ -78,7 +78,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     auto* header = sections;
     auto* heading = new design::Text(tr("New connection"), header);
     heading->setObjectName("profileHeading");
-    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    heading->setTypographyRole(design::TypographyRole::Title);
     headerLayout->addWidget(heading);
     headerLayout->addStretch();
     auto* dismiss = new design::Button({}, header);

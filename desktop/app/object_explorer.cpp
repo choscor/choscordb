@@ -233,7 +233,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     ddl_->setAccessibleName(tr("Object DDL"));
     ddl_->setReadOnly(true);
     ddl_->setProperty("designRole", "codePreview");
-    ddl_->setFont(design::resolveTypography(design::TypographyRole::Monospace));
+    ddl_->setFont(design::resolveTypography(design::TypographyRole::Mono));
     ddl_->setFrameShape(QFrame::NoFrame);
     new DdlHighlighter(ddl_);
     pages_->addWidget(ddl_);

@@ -20,7 +20,7 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     auto* sections = new design::DialogSections(this);
     root->addWidget(sections);
     auto* heading = new design::Text(tr("Query settings"), sections);
-    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    heading->setTypographyRole(design::TypographyRole::Title);
     sections->headerLayout()->addWidget(heading);
     auto* layout = sections->bodyLayout();
     layout->setSpacing(design::spacing(design::Spacing::Two));

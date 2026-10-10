@@ -524,7 +524,7 @@ void ControlStyleTest::badgeAndProgressUseCompactReferenceGeometry() {
     const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
                               false};
     QWidget root;
-    root.setFont(resolveTypography(TypographyRole::Ui));
+    root.setFont(resolveTypography(TypographyRole::Body));
     root.setStyleSheet(applicationStyleSheet(theme));
     QLabel badge("Connected", &root);
     badge.setProperty("designRole", "badge");
@@ -583,7 +583,7 @@ void ControlStyleTest::tabsToolsAndTableHeadersUseCompactPaneGeometry() {
     const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
                               false};
     QWidget root;
-    root.setFont(resolveTypography(TypographyRole::Ui));
+    root.setFont(resolveTypography(TypographyRole::Body));
     root.setStyleSheet(applicationStyleSheet(theme));
     QTabBar tabs(&root);
     tabs.addTab("Results");
@@ -635,7 +635,7 @@ void ControlStyleTest::menusTabsAndScrollbarsUseSharedSurfacesAndRemainInteracti
     const ResolvedTheme theme{ResolvedAppearance::Dark, resolveColors(ResolvedAppearance::Dark),
                               false};
     QWidget root;
-    root.setFont(resolveTypography(TypographyRole::Ui));
+    root.setFont(resolveTypography(TypographyRole::Body));
     root.setStyle(&style);
     root.setPalette(applicationPalette(theme));
     root.setProperty("designTheme", QVariant::fromValue(theme));
@@ -679,7 +679,7 @@ void ControlStyleTest::fieldsExposeInvalidBorderAndPreserveReadOnlyAndPopupInput
     const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
                               false};
     QWidget root;
-    root.setFont(resolveTypography(TypographyRole::Ui));
+    root.setFont(resolveTypography(TypographyRole::Body));
     root.setStyle(&style);
     root.setPalette(applicationPalette(theme));
     root.setStyleSheet(applicationStyleSheet(theme));

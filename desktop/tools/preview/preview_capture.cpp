@@ -222,7 +222,7 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
     metadata.themes = comparison                               ? "Light / Dark"
                       : appearance == ResolvedAppearance::Dark ? "Dark"
                                                                : "Light";
-    metadata.font = resolveTypography(TypographyRole::Ui).family().toStdString();
+    metadata.font = resolveTypography(TypographyRole::Body).family().toStdString();
     metadata.qt = QT_VERSION_STR;
     metadata.platform = QGuiApplication::platformName().toStdString();
     metadata.os = QSysInfo::prettyProductName().toStdString();
