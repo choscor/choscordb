@@ -12,7 +12,7 @@ preserved by the component extraction.
 | Button | `button/`: semantic `Button` subclass, painting, stock QPushButton rules |
 | Button group | `button_group/`: `ButtonGroup` layout and adjoining edges |
 | Text | `text/`: semantic `Text` label and typography-aware sizing |
-| Label, badge, keyboard hint | `label/`, `badge/`, `kbd/`: QLabel role/state styles |
+| Label, badge, keyboard hint | `label/`, `badge/`, `kbd/`: QLabel role/state styles; the Badge `driver` variant names a driver with a neutral badge beside its unmodified logo |
 | Fields | `field/`: shared single-line input, key-sequence and field-state rules; keyboard focus frame and focus painting |
 | Text area | `text_area/`: QPlainTextEdit/QTextEdit rules |
 | JSON text view | `json_text_view/`: selectable read-only JSON text with theme-aware syntax coloring |
@@ -22,14 +22,14 @@ preserved by the component extraction.
 | Switch | `switch/`: existing `designRole="switch"` track and thumb painting |
 | Tool button | `tool_button/`: QToolButton states and menu-indicator rules |
 | Toolbar | `toolbar/`: toolbar geometry, separators, and muted workspace variant |
-| Status line | `status_line/`: shared single-row workspace layout, Ui typography, paging, overflow, neutral/success/error surfaces, loading icon, and complete Details |
+| Status line | `status_line/`: shared single-row workspace layout, Body typography, paging, overflow, `<status>-surface` fills with status text (neutral uses `surface-raised`), loading icon, and complete Details |
 | Tabs | `tabs/`: pane/document variants, left-aligned document labels, and tab-close painting |
 | Table | `table/`: table font, row styles, and interactive result headers |
 | Tree | `tree/`: navigation rows and branch painting |
 | List | `list/`: list item styles |
 | Item view | `item_view/`: selectors genuinely shared by table/tree/list |
-| Saved connection row | `navigation_profile_row/`: compact database profile delegate and selection state |
-| Recent history row | `history_row/`: SQL excerpt, database metadata, status badge, and muted hover delegate |
+| Saved connection row | `navigation_profile_row/`: compact database profile delegate, neutral driver-logo tile and selection state |
+| Recent history row | `history_row/`: SQL excerpt, database metadata, status badge (`historyStatusTint`, shared with the history dock), and hover delegate |
 | Column row | `column_row/`: iconless navigation name with a right-aligned database type on the same row |
 | Header | `header/`: header and table-corner styles |
 | Scrollbar | `scrollbar/`: scrollbar dimensions and states |
@@ -45,7 +45,7 @@ preserved by the component extraction.
 | Dialog shell | `dialog_shell/`: reusable nonmodal `QDialog` shell and content/status styles |
 | Dialog sections | `dialog_sections/`: compact header, growing body, and muted padded footer for dialogs |
 | Confirmation dialog | `confirmation_dialog/`: reusable QMessageBox contract and presentation |
-| Toast region | `toast_region/`: host-attached queued notices, reading-time and focus/hover pauses, pinned failures, bounded full Details, and gallery progress compatibility |
+| Toast region | `toast_region/`: host-attached queued notices with `<status>-surface` fills, status text and a status icon; a neutral progress notice; reading-time and focus/hover pauses, pinned failures, and bounded full Details |
 | Shared glyphs | `control_glyphs/`: select/spin overlays and arrow painting; Qt retains hit testing |
 
 Stock Qt widgets remain stock widgets. Their owning modules supply styles and,
@@ -58,9 +58,14 @@ uses semantic theme colors and metrics in the feature widget.
 
 ## Foundations and integration
 
-- `colors/`: semantic colors, contrast and accent validation.
-- `metrics/`: dimensions, spacing, radii, elevation, motion and layout metrics.
-- `fonts/`: font registration and typography resolution.
+The token vocabulary, scales, typography roles and state model are documented in
+`docs/design/design-system.md`.
+
+- `colors/`: `design::Colors` (26 named colors), contrast and forced-contrast
+  resolution. Literal palette colors live only here.
+- `metrics/`: the compact `Dimension`, `Spacing` and `Radius` scales, elevation,
+  motion, and `LayoutMetrics` for window defaults and initial pane sizes.
+- `fonts/`: font registration and the seven `TypographyRole` roles.
 - `tokens/`: discoverable token catalog used by the developer gallery.
 - `icons.h/.cpp`: icon roles, resource lookup and themed rendering.
 - `theme.h/.cpp`: resolved-theme value, widget-scope lookup and Qt palette.
@@ -68,14 +73,15 @@ uses semantic theme colors and metrics in the feature widget.
 - `platform_accessibility.h/.cpp`: platform preference integration.
 - `control_style.h/.cpp`: Qt style coordinator; dispatches to component helpers,
   preserves event order and delegates unhandled primitives to the base style.
-- `style/`: ordered stylesheet assembly, shared theme lookup and token expansion.
+- `style/`: the one stylesheet assembly. `stylesheet.cpp` concatenates the
+  component QSS files in its `sharedCascade` order and expands named `@token`
+  placeholders; `themedStyleSheet` resolves a single file for a scoped widget.
   It does not own component selectors or widget implementations.
 
-`*_style` functions return unresolved fragments for the central assemblers; do
-not apply them directly to a widget. Use `ThemeManager` for a complete themed
-root. The existing property API (`variant`, `designRole`, `invalid`, etc.) stays
-unchanged. Base rules precede component rules, and fragment order is deliberate:
-changing order can change QSS precedence even when individual rules are unchanged.
+Use `ThemeManager` for a complete themed root. The existing property API
+(`variant`, `designRole`, `invalid`, etc.) stays unchanged. Cascade order is
+deliberate: a later file wins over an earlier rule of equal specificity, and each
+selector and property pair is defined in one file.
 
 Keep a component's presentation and private behavior together, put workflow state
 in `desktop/widgets/` or application controllers, and register new source files
@@ -122,7 +128,7 @@ owning modules.
 | Right sheet | Right sheet, JSON text view, and shared dialog presentation |
 | Quick search overlay | Quick search and shared dialog presentation |
 | Menus and submenus | Menu |
-| Feedback and toast states | Badge, progress, toast region |
+| Feedback and toast states | Badge (including the driver variant), progress, toast region |
 
 Whenever adding or changing code in a design-system component, add or update its
 visible Light/Dark specimen in `preview_window.cpp` and the matching check in
@@ -149,3 +155,10 @@ policy tests passed, as did standalone-header and development/release builds.
 The release linker reported cached Rust objects targeting a newer macOS version;
 older macOS compatibility and Windows/Linux/native accessibility were not
 validated by this extraction check.
+
+Compact design system, 2026-10-10: the phase 1 consolidation (one stylesheet
+assembly, named tokens, removed density and accent) rendered every offscreen
+Light/Dark gallery capture byte-identical except the token catalog, whose names
+changed. Phase 2 changed values deliberately (orange brand, compact sizes,
+unified states, seven type roles); its acceptance checks are listed in
+`docs/specs/2026-10-10-compact-design-system.md`.
