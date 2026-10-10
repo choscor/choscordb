@@ -62,14 +62,17 @@ void NavigationTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& 
 
     const auto theme = resolvedThemeForWidget(*this);
     const auto& colors = theme.colors;
-    const qreal gap = DesignMetrics{}.navigationHighlightGap;
-    const QRectF highlight(5, option.rect.top() + gap / 2, viewport()->width() - 10,
+    const qreal gap = layoutMetrics().navigationHighlightGap;
+    const int inset = spacing(Spacing::One);
+    const int rounding = radius(Radius::Medium);
+    const QRectF highlight(inset, option.rect.top() + gap / 2, viewport()->width() - 2 * inset,
                            option.rect.height() - gap);
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
-    painter->setPen(theme.forcedContrast && selected ? QPen(colors.focus, 2) : QPen(Qt::NoPen));
-    painter->setBrush(colors.muted);
-    painter->drawRoundedRect(highlight, 5, 5);
+    painter->setPen(theme.forcedContrast && selected ? QPen(colors.ring, focusSpec().ringWidth)
+                                                     : QPen(Qt::NoPen));
+    painter->setBrush(selected ? colors.selection : colors.surfaceRaised);
+    painter->drawRoundedRect(highlight, rounding, rounding);
     painter->restore();
 
     QStyleOptionViewItem unselected(option);
@@ -79,15 +82,20 @@ void NavigationTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& 
 
 void NavigationTreeView::drawBranches(QPainter* painter, const QRect& rect,
                                       const QModelIndex& index) const {
-    if ((selectionModel() && selectionModel()->isSelected(index)) || hoveredIndex_ == index) {
+    const bool selected = selectionModel() && selectionModel()->isSelected(index);
+    if (selected || hoveredIndex_ == index) {
+        const auto& colors = resolvedThemeForWidget(*this).colors;
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing);
         painter->setClipRect(rect);
         painter->setPen(Qt::NoPen);
-        painter->setBrush(resolvedThemeForWidget(*this).colors.muted);
-        const qreal gap = DesignMetrics{}.navigationHighlightGap;
-        painter->drawRoundedRect(
-            QRectF(5, rect.top() + gap / 2, viewport()->width() - 10, rect.height() - gap), 5, 5);
+        painter->setBrush(selected ? colors.selection : colors.surfaceRaised);
+        const qreal gap = layoutMetrics().navigationHighlightGap;
+        const int inset = spacing(Spacing::One);
+        const int rounding = radius(Radius::Medium);
+        painter->drawRoundedRect(QRectF(inset, rect.top() + gap / 2,
+                                        viewport()->width() - 2 * inset, rect.height() - gap),
+                                 rounding, rounding);
         painter->restore();
     }
     QTreeView::drawBranches(painter, rect, index);

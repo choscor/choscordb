@@ -75,16 +75,16 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     sqlForm->addRow(tr("&Schema:"), schema_);
     tableValidation_ = new design::FieldValidation(table_, this);
     sqlForm->addRow(tr("&Table:"), tableValidation_);
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* layout = new QVBoxLayout(this);
     auto* sections = new design::DialogSections(this);
     layout->addWidget(sections);
     auto* headerLayout = sections->headerLayout();
     auto* header = headerLayout->parentWidget();
-    header->setFixedHeight(metrics.modalHeaderHeight);
-    headerLayout->setContentsMargins(metrics.modalContentInset, 0, metrics.modalContentInset, 0);
+    header->setFixedHeight(design::layoutMetrics().modalHeaderHeight);
+    headerLayout->setContentsMargins(design::spacing(design::Spacing::Four), 0,
+                                     design::spacing(design::Spacing::Four), 0);
     auto* heading = new design::Text(tr("Export results"), header);
-    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    heading->setTypographyRole(design::TypographyRole::Title);
     headerLayout->addWidget(heading);
     headerLayout->addStretch();
     auto* dismiss = new design::Button({}, header);
@@ -99,8 +99,9 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     auto* body = bodyLayout->parentWidget();
     body->setProperty("designSurface", "panel");
     body->setAttribute(Qt::WA_StyledBackground);
-    bodyLayout->setContentsMargins(metrics.modalContentInset, metrics.modalFooterInset,
-                                   metrics.modalContentInset, metrics.modalFooterInset);
+    bodyLayout->setContentsMargins(
+        design::spacing(design::Spacing::Four), design::layoutMetrics().modalFooterInset,
+        design::spacing(design::Spacing::Four), design::layoutMetrics().modalFooterInset);
     bodyLayout->addWidget(scope_);
     setResultViewActive(false);
     bodyLayout->addLayout(form);
@@ -119,8 +120,9 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     auto* footer = buttons->parentWidget();
     footer->setProperty("designSurface", "muted");
     footer->setAttribute(Qt::WA_StyledBackground);
-    buttons->setContentsMargins(metrics.modalFooterInset, metrics.modalFooterVerticalInset,
-                                metrics.modalFooterInset, metrics.modalFooterVerticalInset);
+    buttons->setContentsMargins(
+        design::layoutMetrics().modalFooterInset, design::layoutMetrics().modalFooterVerticalInset,
+        design::layoutMetrics().modalFooterInset, design::layoutMetrics().modalFooterVerticalInset);
     buttons->addStretch();
     auto* close = new design::Button(tr("Close"), footer);
     close->setObjectName("exportClose");

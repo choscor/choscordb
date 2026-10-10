@@ -152,7 +152,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         code->setPlainText("CREATE TABLE example (id INTEGER PRIMARY KEY);");
         code->setReadOnly(true);
         code->setFrameShape(QFrame::NoFrame);
-        code->setFont(resolveTypography(TypographyRole::Monospace));
+        code->setFont(resolveTypography(TypographyRole::Mono));
         layout->addWidget(code, 1);
         auto* richText = new QTextEdit(host);
         configureRichTextArea(*richText);
@@ -196,7 +196,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         auto* model = new QStandardItemModel(tree);
         auto* parent = new QStandardItem("Navigation group");
         auto* child = new QStandardItem("Nested item");
-        child->setIcon(themedIcon(Icon::Table, resolvedThemeForWidget(*host).colors.mutedText,
+        child->setIcon(themedIcon(Icon::Table, resolvedThemeForWidget(*host).colors.fgMuted,
                                   dimension(Dimension::IconSmall)));
         parent->appendRow(child);
         model->appendRow(parent);
@@ -263,7 +263,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         for (int i = 0; i < 8; ++i) {
             const auto icon = i >= 1 && i <= 3 ? Icon::Table : Icon::Code;
             tabs->addTab(new QLabel("Neutral document chrome", tabs),
-                         themedIcon(icon, resolvedThemeForWidget(*host).colors.mutedText, 16),
+                         themedIcon(icon, resolvedThemeForWidget(*host).colors.fgMuted, 16),
                          i == 0   ? "Untitled query 1"
                          : i == 1 ? "orders"
                          : i == 2 ? "customers"
@@ -320,8 +320,8 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         splitter->setObjectName("previewEditorResultsSplit");
         splitter->addWidget(new QPlainTextEdit("SELECT 1;", splitter));
         splitter->addWidget(new QLabel("Results · drag to resize", splitter));
-        const DesignMetrics metrics;
-        splitter->setSizes({metrics.initialEditorHeight, metrics.initialResultsHeight});
+        splitter->setSizes(
+            {layoutMetrics().initialEditorHeight, layoutMetrics().initialResultsHeight});
         splitter->setStretchFactor(0, 1);
         splitter->setStretchFactor(1, 1);
         layout->addWidget(splitter, 1);
@@ -407,6 +407,30 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
             QString("Storage could not finish. Retry after checking permissions. ").repeated(20));
         layout->addWidget(detail);
     } else if (id == "feedback") {
+        auto* badges = new QHBoxLayout;
+        badges->setSpacing(spacing(Spacing::Two));
+        for (const auto* variant : {"default", "secondary", "outline", "destructive"}) {
+            auto* badge = new QLabel(QString::fromLatin1(variant), host);
+            badge->setObjectName(QStringLiteral("previewBadge_%1").arg(variant));
+            badge->setProperty("designRole", "badge");
+            if (QLatin1String(variant) != QLatin1String("default"))
+                badge->setProperty("variant", variant);
+            badges->addWidget(badge);
+        }
+        // A driver is named by one neutral badge beside its unmodified logo.
+        auto* logo = new QLabel(host);
+        logo->setObjectName("previewDriverLogo");
+        logo->setPixmap(themedIcon(Icon::PostgreSQL, resolvedThemeForWidget(*host).colors.fg,
+                                   dimension(Dimension::Icon))
+                            .pixmap(dimension(Dimension::Icon), dimension(Dimension::Icon)));
+        badges->addWidget(logo);
+        auto* driver = new QLabel("PostgreSQL", host);
+        driver->setObjectName("previewDriverBadge");
+        driver->setProperty("designRole", "badge");
+        driver->setProperty("variant", "driver");
+        badges->addWidget(driver);
+        badges->addStretch();
+        layout->addLayout(badges);
         auto* viewport = host->parentWidget();
         auto* toast = new choscordb::ToastRegion;
         toast->attachTo(viewport);

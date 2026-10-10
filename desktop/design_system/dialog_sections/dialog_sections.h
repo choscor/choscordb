@@ -26,6 +26,4 @@ class DialogSections : public QWidget {
     QHBoxLayout* footer_ = nullptr;
 };
 
-QString dialogSectionsApplicationStyleSheet(const ResolvedTheme& theme);
-
 } // namespace choscordb::design

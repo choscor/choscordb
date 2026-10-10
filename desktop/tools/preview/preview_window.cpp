@@ -72,6 +72,17 @@
 namespace choscordb::design {
 void applySpecimenTheme(QWidget& host);
 namespace {
+// Dialogs open in the window overlay, outside the themed host, so each one
+// takes the host's theme, stylesheet and palette itself.
+void applyHostTheme(QWidget& surface, const QWidget& host) {
+    for (auto* ancestor = &host; ancestor; ancestor = ancestor->parentWidget()) {
+        if (auto* manager =
+                ancestor->findChild<ThemeManager*>(QString{}, Qt::FindDirectChildrenOnly)) {
+            manager->applyTo(surface);
+            return;
+        }
+    }
+}
 struct Specimen {
     QString section;
     QString id;
@@ -140,7 +151,7 @@ QList<Specimen> specimens() {
         {"Components", "confirmations", "Destructive confirmations",
          "desktop/design_system/confirmation_dialog/confirmation_dialog.cpp"},
         {"Components", "menus", "Menus and submenus", "desktop/design_system/menu/menu.cpp"},
-        {"Components", "feedback", "Toasts, pinned failures, and dismiss buttons",
+        {"Components", "feedback", "Badges, toasts, pinned failures, and dismiss buttons",
          "desktop/design_system/toast_region/toast_region.cpp"},
     };
 }
@@ -168,7 +179,7 @@ class IconDisplay final : public QLabel {
   protected:
     void paintEvent(QPaintEvent*) override {
         const auto colors = resolvedThemeForWidget(*this).colors;
-        const auto color = dimmed_ ? colors.disabled : colors.foreground;
+        const auto color = dimmed_ ? colors.fgDisabled : colors.fg;
         if (icon_.isNull() || color_ != color) {
             icon_ = themedIcon(role_, color, size_);
             color_ = color;
@@ -208,9 +219,9 @@ void populateIcons(QWidget* host, QVBoxLayout* layout) {
     layout->addStretch();
 }
 void populateTypography(QWidget* host, QVBoxLayout* layout) {
-    for (const auto role : {TypographyRole::Heading, TypographyRole::DialogTitle,
-                            TypographyRole::Base, TypographyRole::Ui, TypographyRole::Small,
-                            TypographyRole::Field, TypographyRole::Monospace}) {
+    for (const auto role :
+         {TypographyRole::Title, TypographyRole::Body, TypographyRole::Dense, TypographyRole::Small,
+          TypographyRole::Caption, TypographyRole::Mono, TypographyRole::Metadata}) {
         const auto spec = typographySpec(role);
         auto* text = new Text("ChoscorDB · Truy vấn dữ liệu · 日本語 · Ελληνικά · 🙂", host);
         text->setTypographyRole(role);
@@ -253,8 +264,7 @@ void populateRightSheet(QWidget* host, QVBoxLayout* layout) {
     layout->addWidget(open);
     auto* sheet = new RightSheet(host);
     sheet->setObjectName("previewRightSheet");
-    sheet->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
-    sheet->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
+    applyHostTheme(*sheet, *host);
     sheet->setTitle("Example details");
     auto* body = new JsonTextView(sheet);
     body->setObjectName("previewRightSheetContent");
@@ -279,8 +289,7 @@ void populateQuickSearch(QWidget* host, QVBoxLayout* layout) {
     layout->addWidget(open);
     auto* dialog = new QuickSearchDialog(host);
     dialog->setObjectName("previewQuickSearchDialog");
-    dialog->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
-    dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
+    applyHostTheme(*dialog, *host);
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
     QObject::connect(dialog, &QuickSearchDialog::queryChanged, dialog, [dialog](const QString&) {
         dialog->setResults(
@@ -305,8 +314,7 @@ void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     dialog->setEdgeToEdgeContent(true);
     dialog->setObjectName("previewDialogSectionsModal");
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
-    dialog->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
-    dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
+    applyHostTheme(*dialog, *host);
     dialog->resize(560, 440);
     auto* root = new QVBoxLayout(dialog);
     root->setContentsMargins(0, 0, 0, 0);
@@ -315,7 +323,7 @@ void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     sections->setObjectName("previewDialogSections");
     root->addWidget(sections);
     auto* heading = new Text("New connection", sections);
-    heading->setTypographyRole(TypographyRole::DialogTitle);
+    heading->setTypographyRole(TypographyRole::Title);
     sections->headerLayout()->addWidget(heading);
     sections->headerLayout()->addStretch();
     auto* close = new Button({}, sections);
@@ -395,9 +403,7 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
             host);
         confirmation->setObjectName("previewActualDialog");
         open->setProperty("previewSurface", QVariant::fromValue<QObject*>(confirmation));
-        confirmation->setProperty("designTheme",
-                                  QVariant::fromValue(resolvedThemeForWidget(*host)));
-        confirmation->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
+        applyHostTheme(*confirmation, *host);
         auto* affirmative = confirmation->addButton("Delete", QMessageBox::DestructiveRole);
         confirmation->setDefaultButton(QMessageBox::Cancel);
         confirmation->setEscapeButton(QMessageBox::Cancel);
@@ -414,14 +420,13 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
     QDialog* dialog = modeless ? static_cast<QDialog*>(new choscordb::DialogShell(host))
                                : static_cast<QDialog*>(new ModalDialog(host));
     dialog->setAttribute(Qt::WA_WindowPropagation);
-    dialog->setProperty("designTheme", QVariant::fromValue(resolvedThemeForWidget(*host)));
-    dialog->setPalette(applicationPalette(resolvedThemeForWidget(*host)));
+    applyHostTheme(*dialog, *host);
     dialog->setObjectName("previewActualDialog");
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
     dialog->setWindowTitle("Synthetic component preview");
     auto* content = new QVBoxLayout(dialog);
     auto* heading = new Text(destructive ? "Delete synthetic record?" : "Panel details", dialog);
-    heading->setTypographyRole(TypographyRole::DialogTitle);
+    heading->setTypographyRole(TypographyRole::Title);
     content->addWidget(heading);
     auto* description =
         new Text(destructive ? "This preview records your choice only. No data is changed."
@@ -469,7 +474,7 @@ void populateMenu(QWidget* host, QVBoxLayout* layout) {
         host, &QWidget::customContextMenuRequested, menu,
         [host, menu](const QPoint& point) { popupContextMenu(*menu, host->mapToGlobal(point)); });
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(menu));
-    menu->addAction(themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.foreground, 16),
+    menu->addAction(themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.fg, 16),
                     "Primary action")
         ->setShortcut(QKeySequence("Ctrl+Return"));
     auto* toggle = menu->addAction("Wrap text");
@@ -515,7 +520,7 @@ void populateFields(QWidget* host, QVBoxLayout* layout) {
         if (state == "password") {
             field->setEchoMode(QLineEdit::Password);
             field->setText("synthetic-password");
-            const auto iconColor = resolvedThemeForWidget(*host).colors.foreground;
+            const auto iconColor = resolvedThemeForWidget(*host).colors.fg;
             auto* toggle =
                 field->addAction(themedIcon(Icon::Eye, iconColor, 16), QLineEdit::TrailingPosition);
             toggle->setObjectName("field-password-toggle");
@@ -622,24 +627,20 @@ void populateButtons(QWidget* host, QVBoxLayout* layout) {
     }
     layout->addLayout(grid);
     layout->addWidget(new QLabel("Reference text and icon sizes", host));
-    const QList<QPair<QString, ButtonSize>> sizes = {{"xs", ButtonSize::ExtraSmall},
-                                                     {"sm", ButtonSize::Small},
-                                                     {"default", ButtonSize::Default},
-                                                     {"lg", ButtonSize::Large},
-                                                     {"icon-xs", ButtonSize::IconExtraSmall},
-                                                     {"icon-sm", ButtonSize::IconSmall},
-                                                     {"icon", ButtonSize::Icon},
-                                                     {"icon-lg", ButtonSize::IconLarge}};
+    const QList<QPair<QString, ButtonSize>> sizes = {
+        {"xs", ButtonSize::ExtraSmall},     {"sm", ButtonSize::Small},
+        {"default", ButtonSize::Default},   {"icon-xs", ButtonSize::IconExtraSmall},
+        {"icon-sm", ButtonSize::IconSmall}, {"icon", ButtonSize::Icon}};
     auto* sizeGrid = new QGridLayout;
     for (int i = 0; i < sizes.size(); ++i) {
         const auto& size = sizes[i];
         auto* button = new Button(size.first.startsWith("icon") ? QString{} : size.first, host);
         button->setObjectName("button-size-" + size.first);
         button->setAccessibleName("Add · " + size.first);
-        button->setIcon(
-            themedIcon(Icon::Add, resolvedThemeForWidget(*host).colors.primaryForeground, 16));
+        button->setIcon(themedIcon(Icon::Add, resolvedThemeForWidget(*host).colors.primaryFg,
+                                   dimension(Dimension::Icon)));
         button->setButtonSize(size.second);
-        sizeGrid->addWidget(button, i / 4, i % 4);
+        sizeGrid->addWidget(button, i / 3, i % 3);
     }
     layout->addLayout(sizeGrid);
     auto* longLabel = new Button("Truy vấn dữ liệu · 日本語 · Long constrained label", host);
@@ -734,7 +735,7 @@ PreviewWindow::PreviewWindow(QWidget* parent) : QMainWindow(parent) {
         theme->setMode(host == light_ ? ThemeMode::Light : ThemeMode::Dark);
         theme->setReducedMotion(true);
         theme->applyTo(*host);
-        host->setFont(resolveTypography(TypographyRole::Ui));
+        host->setFont(resolveTypography(TypographyRole::Body));
         (void)new QVBoxLayout(host);
         panes->addWidget(host);
     }

@@ -16,9 +16,6 @@ class QPlainTextEdit;
 
 namespace choscordb::design {
 
-struct ResolvedTheme;
-QString statusLineStyleSheet(const ResolvedTheme& theme);
-
 // The shared bottom line for workspace results and object panes.
 class StatusLine final : public QWidget {
     Q_OBJECT

@@ -103,7 +103,7 @@ void PreviewTest::workspaceToolbarSpecimenUsesMutedSurfaceInBothThemes() {
         const auto sample =
             toolbar->mapTo(surface, QPoint(toolbar->width() - 20, toolbar->height() / 2));
         QCOMPARE(surface->grab().toImage().pixelColor(sample),
-                 choscordb::design::resolvedThemeForWidget(*toolbar).colors.muted);
+                 choscordb::design::resolvedThemeForWidget(*toolbar).colors.surfaceRaised);
     }
 }
 
@@ -316,12 +316,12 @@ void PreviewTest::buttonsUseProductionVariantsAndStates() {
     auto* smallest = light->findChild<Button*>("button-size-xs");
     QVERIFY(smallest);
     QCOMPARE(smallest->buttonSize(), ButtonSize::ExtraSmall);
-    QCOMPARE(smallest->font().pixelSize(),
-             typographySpec(TypographyRole::SectionCaption).pixelSize);
-    QCOMPARE(pressed->font().pixelSize(), typographySpec(TypographyRole::Ui).pixelSize);
-    auto* largest = light->findChild<Button*>("button-size-icon-lg");
+    QCOMPARE(smallest->font().pixelSize(), typographySpec(TypographyRole::Caption).pixelSize);
+    QCOMPARE(pressed->font().pixelSize(), typographySpec(TypographyRole::Body).pixelSize);
+    auto* largest = light->findChild<Button*>("button-size-icon");
     QVERIFY(largest);
-    QCOMPARE(largest->buttonSize(), ButtonSize::IconLarge);
+    QCOMPARE(largest->buttonSize(), ButtonSize::Icon);
+    QCOMPARE(largest->size(), QSize(dimension(Dimension::Control), dimension(Dimension::Control)));
 }
 
 void PreviewTest::individualSpecimensAreSelectableAndSearchable() {
@@ -556,11 +556,14 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
         const auto firstSelectedRow = list->visualItemRect(list->item(0));
         const auto selectedRow = list->visualItemRect(list->item(1));
         const auto regularRow = list->visualItemRect(list->item(2));
+        // Sample resting rows, wherever an earlier test left the pointer.
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(list->viewport(), &leave);
         const auto image = list->viewport()->grab().toImage();
         QCOMPARE(image.pixelColor(firstSelectedRow.right() - 30, firstSelectedRow.center().y()),
-                 colors.sidebarAccent);
+                 colors.selection);
         QCOMPARE(image.pixelColor(selectedRow.right() - 30, selectedRow.center().y()),
-                 colors.sidebarAccent);
+                 colors.selection);
         QCOMPARE(image.pixelColor(regularRow.right() - 30, regularRow.center().y()),
                  colors.sidebar);
         QVERIFY(list->visualItemRect(list->item(1)).bottom() < list->viewport()->height());
@@ -570,12 +573,11 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
                      .toString(),
                  QString("postgres"));
         QVERIFY(dynamic_cast<choscordb::design::NavigationProfileDelegate*>(list->itemDelegate()));
-        QCOMPARE(choscordb::design::resolveTypography(
-                     choscordb::design::TypographyRole::NavigationDetail)
+        QCOMPARE(choscordb::design::resolveTypography(choscordb::design::TypographyRole::Small)
                      .pixelSize(),
-                 10);
+                 11);
         const auto height = list->visualItemRect(list->item(0)).height();
-        QVERIFY(height >= 32 && height <= 36);
+        QCOMPARE(height, choscordb::design::dimension(choscordb::design::Dimension::Row));
     }
 }
 
@@ -623,7 +625,8 @@ void PreviewTest::navigationTreeTogglesAndRenamesFromMenu() {
         const auto root = specimen->model()->index(0, 0);
         const auto child = specimen->model()->index(0, 0, root);
         QVERIFY(specimen->visualRect(root).height() >= 18);
-        QVERIFY(specimen->visualRect(root).height() <= 24);
+        QCOMPARE(specimen->visualRect(root).height(),
+                 choscordb::design::dimension(choscordb::design::Dimension::Row));
         QVERIFY(specimen->visualRect(child).left() - specimen->visualRect(root).left() <= 20);
     }
     const auto group = tree->model()->index(0, 0);
@@ -732,7 +735,8 @@ void PreviewTest::rightSheetSpecimenUsesModalBoundaryInBothThemes() {
         QCOMPARE(footer->accessibleName(), QString("Sheet actions"));
         QCOMPARE(footer->geometry().bottom(), sheet->rect().bottom());
         const auto footerColor = footer->grab(QRect(1, 1, 1, 1)).toImage().pixelColor(0, 0);
-        QCOMPARE(footerColor, choscordb::design::resolvedThemeForWidget(*sheet).colors.muted);
+        QCOMPARE(footerColor,
+                 choscordb::design::resolvedThemeForWidget(*sheet).colors.surfaceRaised);
         QSignalSpy backgroundClicks(open, &QPushButton::clicked);
         QTest::mouseClick(open, Qt::LeftButton);
         QCOMPARE(backgroundClicks.count(), 0);
@@ -800,8 +804,8 @@ void PreviewTest::dialogSectionsHaveMutedPaddedFooterInBothThemes() {
         const auto footerColor = footer->grab().toImage().pixelColor(20, footer->height() / 2);
         const auto bodyColor = body->grab().toImage().pixelColor(20, body->height() - 10);
         QVERIFY(footerColor != bodyColor);
-        QVERIFY(qAbs(footerColor.red() - footerColor.green()) <= 2);
-        QVERIFY(qAbs(footerColor.green() - footerColor.blue()) <= 2);
+        QCOMPARE(footerColor,
+                 choscordb::design::resolvedThemeForWidget(*footer).colors.surfaceRaised);
         dialog->reject();
     }
 }
@@ -830,7 +834,7 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         QVERIFY(corner->addButton()->isVisible());
         QCOMPARE(corner->addButton()->variant(), choscordb::design::ButtonVariant::Ghost);
         QCOMPARE(corner->grab().toImage().pixelColor(1, corner->height() / 2),
-                 choscordb::design::resolvedThemeForWidget(*corner).colors.muted);
+                 choscordb::design::resolvedThemeForWidget(*corner).colors.surfaceRaised);
         QCOMPARE(tabs->tabText(0), QString("Untitled query 1"));
         QCOMPARE(tabs->tabText(1), QString("orders"));
         QCOMPARE(tabs->tabText(2), QString("customers"));
@@ -860,10 +864,10 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         tabs->setTabText(0, {});
         tabs->setTabIcon(0, {});
         const auto withoutIcon = tabs->tabBar()->grab().toImage();
-        tabs->setTabIcon(0, choscordb::design::themedIcon(
-                                choscordb::design::Icon::Table,
-                                choscordb::design::resolvedThemeForWidget(*tabs).colors.mutedText,
-                                16));
+        tabs->setTabIcon(0,
+                         choscordb::design::themedIcon(
+                             choscordb::design::Icon::Table,
+                             choscordb::design::resolvedThemeForWidget(*tabs).colors.fgMuted, 16));
         const auto withTableIcon = tabs->tabBar()->grab().toImage();
         int iconPixels = 0;
         for (int y = selected.center().y() - 8; y <= selected.center().y() + 8; ++y)
@@ -885,7 +889,7 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         const auto addPoint = corner->addButton()->mapTo(tabs, QPoint(1, 2));
         QVERIFY(addPoint.x() - tabs->tabBar()->tabRect(0).right() <= 6);
         QCOMPARE(tabs->grab().toImage().pixelColor(addPoint),
-                 choscordb::design::resolvedThemeForWidget(*tabs).colors.muted);
+                 choscordb::design::resolvedThemeForWidget(*tabs).colors.surfaceRaised);
         const QPoint hoverLocal(5, corner->addButton()->height() / 2);
         const auto hoverPoint = corner->addButton()->mapTo(tabs, hoverLocal);
         const auto normalImage = tabs->grab().toImage();

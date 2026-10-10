@@ -20,7 +20,7 @@
 class ComponentsTest final : public QObject {
     Q_OBJECT
   private slots:
-    void sidebarSelectionUsesNeutralFill() {
+    void sidebarSelectionUsesSelectionFill() {
         using namespace choscordb::design;
         for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
             QWidget root;
@@ -36,12 +36,12 @@ class ComponentsTest final : public QObject {
             button.setChecked(true);
             const auto selected = button.grab().toImage();
             const auto colors = resolvedThemeForWidget(button).colors;
-            QCOMPARE(selected.pixelColor(20, 14), colors.muted);
+            QCOMPARE(selected.pixelColor(20, 14), colors.selection);
             button.setChecked(false);
-            QVERIFY(button.grab().toImage().pixelColor(20, 14) != colors.muted);
+            QVERIFY(button.grab().toImage().pixelColor(20, 14) != colors.surfaceRaised);
         }
     }
-    void paneTabsHaveSquareCornersWhileDocumentTabsRetainTheirShape() {
+    void paneAndDocumentTabsHaveSquareCorners() {
         using namespace choscordb::design;
         QWidget root;
         ThemeManager theme;
@@ -61,7 +61,7 @@ class ComponentsTest final : public QObject {
         const auto colors = resolvedThemeForWidget(tabs).colors;
         int topOfFill = rect.top();
         while (topOfFill < rect.top() + 10 &&
-               image.pixelColor(rect.left() + 8, topOfFill) == colors.muted)
+               image.pixelColor(rect.left() + 8, topOfFill) == colors.surfaceRaised)
             ++topOfFill;
         QVERIFY(topOfFill < rect.top() + 10);
         QCOMPARE(image.pixelColor(rect.left() + 8, topOfFill), colors.surface);
@@ -73,13 +73,13 @@ class ComponentsTest final : public QObject {
         const auto documentRect = tabs.tabRect(1);
         int documentTop = documentRect.top();
         while (documentTop < documentRect.top() + 10 &&
-               image.pixelColor(documentRect.left() + 8, documentTop) == colors.muted)
+               image.pixelColor(documentRect.left() + 8, documentTop) == colors.surfaceRaised)
             ++documentTop;
         QVERIFY(documentTop < documentRect.top() + 10);
-        QCOMPARE(image.pixelColor(documentRect.left() + 8, documentTop), colors.mutedText);
-        QCOMPARE(image.pixelColor(documentRect.left() + 1, documentTop), colors.muted);
+        QCOMPARE(image.pixelColor(documentRect.left() + 8, documentTop), colors.fgMuted);
+        QCOMPARE(image.pixelColor(documentRect.left() + 1, documentTop), colors.fgMuted);
     }
-    void sidebarTreeSelectionHasNeutralRoundedFill() {
+    void sidebarTreeSelectionHasRoundedSelectionFill() {
         using namespace choscordb::design;
         for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
             QWidget root;
@@ -107,10 +107,10 @@ class ComponentsTest final : public QObject {
             const auto rect = tree.visualRect(model.index(0, 0));
             const auto image = tree.viewport()->grab().toImage();
             const auto colors = resolvedThemeForWidget(tree).colors;
-            QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()), colors.muted);
-            QCOMPARE(image.pixelColor(6, rect.center().y()), colors.muted);
-            QCOMPARE(image.pixelColor(10, rect.top() + 3), colors.muted);
-            QVERIFY(image.pixelColor(6, rect.top() + 1) != colors.muted);
+            QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()), colors.selection);
+            QCOMPARE(image.pixelColor(6, rect.center().y()), colors.selection);
+            QCOMPARE(image.pixelColor(10, rect.top() + 3), colors.selection);
+            QVERIFY(image.pixelColor(6, rect.top() + 1) != colors.surfaceRaised);
             const auto hoverRect = tree.visualRect(model.index(1, 0));
             QVERIFY(tree.viewport()->hasMouseTracking());
             QTest::mouseMove(tree.viewport(), QPoint(1, 1));
@@ -118,7 +118,7 @@ class ComponentsTest final : public QObject {
             QCoreApplication::processEvents();
             const auto hovered = tree.viewport()->grab().toImage();
             QCOMPARE(hovered.pixelColor(hoverRect.right() - 8, hoverRect.center().y()),
-                     colors.muted);
+                     colors.surfaceRaised);
             tree.verticalScrollBar()->setValue(tree.verticalScrollBar()->value() + 2);
             QCoreApplication::processEvents();
             const auto underPointer = tree.indexAt(hoverRect.center());
@@ -127,7 +127,7 @@ class ComponentsTest final : public QObject {
             const auto scrolled = tree.viewport()->grab().toImage();
             QCOMPARE(scrolled.pixelColor(tree.visualRect(underPointer).right() - 8,
                                          hoverRect.center().y()),
-                     colors.muted);
+                     colors.surfaceRaised);
         }
     }
     void sidebarTreeLeaveFromBlankSpaceDoesNotLeaveStaleHover() {
@@ -159,9 +159,9 @@ class ComponentsTest final : public QObject {
         QVERIFY(row.isValid());
         const auto image = tree.viewport()->grab().toImage();
         QVERIFY(image.pixelColor(tree.visualRect(row).right() - 8, blank.y()) !=
-                resolvedThemeForWidget(tree).colors.muted);
+                resolvedThemeForWidget(tree).colors.surfaceRaised);
     }
-    void sidebarSavedFilesSelectionUsesNeutralFill() {
+    void sidebarSavedFilesSelectionUsesSelectionFill() {
         using namespace choscordb::design;
         for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
             QWidget root;
@@ -187,7 +187,7 @@ class ComponentsTest final : public QObject {
             const auto rect = tree.visualItemRect(item);
             const auto image = tree.viewport()->grab().toImage();
             QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()),
-                     resolvedThemeForWidget(tree).colors.muted);
+                     resolvedThemeForWidget(tree).colors.selection);
         }
     }
     void selectedConnectionRowUsesNeutralColors() {
@@ -213,7 +213,7 @@ class ComponentsTest final : public QObject {
             const auto row = list.visualItemRect(item);
             const auto image = list.viewport()->grab().toImage();
             const auto colors = resolvedThemeForWidget(list).colors;
-            QCOMPARE(image.pixelColor(row.left() + 3, row.center().y()), colors.sidebarAccent);
+            QCOMPARE(image.pixelColor(row.left() + 3, row.center().y()), colors.selection);
         }
     }
     void connectionRowsAreCompactAndShowOnlyCenteredNames() {
@@ -236,7 +236,7 @@ class ComponentsTest final : public QObject {
             const auto row = list.visualItemRect(item);
             QVERIFY(row.height() <= 36);
             const auto withDetail = list.viewport()->grab(row).toImage();
-            const auto ink = resolvedThemeForWidget(list).colors.text;
+            const auto ink = resolvedThemeForWidget(list).colors.fg;
             int inkTop = withDetail.height();
             int inkBottom = -1;
             for (int y = 0; y < withDetail.height(); ++y)
@@ -275,7 +275,7 @@ class ComponentsTest final : public QObject {
             QPainter painter(&image);
             style.drawPrimitive(QStyle::PE_IndicatorBranch, &branch, &painter, &tree);
             painter.end();
-            const auto muted = resolvedThemeForWidget(tree).colors.mutedText;
+            const auto muted = resolvedThemeForWidget(tree).colors.fgMuted;
             int inkPixels = 0;
             for (int y = 0; y < image.height(); ++y)
                 for (int x = 0; x < image.width(); ++x) {
@@ -308,8 +308,8 @@ class ComponentsTest final : public QObject {
         QTest::addColumn<bool>("native");
         QTest::newRow("light") << false << QColor("#ffffff") << false;
         QTest::newRow("native-light") << false << QColor("#ffffff") << true;
-        QTest::newRow("dark") << true << QColor("#12231b") << false;
-        QTest::newRow("native-dark") << true << QColor("#12231b") << true;
+        QTest::newRow("dark") << true << QColor("#1f1206") << false;
+        QTest::newRow("native-dark") << true << QColor("#1f1206") << true;
     }
     void primaryKeyboardFocusContrastsWithTheActionFill() {
         QFETCH(bool, dark);
@@ -350,12 +350,12 @@ class ComponentsTest final : public QObject {
         button.setButtonContext(ButtonContext::EditorAction);
         QCOMPARE(button.font().pixelSize(), 12);
         QCOMPARE(button.font().letterSpacing(), 0.0);
-        QCOMPARE(button.height(), 29);
+        QCOMPARE(button.height(), 28);
         QVERIFY(button.sizeHint().width() >= footerWidth + 6);
         button.setDesignIcon(Icon::Run);
-        QCOMPARE(button.height(), 30);
+        QCOMPARE(button.height(), 28);
     }
-    void primaryPressDoesNotShiftReferenceGeometry() {
+    void primaryFillFollowsRestHoverAndPressWithoutShifting() {
         using namespace choscordb::design;
         QWidget root;
         ThemeManager theme;
@@ -368,30 +368,45 @@ class ComponentsTest final : public QObject {
         root.resize(150, 80);
         root.show();
         button.clearFocus();
+        const auto colors = resolvedThemeForWidget(button).colors;
+        QCOMPARE(button.grab().toImage().pixelColor(4, button.height() / 2), colors.primary);
         QTest::mouseMove(&button, button.rect().center());
-        const auto normal = button.grab().toImage();
+        // Pressing darkens the fill; the label and icon stay in place.
+        const auto inkBounds = [](const QImage& image) {
+            QRect bounds;
+            for (int y = 0; y < image.height(); ++y)
+                for (int x = 0; x < image.width(); ++x)
+                    if (image.pixelColor(x, y).lightness() > 200)
+                        bounds |= QRect(x, y, 1, 1);
+            return bounds;
+        };
+        const auto hovered = button.grab().toImage();
         QTest::mousePress(&button, Qt::LeftButton);
-        QCOMPARE(button.grab().toImage(), normal);
+        const auto pressed = button.grab().toImage();
+        QCOMPARE(hovered.pixelColor(4, button.height() / 2), colors.primaryHover);
+        QCOMPARE(pressed.pixelColor(4, button.height() / 2), colors.primaryPressed);
+        QCOMPARE(pressed.size(), hovered.size());
+        QCOMPARE(inkBounds(pressed), inkBounds(hovered));
         QTest::mouseRelease(&button, Qt::LeftButton);
     }
     void compactIconActionsRespectReferenceLineBoxAndDispatch() {
         using namespace choscordb::design;
         Button button("Run");
         button.setButtonSize(ButtonSize::Small);
-        QCOMPARE(button.height(), 29);
+        QCOMPARE(button.height(), 28);
         button.setDesignIcon(Icon::Run);
-        QCOMPARE(button.height(), 30);
+        QCOMPARE(button.height(), 28);
         button.resize(75, button.height());
         button.show();
         QSignalSpy clicked(&button, &QPushButton::clicked);
         QTest::mouseClick(&button, Qt::LeftButton);
         QCOMPARE(clicked.count(), 1);
         button.setButtonSize(ButtonSize::Default);
-        QCOMPARE(button.height(), 36);
+        QCOMPARE(button.height(), 32);
         Button customIcon("Run");
         customIcon.setButtonSize(ButtonSize::Small);
-        customIcon.setIcon(themedIcon(Icon::Run, Qt::black, 18));
-        QCOMPARE(customIcon.height(), 30);
+        customIcon.setIcon(themedIcon(Icon::Run, Qt::black, 16));
+        QCOMPARE(customIcon.height(), 28);
     }
     void semanticButtonIconFollowsLiveThemeAndVariant() {
         using namespace choscordb::design;
@@ -404,14 +419,14 @@ class ComponentsTest final : public QObject {
         button.setButtonSize(ButtonSize::Icon);
         button.setDesignIcon(Icon::Add);
         const auto light = button.grab().toImage();
-        QVERIFY(light.pixelColor(18, 18).lightness() < 100);
+        QVERIFY(light.pixelColor(16, 16).lightness() < 100);
         theme.setMode(ThemeMode::Dark);
         theme.applyTo(host);
         const auto dark = button.grab().toImage();
-        QVERIFY(dark.pixelColor(18, 18).lightness() > 180);
+        QVERIFY(dark.pixelColor(16, 16).lightness() > 180);
         button.setVariant(ButtonVariant::Default);
         const auto primary = button.grab().toImage();
-        QVERIFY(primary.pixelColor(18, 18).lightness() < 100);
+        QVERIFY(primary.pixelColor(16, 16).lightness() < 100);
     }
     void destructiveTextRemainsReadableOnItsTintedSurface() {
         using namespace choscordb::design;
@@ -460,9 +475,10 @@ class ComponentsTest final : public QObject {
         Button button("Save");
         const int normalWidth = button.sizeHint().width();
         button.setLoading(true);
-        QCOMPARE(button.sizeHint().width(), normalWidth + 22);
+        QCOMPARE(button.sizeHint().width(),
+                 normalWidth + dimension(Dimension::Icon) + spacing(Spacing::One));
         button.setButtonSize(ButtonSize::Icon);
-        QCOMPARE(button.sizeHint(), QSize(36, 36));
+        QCOMPARE(button.sizeHint(), QSize(32, 32));
     }
     void mouseFocusDoesNotPaintTheKeyboardRing() {
         using namespace choscordb::design;
@@ -487,7 +503,7 @@ class ComponentsTest final : public QObject {
         button.setFocus(Qt::TabFocusReason);
         QTRY_VERIFY(button.hasFocus());
         QVERIFY(button.grab().toImage() != normal);
-        QCOMPARE(button.size(), QSize(100, 33));
+        QCOMPARE(button.size(), QSize(100, 32));
     }
     void groupedActionsAreJoinedAndKeyboardAccessible() {
         using namespace choscordb::design;
@@ -547,7 +563,7 @@ class ComponentsTest final : public QObject {
         host.resize(300, 80);
         host.show();
         QCoreApplication::processEvents();
-        QCOMPARE(button.size(), QSize(36, 36));
+        QCOMPARE(button.size(), QSize(32, 32));
         button.setButtonSize(ButtonSize::Default);
         button.setText("A wider text action");
         QCoreApplication::processEvents();
@@ -611,30 +627,31 @@ class ComponentsTest final : public QObject {
         button.resize(100, 32);
         host.show();
         QCoreApplication::processEvents();
-        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#287f66"));
+        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#c2410c"));
         button.setVariant(ButtonVariant::Secondary);
-        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#f2f2f2"));
+        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#eef1f2"));
         button.setVariant(ButtonVariant::Outline);
         QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#ffffff"));
         theme.setMode(ThemeMode::Dark);
         theme.applyTo(host);
         button.setVariant(ButtonVariant::Default);
-        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#65b493"));
+        QCOMPARE(button.grab().toImage().pixelColor(50, 5), QColor("#ff8a18"));
     }
     void buttonsHaveReferenceSizes() {
         using namespace choscordb::design;
         Button button("Save");
-        QCOMPARE(button.sizeHint().height(), 33);
+        QCOMPARE(button.sizeHint().height(), 32);
         button.setButtonSize(ButtonSize::ExtraSmall);
-        QCOMPARE(button.sizeHint().height(), 25);
+        QCOMPARE(button.sizeHint().height(), 24);
         button.setButtonSize(ButtonSize::Small);
-        QCOMPARE(button.sizeHint().height(), 29);
-        button.setButtonSize(ButtonSize::Large);
-        QCOMPARE(button.sizeHint().height(), 37);
+        QCOMPARE(button.sizeHint().height(), 28);
+        // A leading icon does not change the control height.
+        button.setDesignIcon(Icon::Add);
+        QCOMPARE(button.sizeHint().height(), 28);
+        button.setButtonSize(ButtonSize::IconExtraSmall);
+        QCOMPARE(button.sizeHint(), QSize(24, 24));
         button.setButtonSize(ButtonSize::Icon);
-        QCOMPARE(button.sizeHint(), QSize(36, 36));
-        button.setButtonSize(ButtonSize::IconLarge);
-        QCOMPARE(button.sizeHint(), QSize(40, 40));
+        QCOMPARE(button.sizeHint(), QSize(32, 32));
     }
 };
 QTEST_MAIN(ComponentsTest)

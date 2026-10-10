@@ -21,8 +21,8 @@ bool drawCheckboxIndicator(QStyle::PrimitiveElement element, const QStyleOption*
         if (themeValue.canConvert<ResolvedTheme>()) {
             const auto colors = themeValue.value<ResolvedTheme>().colors;
             fill = colors.primary;
-            markColor = colors.primaryForeground;
-            border = colors.input;
+            markColor = colors.primaryFg;
+            border = colors.border;
         }
         if (!enabled)
             painter->setOpacity(0.5);
@@ -56,8 +56,8 @@ bool drawCheckboxIndicator(QStyle::PrimitiveElement element, const QStyleOption*
         if (themeValue.canConvert<ResolvedTheme>()) {
             const auto colors = themeValue.value<ResolvedTheme>().colors;
             fill = colors.primary;
-            markColor = colors.primaryForeground;
-            border = colors.input;
+            markColor = colors.primaryFg;
+            border = colors.border;
         }
         if (!enabled) {
             markColor = fill;

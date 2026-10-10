@@ -80,7 +80,7 @@ class UpdateProgressDialog final : public DialogShell {
         setWindowTitle(tr("ChoscorDB update"));
         auto* layout = new QVBoxLayout(this);
         auto* title = new design::Text(tr("Updating ChoscorDB"), this);
-        title->setTypographyRole(design::TypographyRole::DialogTitle);
+        title->setTypographyRole(design::TypographyRole::Title);
         layout->addWidget(title);
         message_ = createDescription(tr("Downloading update…"), this);
         layout->addWidget(message_);
@@ -211,9 +211,9 @@ class NativeUpdater final : public QObject {
     void refreshCheckIcon() {
         if (!window_ || !checkAction_)
             return;
-        checkAction_->setIcon(design::themedIcon(
-            design::Icon::Refresh, design::resolvedThemeForWidget(*window_).colors.foreground,
-            design::dimension(design::Dimension::Icon)));
+        checkAction_->setIcon(design::themedIcon(design::Icon::Refresh,
+                                                 design::resolvedThemeForWidget(*window_).colors.fg,
+                                                 design::dimension(design::Dimension::Icon)));
     }
     void loadConsent() {
         const auto directory = consentDirectory_;

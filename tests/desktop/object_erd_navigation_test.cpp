@@ -52,7 +52,7 @@ class ObjectErdNavigationTest final : public QObject {
         QVERIFY(status->toolTip().contains("missing"));
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
         QCOMPARE(footer->palette().color(QPalette::Window),
-                 design::resolvedThemeForWidget(explorer).colors.muted);
+                 design::resolvedThemeForWidget(explorer).colors.surfaceRaised);
         QCOMPARE(erd->graph().edges.size(), 1);
         QCOMPARE(erd->graph().tables.size(), 2);
     }

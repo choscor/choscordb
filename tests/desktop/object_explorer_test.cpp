@@ -382,7 +382,7 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(ddl->viewport()->geometry().left() >= gutter->width());
         const auto initialWidth = gutter->width();
         QVERIFY(initialWidth >= ddl->fontMetrics().horizontalAdvance("000"));
-        const auto background = design::resolvedThemeForWidget(*ddl).colors.elevatedSurface;
+        const auto background = design::resolvedThemeForWidget(*ddl).colors.surfaceRaised;
         const auto lightImage = gutter->grab().toImage();
         QCOMPARE(lightImage.pixelColor(1, lightImage.height() / 2), background);
         bool numberPainted = false;
@@ -404,7 +404,7 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(gutter->grab().toImage() != beforeScroll);
         theme.setMode(design::ThemeMode::Dark);
         theme.applyTo(explorer);
-        const auto darkBackground = design::resolvedThemeForWidget(*ddl).colors.elevatedSurface;
+        const auto darkBackground = design::resolvedThemeForWidget(*ddl).colors.surfaceRaised;
         QVERIFY(darkBackground != background);
         const auto darkImage = gutter->grab().toImage();
         QCOMPARE(darkImage.pixelColor(1, darkImage.height() / 2), darkBackground);
@@ -433,7 +433,7 @@ class ObjectExplorerTest final : public QObject {
         auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
         QVERIFY(ddl);
         QCOMPARE(ddl->font().family(),
-                 design::resolveTypography(design::TypographyRole::Monospace).family());
+                 design::resolveTypography(design::TypographyRole::Mono).family());
         QCOMPARE(ddl->font().pixelSize(), 13);
         QCOMPARE(ddl->frameShape(), QFrame::NoFrame);
         ddl->setPlainText("SELECT 'x', 42; -- note");
@@ -446,9 +446,9 @@ class ObjectExplorerTest final : public QObject {
             return QColor{};
         };
         QCOMPARE(colorAt(0), QColor("#885da7"));
-        QCOMPARE(colorAt(7), QColor("#287f66"));
-        QCOMPARE(colorAt(12), QColor("#936b3f"));
-        QCOMPARE(colorAt(16), QColor("#6f7879"));
+        QCOMPARE(colorAt(7), QColor("#c2410c"));
+        QCOMPARE(colorAt(12), QColor("#2f6aa3"));
+        QCOMPARE(colorAt(16), QColor("#68737a"));
     }
     void ddlRecolorsWithThemeAndKeepsCommentNumbersMuted() {
         EngineAdapter adapter;
@@ -466,7 +466,7 @@ class ObjectExplorerTest final : public QObject {
                     return range.format.foreground().color();
             return QColor{};
         };
-        QCOMPARE(colorAt(14), QColor("#6f7879"));
+        QCOMPARE(colorAt(14), QColor("#68737a"));
         theme.setMode(design::ThemeMode::Dark);
         theme.applyTo(explorer);
         QCOMPARE(colorAt(0), QColor("#a984c8"));
@@ -551,7 +551,8 @@ class ObjectExplorerTest final : public QObject {
         for (const auto mode : {design::ThemeMode::Light, design::ThemeMode::Dark}) {
             theme.setMode(mode);
             theme.applyTo(explorer);
-            QCOMPARE(footer->palette().color(QPalette::Window), theme.resolvedTheme().colors.muted);
+            QCOMPARE(footer->palette().color(QPalette::Window),
+                     theme.resolvedTheme().colors.surfaceRaised);
         }
         QCOMPARE(explorer.paneIndex(), 3);
         QTest::qWait(50);
@@ -582,7 +583,7 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(status->property("state").toString(), QString("disconnected"));
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
         QCOMPARE(footer->palette().color(QPalette::Window),
-                 design::resolvedThemeForWidget(*footer).colors.muted);
+                 design::resolvedThemeForWidget(*footer).colors.surfaceRaised);
         QVERIFY(!explorer.findChild<QPushButton*>("objectReconnect"));
         auto* action = explorer.findChild<QAction*>("objectReconnect");
         QVERIFY(action);
@@ -854,7 +855,7 @@ class ObjectExplorerTest final : public QObject {
         tabs->setCurrentIndex(3);
         QTRY_COMPARE(status->property("state").toString(), QString("unsupported"));
         QVERIFY(status->text().size() > QString("Unsupported:").size());
-        QCOMPARE(footer->palette().color(QPalette::Window), colors.muted);
+        QCOMPARE(footer->palette().color(QPalette::Window), colors.surfaceRaised);
         QSignalSpy failed(&adapter, &EngineAdapter::objectInspectionFailed);
         explorer.openObject(*connection, R"(["main","later"])", "later");
         tabs->setCurrentIndex(3);
@@ -959,7 +960,8 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(values.contains("No"));
         QVERIFY(values.contains("TEXT"));
         QCOMPARE(table->editTriggers(), QAbstractItemView::NoEditTriggers);
-        QCOMPARE(table->rowHeight(0), 33);
+        QCOMPARE(table->rowHeight(0),
+                 choscordb::design::dimension(choscordb::design::Dimension::Row));
         QVERIFY(!table->verticalHeader()->isVisible());
         QVERIFY(
             !qvariant_cast<QIcon>(table->model()->index(0, 0).data(Qt::DecorationRole)).isNull());

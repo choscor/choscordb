@@ -636,9 +636,6 @@ pub mod ffi {
     struct AppearanceLayoutDto {
         version: u32,
         theme: String,
-        density: String,
-        accent_kind: String,
-        accent: String,
         navigator_width: u32,
         editor_results_split: u16,
         history_height: u32,

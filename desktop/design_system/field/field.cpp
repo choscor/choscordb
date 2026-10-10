@@ -77,12 +77,12 @@ class FieldFocusFrame final : public QFocusFrame {
         }
         if (themeValue.canConvert<ResolvedTheme>()) {
             const auto theme = themeValue.value<ResolvedTheme>();
-            color = widget()->property("invalid").toBool() ? theme.colors.destructive
-                                                           : theme.colors.focus;
+            color =
+                widget()->property("invalid").toBool() ? theme.colors.danger : theme.colors.ring;
         }
         painter.setPen(QPen(color, focusSpec().ringWidth));
         painter.setBrush(Qt::NoBrush);
-        const auto rounding = radius(Radius::Large);
+        const auto rounding = radius(Radius::Medium);
         painter.drawRoundedRect(QRectF(rect()).adjusted(1.5, 1.5, -1.5, -1.5), rounding, rounding);
     }
 };

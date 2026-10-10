@@ -116,12 +116,12 @@ void PreviewTest::quickSearchSpecimenUsesRealOverlayInBothThemes() {
             list->itemWidget(list->item(0))->findChild<QLabel*>("quickSearchResultDetail");
         auto* unselectedDetail =
             list->itemWidget(list->item(1))->findChild<QLabel*>("quickSearchResultDetail");
-        QCOMPARE(selectedDetail->palette().color(QPalette::WindowText), colors.accentForeground);
-        QCOMPARE(unselectedDetail->palette().color(QPalette::WindowText), colors.mutedText);
+        QCOMPARE(selectedDetail->palette().color(QPalette::WindowText), colors.fg);
+        QCOMPARE(unselectedDetail->palette().color(QPalette::WindowText), colors.fgMuted);
         list->setCurrentRow(1);
         QVERIFY(list->accessibleDescription().contains(dialog->results().at(1).title));
-        QCOMPARE(selectedDetail->palette().color(QPalette::WindowText), colors.mutedText);
-        QCOMPARE(unselectedDetail->palette().color(QPalette::WindowText), colors.accentForeground);
+        QCOMPARE(selectedDetail->palette().color(QPalette::WindowText), colors.fgMuted);
+        QCOMPARE(unselectedDetail->palette().color(QPalette::WindowText), colors.fg);
         QVERIFY(!input->accessibleName().isEmpty());
         QVERIFY(!list->accessibleName().isEmpty());
         QVERIFY(!status->accessibleName().isEmpty());
@@ -149,18 +149,18 @@ void PreviewTest::quickSearchRowsUseSuppliedIconAndRetintWhenThemeChanges() {
     QVERIFY(icon);
     const auto iconSize = dimension(Dimension::IconSmall);
     const auto light = resolvedThemeForWidget(*lightHost);
-    QCOMPARE(icon->pixmap().toImage(), themedIcon(Icon::Table, light.colors.mutedText, iconSize)
+    QCOMPARE(icon->pixmap().toImage(), themedIcon(Icon::Table, light.colors.fgMuted, iconSize)
                                            .pixmap(iconSize, iconSize)
                                            .toImage());
     const auto dark = resolvedThemeForWidget(*darkHost);
     dialog->setProperty("designTheme", QVariant::fromValue(dark));
     dialog->setPalette(applicationPalette(dark));
     QCoreApplication::processEvents();
-    QCOMPARE(icon->pixmap().toImage(), themedIcon(Icon::Table, dark.colors.mutedText, iconSize)
+    QCOMPARE(icon->pixmap().toImage(), themedIcon(Icon::Table, dark.colors.fgMuted, iconSize)
                                            .pixmap(iconSize, iconSize)
                                            .toImage());
     auto* detail = list->itemWidget(list->item(0))->findChild<QLabel*>("quickSearchResultDetail");
-    QCOMPARE(detail->palette().color(QPalette::WindowText), dark.colors.accentForeground);
+    QCOMPARE(detail->palette().color(QPalette::WindowText), dark.colors.fg);
     dialog->reject();
 }
 

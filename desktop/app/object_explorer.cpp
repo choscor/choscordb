@@ -96,8 +96,7 @@ class DdlEditor final : public QPlainTextEdit {
     }
     void paintGutter(QPaintEvent* event) {
         QPainter painter(gutter_);
-        painter.fillRect(event->rect(),
-                         design::resolvedThemeForWidget(*this).colors.elevatedSurface);
+        painter.fillRect(event->rect(), design::resolvedThemeForWidget(*this).colors.surfaceRaised);
         painter.setPen(palette().color(QPalette::Text));
         painter.setFont(font());
         auto block = firstVisibleBlock();
@@ -146,16 +145,16 @@ class DdlHighlighter final : public QSyntaxHighlighter {
             return design::contrastRatio(color, base) >= 4.5 ? color : foreground;
         };
         QTextCharFormat keyword;
-        keyword.setForeground(readable(colors.sqlKeyword));
+        keyword.setForeground(readable(colors.codeKeyword));
         keyword.setFontWeight(QFont::DemiBold);
         QTextCharFormat literal;
-        literal.setForeground(readable(colors.sqlString));
+        literal.setForeground(readable(colors.codeString));
         QTextCharFormat identifier;
         identifier.setForeground(foreground);
         QTextCharFormat comment;
-        comment.setForeground(readable(colors.sqlComment));
+        comment.setForeground(readable(colors.codeComment));
         QTextCharFormat number;
-        number.setForeground(readable(colors.sqlNumber));
+        number.setForeground(readable(colors.codeNumber));
         const int blockStart = currentBlock().position();
         const int blockEnd = blockStart + static_cast<int>(text.size());
         auto span = std::lower_bound(spans_.begin(), spans_.end(), blockStart,
@@ -188,7 +187,7 @@ class ObjectColumnDelegate final : public QStyledItemDelegate {
         if (role.isValid() && option->widget) {
             option->icon = design::themedIcon(
                 static_cast<design::Icon>(role.toInt()),
-                design::resolvedThemeForWidget(*option->widget).colors.mutedText, objectIconSize());
+                design::resolvedThemeForWidget(*option->widget).colors.fgMuted, objectIconSize());
             option->features |= QStyleOptionViewItem::HasDecoration;
             option->decorationSize = QSize(objectIconSize(), objectIconSize());
         }
@@ -234,7 +233,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     ddl_->setAccessibleName(tr("Object DDL"));
     ddl_->setReadOnly(true);
     ddl_->setProperty("designRole", "codePreview");
-    ddl_->setFont(design::resolveTypography(design::TypographyRole::Monospace));
+    ddl_->setFont(design::resolveTypography(design::TypographyRole::Mono));
     ddl_->setFrameShape(QFrame::NoFrame);
     new DdlHighlighter(ddl_);
     pages_->addWidget(ddl_);
@@ -250,9 +249,9 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     auto* headerBody = new QWidget(this);
     headerBody->setObjectName("objectHeader");
     auto* header = new QHBoxLayout(headerBody);
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
-    header->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
-                               metrics.spacingSmall);
+    header->setContentsMargins(
+        design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One),
+        design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One));
     layout->insertWidget(0, headerBody);
     auto* footerBody = new design::StatusLine(this);
     footerBody->setObjectName("objectFooter");
@@ -619,10 +618,7 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
         setStatus("loaded", tr("%1 · DDL loaded").arg(label_));
         return;
     }
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
-    table_->verticalHeader()->setDefaultSectionSize(inspection.pane == ObjectInspectionPane::Columns
-                                                        ? metrics.objectColumnRowHeight
-                                                        : metrics.dataRowHeight);
+    table_->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::Row));
     if (inspection.pane == ObjectInspectionPane::Columns) {
         // Rust rejects templates beyond its column and size limits.
         columnsLoaded_ = true;
@@ -644,7 +640,7 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
             }
     model_->setHorizontalHeaderLabels(headers);
     // Resolve per-render presentation once rather than per row or cell.
-    const auto mutedText = design::resolvedThemeForWidget(*this).colors.mutedText;
+    const auto mutedText = design::resolvedThemeForWidget(*this).colors.fgMuted;
     const QIcon keyIcon = design::themedIcon(design::Icon::Key, mutedText, objectIconSize());
     const QIcon fileIcon = design::themedIcon(design::Icon::File, mutedText, objectIconSize());
     const QFont metadataFont = design::resolveTypography(design::TypographyRole::Metadata);

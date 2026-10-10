@@ -384,11 +384,14 @@ void ModernUiTest::savedProfileBadgesDistinguishDriversInBothThemes() {
 
         for (int row = 0; row < profiles->count(); ++row) {
             auto* item = profiles->item(row);
-            const auto driver = item->data(Qt::UserRole).value<choscordb::SavedProfile>().driver;
-            // Sample the badge padding, outside the downloaded logo artwork.
+            // Sample the neutral tile padding, outside the downloaded logo artwork.
             const auto point = profiles->visualItemRect(item).topLeft() + QPoint(11, 22);
-            QCOMPARE(pixels.pixelColor(point * pixels.devicePixelRatio()),
-                     QColor(driver == "sqlite" ? "#f6f0e6" : "#edf3f9"));
+            QCOMPARE(
+                pixels.pixelColor(point * pixels.devicePixelRatio()),
+                choscordb::design::resolveColors(mode == choscordb::design::ThemeMode::Light
+                                                     ? choscordb::design::ResolvedAppearance::Light
+                                                     : choscordb::design::ResolvedAppearance::Dark)
+                    .surfaceRaised);
         }
     }
 }
@@ -515,7 +518,7 @@ void ModernUiTest::captureScreenFixtures() {
                     const int y = result->visualRect(result->model()->index(1, 0)).bottom() - 4;
                     QCOMPARE(pixels.pixelColor(QPoint(result->viewport()->width() - 3, y) *
                                                pixels.devicePixelRatio()),
-                             QColor(mode == "light" ? "#f2f2f2" : "#303030"));
+                             QColor(mode == "light" ? "#eef1f2" : "#283135"));
                 }
                 const auto name = QString("%1-%2x%3-%4.png")
                                       .arg(mode)

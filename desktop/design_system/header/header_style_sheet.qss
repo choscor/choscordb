@@ -1,21 +1,21 @@
 QHeaderView {
-  background: @background;
-  color: @foreground;
+  background: @bg;
+  color: @fg;
 }
 
 QHeaderView::section {
-  min-height: @tableHeaderHeight;
+  min-height: @header-height;
   border: 0;
   border-bottom: 1px solid @border;
   padding: 0 12px;
-  background: @muted;
-  color: @mutedText;
-  font-size: 11px;
+  background: @surface-raised;
+  color: @fg-muted;
+  font-size: @font-small;
   font-weight: 500;
 }
 
 QTableCornerButton::section {
   border: 0;
   border-bottom: 1px solid @border;
-  background: @background;
+  background: @bg;
 }

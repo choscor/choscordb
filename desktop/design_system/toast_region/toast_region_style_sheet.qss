@@ -1,37 +1,38 @@
 QLabel#toastRegion, QLabel#progressToast {
-  background-color: @warningSurface;
-  color: %17;
-  border: %2px solid %3;
-  border-radius: %16px;
-  padding: %5px;
+  background-color: @surface-raised;
+  color: @fg-muted;
+  border: 1px solid @border;
+  border-radius: @radius-md;
+  padding: @space-2;
 }
 
 QLabel#toastRegion[variant="success"] {
-  background-color: @success;
-  color: @successForeground;
+  background-color: @success-surface;
+  color: @success;
 }
 
 QLabel#toastRegion[variant="warning"] {
-  background-color: @warningSurface;
+  background-color: @warning-surface;
+  color: @warning;
 }
 
 QLabel#toastRegion[variant="danger"] {
-  background-color: @dangerSurface;
+  background-color: @danger-surface;
+  color: @danger;
 }
 
 QLabel#toastRegion[variant="progress"], QLabel#progressToast[variant="progress"] {
-  background-color: @warningSurface;
-  padding-top: @toastProgressTopPadding;
+  padding-top: @space-1;
 }
 
 QProgressBar#toastProgress {
-  min-height: @toastProgressHeight;
-  max-height: @toastProgressHeight;
-  border-radius: @toastProgressRadius;
+  min-height: @space-2;
+  max-height: @space-2;
+  border-radius: @radius-sm;
 }
 
 QProgressBar#toastProgress::chunk {
-  border-radius: @toastProgressRadius;
+  border-radius: @radius-sm;
 }
 
 QToolButton#toastDismiss {
@@ -41,14 +42,14 @@ QToolButton#toastDismiss {
   max-height: 24px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: @radius-sm;
   background: transparent;
 }
 
 QToolButton#toastDismiss:hover {
-  background: %12;
+  background: @border;
 }
 
 QToolButton#toastDismiss:focus {
-  border-color: %7;
+  border-color: @ring;
 }

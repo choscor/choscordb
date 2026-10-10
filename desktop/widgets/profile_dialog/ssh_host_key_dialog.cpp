@@ -17,15 +17,14 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
     : DialogShell(parent), candidates_(candidates) {
     setObjectName("sshHostKeyDialog");
     setWindowTitle(tr("Verify SSH host key"));
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* root = new QVBoxLayout(this);
     auto* sections = new design::DialogSections(this);
     root->addWidget(sections);
     auto* heading = new design::Text(windowTitle(), sections);
-    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    heading->setTypographyRole(design::TypographyRole::Title);
     sections->headerLayout()->addWidget(heading);
     auto* layout = sections->bodyLayout();
-    layout->setSpacing(metrics.spacingMedium);
+    layout->setSpacing(design::spacing(design::Spacing::Two));
     layout->addWidget(createDescription(
         tr("Compare the SHA256 fingerprint with a trusted source before approving a key. "
            "Inspection does not change SSH trust."),
@@ -33,7 +32,7 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
     list_ = new QListWidget(this);
     list_->setObjectName("sshHostKeyCandidates");
     list_->setAccessibleName(tr("Inspected SSH host keys"));
-    list_->setMaximumHeight(metrics.dataRowHeight * 4);
+    list_->setMaximumHeight(design::dimension(design::Dimension::Row) * 4);
     for (const auto& candidate : candidates_)
         list_->addItem(candidate.keyType + " — " + candidate.sha256);
     list_->setCurrentRow(-1);

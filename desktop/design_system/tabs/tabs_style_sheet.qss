@@ -3,7 +3,7 @@ QTabWidget::pane {
 }
 
 QTabBar {
-  background: @muted;
+  background: @surface-raised;
   border-radius: 0;
   border-bottom: 1px solid @border;
 }
@@ -13,15 +13,15 @@ QTabBar[designTabVariant="document"] {
 }
 
 QTabBar::tab {
-  min-height: @paneTabHeight;
-  max-height: @paneTabHeight;
+  min-height: @pane-tab-height;
+  max-height: @pane-tab-height;
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 0;
   padding: 0 9px;
   margin: 0 0 1px 0;
-  font-size: 11px;
-  color: @mutedText;
+  font-size: @font-small;
+  color: @fg-muted;
   background: transparent;
 }
 
@@ -34,18 +34,16 @@ QTabBar::tab:last, QTabBar::tab:only-one {
 }
 
 QTabBar::tab:selected {
-  background: @field;
-  color: @foreground;
-  border-bottom-color: @mutedText;
+  background: @surface;
+  color: @fg;
+  border-bottom-color: @fg-muted;
 }
 
 QTabBar[designTabVariant="document"]::tab {
-  border-top-left-radius: 5px;
-  border-top-right-radius: 5px;
-  min-width: 124px;
-  max-width: 124px;
-  min-height: @documentTabHeight;
-  max-height: @documentTabHeight;
+  min-width: @document-tab-width;
+  max-width: @document-tab-width;
+  min-height: @document-tab-height;
+  max-height: @document-tab-height;
   border-bottom: 0;
   border-top: 2px solid transparent;
   border-right: 1px solid @border;
@@ -54,14 +52,14 @@ QTabBar[designTabVariant="document"]::tab {
 }
 
 QTabBar[designTabVariant="document"]::tab:selected {
-  border-top-color: @mutedText;
+  border-top-color: @fg-muted;
   font-weight: bold;
 }
 
 QTabBar::tab:hover {
-  color: @foreground;
+  color: @fg;
 }
 
 QTabBar::tab:disabled {
-  color: @disabled;
+  color: @fg-disabled;
 }

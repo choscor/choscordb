@@ -134,7 +134,7 @@ class Backdrop final : public QWidget {
             shadow_.fill(Qt::transparent);
             QPainter shadowPainter(&shadow_);
             QPainterPath path;
-            path.addRoundedRect(panel, radius(Radius::ExtraLarge), radius(Radius::ExtraLarge));
+            path.addRoundedRect(panel, radius(Radius::Large), radius(Radius::Large));
             QPainterPath outside;
             outside.addRect(rect());
             // QGraphicsDropShadowEffect includes its source in the scene render.
@@ -143,7 +143,7 @@ class Backdrop final : public QWidget {
             shadowPainter.setClipPath(outside.subtracted(path));
             for (const auto& layer : elevation(Elevation::Dialog)) {
                 QGraphicsScene scene;
-                auto* item = scene.addPath(path, Qt::NoPen, theme.colors.text);
+                auto* item = scene.addPath(path, Qt::NoPen, theme.colors.fg);
                 auto* effect = new QGraphicsDropShadowEffect;
                 effect->setBlurRadius(layer.blur * 2);
                 effect->setOffset(layer.x, layer.y);
@@ -394,9 +394,9 @@ void paintDialogSurface(QWidget& widget, bool drawBorder) {
     painter.setRenderHint(QPainter::Antialiasing);
     const auto theme = resolvedThemeForWidget(widget);
     const auto& colors = theme.colors;
-    painter.setBrush(colors.popover);
+    painter.setBrush(colors.surface);
     painter.setPen(drawBorder ? QPen(colors.border, 1) : Qt::NoPen);
-    const auto cornerRadius = resolveMetrics(Density::Compact, true).dialogRadius;
+    const auto cornerRadius = radius(Radius::Large);
     const auto bounds =
         drawBorder ? QRectF(widget.rect()).adjusted(.5, .5, -.5, -.5) : QRectF(widget.rect());
     painter.drawRoundedRect(bounds, cornerRadius, cornerRadius);

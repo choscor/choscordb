@@ -55,7 +55,7 @@ class PreviewTest final : public QObject {
     void quickSearchRowsUseSuppliedIconAndRetintWhenThemeChanges();
     void quickSearchInteractionPreservesFocusAndSelection();
     void quickSearchKeepsSelectionAcrossResultUpdates();
-    void tableHoverPreservesBackgroundInBothThemes();
+    void tableHoverUsesRaisedSurfaceInBothThemes();
     void typedTableSpecimenUsesSharedControlsInBothThemes();
     void choiceEditorSpecimenShowsRealControlInBothThemes();
     void typedTableDropdownAndLinkActionWorkThroughView();
@@ -87,6 +87,7 @@ class PreviewTest final : public QObject {
     void componentFamiliesAreRendered();
     void dialogSectionsPreviewUsesRealComponentInBothThemes();
     void navigationProfileRowsShowRegularAndSelectedStates();
+    void driverBadgeAndConnectionTileUseNeutralTokensInBothThemes();
     void dockSpecimenRendersThemedTitleAndButtons();
     void navigationTreeTogglesAndRenamesFromMenu();
 };

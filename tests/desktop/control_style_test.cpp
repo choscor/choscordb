@@ -143,9 +143,9 @@ void ControlStyleTest::comboPopupUsesOneBorderAndFilledSelection() {
              0);
     const auto viewImage = view->grab().toImage();
     QCOMPARE(viewImage.pixelColor(viewImage.width() - 1, viewImage.height() / 2),
-             QColor("#e7ebed"));
+             QColor("#e3e7ea"));
     QCOMPARE(viewImage.pixelColor(viewImage.width() / 2, viewImage.height() - 1),
-             QColor("#e7ebed"));
+             QColor("#e3e7ea"));
     const auto image = view->viewport()->grab().toImage();
     const auto scale = image.devicePixelRatio();
     const auto selected =
@@ -153,7 +153,7 @@ void ControlStyleTest::comboPopupUsesOneBorderAndFilledSelection() {
     QVERIFY(!selected.isEmpty());
     QCOMPARE(image.pixelColor(qRound((selected.right() - 15) * scale),
                               qRound(selected.center().y() * scale)),
-             QColor("#ccebdc"));
+             QColor("#fde4d3"));
     saveNativeSurface(*view->parentWidget(), "native-combo-popup.png");
     QTest::keyClick(view, Qt::Key_Down);
     QTest::keyClick(view, Qt::Key_Return);
@@ -169,7 +169,7 @@ void ControlStyleTest::comboPopupUsesOneBorderAndFilledSelection() {
         view->visualRect(view->currentIndex()).intersected(view->viewport()->rect());
     QCOMPARE(dark.pixelColor(qRound((darkSelection.right() - 15) * darkScale),
                              qRound(darkSelection.center().y() * darkScale)),
-             QColor("#254b38"));
+             QColor("#4a2c14"));
     saveNativeSurface(*view->parentWidget(), "native-combo-popup-dark.png");
     QTest::keyClick(view, Qt::Key_Escape);
     QVERIFY(!view->isVisible());
@@ -353,7 +353,7 @@ void ControlStyleTest::paneTabsPaintReferenceInsetsWithoutMovingDocumentTabs() {
     const auto capture = tabs.grab();
     const auto image = capture.toImage();
     const auto scale = capture.devicePixelRatio();
-    QCOMPARE(image.pixelColor(qRound(4 * scale), qRound(12 * scale)), QColor("#f2f2f2"));
+    QCOMPARE(image.pixelColor(qRound(4 * scale), qRound(12 * scale)), QColor("#eef1f2"));
     QCOMPARE(image.pixelColor(qRound(10 * scale), qRound(12 * scale)), QColor("#ffffff"));
     QCOMPARE(tabs.height(), 35);
     QTest::mouseClick(&tabs, Qt::LeftButton, {}, tabs.tabRect(1).center());
@@ -413,8 +413,8 @@ void ControlStyleTest::closableDocumentTabsUseCompactHeight() {
     tabs.addTab("A much longer history query title");
     root.show();
     QCoreApplication::processEvents();
-    QCOMPARE(tabs.sizeHint().height(), 33);
-    QCOMPARE(tabs.tabRect(0).height(), 33);
+    QCOMPARE(tabs.sizeHint().height(), 32);
+    QCOMPARE(tabs.tabRect(0).height(), 32);
     const auto side = static_cast<QTabBar::ButtonPosition>(
         tabs.style()->styleHint(QStyle::SH_TabBar_CloseButtonPosition));
     auto* close = tabs.tabButton(0, side);
@@ -456,14 +456,14 @@ void ControlStyleTest::referenceSwitchMovesItsThumbAndKeepsKeyboardSemantics() {
     QStyleOptionButton option;
     option.initFrom(&toggle);
     auto indicator = toggle.style()->subElementRect(QStyle::SE_CheckBoxIndicator, &option, &toggle);
-    QCOMPARE(indicator.size(), QSize(32, 19));
+    QCOMPARE(indicator.size(), QSize(32, 18));
     const auto unchecked = toggle.grab().toImage();
     QCOMPARE(unchecked.pixelColor(indicator.left() + 9, indicator.top() + 9), QColor(Qt::white));
     QTest::keyClick(&toggle, Qt::Key_Space);
     QVERIFY(toggle.isChecked());
     toggle.clearFocus();
     const auto checked = toggle.grab().toImage();
-    QCOMPARE(checked.pixelColor(indicator.left() + 9, indicator.top() + 9), QColor("#287f66"));
+    QCOMPARE(checked.pixelColor(indicator.left() + 9, indicator.top() + 9), QColor("#c2410c"));
     QCOMPARE(checked.pixelColor(indicator.left() + 22, indicator.top() + 9), QColor(Qt::white));
     toggle.setEnabled(false);
     QTest::keyClick(&toggle, Qt::Key_Space);
@@ -682,10 +682,10 @@ void ControlStyleTest::scopedCheckboxUsesSemanticFill_data() {
     QTest::addColumn<bool>("dark");
     QTest::addColumn<bool>("mixed");
     QTest::addColumn<QColor>("expected");
-    QTest::newRow("light-checked") << false << false << QColor("#287f66");
-    QTest::newRow("light-mixed") << false << true << QColor("#287f66");
-    QTest::newRow("dark-checked") << true << false << QColor("#65b493");
-    QTest::newRow("dark-mixed") << true << true << QColor("#65b493");
+    QTest::newRow("light-checked") << false << false << QColor("#c2410c");
+    QTest::newRow("light-mixed") << false << true << QColor("#c2410c");
+    QTest::newRow("dark-checked") << true << false << QColor("#ff8a18");
+    QTest::newRow("dark-mixed") << true << true << QColor("#ff8a18");
 }
 
 void ControlStyleTest::scopedCheckboxUsesSemanticFill() {

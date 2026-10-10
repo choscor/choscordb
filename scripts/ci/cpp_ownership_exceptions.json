@@ -8,7 +8,7 @@
   {
     "path": "desktop/design_system/json_text_view/json_text_view.cpp",
     "rule": "domain-parsing",
-    "sha256": "863592de91e2420297112c7fcaa37d7bc27cece30dbd0ed198f0ddc4bc5eaff3",
+    "sha256": "a5422a81be61856f040a069eef58fd20351aae1e5dc8b4a7f23edbbd98cf6f54",
     "reason": "Regular expressions select syntax highlighting spans; they do not validate or transform backend results."
   },
   {
@@ -26,13 +26,13 @@
   {
     "path": "desktop/tools/preview/preview_standard.cpp",
     "rule": "sql-text",
-    "sha256": "f60ad977f436cace2f8042afcb6cc83198aedb97db96f768d5746a22f8a53ed6",
+    "sha256": "947944ad24af1974ddbec0ca676d2aed701d20bec465fa0fb0747fc910880075",
     "reason": "The CREATE TABLE literal populates a synthetic read-only SQL-editor specimen. This developer gallery does not execute it or derive application SQL from it."
   },
   {
     "path": "desktop/tools/preview/preview_window.cpp",
     "rule": "sql-text",
-    "sha256": "a98f602731effecf5b74260f35c1e5f371e8a9d3dd4dee5ee2979526f126cce3",
+    "sha256": "15f0f02a80ebf80e4186728734c1c1729a8a7f719786d10302ae987f33d7c45a",
     "reason": "The SELECT literal is synthetic content for the SQL-editor gallery specimen in Light and Dark themes. The gallery does not execute it or generate database requests."
   },
   {

@@ -38,7 +38,7 @@ class ProfileProgressDialog final : public DialogShell {
         setWindowTitle(tr("Profiles"));
         auto* content = new QVBoxLayout(this);
         auto* heading = new design::Text(tr("Profiles"), this);
-        heading->setTypographyRole(design::TypographyRole::DialogTitle);
+        heading->setTypographyRole(design::TypographyRole::Title);
         content->addWidget(heading);
         message_ = createDescription({}, this);
         message_->setObjectName("profileProgressMessage");
@@ -70,7 +70,6 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     const auto margin = design::spacing(design::Spacing::Four);
     resize(design::dialogInitialSize(design::DialogSize::Profiles)
                .boundedTo(available - QSize(margin * 2, margin * 2)));
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* outer = new QVBoxLayout(this);
     auto* sections = new design::DialogSections(this);
     sections->setObjectName("profileSections");
@@ -79,7 +78,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     auto* header = sections;
     auto* heading = new design::Text(tr("New connection"), header);
     heading->setObjectName("profileHeading");
-    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    heading->setTypographyRole(design::TypographyRole::Title);
     headerLayout->addWidget(heading);
     headerLayout->addStretch();
     auto* dismiss = new design::Button({}, header);
@@ -111,7 +110,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     sections->bodyLayout()->addWidget(formScroll);
     auto* formLayout = new QFormLayout(form_);
     formLayout->setContentsMargins(0, 0, design::spacing(design::Spacing::Three),
-                                   metrics.spacingMedium);
+                                   design::spacing(design::Spacing::Two));
     formLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
     formLayout->addRow(
         createDescription(tr("Connect to a server or open a local database file."), form_));

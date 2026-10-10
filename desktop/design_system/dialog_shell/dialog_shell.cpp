@@ -15,7 +15,7 @@ DialogShell::DialogShell(QWidget* parent) : QDialog(parent) {
     setProperty("appDialog", true);
     setModal(false);
     setAttribute(Qt::WA_WindowPropagation);
-    setFont(design::resolveTypography(design::TypographyRole::Ui));
+    setFont(design::resolveTypography(design::TypographyRole::Body));
     presentation_ = new design::DialogPresentation(*this);
 }
 
@@ -69,26 +69,13 @@ void DialogShell::paintEvent(QPaintEvent*) {
 }
 
 void DialogShell::applyLayoutMetrics() {
-    design::ThemeManager* theme = nullptr;
-    for (auto* scope = static_cast<QObject*>(this); scope != nullptr; scope = scope->parent()) {
-        theme = scope->findChild<design::ThemeManager*>(QString{}, Qt::FindDirectChildrenOnly);
-        if (theme != nullptr) {
-            break;
-        }
-    }
-    if (theme != nullptr && !observingTheme_) {
-        observingTheme_ = true;
-        connect(theme, &design::ThemeManager::metricsChanged, this,
-                [this] { applyLayoutMetrics(); });
-    }
-    const auto metrics =
-        theme ? theme->metrics() : design::resolveMetrics(design::Density::Compact, true);
     if (auto* root = layout()) {
-        root->setContentsMargins(metrics.dialogContentSpacing, metrics.dialogContentSpacing,
-                                 metrics.dialogContentSpacing, metrics.dialogContentSpacing);
+        root->setContentsMargins(
+            design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Four),
+            design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Four));
     }
     for (auto* childLayout : findChildren<QLayout*>()) {
-        childLayout->setSpacing(metrics.spacingMedium);
+        childLayout->setSpacing(design::spacing(design::Spacing::Two));
     }
 }
 

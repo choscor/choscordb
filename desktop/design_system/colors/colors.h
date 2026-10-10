@@ -1,83 +1,57 @@
 #pragma once
 
 #include <QColor>
+#include <QList>
 #include <QMetaType>
 #include <QPalette>
 #include <QString>
+#include <utility>
 
 namespace choscordb::design {
 
 enum class ThemeMode { System, Light, Dark };
 enum class ResolvedAppearance { Light, Dark };
-struct SemanticColors final {
-    QColor background;
-    QColor foreground;
-    QColor card;
-    QColor cardForeground;
-    QColor popover;
-    QColor popoverForeground;
-    QColor primary;
-    QColor primaryForeground;
-    QColor secondary;
-    QColor secondaryForeground;
-    QColor muted;
-    QColor mutedForeground;
-    QColor accent;
-    QColor accentForeground;
-    QColor destructive;
-    QColor border;
-    QColor input;
-    QColor ring;
-    QColor sidebar;
-    QColor sidebarForeground;
-    QColor sidebarPrimary;
-    QColor sidebarPrimaryForeground;
-    QColor sidebarAccent;
-    QColor sidebarAccentForeground;
-    QColor sidebarBorder;
-    QColor sidebarRing;
-    QColor canvas;
+// ChoscorDB color roles. Kebab-case names (`surface-raised`) are used in QSS
+// and the gallery token catalog; see docs/design/design-system.md.
+struct Colors final {
+    QColor bg;
     QColor surface;
-    QColor elevatedSurface;
-    QColor text;
-    QColor mutedText;
-    QColor action;
-    QColor actionHover;
-    QColor actionPressed;
-    QColor actionText;
+    QColor surfaceRaised;
+    QColor sidebar;
+    QColor fg;
+    QColor fgMuted;
+    QColor fgDisabled;
+    QColor border;
+    QColor primary;
+    QColor primaryHover;
+    QColor primaryPressed;
+    QColor primaryFg;
     QColor selection;
-    QColor selectionText;
-    QColor focus;
-    QColor subtleAccent;
-    QColor separator;
-    QColor disabled;
+    QColor ring;
     QColor success;
-    QColor warning;
-    QColor danger;
     QColor successSurface;
+    QColor warning;
     QColor warningSurface;
+    QColor danger;
     QColor dangerSurface;
-    QColor neutral;
     QColor backdrop;
     QColor switchTrack;
-    QColor switchThumb;
-    QColor sqlKeyword;
-    QColor sqlString;
-    QColor sqlComment;
-    QColor sqlNumber;
-    QColor jsonKey;
-    QColor jsonString;
-    QColor jsonNumber;
-    QColor jsonLiteral;
-    QColor sqliteBadgeBackground, sqliteBadgeForeground, sqliteBadgeBorder;
-    QColor postgresBadgeBackground, postgresBadgeForeground, postgresBadgeBorder;
+    QColor codeKeyword;
+    QColor codeString;
+    QColor codeNumber;
+    QColor codeComment;
 
-    friend bool operator==(const SemanticColors&, const SemanticColors&) = default;
+    friend bool operator==(const Colors&, const Colors&) = default;
 };
 
 [[nodiscard]] double contrastRatio(const QColor& foreground, const QColor& background);
-[[nodiscard]] SemanticColors resolveColors(ResolvedAppearance appearance);
-[[nodiscard]] SemanticColors resolveForcedContrastColors(const QPalette& palette);
+[[nodiscard]] Colors resolveColors(ResolvedAppearance appearance);
+[[nodiscard]] Colors resolveForcedContrastColors(const QPalette& palette);
+// The switch thumb is computed rather than a role: `surface` in Light and
+// white in Dark.
+[[nodiscard]] QColor switchThumb(const Colors& colors, ResolvedAppearance appearance);
+// Every color role with its kebab-case token name, in catalog order.
+[[nodiscard]] QList<std::pair<QString, QColor>> colorTokens(const Colors& colors);
 
 } // namespace choscordb::design
 

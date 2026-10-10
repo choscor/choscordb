@@ -31,10 +31,9 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     : QWidget(parent), sql_(sqlWorkspace) {
     setObjectName("objectDataWorkspace");
     setProperty("designSurface", "panel");
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(metrics.spacingSmall);
+    layout->setSpacing(design::spacing(design::Spacing::One));
     auto* summary = new design::Text(tr("Open Data to read an object."), this);
     summary->setObjectName("objectDataSummary");
     auto* table = new QTableView(this);
@@ -46,8 +45,8 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     design::configureResultTable(*table, false);
     table->setWordWrap(false);
     table->setFrameShape(QFrame::NoFrame);
-    table->verticalHeader()->setDefaultSectionSize(metrics.objectDataRowHeight);
-    table->horizontalHeader()->setFixedHeight(metrics.objectDataHeaderHeight);
+    table->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::Row));
+    table->horizontalHeader()->setFixedHeight(design::dimension(design::Dimension::Header));
     table->horizontalHeader()->setDefaultSectionSize(
         design::dimension(design::Dimension::TableColumn));
     table->horizontalHeader()->setStretchLastSection(false);
@@ -57,7 +56,7 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     messages->setAccessibleName(tr("Object data diagnostics"));
     messages->setReadOnly(true);
     messages->setMaximumBlockCount(1000);
-    messages->setMaximumHeight(metrics.dataRowHeight * 3);
+    messages->setMaximumHeight(design::dimension(design::Dimension::Row) * 3);
     messages->hide();
     layout->addWidget(messages);
     auto* statusLine = new design::StatusLine(this);
@@ -66,8 +65,9 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     toolbar_ = new QWidget(this);
     toolbar_->setObjectName("objectDataToolbar");
     auto* toolbar = new QHBoxLayout(toolbar_);
-    toolbar->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
-                                metrics.spacingSmall);
+    toolbar->setContentsMargins(
+        design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One),
+        design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One));
     layout->insertWidget(0, toolbar_);
     auto makeButton = [](QHBoxLayout* target, const QString& label, const char* name,
                          design::Icon icon) {

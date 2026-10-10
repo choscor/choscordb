@@ -2,26 +2,32 @@ QLabel[designRole="badge"] {
   min-height: 18px;
   max-height: 18px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: @radius-sm;
   padding: 0 7px;
-  font-size: 10px;
+  font-size: @font-caption;
   font-weight: 400;
   color: @primary;
-  background: @accent;
+  background: @selection;
 }
 
 QLabel[designRole="badge"][variant="secondary"] {
-  background: @muted;
-  color: @foreground;
+  background: @surface-raised;
+  color: @fg;
 }
 
 QLabel[designRole="badge"][variant="outline"] {
   background: transparent;
-  color: @foreground;
+  color: @fg;
   border-color: @border;
 }
 
 QLabel[designRole="badge"][variant="destructive"] {
-  background: @destructiveTint;
-  color: @dangerText;
+  background: @destructive-tint;
+  color: @danger;
+}
+
+QLabel[designRole="badge"][variant="driver"] {
+  background: @surface-raised;
+  color: @fg;
+  border-color: @border;
 }

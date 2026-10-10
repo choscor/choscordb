@@ -8,48 +8,38 @@
 
 namespace choscordb::design {
 
-enum class Density { Compact, Comfortable };
 enum class DialogSize { Short, Export, Preferences, Profiles, Detail, Ddl };
-enum class Spacing { Quarter, Half, One, OneHalf, Two, TwoHalf, Three, Four, Six, Eight };
+enum class Spacing { Half, One, OneHalf, Two, Three, Four, Six, Eight };
+// The compact scale, in logical pixels on a 4px grid. Controls share one
+// height per size; every data row and header is Row/Header high.
 enum class Dimension {
-    ButtonExtraSmall,
-    ButtonSmall,
-    Button,
-    ButtonLarge,
-    Input,
-    Selector,
+    ControlExtraSmall,
+    ControlSmall,
+    Control,
     Checkbox,
     IconSmall,
     Icon,
-    IconLarge,
     ModalWidth,
     QuickSearchWidth,
     QuickSearchRow,
     CompletionPopupWidth,
     SheetWidth,
-    TableRow,
     TableColumn,
-    TableHeader,
-    NavigationRow,
-    PaneTab,
-    DocumentTab,
+    Row,
+    Header,
+    Tab,
+    DocumentTabWidth,
+    Toolbar,
     Progress,
+    Scrollbar,
     ToastProgress,
     Badge,
     SwitchWidth,
     SwitchHeight,
     SwitchThumb
 };
-enum class Radius {
-    Small,
-    Medium,
-    Large,
-    ExtraLarge,
-    TwoExtraLarge,
-    ThreeExtraLarge,
-    FourExtraLarge
-};
-enum class Elevation { None, Medium, Large, Dialog };
+enum class Radius { Small, Medium, Large };
+enum class Elevation { Popover, Dialog };
 enum class Motion { Interaction, Popup };
 
 struct ShadowLayer final {
@@ -81,46 +71,23 @@ struct MotionSpec final {
 [[nodiscard]] FocusSpec focusSpec();
 [[nodiscard]] MotionSpec motionSpec(Motion value, bool reducedMotion = false);
 
-struct DesignMetrics final {
-    int grid = 4;
-    int spacingSmall = 4;
-    int spacingMedium = 8;
-    int spacingLarge = 16;
-    int controlHeight = 33;
-    int dataRowHeight = 29;
-    int sqlResultRowHeight = 35;
-    int objectDataRowHeight = 35;
-    int sqlResultHeaderHeight = 34;
-    int objectDataHeaderHeight = 34;
-    int navigationRowHeight = 33;
-    int navigationItemMinHeight = 18;
-    int navigationItemPadding = 2;
-    int navigationHighlightGap = 1;
-    int workspaceChromeHeight = 35;
-    int dialogContentSpacing = 16;
+// Layout-only constants: window defaults and minimums, initial pane sizes and
+// label limits. Sizes on the design scale come from Dimension, Spacing and Radius.
+struct LayoutMetrics final {
     int modalHeaderHeight = 58;
-    int modalContentInset = 16;
     int modalFooterInset = 14;
     int modalFooterVerticalInset = 9;
     int connectionContentInset = 21;
-    int connectionHeaderHeight = 66;
     int connectionDriverHeight = 44;
-    int iconSmall = 16;
-    int iconLarge = 20;
-    int controlRadius = 7;
-    int popoverRadius = 10;
-    int dialogRadius = 8;
-    int separatorWidth = 1;
-    int dialogElevation = 0;
     int connectionLabelCharacters = 16;
     int transactionLabelCharacters = 12;
+    int navigationHighlightGap = 1;
     int narrowWorkspaceWidth = 1100;
     int defaultWorkspaceWidth = 1280;
     int defaultWorkspaceHeight = 900;
     int minimumWorkspaceWidth = 960;
     int minimumWorkspaceHeight = 640;
     int narrowNavigatorWidth = 235;
-    int objectColumnRowHeight = 33;
     int sidebarInset = 11;
     int sidebarTopInset = 9;
     int initialEditorHeight = 380;
@@ -128,16 +95,11 @@ struct DesignMetrics final {
     int initialHistoryHeight = 360;
     int minimumNavigatorWidth = 96;
     int minimumHistoryHeight = 80;
-    int animationDurationMs = 150;
-    bool animationsEnabled = true;
-
-    friend bool operator==(const DesignMetrics&, const DesignMetrics&) = default;
 };
 
-[[nodiscard]] DesignMetrics resolveMetrics(Density density, bool reducedMotion);
+[[nodiscard]] constexpr LayoutMetrics layoutMetrics() {
+    return {};
+}
 [[nodiscard]] QSize dialogInitialSize(DialogSize size);
 
 } // namespace choscordb::design
-
-Q_DECLARE_METATYPE(choscordb::design::Density)
-Q_DECLARE_METATYPE(choscordb::design::DesignMetrics)

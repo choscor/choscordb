@@ -117,7 +117,7 @@ class HistoryTest : public QObject {
         auto* preview = history.findChild<QPlainTextEdit*>("historyPreview");
         QVERIFY(!preview->isVisible());
         QCOMPARE(preview->property("designRole").toString(), QString("codePreview"));
-        QCOMPARE(preview->font().family(), resolveTypography(TypographyRole::Monospace).family());
+        QCOMPARE(preview->font().family(), resolveTypography(TypographyRole::Mono).family());
         table->selectRow(0);
         QVERIFY(!preview->isVisible());
         auto* manage = history.findChild<QToolButton*>("historyManage");

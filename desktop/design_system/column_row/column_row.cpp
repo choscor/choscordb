@@ -30,7 +30,7 @@ void ColumnRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opt
     option.widget->style()->drawControl(QStyle::CE_ItemViewItem, &item, painter, option.widget);
 
     const auto colors = resolvedThemeForWidget(*option.widget).colors;
-    const auto detailFont = resolveTypography(TypographyRole::NavigationDetail);
+    const auto detailFont = resolveTypography(TypographyRole::Small);
     const auto nameFont = detailFont;
     const QFontMetrics nameMetrics(nameFont);
     const QFontMetrics detailMetrics(detailFont);
@@ -48,7 +48,7 @@ void ColumnRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opt
     painter->save();
     painter->setClipRect(textRect);
     painter->setFont(nameFont);
-    painter->setPen(colors.text);
+    painter->setPen(colors.fg);
     painter->drawText(QRect(textRect.left(), textRect.top(), nameWidth, textRect.height()),
                       Qt::AlignLeft | Qt::AlignVCenter,
                       nameMetrics.horizontalAdvance(name) <= nameWidth
@@ -56,7 +56,7 @@ void ColumnRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opt
                           : nameMetrics.elidedText(name, Qt::ElideRight, nameWidth));
     if (detailWidth > 0) {
         painter->setFont(detailFont);
-        painter->setPen(colors.mutedText);
+        painter->setPen(colors.fgMuted);
         painter->drawText(QRect(textRect.right() - detailWidth + 1, textRect.top(), detailWidth,
                                 textRect.height()),
                           Qt::AlignRight | Qt::AlignVCenter,

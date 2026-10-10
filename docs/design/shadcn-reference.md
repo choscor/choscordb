@@ -1,5 +1,9 @@
 # Pinned shadcn reference
 
+> **Historical.** This reference is superseded by
+> [`design-system.md`](design-system.md), the compact design system adopted on
+> 2026-10-10. Its shadcn names, values and metrics no longer match the code.
+
 Selected 2026-09-12: **Base UI / Nova / Neutral**, default radius, Geist,
 Lucide, subtle menu accent, default menu color. The official theming example
 explicitly selects `base-nova` and `neutral`; `DEFAULT_PRESETS.nova` selects Geist

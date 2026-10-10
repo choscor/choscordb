@@ -1,10 +1,10 @@
 QMenu {
   min-width: 243px;
-  margin: @shadowMargin;
-  background: @popover;
-  color: @popoverText;
+  margin: @shadow-margin;
+  background: @surface;
+  color: @fg;
   border: 1px solid @border;
-  border-radius: @popoverRadius;
+  border-radius: @radius-lg;
   padding: 5px;
 }
 
@@ -12,18 +12,18 @@ QMenu::item {
   min-width: 209px;
   min-height: 17px;
   padding: 6px 24px 6px 10px;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: @radius-sm;
+  font-size: @font-dense;
   font-weight: 400;
 }
 
 QMenu::item:selected {
-  background: @primary;
-  color: @primaryText;
+  background: @surface-raised;
+  color: @fg;
 }
 
 QMenu::item:disabled {
-  color: @disabled;
+  color: @fg-disabled;
 }
 
 QMenu::separator {

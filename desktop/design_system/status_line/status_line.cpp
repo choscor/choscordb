@@ -6,7 +6,6 @@
 #include "design_system/fonts/fonts.h"
 #include "design_system/icons.h"
 #include "design_system/metrics/metrics.h"
-#include "design_system/style/style_resource.h"
 #include "design_system/theme.h"
 #include <QStyle>
 
@@ -26,21 +25,12 @@
 
 namespace choscordb::design {
 
-QString statusLineStyleSheet(const ResolvedTheme& theme) {
-    auto sheet = loadStyleSheet(QStringLiteral("status_line/status_line.qss"));
-    sheet.replace(QStringLiteral("@neutral"), theme.colors.mutedText.name());
-    sheet.replace(QStringLiteral("@success"), theme.colors.success.name());
-    sheet.replace(QStringLiteral("@danger"), theme.colors.danger.name());
-    return sheet;
-}
-
 StatusLine::StatusLine(QWidget* parent) : QWidget(parent) {
-    const auto metrics = resolveMetrics(Density::Compact, true);
-    setFont(resolveTypography(TypographyRole::Ui));
+    setFont(resolveTypography(TypographyRole::Body));
     content_ = new QHBoxLayout(this);
-    content_->setContentsMargins(metrics.spacingMedium, metrics.spacingSmall, metrics.spacingMedium,
-                                 metrics.spacingSmall);
-    content_->setSpacing(metrics.spacingMedium);
+    content_->setContentsMargins(spacing(Spacing::Two), spacing(Spacing::One),
+                                 spacing(Spacing::Two), spacing(Spacing::One));
+    content_->setSpacing(spacing(Spacing::Two));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
     loading_ = new QLabel(this);
     loading_->setObjectName("statusLoadingIcon");
@@ -79,11 +69,10 @@ void StatusLine::configure(const Fields& fields, bool centered) {
     message_->hide();
     details_->setText({});
     details_->setToolTip(tr("Read full status details"));
-    const auto metrics = resolveMetrics(Density::Compact, true);
     Button sizingButton({});
     sizingButton.setButtonSize(ButtonSize::IconSmall);
     setFixedHeight(qMax(fontMetrics().height(), sizingButton.sizeHint().height()) +
-                   2 * metrics.spacingSmall);
+                   2 * spacing(Spacing::One));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     fields_ = fields;
     centered_ = centered;
@@ -388,7 +377,7 @@ void StatusLine::paintEvent(QPaintEvent*) {
     const auto state = property("busy").toBool() ? State::Neutral : state_;
     painter.fillRect(rect(), state == State::Success ? colors.successSurface
                              : state == State::Error ? colors.dangerSurface
-                                                     : colors.muted);
+                                                     : colors.surfaceRaised);
     painter.setFont(font());
     painter.setPen(palette().color(QPalette::WindowText));
     for (const auto& point : separators_)
@@ -406,10 +395,10 @@ void StatusLine::refreshAppearance() {
     auto colorsForLine = palette();
     colorsForLine.setColor(QPalette::Window, state == State::Success ? colors.successSurface
                                              : state == State::Error ? colors.dangerSurface
-                                                                     : colors.muted);
+                                                                     : colors.surfaceRaised);
     colorsForLine.setColor(QPalette::WindowText, state == State::Success ? colors.success
                                                  : state == State::Error ? colors.danger
-                                                                         : colors.mutedText);
+                                                                         : colors.fgMuted);
     setPalette(colorsForLine);
     const auto semantic = state == State::Error     ? "error"
                           : state == State::Success ? "success"
@@ -424,13 +413,12 @@ void StatusLine::refreshAppearance() {
             label->style()->polish(label);
         }
     }
-    const auto metrics = resolveMetrics(Density::Compact, true);
-    message_->setMaximumHeight(metrics.dataRowHeight * 3);
-    loading_->setPixmap(themedIcon(Icon::Loader, colors.mutedText, metrics.iconSmall)
-                            .pixmap(metrics.iconSmall, metrics.iconSmall));
+    message_->setMaximumHeight(dimension(Dimension::Row) * 3);
+    loading_->setPixmap(themedIcon(Icon::Loader, colors.fgMuted, dimension(Dimension::Icon))
+                            .pixmap(dimension(Dimension::Icon), dimension(Dimension::Icon)));
     if (configured_)
-        details_->setIcon(
-            themedIcon(Icon::Eye, colorsForLine.color(QPalette::WindowText), metrics.iconSmall));
+        details_->setIcon(themedIcon(Icon::Eye, colorsForLine.color(QPalette::WindowText),
+                                     dimension(Dimension::Icon)));
     refreshing_ = false;
     update();
 }

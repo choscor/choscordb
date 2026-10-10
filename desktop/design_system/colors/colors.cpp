@@ -40,164 +40,110 @@ double contrastRatio(const QColor& foreground, const QColor& background) {
     return (lighter + 0.05) / (darker + 0.05);
 }
 
-SemanticColors resolveColors(ResolvedAppearance appearance) {
-    // Final MVP :root/.dark values.
+Colors resolveColors(ResolvedAppearance appearance) {
+    // Orange brand from the app mark on cool blue-slate neutrals; green is
+    // reserved for success. Every text pair is at least 4.5:1 (WCAG 2).
     const bool dark = appearance == ResolvedAppearance::Dark;
-    const QColor canvas(dark ? "#171d20" : "#f6f7f8");
-    const QColor panel(dark ? "#20272b" : "#ffffff");
-    const QColor text(dark ? "#e0e8e8" : "#222b32");
-    const QColor soft(dark ? "#303030" : "#f2f2f2");
-    const QColor green(dark ? "#65b493" : "#287f66");
-    const QColor greenText(dark ? "#12231b" : "#ffffff");
-    const QColor greenBackground(dark ? "#254b38" : "#ccebdc");
-    const QColor line(dark ? "#343e43" : "#e7ebed");
-    const QColor sidebar(dark ? "#1c2428" : "#fafbfb");
-    // Accessibility extensions: the reference's light muted/red text does not
-    // reach 4.5:1. Keep the hue and increase contrast on panel/soft surfaces.
-    const QColor mutedText(dark ? "#8e9da3" : "#626e75");
-    const QColor danger(dark ? "#e58c85" : "#a5413d");
+    const QColor surface(dark ? "#20272b" : "#ffffff");
+    const QColor fg(dark ? "#e0e8e8" : "#222b32");
+    const QColor primary(dark ? "#ff8a18" : "#c2410c");
     return {
-        .background = canvas,
-        .foreground = text,
-        .card = panel,
-        .cardForeground = text,
-        .popover = panel,
-        .popoverForeground = text,
-        .primary = green,
-        .primaryForeground = greenText,
-        .secondary = soft,
-        .secondaryForeground = text,
-        .muted = soft,
-        .mutedForeground = mutedText,
-        .accent = greenBackground,
-        .accentForeground = text,
-        .destructive = QColor("#c45d58"),
-        .border = line,
-        .input = line,
-        .ring = green,
-        .sidebar = sidebar,
-        .sidebarForeground = text,
-        .sidebarPrimary = green,
-        .sidebarPrimaryForeground = greenText,
-        .sidebarAccent = greenBackground,
-        .sidebarAccentForeground = dark ? green : QColor("#24765e"),
-        .sidebarBorder = line,
-        .sidebarRing = green,
-        .canvas = canvas,
-        .surface = panel,
-        .elevatedSurface = soft,
-        .text = text,
-        .mutedText = mutedText,
-        .action = green,
-        .actionHover = green,
-        .actionPressed = green,
-        .actionText = greenText,
-        .selection = greenBackground,
-        .selectionText = text,
-        .focus = green,
-        .subtleAccent = greenBackground,
-        .separator = line,
-        .disabled = blend(text, panel, 0.4),
-        .success = green,
-        .warning = QColor(dark ? "#e0bb72" : "#805d24"),
-        .danger = danger,
-        .successSurface = QColor(dark ? "#283e34" : "#eaf4ef"),
-        .warningSurface = QColor(dark ? "#473b22" : "#fff3d6"),
-        .dangerSurface = QColor(dark ? "#492d2b" : "#fdecea"),
-        .neutral = mutedText,
+        .bg = QColor(dark ? "#171d20" : "#f6f7f8"),
+        .surface = surface,
+        .surfaceRaised = QColor(dark ? "#283135" : "#eef1f2"),
+        .sidebar = QColor(dark ? "#1c2428" : "#fafbfb"),
+        .fg = fg,
+        .fgMuted = QColor(dark ? "#93a2a8" : "#5f6b72"),
+        .fgDisabled = blend(fg, surface, 0.4),
+        .border = QColor(dark ? "#343e43" : "#e3e7ea"),
+        .primary = primary,
+        .primaryHover = QColor(dark ? "#ff9b3d" : "#ad3a0b"),
+        .primaryPressed = QColor(dark ? "#f07800" : "#9a330a"),
+        .primaryFg = QColor(dark ? "#1f1206" : "#ffffff"),
+        .selection = QColor(dark ? "#4a2c14" : "#fde4d3"),
+        .ring = primary,
+        .success = QColor(dark ? "#6cc08b" : "#2b7a4b"),
+        .successSurface = QColor(dark ? "#213a2b" : "#e7f3eb"),
+        .warning = QColor(dark ? "#e8c35a" : "#7d5a00"),
+        .warningSurface = QColor(dark ? "#3d3418" : "#fff4d1"),
+        .danger = QColor(dark ? "#f2878f" : "#b42336"),
+        .dangerSurface = QColor(dark ? "#4a2228" : "#fceaec"),
         .backdrop = QColor(25, 44, 54, 80),
         .switchTrack = QColor(dark ? "#465359" : "#d8dfe0"),
-        .switchThumb = QColor("#ffffff"),
-        // Preserve prototype syntax hues; adjust only colors below 4.5:1 on
-        // the editor panel (light comments/numbers and dark keywords).
-        .sqlKeyword = QColor(dark ? "#a984c8" : "#885da7"),
-        .sqlString = green,
-        .sqlComment = QColor(dark ? "#9ca6a7" : "#6f7879"),
-        .sqlNumber = QColor(dark ? "#b3834f" : "#936b3f"),
-        .jsonKey = QColor(dark ? "#a984c8" : "#885da7"),
-        .jsonString = green,
-        .jsonNumber = QColor(dark ? "#b3834f" : "#936b3f"),
-        .jsonLiteral = QColor(dark ? "#9ca6a7" : "#6f7879"),
-        .sqliteBadgeBackground = QColor("#f6f0e6"),
-        .sqliteBadgeForeground = QColor("#ad8a51"),
-        .sqliteBadgeBorder = QColor("#eae1d3"),
-        .postgresBadgeBackground = QColor("#edf3f9"),
-        .postgresBadgeForeground = QColor("#6288ab"),
-        .postgresBadgeBorder = QColor("#dce7ef"),
+        .codeKeyword = QColor(dark ? "#a984c8" : "#885da7"),
+        .codeString = primary,
+        .codeNumber = QColor(dark ? "#7fa8d6" : "#2f6aa3"),
+        .codeComment = QColor(dark ? "#9ca6a7" : "#68737a"),
     };
 }
 
-SemanticColors resolveForcedContrastColors(const QPalette& palette) {
+Colors resolveForcedContrastColors(const QPalette& palette) {
     const QColor canvas = paletteColor(palette, QPalette::Window, QColor("#000000"));
     const QColor surface = paletteColor(palette, QPalette::Base, canvas);
     const QColor highlight = paletteColor(palette, QPalette::Highlight, QColor("#FFFFFF"));
     const QColor text = paletteColor(palette, QPalette::WindowText, QColor("#FFFFFF"));
     return {
-        .background = canvas,
-        .foreground = text,
-        .card = surface,
-        .cardForeground = text,
-        .popover = surface,
-        .popoverForeground = text,
-        .primary = highlight,
-        .primaryForeground = paletteColor(palette, QPalette::HighlightedText, canvas),
-        .secondary = surface,
-        .secondaryForeground = text,
-        .muted = surface,
-        .mutedForeground = text,
-        .accent = surface,
-        .accentForeground = text,
-        .destructive = text,
-        .border = text,
-        .input = text,
-        .ring = highlight,
-        .sidebar = surface,
-        .sidebarForeground = text,
-        .sidebarPrimary = highlight,
-        .sidebarPrimaryForeground = paletteColor(palette, QPalette::HighlightedText, canvas),
-        .sidebarAccent = surface,
-        .sidebarAccentForeground = text,
-        .sidebarBorder = text,
-        .sidebarRing = highlight,
-        .canvas = canvas,
+        .bg = canvas,
         .surface = surface,
-        .elevatedSurface = surface,
-        .text = text,
-        .mutedText = text,
-        .action = highlight,
-        .actionHover = highlight,
-        .actionPressed = highlight,
-        .actionText = paletteColor(palette, QPalette::HighlightedText, canvas),
-        .selection = highlight,
-        .selectionText = paletteColor(palette, QPalette::HighlightedText, canvas),
-        .focus = highlight,
-        .subtleAccent = surface,
-        .separator = text,
-        .disabled = paletteColor(palette, QPalette::PlaceholderText, text),
+        .surfaceRaised = surface,
+        .sidebar = surface,
+        .fg = text,
+        .fgMuted = text,
+        .fgDisabled = paletteColor(palette, QPalette::PlaceholderText, text),
+        .border = text,
+        .primary = highlight,
+        .primaryHover = highlight,
+        .primaryPressed = highlight,
+        .primaryFg = paletteColor(palette, QPalette::HighlightedText, canvas),
+        .selection = surface,
+        .ring = highlight,
         .success = text,
-        .warning = text,
-        .danger = text,
         .successSurface = surface,
+        .warning = text,
         .warningSurface = surface,
+        .danger = text,
         .dangerSurface = surface,
-        .neutral = text,
         .backdrop = QColor(0, 0, 0, 160),
         .switchTrack = surface,
-        .switchThumb = surface,
-        .sqlKeyword = text,
-        .sqlString = text,
-        .sqlComment = text,
-        .sqlNumber = text,
-        .jsonKey = text,
-        .jsonString = text,
-        .jsonNumber = text,
-        .jsonLiteral = text,
-        .sqliteBadgeBackground = surface,
-        .sqliteBadgeForeground = text,
-        .sqliteBadgeBorder = text,
-        .postgresBadgeBackground = surface,
-        .postgresBadgeForeground = text,
-        .postgresBadgeBorder = text,
+        .codeKeyword = text,
+        .codeString = text,
+        .codeNumber = text,
+        .codeComment = text,
+    };
+}
+
+QColor switchThumb(const Colors& colors, ResolvedAppearance appearance) {
+    return appearance == ResolvedAppearance::Dark ? QColor("#ffffff") : colors.surface;
+}
+
+QList<std::pair<QString, QColor>> colorTokens(const Colors& colors) {
+    return {
+        {QStringLiteral("bg"), colors.bg},
+        {QStringLiteral("surface"), colors.surface},
+        {QStringLiteral("surface-raised"), colors.surfaceRaised},
+        {QStringLiteral("sidebar"), colors.sidebar},
+        {QStringLiteral("fg"), colors.fg},
+        {QStringLiteral("fg-muted"), colors.fgMuted},
+        {QStringLiteral("fg-disabled"), colors.fgDisabled},
+        {QStringLiteral("border"), colors.border},
+        {QStringLiteral("primary"), colors.primary},
+        {QStringLiteral("primary-hover"), colors.primaryHover},
+        {QStringLiteral("primary-pressed"), colors.primaryPressed},
+        {QStringLiteral("primary-fg"), colors.primaryFg},
+        {QStringLiteral("selection"), colors.selection},
+        {QStringLiteral("ring"), colors.ring},
+        {QStringLiteral("success"), colors.success},
+        {QStringLiteral("success-surface"), colors.successSurface},
+        {QStringLiteral("warning"), colors.warning},
+        {QStringLiteral("warning-surface"), colors.warningSurface},
+        {QStringLiteral("danger"), colors.danger},
+        {QStringLiteral("danger-surface"), colors.dangerSurface},
+        {QStringLiteral("backdrop"), colors.backdrop},
+        {QStringLiteral("switch-track"), colors.switchTrack},
+        {QStringLiteral("code-keyword"), colors.codeKeyword},
+        {QStringLiteral("code-string"), colors.codeString},
+        {QStringLiteral("code-number"), colors.codeNumber},
+        {QStringLiteral("code-comment"), colors.codeComment},
     };
 }
 

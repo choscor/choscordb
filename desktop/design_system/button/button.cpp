@@ -11,15 +11,15 @@
 namespace choscordb::design {
 namespace {
 int buttonPadding(ButtonSize size, ButtonContext context) {
-    const int index = static_cast<int>(size) % 4;
-    return context == ButtonContext::EditorAction ? 12 : index == 0 ? 6 : index == 1 ? 9 : 12;
+    const int index = static_cast<int>(size) % 3;
+    return context == ButtonContext::EditorAction ? 12 : index == 0 ? 6 : index == 1 ? 8 : 12;
 }
 QFont buttonFont(ButtonSize size, ButtonContext context) {
-    const int index = static_cast<int>(size) % 4;
-    const auto role = context == ButtonContext::EditorAction ? TypographyRole::Field
-                      : index == 0                           ? TypographyRole::SectionCaption
+    const int index = static_cast<int>(size) % 3;
+    const auto role = context == ButtonContext::EditorAction ? TypographyRole::Dense
+                      : index == 0                           ? TypographyRole::Caption
                       : index == 1                           ? TypographyRole::Small
-                                                             : TypographyRole::Ui;
+                                                             : TypographyRole::Body;
     auto font = resolveTypography(role);
     font.setLetterSpacing(QFont::AbsoluteSpacing, 0);
     font.setWeight(QFont::Normal);
@@ -48,8 +48,8 @@ void Button::setIcon(const QIcon& icon) {
 void Button::setDesignIcon(Icon role) {
     designIcon_ = role;
     paintedIcon_ = {};
-    QPushButton::setIcon(themedIcon(role, resolvedThemeForWidget(*this).colors.foreground,
-                                    dimension(Dimension::Icon)));
+    QPushButton::setIcon(
+        themedIcon(role, resolvedThemeForWidget(*this).colors.fg, dimension(Dimension::Icon)));
     setButtonSize(size_);
 }
 void Button::setVariant(ButtonVariant variant) {
@@ -93,17 +93,11 @@ bool Button::isLoading() const {
     return loading_;
 }
 QSize Button::sizeHint() const {
-    const int index = static_cast<int>(size_) % 4;
-    const int heights[] = {dimension(Dimension::ButtonExtraSmall),
-                           dimension(Dimension::ButtonSmall), dimension(Dimension::Button),
-                           dimension(Dimension::ButtonLarge)};
-    const bool hasLeading = loading_ || !icon().isNull() || size_ >= ButtonSize::IconExtraSmall;
-    const int height = context_ == ButtonContext::Choice
-                           ? DesignMetrics{}.connectionDriverHeight
-                           : heights[index] + (hasLeading ? (index == 0   ? 0
-                                                             : index == 1 ? 1
-                                                                          : 3)
-                                                          : 0);
+    const int index = static_cast<int>(size_) % 3;
+    const int heights[] = {dimension(Dimension::ControlExtraSmall),
+                           dimension(Dimension::ControlSmall), dimension(Dimension::Control)};
+    const int height =
+        context_ == ButtonContext::Choice ? layoutMetrics().connectionDriverHeight : heights[index];
     if (size_ >= ButtonSize::IconExtraSmall)
         return {height, height};
     const int padding = buttonPadding(size_, context_);
@@ -138,8 +132,9 @@ void Button::paintEvent(QPaintEvent*) {
     const bool dark = theme.appearance == ResolvedAppearance::Dark;
     const auto& colors = theme.colors;
     const bool hover = state.testFlag(QStyle::State_MouseOver);
+    const bool pressed = state.testFlag(QStyle::State_Sunken);
     QColor background = Qt::transparent;
-    QColor foreground = colors.foreground;
+    QColor foreground = colors.fg;
     QColor border = Qt::transparent;
     auto alpha = [](QColor color, qreal opacity) {
         color.setAlphaF(color.alphaF() * opacity);
@@ -147,40 +142,36 @@ void Button::paintEvent(QPaintEvent*) {
     };
     switch (variant_) {
     case ButtonVariant::Default:
-        background = colors.primary;
-        foreground = colors.primaryForeground;
+        background = pressed ? colors.primaryPressed : hover ? colors.primaryHover : colors.primary;
+        foreground = colors.primaryFg;
         break;
     case ButtonVariant::Secondary:
-        background = colors.secondary;
-        foreground = colors.secondaryForeground;
-        if (hover)
-            background = colors.accent;
+        // Secondary already rests on surface-raised; hover steps to the border tone.
+        background = hover || pressed ? colors.border : colors.surfaceRaised;
         break;
     case ButtonVariant::Outline:
-        background = hover ? colors.muted : colors.surface;
-        border = dark ? colors.input : colors.border;
+        background = hover || pressed ? colors.surfaceRaised : colors.surface;
+        border = colors.border;
         break;
     case ButtonVariant::Ghost:
-        if (hover || state.testFlag(QStyle::State_On))
-            background = alpha(colors.muted, dark ? .5 : 1.);
+        if (hover || pressed)
+            background = colors.surfaceRaised;
         break;
     case ButtonVariant::Destructive:
-        background = alpha(colors.destructive, (dark ? .2 : .1) + (hover ? .1 : 0.));
+        background = alpha(colors.danger, (dark ? .2 : .1) + (hover || pressed ? .1 : 0.));
         foreground = colors.danger;
         break;
     case ButtonVariant::Link:
         foreground = colors.primary;
         break;
     }
-    if (context_ == ButtonContext::SidebarTab && isChecked()) {
-        background = colors.muted;
-        foreground = colors.sidebarForeground;
+    // Checked toggles, segments and choices are selected rows of a set.
+    if (isChecked() && variant_ != ButtonVariant::Default) {
+        background = colors.selection;
+        foreground = colors.fg;
     }
-    if (context_ == ButtonContext::Choice && isChecked()) {
-        background = colors.subtleAccent;
-        foreground = colors.sidebarAccentForeground;
+    if (context_ == ButtonContext::Choice && isChecked())
         border = colors.primary;
-    }
     if (context_ == ButtonContext::TabAction && hover) {
         background = Qt::transparent;
         foreground = colors.primary;
@@ -191,7 +182,7 @@ void Button::paintEvent(QPaintEvent*) {
         painter.setOpacity(.4);
     const bool focus = state.testFlag(QStyle::State_HasFocus);
     QRectF panel = QRectF(rect()).adjusted(.5, .5, -.5, -.5);
-    const int radius = design::radius(Radius::Large);
+    const int radius = design::radius(Radius::Medium);
     painter.setBrush(background);
     painter.setPen(QPen(border, 1));
     if (property("groupFirst").isValid()) {
@@ -227,14 +218,13 @@ void Button::paintEvent(QPaintEvent*) {
     } else
         painter.drawRoundedRect(panel, radius, radius);
     if (focus) {
-        painter.setPen(
-            QPen(variant_ == ButtonVariant::Default ? colors.primaryForeground : colors.focus,
-                 focusSpec().borderWidth));
+        painter.setPen(QPen(variant_ == ButtonVariant::Default ? colors.primaryFg : colors.ring,
+                            focusSpec().borderWidth));
         painter.setBrush(Qt::NoBrush);
         painter.drawRoundedRect(panel.adjusted(1, 1, -1, -1), radius, radius);
     }
     auto textFont = buttonFont(size_, context_);
-    const int index = static_cast<int>(size_) % 4;
+    const int index = static_cast<int>(size_) % 3;
     textFont.setUnderline(variant_ == ButtonVariant::Link && hover);
     painter.setFont(textFont);
     painter.setPen(foreground);

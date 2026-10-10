@@ -13,61 +13,17 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
         add(QStringLiteral("color.") + name,
             value.alpha() == 255 ? value.name() : value.name(QColor::HexArgb));
     };
-    color(QStringLiteral("background"), colors.background);
-    color(QStringLiteral("foreground"), colors.foreground);
-    color(QStringLiteral("card"), colors.card);
-    color(QStringLiteral("card-foreground"), colors.cardForeground);
-    color(QStringLiteral("popover"), colors.popover);
-    color(QStringLiteral("popover-foreground"), colors.popoverForeground);
-    color(QStringLiteral("primary"), colors.primary);
-    color(QStringLiteral("primary-foreground"), colors.primaryForeground);
-    color(QStringLiteral("secondary"), colors.secondary);
-    color(QStringLiteral("secondary-foreground"), colors.secondaryForeground);
-    color(QStringLiteral("muted"), colors.muted);
-    color(QStringLiteral("muted-foreground"), colors.mutedForeground);
-    color(QStringLiteral("accent"), colors.accent);
-    color(QStringLiteral("accent-foreground"), colors.accentForeground);
-    color(QStringLiteral("destructive"), colors.destructive);
-    color(QStringLiteral("border"), colors.border);
-    color(QStringLiteral("input"), colors.input);
-    color(QStringLiteral("ring"), colors.ring);
-    color(QStringLiteral("sidebar"), colors.sidebar);
-    color(QStringLiteral("sidebar-foreground"), colors.sidebarForeground);
-    color(QStringLiteral("sidebar-primary"), colors.sidebarPrimary);
-    color(QStringLiteral("sidebar-primary-foreground"), colors.sidebarPrimaryForeground);
-    color(QStringLiteral("sidebar-accent"), colors.sidebarAccent);
-    color(QStringLiteral("sidebar-accent-foreground"), colors.sidebarAccentForeground);
-    color(QStringLiteral("sidebar-border"), colors.sidebarBorder);
-    color(QStringLiteral("sidebar-ring"), colors.sidebarRing);
-    color(QStringLiteral("focus"), colors.focus);
-    color(QStringLiteral("success"), colors.success);
-    color(QStringLiteral("warning"), colors.warning);
-    color(QStringLiteral("danger"), colors.danger);
-    color(QStringLiteral("neutral"), colors.neutral);
-    color(QStringLiteral("backdrop"), colors.backdrop);
+    for (const auto& [name, value] : colorTokens(colors))
+        color(name, value);
     add(QStringLiteral("backdrop.blur"), QString::number(backdropBlurRadius()) + "px");
-    color(QStringLiteral("switch-track"), colors.switchTrack);
-    color(QStringLiteral("switch-thumb"), colors.switchThumb);
-    color(QStringLiteral("json-key"), colors.jsonKey);
-    color(QStringLiteral("json-string"), colors.jsonString);
-    color(QStringLiteral("json-number"), colors.jsonNumber);
-    color(QStringLiteral("json-literal"), colors.jsonLiteral);
-    color(QStringLiteral("sqlite-badge-background"), colors.sqliteBadgeBackground);
-    color(QStringLiteral("sqlite-badge-foreground"), colors.sqliteBadgeForeground);
-    color(QStringLiteral("sqlite-badge-border"), colors.sqliteBadgeBorder);
-    color(QStringLiteral("postgres-badge-background"), colors.postgresBadgeBackground);
-    color(QStringLiteral("postgres-badge-foreground"), colors.postgresBadgeForeground);
-    color(QStringLiteral("postgres-badge-border"), colors.postgresBadgeBorder);
 
     const auto pixels = [&add](const QString& name, int value) {
         add(name, QString::number(value) + QStringLiteral("px"));
     };
-    pixels(QStringLiteral("spacing.0.25"), spacing(Spacing::Quarter));
     pixels(QStringLiteral("spacing.0.5"), spacing(Spacing::Half));
     pixels(QStringLiteral("spacing.1"), spacing(Spacing::One));
     pixels(QStringLiteral("spacing.1.5"), spacing(Spacing::OneHalf));
     pixels(QStringLiteral("spacing.2"), spacing(Spacing::Two));
-    pixels(QStringLiteral("spacing.2.5"), spacing(Spacing::TwoHalf));
     pixels(QStringLiteral("spacing.3"), spacing(Spacing::Three));
     pixels(QStringLiteral("spacing.4"), spacing(Spacing::Four));
     pixels(QStringLiteral("spacing.6"), spacing(Spacing::Six));
@@ -75,29 +31,30 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     pixels(QStringLiteral("radius.sm"), radius(Radius::Small));
     pixels(QStringLiteral("radius.md"), radius(Radius::Medium));
     pixels(QStringLiteral("radius.lg"), radius(Radius::Large));
-    pixels(QStringLiteral("radius.xl"), radius(Radius::ExtraLarge));
-    pixels(QStringLiteral("radius.2xl"), radius(Radius::TwoExtraLarge));
-    pixels(QStringLiteral("radius.3xl"), radius(Radius::ThreeExtraLarge));
-    pixels(QStringLiteral("radius.4xl"), radius(Radius::FourExtraLarge));
-    pixels(QStringLiteral("size.button.xs"), dimension(Dimension::ButtonExtraSmall));
-    pixels(QStringLiteral("size.button.sm"), dimension(Dimension::ButtonSmall));
-    pixels(QStringLiteral("size.button.default"), dimension(Dimension::Button));
-    pixels(QStringLiteral("size.button.lg"), dimension(Dimension::ButtonLarge));
-    pixels(QStringLiteral("size.input"), dimension(Dimension::Input));
-    pixels(QStringLiteral("size.selector"), dimension(Dimension::Selector));
+    pixels(QStringLiteral("size.control.xs"), dimension(Dimension::ControlExtraSmall));
+    pixels(QStringLiteral("size.control.sm"), dimension(Dimension::ControlSmall));
+    pixels(QStringLiteral("size.control"), dimension(Dimension::Control));
+    pixels(QStringLiteral("size.row"), dimension(Dimension::Row));
+    pixels(QStringLiteral("size.header"), dimension(Dimension::Header));
+    pixels(QStringLiteral("size.tab"), dimension(Dimension::Tab));
+    pixels(QStringLiteral("size.tab.document.width"), dimension(Dimension::DocumentTabWidth));
+    pixels(QStringLiteral("size.toolbar"), dimension(Dimension::Toolbar));
+    pixels(QStringLiteral("size.quickSearch.row"), dimension(Dimension::QuickSearchRow));
+    pixels(QStringLiteral("size.icon.sm"), dimension(Dimension::IconSmall));
+    pixels(QStringLiteral("size.icon"), dimension(Dimension::Icon));
     pixels(QStringLiteral("size.checkbox"), dimension(Dimension::Checkbox));
-    pixels(QStringLiteral("size.icon.small"), dimension(Dimension::IconSmall));
-    pixels(QStringLiteral("size.icon.default"), dimension(Dimension::Icon));
-    pixels(QStringLiteral("size.icon.large"), dimension(Dimension::IconLarge));
-    pixels(QStringLiteral("size.modal.width"), dimension(Dimension::ModalWidth));
-    pixels(QStringLiteral("size.completion.width"), dimension(Dimension::CompletionPopupWidth));
-    pixels(QStringLiteral("size.table.row"), dimension(Dimension::TableRow));
-    pixels(QStringLiteral("size.table.column"), dimension(Dimension::TableColumn));
-    pixels(QStringLiteral("size.table.header"), dimension(Dimension::TableHeader));
-    pixels(QStringLiteral("size.navigation.row"), dimension(Dimension::NavigationRow));
-    pixels(QStringLiteral("size.tab.pane"), dimension(Dimension::PaneTab));
-    pixels(QStringLiteral("size.tab.document"), dimension(Dimension::DocumentTab));
+    pixels(QStringLiteral("size.switch.width"), dimension(Dimension::SwitchWidth));
+    pixels(QStringLiteral("size.switch.height"), dimension(Dimension::SwitchHeight));
+    pixels(QStringLiteral("size.switch.thumb"), dimension(Dimension::SwitchThumb));
+    pixels(QStringLiteral("size.progress"), dimension(Dimension::Progress));
+    pixels(QStringLiteral("size.scrollbar"), dimension(Dimension::Scrollbar));
+    pixels(QStringLiteral("size.badge"), dimension(Dimension::Badge));
     pixels(QStringLiteral("size.toast.progress"), dimension(Dimension::ToastProgress));
+    pixels(QStringLiteral("size.modal.width"), dimension(Dimension::ModalWidth));
+    pixels(QStringLiteral("size.quickSearch.width"), dimension(Dimension::QuickSearchWidth));
+    pixels(QStringLiteral("size.sheet.width"), dimension(Dimension::SheetWidth));
+    pixels(QStringLiteral("size.completion.width"), dimension(Dimension::CompletionPopupWidth));
+    pixels(QStringLiteral("size.table.column"), dimension(Dimension::TableColumn));
     add(QStringLiteral("icon.stroke"), QString::number(iconStrokeWidth()) + "px");
 
     pixels(QStringLiteral("border.width"), focusSpec().borderWidth);
@@ -105,12 +62,9 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     add(QStringLiteral("focus.referenceOpacity"),
         QString::number(focusSpec().referenceRingOpacity));
     for (const auto& [name, role] :
-         {std::pair{"ui", TypographyRole::Ui}, std::pair{"small", TypographyRole::Small},
-          std::pair{"heading", TypographyRole::Heading}, std::pair{"base", TypographyRole::Base},
-          std::pair{"dialogTitle", TypographyRole::DialogTitle},
-          std::pair{"monospace", TypographyRole::Monospace},
-          std::pair{"field", TypographyRole::Field},
-          std::pair{"sectionCaption", TypographyRole::SectionCaption},
+         {std::pair{"caption", TypographyRole::Caption}, std::pair{"small", TypographyRole::Small},
+          std::pair{"dense", TypographyRole::Dense}, std::pair{"body", TypographyRole::Body},
+          std::pair{"title", TypographyRole::Title}, std::pair{"mono", TypographyRole::Mono},
           std::pair{"metadata", TypographyRole::Metadata}}) {
         const auto spec = typographySpec(role);
         const auto prefix = QStringLiteral("typography.%1.").arg(QLatin1String(name));
@@ -127,8 +81,7 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
         add(prefix + QStringLiteral(".easing"), spec.easing);
     }
     for (const auto& [name, role] :
-         {std::pair{"md", Elevation::Medium}, std::pair{"lg", Elevation::Large},
-          std::pair{"dialog", Elevation::Dialog}}) {
+         {std::pair{"popover", Elevation::Popover}, std::pair{"dialog", Elevation::Dialog}}) {
         const auto layers = elevation(role);
         for (qsizetype i = 0; i < layers.size(); ++i) {
             const auto prefix = QStringLiteral("elevation.%1%2.")

@@ -1,4 +1,6 @@
 #pragma once
+#include "design_system/icons.h"
+
 #include <QLabel>
 #include <QPointer>
 #include <deque>
@@ -34,6 +36,8 @@ class ToastRegion final : public QLabel {
     bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
+    [[nodiscard]] static int leadingInset();
+    void showStatusIcon(design::Icon icon, const QColor& color);
     struct Notice {
         QString title;
         QString detail;
@@ -54,6 +58,7 @@ class ToastRegion final : public QLabel {
     void openDetails();
     QPointer<QWidget> overlayHost_;
     QTimer* timer_;
+    QLabel* icon_;
     QToolButton* dismiss_;
     QToolButton* details_;
     QPointer<QDialog> detailsDialog_;

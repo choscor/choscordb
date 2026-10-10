@@ -1,6 +1,5 @@
 #include "design_system/tabs/tabs_style.h"
 #include "design_system/fonts/fonts.h"
-#include "design_system/style/style_resource.h"
 #include "design_system/theme.h"
 #include <QFocusEvent>
 #include <QPainter>
@@ -13,13 +12,6 @@ DocumentTabBar::DocumentTabBar(QWidget* parent) : QTabBar(parent) {
     setFont(resolveTypography(TypographyRole::Small));
 }
 
-QString tabsStyleSheet() {
-    return loadStyleSheet(QStringLiteral("tabs/tabs_style_sheet.qss"));
-}
-
-QString tabsApplicationStyleSheet() {
-    return loadStyleSheet(QStringLiteral("tabs/tabs_application_style_sheet.qss"));
-}
 namespace {
 void drawDocumentTabLabel(const QStyleOptionTab& tab, QPainter* painter, const QTabBar& bar,
                           int index) {
@@ -28,11 +20,11 @@ void drawDocumentTabLabel(const QStyleOptionTab& tab, QPainter* painter, const Q
     font.setBold(tab.state.testFlag(QStyle::State_Selected));
     painter->setFont(font);
     const auto colors = resolvedThemeForWidget(bar).colors;
-    painter->setPen(!tab.state.testFlag(QStyle::State_Enabled) ? colors.disabled
+    painter->setPen(!tab.state.testFlag(QStyle::State_Enabled) ? colors.fgDisabled
                     : tab.state.testFlag(QStyle::State_Selected) ||
                             tab.state.testFlag(QStyle::State_MouseOver)
-                        ? colors.foreground
-                        : colors.mutedText);
+                        ? colors.fg
+                        : colors.fgMuted);
     const int iconSize = dimension(Dimension::IconSmall);
     int left = tab.rect.left() + spacing(Spacing::Two);
     if (const auto* leading = bar.tabButton(index, QTabBar::LeftSide))
@@ -94,7 +86,7 @@ void DocumentTabBar::paintEvent(QPaintEvent* event) {
     if (keyboardFocus_ && hasFocus() && currentIndex() >= 0) {
         painter.save();
         painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(resolvedThemeForWidget(*this).colors.focus, focusSpec().ringWidth));
+        painter.setPen(QPen(resolvedThemeForWidget(*this).colors.ring, focusSpec().ringWidth));
         painter.setBrush(Qt::NoBrush);
         const auto bounds = QRectF(tabRect(currentIndex())).adjusted(3, 3, -3, -3);
         painter.drawRoundedRect(bounds, radius(Radius::Small), radius(Radius::Small));

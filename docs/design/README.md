@@ -69,7 +69,8 @@ read-only object data owns separate bounded state. Selecting a sidebar connectio
 never silently retargets an existing document. Export and Preferences are
 modal; large-value detail remains nonmodal.
 
-Legacy accent/density settings remain readable without rendering effects. Saved
+Saved appearance rows from before the compact design system (version 1, with
+density and accent) migrate to version 2 on load without those fields. Saved
 profiles, credential references, SQL/recovery buffers, history, shortcuts, editor
 fonts and compatible geometry/splitters must survive. Only incompatible dock
 placement may be reset.

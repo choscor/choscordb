@@ -1,22 +1,16 @@
 QTreeView::item:hover {
-  background: @muted;
+  background: @surface-raised;
 }
 
 QTreeView::item:selected {
-  background: @accent;
-  color: @navigationText;
-  font-weight: 600;
-}
-
-QTreeView[designSurface="sidebar"]::item:selected {
-  background: @muted;
-  color: @foreground;
+  background: @selection;
+  color: @fg;
 }
 
 /* NavigationTreeView paints its own rounded row fill. */
 QTreeView[designNavigationTree="true"]::item:selected {
   background: transparent;
-  color: @foreground;
+  color: @fg;
 }
 
 QTreeView[designNavigationTree="true"]::item:hover {

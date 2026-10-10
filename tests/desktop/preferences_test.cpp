@@ -48,11 +48,11 @@ class PreferencesTest : public QObject {
         auto* header = sections->headerLayout()->parentWidget();
         auto* body = sections->bodyLayout()->parentWidget();
         auto* footer = sections->footerLayout()->parentWidget();
-        const auto metrics =
-            choscordb::design::resolveMetrics(choscordb::design::Density::Compact, true);
-        QCOMPARE(header->height(), metrics.modalHeaderHeight);
-        QCOMPARE(sections->headerLayout()->contentsMargins().left(), metrics.modalContentInset);
-        QCOMPARE(sections->footerLayout()->contentsMargins().left(), metrics.modalFooterInset);
+        const auto layout = choscordb::design::layoutMetrics();
+        QCOMPARE(header->height(), layout.modalHeaderHeight);
+        QCOMPARE(sections->headerLayout()->contentsMargins().left(),
+                 choscordb::design::spacing(choscordb::design::Spacing::Four));
+        QCOMPARE(sections->footerLayout()->contentsMargins().left(), layout.modalFooterInset);
         QCOMPARE(footer->property("designSurface").toString(), QString("muted"));
         auto* dismiss =
             dialog->findChild<QPushButton*>(exportTool ? "exportDismiss" : "preferencesDismiss");

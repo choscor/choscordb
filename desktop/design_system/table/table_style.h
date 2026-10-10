@@ -70,7 +70,5 @@ class ResultTableDelegate final : public QStyledItemDelegate {
     QPointer<QAbstractItemModel> model_;
 };
 
-QString tableStyleSheet();
-QString tableItemStyleSheet();
 ResultTableDelegate* configureResultTable(QTableView& table, bool showGrid = true);
 } // namespace choscordb::design

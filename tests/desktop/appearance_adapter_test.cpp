@@ -49,9 +49,6 @@ class AppearanceAdapterTest final : public QObject {
 
             choscordb::AppearanceLayout value;
             value.theme = "dark";
-            value.density = "comfortable";
-            value.accentKind = "custom";
-            value.accent = "#2468B2";
             value.navigatorWidth = 312;
             value.editorResultsSplit = 540;
             value.historyHeight = 240;
@@ -75,7 +72,6 @@ class AppearanceAdapterTest final : public QObject {
             QTRY_COMPARE(ready.count(), 1);
             const auto loaded = qvariant_cast<choscordb::AppearanceLayout>(ready.at(0).at(2));
             QCOMPARE(loaded.theme, QString("dark"));
-            QCOMPARE(loaded.density, QString("comfortable"));
             QCOMPARE(loaded.navigatorWidth, quint32(312));
             QCOMPARE(loaded.screenName, QString("test-screen"));
             QVERIFY(adapter.resetAppearanceLayout(44));
@@ -115,8 +111,7 @@ class AppearanceAdapterTest final : public QObject {
         QVERIFY(!failed.at(0).at(1).toString().isEmpty());
 
         invalid = valid;
-        invalid.accentKind = "custom";
-        invalid.accent = "#nothex";
+        invalid.editorResultsSplit = 1001;
         QVERIFY(!adapter.setAppearanceLayout(invalid, 203));
         QTRY_COMPARE(failed.size(), 2);
 

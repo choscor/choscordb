@@ -149,7 +149,7 @@ struct QueryPreferenceLimits {
 struct AppearanceLayout {
     AppearanceLayout();
     quint32 version;
-    QString theme, density, accentKind, accent;
+    QString theme;
     quint32 navigatorWidth, historyHeight;
     quint16 editorResultsSplit;
     bool navigatorVisible, historyVisible;

@@ -22,7 +22,7 @@ void MainWindow::updateNativeTitleBar() {
     if (!window) {
         return;
     }
-    const auto color = theme_->resolvedTheme().colors.background;
+    const auto color = theme_->resolvedTheme().colors.bg;
     // Keep Qt's content below AppKit's title bar. A full-size content view plus
     // a Qt top margin leaves a blank strip above the tabs and navigator.
     window.styleMask &= ~NSWindowStyleMaskFullSizeContentView;

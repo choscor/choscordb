@@ -30,7 +30,6 @@ class DialogShell : public QDialog {
   private:
     void applyLayoutMetrics();
     void ensureContentHeight();
-    bool observingTheme_ = false;
     design::DialogPresentation* presentation_ = nullptr;
 };
 

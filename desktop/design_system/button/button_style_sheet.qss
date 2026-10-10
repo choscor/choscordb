@@ -1,52 +1,104 @@
 QPushButton {
-  min-height: @buttonHeight;
+  min-height: @control-height;
   padding: 0 12px;
   border: 1px solid @border;
-  border-radius: @controlRadius;
-  background: @field;
-  color: @foreground;
+  border-radius: @radius-md;
+  background: @surface;
+  color: @fg;
   font-weight: 400;
+}
+
+QPushButton:hover, QPushButton:pressed {
+  background-color: @surface-raised;
+}
+
+QPushButton:default, QPushButton:checked {
+  color: @primary-fg;
+  background-color: @primary;
+  border-color: @primary;
+}
+
+QPushButton:default:hover, QPushButton:checked:hover {
+  background-color: @primary-hover;
+  border-color: @primary-hover;
+}
+
+QPushButton:default:pressed, QPushButton:checked:pressed {
+  background-color: @primary-pressed;
+  border-color: @primary-pressed;
+}
+
+QPushButton:focus {
+  border: 1px solid @ring;
+}
+
+QPushButton[primary="true"], QToolButton[primary="true"] {
+  color: @primary-fg;
+  background-color: @primary;
+  border-color: @primary;
+}
+
+QPushButton[primary="true"]:hover {
+  background-color: @primary-hover;
+  border-color: @primary-hover;
+}
+
+QPushButton[primary="true"]:pressed {
+  background-color: @primary-pressed;
+  border-color: @primary-pressed;
+}
+
+QPushButton:disabled {
+  color: @fg-disabled;
 }
 
 QPushButton[variant="default"] {
   background: @primary;
-  color: @primaryText;
+  color: @primary-fg;
   border-color: transparent;
   font-weight: 400;
 }
 
+QPushButton[variant="default"]:hover {
+  background: @primary-hover;
+}
+
+QPushButton[variant="default"]:pressed {
+  background: @primary-pressed;
+}
+
 QPushButton[variant="outline"] {
-  background: @field;
-  color: @foreground;
+  background: @surface;
+  color: @fg;
   border-color: @border;
   font-weight: 400;
 }
 
 QPushButton[variant="outline"]:hover, QPushButton[variant="outline"]:pressed {
-  background: @muted;
-  color: @foreground;
+  background: @surface-raised;
+  color: @fg;
 }
 
 QPushButton[variant="destructive"] {
-  background: @destructiveTint;
-  color: @dangerText;
+  background: @destructive-tint;
+  color: @danger;
   border-color: transparent;
   font-weight: 400;
 }
 
 QPushButton[variant="destructive"]:hover, QPushButton[variant="destructive"]:pressed {
-  background: @destructiveHover;
-  color: @dangerText;
+  background: @destructive-hover;
+  color: @danger;
 }
 
 QPushButton:default:focus, QPushButton:checked:focus, QPushButton[variant="default"]:focus, QPushButton[primary="true"]:focus {
-  border-color: @primaryText;
+  border-color: @primary-fg;
 }
 
 QPushButton[variant="outline"]:focus, QPushButton[variant="destructive"]:focus {
-  border-color: @focus;
+  border-color: @ring;
 }
 
 QPushButton[variant="default"]:disabled, QPushButton[variant="outline"]:disabled, QPushButton[variant="destructive"]:disabled {
-  color: @disabled;
+  color: @fg-disabled;
 }

@@ -4,9 +4,7 @@ choscordb_add_library(choscordb-design-system
   desktop/resources/resources.qrc
   desktop/resources/styles.qrc
   desktop/design_system/style/style_resource.cpp
-  desktop/design_system/badge/badge_style.cpp
   desktop/design_system/button/button.cpp
-  desktop/design_system/button/button_style.cpp
   desktop/design_system/button_group/button_group.cpp
   desktop/design_system/checkbox/checkbox_indicator.cpp
   desktop/design_system/column_row/column_row.cpp
@@ -17,40 +15,25 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/control_style.cpp
   desktop/design_system/dialog_presentation/dialog_presentation.cpp
   desktop/design_system/dialog_shell/dialog_shell.cpp
-  desktop/design_system/dialog_shell/dialog_shell_style.cpp
   desktop/design_system/dialog_sections/dialog_sections.cpp
   desktop/design_system/dock/dock_style.cpp
   desktop/design_system/field/field.cpp
-  desktop/design_system/field/field_style.cpp
   desktop/design_system/field/focus_indicator.cpp
   desktop/design_system/fonts/fonts.cpp
-  desktop/design_system/header/header_style.cpp
   desktop/design_system/history_row/history_row.cpp
   desktop/design_system/icons.cpp
-  desktop/design_system/item_view/item_view_style.cpp
   desktop/design_system/json_text_view/json_text_view.cpp
   desktop/design_system/navigation_profile_row/navigation_profile_row.cpp
-  desktop/design_system/kbd/kbd_style.cpp
-  desktop/design_system/label/label_style.cpp
-  desktop/design_system/list/list_style.cpp
   desktop/design_system/menu/menu.cpp
   desktop/design_system/menu/menu_indicator.cpp
-  desktop/design_system/menu/menu_style.cpp
   desktop/design_system/metrics/metrics.cpp
   desktop/design_system/modal_panel/modal_panel.cpp
   desktop/design_system/platform_accessibility.cpp
-  desktop/design_system/progress/progress_style.cpp
   desktop/design_system/quick_search/quick_search_dialog.cpp
   desktop/design_system/right_sheet/right_sheet.cpp
-  desktop/design_system/scrollbar/scrollbar_style.cpp
   desktop/design_system/select/select_popup.cpp
-  desktop/design_system/select/select_style.cpp
-  desktop/design_system/separator/separator_style.cpp
-  desktop/design_system/spin_box/spin_box_style.cpp
   desktop/design_system/status_line/status_line.cpp
-  desktop/design_system/splitter/splitter_style.cpp
-  desktop/design_system/style/application_stylesheet.cpp
-  desktop/design_system/style/control_stylesheet.cpp
+  desktop/design_system/style/stylesheet.cpp
   desktop/design_system/switch/switch_indicator.cpp
   desktop/design_system/table/table_style.cpp
   desktop/design_system/table/table_style.h
@@ -61,14 +44,9 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/theme.cpp
   desktop/design_system/theme_manager.cpp
   desktop/design_system/toast_region/toast_region.cpp
-  desktop/design_system/toast_region/toast_region_style.cpp
   desktop/design_system/tokens/tokens.cpp
-  desktop/design_system/tool_button/tool_button_style.cpp
-  desktop/design_system/toolbar/toolbar_style.cpp
   desktop/design_system/tooltip/tooltip.cpp
-  desktop/design_system/tooltip/tooltip_style.cpp
   desktop/design_system/tree/tree_indicator.cpp
-  desktop/design_system/tree/tree_style.cpp
   desktop/design_system/tree/navigation_tree_view.cpp
 )
 target_include_directories(choscordb-design-system PUBLIC desktop)

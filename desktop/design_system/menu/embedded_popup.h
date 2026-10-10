@@ -1,7 +1,7 @@
 #pragma once
 
 #include "design_system/menu/menu.h"
-#include "design_system/style/control_stylesheet.h"
+#include "design_system/theme.h"
 #include <QApplication>
 #include <QDynamicPropertyChangeEvent>
 #include <QEvent>
@@ -222,8 +222,8 @@ class EmbeddedPopup final : public QObject {
         surface_->setProperty("designTheme", QVariant::fromValue(theme));
         auto palette = applicationPalette(theme);
         if (qobject_cast<QMenu*>(surface_)) {
-            palette.setColor(QPalette::Window, theme.colors.popover);
-            const auto sheet = controlStyleSheet(theme);
+            palette.setColor(QPalette::Window, theme.colors.surface);
+            const auto sheet = applicationStyleSheet(theme);
             if (surface_->styleSheet() != sheet)
                 surface_->setStyleSheet(sheet);
         }

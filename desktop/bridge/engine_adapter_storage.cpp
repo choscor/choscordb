@@ -8,9 +8,6 @@ AppearanceLayoutDto appearanceDto(const AppearanceLayout& value) {
     AppearanceLayoutDto dto;
     dto.version = value.version;
     dto.theme = toRust(value.theme);
-    dto.density = toRust(value.density);
-    dto.accent_kind = toRust(value.accentKind);
-    dto.accent = toRust(value.accent);
     dto.navigator_width = value.navigatorWidth;
     dto.editor_results_split = value.editorResultsSplit;
     dto.history_height = value.historyHeight;

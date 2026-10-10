@@ -1,4 +1,0 @@
-QTreeView, QTableView {
-  gridline-color: %3;
-  selection-background-color: %12;
-}

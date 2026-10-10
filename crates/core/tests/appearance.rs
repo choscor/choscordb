@@ -1,6 +1,4 @@
-use choscordb_core::{
-    Accent, AppearanceLayout, Density, Engine, EngineConfig, Event, SubmitError, ThemeMode,
-};
+use choscordb_core::{AppearanceLayout, Engine, EngineConfig, Event, SubmitError, ThemeMode};
 
 fn event(engine: &mut Engine) -> Event {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -33,8 +31,6 @@ fn appearance_get_set_reset_are_correlated_gated_and_persistent() {
 
     let expected = AppearanceLayout {
         theme: ThemeMode::Dark,
-        density: Density::Comfortable,
-        accent: Accent::Custom("#1267A8".into()),
         ..Default::default()
     };
     engine.appearance_layout_set(expected.clone(), 3).unwrap();
@@ -96,9 +92,9 @@ fn corrupt_and_unsupported_failures_are_distinct_and_terminal() {
             "corrupt",
         ),
         (
-            r##"{"version":2,"theme":"system","density":"compact","accent":{"kind":"preset","value":"cobalt"},"layout":{"navigator_width":280,"editor_results_split":600,"history_height":220,"navigator_visible":true,"history_visible":false},"geometry":{"x":0,"y":0,"width":1280,"height":900,"maximized":false}}"##,
+            r##"{"version":3,"theme":"system","layout":{"navigator_width":280,"editor_results_split":600,"history_height":220,"navigator_visible":true,"history_visible":false},"geometry":{"x":0,"y":0,"width":1280,"height":900,"maximized":false}}"##,
             choscordb_driver_api::ErrorKind::Unsupported,
-            "version 2",
+            "version 3",
         ),
     ] {
         let directory = tempfile::tempdir().unwrap();

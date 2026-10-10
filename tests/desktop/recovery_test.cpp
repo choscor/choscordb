@@ -294,7 +294,7 @@ class RecoveryTest : public QObject {
         function.label = "calculate";
         recovery.restoredTabs(restores.at(0).at(0).toULongLong(), {view, function}, 0);
         QCOMPARE(tabs.count(), 2);
-        const auto color = design::resolvedThemeForWidget(tabs).colors.mutedText;
+        const auto color = design::resolvedThemeForWidget(tabs).colors.fgMuted;
         QCOMPARE(tabs.tabIcon(0).pixmap(16, 16).toImage(),
                  design::themedIcon(design::Icon::Eye, color, 16).pixmap(16, 16).toImage());
         QCOMPARE(tabs.tabIcon(1).pixmap(16, 16).toImage(),

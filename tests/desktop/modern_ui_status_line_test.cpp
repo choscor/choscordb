@@ -68,13 +68,16 @@ void ModernUiTest::resultFooterTracksOperationOutcome() {
         QVERIFY(label);
         QCOMPARE(label->font().pixelSize(), footer->font().pixelSize());
     }
-    QCOMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.muted);
+    QCOMPARE(footer->palette().color(QPalette::Window),
+             theme->resolvedTheme().colors.surfaceRaised);
 
     workspace->connectSqlite(":memory:");
     QTRY_VERIFY(run->isEnabled());
-    QTRY_COMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.muted);
+    QTRY_COMPARE(footer->palette().color(QPalette::Window),
+                 theme->resolvedTheme().colors.surfaceRaised);
     theme->setMode(choscordb::design::ThemeMode::Dark);
-    QTRY_COMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.muted);
+    QTRY_COMPARE(footer->palette().color(QPalette::Window),
+                 theme->resolvedTheme().colors.surfaceRaised);
     theme->setMode(choscordb::design::ThemeMode::Light);
     auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
     QVERIFY(editor);
@@ -90,7 +93,8 @@ void ModernUiTest::resultFooterTracksOperationOutcome() {
     auto* other = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
     QVERIFY(other && other != editor);
     other->setConnectionTarget(std::nullopt, {});
-    QTRY_COMPARE(footer->palette().color(QPalette::Window), theme->resolvedTheme().colors.muted);
+    QTRY_COMPARE(footer->palette().color(QPalette::Window),
+                 theme->resolvedTheme().colors.surfaceRaised);
     other->setConnectionTarget(editor->connectionTarget(), editor->targetLabel());
     QTRY_VERIFY(run->isEnabled());
     other->setText("SELECT 2");
@@ -165,7 +169,7 @@ void ModernUiTest::sqlDocumentSwitchKeepsFooterAndResultOwnershipTogether() {
     QVERIFY(!grid->isVisible());
     QVERIFY(page->text().isEmpty());
     QCOMPARE(window.findChild<QWidget*>("sqlResultFooter")->palette().color(QPalette::Window),
-             choscordb::design::resolvedThemeForWidget(window).colors.muted);
+             choscordb::design::resolvedThemeForWidget(window).colors.surfaceRaised);
     tabs->setCurrentWidget(second);
     QTRY_VERIFY(grid->isVisible());
     QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("42"));
@@ -339,7 +343,7 @@ void ModernUiTest::operationFailureRemainsRedAfterDisconnectCleanup() {
     workspace->connectSqlite(":memory:");
     QTRY_COMPARE(recovered.count(), 1);
     QCOMPARE(footer->palette().color(QPalette::Window),
-             choscordb::design::resolvedThemeForWidget(window).colors.muted);
+             choscordb::design::resolvedThemeForWidget(window).colors.surfaceRaised);
 }
 
 void ModernUiTest::embeddedDataFailureRemainsVisibleAfterDisconnectCleanup_data() {

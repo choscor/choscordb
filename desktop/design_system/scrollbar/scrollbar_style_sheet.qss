@@ -4,14 +4,14 @@ QAbstractScrollArea::corner {
 }
 
 QScrollBar:vertical {
-  width: 10px;
+  width: @scrollbar-size;
   margin: 0;
   border: 0;
   background: transparent;
 }
 
 QScrollBar:horizontal {
-  height: 10px;
+  height: @scrollbar-size;
   margin: 0;
   border: 0;
   background: transparent;
@@ -20,13 +20,13 @@ QScrollBar:horizontal {
 QScrollBar::handle {
   background: @border;
   border: 2px solid transparent;
-  border-radius: 5px;
+  border-radius: @scrollbar-radius;
   min-width: 20px;
   min-height: 20px;
 }
 
 QScrollBar::handle:hover, QScrollBar::handle:pressed {
-  background: @mutedText;
+  background: @fg-muted;
 }
 
 QScrollBar::add-line, QScrollBar::sub-line {

@@ -66,8 +66,8 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath, DiagnosticsS
 #ifdef Q_OS_MACOS
     connect(theme_, &design::ThemeManager::themeChanged, this, [this] { updateNativeTitleBar(); });
 #endif
-    setWindowIcon(design::themedIcon(design::Icon::AppMark, theme_->resolvedTheme().colors.action,
-                                     theme_->metrics().iconLarge));
+    setWindowIcon(design::themedIcon(design::Icon::AppMark, theme_->resolvedTheme().colors.primary,
+                                     design::dimension(design::Dimension::Control)));
     const auto ui = buildUi();
     connectWorkspace(ui, storagePath);
     connectDiagnostics();
@@ -369,8 +369,8 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
     explorer->setProperty("objectType", kind);
     explorer->setProperty("objectLabel", label);
     explorer->openObject(connection, objectId, label, kind, properties);
-    const auto icon = design::themedIcon(
-        objectKindIcon(kind), theme_->resolvedTheme().colors.mutedText, objectIconSize());
+    const auto icon = design::themedIcon(objectKindIcon(kind),
+                                         theme_->resolvedTheme().colors.fgMuted, objectIconSize());
     const int index = editors_->addTab(explorer, icon, objectTabTitle(objectId, label));
     editors_->setCurrentIndex(index);
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
@@ -395,9 +395,8 @@ void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
     auto* objectData = explorer->findChild<ObjectDataWorkspace*>();
     objectData->setInitialFilter(filter);
     explorer->openObject(connection, objectId, label, QStringLiteral("table"));
-    const auto icon =
-        design::themedIcon(objectKindIcon(QStringLiteral("table")),
-                           theme_->resolvedTheme().colors.mutedText, objectIconSize());
+    const auto icon = design::themedIcon(objectKindIcon(QStringLiteral("table")),
+                                         theme_->resolvedTheme().colors.fgMuted, objectIconSize());
     editors_->setCurrentIndex(editors_->addTab(explorer, icon, objectTabTitle(objectId, label)));
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
     explorer->selectPane(5);
@@ -469,7 +468,7 @@ SqlEditor* MainWindow::addEditor() {
     }
     const int index = editors_->addTab(editor,
                                        design::themedIcon(design::Icon::Code,
-                                                          theme_->resolvedTheme().colors.mutedText,
+                                                          theme_->resolvedTheme().colors.fgMuted,
                                                           objectIconSize()),
                                        title);
     editors_->setCurrentIndex(index);

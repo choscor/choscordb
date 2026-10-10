@@ -63,9 +63,10 @@ namespace choscordb {
 using namespace main_window_detail;
 
 MainWindow::Ui MainWindow::buildUi() {
-    const auto initialMetrics = theme_->metrics();
-    resize(initialMetrics.defaultWorkspaceWidth, initialMetrics.defaultWorkspaceHeight);
-    setMinimumSize(initialMetrics.minimumWorkspaceWidth, initialMetrics.minimumWorkspaceHeight);
+    resize(design::layoutMetrics().defaultWorkspaceWidth,
+           design::layoutMetrics().defaultWorkspaceHeight);
+    setMinimumSize(design::layoutMetrics().minimumWorkspaceWidth,
+                   design::layoutMetrics().minimumWorkspaceHeight);
     auto* fileMenu = menuBar()->addMenu(tr("&File"));
     auto* newQuery = fileMenu->addAction(tr("New query"));
     newQuery->setObjectName("newQuery");
@@ -237,8 +238,9 @@ MainWindow::Ui MainWindow::buildUi() {
         button->setVariant(design::ButtonVariant::Ghost);
         button->setButtonSize(design::ButtonSize::IconSmall);
     }
-    navLayout->setContentsMargins(0, initialMetrics.spacingSmall, 0, initialMetrics.spacingMedium);
-    navLayout->setSpacing(initialMetrics.spacingSmall);
+    navLayout->setContentsMargins(0, design::spacing(design::Spacing::One), 0,
+                                  design::spacing(design::Spacing::Two));
+    navLayout->setSpacing(design::spacing(design::Spacing::One));
     auto* sidebarTabs = new QHBoxLayout;
     sidebarTabs->setSpacing(0);
     const int sidebarInset = design::spacing(design::Spacing::OneHalf);
@@ -300,7 +302,7 @@ MainWindow::Ui MainWindow::buildUi() {
     savedConnections->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     savedConnections->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     savedConnections->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    new SidebarConnectionListScroll(savedConnections, connectionsScroll, theme_);
+    new SidebarConnectionListScroll(savedConnections, connectionsScroll);
     new SidebarWheelForwarder(connectionsScroll, savedConnections->viewport());
     auto* connectionsEmpty = createEmptyStateText(
         tr("No saved connections yet.\nUse + to add a database connection."), connectionSection);
@@ -400,7 +402,6 @@ MainWindow::Ui MainWindow::buildUi() {
         for (auto* section : {connectionSection, savedSection, historySection})
             section->titleLabel()->setMinimumHeight(addConnection->sizeHint().height());
     };
-    connect(theme_, &design::ThemeManager::metricsChanged, this, alignSidebarHeadings);
     alignSidebarHeadings();
     auto* historySearch = new QLineEdit(historySection);
     historySearch->setObjectName("sidebarHistorySearch");
@@ -441,7 +442,7 @@ MainWindow::Ui MainWindow::buildUi() {
     toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     auto* connections = new QComboBox;
     connections->setObjectName("connectionSelector");
-    connections->setMinimumContentsLength(initialMetrics.connectionLabelCharacters);
+    connections->setMinimumContentsLength(design::layoutMetrics().connectionLabelCharacters);
     connections->setAccessibleName(tr("SQL document connection target"));
     connections->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     connections->addItem(tr("No active connection"));
@@ -499,7 +500,7 @@ MainWindow::Ui MainWindow::buildUi() {
     });
     auto* mode = new QComboBox;
     mode->setObjectName("transactionMode");
-    mode->setMinimumContentsLength(initialMetrics.transactionLabelCharacters);
+    mode->setMinimumContentsLength(design::layoutMetrics().transactionLabelCharacters);
     mode->setAccessibleName(tr("Transaction mode"));
     mode->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     mode->addItems({tr("Auto-commit"), tr("Manual transaction")});
@@ -535,19 +536,18 @@ MainWindow::Ui MainWindow::buildUi() {
     preferences_->addAction("rollback", rollbackAction);
     const auto refreshIcons = [this, run, cancel, addConnection, refreshNavigator, toolbar] {
         const auto resolved = theme_->resolvedTheme();
-        const auto metrics = theme_->metrics();
-        toolbar->setIconSize(QSize(metrics.iconSmall, metrics.iconSmall));
-        setWindowIcon(
-            design::themedIcon(design::Icon::AppMark, resolved.colors.action, metrics.iconLarge));
-        run->setIcon(
-            design::themedIcon(design::Icon::Run, resolved.colors.text, metrics.iconSmall));
-        cancel->setIcon(
-            design::themedIcon(design::Icon::Cancel, resolved.colors.text, metrics.iconSmall));
+        toolbar->setIconSize(QSize(design::dimension(design::Dimension::Icon),
+                                   design::dimension(design::Dimension::Icon)));
+        setWindowIcon(design::themedIcon(design::Icon::AppMark, resolved.colors.primary,
+                                         design::dimension(design::Dimension::Control)));
+        run->setIcon(design::themedIcon(design::Icon::Run, resolved.colors.fg,
+                                        design::dimension(design::Dimension::Icon)));
+        cancel->setIcon(design::themedIcon(design::Icon::Cancel, resolved.colors.fg,
+                                           design::dimension(design::Dimension::Icon)));
         refreshNavigator->setDesignIcon(design::Icon::Refresh);
         addConnection->setDesignIcon(design::Icon::Add);
     };
     connect(theme_, &design::ThemeManager::themeChanged, this, refreshIcons);
-    connect(theme_, &design::ThemeManager::metricsChanged, this, refreshIcons);
     refreshIcons();
     auto* splitter = new QSplitter(Qt::Vertical);
     auto* workspaceTabs = new WorkspaceTabs;
@@ -558,9 +558,9 @@ MainWindow::Ui MainWindow::buildUi() {
             const auto* explorer = qobject_cast<ObjectExplorer*>(editors_->widget(index));
             const auto kind = explorer ? explorer->property("objectType").toString() : QString{};
             const auto role = explorer ? objectKindIcon(kind) : design::Icon::Code;
-            editors_->setTabIcon(index,
-                                 design::themedIcon(role, theme_->resolvedTheme().colors.mutedText,
-                                                    objectIconSize()));
+            editors_->setTabIcon(
+                index,
+                design::themedIcon(role, theme_->resolvedTheme().colors.fgMuted, objectIconSize()));
         }
     });
     connect(editors_, &QTabWidget::currentChanged, this, [this, workspaceTabs] {
@@ -673,8 +673,9 @@ MainWindow::Ui MainWindow::buildUi() {
     toolbarHost->setObjectName("queryToolbarContainer");
     toolbarHost->setProperty("designToolbarSurface", "workspace");
     auto* toolbarLayout = new QVBoxLayout(toolbarHost);
-    toolbarLayout->setContentsMargins(initialMetrics.spacingSmall, initialMetrics.spacingSmall,
-                                      initialMetrics.spacingSmall, initialMetrics.spacingSmall);
+    toolbarLayout->setContentsMargins(
+        design::spacing(design::Spacing::One), design::spacing(design::Spacing::One),
+        design::spacing(design::Spacing::One), design::spacing(design::Spacing::One));
     toolbarLayout->setSpacing(0);
     toolbarLayout->addWidget(toolbar);
     workspaceTabs->workspaceBar()->setHeader(toolbarHost);
@@ -707,8 +708,8 @@ MainWindow::Ui MainWindow::buildUi() {
     // QTableView::sizeHintForColumn samples rows using the vertical header's precision.
     grid->horizontalHeader()->setResizeContentsPrecision(50);
     grid->verticalHeader()->setResizeContentsPrecision(50);
-    grid->verticalHeader()->setDefaultSectionSize(initialMetrics.sqlResultRowHeight);
-    grid->horizontalHeader()->setFixedHeight(initialMetrics.sqlResultHeaderHeight);
+    grid->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::Row));
+    grid->horizontalHeader()->setFixedHeight(design::dimension(design::Dimension::Header));
     resultLayout->addWidget(grid, 1);
     auto* resultFooter = new design::StatusLine;
     resultFooter->setObjectName("sqlResultFooter");
@@ -785,7 +786,8 @@ MainWindow::Ui MainWindow::buildUi() {
     resultAreaLayout->addWidget(resultFooter);
     splitter->addWidget(resultArea);
     sqlResultArea_ = resultArea;
-    splitter->setSizes({initialMetrics.initialEditorHeight, initialMetrics.initialResultsHeight});
+    splitter->setSizes({design::layoutMetrics().initialEditorHeight,
+                        design::layoutMetrics().initialResultsHeight});
     layout->addWidget(splitter);
     search_ = new SearchPanel(
         [this] { return qobject_cast<SqlEditor*>(editors_->currentWidget()); }, this);
@@ -846,10 +848,10 @@ MainWindow::Ui MainWindow::buildUi() {
     startIcon->setObjectName("startDatabaseIcon");
     startIcon->setAlignment(Qt::AlignCenter);
     const auto colorStartIcon = [this, startIcon] {
-        const int size = design::dimension(design::Dimension::IconLarge) * 3 / 2;
-        startIcon->setPixmap(design::themedIcon(design::Icon::Database,
-                                                theme_->resolvedTheme().colors.mutedText, size)
-                                 .pixmap(size, size));
+        const int size = design::dimension(design::Dimension::Control);
+        startIcon->setPixmap(
+            design::themedIcon(design::Icon::Database, theme_->resolvedTheme().colors.fgMuted, size)
+                .pixmap(size, size));
     };
     colorStartIcon();
     connect(theme_, &design::ThemeManager::themeChanged, startIcon, colorStartIcon);

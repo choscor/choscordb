@@ -37,7 +37,7 @@ void JsonTextViewTest::syntaxColorsAndCopySurviveThemeChanges() {
         for (const auto& range : block.layout()->formats())
             if (position >= range.start && position < range.start + range.length)
                 return range.format.foreground().color();
-        return resolvedThemeForWidget(*editor).colors.text;
+        return resolvedThemeForWidget(*editor).colors.fg;
     };
     const int key = json.indexOf(QStringLiteral("key"));
     const int string = json.indexOf(QStringLiteral("true"));
@@ -52,14 +52,14 @@ void JsonTextViewTest::syntaxColorsAndCopySurviveThemeChanges() {
 
     const auto checkColors = [&] {
         const auto colors = resolvedThemeForWidget(*editor).colors;
-        QCOMPARE(inkAt(key), colors.jsonKey);
-        QCOMPARE(inkAt(string), colors.jsonString);
-        QCOMPARE(inkAt(stringNumber), colors.jsonString);
-        QCOMPARE(inkAt(number), colors.jsonNumber);
-        QCOMPARE(inkAt(literal), colors.jsonLiteral);
-        QCOMPARE(inkAt(nullValue), colors.jsonLiteral);
-        QCOMPARE(inkAt(falseValue), colors.jsonLiteral);
-        QCOMPARE(inkAt(punctuation), colors.text);
+        QCOMPARE(inkAt(key), colors.codeKeyword);
+        QCOMPARE(inkAt(string), colors.codeString);
+        QCOMPARE(inkAt(stringNumber), colors.codeString);
+        QCOMPARE(inkAt(number), colors.codeNumber);
+        QCOMPARE(inkAt(literal), colors.codeComment);
+        QCOMPARE(inkAt(nullValue), colors.codeComment);
+        QCOMPARE(inkAt(falseValue), colors.codeComment);
+        QCOMPARE(inkAt(punctuation), colors.fg);
         QCOMPARE(editor->toPlainText(), json);
     };
     checkColors();
@@ -73,7 +73,7 @@ void JsonTextViewTest::syntaxColorsAndCopySurviveThemeChanges() {
     checkColors();
 
     editor->setPlainText(QStringLiteral("true"));
-    QCOMPARE(inkAt(0), resolvedThemeForWidget(*editor).colors.jsonLiteral);
+    QCOMPARE(inkAt(0), resolvedThemeForWidget(*editor).colors.codeComment);
     QCOMPARE(editor->toPlainText(), QStringLiteral("true"));
 }
 

@@ -12,7 +12,6 @@
 namespace choscordb {
 SshPrivateKeyEditor::SshPrivateKeyEditor(const QString& prefix, QWidget* parent) : QWidget(parent) {
     setObjectName(prefix);
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     preview_ = new QPlainTextEdit(this);
@@ -20,7 +19,7 @@ SshPrivateKeyEditor::SshPrivateKeyEditor(const QString& prefix, QWidget* parent)
     preview_->setAccessibleName(tr("Private key (contents hidden)"));
     preview_->setReadOnly(true);
     preview_->setUndoRedoEnabled(false);
-    preview_->setMaximumHeight(metrics.dataRowHeight * 4);
+    preview_->setMaximumHeight(design::dimension(design::Dimension::Row) * 4);
     preview_->installEventFilter(this);
     layout->addWidget(preview_);
     auto* buttons = new QHBoxLayout;

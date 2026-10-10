@@ -89,6 +89,4 @@ class QuickSearchDialog final : public QDialog {
     bool loading_ = false;
 };
 
-[[nodiscard]] QString quickSearchStyleSheet();
-
 } // namespace choscordb::design

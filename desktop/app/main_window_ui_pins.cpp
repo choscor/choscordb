@@ -15,7 +15,7 @@ PinnedSidebar buildPinnedSidebar(QWidget* parent, QVBoxLayout* layout) {
     auto* section = new SidebarSection(label("Pinned"), parent);
     section->setObjectName("pinnedSection");
     section->setAccessibleName(label("Pinned shortcuts"));
-    section->layout()->setSpacing(design::spacing(design::Spacing::Quarter));
+    section->layout()->setSpacing(design::spacing(design::Spacing::Half));
     layout->addWidget(section);
     auto* empty = main_window_detail::createEmptyStateText(
         label("No pinned objects yet.\nPin a schema or object from its menu."), section);

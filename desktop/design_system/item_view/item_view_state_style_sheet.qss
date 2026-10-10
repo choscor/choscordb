@@ -1,20 +1,18 @@
-QTableView::item:selected, QTreeView::item:selected, QListView::item:selected {
-  background: @accent;
-  color: @foreground;
+QTableView::item:selected, QListView::item:selected {
+  background: @selection;
+  color: @fg;
 }
 
-QListView::item:hover {
-  background: @accent;
+QTableView::item:hover:!selected, QListView::item:hover:!selected {
+  background: @surface-raised;
 }
 
 QListView[designSurface="sidebar"]::item:selected {
-  background: @muted;
-  color: @foreground;
-  border-radius: 5px;
+  border-radius: @radius-md;
 }
 
-QListView[designNavigationItem="true"]::item:hover {
-  background: @muted;
-  color: @foreground;
-  border-radius: 5px;
+QListView[designNavigationItem="true"]::item:hover:!selected {
+  background: @surface-raised;
+  color: @fg;
+  border-radius: @radius-md;
 }

@@ -5,9 +5,9 @@ mod appearance;
 mod preferences;
 mod query_preferences;
 pub use appearance::{
-    APPEARANCE_LAYOUT_VERSION, Accent, AccentPreset, AppearanceChoiceError, AppearanceLayout,
-    Density, MAX_APPEARANCE_LAYOUT_BYTES, MAX_SCREEN_NAME_BYTES, MAX_WINDOW_DIMENSION,
-    MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, ThemeMode, WindowGeometry, WorkspaceLayout,
+    APPEARANCE_LAYOUT_VERSION, AppearanceLayout, MAX_APPEARANCE_LAYOUT_BYTES,
+    MAX_SCREEN_NAME_BYTES, MAX_WINDOW_DIMENSION, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, ThemeMode,
+    WindowGeometry, WorkspaceLayout,
 };
 use choscordb_driver_api::{ConnectionOptions, Secret};
 pub use choscordb_driver_api::{SshTunnel, TlsMode};

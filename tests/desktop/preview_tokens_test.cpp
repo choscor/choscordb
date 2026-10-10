@@ -16,22 +16,22 @@ void PreviewTest::tokensExposeCopyableValuesAndSources() {
         QVERIFY(host);
         auto* tokens = host->findChild<QTableWidget*>("previewTokens");
         QVERIFY(tokens);
-        const auto spacing = tokens->findItems("spacing.0.25", Qt::MatchExactly);
+        const auto spacing = tokens->findItems("spacing.0.5", Qt::MatchExactly);
         QCOMPARE(spacing.size(), 1);
-        QCOMPARE(tokens->item(spacing.front()->row(), 1)->text(), QStringLiteral("1px"));
+        QCOMPARE(tokens->item(spacing.front()->row(), 1)->text(), QStringLiteral("2px"));
         tokens->scrollToItem(spacing.front());
         QTRY_VERIFY(tokens->viewport()->rect().contains(tokens->visualItemRect(spacing.front())));
     }
     auto* light = window.findChild<QWidget*>("previewLight");
     auto* table = light->findChild<QTableWidget*>("previewTokens");
     QVERIFY(table);
-    const auto matches = table->findItems("color.background", Qt::MatchExactly);
+    const auto matches = table->findItems("color.bg", Qt::MatchExactly);
     QCOMPARE(matches.size(), 1);
     table->setCurrentCell(matches.front()->row(), 0);
     auto* copy = light->findChild<QPushButton*>("previewCopyToken");
     QVERIFY(copy);
     copy->click();
-    QVERIFY(QApplication::clipboard()->text().contains("background"));
+    QVERIFY(QApplication::clipboard()->text().contains("color.bg"));
     QVERIFY(QApplication::clipboard()->text().contains("#f6f7f8", Qt::CaseInsensitive));
     QVERIFY(QApplication::clipboard()->text().contains("desktop/design_system/tokens/tokens.cpp"));
 }

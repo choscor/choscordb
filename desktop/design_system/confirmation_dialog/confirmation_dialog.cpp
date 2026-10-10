@@ -41,9 +41,9 @@ void ConfirmationDialog::refreshIcon() {
     }
     const auto theme = design::resolvedThemeForWidget(*this);
     const auto role = sourceIcon_ == Critical ? design::Icon::Error : design::Icon::Warning;
-    const auto color = sourceIcon_ == Critical  ? theme.colors.destructive
+    const auto color = sourceIcon_ == Critical  ? theme.colors.danger
                        : sourceIcon_ == Warning ? theme.colors.warning
-                                                : theme.colors.foreground;
+                                                : theme.colors.fg;
     const auto scale = devicePixelRatioF();
     if (iconTint_ == color && iconPixmap().devicePixelRatioF() == scale) {
         return;

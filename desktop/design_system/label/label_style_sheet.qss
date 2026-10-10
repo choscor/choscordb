@@ -1,9 +1,22 @@
+QLabel[state="completed"], QLabel[state="success"], QLabel[state="loaded"],
+QLabel[state="ready"], QLabel[state="restored"] {
+  color: @success;
+}
+
+QLabel[state="warning"] {
+  color: @warning;
+}
+
+QLabel[state="failed"], QLabel[state="error"] {
+  color: @danger;
+}
+
 QLabel[designRole="heading"] {
-  font-size: 14px;
+  font-size: @font-title;
   font-weight: 600;
-  color: @foreground;
+  color: @fg;
 }
 
 QLabel[designRole="description"] {
-  color: @mutedText;
+  color: @fg-muted;
 }

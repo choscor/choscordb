@@ -48,7 +48,7 @@ void MainWindow::connectNavigator(const Ui& ui) {
     auto* navigatorController = new NavigatorController(workspace_->adapter(), tree, filter);
     navigatorController_ = navigatorController;
     auto* connectionsScroll = findChild<QScrollArea*>("connectionsScroll");
-    const auto updateTreeHeight = [this, tree] {
+    const auto updateTreeHeight = [tree] {
         const auto* model = tree->model();
         if (!model)
             return;
@@ -69,7 +69,7 @@ void MainWindow::connectNavigator(const Ui& ui) {
         }
         const int rowHeight = rows == 0
                                   ? 0
-                                  : std::max(theme_->metrics().navigationRowHeight,
+                                  : std::max(design::dimension(design::Dimension::Row),
                                              tree->sizeHintForIndex(model->index(0, 0)).height());
         tree->setFixedHeight(std::max(design::spacing(design::Spacing::Two),
                                       rows * rowHeight + 2 * tree->frameWidth()));
@@ -112,7 +112,6 @@ void MainWindow::connectNavigator(const Ui& ui) {
     };
     connect(tree, &QTreeView::expanded, tree, updateTreeHeightNow);
     connect(tree, &QTreeView::collapsed, tree, updateTreeHeightNow);
-    connect(theme_, &design::ThemeManager::metricsChanged, tree, scheduleTreeHeight);
     connect(navigatorController, &NavigatorController::selectedConnectionsChanged, tree,
             scheduleTreeHeight);
     connect(filter, &QLineEdit::textChanged, tree, scheduleTreeHeight);

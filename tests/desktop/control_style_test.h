@@ -36,10 +36,11 @@ class ControlStyleTest final : public QObject {
     void selectsIgnoreWheelButKeepExplicitSelection();
     void scopedCheckboxUsesSemanticFill_data();
     void scopedCheckboxUsesSemanticFill();
-    void scopedDarkButtonsAndTextSelectionUseSemanticColors();
+    void scopedDarkButtonsAndTextSelectionUseColors();
     void navigationRowsUseCompactGeometry();
     void treeHoverFillsSquareRowCorners();
     void listSelectionFillsSquareRowCorners();
+    void rowsAndMenusShareOneSelectionAndHoverModel();
     void validationStateUpdatesAnAlreadyVisibleField();
     void tableRowsHonorReferenceLineBoxAndPadding();
     void unusedHeaderGutterUsesThemeSurface_data();
@@ -64,6 +65,6 @@ class ControlStyleTest final : public QObject {
     void fieldsExposeInvalidBorderAndPreserveReadOnlyAndPopupInput();
     void checkedAndMixedIndicatorsRenderSemanticFill();
     void checkedRadioUsesCheckboxAccentAndSize();
-    void disabledCheckedIndicatorUsesMutedGreenOutlineAndCheck();
+    void disabledCheckedIndicatorUsesMutedPrimaryOutlineAndCheck();
     void checkboxUsesReferenceGeometryAndKeyboardMixedState();
 };

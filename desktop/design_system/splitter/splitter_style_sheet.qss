@@ -3,7 +3,7 @@ QSplitter::handle {
 }
 
 QSplitter::handle:hover, QSplitter::handle:pressed {
-  background: @focus;
+  background: @ring;
 }
 
 QMainWindow::separator {
@@ -13,5 +13,5 @@ QMainWindow::separator {
 }
 
 QMainWindow::separator:hover, QMainWindow::separator:pressed {
-  background: @focus;
+  background: @ring;
 }

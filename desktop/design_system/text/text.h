@@ -22,7 +22,7 @@ class Text final : public QLabel {
     void paintEvent(QPaintEvent* event) override;
 
   private:
-    TypographyRole role_ = TypographyRole::Ui;
+    TypographyRole role_ = TypographyRole::Body;
 };
 
 } // namespace choscordb::design

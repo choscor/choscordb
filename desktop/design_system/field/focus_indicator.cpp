@@ -20,7 +20,7 @@ bool drawFocusIndicator(QStyle::PrimitiveElement element, const QStyleOption* op
                                       (button->isDefault() || button->isChecked() ||
                                        button->property("primary").toBool()));
                 if (primary)
-                    color = resolvedThemeForWidget(*button).colors.primaryForeground;
+                    color = resolvedThemeForWidget(*button).colors.primaryFg;
             }
             painter->setPen(QPen(color, focusSpec().ringWidth));
             painter->setBrush(Qt::NoBrush);

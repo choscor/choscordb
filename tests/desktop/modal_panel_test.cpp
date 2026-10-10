@@ -575,7 +575,7 @@ class ModalPanelTest final : public QObject {
         const QPoint inDialog = destructive->mapTo(&dialog, sample);
         QCOMPARE(rendered.pixelColor(qRound(inDialog.x() * rendered.devicePixelRatio()),
                                      qRound(inDialog.y() * rendered.devicePixelRatio())),
-                 QColor("#f9eeee"));
+                 QColor("#f7e9eb"));
         dialog.reject();
     }
     void shortConfirmationUsesCompactLayout() {

@@ -1,5 +1,5 @@
 QComboBox {
-  min-height: @selectorHeight;
+  min-height: @control-height;
   padding-right: 4px;
 }
 
@@ -16,17 +16,17 @@ QComboBox::down-arrow {
 }
 
 QComboBox QAbstractItemView {
-  background: @popover;
-  color: @popoverText;
+  background: @surface;
+  color: @fg;
   border: 1px solid @border;
   padding: 4px;
   outline: 0;
-  selection-background-color: @accent;
-  selection-color: @accentText;
+  selection-background-color: @selection;
+  selection-color: @fg;
 }
 
 QComboBox QAbstractItemView::item {
   min-height: 20px;
   padding: 4px 6px;
-  border-radius: 6px;
+  border-radius: @radius-sm;
 }

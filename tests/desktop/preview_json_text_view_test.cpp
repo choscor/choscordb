@@ -36,9 +36,9 @@ void PreviewTest::jsonTextViewSpecimenColorsSyntaxInBothThemes() {
         QVERIFY(editor->inherits("choscordb::design::JsonTextView"));
         QVERIFY(editor->isReadOnly());
         QCOMPARE(editor->toPlainText(), json);
-        QCOMPARE(editor->font().family(),
-                 choscordb::design::resolveTypography(choscordb::design::TypographyRole::Monospace)
-                     .family());
+        QCOMPARE(
+            editor->font().family(),
+            choscordb::design::resolveTypography(choscordb::design::TypographyRole::Mono).family());
         const auto colors = resolvedThemeForWidget(*editor).colors;
         const auto block = editor->document()->firstBlock().next();
         QVERIFY(block.isValid());
@@ -46,7 +46,7 @@ void PreviewTest::jsonTextViewSpecimenColorsSyntaxInBothThemes() {
             for (const auto& range : target.layout()->formats())
                 if (position >= range.start && position < range.start + range.length)
                     return range.format.foreground().color();
-            return colors.text;
+            return colors.fg;
         };
         const auto key = inkAt(block, 3);
         const auto punctuation = inkAt(block, 7);

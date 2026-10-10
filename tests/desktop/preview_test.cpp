@@ -177,7 +177,7 @@ void PreviewTest::recentHistoryRowsUseSharedDelegateInBothThemes() {
         QTest::mouseMove(list->viewport(), row.center());
         QCoreApplication::processEvents();
         QCOMPARE(list->viewport()->grab().toImage().pixelColor(row.right() - 5, row.center().y()),
-                 choscordb::design::resolvedThemeForWidget(*list).colors.muted);
+                 choscordb::design::resolvedThemeForWidget(*list).colors.surfaceRaised);
         const auto colors = choscordb::design::resolvedThemeForWidget(*list).colors;
         const auto image = list->viewport()->grab().toImage();
         int successPixels = 0;
@@ -243,13 +243,16 @@ void PreviewTest::toastPortalIsPresentInBothThemes() {
         auto* host = window.findChild<QWidget*>(name);
         QVERIFY(host);
         const auto expectedSurface = QString::fromLatin1(name) == QStringLiteral("previewLight")
-                                         ? QStringLiteral("#287f66")
-                                         : QStringLiteral("#65b493");
+                                         ? QStringLiteral("#e7f3eb")
+                                         : QStringLiteral("#213a2b");
         const auto successRule =
             host->styleSheet()
                 .section(QStringLiteral("QLabel#toastRegion[variant=\"success\"]"), 1)
                 .section('}', 0, 0);
-        QVERIFY2(successRule.contains(QStringLiteral("background-color: %1").arg(expectedSurface)),
+        QVERIFY2(successRule.contains(QStringLiteral("background-color: rgba(%1,%2,%3,255)")
+                                          .arg(QColor(expectedSurface).red())
+                                          .arg(QColor(expectedSurface).green())
+                                          .arg(QColor(expectedSurface).blue())),
                  qPrintable(successRule));
         auto* scroll = host->findChild<QScrollArea*>("previewContentScroll");
         auto* toast = host->findChild<choscordb::ToastRegion*>("toastRegion");
@@ -312,7 +315,7 @@ void PreviewTest::progressToastHasPersistentIndicatorInBothThemes() {
         QVERIFY(progress->findChild<QProgressBar*>()->height() >= 8);
         QVERIFY(progress->findChild<QProgressBar*>()->geometry().top() >= 60);
         QCOMPARE(progress->grab().toImage().pixelColor(3, progress->height() / 2),
-                 choscordb::design::resolvedThemeForWidget(*progress).colors.warningSurface);
+                 choscordb::design::resolvedThemeForWidget(*progress).colors.surfaceRaised);
         QVERIFY(!progress->findChild<QTimer*>()->isActive());
         QCOMPARE(progress->geometry().right(), progress->parentWidget()->width() - 17);
         QCOMPARE(progress->geometry().bottom(), progress->parentWidget()->height() - 17);
@@ -462,7 +465,7 @@ void PreviewTest::galleryOpenKeepsOverlayInsideWindow() {
         }
         const auto pixel = capture.toImage().pixelColor(qRound(5 * capture.devicePixelRatio()),
                                                         qRound(5 * capture.devicePixelRatio()));
-        const auto expected = choscordb::design::resolvedThemeForWidget(*dialog).colors.popover;
+        const auto expected = choscordb::design::resolvedThemeForWidget(*dialog).colors.surface;
         QVERIFY2(qAbs(pixel.red() - expected.red()) < 10 &&
                      qAbs(pixel.green() - expected.green()) < 10 &&
                      qAbs(pixel.blue() - expected.blue()) < 10,
@@ -573,9 +576,9 @@ void PreviewTest::narrowGalleryKeepsNavigationAndActionsReachable() {
     QVERIFY(light);
     auto* scroll = light->findChild<QScrollArea*>("previewContentScroll");
     QVERIFY2(scroll, "Overflow must scroll inside the specimen at the minimum window size.");
-    auto* last = light->findChild<QPushButton*>("button-size-icon-lg");
+    auto* last = light->findChild<QPushButton*>("button-size-icon");
     QVERIFY(last);
-    auto* previous = light->findChild<QPushButton*>("button-size-icon");
+    auto* previous = light->findChild<QPushButton*>("button-size-icon-sm");
     QVERIFY(previous);
     previous->setFocus(Qt::TabFocusReason);
     QTRY_VERIFY(previous->hasFocus());
@@ -861,7 +864,7 @@ void PreviewTest::statusLineSpecimenUsesSharedSurfaceInBothThemes() {
         auto* neutral = host->findChild<StatusLine*>("previewStatusNeutral");
         QVERIFY(available && unavailable && neutral);
         QCOMPARE(neutral->palette().color(QPalette::Window),
-                 resolvedThemeForWidget(*host).colors.muted);
+                 resolvedThemeForWidget(*host).colors.surfaceRaised);
         QCOMPARE(neutral->height(), available->height());
         QCOMPARE(unavailable->height(), available->height());
         QVERIFY(available->findChild<QPushButton*>("previewStatusNext"));

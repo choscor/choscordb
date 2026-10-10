@@ -234,14 +234,12 @@ class PinningSidebarTest final : public QObject {
         QVERIFY(savePins(path, {pin()}));
         for (const auto mode :
              {choscordb::design::ThemeMode::Light, choscordb::design::ThemeMode::Dark}) {
-            for (const auto density :
-                 {choscordb::design::Density::Compact, choscordb::design::Density::Comfortable}) {
+            for (const auto height : {640, 900}) {
                 choscordb::MainWindow window(nullptr, path);
-                window.resize(960, density == choscordb::design::Density::Compact ? 640 : 900);
+                window.resize(960, height);
                 auto* theme = window.findChild<choscordb::design::ThemeManager*>();
                 QVERIFY(theme);
                 theme->setMode(mode);
-                theme->setDensity(density);
                 window.show();
                 auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
                 auto* saved = window.findChild<QListWidget*>("savedConnections");
@@ -277,7 +275,7 @@ class PinningSidebarTest final : public QObject {
                 auto* connectionSection = savedCaption->parentWidget();
                 QCOMPARE(section->geometry().top() - (connectionSection->geometry().bottom() + 1),
                          16);
-                QCOMPARE(pinGap, 1);
+                QCOMPARE(pinGap, 2);
                 QCOMPARE(caption->height(), caption->sizeHint().height());
                 QCOMPARE(objectSection->geometry().top() - (section->geometry().bottom() + 1), 16);
             }
@@ -365,9 +363,8 @@ class PinningSidebarTest final : public QObject {
         }
         QTRY_COMPARE(saved->count(), 32);
         for (const auto mode : {design::ThemeMode::Light, design::ThemeMode::Dark}) {
-            for (const auto density : {design::Density::Compact, design::Density::Comfortable}) {
+            {
                 theme->setMode(mode);
-                theme->setDensity(density);
                 QTRY_COMPARE(saved->verticalScrollBar()->maximum(), 0);
                 QTRY_VERIFY(saved->viewport()->rect().contains(
                     saved->visualItemRect(saved->item(saved->count() - 1))));

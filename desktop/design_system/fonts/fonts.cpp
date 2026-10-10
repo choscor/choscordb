@@ -24,29 +24,22 @@ bool bundledFontsAvailable() {
 
 TypographySpec typographySpec(TypographyRole role) {
     const auto family = QFontDatabase::systemFont(QFontDatabase::GeneralFont).family();
+    const auto fixed = QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
     switch (role) {
-    case TypographyRole::SectionCaption:
+    case TypographyRole::Caption:
         return {family, 10, 14, QFont::DemiBold};
-    case TypographyRole::Metadata:
-        return {QFontDatabase::systemFont(QFontDatabase::FixedFont).family(), 12, 17,
-                QFont::Normal};
     case TypographyRole::Small:
         return {family, 11, 16, QFont::Normal};
-    case TypographyRole::NavigationDetail:
-        return {family, 10, 16, QFont::Normal};
-    case TypographyRole::Heading:
-        return {family, 14, 20, QFont::DemiBold};
-    case TypographyRole::Base:
-        return {family, 13, 22, QFont::Normal};
-    case TypographyRole::DialogTitle:
-        return {family, 14, 20, QFont::DemiBold};
-    case TypographyRole::Monospace:
-        return {QFontDatabase::systemFont(QFontDatabase::FixedFont).family(), 13, 24,
-                QFont::Normal};
-    case TypographyRole::Ui:
+    case TypographyRole::Dense:
+        return {family, 12, 16, QFont::Normal};
+    case TypographyRole::Body:
         return {family, 13, 18, QFont::Normal};
-    case TypographyRole::Field:
-        return {family, 12, 17, QFont::Medium};
+    case TypographyRole::Title:
+        return {family, 14, 20, QFont::DemiBold};
+    case TypographyRole::Mono:
+        return {fixed, 13, 20, QFont::Normal};
+    case TypographyRole::Metadata:
+        return {fixed, 12, 16, QFont::Normal};
     }
     return {};
 }
@@ -56,7 +49,7 @@ QFont resolveTypography(TypographyRole role) {
     // preferences, while all UI roles continue to request the platform font.
     (void)bundledFontsAvailable();
     // SQL editors apply their own saved font preferences; preserve that seam.
-    if (role == TypographyRole::Monospace || role == TypographyRole::Metadata) {
+    if (role == TypographyRole::Mono || role == TypographyRole::Metadata) {
         auto font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
         font.setPixelSize(typographySpec(role).pixelSize);
         return font;
@@ -65,9 +58,10 @@ QFont resolveTypography(TypographyRole role) {
     auto font = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
     font.setPixelSize(spec.pixelSize);
     font.setWeight(spec.weight);
-    font.setLetterSpacing(QFont::AbsoluteSpacing, role == TypographyRole::SectionCaption ? 1.3
-                                                  : role == TypographyRole::Field        ? 0
-                                                                                         : -0.12);
+    font.setLetterSpacing(QFont::AbsoluteSpacing,
+                          role == TypographyRole::Caption                                 ? 1.3
+                          : role == TypographyRole::Body || role == TypographyRole::Title ? -0.12
+                                                                                          : 0);
     return font;
 }
 

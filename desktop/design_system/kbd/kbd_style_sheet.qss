@@ -1,7 +1,7 @@
 QLabel[designRole="kbd"] {
-  background: @muted;
-  color: @mutedText;
-  border-radius: 4px;
+  background: @surface-raised;
+  color: @fg-muted;
+  border-radius: @radius-sm;
   padding: 2px 5px;
-  font-size: 10px;
+  font-size: @font-caption;
 }

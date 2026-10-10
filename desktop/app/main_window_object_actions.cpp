@@ -121,7 +121,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         auto* sections = new design::DialogSections(&dialog);
         root->addWidget(sections);
         auto* heading = new design::Text(dialog.windowTitle(), sections);
-        heading->setTypographyRole(design::TypographyRole::DialogTitle);
+        heading->setTypographyRole(design::TypographyRole::Title);
         sections->headerLayout()->addWidget(heading);
         auto* layout = sections->bodyLayout();
         layout->addWidget(dialog.createDescription(
@@ -138,7 +138,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         preview->setAccessibleName(tr("SQL preview"));
         preview->setReadOnly(true);
         preview->setProperty("designRole", "codePreview");
-        preview->setFont(design::resolveTypography(design::TypographyRole::Monospace));
+        preview->setFont(design::resolveTypography(design::TypographyRole::Mono));
         preview->setFrameShape(QFrame::NoFrame);
         layout->addWidget(preview);
         auto* status = dialog.createInlineStatus(&dialog);

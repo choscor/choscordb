@@ -8,6 +8,16 @@
 #include <QStyleOptionViewItem>
 
 namespace choscordb::design {
+StatusTint historyStatusTint(const Colors& colors, QStringView status) {
+    if (status == u"completed")
+        return {colors.success, colors.successSurface};
+    if (status == u"failed" || status == u"disconnected")
+        return {colors.danger, colors.dangerSurface};
+    if (status == u"cancelled")
+        return {colors.warning, colors.warningSurface};
+    return {colors.fgMuted, colors.surfaceRaised};
+}
+
 namespace {
 QString statusLabel(const QString& status) {
     if (status == "completed")
@@ -25,7 +35,7 @@ QString statusLabel(const QString& status) {
 QSize RecentHistoryRowDelegate::sizeHint(const QStyleOptionViewItem& option,
                                          const QModelIndex&) const {
     const int height = typographySpec(TypographyRole::Metadata).lineHeight +
-                       2 * typographySpec(TypographyRole::NavigationDetail).lineHeight +
+                       2 * typographySpec(TypographyRole::Small).lineHeight +
                        spacing(Spacing::Two) + spacing(Spacing::Half);
     return {option.rect.width(), height};
 }
@@ -45,22 +55,24 @@ void RecentHistoryRowDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(selected ? colors.border : Qt::transparent);
-    painter->setBrush((selected || hovered) ? colors.muted : colors.sidebar);
-    painter->drawRoundedRect(bounds, radius(Radius::Small), radius(Radius::Small));
+    painter->setBrush(selected  ? colors.selection
+                      : hovered ? colors.surfaceRaised
+                                : colors.sidebar);
+    painter->drawRoundedRect(bounds, radius(Radius::Medium), radius(Radius::Medium));
 
     const QFont sqlFont = resolveTypography(TypographyRole::Metadata);
     const QFontMetrics sqlMetrics(sqlFont);
     auto sql = index.data(SqlRole).toString();
     sql.replace(QLatin1Char('\n'), QLatin1Char(' '));
     painter->setFont(sqlFont);
-    painter->setPen(colors.text);
+    painter->setPen(colors.fg);
     const int firstY = bounds.top() + spacing(Spacing::One);
     const int sqlLineHeight = sqlMetrics.lineSpacing();
     const auto shown = sqlMetrics.elidedText(sql, Qt::ElideRight, textWidth);
     painter->drawText(QRect(bounds.left() + inset, firstY, textWidth, sqlLineHeight),
                       Qt::AlignLeft | Qt::AlignVCenter, shown);
 
-    const QFont detailFont = resolveTypography(TypographyRole::NavigationDetail);
+    const QFont detailFont = resolveTypography(TypographyRole::Small);
     const QFontMetrics detailMetrics(detailFont);
     painter->setFont(detailFont);
     const int dateY = bounds.bottom() - spacing(Spacing::One) - detailMetrics.height();
@@ -69,33 +81,21 @@ void RecentHistoryRowDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     const int badgeWidth = detailMetrics.horizontalAdvance(status) + 2 * inset;
     const int badgeLeft = bounds.right() - inset - badgeWidth;
     const QRect badge(badgeLeft, dateY - lineGap, badgeWidth, detailMetrics.height() + 2 * lineGap);
-    QColor badgeInk = colors.mutedText;
-    QColor badgeSurface = colors.muted;
-    const auto rawStatus = index.data(StatusRole).toString();
-    if (rawStatus == "completed") {
-        badgeInk = colors.success;
-        badgeSurface = colors.successSurface;
-    } else if (rawStatus == "failed" || rawStatus == "disconnected") {
-        badgeInk = colors.danger;
-        badgeSurface = colors.dangerSurface;
-    } else if (rawStatus == "cancelled") {
-        badgeInk = colors.warning;
-        badgeSurface = colors.warningSurface;
-    }
+    const auto tint = historyStatusTint(colors, index.data(StatusRole).toString());
     painter->setPen(Qt::NoPen);
-    painter->setBrush(badgeSurface);
+    painter->setBrush(tint.surface);
     painter->drawRoundedRect(badge, radius(Radius::Small), radius(Radius::Small));
-    painter->setPen(badgeInk);
+    painter->setPen(tint.ink);
     painter->drawText(badge, Qt::AlignCenter, status);
 
     const int iconSize = dimension(Dimension::IconSmall);
     const int metadataLeft = bounds.left() + inset;
-    themedIcon(driverIcon(index.data(DriverRole).toString()), colors.mutedText, iconSize)
+    themedIcon(driverIcon(index.data(DriverRole).toString()), colors.fgMuted, iconSize)
         .paint(painter, QRect(metadataLeft, connectionY, iconSize, iconSize));
     const int connectionLeft = metadataLeft + iconSize + lineGap;
     const auto when = index.data(WhenRole).toString();
     const int connectionWidth = qMax(0, bounds.right() - inset - connectionLeft);
-    painter->setPen(colors.mutedText);
+    painter->setPen(colors.fgMuted);
     painter->drawText(QRect(connectionLeft, connectionY, connectionWidth, detailMetrics.height()),
                       Qt::AlignLeft | Qt::AlignVCenter,
                       detailMetrics.elidedText(index.data(ConnectionRole).toString(),
@@ -105,10 +105,10 @@ void RecentHistoryRowDelegate::paint(QPainter* painter, const QStyleOptionViewIt
                       Qt::AlignLeft | Qt::AlignVCenter,
                       detailMetrics.elidedText(when, Qt::ElideRight, dateWidth));
     if (option.state & QStyle::State_HasFocus) {
-        painter->setPen(QPen(colors.focus, focusSpec().borderWidth));
+        painter->setPen(QPen(colors.ring, focusSpec().borderWidth));
         painter->setBrush(Qt::NoBrush);
-        painter->drawRoundedRect(bounds.adjusted(1, 1, -1, -1), radius(Radius::Small),
-                                 radius(Radius::Small));
+        painter->drawRoundedRect(bounds.adjusted(1, 1, -1, -1), radius(Radius::Medium),
+                                 radius(Radius::Medium));
     }
     painter->restore();
 }

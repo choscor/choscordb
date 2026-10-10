@@ -19,6 +19,10 @@ exception is necessary, give the reason in the marker or exception entry.
 - Qt may collect a path from a native dialog or present a backend result. Pass
   the request to Rust for validation and execution. UI input hints do not
   replace Rust validation. Keep backend work off the UI thread.
+- Rust is the source of truth for behavior, policy, limits, persisted encodings
+  and backend contracts, exposed as typed DTOs over the CXX bridge. Visual
+  tokens (colors, sizes, radii, typography) are frontend-owned in C++ and never
+  cross the bridge.
 - Rust is the single source of defaults, limits, budgets, intervals, user-facing
   policy messages, and persisted encodings (IDs, context strings, file names,
   storage locations). Expose them through the bridge; do not restate them in C++.
@@ -59,6 +63,17 @@ exception is necessary, give the reason in the marker or exception entry.
 These rules apply to the Qt Widgets UI in `desktop/app/` and `desktop/widgets/`.
 For changes in `desktop/design_system/`, also follow its `CLAUDE.md`.
 
+### Design system
+
+- `desktop/design_system/` is the single, compact source of visual tokens and
+  components; `docs/design/design-system.md` lists the vocabulary.
+- Every screen in `desktop/app/` and `desktop/widgets/` uses its tokens, roles
+  and components, with no local colors, sizes, radii, font sizes or stylesheet
+  strings.
+- There is one stylesheet assembly, and it uses named tokens only.
+- Adding a token requires a real second use and a gallery specimen. Aliases
+  (two names for one value) are not allowed.
+
 - Reuse presentation from `desktop/design_system/`. Stock Qt controls styled by
   `ThemeManager`, `ControlStyle`, or shared QSS count as shared components; do not
   add an empty subclass just to increase the subclass count.
@@ -72,11 +87,11 @@ For changes in `desktop/design_system/`, also follow its `CLAUDE.md`.
 - Keep user-selected SQL editor fonts as user settings.
 - Use `ConfirmationDialog` for message boxes and shared dialog shells for modal
   content when their contracts fit.
-- Keep sibling screens on one pattern: `TypographyRole::DialogTitle` for dialog
+- Keep sibling screens on one pattern: `TypographyRole::Title` for dialog
   titles, `design::DialogSections` for dialog header/body/footer, `design::Button`
   (Outline for Cancel/Close) instead of stock `QDialogButtonBox` buttons,
   `FieldValidation` or `designRole="fieldError"` for errors, the description role
-  for help text, `TypographyRole::Monospace` with `designRole="codePreview"` for
+  for help text, `TypographyRole::Mono` with `designRole="codePreview"` for
   SQL previews, `design::popupContextMenu`/`execContextMenu` for menus, and
   `design::Icon` roles instead of Qt standard icons outside macOS native menus.
 - Every value set on `designRole`, `variant`, `state`, or `designSurface` must be

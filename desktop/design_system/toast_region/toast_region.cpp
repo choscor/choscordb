@@ -3,6 +3,7 @@
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/icons.h"
 #include "design_system/metrics/metrics.h"
+#include "design_system/theme.h"
 #include <QAccessible>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -25,8 +26,14 @@ ToastRegion::ToastRegion(QWidget* parent)
     setAccessibleName(tr("Notifications"));
     setTextFormat(Qt::PlainText);
     setWordWrap(true);
-    // Reserve a separate column so wrapped notification text never meets the close button.
-    setContentsMargins(0, 0, 36, 0);
+    // Reserve a leading status-icon column and a trailing column so wrapped
+    // notification text never meets the icon or the close button.
+    setContentsMargins(leadingInset(), 0, 36, 0);
+    icon_ = new QLabel(this);
+    icon_->setObjectName("toastIcon");
+    icon_->setFixedSize(design::dimension(design::Dimension::Icon),
+                        design::dimension(design::Dimension::Icon));
+    icon_->hide();
     dismiss_ = new QToolButton(this);
     dismiss_->setObjectName("toastDismiss");
     dismiss_->setAccessibleName(tr("Dismiss notification"));
@@ -61,9 +68,18 @@ ToastRegion::ToastRegion(QWidget* parent)
     progress_->hide();
     hide();
 }
+int ToastRegion::leadingInset() {
+    return design::dimension(design::Dimension::Icon) + design::spacing(design::Spacing::Two);
+}
+void ToastRegion::showStatusIcon(design::Icon icon, const QColor& color) {
+    const int size = design::dimension(design::Dimension::Icon);
+    icon_->setPixmap(design::themedIcon(icon, color, size).pixmap(QSize(size, size)));
+    icon_->show();
+}
 void ToastRegion::resizeEvent(QResizeEvent* event) {
     QLabel::resizeEvent(event);
     dismiss_->move(qMax(0, width() - dismiss_->width() - 6), 6);
+    icon_->move(design::spacing(design::Spacing::Two), design::spacing(design::Spacing::Two));
     details_->move(
         design::spacing(design::Spacing::Three),
         qMax(0, height() - details_->height() - design::spacing(design::Spacing::Three)));
@@ -126,7 +142,7 @@ void ToastRegion::placeOverlay() {
     setMinimumHeight(0);
     setMaximumHeight(QWIDGETSIZE_MAX);
     details_->hide();
-    setContentsMargins(0, 0, 36, 0);
+    setContentsMargins(leadingInset(), 0, 36, 0);
     setText(fullContent_);
     const bool progressVisible = !progress_->isHidden();
     const int progressSpace = progressVisible ? design::spacing(design::Spacing::Eight) : 0;
@@ -140,7 +156,8 @@ void ToastRegion::placeOverlay() {
     if (measuredHeight() > heightLimit) {
         details_->adjustSize();
         details_->show();
-        setContentsMargins(0, 0, 36, details_->height() + design::spacing(design::Spacing::Six));
+        setContentsMargins(leadingInset(), 0, 36,
+                           details_->height() + design::spacing(design::Spacing::Six));
         auto title = fullTitle_;
         auto body = fullBody_;
         const auto content = [](const QString& title, const QString& body) {
@@ -251,6 +268,13 @@ void ToastRegion::renderToast(const QString& title, const QString& body, ToastVa
     setProperty("variant", name);
     style()->unpolish(this);
     style()->polish(this);
+    const auto& colors = design::resolvedThemeForWidget(*this).colors;
+    showStatusIcon(variant == ToastVariant::Success   ? design::Icon::Check
+                   : variant == ToastVariant::Warning ? design::Icon::Warning
+                                                      : design::Icon::Error,
+                   variant == ToastVariant::Success   ? colors.success
+                   : variant == ToastVariant::Warning ? colors.warning
+                                                      : colors.danger);
     setTextFormat(Qt::RichText);
     setAccessibleDescription(title + QStringLiteral(". ") + body);
     display(QStringLiteral("<b>%1</b><br/>%2").arg(title.toHtmlEscaped(), body.toHtmlEscaped()));
@@ -307,6 +331,7 @@ void ToastRegion::renderProgress(const QString& title, const QString& detail) {
     setProperty("variant", "progress");
     style()->unpolish(this);
     style()->polish(this);
+    showStatusIcon(design::Icon::Loader, design::resolvedThemeForWidget(*this).colors.fgMuted);
     progress_->show();
     setTextFormat(Qt::RichText);
     const auto content =

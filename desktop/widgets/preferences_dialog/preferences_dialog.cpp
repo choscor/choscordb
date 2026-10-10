@@ -36,16 +36,16 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     setWindowTitle(tr("Preferences"));
     setObjectName("preferencesDialog");
     resize(design::dialogInitialSize(design::DialogSize::Preferences));
-    const auto metrics = design::resolveMetrics(design::Density::Compact, true);
     auto* layout = new QVBoxLayout(this);
     auto* sections = new design::DialogSections(this);
     layout->addWidget(sections);
     auto* headerLayout = sections->headerLayout();
     auto* header = headerLayout->parentWidget();
-    header->setFixedHeight(metrics.modalHeaderHeight);
-    headerLayout->setContentsMargins(metrics.modalContentInset, 0, metrics.modalContentInset, 0);
+    header->setFixedHeight(design::layoutMetrics().modalHeaderHeight);
+    headerLayout->setContentsMargins(design::spacing(design::Spacing::Four), 0,
+                                     design::spacing(design::Spacing::Four), 0);
     auto* heading = new design::Text(tr("Preferences"), header);
-    heading->setTypographyRole(design::TypographyRole::DialogTitle);
+    heading->setTypographyRole(design::TypographyRole::Title);
     headerLayout->addWidget(heading);
     headerLayout->addStretch();
     auto* dismiss = new design::Button({}, header);
@@ -74,7 +74,7 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     status_->setWordWrap(true);
     status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
     body->addWidget(statusLine_);
-    auto addPage = [pages, metrics](QWidget* page, const QString& title) {
+    auto addPage = [pages](QWidget* page, const QString& title) {
         auto* scroll = new QScrollArea(pages);
         scroll->setWidgetResizable(true);
         scroll->setFrameShape(QFrame::NoFrame);
@@ -83,8 +83,9 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
         page->setAttribute(Qt::WA_StyledBackground);
         page->setBackgroundRole(QPalette::Base);
         if (page->layout())
-            page->layout()->setContentsMargins(metrics.modalContentInset, metrics.modalFooterInset,
-                                               metrics.modalContentInset, metrics.modalFooterInset);
+            page->layout()->setContentsMargins(
+                design::spacing(design::Spacing::Four), design::layoutMetrics().modalFooterInset,
+                design::spacing(design::Spacing::Four), design::layoutMetrics().modalFooterInset);
         scroll->setWidget(page);
         pages->addTab(scroll, title);
     };
@@ -209,8 +210,9 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     auto* footer = buttons->parentWidget();
     footer->setProperty("designSurface", "muted");
     footer->setAttribute(Qt::WA_StyledBackground);
-    buttons->setContentsMargins(metrics.modalFooterInset, metrics.modalFooterVerticalInset,
-                                metrics.modalFooterInset, metrics.modalFooterVerticalInset);
+    buttons->setContentsMargins(
+        design::layoutMetrics().modalFooterInset, design::layoutMetrics().modalFooterVerticalInset,
+        design::layoutMetrics().modalFooterInset, design::layoutMetrics().modalFooterVerticalInset);
     auto* reset = new design::Button(tr("Restore defaults"), footer);
     reset_ = reset;
     reset->setObjectName("preferencesReset");
@@ -437,7 +439,7 @@ EditorPreferences PreferencesDialog::draft() const {
 void PreferencesDialog::fill(const EditorPreferences& value) {
     system_->setChecked(value.fontFamily.isEmpty());
     font_->setCurrentFont(value.fontFamily.isEmpty()
-                              ? design::resolveTypography(design::TypographyRole::Monospace)
+                              ? design::resolveTypography(design::TypographyRole::Mono)
                               : QFont(value.fontFamily));
     size_->setValue(value.fontSize);
     for (qsizetype i = 0; i < catalog_.size(); ++i) {
@@ -452,9 +454,8 @@ void PreferencesDialog::fill(const EditorPreferences& value) {
 }
 void PreferencesDialog::updatePreview() {
     font_->setEnabled(!system_->isChecked());
-    QFont selected = system_->isChecked()
-                         ? design::resolveTypography(design::TypographyRole::Monospace)
-                         : font_->currentFont();
+    QFont selected = system_->isChecked() ? design::resolveTypography(design::TypographyRole::Mono)
+                                          : font_->currentFont();
     selected.setPointSize(size_->value());
     preview_->setEditorFont(selected);
 }

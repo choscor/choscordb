@@ -1,6 +1,6 @@
 #include "design_system/dock/dock_style.h"
 #include "design_system/icons.h"
-#include "design_system/style/style_resource.h"
+#include "design_system/style/stylesheet.h"
 #include "design_system/theme.h"
 
 #include <QDockWidget>
@@ -9,10 +9,6 @@
 #include <QToolButton>
 
 namespace choscordb::design {
-
-QString dockApplicationStyleSheet() {
-    return loadStyleSheet(QStringLiteral("dock/title.qss"));
-}
 
 void styleDockWidget(QDockWidget& dock, const ResolvedTheme& theme) {
     auto* titleBar = new QWidget(&dock);
@@ -28,7 +24,7 @@ void styleDockWidget(QDockWidget& dock, const ResolvedTheme& theme) {
         button->setObjectName(name);
         button->setProperty("iconOnly", true);
         button->setToolTip(tooltip);
-        button->setIcon(themedIcon(icon, theme.colors.text, 14));
+        button->setIcon(themedIcon(icon, theme.colors.fg, 14));
         button->setIconSize(QSize(14, 14));
         button->setFixedSize(30, 30);
         row->addWidget(button);
@@ -44,7 +40,6 @@ void styleDockWidget(QDockWidget& dock, const ResolvedTheme& theme) {
     titleBar->setObjectName(QStringLiteral("dockTitleBar"));
     titleBar->setFixedHeight(34);
     dock.setTitleBarWidget(titleBar);
-    dock.setStyleSheet(loadStyleSheet(QStringLiteral("dock/widget.qss"))
-                           .arg(theme.colors.surface.name(), theme.colors.text.name()));
+    dock.setStyleSheet(themedStyleSheet(u"dock/dock_widget_style_sheet.qss", theme));
 }
 } // namespace choscordb::design

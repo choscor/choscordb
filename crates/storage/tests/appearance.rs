@@ -1,14 +1,12 @@
 use choscordb_storage::{
-    APPEARANCE_LAYOUT_VERSION, Accent, AccentPreset, AppearanceChoiceError, AppearanceLayout,
-    Density, Storage, StorageError, ThemeMode, WindowGeometry, WorkspaceLayout,
+    APPEARANCE_LAYOUT_VERSION, AppearanceLayout, Storage, StorageError, ThemeMode, WindowGeometry,
+    WorkspaceLayout,
 };
 
 fn customized() -> AppearanceLayout {
     AppearanceLayout {
         version: APPEARANCE_LAYOUT_VERSION,
         theme: ThemeMode::Dark,
-        density: Density::Comfortable,
-        accent: Accent::Custom("#1267A8".into()),
         layout: WorkspaceLayout {
             navigator_width: 312,
             editor_results_split: 575,
@@ -35,43 +33,6 @@ fn desktop_theme_choices_use_the_persisted_theme_vocabulary() {
     for value in ["sepia", "Dark", "", " dark "] {
         assert_eq!(ThemeMode::parse_choice(value), None);
     }
-}
-
-#[test]
-fn desktop_density_and_accent_choices_use_the_persisted_vocabulary() {
-    assert_eq!(Density::parse_choice("compact"), Some(Density::Compact));
-    assert_eq!(
-        Density::parse_choice("comfortable"),
-        Some(Density::Comfortable)
-    );
-    assert_eq!(Density::parse_choice("Comfortable"), None);
-    for (name, expected) in [
-        ("cobalt", AccentPreset::Cobalt),
-        ("azure", AccentPreset::Azure),
-        ("violet", AccentPreset::Violet),
-        ("teal", AccentPreset::Teal),
-        ("green", AccentPreset::Green),
-        ("orange", AccentPreset::Orange),
-        ("rose", AccentPreset::Rose),
-    ] {
-        assert_eq!(AccentPreset::parse_choice(name), Some(expected));
-        assert_eq!(
-            Accent::parse_choice("preset", name.into()),
-            Ok(Accent::Preset(expected))
-        );
-    }
-    assert_eq!(
-        Accent::parse_choice("custom", "#123ABC".into()),
-        Ok(Accent::Custom("#123ABC".into()))
-    );
-    assert_eq!(
-        Accent::parse_choice("preset", "unknown".into()),
-        Err(AppearanceChoiceError::UnknownAccentPreset)
-    );
-    assert_eq!(
-        Accent::parse_choice("other", "cobalt".into()),
-        Err(AppearanceChoiceError::UnknownAccentKind)
-    );
 }
 
 #[test]
@@ -111,7 +72,15 @@ fn corrupt_and_unsupported_records_are_reported_and_never_overwritten_on_load() 
     for (stored, expected_error) in [
         ("{not json", "corrupt"),
         (
-            r##"{"version":2,"theme":"system","density":"compact","accent":{"kind":"preset","value":"cobalt"},"layout":{"navigator_width":280,"editor_results_split":600,"history_height":220,"navigator_visible":true,"history_visible":false},"geometry":{"x":0,"y":0,"width":1280,"height":900,"maximized":false}}"##,
+            r##"{"version":1,"theme":"system","density":"compact","accent":{"kind":"preset","value":"cobalt"},"sidebar":"left","layout":{"navigator_width":280,"editor_results_split":600,"history_height":220,"navigator_visible":true,"history_visible":false},"geometry":{"x":0,"y":0,"width":1280,"height":900,"maximized":false}}"##,
+            "corrupt",
+        ),
+        (
+            r##"{"version":2,"theme":"system","density":"compact","layout":{"navigator_width":280,"editor_results_split":600,"history_height":220,"navigator_visible":true,"history_visible":false},"geometry":{"x":0,"y":0,"width":1280,"height":900,"maximized":false}}"##,
+            "corrupt",
+        ),
+        (
+            r##"{"version":3,"theme":"system","layout":{"navigator_width":280,"editor_results_split":600,"history_height":220,"navigator_visible":true,"history_visible":false},"geometry":{"x":0,"y":0,"width":1280,"height":900,"maximized":false}}"##,
             "unsupported",
         ),
     ] {
@@ -130,7 +99,7 @@ fn corrupt_and_unsupported_records_are_reported_and_never_overwritten_on_load() 
         let error = storage.appearance_layout().unwrap_err();
         assert!(match expected_error {
             "corrupt" => matches!(error, StorageError::CorruptAppearance),
-            "unsupported" => matches!(error, StorageError::UnsupportedAppearanceVersion(2)),
+            "unsupported" => matches!(error, StorageError::UnsupportedAppearanceVersion(3)),
             _ => false,
         });
         drop(storage);
@@ -144,6 +113,55 @@ fn corrupt_and_unsupported_records_are_reported_and_never_overwritten_on_load() 
             .unwrap();
         assert_eq!(unchanged, stored);
     }
+}
+
+#[test]
+fn version_one_record_drops_density_and_accent_and_saves_as_version_two() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("v1.sqlite");
+    drop(Storage::open(&path).unwrap());
+    let stored = r##"{"version":1,"theme":"dark","density":"comfortable","accent":{"kind":"custom","value":"#1267A8"},"layout":{"navigator_width":312,"editor_results_split":575,"history_height":244,"navigator_visible":true,"history_visible":true},"geometry":{"x":0,"y":0,"width":1280,"height":900,"maximized":false}}"##;
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute(
+        "INSERT INTO appearance_layout(singleton,value) VALUES (1,?1)",
+        [stored],
+    )
+    .unwrap();
+    drop(db);
+
+    let mut storage = Storage::open(&path).unwrap();
+    let loaded = storage.appearance_layout().unwrap().unwrap();
+    assert_eq!(APPEARANCE_LAYOUT_VERSION, 2);
+    assert_eq!(
+        loaded,
+        AppearanceLayout {
+            version: 2,
+            theme: ThemeMode::Dark,
+            layout: customized().layout,
+            geometry: WindowGeometry::default(),
+        }
+    );
+    storage.set_appearance_layout(&loaded).unwrap();
+    drop(storage);
+
+    let saved: serde_json::Value = serde_json::from_str(
+        &rusqlite::Connection::open(&path)
+            .unwrap()
+            .query_row(
+                "SELECT value FROM appearance_layout WHERE singleton=1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(saved["version"], 2);
+    assert!(saved.get("density").is_none());
+    assert!(saved.get("accent").is_none());
+    assert_eq!(
+        Storage::open(&path).unwrap().appearance_layout().unwrap(),
+        Some(loaded)
+    );
 }
 
 #[test]
@@ -185,7 +203,7 @@ fn implausible_geometry_falls_back_without_losing_appearance_or_rewriting_storag
     let storage = Storage::open(&path).unwrap();
     let loaded = storage.appearance_layout().unwrap().unwrap();
     assert_eq!(loaded.theme, ThemeMode::Dark);
-    assert_eq!(loaded.density, Density::Comfortable);
+    assert_eq!(loaded.layout, customized().layout);
     assert_eq!(loaded.geometry, WindowGeometry::default());
     drop(storage);
 
@@ -206,9 +224,6 @@ fn every_field_is_bounded_and_enums_reject_unknown_values() {
     assert!(valid.validate().is_ok());
 
     let mut cases = Vec::new();
-    let mut value = valid.clone();
-    value.accent = Accent::Custom("red".into());
-    cases.push(value);
     let mut value = valid.clone();
     value.geometry.width = 959;
     cases.push(value);
@@ -231,17 +246,9 @@ fn every_field_is_bounded_and_enums_reject_unknown_values() {
         ));
     }
 
-    let unknown = r##"{"version":1,"theme":"sepia","density":"compact","accent":{"kind":"preset","value":"cobalt"},"layout":{"navigator_width":280,"editor_results_split":600,"history_height":220,"navigator_visible":true,"history_visible":false},"geometry":{"x":0,"y":0,"width":1280,"height":900,"maximized":false}}"##;
+    let unknown = r##"{"version":2,"theme":"sepia","layout":{"navigator_width":280,"editor_results_split":600,"history_height":220,"navigator_visible":true,"history_visible":false},"geometry":{"x":0,"y":0,"width":1280,"height":900,"maximized":false}}"##;
     assert!(serde_json::from_str::<AppearanceLayout>(unknown).is_err());
-
-    assert!(
-        AppearanceLayout {
-            accent: Accent::Preset(AccentPreset::Cobalt),
-            ..AppearanceLayout::default()
-        }
-        .validate()
-        .is_ok()
-    );
+    assert!(AppearanceLayout::default().validate().is_ok());
 }
 
 #[test]
