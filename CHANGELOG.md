@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## [0.1.10]
+
+- Refreshed the interface with an orange brand palette, compact 4px sizing, flat sidebars, segmented pane tabs, and consistent hover and selection highlights.
+- Set all interface text in the bundled Geist and Geist Mono fonts, so every platform renders the same typeface at a larger, more readable scale.
+- Improved responsiveness with large navigator trees, pins, quick search, and result pages with large selections.
+- Show long text cells as a single-line preview in result grids while keeping the full value for editing and copying.
+- Aligned dialogs, menus, and status messages on one consistent design.
+- Fixed a failed sidebar or quick-search history request being mistaken for a failed workspace save or shutdown flush.
+- Fixed document tab titles eliding and confirmation dialogs scrolling when their text fits.
+- Fixed a separator line appearing under the macOS title bar.
+
 ## [0.1.9]
 
 - Added a side sheet for editing result cells.
