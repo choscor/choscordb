@@ -433,7 +433,7 @@ void ControlStyleTest::closableDocumentTabsUseCompactHeight() {
     QVERIFY(close);
     QVERIFY(tabs.tabRect(0).contains(close->geometry()));
     QCOMPARE(tabs.tabRect(0).width(), tabs.tabRect(1).width());
-    QVERIFY2(tabs.tabRect(0).width() >= 140 && tabs.tabRect(0).width() <= 160,
+    QVERIFY2(tabs.tabRect(0).width() >= 156 && tabs.tabRect(0).width() <= 176,
              qPrintable(QString::number(tabs.tabRect(0).width())));
 }
 

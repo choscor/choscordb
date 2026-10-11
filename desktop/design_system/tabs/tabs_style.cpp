@@ -39,11 +39,13 @@ void drawDocumentTabLabel(const QStyleOptionTab& tab, QPainter* painter, const Q
     const auto* close = bar.tabButton(index, QTabBar::RightSide);
     const int rightInset =
         spacing(Spacing::Two) + (close ? close->width() + spacing(Spacing::One) : 0);
-    const QRect textRect(left, tab.rect.top(), qMax(0, tab.rect.right() - rightInset - left + 1),
-                         tab.rect.height());
-    painter->drawText(
-        textRect, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine,
-        painter->fontMetrics().elidedText(tab.text, bar.elideMode(), textRect.width()));
+    const int textWidth = qMax(0, tab.rect.right() - rightInset - left + 1);
+    // Centre the cap height, not Geist's asymmetric ascent/descent line box,
+    // so the label's ink sits on the tab's centre line with its icon.
+    const auto metrics = painter->fontMetrics();
+    const int baseline = tab.rect.top() + (tab.rect.height() + metrics.capHeight()) / 2;
+    painter->drawText(QPoint(left, baseline),
+                      metrics.elidedText(tab.text, bar.elideMode(), textWidth));
     painter->restore();
 }
 } // namespace

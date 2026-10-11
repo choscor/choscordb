@@ -74,7 +74,7 @@ One name per value; aliases are not allowed. Phase 2 values:
 | `Row` | 28 | Result and object grids, navigator, lists, history, saved connections |
 | `Header` | 28 | Table and grid headers |
 | `Tab` | 32 | Pane and document tabs |
-| `DocumentTabWidth` | 124 | Document tab width |
+| `DocumentTabWidth` | 140 | Document tab width |
 | `Toolbar` | 32 | Workspace toolbar and dock titles |
 | `QuickSearchRow` | 44 | Quick-search result rows |
 | `IconSmall` / `Icon` | 12 / 16 | Icons |

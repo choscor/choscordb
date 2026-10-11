@@ -84,7 +84,7 @@ int dimension(Dimension value) {
     case Dimension::Tab:
         return 32;
     case Dimension::DocumentTabWidth:
-        return 124;
+        return 140;
     case Dimension::Toolbar:
         return 32;
     case Dimension::Progress:

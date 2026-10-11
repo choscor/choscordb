@@ -849,8 +849,8 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
             tabs->tabBar()->font().pixelSize(),
             choscordb::design::typographySpec(choscordb::design::TextStyle::Callout).pixelSize);
         QCOMPARE(tabs->tabBar()->tabRect(0).width(), tabs->tabBar()->tabRect(1).width());
-        QVERIFY(tabs->tabBar()->tabRect(0).width() >= 138);
-        QVERIFY(tabs->tabBar()->tabRect(0).width() <= 150);
+        QVERIFY(tabs->tabBar()->tabRect(0).width() >= 154);
+        QVERIFY(tabs->tabBar()->tabRect(0).width() <= 166);
         QCOMPARE(tabs->tabBar()->style()->pixelMetric(QStyle::PM_TabBarIconSize, nullptr,
                                                       tabs->tabBar()),
                  12);
@@ -955,7 +955,10 @@ void PreviewTest::documentTabContentsSitAtVerticalCenterInBothThemes() {
             const qreal textCenter = inkCenter(withText, withoutText);
             QVERIFY(textCenter >= 0);
             QVERIFY(qAbs(iconCenter - tab.center().y()) <= 0.5);
-            QVERIFY(qAbs(textCenter - tab.center().y()) <= 0.5);
+            QVERIFY2(qAbs(textCenter - tab.center().y()) <= 0.5,
+                     qPrintable(QString("Text center %1, tab center %2")
+                                    .arg(textCenter)
+                                    .arg(tab.center().y())));
             QVERIFY2(
                 qAbs(iconCenter - textCenter) <= 1.0,
                 qPrintable(

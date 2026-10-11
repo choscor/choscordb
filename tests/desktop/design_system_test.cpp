@@ -286,7 +286,7 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(dimension(Dimension::SwitchThumb), 12);
         QCOMPARE(dimension(Dimension::Progress), 4);
         QCOMPARE(dimension(Dimension::Scrollbar), 10);
-        QCOMPARE(dimension(Dimension::DocumentTabWidth), 124);
+        QCOMPARE(dimension(Dimension::DocumentTabWidth), 140);
         QCOMPARE(radius(Radius::Small), 4);
         QCOMPARE(radius(Radius::Medium), 6);
         QCOMPARE(radius(Radius::Large), 10);
