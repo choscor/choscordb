@@ -126,7 +126,10 @@ void ResultTableDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
     QStyleOptionViewItem rowOption(option);
     initStyleOption(&rowOption, index);
     // Qt 6.8 switches a hovered stylesheet item to a Windows-style painter,
-    // which changes the native macOS text geometry. Preserve row presentation.
+    // which changes the native macOS text geometry. Preserve row presentation
+    // and paint the hover surface through the background brush instead.
+    const bool hovered =
+        (rowOption.state & QStyle::State_MouseOver) && !(rowOption.state & QStyle::State_Selected);
     rowOption.state &= ~QStyle::State_MouseOver;
     auto* style = rowOption.widget ? rowOption.widget->style() : QApplication::style();
     if (const auto change = index.data(CellChangeRole).toInt();
@@ -135,6 +138,8 @@ void ResultTableDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
         rowOption.backgroundBrush = change == int(CellChange::Deleted)    ? colors.dangerSurface
                                     : change == int(CellChange::Inserted) ? colors.successSurface
                                                                           : colors.warningSurface;
+    } else if (hovered && option.widget) {
+        rowOption.backgroundBrush = theme(*option.widget).colors.surfaceRaised;
     }
     const bool link = hasLink(index);
     if (link) {
