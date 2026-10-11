@@ -27,6 +27,26 @@
       "path": "fonts/Geist/ttf/Geist-Bold.ttf",
       "local": "Geist-Bold.ttf",
       "sha256": "3f21f02b827228c3f0c5fb230d027b5a1a263013618e8052bc1b3c5692812c88"
+    },
+    {
+      "path": "fonts/GeistMono/ttf/GeistMono-Regular.ttf",
+      "local": "GeistMono-Regular.ttf",
+      "sha256": "5a0de4b3d54ab272f76a1d8c84b7fb24c67bbec6591d5300e61c7bc10094b6c8"
+    },
+    {
+      "path": "fonts/GeistMono/ttf/GeistMono-Medium.ttf",
+      "local": "GeistMono-Medium.ttf",
+      "sha256": "6fa6a795c17a11bcbef410f52a853e8503f8e25d92762d202d907c54f5c0c0fb"
+    },
+    {
+      "path": "fonts/GeistMono/ttf/GeistMono-SemiBold.ttf",
+      "local": "GeistMono-SemiBold.ttf",
+      "sha256": "fd16d1b58c2178315d110eb399a92cb02bac80f8250e0b58a605fe96ee257364"
+    },
+    {
+      "path": "fonts/GeistMono/ttf/GeistMono-Bold.ttf",
+      "local": "GeistMono-Bold.ttf",
+      "sha256": "325de0913317e63c9b0084d3f571c6d1c9279e776e9260c62be19e1c12d1be3c"
     }
   ]
 }

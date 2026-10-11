@@ -39,5 +39,9 @@
     <file alias="Geist-Medium.ttf">fonts/Geist-Medium.ttf</file>
     <file alias="Geist-SemiBold.ttf">fonts/Geist-SemiBold.ttf</file>
     <file alias="Geist-Bold.ttf">fonts/Geist-Bold.ttf</file>
+    <file alias="GeistMono-Regular.ttf">fonts/GeistMono-Regular.ttf</file>
+    <file alias="GeistMono-Medium.ttf">fonts/GeistMono-Medium.ttf</file>
+    <file alias="GeistMono-SemiBold.ttf">fonts/GeistMono-SemiBold.ttf</file>
+    <file alias="GeistMono-Bold.ttf">fonts/GeistMono-Bold.ttf</file>
   </qresource>
 </RCC>
