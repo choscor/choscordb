@@ -37,6 +37,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QtTest>
+#include <algorithm>
 class ObjectDataWorkspaceTest : public QObject {
     Q_OBJECT
     static void triggerTableAction(QTableView* grid, const QString& label) {
@@ -291,11 +292,20 @@ class ObjectDataWorkspaceTest : public QObject {
 
         const auto firstCell = grid->visualRect(model->index(0, 0));
         const auto secondCell = grid->visualRect(model->index(0, 1));
+        // Measure glyph coverage against this grab's own cell background, so a
+        // hover surface does not move an antialiased edge across a fixed cutoff.
         const auto textLeft = [&] {
             const auto image = grid->viewport()->grab().toImage();
+            const int background =
+                image.pixelColor(firstCell.right() - 4, firstCell.center().y()).lightness();
+            int darkest = background;
             for (int x = firstCell.left() + 2; x < firstCell.right() - 2; ++x)
                 for (int y = firstCell.top() + 2; y < firstCell.bottom() - 2; ++y)
-                    if (image.pixelColor(x, y).lightness() < 100)
+                    darkest = std::min(darkest, image.pixelColor(x, y).lightness());
+            const int cutoff = background - (background - darkest) * 6 / 10;
+            for (int x = firstCell.left() + 2; x < firstCell.right() - 2; ++x)
+                for (int y = firstCell.top() + 2; y < firstCell.bottom() - 2; ++y)
+                    if (image.pixelColor(x, y).lightness() < cutoff)
                         return x;
             return -1;
         };
