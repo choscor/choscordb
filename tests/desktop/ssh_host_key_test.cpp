@@ -2,6 +2,7 @@
 #include "widgets/profile_dialog/ssh_host_key_dialog.h"
 #include "workspace_test.h"
 #include "workspace_test_fixture.h"
+#include <QDir>
 #include <QElapsedTimer>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -139,14 +140,16 @@ void WorkspaceTest::sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint() 
         path->setText(invalid);
         QVERIFY2(!approve->isEnabled(), qPrintable(invalid));
     }
-    path->setText("/tmp/explicit known hosts");
+    // Rust accepts an absolute path for this platform, e.g. C:/ on Windows.
+    const auto knownHosts = QDir::rootPath() + QStringLiteral("tmp/explicit known hosts");
+    path->setText(knownHosts);
     QVERIFY(approve->isEnabled());
     QVERIFY(approved.isEmpty());
     approve->click();
     QCOMPARE(approved.count(), 1);
     auto* loading = review.findChild<QLabel*>("statusLoadingIcon");
     QVERIFY(loading && loading->isVisible());
-    QCOMPARE(approved.first().at(1).toString(), QString("/tmp/explicit known hosts"));
+    QCOMPARE(approved.first().at(1).toString(), knownHosts);
     const auto selected = qvariant_cast<choscordb::SshHostKeyCandidate>(approved.first().at(0));
     QCOMPARE(selected.opaqueJson, candidate.opaqueJson);
     QCOMPARE(selected.sha256, candidate.sha256);

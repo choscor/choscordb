@@ -189,12 +189,19 @@ pub enum SshHostKeyApproval {
 pub fn validate_known_hosts_path(literal: &str) -> Result<()> {
     let path = Path::new(literal);
     let normalized: std::path::PathBuf = path.components().collect();
+    // Windows rebuilds components with `\`, while backslashes are rejected below,
+    // so compare against the literal with `/` read as the separator there.
+    let expected = if cfg!(windows) {
+        literal.replace('/', std::path::MAIN_SEPARATOR_STR)
+    } else {
+        literal.to_owned()
+    };
     if literal.is_empty()
         || literal.len() > 16 * 1024
         || literal.starts_with('~')
         || !path.is_absolute()
         || path.file_name().is_none()
-        || normalized.as_os_str() != path.as_os_str()
+        || normalized.as_os_str() != std::ffi::OsStr::new(&expected)
         || path.components().any(|part| {
             matches!(
                 part,

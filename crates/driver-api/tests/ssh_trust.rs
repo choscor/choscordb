@@ -306,6 +306,22 @@ fn known_hosts_destination_must_be_a_literal_absolute_normalized_path() {
         assert!(validate_known_hosts_path(path).is_err(), "{path:?}");
     }
     assert!(validate_known_hosts_path(&format!("/{}", "a".repeat(16 * 1024))).is_err());
-    assert!(validate_known_hosts_path("/tmp/explicit known hosts").is_ok());
-    assert!(validate_known_hosts_path("/Users/me/.ssh/known_hosts").is_ok());
+    #[cfg(not(windows))]
+    {
+        assert!(validate_known_hosts_path("/tmp/explicit known hosts").is_ok());
+        assert!(validate_known_hosts_path("/Users/me/.ssh/known_hosts").is_ok());
+    }
+    #[cfg(windows)]
+    {
+        assert!(validate_known_hosts_path("C:/Users/me/.ssh/known_hosts").is_ok());
+        for path in [
+            "/tmp/known_hosts",
+            "C:known_hosts",
+            "C:\\Users\\me\\known_hosts",
+            "C:/Users//me/known_hosts",
+            "C:/Users/./me/known_hosts",
+        ] {
+            assert!(validate_known_hosts_path(path).is_err(), "{path:?}");
+        }
+    }
 }
