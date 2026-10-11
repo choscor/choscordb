@@ -36,8 +36,8 @@ class SelectedConnectionProxy final : public QSortFilterProxyModel {
     }
     const QList<quint64>& visible() const { return ordered_; }
     void refreshVisibility() { refreshFilter(); }
-    void setText(const QString& text) {
-        filter_ = TextFilter(text);
+    void setText(const QString& query) {
+        filter_ = TextFilter(query);
         refreshFilter();
     }
 
@@ -91,10 +91,10 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
         static_cast<SelectedConnectionProxy*>(proxy_)->setText(filter_->text());
         advanceSearch(searchGeneration_);
     });
-    connect(filter, &QLineEdit::textChanged, this, [this](const QString& text) {
-        if (text.trimmed().isEmpty()) {
+    connect(filter, &QLineEdit::textChanged, this, [this](const QString& query) {
+        if (query.trimmed().isEmpty()) {
             filterTimer_->stop();
-            static_cast<SelectedConnectionProxy*>(proxy_)->setText(text);
+            static_cast<SelectedConnectionProxy*>(proxy_)->setText(query);
         } else {
             filterTimer_->start(150);
         }

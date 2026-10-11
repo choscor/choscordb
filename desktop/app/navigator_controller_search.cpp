@@ -263,8 +263,8 @@ void NavigatorController::advanceSearch(quint64 generation, bool resume) {
     searchFinished_ = true;
     // Expand each distinct ancestor once, even when many matches share it.
     QSet<QModelIndex> ancestors;
-    for (const auto& match : std::exchange(searchMatches_, {})) {
-        for (auto ancestor = QModelIndex(match).parent(); ancestor.isValid();
+    for (const auto& found : std::exchange(searchMatches_, {})) {
+        for (auto ancestor = QModelIndex(found).parent(); ancestor.isValid();
              ancestor = ancestor.parent()) {
             if (ancestors.contains(ancestor))
                 break;
