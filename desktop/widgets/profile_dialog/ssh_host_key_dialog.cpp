@@ -21,7 +21,7 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
     auto* sections = new design::DialogSections(this);
     root->addWidget(sections);
     auto* heading = new design::Text(windowTitle(), sections);
-    heading->setTypographyRole(design::TypographyRole::Title);
+    heading->setTextStyle(design::TextStyle::Headline);
     sections->headerLayout()->addWidget(heading);
     auto* layout = sections->bodyLayout();
     layout->setSpacing(design::spacing(design::Spacing::Two));

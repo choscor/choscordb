@@ -143,7 +143,7 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
         const auto treeImage = tree->viewport()->grab().toImage();
         QVERIFY(parentRow.left() > 6);
         QCOMPARE(treeImage.pixelColor(parentRow.left() - 1, parentRow.bottom() - 4),
-                 choscordb::design::resolvedThemeForWidget(*tree).colors.selection);
+                 choscordb::design::resolvedThemeForWidget(*tree).colors.surface);
         const auto branchInk = choscordb::design::resolvedThemeForWidget(*tree).colors.fgMuted;
         bool hasMutedBranch = false;
         for (int y = parentRow.top(); y <= parentRow.bottom(); ++y)
@@ -158,16 +158,16 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
         QTest::mouseMove(tree->viewport(), row.center());
         QCoreApplication::processEvents();
         QCOMPARE(tree->viewport()->grab().toImage().pixelColor(row.right() - 8, row.center().y()),
-                 choscordb::design::resolvedThemeForWidget(*tree).colors.surfaceRaised);
+                 choscordb::design::resolvedThemeForWidget(*tree).colors.surface);
         // The fills reach within half a pixel of each row boundary: adjacent
         // highlighted rows leave a single logical pixel between them.
         const auto hoveredImage = tree->viewport()->grab().toImage();
         QVERIFY(hoveredImage.pixelColor(tree->viewport()->width() / 2, row.top()) !=
-                choscordb::design::resolvedThemeForWidget(*tree).colors.surfaceRaised);
+                choscordb::design::resolvedThemeForWidget(*tree).colors.surface);
         QCOMPARE(hoveredImage.pixelColor(row.right() - 8, row.top() + 1),
-                 choscordb::design::resolvedThemeForWidget(*tree).colors.surfaceRaised);
+                 choscordb::design::resolvedThemeForWidget(*tree).colors.surface);
         QCOMPARE(hoveredImage.pixelColor(row.right() - 8, row.bottom() - 1),
-                 choscordb::design::resolvedThemeForWidget(*tree).colors.surfaceRaised);
+                 choscordb::design::resolvedThemeForWidget(*tree).colors.surface);
         auto* sidebarList = host->findChild<QListWidget*>("previewSidebarList");
         QVERIFY(sidebarList && sidebarList->isVisible());
         QCOMPARE(sidebarList->property("designSurface").toString(), QString("sidebar"));
@@ -177,7 +177,7 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
         QCoreApplication::processEvents();
         QCOMPARE(sidebarList->viewport()->grab().toImage().pixelColor(listRow.right() - 8,
                                                                       listRow.center().y()),
-                 choscordb::design::resolvedThemeForWidget(*sidebarList).colors.surfaceRaised);
+                 choscordb::design::resolvedThemeForWidget(*sidebarList).colors.surface);
     }
     QVERIFY(window.selectSpecimen("navigation-profile-row"));
     for (const auto* name : {"previewLight", "previewDark"}) {
@@ -226,7 +226,7 @@ void PreviewTest::driverBadgeAndConnectionTileUseNeutralTokensInBothThemes() {
             const auto image = list->viewport()->grab(rect).toImage();
             const auto scale = image.devicePixelRatio();
             // Tile padding is neutral; the logo inside it is drawn unmodified.
-            QCOMPARE(image.pixelColor(qRound(11 * scale), qRound(22 * scale)),
+            QCOMPARE(image.pixelColor(qRound(14 * scale), qRound(14 * scale)),
                      colors.surfaceRaised);
             int logoPixels = 0;
             for (int y = 8; y < 20; ++y)

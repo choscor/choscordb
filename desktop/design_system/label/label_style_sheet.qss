@@ -12,8 +12,8 @@ QLabel[state="failed"], QLabel[state="error"] {
 }
 
 QLabel[designRole="heading"] {
-  font-size: @font-title;
-  font-weight: 600;
+  font-size: @font-headline;
+  font-weight: @font-headline-weight;
   color: @fg;
 }
 

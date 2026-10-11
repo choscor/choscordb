@@ -15,7 +15,7 @@ DialogShell::DialogShell(QWidget* parent) : QDialog(parent) {
     setProperty("appDialog", true);
     setModal(false);
     setAttribute(Qt::WA_WindowPropagation);
-    setFont(design::resolveTypography(design::TypographyRole::Body));
+    setFont(design::resolveTypography(design::TextStyle::Body));
     presentation_ = new design::DialogPresentation(*this);
 }
 

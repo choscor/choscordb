@@ -5,27 +5,37 @@
 
 namespace choscordb::design {
 
-// Seven roles on the platform UI and fixed fonts. The SQL editor keeps the
-// user's saved font; Mono is for read-only SQL previews.
-enum class TypographyRole {
-    Caption, // 10/14 600 +1.3px: section captions, badges, kbd
-    Small,   // 11/16: secondary detail, field errors, tab labels
-    Dense,   // 12/16: table cells, headers, tree, list and menu items, fields
-    Body,    // 13/18 -0.12px: default UI text
-    Title,   // 14/20 600 -0.12px: headings and dialog titles
-    Mono,    // 13/20 fixed: SQL previews
-    Metadata // 12/16 fixed: SQL snippets in history rows
+// The macOS built-in text styles from Apple's Human Interface Guidelines, on
+// the platform UI font (SF Pro on macOS). The SQL editor keeps the user's
+// saved font.
+enum class TextStyle {
+    LargeTitle,  // 26/32 Regular
+    Title1,      // 22/26 Regular
+    Title2,      // 17/22 Regular
+    Title3,      // 15/20 Regular
+    Headline,    // 13/16 Bold: headings and dialog titles
+    Body,        // 13/16 Regular: default UI text
+    Callout,     // 12/15 Regular: table cells, headers, tree, list and menu items, fields
+    Subheadline, // 11/14 Regular: secondary detail, field errors, tab labels, sidebar sections
+    Footnote,    // 10/13 Regular
+    Caption1,    // 10/13 Regular
+    Caption2     // 10/13 Medium: badges, kbd
 };
+
+// SwiftUI's Font.Design: Monospaced sets a style in the platform fixed-pitch
+// font, as for read-only SQL previews and history SQL excerpts.
+enum class FontDesign { Default, Monospaced };
 
 struct TypographySpec final {
     QString family;
-    int pixelSize = 14;
-    int lineHeight = 20;
+    int pixelSize = 13;
+    int lineHeight = 16;
     QFont::Weight weight = QFont::Normal;
 };
 
-[[nodiscard]] TypographySpec typographySpec(TypographyRole role);
+[[nodiscard]] TypographySpec typographySpec(TextStyle style,
+                                            FontDesign design = FontDesign::Default);
 [[nodiscard]] bool bundledFontsAvailable();
-[[nodiscard]] QFont resolveTypography(TypographyRole role);
+[[nodiscard]] QFont resolveTypography(TextStyle style, FontDesign design = FontDesign::Default);
 
 } // namespace choscordb::design

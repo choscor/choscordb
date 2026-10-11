@@ -18,7 +18,7 @@ class PreviewTest final : public QObject {
     void tableHeadersCanBeDraggedInBothThemes();
     void dialogSectionsHaveMutedPaddedFooterInBothThemes();
     void modalSpecimenNamesTheDialogSurface();
-    void workspaceToolbarSpecimenUsesMutedSurfaceInBothThemes();
+    void workspaceToolbarSpecimenUsesSurfaceInBothThemes();
     void statusLineSpecimenUsesSharedSurfaceInBothThemes();
     void richTextParagraphsHaveCompactSpacing();
     void showToastOpensTransientToastAtViewportCorner();

@@ -87,7 +87,7 @@ void PreviewTest::codePreviewTextAreaUsesSharedVariantInBothThemes() {
         QCOMPARE(code->viewport()->geometry().left(), 0);
     }
 }
-void PreviewTest::workspaceToolbarSpecimenUsesMutedSurfaceInBothThemes() {
+void PreviewTest::workspaceToolbarSpecimenUsesSurfaceInBothThemes() {
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen("toolbar"));
     window.show();
@@ -103,7 +103,7 @@ void PreviewTest::workspaceToolbarSpecimenUsesMutedSurfaceInBothThemes() {
         const auto sample =
             toolbar->mapTo(surface, QPoint(toolbar->width() - 20, toolbar->height() / 2));
         QCOMPARE(surface->grab().toImage().pixelColor(sample),
-                 choscordb::design::resolvedThemeForWidget(*toolbar).colors.surfaceRaised);
+                 choscordb::design::resolvedThemeForWidget(*toolbar).colors.surface);
     }
 }
 
@@ -262,7 +262,7 @@ void PreviewTest::sidebarTabSpecimenUsesProductionContextInBothThemes() {
         auto* navigator = host->findChild<QWidget*>("navigatorBody");
         QVERIFY(navigator);
         QVERIFY(navigator->findChild<QListWidget*>("savedConnections"));
-        QCOMPARE(tab->buttonContext(), ButtonContext::SidebarTab);
+        QCOMPARE(tab->buttonContext(), ButtonContext::Sidebar);
         QVERIFY(tab->isChecked());
     }
 }
@@ -316,8 +316,8 @@ void PreviewTest::buttonsUseProductionVariantsAndStates() {
     auto* smallest = light->findChild<Button*>("button-size-xs");
     QVERIFY(smallest);
     QCOMPARE(smallest->buttonSize(), ButtonSize::ExtraSmall);
-    QCOMPARE(smallest->font().pixelSize(), typographySpec(TypographyRole::Caption).pixelSize);
-    QCOMPARE(pressed->font().pixelSize(), typographySpec(TypographyRole::Body).pixelSize);
+    QCOMPARE(smallest->font().pixelSize(), typographySpec(TextStyle::Caption2).pixelSize);
+    QCOMPARE(pressed->font().pixelSize(), typographySpec(TextStyle::Body).pixelSize);
     auto* largest = light->findChild<Button*>("button-size-icon");
     QVERIFY(largest);
     QCOMPARE(largest->buttonSize(), ButtonSize::Icon);
@@ -546,7 +546,7 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
                      ->data(choscordb::design::NavigationProfileDelegate::DriverRole)
                      .toString(),
                  QString("mysql"));
-        QCOMPARE(list->spacing(), choscordb::design::spacing(choscordb::design::Spacing::Half));
+        QCOMPARE(list->spacing(), 0);
         QCOMPARE(list->currentRow(), 1);
         QCOMPARE(list->selectionMode(), QAbstractItemView::MultiSelection);
         QVERIFY(list->item(0)->isSelected());
@@ -561,11 +561,11 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
         QCoreApplication::sendEvent(list->viewport(), &leave);
         const auto image = list->viewport()->grab().toImage();
         QCOMPARE(image.pixelColor(firstSelectedRow.right() - 30, firstSelectedRow.center().y()),
-                 colors.selection);
+                 colors.surface);
         QCOMPARE(image.pixelColor(selectedRow.right() - 30, selectedRow.center().y()),
-                 colors.selection);
+                 colors.surface);
         QCOMPARE(image.pixelColor(regularRow.right() - 30, regularRow.center().y()),
-                 colors.sidebar);
+                 colors.surfaceRaised);
         QVERIFY(list->visualItemRect(list->item(1)).bottom() < list->viewport()->height());
         QCOMPARE(list->item(0)->text(), QString("test sqlite"));
         QCOMPARE(list->item(1)
@@ -573,7 +573,7 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
                      .toString(),
                  QString("postgres"));
         QVERIFY(dynamic_cast<choscordb::design::NavigationProfileDelegate*>(list->itemDelegate()));
-        QCOMPARE(choscordb::design::resolveTypography(choscordb::design::TypographyRole::Small)
+        QCOMPARE(choscordb::design::resolveTypography(choscordb::design::TextStyle::Subheadline)
                      .pixelSize(),
                  11);
         const auto height = list->visualItemRect(list->item(0)).height();
@@ -882,7 +882,9 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         const auto paneRect = paneTabs->tabRect(paneTabs->currentIndex());
         const auto paneImage = paneTabs->grab().toImage();
         const auto colors = choscordb::design::resolvedThemeForWidget(*paneTabs).colors;
-        QCOMPARE(paneImage.pixelColor(paneRect.left() + 1, paneRect.top() + 1), colors.surface);
+        QCOMPARE(paneImage.pixelColor(paneRect.left() + 4, paneRect.center().y()), colors.surface);
+        QCOMPARE(paneImage.pixelColor(paneRect.left() + 1, paneRect.top() + 1),
+                 colors.surfaceRaised);
         while (tabs->count() > 1)
             tabs->removeTab(tabs->count() - 1);
         QCoreApplication::processEvents();

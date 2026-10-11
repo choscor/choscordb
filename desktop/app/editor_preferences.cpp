@@ -63,7 +63,7 @@ bool EditorPreferencesController::eventFilter(QObject* watched, QEvent* event) {
     return QObject::eventFilter(watched, event);
 }
 void EditorPreferencesController::applyFont(SqlEditor* editor) {
-    auto font = design::resolveTypography(design::TypographyRole::Mono);
+    auto font = design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced);
     if (!preferences_.fontFamily.isEmpty())
         font.setFamily(preferences_.fontFamily);
     font.setPointSize(preferences_.fontSize);

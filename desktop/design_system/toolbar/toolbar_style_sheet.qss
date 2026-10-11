@@ -10,7 +10,7 @@ QToolBar[designToolbarVariant="workspace"] {
 }
 
 QWidget[designToolbarSurface="workspace"] {
-  background: @surface-raised;
+  background: @surface;
 }
 
 QToolBar::separator {

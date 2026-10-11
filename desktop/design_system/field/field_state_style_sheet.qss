@@ -15,5 +15,5 @@ QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabl
 }
 
 QLabel[designRole="fieldError"] {
-  font-size: @font-small;
+  font-size: @font-subheadline;
 }

@@ -80,7 +80,7 @@ class UpdateProgressDialog final : public DialogShell {
         setWindowTitle(tr("ChoscorDB update"));
         auto* layout = new QVBoxLayout(this);
         auto* title = new design::Text(tr("Updating ChoscorDB"), this);
-        title->setTypographyRole(design::TypographyRole::Title);
+        title->setTextStyle(design::TextStyle::Headline);
         layout->addWidget(title);
         message_ = createDescription(tr("Downloading update…"), this);
         layout->addWidget(message_);

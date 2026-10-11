@@ -22,46 +22,48 @@ bool bundledFontsAvailable() {
     return loaded;
 }
 
-TypographySpec typographySpec(TypographyRole role) {
-    const auto family = QFontDatabase::systemFont(QFontDatabase::GeneralFont).family();
-    const auto fixed = QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
-    switch (role) {
-    case TypographyRole::Caption:
-        return {family, 10, 14, QFont::DemiBold};
-    case TypographyRole::Small:
-        return {family, 11, 16, QFont::Normal};
-    case TypographyRole::Dense:
-        return {family, 12, 16, QFont::Normal};
-    case TypographyRole::Body:
-        return {family, 13, 18, QFont::Normal};
-    case TypographyRole::Title:
-        return {family, 14, 20, QFont::DemiBold};
-    case TypographyRole::Mono:
-        return {fixed, 13, 20, QFont::Normal};
-    case TypographyRole::Metadata:
-        return {fixed, 12, 16, QFont::Normal};
+TypographySpec typographySpec(TextStyle style, FontDesign design) {
+    const auto family = QFontDatabase::systemFont(design == FontDesign::Monospaced
+                                                      ? QFontDatabase::FixedFont
+                                                      : QFontDatabase::GeneralFont)
+                            .family();
+    switch (style) {
+    case TextStyle::LargeTitle:
+        return {family, 26, 32, QFont::Normal};
+    case TextStyle::Title1:
+        return {family, 22, 26, QFont::Normal};
+    case TextStyle::Title2:
+        return {family, 17, 22, QFont::Normal};
+    case TextStyle::Title3:
+        return {family, 15, 20, QFont::Normal};
+    case TextStyle::Headline:
+        return {family, 13, 16, QFont::Bold};
+    case TextStyle::Body:
+        return {family, 13, 16, QFont::Normal};
+    case TextStyle::Callout:
+        return {family, 12, 15, QFont::Normal};
+    case TextStyle::Subheadline:
+        return {family, 11, 14, QFont::Normal};
+    case TextStyle::Footnote:
+    case TextStyle::Caption1:
+        return {family, 10, 13, QFont::Normal};
+    case TextStyle::Caption2:
+        return {family, 10, 13, QFont::Medium};
     }
     return {};
 }
 
-QFont resolveTypography(TypographyRole role) {
+QFont resolveTypography(TextStyle style, FontDesign design) {
     // Keep previously selectable bundled families available to saved SQL font
-    // preferences, while all UI roles continue to request the platform font.
+    // preferences, while all UI styles continue to request the platform font.
     (void)bundledFontsAvailable();
-    // SQL editors apply their own saved font preferences; preserve that seam.
-    if (role == TypographyRole::Mono || role == TypographyRole::Metadata) {
-        auto font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-        font.setPixelSize(typographySpec(role).pixelSize);
-        return font;
-    }
-    const auto spec = typographySpec(role);
-    auto font = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
+    // The platform font applies its own size-specific tracking.
+    const auto spec = typographySpec(style, design);
+    auto font = QFontDatabase::systemFont(design == FontDesign::Monospaced
+                                              ? QFontDatabase::FixedFont
+                                              : QFontDatabase::GeneralFont);
     font.setPixelSize(spec.pixelSize);
     font.setWeight(spec.weight);
-    font.setLetterSpacing(QFont::AbsoluteSpacing,
-                          role == TypographyRole::Caption                                 ? 1.3
-                          : role == TypographyRole::Body || role == TypographyRole::Title ? -0.12
-                                                                                          : 0);
     return font;
 }
 

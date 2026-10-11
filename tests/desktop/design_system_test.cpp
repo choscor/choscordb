@@ -226,19 +226,19 @@ class DesignSystemTest final : public QObject {
 
     void platformUiTypographyUsesReferenceFontAndPreservesMonospace() {
         using namespace choscordb::design;
-        const auto ui = resolveTypography(TypographyRole::Body);
+        const auto ui = resolveTypography(TextStyle::Body);
         QCOMPARE(ui.family(), QFontDatabase::systemFont(QFontDatabase::GeneralFont).family());
         QCOMPARE(QFontInfo(ui).family(),
                  QFontInfo(QFontDatabase::systemFont(QFontDatabase::GeneralFont)).family());
         QCOMPARE(ui.pixelSize(), 13);
         QCOMPARE(ui.weight(), QFont::Normal);
-        const auto heading = resolveTypography(TypographyRole::Title);
+        const auto heading = resolveTypography(TextStyle::Headline);
         QCOMPARE(heading.family(), ui.family());
-        QCOMPARE(heading.pixelSize(), 14);
-        QCOMPARE(heading.weight(), QFont::DemiBold);
+        QCOMPARE(heading.pixelSize(), 13);
+        QCOMPARE(heading.weight(), QFont::Bold);
         auto expectedMonospace = QFontDatabase::systemFont(QFontDatabase::FixedFont);
         expectedMonospace.setPixelSize(13);
-        QCOMPARE(resolveTypography(TypographyRole::Mono), expectedMonospace);
+        QCOMPARE(resolveTypography(TextStyle::Body, FontDesign::Monospaced), expectedMonospace);
     }
 
     void tokensExposeCopyableReferenceValuesAndDefinitionSources() {
@@ -258,7 +258,7 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(value("size.row"), QString("28px"));
         QCOMPARE(value("focus.width"), QString("2px"));
         QCOMPARE(value("motion.popup"), QString("100ms"));
-        QCOMPARE(value("typography.body.lineHeight"), QString("18px"));
+        QCOMPARE(value("typography.body.lineHeight"), QString("16px"));
         QCOMPARE(value("elevation.popover.blur"), QString("40px"));
         for (const auto& token : tokens) {
             QVERIFY2(
@@ -327,7 +327,7 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(layout.defaultWorkspaceWidth, 1280);
         QCOMPARE(layout.minimumWorkspaceWidth, 960);
         QCOMPARE(dialogInitialSize(DialogSize::Ddl), QSize(700, 500));
-        QVERIFY(!resolveTypography(TypographyRole::Mono).family().isEmpty());
+        QVERIFY(!resolveTypography(TextStyle::Body, FontDesign::Monospaced).family().isEmpty());
     }
 
     void paletteResolvesReadableComponentRoles() {
@@ -354,7 +354,6 @@ class DesignSystemTest final : public QObject {
         const QStringList expected{"bg",
                                    "surface",
                                    "surface-raised",
-                                   "sidebar",
                                    "fg",
                                    "fg-muted",
                                    "fg-disabled",

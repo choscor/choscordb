@@ -29,8 +29,8 @@ void ControlStyle::polish(QWidget* widget) {
         tabs->setDrawBase(false);
     if (qobject_cast<QLineEdit*>(widget) || qobject_cast<QComboBox*>(widget) ||
         qobject_cast<QAbstractSpinBox*>(widget) || qobject_cast<QKeySequenceEdit*>(widget)) {
-        // Field values use Dense at medium weight; placeholders stay regular.
-        auto fieldFont = resolveTypography(TypographyRole::Dense);
+        // Field values use Callout at medium weight; placeholders stay regular.
+        auto fieldFont = resolveTypography(TextStyle::Callout);
         fieldFont.setWeight(QFont::Medium);
         widget->setFont(fieldFont);
         if (auto* line = qobject_cast<QLineEdit*>(widget)) {
@@ -46,10 +46,6 @@ void ControlStyle::polish(QWidget* widget) {
             }
             updateFont();
         }
-    } else if (qobject_cast<QPushButton*>(widget) || qobject_cast<QToolButton*>(widget)) {
-        auto font = widget->font();
-        font.setLetterSpacing(QFont::AbsoluteSpacing, 0);
-        widget->setFont(font);
     }
 
     detail::polishMenu(widget);

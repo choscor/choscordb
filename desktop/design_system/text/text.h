@@ -11,7 +11,7 @@ class Text final : public QLabel {
     Q_OBJECT
   public:
     explicit Text(const QString& text = {}, QWidget* parent = nullptr);
-    void setTypographyRole(TypographyRole role);
+    void setTextStyle(TextStyle style, FontDesign design = FontDesign::Default);
     void setWeight(QFont::Weight weight);
 
     [[nodiscard]] QSize sizeHint() const override;
@@ -22,7 +22,8 @@ class Text final : public QLabel {
     void paintEvent(QPaintEvent* event) override;
 
   private:
-    TypographyRole role_ = TypographyRole::Body;
+    TextStyle style_ = TextStyle::Body;
+    FontDesign design_ = FontDesign::Default;
 };
 
 } // namespace choscordb::design

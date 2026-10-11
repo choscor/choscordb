@@ -111,13 +111,13 @@ class HistoryTest : public QObject {
         QVERIFY(!table->horizontalHeader()->isVisible());
         using namespace choscordb::design;
         QCOMPARE(table->rowHeight(0), 3 * spacing(Spacing::Two) +
-                                          typographySpec(TypographyRole::Metadata).lineHeight +
+                                          typographySpec(TextStyle::Callout, FontDesign::Monospaced).lineHeight +
                                           dimension(Dimension::Badge));
         QCOMPARE(table->columnWidth(2), table->viewport()->width());
         auto* preview = history.findChild<QPlainTextEdit*>("historyPreview");
         QVERIFY(!preview->isVisible());
         QCOMPARE(preview->property("designRole").toString(), QString("codePreview"));
-        QCOMPARE(preview->font().family(), resolveTypography(TypographyRole::Mono).family());
+        QCOMPARE(preview->font().family(), resolveTypography(TextStyle::Body, FontDesign::Monospaced).family());
         table->selectRow(0);
         QVERIFY(!preview->isVisible());
         auto* manage = history.findChild<QToolButton*>("historyManage");

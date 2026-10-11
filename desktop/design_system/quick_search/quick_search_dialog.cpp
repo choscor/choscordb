@@ -45,13 +45,13 @@ QuickSearchResultRow::QuickSearchResultRow(const QuickSearchResult& result, QWid
     titleLabel_ = new QLabel(result.title, this);
     titleLabel_->setObjectName("quickSearchResultTitle");
     titleLabel_->setTextFormat(Qt::PlainText);
-    titleLabel_->setFont(resolveTypography(TypographyRole::Body));
+    titleLabel_->setFont(resolveTypography(TextStyle::Body));
     titleLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     text->addWidget(titleLabel_);
     detailLabel_ = new QLabel(result.context, this);
     detailLabel_->setObjectName("quickSearchResultDetail");
     detailLabel_->setTextFormat(Qt::PlainText);
-    detailLabel_->setFont(resolveTypography(TypographyRole::Small));
+    detailLabel_->setFont(resolveTypography(TextStyle::Subheadline));
     detailLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     text->addWidget(detailLabel_);
     layout->addLayout(text, 1);
@@ -132,7 +132,7 @@ QuickSearchDialog::QuickSearchDialog(QWidget* parent)
     status_->setObjectName("quickSearchStatus");
     status_->setAccessibleName(tr("Quick search status"));
     status_->setWordWrap(true);
-    status_->setFont(resolveTypography(TypographyRole::Small));
+    status_->setFont(resolveTypography(TextStyle::Subheadline));
     layout->addWidget(status_);
 
     connect(input_, &QLineEdit::textChanged, this, &QuickSearchDialog::queryChanged);

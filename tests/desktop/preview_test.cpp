@@ -177,7 +177,7 @@ void PreviewTest::recentHistoryRowsUseSharedDelegateInBothThemes() {
         QTest::mouseMove(list->viewport(), row.center());
         QCoreApplication::processEvents();
         QCOMPARE(list->viewport()->grab().toImage().pixelColor(row.right() - 5, row.center().y()),
-                 choscordb::design::resolvedThemeForWidget(*list).colors.surfaceRaised);
+                 choscordb::design::resolvedThemeForWidget(*list).colors.surface);
         const auto colors = choscordb::design::resolvedThemeForWidget(*list).colors;
         const auto image = list->viewport()->grab().toImage();
         int successPixels = 0;

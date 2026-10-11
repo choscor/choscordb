@@ -5,7 +5,7 @@ QToolButton {
   border: 1px solid transparent;
   border-radius: @radius-md;
   padding: 0 9px;
-  font-size: @font-small;
+  font-size: @font-subheadline;
   background: transparent;
   color: @fg;
 }

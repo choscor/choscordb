@@ -152,7 +152,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         code->setPlainText("CREATE TABLE example (id INTEGER PRIMARY KEY);");
         code->setReadOnly(true);
         code->setFrameShape(QFrame::NoFrame);
-        code->setFont(resolveTypography(TypographyRole::Mono));
+        code->setFont(resolveTypography(TextStyle::Body, FontDesign::Monospaced));
         layout->addWidget(code, 1);
         auto* richText = new QTextEdit(host);
         configureRichTextArea(*richText);
@@ -228,7 +228,6 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         list->setObjectName("previewNavigationProfiles");
         list->setAccessibleName("Saved database connections");
         list->setItemDelegate(new NavigationProfileDelegate(list));
-        list->setSpacing(spacing(Spacing::Half));
         list->setProperty("designSurface", "sidebar");
         list->setMouseTracking(true);
         list->setSelectionMode(QAbstractItemView::MultiSelection);
@@ -282,7 +281,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
             objectTabs->addTab(label);
         objectTabs->setExpanding(false);
         objectTabs->setCurrentIndex(3);
-        layout->addWidget(objectTabs);
+        layout->addWidget(objectTabs, 0, Qt::AlignLeft);
     } else if (id == "toolbar") {
         auto* toolbarBar = new QWidget(host);
         toolbarBar->setProperty("designToolbarSurface", "workspace");

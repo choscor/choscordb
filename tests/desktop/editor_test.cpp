@@ -100,27 +100,27 @@ class EditorTest : public QObject {
         // produced when QScintilla receives a pixel QFont as pointSizeF == -1.
         const auto defaultCaps = capHeight();
         QVERIFY2(defaultCaps >= 8, qPrintable(QString::number(defaultCaps)));
-        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 20L);
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 16L);
         const auto defaultWidth =
             editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH,
                                  static_cast<std::uintptr_t>(QsciLexerSQL::Default), "MMMM");
         // Platform fixed-font fallback differs under Qt's offscreen plugin.
         // Its absolute advance is not a reference constant; compare actual
         // glyph growth after the user's larger point-size preference instead.
-        auto custom = resolveTypography(TypographyRole::Mono);
+        auto custom = resolveTypography(TextStyle::Body, FontDesign::Monospaced);
         custom.setPointSize(22);
         editor.setEditorFont(custom);
         QCoreApplication::processEvents();
         QVERIFY(capHeight() >= 16);
-        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 20L);
+        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 16L);
         QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH,
                                      static_cast<std::uintptr_t>(QsciLexerSQL::Default),
                                      "MMMM") > defaultWidth * 1.5);
         editor.insertAt(";", 1, 4);
         editor.setSelection(0, 1, 0, 3);
         const auto revision = editor.revision();
-        editor.setEditorFont(resolveTypography(TypographyRole::Mono));
-        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 20L);
+        editor.setEditorFont(resolveTypography(TextStyle::Body, FontDesign::Monospaced));
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 16L);
         QCOMPARE(editor.selectedText(), QString("MM"));
         QCOMPARE(editor.revision(), revision);
         QCOMPARE(editor.text(), QString("MMMM\nMMMM;"));
@@ -189,6 +189,19 @@ class EditorTest : public QObject {
         QCoreApplication::processEvents();
         const int x = editor.marginWidth(0) + editor.marginWidth(1) + editor.marginWidth(2) / 2;
         QCOMPARE(editor.grab().toImage().pixelColor(x, 160), QColor("#20272b"));
+    }
+    void editorFillsItsEdgesWithoutAFrame() {
+        using namespace choscordb::design;
+        choscordb::SqlEditor editor;
+        editor.resize(400, 200);
+        editor.setPalette(applicationPalette(
+            {ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light), false}));
+        editor.show();
+        QCoreApplication::processEvents();
+        const auto image = editor.grab().toImage();
+        const QColor paper = resolveColors(ResolvedAppearance::Light).surface;
+        QCOMPARE(image.pixelColor(image.width() - 1, 100), paper);
+        QCOMPARE(image.pixelColor(200, 0), paper);
     }
     void restoresBufferAndSelectionWithoutReadingFile() {
         choscordb::SqlEditor editor;

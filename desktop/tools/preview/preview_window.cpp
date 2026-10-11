@@ -219,12 +219,15 @@ void populateIcons(QWidget* host, QVBoxLayout* layout) {
     layout->addStretch();
 }
 void populateTypography(QWidget* host, QVBoxLayout* layout) {
-    for (const auto role :
-         {TypographyRole::Title, TypographyRole::Body, TypographyRole::Dense, TypographyRole::Small,
-          TypographyRole::Caption, TypographyRole::Mono, TypographyRole::Metadata}) {
-        const auto spec = typographySpec(role);
+    QList<std::pair<TextStyle, FontDesign>> specimens;
+    for (int style = 0; style <= static_cast<int>(TextStyle::Caption2); ++style)
+        specimens.append({static_cast<TextStyle>(style), FontDesign::Default});
+    specimens.append({TextStyle::Body, FontDesign::Monospaced});
+    specimens.append({TextStyle::Callout, FontDesign::Monospaced});
+    for (const auto& [style, design] : specimens) {
+        const auto spec = typographySpec(style, design);
         auto* text = new Text("ChoscorDB · Truy vấn dữ liệu · 日本語 · Ελληνικά · 🙂", host);
-        text->setTypographyRole(role);
+        text->setTextStyle(style, design);
         text->setWordWrap(true);
         layout->addWidget(text);
         layout->addWidget(new QLabel(QString("%1 · %2 px / %3 px line height · weight %4")
@@ -323,7 +326,7 @@ void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     sections->setObjectName("previewDialogSections");
     root->addWidget(sections);
     auto* heading = new Text("New connection", sections);
-    heading->setTypographyRole(TypographyRole::Title);
+    heading->setTextStyle(TextStyle::Headline);
     sections->headerLayout()->addWidget(heading);
     sections->headerLayout()->addStretch();
     auto* close = new Button({}, sections);
@@ -426,7 +429,7 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
     dialog->setWindowTitle("Synthetic component preview");
     auto* content = new QVBoxLayout(dialog);
     auto* heading = new Text(destructive ? "Delete synthetic record?" : "Panel details", dialog);
-    heading->setTypographyRole(TypographyRole::Title);
+    heading->setTextStyle(TextStyle::Headline);
     content->addWidget(heading);
     auto* description =
         new Text(destructive ? "This preview records your choice only. No data is changed."
@@ -564,7 +567,7 @@ void populateButtons(QWidget* host, QVBoxLayout* layout) {
     auto* sidebarTab = new Button("Connections", navigator);
     sidebarTab->setObjectName("previewSidebarTab");
     sidebarTab->setVariant(ButtonVariant::Ghost);
-    sidebarTab->setButtonContext(ButtonContext::SidebarTab);
+    sidebarTab->setButtonContext(ButtonContext::Sidebar);
     sidebarTab->setDesignIcon(Icon::Database);
     sidebarTab->setCheckable(true);
     sidebarTab->setChecked(true);
@@ -735,7 +738,7 @@ PreviewWindow::PreviewWindow(QWidget* parent) : QMainWindow(parent) {
         theme->setMode(host == light_ ? ThemeMode::Light : ThemeMode::Dark);
         theme->setReducedMotion(true);
         theme->applyTo(*host);
-        host->setFont(resolveTypography(TypographyRole::Body));
+        host->setFont(resolveTypography(TextStyle::Body));
         (void)new QVBoxLayout(host);
         panes->addWidget(host);
     }
@@ -907,7 +910,6 @@ void PreviewWindow::rebuildSpecimens() {
             auto* table = new QTableWidget(content);
             table->setObjectName("previewResultTable");
             configureResultTable(*table, false);
-            table->setAlternatingRowColors(true);
             table->setColumnCount(2);
             table->setHorizontalHeaderLabels({"Name", "Value"});
             table->setRowCount(3);

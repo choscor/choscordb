@@ -79,10 +79,6 @@ QHash<QString, QString> styleTokens(const ResolvedTheme& theme) {
                   cssColor(withAlpha(colors.danger, dark ? 0.2 : 0.1)));
     tokens.insert(QStringLiteral("destructive-hover"),
                   cssColor(withAlpha(colors.danger, dark ? 0.3 : 0.2)));
-    tokens.insert(QStringLiteral("sidebar-glass-top"),
-                  cssColor(withAlpha(colors.sidebar, 232 / 255.0)));
-    tokens.insert(QStringLiteral("sidebar-glass-bottom"),
-                  cssColor(withAlpha(colors.surfaceRaised, 208 / 255.0)));
     tokens.insert(QStringLiteral("shadow-margin"), pixels(detail::menuShadowMargin()));
 
     tokens.insert(QStringLiteral("radius-sm"), pixels(radius(Radius::Small)));
@@ -96,7 +92,9 @@ QHash<QString, QString> styleTokens(const ResolvedTheme& theme) {
     // them, so the rendered box matches the Dimension.
     tokens.insert(QStringLiteral("control-height"), pixels(dimension(Dimension::Control) - 2));
     tokens.insert(QStringLiteral("tool-height"), pixels(dimension(Dimension::ControlSmall) - 2));
-    tokens.insert(QStringLiteral("pane-tab-height"), pixels(dimension(Dimension::Tab) - 3));
+    // Pane tabs sit inside a Half inset and draw a 1px outline.
+    tokens.insert(QStringLiteral("pane-tab-height"),
+                  pixels(dimension(Dimension::Tab) - 2 * spacing(Spacing::Half) - 2));
     tokens.insert(QStringLiteral("document-tab-height"), pixels(dimension(Dimension::Tab) - 2));
     tokens.insert(QStringLiteral("document-tab-width"),
                   pixels(dimension(Dimension::DocumentTabWidth)));
@@ -110,14 +108,14 @@ QHash<QString, QString> styleTokens(const ResolvedTheme& theme) {
     tokens.insert(QStringLiteral("scrollbar-radius"), pixels(dimension(Dimension::Scrollbar) / 2));
     tokens.insert(QStringLiteral("toolbar-height"), pixels(dimension(Dimension::Toolbar)));
 
-    tokens.insert(QStringLiteral("font-caption"),
-                  pixels(typographySpec(TypographyRole::Caption).pixelSize));
-    tokens.insert(QStringLiteral("font-small"),
-                  pixels(typographySpec(TypographyRole::Small).pixelSize));
-    tokens.insert(QStringLiteral("font-dense"),
-                  pixels(typographySpec(TypographyRole::Dense).pixelSize));
-    tokens.insert(QStringLiteral("font-title"),
-                  pixels(typographySpec(TypographyRole::Title).pixelSize));
+    for (const auto& [name, style] :
+         {std::pair{"caption2", TextStyle::Caption2}, std::pair{"subheadline", TextStyle::Subheadline},
+          std::pair{"callout", TextStyle::Callout}, std::pair{"headline", TextStyle::Headline}}) {
+        const auto spec = typographySpec(style);
+        const auto prefix = QStringLiteral("font-%1").arg(QLatin1String(name));
+        tokens.insert(prefix, pixels(spec.pixelSize));
+        tokens.insert(prefix + QStringLiteral("-weight"), QString::number(spec.weight));
+    }
     return tokens;
 }
 } // namespace

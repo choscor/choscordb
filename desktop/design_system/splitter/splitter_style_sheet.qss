@@ -8,8 +8,8 @@ QSplitter::handle:hover, QSplitter::handle:pressed {
 
 QMainWindow::separator {
   background: @border;
-  width: 5px;
-  height: 5px;
+  width: 3px;
+  height: 3px;
 }
 
 QMainWindow::separator:hover, QMainWindow::separator:pressed {

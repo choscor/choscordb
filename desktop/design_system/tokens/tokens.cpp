@@ -61,18 +61,22 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     pixels(QStringLiteral("focus.width"), focusSpec().ringWidth);
     add(QStringLiteral("focus.referenceOpacity"),
         QString::number(focusSpec().referenceRingOpacity));
-    for (const auto& [name, role] :
-         {std::pair{"caption", TypographyRole::Caption}, std::pair{"small", TypographyRole::Small},
-          std::pair{"dense", TypographyRole::Dense}, std::pair{"body", TypographyRole::Body},
-          std::pair{"title", TypographyRole::Title}, std::pair{"mono", TypographyRole::Mono},
-          std::pair{"metadata", TypographyRole::Metadata}}) {
-        const auto spec = typographySpec(role);
+    for (const auto& [name, style] :
+         {std::pair{"largeTitle", TextStyle::LargeTitle}, std::pair{"title1", TextStyle::Title1},
+          std::pair{"title2", TextStyle::Title2}, std::pair{"title3", TextStyle::Title3},
+          std::pair{"headline", TextStyle::Headline}, std::pair{"body", TextStyle::Body},
+          std::pair{"callout", TextStyle::Callout}, std::pair{"subheadline", TextStyle::Subheadline},
+          std::pair{"footnote", TextStyle::Footnote}, std::pair{"caption1", TextStyle::Caption1},
+          std::pair{"caption2", TextStyle::Caption2}}) {
+        const auto spec = typographySpec(style);
         const auto prefix = QStringLiteral("typography.%1.").arg(QLatin1String(name));
         add(prefix + QStringLiteral("family"), spec.family);
         pixels(prefix + QStringLiteral("size"), spec.pixelSize);
         pixels(prefix + QStringLiteral("lineHeight"), spec.lineHeight);
         add(prefix + QStringLiteral("weight"), QString::number(spec.weight));
     }
+    add(QStringLiteral("typography.monospaced.family"),
+        typographySpec(TextStyle::Body, FontDesign::Monospaced).family);
     for (const auto& [name, role] :
          {std::pair{"interaction", Motion::Interaction}, std::pair{"popup", Motion::Popup}}) {
         const auto spec = motionSpec(role);

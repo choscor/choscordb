@@ -266,8 +266,8 @@ void ObjectErdWidget::render() {
         return;
     const auto colors = design::resolvedThemeForWidget(*this).colors;
     view_->setBackgroundBrush(colors.bg);
-    const QFont headerFont = design::resolveTypography(design::TypographyRole::Title);
-    const QFont rowFont = design::resolveTypography(design::TypographyRole::Metadata);
+    const QFont headerFont = design::resolveTypography(design::TextStyle::Headline);
+    const QFont rowFont = design::resolveTypography(design::TextStyle::Callout, design::FontDesign::Monospaced);
     const QFontMetrics headerMeasure(headerFont), rowMeasure(rowFont);
     const qreal pad = design::spacing(design::Spacing::Two);
     const qreal rowHeight = qMax(design::dimension(design::Dimension::Row),

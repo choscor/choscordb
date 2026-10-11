@@ -38,7 +38,8 @@ void PreviewTest::jsonTextViewSpecimenColorsSyntaxInBothThemes() {
         QCOMPARE(editor->toPlainText(), json);
         QCOMPARE(
             editor->font().family(),
-            choscordb::design::resolveTypography(choscordb::design::TypographyRole::Mono).family());
+            choscordb::design::resolveTypography(choscordb::design::TextStyle::Body,
+                                                 choscordb::design::FontDesign::Monospaced).family());
         const auto colors = resolvedThemeForWidget(*editor).colors;
         const auto block = editor->document()->firstBlock().next();
         QVERIFY(block.isValid());

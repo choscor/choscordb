@@ -34,8 +34,8 @@ QString statusLabel(const QString& status) {
 
 QSize RecentHistoryRowDelegate::sizeHint(const QStyleOptionViewItem& option,
                                          const QModelIndex&) const {
-    const int height = typographySpec(TypographyRole::Metadata).lineHeight +
-                       2 * typographySpec(TypographyRole::Small).lineHeight +
+    const int height = typographySpec(TextStyle::Callout, FontDesign::Monospaced).lineHeight +
+                       2 * typographySpec(TextStyle::Subheadline).lineHeight +
                        spacing(Spacing::Two) + spacing(Spacing::Half);
     return {option.rect.width(), height};
 }
@@ -55,12 +55,10 @@ void RecentHistoryRowDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(selected ? colors.border : Qt::transparent);
-    painter->setBrush(selected  ? colors.selection
-                      : hovered ? colors.surfaceRaised
-                                : colors.sidebar);
+    painter->setBrush(selected || hovered ? colors.surface : colors.surfaceRaised);
     painter->drawRoundedRect(bounds, radius(Radius::Medium), radius(Radius::Medium));
 
-    const QFont sqlFont = resolveTypography(TypographyRole::Metadata);
+    const QFont sqlFont = resolveTypography(TextStyle::Callout, FontDesign::Monospaced);
     const QFontMetrics sqlMetrics(sqlFont);
     auto sql = index.data(SqlRole).toString();
     sql.replace(QLatin1Char('\n'), QLatin1Char(' '));
@@ -72,7 +70,7 @@ void RecentHistoryRowDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     painter->drawText(QRect(bounds.left() + inset, firstY, textWidth, sqlLineHeight),
                       Qt::AlignLeft | Qt::AlignVCenter, shown);
 
-    const QFont detailFont = resolveTypography(TypographyRole::Small);
+    const QFont detailFont = resolveTypography(TextStyle::Subheadline);
     const QFontMetrics detailMetrics(detailFont);
     painter->setFont(detailFont);
     const int dateY = bounds.bottom() - spacing(Spacing::One) - detailMetrics.height();

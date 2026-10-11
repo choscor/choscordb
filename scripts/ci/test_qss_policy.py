@@ -140,7 +140,7 @@ class QssPolicyTest(unittest.TestCase):
                 {
                     "button/button_style_sheet.qss": "QPushButton {\n"
                     "  color: @fg;\n"
-                    "  font-size: @font-dense;\n"
+                    "  font-size: @font-callout;\n"
                     "  border-radius: @radius-md;\n"
                     "}\n"
                 },

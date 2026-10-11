@@ -4,5 +4,5 @@ QToolTip {
   border: 0;
   border-radius: @radius-md;
   padding: 6px 12px;
-  font-size: @font-dense;
+  font-size: @font-callout;
 }

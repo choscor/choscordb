@@ -225,7 +225,7 @@ void MainWindow::showDiagnosticsExport() {
     auto* sections = new design::DialogSections(dialog);
     layout->addWidget(sections);
     auto* heading = new design::Text(tr("Export Diagnostics"), sections);
-    heading->setTypographyRole(design::TypographyRole::Title);
+    heading->setTextStyle(design::TextStyle::Headline);
     sections->headerLayout()->addWidget(heading);
     auto* summary = dialog->createDescription(
         diagnostics_ ? tr("Reading local diagnostics…")

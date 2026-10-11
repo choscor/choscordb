@@ -13,8 +13,8 @@ QMenu::item {
   min-height: 17px;
   padding: 6px 24px 6px 10px;
   border-radius: @radius-sm;
-  font-size: @font-dense;
-  font-weight: 400;
+  font-size: @font-callout;
+  font-weight: @font-callout-weight;
 }
 
 QMenu::item:selected {
