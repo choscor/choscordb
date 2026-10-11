@@ -121,17 +121,28 @@ async fn ipv6_binding_and_password_context_are_isolated() {
     drop(reservation);
     let first_password = Secret::new("first-password");
     let second_password = Secret::new("second-password");
-    let first = SshLocalForward::open(
-        &settings,
-        Some(&first_password),
-        &Default::default(),
-        None,
-        &Default::default(),
-        "database.example",
-        5432,
-    )
+    // The released reservation port can stay unavailable briefly, as in
+    // exact_local_binding_refuses_conflicts_and_releases_with_last_owner.
+    let first = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if let Ok(forward) = SshLocalForward::open(
+                &settings,
+                Some(&first_password),
+                &Default::default(),
+                None,
+                &Default::default(),
+                "database.example",
+                5432,
+            )
+            .await
+            {
+                break forward;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
     .await
-    .unwrap();
+    .expect("released IPv6 reservation port remained unavailable");
     assert!(first.address().is_ipv6());
     assert!(
         SshLocalForward::open(
