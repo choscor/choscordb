@@ -17,7 +17,6 @@ struct Colors final {
     QColor bg;
     QColor surface;
     QColor surfaceRaised;
-    QColor sidebar;
     QColor fg;
     QColor fgMuted;
     QColor fgDisabled;

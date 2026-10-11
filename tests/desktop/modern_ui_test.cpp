@@ -313,20 +313,36 @@ void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections(
     QTRY_COMPARE(sidebar->width(), 235);
     window.resize(1280, 900);
     QTRY_COMPARE(sidebar->width(), 260);
+    // A slim resize handle between the sidebar and the workspace.
+    QCOMPARE(window.centralWidget()->geometry().left() - sidebar->geometry().right() - 1, 3);
     auto* title = window.findChild<QLabel*>("navigatorTitle");
     QVERIFY(!window.findChild<QStatusBar*>());
     auto* navBody = sidebar->widget();
     QVERIFY(navBody);
     QCOMPARE(navBody->objectName(), QString("navigatorBody"));
     QVERIFY(qApp->styleSheet().contains("QWidget#navigatorBody"));
-    QVERIFY(qApp->styleSheet().contains("qlineargradient"));
-    QVERIFY(!qApp->styleSheet().contains("@sidebarGlassTop"));
     QCOMPARE(navBody->layout()->contentsMargins().top(),
              choscordb::design::spacing(choscordb::design::Spacing::One));
-    QCOMPARE(title->text(), QString("CONNECTIONS"));
-    QCOMPARE(title->font().pixelSize(), 10);
-    // Qt stores font tracking in 1/64px units.
-    QVERIFY(qAbs(title->font().letterSpacing() - 1.3) < 1.0 / 64);
+    // One flat gray from the tab row to the bottom edge, matching the document tab bar.
+    const auto sidebarGray =
+        choscordb::design::resolveColors(choscordb::design::ResolvedAppearance::Light)
+            .surfaceRaised;
+    const auto flatSidebar = navBody->grab().toImage();
+    const auto flatScale = flatSidebar.devicePixelRatio();
+    for (const auto& point :
+         {QPoint(navBody->width() - 3, 2), QPoint(3, 2), QPoint(3, navBody->height() / 2),
+          QPoint(navBody->width() - 3, navBody->height() - 3)})
+        QVERIFY2(flatSidebar.pixelColor(point * flatScale) == sidebarGray,
+                 qPrintable(QString("sidebar pixel at %1,%2").arg(point.x()).arg(point.y())));
+    // Section labels read as quiet sentence-case group labels, like "Platform" in the reference.
+    QCOMPARE(title->text(), QString("Connections"));
+    QCOMPARE(
+        title->font().pixelSize(),
+        choscordb::design::typographySpec(choscordb::design::TextStyle::Subheadline).pixelSize);
+    QCOMPARE(title->font().weight(), QFont::Medium);
+    QCOMPARE(
+        title->palette().color(title->foregroundRole()),
+        choscordb::design::resolveColors(choscordb::design::ResolvedAppearance::Light).fgMuted);
     auto* tree = window.findChild<QTreeView*>("databaseNavigator");
     const auto pixels = tree->viewport()->grab().toImage();
     const auto navigatorPixel = pixels.pixelColor(QPoint(4, 4) * pixels.devicePixelRatio());
@@ -369,10 +385,12 @@ void ModernUiTest::savedProfileBadgesDistinguishDriversInBothThemes() {
     QTRY_COMPARE(profiles->geometry().top() - navLayout->itemAt(0)->geometry().bottom() - 1,
                  navLayout->spacing());
     QTRY_VERIFY(!profiles->verticalScrollBar()->isVisible());
-    QCOMPARE(profiles->spacing(), choscordb::design::spacing(choscordb::design::Spacing::Half));
-    QCOMPARE(profiles->visualItemRect(profiles->item(1)).top() -
-                 profiles->visualItemRect(profiles->item(0)).bottom() - 1,
-             profiles->spacing() * 2);
+    // Connection rows abut at full row height, like the navigator tree; the
+    // delegate leaves the seam between highlights.
+    const auto firstRow = profiles->visualItemRect(profiles->item(0));
+    const auto secondRow = profiles->visualItemRect(profiles->item(1));
+    QCOMPARE(firstRow.height(), choscordb::design::dimension(choscordb::design::Dimension::Row));
+    QCOMPARE(secondRow.top(), firstRow.bottom() + 1);
     auto* theme = window.findChild<choscordb::design::ThemeManager*>();
     for (const auto mode :
          {choscordb::design::ThemeMode::Light, choscordb::design::ThemeMode::Dark}) {
@@ -385,7 +403,7 @@ void ModernUiTest::savedProfileBadgesDistinguishDriversInBothThemes() {
         for (int row = 0; row < profiles->count(); ++row) {
             auto* item = profiles->item(row);
             // Sample the neutral tile padding, outside the downloaded logo artwork.
-            const auto point = profiles->visualItemRect(item).topLeft() + QPoint(11, 22);
+            const auto point = profiles->visualItemRect(item).topLeft() + QPoint(14, 14);
             QCOMPARE(
                 pixels.pixelColor(point * pixels.devicePixelRatio()),
                 choscordb::design::resolveColors(mode == choscordb::design::ThemeMode::Light
@@ -718,6 +736,26 @@ void ModernUiTest::captureScreenFixtures() {
 }
 
 QTEST_MAIN(ModernUiTest)
+
+void ModernUiTest::sidebarHeaderButtonHoverLiftsToSurface() {
+    choscordb::MainWindow window;
+    window.resize(1000, 700);
+    window.show();
+    auto* addConnection = window.findChild<QPushButton*>("navigatorAddConnection");
+    QVERIFY(addConnection);
+    const auto colors = choscordb::design::resolvedThemeForWidget(*addConnection).colors;
+    const QPoint edge(2, addConnection->height() / 2);
+    const auto fill = [addConnection, edge] {
+        const auto image = addConnection->window()->grab().toImage();
+        return image.pixelColor(addConnection->mapTo(addConnection->window(), edge) *
+                                image.devicePixelRatio());
+    };
+    QTest::mouseMove(&window, QPoint(window.width() - 2, window.height() - 2));
+    QTRY_COMPARE(fill(), colors.surfaceRaised);
+    // On the gray sidebar, hover lifts to surface instead of vanishing into it.
+    QTest::mouseMove(addConnection, addConnection->rect().center());
+    QTRY_COMPARE(fill(), colors.surface);
+}
 
 void ModernUiTest::queryToolbarShowsOnlyRequestedControls() {
     choscordb::MainWindow window;

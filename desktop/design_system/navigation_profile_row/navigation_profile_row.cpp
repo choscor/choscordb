@@ -15,16 +15,22 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     const auto& colors = theme.colors;
     const bool selected = option.state & QStyle::State_Selected;
     const bool hovered = option.state & QStyle::State_MouseOver;
-    const auto bounds = option.rect.adjusted(1, 0, -1, 0);
+    // Rows abut and the highlight leaves the navigator tree's seam between them.
+    const int sideInset = spacing(Spacing::One);
+    const auto bounds = option.rect.adjusted(sideInset, 0, -sideInset, 0);
+    const qreal gap = layoutMetrics().navigationHighlightGap;
+    const auto highlight = QRectF(bounds).adjusted(0, gap / 2, 0, -gap / 2);
     const int rowRadius = radius(Radius::Medium);
     const int inset = spacing(Spacing::Two);
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(selected ? colors.border : Qt::transparent);
-    painter->setBrush(selected  ? colors.selection
-                      : hovered ? colors.surfaceRaised
-                                : colors.sidebar);
-    painter->drawRoundedRect(bounds, rowRadius, rowRadius);
+    // Idle rows stay unfilled so the sidebar surface shows through.
+    if (selected || hovered) {
+        painter->setBrush(colors.surface);
+        // Keep the selected outline inside the highlight so the seam stays clear.
+        painter->drawRoundedRect(highlight.adjusted(.5, .5, -.5, -.5), rowRadius, rowRadius);
+    }
     // One neutral tile beside the unmodified driver logo.
     const int tileSize = dimension(Dimension::ControlExtraSmall);
     const QRect tile(bounds.left() + inset, bounds.center().y() - tileSize / 2 + 1, tileSize,
@@ -41,7 +47,7 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     const int checkSize = dimension(Dimension::IconSmall);
     const int textLeft = tile.right() + 1 + inset;
     const int textWidth = qMax(0, bounds.right() - textLeft - checkSize - 2 * inset);
-    auto titleFont = resolveTypography(TypographyRole::Dense);
+    auto titleFont = resolveTypography(TextStyle::Callout);
     titleFont.setWeight(QFont::Medium);
     painter->setFont(titleFont);
     painter->setPen(colors.fg);
@@ -55,7 +61,7 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     if (option.state & QStyle::State_HasFocus) {
         painter->setPen(QPen(colors.ring, focusSpec().ringWidth));
         painter->setBrush(Qt::NoBrush);
-        painter->drawRoundedRect(QRectF(bounds).adjusted(1, 1, -1, -1), rowRadius, rowRadius);
+        painter->drawRoundedRect(highlight.adjusted(1, 1, -1, -1), rowRadius, rowRadius);
     }
     painter->restore();
 }

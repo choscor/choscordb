@@ -237,6 +237,7 @@ MainWindow::Ui MainWindow::buildUi() {
         button->setText({});
         button->setVariant(design::ButtonVariant::Ghost);
         button->setButtonSize(design::ButtonSize::IconSmall);
+        button->setButtonContext(design::ButtonContext::Sidebar);
     }
     navLayout->setContentsMargins(0, design::spacing(design::Spacing::One), 0,
                                   design::spacing(design::Spacing::Two));
@@ -255,7 +256,7 @@ MainWindow::Ui MainWindow::buildUi() {
         button->setAccessibleName(tab.second);
         button->setToolTip(tab.second);
         button->setCheckable(true);
-        button->setButtonContext(design::ButtonContext::SidebarTab);
+        button->setButtonContext(design::ButtonContext::Sidebar);
         button->setVariant(design::ButtonVariant::Ghost);
         button->setButtonSize(design::ButtonSize::IconSmall);
         button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -296,7 +297,6 @@ MainWindow::Ui MainWindow::buildUi() {
     savedConnections->setAccessibleName(tr("Saved database connections"));
     savedConnections->setSelectionMode(QAbstractItemView::MultiSelection);
     savedConnections->setItemDelegate(new design::NavigationProfileDelegate(savedConnections));
-    savedConnections->setSpacing(design::spacing(design::Spacing::Half));
     savedConnections->setProperty("designSurface", "sidebar");
     savedConnections->setMouseTracking(true);
     savedConnections->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
@@ -700,7 +700,6 @@ MainWindow::Ui MainWindow::buildUi() {
     grid->setObjectName("queryResults");
     grid->setHorizontalHeader(new ResultColumnHeader(grid));
     grid->setAccessibleName(tr("Query results"));
-    grid->setAlternatingRowColors(true);
     grid->setFrameShape(QFrame::NoFrame);
     design::configureResultTable(*grid);
     grid->setWordWrap(false);

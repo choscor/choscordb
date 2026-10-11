@@ -8,6 +8,7 @@ class ModernUiTest final : public QObject {
 
   private slots:
     void queryToolbarShowsOnlyRequestedControls();
+    void sidebarHeaderButtonHoverLiftsToSurface();
     void applicationMenusExposeHelpAndAbout();
     void helpOpensDiagnosticsExportSummary();
     void diagnosticsClearRequiresConfirmation();

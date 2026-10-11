@@ -134,6 +134,8 @@ class SecondaryDesignTest final : public QObject {
         auto* tabs = preferences.findChild<QTabWidget*>("preferencesSections");
         QCOMPARE(tabs->mapTo(&preferences, QPoint{}).x(), 0);
         QCOMPARE(tabs->width(), preferences.width());
+        // The segmented pane track starts at the dialog's inset, not its edge.
+        QCOMPARE(tabs->tabBar()->x(), design::spacing(design::Spacing::Two));
         for (const auto mode : {design::ThemeMode::Light, design::ThemeMode::Dark}) {
             theme.setMode(mode);
             theme.applyTo(preferences);

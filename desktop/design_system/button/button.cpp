@@ -16,12 +16,11 @@ int buttonPadding(ButtonSize size, ButtonContext context) {
 }
 QFont buttonFont(ButtonSize size, ButtonContext context) {
     const int index = static_cast<int>(size) % 3;
-    const auto role = context == ButtonContext::EditorAction ? TypographyRole::Dense
-                      : index == 0                           ? TypographyRole::Caption
-                      : index == 1                           ? TypographyRole::Small
-                                                             : TypographyRole::Body;
+    const auto role = context == ButtonContext::EditorAction ? TextStyle::Callout
+                      : index == 0                           ? TextStyle::Caption2
+                      : index == 1                           ? TextStyle::Subheadline
+                                                             : TextStyle::Body;
     auto font = resolveTypography(role);
-    font.setLetterSpacing(QFont::AbsoluteSpacing, 0);
     font.setWeight(QFont::Normal);
     return font;
 }
@@ -155,7 +154,7 @@ void Button::paintEvent(QPaintEvent*) {
         break;
     case ButtonVariant::Ghost:
         if (hover || pressed)
-            background = colors.surfaceRaised;
+            background = context_ == ButtonContext::Sidebar ? colors.surface : colors.surfaceRaised;
         break;
     case ButtonVariant::Destructive:
         background = alpha(colors.danger, (dark ? .2 : .1) + (hover || pressed ? .1 : 0.));
@@ -165,9 +164,10 @@ void Button::paintEvent(QPaintEvent*) {
         foreground = colors.primary;
         break;
     }
-    // Checked toggles, segments and choices are selected rows of a set.
+    // Checked toggles, segments and choices are selected rows of a set; the
+    // sidebar selects with surface, like the selected tab on a tab bar.
     if (isChecked() && variant_ != ButtonVariant::Default) {
-        background = colors.selection;
+        background = context_ == ButtonContext::Sidebar ? colors.surface : colors.selection;
         foreground = colors.fg;
     }
     if (context_ == ButtonContext::Choice && isChecked())

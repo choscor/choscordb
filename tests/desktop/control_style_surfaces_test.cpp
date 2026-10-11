@@ -242,8 +242,8 @@ void ControlStyleTest::unusedHeaderGutterUsesThemeSurface_data() {
     using namespace choscordb::design;
     QTest::addColumn<bool>("dark");
     QTest::addColumn<QColor>("expected");
-    QTest::newRow("light") << false << resolveColors(ResolvedAppearance::Light).surfaceRaised;
-    QTest::newRow("dark") << true << resolveColors(ResolvedAppearance::Dark).surfaceRaised;
+    QTest::newRow("light") << false << resolveColors(ResolvedAppearance::Light).surface;
+    QTest::newRow("dark") << true << resolveColors(ResolvedAppearance::Dark).surface;
 }
 
 void ControlStyleTest::unusedHeaderGutterUsesThemeSurface() {
@@ -263,6 +263,19 @@ void ControlStyleTest::unusedHeaderGutterUsesThemeSurface() {
     auto* header = table.verticalHeader();
     const auto image = header->grab().toImage();
     QCOMPARE(image.pixelColor(image.width() / 2, image.height() - 10), expected);
+    const auto sections = table.horizontalHeader()->grab().toImage();
+    QCOMPARE(sections.pixelColor(2, sections.height() / 2), expected);
+    QCOMPARE(image.pixelColor(2, header->sectionSize(0) / 2), expected);
+    QAbstractButton* corner = nullptr;
+    for (auto* button : table.findChildren<QAbstractButton*>()) {
+        if (button->inherits("QTableCornerButton")) {
+            corner = button;
+            break;
+        }
+    }
+    QVERIFY(corner);
+    const auto cornerImage = corner->grab().toImage();
+    QCOMPARE(cornerImage.pixelColor(cornerImage.width() / 2, cornerImage.height() / 2), expected);
 }
 
 void ControlStyleTest::tableHeaderColumnsHaveSeparators() {
@@ -312,6 +325,38 @@ void ControlStyleTest::rowNumberColumnHasVerticalSeparator() {
     const auto cornerImage = corner->grab().toImage();
     QCOMPARE(cornerImage.pixelColor(cornerImage.width() - 1, cornerImage.height() / 2),
              theme.colors.border);
+}
+
+void ControlStyleTest::selectedPaneTabKeepsAnOutlineInForcedContrast() {
+    using namespace choscordb::design;
+    // Forced contrast flattens surface and surface-raised, so the selected
+    // segment needs an outline to stay distinguishable.
+    QPalette contrast;
+    contrast.setColor(QPalette::Window, Qt::black);
+    contrast.setColor(QPalette::Base, Qt::black);
+    contrast.setColor(QPalette::WindowText, Qt::white);
+    const ResolvedTheme theme{ResolvedAppearance::Dark, resolveForcedContrastColors(contrast),
+                              true};
+    QWidget root;
+    root.setStyleSheet(applicationStyleSheet(theme));
+    QTabBar tabs(&root);
+    tabs.setExpanding(false);
+    tabs.addTab("Columns");
+    tabs.addTab("Indexes");
+    tabs.resize(tabs.sizeHint());
+    root.resize(340, 80);
+    root.show();
+    QApplication::processEvents();
+    const auto capture = tabs.grab();
+    const auto image = capture.toImage();
+    const auto scale = capture.devicePixelRatio();
+    const int edge = spacing(Spacing::Half);
+    const auto top = [&](const QRect& tab) {
+        return image.pixelColor(qRound(tab.center().x() * scale),
+                                qRound((tab.top() + edge) * scale));
+    };
+    QCOMPARE(top(tabs.tabRect(0)), theme.colors.border);
+    QVERIFY(top(tabs.tabRect(1)) != theme.colors.border);
 }
 
 void ControlStyleTest::tableHeaderAndTabTooltipsUseSharedSurface() {
@@ -524,7 +569,7 @@ void ControlStyleTest::badgeAndProgressUseCompactReferenceGeometry() {
     const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
                               false};
     QWidget root;
-    root.setFont(resolveTypography(TypographyRole::Body));
+    root.setFont(resolveTypography(TextStyle::Body));
     root.setStyleSheet(applicationStyleSheet(theme));
     QLabel badge("Connected", &root);
     badge.setProperty("designRole", "badge");
@@ -583,7 +628,7 @@ void ControlStyleTest::tabsToolsAndTableHeadersUseCompactPaneGeometry() {
     const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
                               false};
     QWidget root;
-    root.setFont(resolveTypography(TypographyRole::Body));
+    root.setFont(resolveTypography(TextStyle::Body));
     root.setStyleSheet(applicationStyleSheet(theme));
     QTabBar tabs(&root);
     tabs.addTab("Results");
@@ -635,7 +680,7 @@ void ControlStyleTest::menusTabsAndScrollbarsUseSharedSurfacesAndRemainInteracti
     const ResolvedTheme theme{ResolvedAppearance::Dark, resolveColors(ResolvedAppearance::Dark),
                               false};
     QWidget root;
-    root.setFont(resolveTypography(TypographyRole::Body));
+    root.setFont(resolveTypography(TextStyle::Body));
     root.setStyle(&style);
     root.setPalette(applicationPalette(theme));
     root.setProperty("designTheme", QVariant::fromValue(theme));
@@ -679,7 +724,7 @@ void ControlStyleTest::fieldsExposeInvalidBorderAndPreserveReadOnlyAndPopupInput
     const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
                               false};
     QWidget root;
-    root.setFont(resolveTypography(TypographyRole::Body));
+    root.setFont(resolveTypography(TextStyle::Body));
     root.setStyle(&style);
     root.setPalette(applicationPalette(theme));
     root.setStyleSheet(applicationStyleSheet(theme));

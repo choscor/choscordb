@@ -6,7 +6,8 @@
 #include <optional>
 
 namespace choscordb::design {
-enum class ButtonContext { Standard, EditorAction, Choice, SidebarTab, TabAction };
+// `Sidebar` buttons rest on the gray sidebar, so hover and checked lift to `surface`.
+enum class ButtonContext { Standard, EditorAction, Choice, Sidebar, TabAction };
 enum class ButtonVariant { Default, Secondary, Outline, Ghost, Destructive, Link };
 // Text sizes, then the square icon-only sizes in the same order.
 enum class ButtonSize { ExtraSmall, Small, Default, IconExtraSmall, IconSmall, Icon };

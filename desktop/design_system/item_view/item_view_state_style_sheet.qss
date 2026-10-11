@@ -8,11 +8,12 @@ QTableView::item:hover:!selected, QListView::item:hover:!selected {
 }
 
 QListView[designSurface="sidebar"]::item:selected {
+  background: @surface;
   border-radius: @radius-md;
 }
 
-QListView[designNavigationItem="true"]::item:hover:!selected {
-  background: @surface-raised;
+QListView[designSurface="sidebar"]::item:hover:!selected {
+  background: @surface;
   color: @fg;
   border-radius: @radius-md;
 }

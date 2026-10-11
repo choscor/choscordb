@@ -3,18 +3,19 @@ QWidget[designSurface="subtle"] {
 }
 
 QWidget[designSurface="sidebar"] {
-  background: @sidebar;
+  background: @surface-raised;
 }
 
-/* A softly layered navigator surface, shared by all three sidebar panes. */
+/* One flat sidebar surface, shared by all three sidebar panes, in the gray of
+   the tab bars. */
 QWidget#navigatorBody {
-  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                              stop:0 @sidebar-glass-top, stop:0.56 @sidebar-glass-top,
-                              stop:1 @sidebar-glass-bottom);
+  background: @surface-raised;
   border-right: 1px solid @border;
 }
 
 QWidget#navigatorBody QStackedWidget,
+QWidget#navigatorBody QScrollArea#connectionsScroll,
+QWidget#navigatorBody QScrollArea#connectionsScroll > QWidget#qt_scrollarea_viewport,
 QWidget#navigatorBody QWidget#connectionsPanel,
 QWidget#navigatorBody QWidget#savedPanel,
 QWidget#navigatorBody QWidget#historyPanel,
@@ -37,7 +38,6 @@ QWidget[designSurface="muted"] {
 
 QTableView, QTreeView, QListView {
   background: @surface;
-  alternate-background-color: @surface-raised;
   color: @fg;
   border: 0;
   gridline-color: @border;

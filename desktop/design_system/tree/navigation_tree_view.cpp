@@ -71,7 +71,7 @@ void NavigationTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& 
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(theme.forcedContrast && selected ? QPen(colors.ring, focusSpec().ringWidth)
                                                      : QPen(Qt::NoPen));
-    painter->setBrush(selected ? colors.selection : colors.surfaceRaised);
+    painter->setBrush(colors.surface);
     painter->drawRoundedRect(highlight, rounding, rounding);
     painter->restore();
 
@@ -89,7 +89,7 @@ void NavigationTreeView::drawBranches(QPainter* painter, const QRect& rect,
         painter->setRenderHint(QPainter::Antialiasing);
         painter->setClipRect(rect);
         painter->setPen(Qt::NoPen);
-        painter->setBrush(selected ? colors.selection : colors.surfaceRaised);
+        painter->setBrush(colors.surface);
         const qreal gap = layoutMetrics().navigationHighlightGap;
         const int inset = spacing(Spacing::One);
         const int rounding = radius(Radius::Medium);

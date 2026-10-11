@@ -346,16 +346,28 @@ void ControlStyleTest::paneTabsPaintReferenceInsetsWithoutMovingDocumentTabs() {
     tabs.setExpanding(false);
     tabs.addTab("Columns");
     tabs.addTab("Indexes");
-    tabs.resize(320, 35);
+    tabs.resize(tabs.sizeHint());
     root.resize(340, 80);
     root.show();
     QCoreApplication::processEvents();
+    // Segmented pane tabs: a rounded surface-raised track, with the selected
+    // tab an inset surface segment.
+    QCOMPARE(tabs.sizeHint().height(), dimension(Dimension::Tab));
     const auto capture = tabs.grab();
     const auto image = capture.toImage();
     const auto scale = capture.devicePixelRatio();
-    QCOMPARE(image.pixelColor(qRound(4 * scale), qRound(12 * scale)), QColor("#eef1f2"));
-    QCOMPARE(image.pixelColor(qRound(10 * scale), qRound(12 * scale)), QColor("#ffffff"));
-    QCOMPARE(tabs.height(), 35);
+    const auto at = [&](int x, int y) {
+        return image.pixelColor(qRound(x * scale), qRound(y * scale));
+    };
+    const QRect selected = tabs.tabRect(0);
+    const QRect idle = tabs.tabRect(1);
+    QCOMPARE(at(selected.left() + 4, selected.center().y()), QColor("#ffffff"));
+    QCOMPARE(at(selected.center().x(), 0), QColor("#eef1f2"));
+    QCOMPARE(at(idle.left() + 4, idle.center().y()), QColor("#eef1f2"));
+    // The track's corner is rounded, so its parent shows through.
+    const auto parentImage = root.grab(tabs.geometry()).toImage();
+    QVERIFY(parentImage.pixelColor(0, 0) != QColor("#eef1f2"));
+    QCOMPARE(parentImage.pixelColor(qRound(selected.center().x() * scale), 0), QColor("#eef1f2"));
     QTest::mouseClick(&tabs, Qt::LeftButton, {}, tabs.tabRect(1).center());
     QCOMPARE(tabs.currentIndex(), 1);
     tabs.setProperty("designTabVariant", "document");
@@ -425,15 +437,14 @@ void ControlStyleTest::closableDocumentTabsUseCompactHeight() {
              qPrintable(QString::number(tabs.tabRect(0).width())));
 }
 
-void ControlStyleTest::inputTrackingResetsBodyTrackingAndRemainsEditable() {
+void ControlStyleTest::inputUsesUntrackedCalloutFontAndRemainsEditable() {
     using namespace choscordb::design;
     QWidget root;
     ThemeManager theme;
     theme.applyTo(root);
     QLineEdit field(&root);
     field.ensurePolished();
-    QVERIFY2(root.font().letterSpacing() < 0,
-             qPrintable(QString::number(root.font().letterSpacing())));
+    QCOMPARE(root.font().letterSpacing(), 0.0);
     QCOMPARE(field.font().letterSpacing(), 0.0);
     QCOMPARE(field.font().pixelSize(), 12);
     QCOMPARE(field.font().weight(), QFont::Medium);

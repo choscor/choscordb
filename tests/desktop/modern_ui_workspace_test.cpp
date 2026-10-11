@@ -453,7 +453,7 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     auto* resetLayout = window.findChild<QAction*>("resetLayout");
 
     QVERIFY(navigatorTitle);
-    QCOMPARE(navigatorTitle->text(), QString("CONNECTIONS"));
+    QCOMPARE(navigatorTitle->text(), QString("Connections"));
     QVERIFY(addConnection);
     QVERIFY(!addConnection->accessibleName().isEmpty());
     QVERIFY(!addConnection->toolTip().isEmpty());

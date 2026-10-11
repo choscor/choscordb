@@ -26,7 +26,7 @@ class ControlStyleTest final : public QObject {
     void paneTabsPaintReferenceInsetsWithoutMovingDocumentTabs();
     void documentOverflowDoesNotPaintTornEdges();
     void closableDocumentTabsUseCompactHeight();
-    void inputTrackingResetsBodyTrackingAndRemainsEditable();
+    void inputUsesUntrackedCalloutFontAndRemainsEditable();
     void referenceSwitchMovesItsThumbAndKeepsKeyboardSemantics();
     void tabCloseUsesNeutralGlyphAndStillDispatches();
     void standardConfirmationVariantsKeepSafeDefaultDistinct();
@@ -47,6 +47,7 @@ class ControlStyleTest final : public QObject {
     void unusedHeaderGutterUsesThemeSurface();
     void tableHeaderColumnsHaveSeparators();
     void rowNumberColumnHasVerticalSeparator();
+    void selectedPaneTabKeepsAnOutlineInForcedContrast();
     void tableHeaderAndTabTooltipsUseSharedSurface();
     void itemTooltipsUseSharedSurface();
     void unbrokenTooltipWrapsAndOwnerDestructionDismissesIt();

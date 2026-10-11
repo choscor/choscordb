@@ -1,10 +1,12 @@
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
 #include "design_system/control_style.h"
+#include "design_system/history_row/history_row.h"
 #include "design_system/icons.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/theme_manager.h"
 #include "design_system/tree/navigation_tree_view.h"
+#include <QCursor>
 #include <QHBoxLayout>
 #include <QListWidget>
 #include <QPainter>
@@ -20,28 +22,37 @@
 class ComponentsTest final : public QObject {
     Q_OBJECT
   private slots:
-    void sidebarSelectionUsesSelectionFill() {
+    void sidebarTabSelectionUsesSurface() {
         using namespace choscordb::design;
         for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
             QWidget root;
+            root.setProperty("designSurface", "sidebar");
+            root.setAttribute(Qt::WA_StyledBackground);
             ThemeManager theme;
             theme.setMode(mode);
             theme.applyTo(root);
             Button button("", &root);
             button.setVariant(ButtonVariant::Ghost);
-            button.setButtonContext(ButtonContext::SidebarTab);
+            button.setButtonContext(ButtonContext::Sidebar);
             button.setCheckable(true);
             button.resize(100, 29);
             root.show();
             button.setChecked(true);
             const auto selected = button.grab().toImage();
             const auto colors = resolvedThemeForWidget(button).colors;
-            QCOMPARE(selected.pixelColor(20, 14), colors.selection);
+            QCOMPARE(selected.pixelColor(20, 14), colors.surface);
             button.setChecked(false);
-            QVERIFY(button.grab().toImage().pixelColor(20, 14) != colors.surfaceRaised);
+            // An unchecked, unhovered tab is unfilled, so the sidebar shows through.
+            const auto idle = root.grab().toImage();
+            QCOMPARE(idle.pixelColor(QPoint(20, 14) * idle.devicePixelRatio()),
+                     colors.surfaceRaised);
+            QTest::mouseMove(&root, QPoint(root.width() - 1, root.height() - 1));
+            QTest::mouseMove(&button, button.rect().center());
+            QTRY_COMPARE_WITH_TIMEOUT(button.grab().toImage().pixelColor(20, 14), colors.surface,
+                                      1000);
         }
     }
-    void paneAndDocumentTabsHaveSquareCorners() {
+    void paneTabsAreSegmentedAndDocumentTabsAreRounded() {
         using namespace choscordb::design;
         QWidget root;
         ThemeManager theme;
@@ -57,29 +68,30 @@ class ComponentsTest final : public QObject {
         root.show();
         QCoreApplication::processEvents();
         const auto rect = tabs.tabRect(1);
-        auto image = tabs.grab().toImage();
+        auto capture = tabs.grab();
+        auto image = capture.toImage();
+        const auto scale = capture.devicePixelRatio();
+        const auto at = [&](int x, int y) {
+            return image.pixelColor(qRound(x * scale), qRound(y * scale));
+        };
         const auto colors = resolvedThemeForWidget(tabs).colors;
-        int topOfFill = rect.top();
-        while (topOfFill < rect.top() + 10 &&
-               image.pixelColor(rect.left() + 8, topOfFill) == colors.surfaceRaised)
-            ++topOfFill;
-        QVERIFY(topOfFill < rect.top() + 10);
-        QCOMPARE(image.pixelColor(rect.left() + 8, topOfFill), colors.surface);
-        QCOMPARE(image.pixelColor(rect.left() + 1, topOfFill), colors.surface);
+        // The selected segment is a surface fill inset in the track, with rounded corners.
+        QCOMPARE(at(rect.left() + 8, rect.center().y()), colors.surface);
+        QCOMPARE(at(rect.center().x(), rect.top()), colors.surfaceRaised);
+        QCOMPARE(at(rect.left(), rect.top() + spacing(Spacing::Half)), colors.surfaceRaised);
         tabs.setProperty("designTabVariant", "document");
         tabs.style()->unpolish(&tabs);
         tabs.style()->polish(&tabs);
-        image = tabs.grab().toImage();
+        capture = tabs.grab();
+        image = capture.toImage();
         const auto documentRect = tabs.tabRect(1);
-        int documentTop = documentRect.top();
-        while (documentTop < documentRect.top() + 10 &&
-               image.pixelColor(documentRect.left() + 8, documentTop) == colors.surfaceRaised)
-            ++documentTop;
-        QVERIFY(documentTop < documentRect.top() + 10);
-        QCOMPARE(image.pixelColor(documentRect.left() + 8, documentTop), colors.fgMuted);
-        QCOMPARE(image.pixelColor(documentRect.left() + 1, documentTop), colors.fgMuted);
+        // The current document tab has no dark top rule, and its top corners are rounded.
+        QCOMPARE(at(documentRect.center().x(), documentRect.top()), colors.surface);
+        QCOMPARE(at(documentRect.left() + 8, documentRect.top()), colors.surface);
+        QCOMPARE(at(documentRect.left(), documentRect.top()), colors.surfaceRaised);
+        QCOMPARE(at(documentRect.left(), documentRect.bottom()), colors.surface);
     }
-    void sidebarTreeSelectionHasRoundedSelectionFill() {
+    void sidebarTreeSelectionHasRoundedSurfaceFill() {
         using namespace choscordb::design;
         for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
             QWidget root;
@@ -107,9 +119,9 @@ class ComponentsTest final : public QObject {
             const auto rect = tree.visualRect(model.index(0, 0));
             const auto image = tree.viewport()->grab().toImage();
             const auto colors = resolvedThemeForWidget(tree).colors;
-            QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()), colors.selection);
-            QCOMPARE(image.pixelColor(6, rect.center().y()), colors.selection);
-            QCOMPARE(image.pixelColor(10, rect.top() + 3), colors.selection);
+            QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()), colors.surface);
+            QCOMPARE(image.pixelColor(6, rect.center().y()), colors.surface);
+            QCOMPARE(image.pixelColor(10, rect.top() + 3), colors.surface);
             QVERIFY(image.pixelColor(6, rect.top() + 1) != colors.surfaceRaised);
             const auto hoverRect = tree.visualRect(model.index(1, 0));
             QVERIFY(tree.viewport()->hasMouseTracking());
@@ -118,7 +130,7 @@ class ComponentsTest final : public QObject {
             QCoreApplication::processEvents();
             const auto hovered = tree.viewport()->grab().toImage();
             QCOMPARE(hovered.pixelColor(hoverRect.right() - 8, hoverRect.center().y()),
-                     colors.surfaceRaised);
+                     colors.surface);
             tree.verticalScrollBar()->setValue(tree.verticalScrollBar()->value() + 2);
             QCoreApplication::processEvents();
             const auto underPointer = tree.indexAt(hoverRect.center());
@@ -127,16 +139,19 @@ class ComponentsTest final : public QObject {
             const auto scrolled = tree.viewport()->grab().toImage();
             QCOMPARE(scrolled.pixelColor(tree.visualRect(underPointer).right() - 8,
                                          hoverRect.center().y()),
-                     colors.surfaceRaised);
+                     colors.surface);
         }
     }
     void sidebarTreeLeaveFromBlankSpaceDoesNotLeaveStaleHover() {
         using namespace choscordb::design;
         QWidget root;
+        root.setProperty("designSurface", "sidebar");
+        root.setAttribute(Qt::WA_StyledBackground);
         ThemeManager theme;
         theme.setMode(ThemeMode::Light);
         theme.applyTo(root);
         NavigationTreeView tree(&root);
+        tree.setObjectName("databaseNavigator");
         QStandardItemModel model;
         model.appendRow(new QStandardItem("First"));
         tree.setModel(&model);
@@ -157,11 +172,13 @@ class ComponentsTest final : public QObject {
         QCoreApplication::processEvents();
         const auto row = tree.indexAt(blank);
         QVERIFY(row.isValid());
-        const auto image = tree.viewport()->grab().toImage();
-        QVERIFY(image.pixelColor(tree.visualRect(row).right() - 8, blank.y()) !=
-                resolvedThemeForWidget(tree).colors.surfaceRaised);
+        const auto image = root.grab().toImage();
+        QCOMPARE(image.pixelColor(tree.viewport()->mapTo(
+                                      &root, QPoint(tree.visualRect(row).right() - 8, blank.y())) *
+                                  image.devicePixelRatio()),
+                 resolvedThemeForWidget(tree).colors.surfaceRaised);
     }
-    void sidebarSavedFilesSelectionUsesSelectionFill() {
+    void sidebarSavedFilesSelectionUsesSurface() {
         using namespace choscordb::design;
         for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
             QWidget root;
@@ -187,7 +204,15 @@ class ComponentsTest final : public QObject {
             const auto rect = tree.visualItemRect(item);
             const auto image = tree.viewport()->grab().toImage();
             QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()),
-                     resolvedThemeForWidget(tree).colors.selection);
+                     resolvedThemeForWidget(tree).colors.surface);
+            auto* other = new QTreeWidgetItem(&tree, {"Other query"});
+            const auto otherRect = tree.visualItemRect(other);
+            QTest::mouseMove(tree.viewport(), QPoint(1, tree.viewport()->height() - 2));
+            QTest::mouseMove(tree.viewport(), otherRect.center());
+            QCoreApplication::processEvents();
+            QTRY_COMPARE_WITH_TIMEOUT(tree.viewport()->grab().toImage().pixelColor(
+                                          otherRect.right() - 8, otherRect.center().y()),
+                                      resolvedThemeForWidget(tree).colors.surface, 1000);
         }
     }
     void selectedConnectionRowUsesNeutralColors() {
@@ -213,7 +238,99 @@ class ComponentsTest final : public QObject {
             const auto row = list.visualItemRect(item);
             const auto image = list.viewport()->grab().toImage();
             const auto colors = resolvedThemeForWidget(list).colors;
-            QCOMPARE(image.pixelColor(row.left() + 3, row.center().y()), colors.selection);
+            QCOMPARE(image.pixelColor(row.left() + 7, row.center().y()), colors.surface);
+        }
+    }
+    void adjacentSelectedConnectionRowsLeaveTheTreeSeam() {
+        using namespace choscordb::design;
+        QWidget root;
+        ThemeManager theme;
+        theme.setMode(ThemeMode::Light);
+        theme.applyTo(root);
+        QListWidget list(&root);
+        list.setObjectName("savedConnections");
+        list.setProperty("designSurface", "sidebar");
+        list.setSelectionMode(QAbstractItemView::MultiSelection);
+        list.setItemDelegate(new NavigationProfileDelegate(&list));
+        for (const auto* name : {"Commerce", "Logistics"}) {
+            auto* item = new QListWidgetItem(name, &list);
+            item->setData(NavigationProfileDelegate::DriverRole, "sqlite");
+            item->setSelected(true);
+        }
+        list.resize(240, 80);
+        root.resize(250, 90);
+        root.show();
+        QCoreApplication::processEvents();
+        const auto first = list.visualItemRect(list.item(0));
+        const auto second = list.visualItemRect(list.item(1));
+        const auto image = list.viewport()->grab().toImage();
+        const int scale = qRound(image.devicePixelRatio());
+        // Between the driver tile and the name, where neither paints.
+        const int x = first.left() + spacing(Spacing::One) + spacing(Spacing::Two) * 3 / 2 +
+                      dimension(Dimension::ControlExtraSmall);
+        // The viewport is transparent wherever no highlight covers it.
+        int seam = 0;
+        for (int y = first.center().y() * scale; y <= second.center().y() * scale; ++y)
+            seam += image.pixelColor(x * scale, y).alpha() < 255;
+        const int gap = layoutMetrics().navigationHighlightGap;
+        QVERIFY2(seam >= gap * scale && seam <= (gap + 1) * scale,
+                 qPrintable(QString("seam=%1").arg(seam)));
+    }
+    void selectedHistoryRowUsesSurface() {
+        using namespace choscordb::design;
+        for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
+            QWidget root;
+            ThemeManager theme;
+            theme.setMode(mode);
+            theme.applyTo(root);
+            QListWidget list(&root);
+            list.setObjectName("sidebarHistoryItems");
+            list.setProperty("designSurface", "sidebar");
+            list.setItemDelegate(new RecentHistoryRowDelegate(&list));
+            auto* item = new QListWidgetItem("select 1", &list);
+            item->setData(RecentHistoryRowDelegate::SqlRole, "select 1");
+            item->setData(RecentHistoryRowDelegate::StatusRole, "completed");
+            list.resize(240, 120);
+            root.resize(250, 130);
+            root.show();
+            list.setCurrentItem(item);
+            list.selectionModel()->select(list.indexFromItem(item),
+                                          QItemSelectionModel::ClearAndSelect);
+            QCoreApplication::processEvents();
+            const auto row = list.visualItemRect(item);
+            const auto image = list.viewport()->grab().toImage();
+            QCOMPARE(image.pixelColor(row.left() + 4, row.center().y()),
+                     resolvedThemeForWidget(list).colors.surface);
+        }
+    }
+    void idleConnectionRowShowsTheSidebarBehindIt() {
+        using namespace choscordb::design;
+        const auto cursor = QCursor::pos();
+        const auto restoreCursor = qScopeGuard([cursor] { QCursor::setPos(cursor); });
+        for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
+            QWidget root;
+            root.setObjectName("navigatorBody");
+            ThemeManager theme;
+            theme.setMode(mode);
+            theme.applyTo(root);
+            QListWidget list(&root);
+            list.setObjectName("savedConnections");
+            list.setProperty("designSurface", "sidebar");
+            list.setItemDelegate(new NavigationProfileDelegate(&list));
+            auto* item = new QListWidgetItem("Example Postgres\nPostgreSQL", &list);
+            item->setData(NavigationProfileDelegate::DriverRole, "postgres");
+            list.resize(240, 80);
+            root.resize(250, 90);
+            QCursor::setPos(-1000, -1000);
+            root.show();
+            list.clearSelection();
+            QCoreApplication::processEvents();
+            const auto row = list.visualItemRect(item);
+            const auto image = root.grab().toImage();
+            const auto offset = list.viewport()->mapTo(&root, QPoint());
+            const QPoint inRow = offset + QPoint(row.left() + 3, row.center().y());
+            const QPoint belowRows = offset + QPoint(row.left() + 3, row.bottom() + 20);
+            QCOMPARE(image.pixelColor(inRow), image.pixelColor(belowRows));
         }
     }
     void connectionRowsAreCompactAndShowOnlyCenteredNames() {
