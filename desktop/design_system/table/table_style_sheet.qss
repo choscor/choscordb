@@ -1,9 +1,11 @@
 QTableView {
-  font-size: @font-dense;
+  font-size: @font-callout;
 }
 
-QTableView QHeaderView {
-  background: @surface-raised;
+QTableView QHeaderView,
+QTableView QHeaderView::section,
+QTableView QTableCornerButton::section {
+  background: @surface;
 }
 
 QTableView QHeaderView::section:horizontal {
@@ -19,6 +21,5 @@ QTableView QHeaderView::section:vertical {
 }
 
 QTableView QTableCornerButton::section {
-  background: @surface-raised;
   border-right: 1px solid @border;
 }

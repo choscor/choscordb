@@ -202,7 +202,7 @@ class ObjectDataWorkspaceTest : public QObject {
             !host.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly));
     }
 
-    void resultGridUsesCompactHeaderAndAlternatingRows() {
+    void resultGridUsesCompactHeaderWithoutStripes() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
         choscordb::ObjectDataWorkspace data(sql);
@@ -220,14 +220,60 @@ class ObjectDataWorkspaceTest : public QObject {
         QVERIFY(model->setPage({first, second}, {{QString("Active"), QString("true")}}, 0));
         QCOMPARE(grid->horizontalHeader()->sectionResizeMode(0), QHeaderView::Interactive);
         QVERIFY(!grid->horizontalHeader()->stretchLastSection());
-        QVERIFY(grid->alternatingRowColors());
+        QVERIFY(!grid->alternatingRowColors());
         QCOMPARE(data.property("designSurface").toString(), QString("panel"));
         auto* queryGrid = window.findChild<QTableView*>("queryResults");
         QVERIFY(queryGrid);
         QCOMPARE(queryGrid->horizontalHeader()->height(),
                  choscordb::design::dimension(choscordb::design::Dimension::Header));
-        QVERIFY(queryGrid->alternatingRowColors());
+        QVERIFY(!queryGrid->alternatingRowColors());
     }
+    void resultGridColumnsFitTheirFullHeaderLabel() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* run = window.findChild<QAction*>("runStatement");
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("CREATE TABLE people AS SELECT CAST(1 AS INTEGER) AS id, "
+                        "CAST('m@x.io' AS TEXT) AS email, "
+                        "CAST('2026-08-02' AS TEXT) AS created_at;");
+        run->trigger();
+        QTRY_VERIFY(window.findChild<QPlainTextEdit*>("queryMessages")
+                        ->toPlainText()
+                        .contains("Completed"));
+        QTRY_VERIFY(run->isEnabled());
+        const auto connection =
+            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(900, 400);
+        data.openObject(connection, R"(["main","people"])", "people");
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        QVERIFY(grid);
+        QTRY_COMPARE(grid->model()->rowCount(), 1);
+        data.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&data));
+        auto* header = grid->horizontalHeader();
+        for (int column = 0; column < grid->model()->columnCount(); ++column) {
+            const auto label = grid->model()->headerData(column, Qt::Horizontal).toString();
+            QVERIFY2(label.contains(QStringLiteral(" · ")), qPrintable(label));
+            const int fitted = header->sectionSize(column);
+            QCOMPARE(fitted, header->sectionSizeHint(column));
+            // A fitted label paints exactly as it does with ample room, so it is not elided.
+            const QRect labelArea(header->sectionViewportPosition(column), 0, fitted - 1,
+                                  header->height());
+            const auto atFit = header->grab(labelArea).toImage();
+            header->resizeSection(column, fitted + 80);
+            const auto roomy = header->grab(labelArea).toImage();
+            header->resizeSection(column, fitted);
+            QVERIFY2(atFit == roomy, qPrintable(label));
+        }
+    }
+
     void hoveringCellPreservesTheRowBackgroundAndText() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();

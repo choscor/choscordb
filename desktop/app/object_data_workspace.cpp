@@ -41,7 +41,6 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     table->setHorizontalHeader(new ResultColumnHeader(table));
     table->setAccessibleName(tr("Object data"));
     table->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
-    table->setAlternatingRowColors(true);
     design::configureResultTable(*table, false);
     table->setWordWrap(false);
     table->setFrameShape(QFrame::NoFrame);

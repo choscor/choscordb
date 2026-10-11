@@ -45,7 +45,7 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     headerLayout->setContentsMargins(design::spacing(design::Spacing::Four), 0,
                                      design::spacing(design::Spacing::Four), 0);
     auto* heading = new design::Text(tr("Preferences"), header);
-    heading->setTypographyRole(design::TypographyRole::Title);
+    heading->setTextStyle(design::TextStyle::Headline);
     headerLayout->addWidget(heading);
     headerLayout->addStretch();
     auto* dismiss = new design::Button({}, header);
@@ -60,6 +60,7 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     pages->setObjectName("preferencesSections");
     pages->setAccessibleName(tr("Preference sections"));
     pages->setDocumentMode(true);
+    pages->setProperty("designTabVariant", "pane");
     pages->setUsesScrollButtons(true);
     pages_ = pages;
     auto* body = sections->bodyLayout();
@@ -439,7 +440,7 @@ EditorPreferences PreferencesDialog::draft() const {
 void PreferencesDialog::fill(const EditorPreferences& value) {
     system_->setChecked(value.fontFamily.isEmpty());
     font_->setCurrentFont(value.fontFamily.isEmpty()
-                              ? design::resolveTypography(design::TypographyRole::Mono)
+                              ? design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced)
                               : QFont(value.fontFamily));
     size_->setValue(value.fontSize);
     for (qsizetype i = 0; i < catalog_.size(); ++i) {
@@ -454,7 +455,7 @@ void PreferencesDialog::fill(const EditorPreferences& value) {
 }
 void PreferencesDialog::updatePreview() {
     font_->setEnabled(!system_->isChecked());
-    QFont selected = system_->isChecked() ? design::resolveTypography(design::TypographyRole::Mono)
+    QFont selected = system_->isChecked() ? design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced)
                                           : font_->currentFont();
     selected.setPointSize(size_->value());
     preview_->setEditorFont(selected);

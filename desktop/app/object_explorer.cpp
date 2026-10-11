@@ -207,7 +207,6 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     for (const auto& title :
          {tr("Columns"), tr("Indexes"), tr("Keys"), tr("DDL"), tr("ERD"), tr("Data")})
         tabs_->addTab(title);
-    layout->addWidget(tabs_);
     pages_ = new QStackedWidget(this);
     table_ = new QTableView(pages_);
     table_->setObjectName("objectMetadata");
@@ -215,7 +214,6 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     model_ = new QStandardItemModel(this);
     table_->setModel(model_);
     table_->setItemDelegate(new ObjectColumnDelegate(table_));
-    table_->setAlternatingRowColors(true);
     table_->verticalHeader()->hide();
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setShowGrid(false);
@@ -226,14 +224,13 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     table_->verticalHeader()->setResizeContentsPrecision(50);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-    table_->horizontalHeader()->setStretchLastSection(true);
     pages_->addWidget(table_);
     ddl_ = new DdlEditor(pages_);
     ddl_->setObjectName("objectDdl");
     ddl_->setAccessibleName(tr("Object DDL"));
     ddl_->setReadOnly(true);
     ddl_->setProperty("designRole", "codePreview");
-    ddl_->setFont(design::resolveTypography(design::TypographyRole::Mono));
+    ddl_->setFont(design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
     ddl_->setFrameShape(QFrame::NoFrame);
     new DdlHighlighter(ddl_);
     pages_->addWidget(ddl_);
@@ -253,6 +250,12 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One),
         design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One));
     layout->insertWidget(0, headerBody);
+    // Pane tabs and their actions share one row; the segmented track hugs its tabs.
+    header->addWidget(tabs_);
+    auto* separator = new QFrame(headerBody);
+    separator->setFrameShape(QFrame::VLine);
+    separator->setFixedHeight(design::dimension(design::Dimension::ControlSmall));
+    header->addWidget(separator);
     auto* footerBody = new design::StatusLine(this);
     footerBody->setObjectName("objectFooter");
     footer_ = footerBody;
@@ -316,6 +319,8 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                                   : button == generate_ ? design::Icon::Code
                                                         : design::Icon::Refresh);
     }
+    // Tab order follows the shared row: pane tabs, then their actions.
+    setTabOrder(tabs_, refresh_);
     updateActions();
     connect(refresh_, &QPushButton::clicked, this, [this] {
         if (tabs_->currentIndex() == 4)
@@ -643,7 +648,7 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
     const auto mutedText = design::resolvedThemeForWidget(*this).colors.fgMuted;
     const QIcon keyIcon = design::themedIcon(design::Icon::Key, mutedText, objectIconSize());
     const QIcon fileIcon = design::themedIcon(design::Icon::File, mutedText, objectIconSize());
-    const QFont metadataFont = design::resolveTypography(design::TypographyRole::Metadata);
+    const QFont metadataFont = design::resolveTypography(design::TextStyle::Callout, design::FontDesign::Monospaced);
     // Grow the model once, then fill cells, instead of one insertion per row.
     const int firstRow = model_->rowCount();
     model_->setRowCount(firstRow + int(inspection.rows.size()));

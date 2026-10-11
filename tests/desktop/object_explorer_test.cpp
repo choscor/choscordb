@@ -4,6 +4,7 @@
 #include "design_system/theme_manager.h"
 #include "widgets/object_erd_widget.h"
 #include <QAction>
+#include <QFrame>
 #include <QGraphicsPathItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
@@ -433,7 +434,7 @@ class ObjectExplorerTest final : public QObject {
         auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
         QVERIFY(ddl);
         QCOMPARE(ddl->font().family(),
-                 design::resolveTypography(design::TypographyRole::Mono).family());
+                 design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced).family());
         QCOMPARE(ddl->font().pixelSize(), 13);
         QCOMPARE(ddl->frameShape(), QFrame::NoFrame);
         ddl->setPlainText("SELECT 'x', 42; -- note");
@@ -595,6 +596,9 @@ class ObjectExplorerTest final : public QObject {
     void actionsBelongToContextualHeaderAndStatusToFooter() {
         EngineAdapter adapter;
         ObjectExplorer explorer(&adapter);
+        choscordb::design::ThemeManager theme;
+        theme.applyTo(explorer);
+        explorer.resize(900, 400);
         auto* header = explorer.findChild<QWidget*>("objectHeader");
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
         QVERIFY(header);
@@ -619,7 +623,9 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(header->geometry().top(), 0);
         QVERIFY(refresh->mapTo(&explorer, QPoint(0, 0)).x() > header->geometry().left());
         QVERIFY(refresh->mapTo(&explorer, QPoint(0, 0)).y() > header->geometry().top());
-        QCOMPARE(header->geometry().bottom() + 1, tabs->geometry().top());
+        auto* pages = explorer.findChild<QStackedWidget*>(QString(), Qt::FindDirectChildrenOnly);
+        QVERIFY(pages);
+        QCOMPARE(header->geometry().bottom() + 1, pages->geometry().top());
         for (const char* name : {"objectRetry", "objectReconnect"}) {
             QVERIFY(!explorer.findChild<QPushButton*>(name));
             auto* action = explorer.findChild<QAction*>(name);
@@ -627,7 +633,20 @@ class ObjectExplorerTest final : public QObject {
             QVERIFY(explorer.actions().contains(action));
             QVERIFY(!action->isEnabled());
         }
-        QVERIFY(refresh->geometry().left() < header->width() / 2);
+        // Pane tabs share the action row; their track hugs the tabs and a
+        // separator divides them from the actions that follow.
+        QCOMPARE(tabs->parentWidget(), header);
+        QCOMPARE(tabs->width(), tabs->sizeHint().width());
+        QFrame* separator = nullptr;
+        for (auto* frame : header->findChildren<QFrame*>(Qt::FindDirectChildrenOnly))
+            if (frame->frameShape() == QFrame::VLine)
+                separator = frame;
+        QVERIFY(separator);
+        QVERIFY(tabs->geometry().right() < separator->geometry().left());
+        QVERIFY(separator->geometry().right() < refresh->geometry().left());
+        QVERIFY(refresh->geometry().left() - tabs->geometry().right() < header->width() / 4);
+        QVERIFY(tabs->geometry().top() <= refresh->geometry().top());
+        QVERIFY(refresh->geometry().bottom() <= tabs->geometry().bottom());
     }
     void reopeningSameObjectKeepsSelectedPaneWithoutReadingAgain() {
         EngineAdapter adapter;
@@ -946,6 +965,7 @@ class ObjectExplorerTest final : public QObject {
         adapter.fetchPage(*create);
         QTRY_COMPARE(finished, 1);
         ObjectExplorer explorer(&adapter);
+        explorer.resize(1600, 600);
         explorer.show();
         explorer.openObject(*connection, R"(["main","dữ liệu"])", "main.dữ liệu");
         auto* table = explorer.findChild<QTableView*>("objectMetadata");
@@ -965,10 +985,12 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(!table->verticalHeader()->isVisible());
         QVERIFY(
             !qvariant_cast<QIcon>(table->model()->index(0, 0).data(Qt::DecorationRole)).isNull());
-        QVERIFY(table->alternatingRowColors());
+        QVERIFY(!table->alternatingRowColors());
         QVERIFY(!table->showGrid());
         QVERIFY(!table->wordWrap());
         QVERIFY(table->columnWidth(4) > 100);
+        // Columns keep their content widths instead of filling the page.
+        QVERIFY(table->horizontalHeader()->length() < table->viewport()->width() / 2);
     }
 };
 QTEST_MAIN(ObjectExplorerTest)

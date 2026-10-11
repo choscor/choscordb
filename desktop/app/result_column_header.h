@@ -95,7 +95,9 @@ class ResultColumnHeader final : public QHeaderView {
             x += keyAdvance();
         }
         painter->setPen(text);
-        const int available = std::max(0, rect.right() - x - inset());
+        // QRect::right() is one pixel inside the section; measure from its full width as
+        // sectionSizeFromContents does so a fitted label is not elided.
+        const int available = std::max(0, rect.left() + rect.width() - x - inset());
         const QString label = type.isEmpty() ? name : name + QStringLiteral(" · ") + type;
         const QFont& small = secondaryFont();
         // Elision is a binary search over text advances; reuse it until the label or width changes.
@@ -160,7 +162,7 @@ class ResultColumnHeader final : public QHeaderView {
     }
     const QFont& secondaryFont() const {
         if (!secondaryFont_)
-            secondaryFont_ = design::resolveTypography(design::TypographyRole::Small);
+            secondaryFont_ = design::resolveTypography(design::TextStyle::Subheadline);
         return *secondaryFont_;
     }
     void clearPaintCache() {

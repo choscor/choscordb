@@ -9,7 +9,7 @@
 
 namespace choscordb::design {
 DocumentTabBar::DocumentTabBar(QWidget* parent) : QTabBar(parent) {
-    setFont(resolveTypography(TypographyRole::Small));
+    setFont(resolveTypography(TextStyle::Subheadline));
 }
 
 namespace {

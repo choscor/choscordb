@@ -2,41 +2,50 @@ QTabWidget::pane {
   border: 0;
 }
 
+QTabWidget[designTabVariant="pane"]::tab-bar {
+  alignment: left;
+  left: @space-2;
+}
+
+/* Pane tabs are a segmented control: a rounded track with the selected tab as
+   an inset surface segment. Place the bar at its size hint so the track hugs
+   its tabs. */
 QTabBar {
   background: @surface-raised;
-  border-radius: 0;
-  border-bottom: 1px solid @border;
+  border: 0;
+  border-radius: @radius-lg;
 }
 
 QTabBar[designTabVariant="document"] {
-  border: 0;
+  border-radius: 0;
 }
 
 QTabBar::tab {
   min-height: @pane-tab-height;
   max-height: @pane-tab-height;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  padding: 0 9px;
-  margin: 0 0 1px 0;
-  font-size: @font-small;
+  border: 1px solid transparent;
+  border-radius: @radius-md;
+  padding: 0 @space-2;
+  margin: @space-half 0;
+  font-size: @font-subheadline;
   color: @fg-muted;
   background: transparent;
 }
 
 QTabBar::tab:first, QTabBar::tab:only-one {
-  margin-left: 9px;
+  margin-left: @space-half;
 }
 
 QTabBar::tab:last, QTabBar::tab:only-one {
-  margin-right: 9px;
+  margin-right: @space-half;
 }
 
+/* The outline keeps the selected segment distinct where surface and
+   surface-raised are close (Dark) or equal (forced contrast). */
 QTabBar::tab:selected {
   background: @surface;
+  border-color: @border;
   color: @fg;
-  border-bottom-color: @fg-muted;
 }
 
 QTabBar[designTabVariant="document"]::tab {
@@ -44,6 +53,8 @@ QTabBar[designTabVariant="document"]::tab {
   max-width: @document-tab-width;
   min-height: @document-tab-height;
   max-height: @document-tab-height;
+  border-radius: 0;
+  border-left: 0;
   border-bottom: 0;
   border-top: 2px solid transparent;
   border-right: 1px solid @border;
@@ -52,7 +63,9 @@ QTabBar[designTabVariant="document"]::tab {
 }
 
 QTabBar[designTabVariant="document"]::tab:selected {
-  border-top-color: @fg-muted;
+  border-top-color: @surface;
+  border-top-left-radius: @radius-md;
+  border-top-right-radius: @radius-md;
   font-weight: bold;
 }
 
