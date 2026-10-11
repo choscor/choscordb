@@ -1,6 +1,8 @@
 #include "bridge/quick_search.h"
 #include "bridge/rust_text.h"
 
+#include <vector>
+
 namespace choscordb {
 using bridge_detail::toRust;
 using bridge_detail::utf8View;
