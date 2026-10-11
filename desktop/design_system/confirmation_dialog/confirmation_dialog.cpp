@@ -199,7 +199,12 @@ void ConfirmationDialog::prepareContent() {
         layout()->activate();
         const int bodyWidth = qMax(1, bodyScroll_->maximumViewportSize().width());
         const int naturalHeight = bodyText_->heightForWidth(bodyWidth);
-        bodyScroll_->setFixedHeight(qMin(naturalHeight, qMax(40, availableHeight / 2)));
+        const int maximumHeight = qMax(40, availableHeight / 2);
+        // A body that fits must not reserve a scroll bar: the bar narrows the
+        // text, which can rewrap a line that exactly fits and then scroll it.
+        bodyScroll_->setVerticalScrollBarPolicy(
+            naturalHeight > maximumHeight ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff);
+        bodyScroll_->setFixedHeight(qMin(naturalHeight, maximumHeight));
     }
     if (layout()) {
         layout()->invalidate();
