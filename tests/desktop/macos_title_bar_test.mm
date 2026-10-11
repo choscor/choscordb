@@ -6,6 +6,7 @@
 #include <QEventLoop>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QWindow>
 #include <QtTest>
 #include <functional>
 
@@ -125,6 +126,16 @@ int main(int argc, char** argv) {
             "transitions (fullSafe=%d, normalSafe=%d, mask=%lu, margin=%d, entered=%d, exited=%d)",
             fullScreenSafe, windowedSafe, static_cast<unsigned long>(native.styleMask),
             window.contentsMargins().top(), entered, exited);
+        return 1;
+    }
+    // Qt rewrites NSWindow.titlebarAppearsTransparent whenever it reapplies the
+    // window flags, which happens during normal app startup after showEvent.
+    window.windowHandle()->setFlags(window.windowHandle()->flags());
+    app.processEvents();
+    if (!native.titlebarAppearsTransparent ||
+        native.titlebarSeparatorStyle != NSTitlebarSeparatorStyleNone) {
+        qCritical("Native title bar must stay transparent with no content separator after Qt "
+                  "reapplies window flags");
         return 1;
     }
     return 0;
