@@ -588,10 +588,13 @@ void ModernUiTest::captureScreenFixtures() {
             capture("start");
             QSignalSpy connected(workspace, &choscordb::QueryWorkspace::connectionReady);
             QListWidgetItem* commerce = nullptr;
-            for (int row = 0; row < profiles->count(); ++row)
-                if (profiles->item(row)->data(Qt::UserRole).value<choscordb::SavedProfile>().id ==
-                    profile.id)
+            for (int row = 0; row < profiles->count(); ++row) {
+                // Read from an lvalue: GCC 13 reports a false -Warray-bounds when
+                // value<T>() moves out of the temporary QVariant.
+                const QVariant data = profiles->item(row)->data(Qt::UserRole);
+                if (data.value<choscordb::SavedProfile>().id == profile.id)
                     commerce = profiles->item(row);
+            }
             QVERIFY(commerce);
             QTest::mouseClick(profiles->viewport(), Qt::LeftButton, Qt::NoModifier,
                               profiles->visualItemRect(commerce).center());

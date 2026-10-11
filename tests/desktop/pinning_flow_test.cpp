@@ -501,7 +501,8 @@ class PinningFlowTest : public QObject {
                  QString("\"main\".\"orders\""));
         QVERIFY(filter->text().isEmpty());
         QCOMPARE(selector->currentData(), editorTarget);
-        auto renamedProfile = profiles->item(0)->data(Qt::UserRole).value<SavedProfile>();
+        const QVariant renamedData = profiles->item(0)->data(Qt::UserRole);
+        auto renamedProfile = renamedData.value<SavedProfile>();
         renamedProfile.name = "Alpha Renamed";
         workspace->adapter()->saveProfile(renamedProfile, 6002);
         QTRY_VERIFY(pinRoot(pins).data(Qt::ToolTipRole).toString().contains("Alpha Renamed"));

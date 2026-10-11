@@ -191,7 +191,8 @@ void ModernUiTest::savedProfileSelectionSurvivesRefreshEditAndDeletionOnlyForExi
         auto find = [profiles](const QString& id) -> QListWidgetItem* {
             for (int row = 0; row < profiles->count(); ++row) {
                 auto* item = profiles->item(row);
-                if (item->data(Qt::UserRole).value<choscordb::SavedProfile>().id == id)
+                const QVariant data = item->data(Qt::UserRole);
+                if (data.value<choscordb::SavedProfile>().id == id)
                     return item;
             }
             return nullptr;
@@ -214,8 +215,8 @@ void ModernUiTest::savedProfileSelectionSurvivesRefreshEditAndDeletionOnlyForExi
         QVERIFY(find(beta.id)->isSelected());
         workspace->adapter()->deleteProfile(alpha.id, 8123);
         QTRY_COMPARE(profiles->count(), 1);
-        QCOMPARE(profiles->item(0)->data(Qt::UserRole).value<choscordb::SavedProfile>().id,
-                 beta.id);
+        const QVariant remaining = profiles->item(0)->data(Qt::UserRole);
+        QCOMPARE(remaining.value<choscordb::SavedProfile>().id, beta.id);
         QVERIFY(profiles->item(0)->isSelected());
         QTRY_COMPARE(tree->model()->rowCount(), 1);
         QVERIFY(tree->model()->index(0, 0).data().toString().contains("Edited Beta"));
