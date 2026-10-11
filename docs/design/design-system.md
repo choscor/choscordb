@@ -15,12 +15,12 @@ owns behavior, policy, limits and persisted encodings.
 | --- | --- | --- |
 | Colors | `colors/colors.h` | `design::Colors`, `resolveColors`, `colorTokens`, `contrastRatio`, forced-contrast resolution |
 | Sizes | `metrics/metrics.h` | `Dimension`, `Spacing`, `Radius`, `Elevation`, `Motion`, and `LayoutMetrics` for window defaults and initial pane sizes |
-| Typography | `fonts/fonts.h` | `TypographyRole`, `typographySpec`, `resolveTypography` |
+| Typography | `fonts/fonts.h` | `TextStyle`, `FontDesign`, `typographySpec`, `resolveTypography` |
 | Stylesheets | `style/stylesheet.cpp` | The ordered shared cascade and the one `@token` expansion |
 | Catalog | `tokens/tokens.cpp` | The gallery's token table |
 
 QSS files refer to tokens by kebab-case name (`@surface-raised`,
-`@control-height`, `@radius-md`, `@font-dense`). They contain no positional
+`@control-height`, `@radius-md`, `@font-callout`). They contain no positional
 `%N` placeholders and no literal `font-size` or `border-radius` values;
 `scripts/ci/qss_policy.py` enforces this and reports a selector/property pair
 defined in two files of the shared cascade.
@@ -32,9 +32,8 @@ One name per value; aliases are not allowed. Phase 2 values:
 | Token | Use | Light | Dark |
 | --- | --- | --- | --- |
 | `bg` | Window canvas | #f6f7f8 | #171d20 |
-| `surface` | Panels, editors, tables, fields, dialogs, popovers | #ffffff | #20272b |
-| `surface-raised` | Tab bars, headers, footers, hover, kbd, neutral badges | #eef1f2 | #283135 |
-| `sidebar` | Navigator surface | #fafbfb | #1c2428 |
+| `surface` | Panels, editors, editor toolbar, tables (including headers and row gutter), fields, dialogs, popovers, sidebar hover and selection | #ffffff | #20272b |
+| `surface-raised` | Tab bars, sidebar, non-table headers, footers, hover, kbd, neutral badges | #eef1f2 | #283135 |
 | `fg` | Primary text | #222b32 | #e0e8e8 |
 | `fg-muted` | Help, metadata, inactive tabs, placeholders | #5f6b72 | #93a2a8 |
 | `fg-disabled` | Disabled text (40% `fg` over `surface`) | computed | computed |
@@ -58,8 +57,8 @@ One name per value; aliases are not allowed. Phase 2 values:
 - The brand is orange. Green is reserved for `success`; no other token falls in
   the 90°–170° hue range.
 - Every text pair is at least 4.5:1 (WCAG 2) in both themes: `fg` on `bg`,
-  `surface`, `surface-raised` and `selection`; `fg-muted` on `bg`, `surface`
-  and `surface-raised`; `primary-fg` on each primary state; `primary` on
+  `surface`, `surface-raised` and `selection`;
+  `fg-muted` on `bg`, `surface` and `surface-raised`; `primary-fg` on each primary state; `primary` on
   `surface`; each status color on its own surface and on `surface`; `code-*` on
   `surface`. `ring` is at least 3:1 on `bg` and `surface`.
 - Computed, not tokens: the switch thumb (`surface` in Light, white in Dark) and
@@ -88,24 +87,42 @@ One name per value; aliases are not allowed. Phase 2 values:
   `Six` 24, `Eight` 32.
 - **Radius:** `Small` 4 (badges, kbd, menu items, toast dismiss, progress),
   `Medium` 6 (controls, rows, quick-search rows, toasts, tooltips), `Large` 10
-  (menus, popovers, dialogs, sheets). Tables, trees and tab bars are square.
+  (menus, popovers, dialogs, sheets). Tables, trees and document tab bars are
+  square; the current document tab rounds its top corners at `Medium`, with no
+  top rule. Pane tabs are a segmented control: a `surface-raised` track at
+  `Large`, sized to its tabs, with the selected tab a `surface` segment at
+  `Medium` inset by `Half`.
 - **Elevation:** `Popover` and `Dialog`.
 - **Motion:** 150ms interaction, 100ms popup, `cubic-bezier(0.4, 0, 0.2, 1)`,
   0 under reduced motion.
 
 ## Typography
 
-Seven roles on the platform UI and fixed fonts:
+The app uses the macOS built-in text styles from Apple's
+[Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/typography)
+on the platform UI font (SF Pro on macOS): 13 pt default, 10 pt minimum. Sizes
+are logical pixels, which equal points on macOS. Letter spacing is left to the
+platform font, which tracks itself per size.
 
-| Role | Spec | Used for |
+| `TextStyle` | Spec | Used for |
 | --- | --- | --- |
-| `Caption` | 10/14, 600, +1.3px | Section captions (uppercase in content), badges, kbd |
-| `Small` | 11/16, 400 | Secondary detail, field errors, tab labels, quick-search details |
-| `Dense` | 12/16, 400; field values 500 | Table cells and headers, tree, list and menu items, tooltips, fields |
-| `Body` | 13/18, 400, −0.12px | Default UI text |
-| `Title` | 14/20, 600, −0.12px | Headings and dialog titles |
-| `Mono` | 13/20, fixed font | Read-only SQL previews (`designRole="codePreview"`) |
-| `Metadata` | 12/16, fixed font | SQL excerpts in history rows |
+| `LargeTitle` | 26/32, 400 | |
+| `Title1` | 22/26, 400 | |
+| `Title2` | 17/22, 400 | |
+| `Title3` | 15/20, 400 | |
+| `Headline` | 13/16, 700 | Headings and dialog titles (`@font-headline`) |
+| `Body` | 13/16, 400 | Default UI text |
+| `Callout` | 12/15, 400; field values 500 | Table cells, tree, list and menu items, tooltips, fields (`@font-callout`) |
+| `Subheadline` | 11/14, 400 | Secondary detail, table headers, field errors, tab labels; sidebar section labels at 500 in `fg-muted` (`@font-subheadline`) |
+| `Footnote` | 10/13, 400 | |
+| `Caption1` | 10/13, 400 | |
+| `Caption2` | 10/13, 500 | Badges, kbd (`@font-caption2`) |
+
+`FontDesign::Monospaced` sets a style in the platform fixed-pitch font, as
+SwiftUI's `.monospaced()` does: `Body` for read-only SQL previews
+(`designRole="codePreview"`) and `Callout` for SQL excerpts in history rows.
+QSS reads each used style's size and weight as `@font-<style>` and
+`@font-<style>-weight`.
 
 The SQL editor keeps the font the user saved.
 
@@ -116,7 +133,9 @@ The SQL editor keeps the font the user saved.
   `border`; tab bars rest on `surface-raised`, so a hovered tab label turns `fg`.
 - **Selected:** `selection` with `fg` text for every tree, list, table,
   quick-search, history and connection row, and for checked buttons and
-  segments. Selected rows are not bold.
+  segments. The sidebar rests on `surface-raised`, like the tab bars; its
+  hovered and selected rows and its tabs lift to `surface`, like a selected
+  tab. Selected rows are not bold.
 - **Menu highlight:** `surface-raised` with `fg`; disabled items `fg-disabled`.
 - **Primary:** `primary` → `primary-hover` → `primary-pressed`, text always
   `primary-fg`.

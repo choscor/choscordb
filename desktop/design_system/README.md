@@ -23,7 +23,7 @@ preserved by the component extraction.
 | Tool button | `tool_button/`: QToolButton states and menu-indicator rules |
 | Toolbar | `toolbar/`: toolbar geometry, separators, and muted workspace variant |
 | Status line | `status_line/`: shared single-row workspace layout, Body typography, paging, overflow, `<status>-surface` fills with status text (neutral uses `surface-raised`), loading icon, and complete Details |
-| Tabs | `tabs/`: pane/document variants, left-aligned document labels, and tab-close painting |
+| Tabs | `tabs/`: segmented pane and document variants, left-aligned document labels, and tab-close painting |
 | Table | `table/`: table font, row styles, and interactive result headers |
 | Tree | `tree/`: navigation rows and branch painting |
 | List | `list/`: list item styles |
@@ -65,7 +65,7 @@ The token vocabulary, scales, typography roles and state model are documented in
   resolution. Literal palette colors live only here.
 - `metrics/`: the compact `Dimension`, `Spacing` and `Radius` scales, elevation,
   motion, and `LayoutMetrics` for window defaults and initial pane sizes.
-- `fonts/`: font registration and the seven `TypographyRole` roles.
+- `fonts/`: font registration and the macOS built-in `TextStyle` text styles.
 - `tokens/`: discoverable token catalog used by the developer gallery.
 - `icons.h/.cpp`: icon roles, resource lookup and themed rendering.
 - `theme.h/.cpp`: resolved-theme value, widget-scope lookup and Qt palette.

@@ -87,13 +87,14 @@ For changes in `desktop/design_system/`, also follow its `CLAUDE.md`.
 - Keep user-selected SQL editor fonts as user settings.
 - Use `ConfirmationDialog` for message boxes and shared dialog shells for modal
   content when their contracts fit.
-- Keep sibling screens on one pattern: `TypographyRole::Title` for dialog
+- Keep sibling screens on one pattern: `TextStyle::Headline` for dialog
   titles, `design::DialogSections` for dialog header/body/footer, `design::Button`
   (Outline for Cancel/Close) instead of stock `QDialogButtonBox` buttons,
   `FieldValidation` or `designRole="fieldError"` for errors, the description role
-  for help text, `TypographyRole::Mono` with `designRole="codePreview"` for
-  SQL previews, `design::popupContextMenu`/`execContextMenu` for menus, and
-  `design::Icon` roles instead of Qt standard icons outside macOS native menus.
+  for help text, `TextStyle::Body` with `FontDesign::Monospaced` and
+  `designRole="codePreview"` for SQL previews,
+  `design::popupContextMenu`/`execContextMenu` for menus, and `design::Icon`
+  roles instead of Qt standard icons outside macOS native menus.
 - Every value set on `designRole`, `variant`, `state`, or `designSurface` must be
   one the design system styles. Use a non-styling property for workflow-only state.
 - Use metrics, spacing, radius, and icon-size tokens in every argument position,

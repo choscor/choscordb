@@ -9,14 +9,19 @@ wrapper subclasses. `docs/design/design-system.md` is the full reference.
 
 - Tokens: `colors/colors.h` (`design::Colors`, kebab names from `colorTokens`),
   `metrics/metrics.h` (`Dimension`, `Spacing`, `Radius`, `Elevation`, `Motion`,
-  `LayoutMetrics`), `fonts/fonts.h` (`TypographyRole`). One name per value; no
+  `LayoutMetrics`), `fonts/fonts.h` (`TextStyle`, `FontDesign`). One name per value; no
   aliases. A new token needs a real second use and a gallery specimen.
-- Typography has seven roles: `Caption`, `Small`, `Dense`, `Body`, `Title`,
-  `Mono`, `Metadata`. Do not add a role without updating the reference.
-- Radii are `Small` 4, `Medium` 6 and `Large` 10; tables, trees and tab bars are
-  square. Sizes sit on the 4px grid: controls 24/28/32, rows and headers 28,
-  tabs and toolbar 32.
-- State model: hover `surface-raised`; selected `selection` with `fg`, not bold;
+- Typography uses Apple's eleven macOS built-in text styles: `LargeTitle`,
+  `Title1`, `Title2`, `Title3`, `Headline`, `Body`, `Callout`, `Subheadline`,
+  `Footnote`, `Caption1`, `Caption2`, with `FontDesign::Monospaced` for fixed-pitch
+  text. Keep their values equal to the HIG table in the reference.
+- Radii are `Small` 4, `Medium` 6 and `Large` 10; tables, trees and document
+  tab bars are square, except the current document tab's `Medium` top corners.
+  Pane tabs are a segmented control: a `Large` track with `Medium` segments.
+  Sizes sit on the 4px grid: controls 24/28/32, rows and headers 28, tabs and
+  toolbar 32.
+- State model: hover `surface-raised`; selected `selection` with `fg`, not bold
+  (both `surface` on the `surface-raised` sidebar);
   menu highlight `surface-raised`; primary → `primary-hover` →
   `primary-pressed`; 2px `ring` for keyboard focus only; status uses
   `<status>-surface` with `<status>` text.
