@@ -4,8 +4,8 @@ QLabel[designRole="badge"] {
   border: 1px solid transparent;
   border-radius: @radius-sm;
   padding: 0 7px;
-  font-size: @font-caption2;
-  font-weight: @font-caption2-weight;
+  font-size: @font-caption;
+  font-weight: @font-caption-weight;
   color: @primary;
   background: @selection;
 }

@@ -55,12 +55,12 @@ void ModernUiTest::resultFooterTracksOperationOutcome() {
     QVERIFY(startFooter);
     auto* startLabel = startFooter->findChild<choscordb::design::Text*>();
     QVERIFY(startLabel);
-    QCOMPARE(startLabel->font().pixelSize(), 13);
+    QCOMPARE(startLabel->font().pixelSize(), 14);
     QCOMPARE(startLabel->text(), QString("Choose a connection to get started"));
     QCOMPARE(startLabel->alignment(), Qt::AlignCenter);
     QCOMPARE(QString::fromLatin1(footer->metaObject()->className()),
              QString("choscordb::design::StatusLine"));
-    QCOMPARE(footer->font().pixelSize(), 13);
+    QCOMPARE(footer->font().pixelSize(), 14);
     QCOMPARE(summary->font().pixelSize(), footer->font().pixelSize());
     for (const char* name : {"executionStateCompact", "executionDuration", "executionPage",
                              "executionRows", "executionVisibleSize"}) {

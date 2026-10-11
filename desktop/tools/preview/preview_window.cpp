@@ -220,7 +220,7 @@ void populateIcons(QWidget* host, QVBoxLayout* layout) {
 }
 void populateTypography(QWidget* host, QVBoxLayout* layout) {
     QList<std::pair<TextStyle, FontDesign>> specimens;
-    for (int style = 0; style <= static_cast<int>(TextStyle::Caption2); ++style)
+    for (int style = 0; style <= static_cast<int>(TextStyle::Caption); ++style)
         specimens.append({static_cast<TextStyle>(style), FontDesign::Default});
     specimens.append({TextStyle::Body, FontDesign::Monospaced});
     specimens.append({TextStyle::Callout, FontDesign::Monospaced});

@@ -441,7 +441,7 @@ class ObjectDataWorkspaceTest : public QObject {
         auto* dataSummary = explorer.findChild<QLabel*>("objectDataSummary");
         auto* objectStatus = explorer.findChild<QLabel*>("objectStatus");
         QVERIFY(sqlSummary && dataSummary && objectStatus);
-        QCOMPARE(sqlSummary->font().pixelSize(), 13);
+        QCOMPARE(sqlSummary->font().pixelSize(), 14);
         QCOMPARE(footer->font().pixelSize(), sqlSummary->font().pixelSize());
         QCOMPARE(dataSummary->font().pixelSize(), sqlSummary->font().pixelSize());
         QCOMPARE(objectStatus->font().pixelSize(), sqlSummary->font().pixelSize());

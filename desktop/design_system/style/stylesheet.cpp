@@ -109,8 +109,8 @@ QHash<QString, QString> styleTokens(const ResolvedTheme& theme) {
     tokens.insert(QStringLiteral("toolbar-height"), pixels(dimension(Dimension::Toolbar)));
 
     for (const auto& [name, style] :
-         {std::pair{"caption2", TextStyle::Caption2}, std::pair{"subheadline", TextStyle::Subheadline},
-          std::pair{"callout", TextStyle::Callout}, std::pair{"headline", TextStyle::Headline}}) {
+         {std::pair{"caption", TextStyle::Caption}, std::pair{"callout", TextStyle::Callout},
+          std::pair{"headline", TextStyle::Headline}}) {
         const auto spec = typographySpec(style);
         const auto prefix = QStringLiteral("font-%1").arg(QLatin1String(name));
         tokens.insert(prefix, pixels(spec.pixelSize));

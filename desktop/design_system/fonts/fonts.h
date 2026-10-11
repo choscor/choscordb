@@ -5,25 +5,24 @@
 
 namespace choscordb::design {
 
-// The macOS built-in text styles from Apple's Human Interface Guidelines, on
-// the platform UI font (SF Pro on macOS). The SQL editor keeps the user's
-// saved font.
+// Text styles on the bundled Geist family, named after Apple's macOS built-in
+// styles. Sizes follow Geist's own scale: 14px body, 13px dense UI text and a
+// 12px minimum, where Geist stays legible on low-DPI screens. The SQL editor keeps the user's saved
+// font.
 enum class TextStyle {
-    LargeTitle,  // 26/32 Regular
-    Title1,      // 22/26 Regular
-    Title2,      // 17/22 Regular
-    Title3,      // 15/20 Regular
-    Headline,    // 13/16 Bold: headings and dialog titles
-    Body,        // 13/16 Regular: default UI text
-    Callout,     // 12/15 Regular: table cells, headers, tree, list and menu items, fields
-    Subheadline, // 11/14 Regular: secondary detail, field errors, tab labels, sidebar sections
-    Footnote,    // 10/13 Regular
-    Caption1,    // 10/13 Regular
-    Caption2     // 10/13 Medium: badges, kbd
+    LargeTitle, // 28/36 SemiBold
+    Title1,     // 22/28 SemiBold
+    Title2,     // 18/24 SemiBold
+    Title3,     // 16/24 SemiBold
+    Headline,   // 14/20 SemiBold: headings and dialog titles
+    Body,       // 14/20 Regular: default UI text
+    Callout,    // 13/18 Regular: table cells and headers, tree, list and menu items,
+                // fields, tabs, secondary detail, field errors, sidebar sections
+    Caption     // 12/16 Medium: badges, kbd
 };
 
-// SwiftUI's Font.Design: Monospaced sets a style in the platform fixed-pitch
-// font, as for read-only SQL previews and history SQL excerpts.
+// SwiftUI's Font.Design: Monospaced sets a style in Geist Mono, as for
+// read-only SQL previews and history SQL excerpts.
 enum class FontDesign { Default, Monospaced };
 
 struct TypographySpec final {

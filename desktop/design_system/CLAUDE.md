@@ -11,10 +11,11 @@ wrapper subclasses. `docs/design/design-system.md` is the full reference.
   `metrics/metrics.h` (`Dimension`, `Spacing`, `Radius`, `Elevation`, `Motion`,
   `LayoutMetrics`), `fonts/fonts.h` (`TextStyle`, `FontDesign`). One name per value; no
   aliases. A new token needs a real second use and a gallery specimen.
-- Typography uses Apple's eleven macOS built-in text styles: `LargeTitle`,
-  `Title1`, `Title2`, `Title3`, `Headline`, `Body`, `Callout`, `Subheadline`,
-  `Footnote`, `Caption1`, `Caption2`, with `FontDesign::Monospaced` for fixed-pitch
-  text. Keep their values equal to the HIG table in the reference.
+- Typography uses eight text styles named after Apple's macOS built-in styles:
+  `LargeTitle`, `Title1`, `Title2`, `Title3`, `Headline`, `Body`, `Callout` and
+  `Caption`, with `FontDesign::Monospaced` for fixed-pitch text, set in the
+  bundled Geist and Geist Mono. Keep their values equal to the
+  table in the reference; no style goes below Geist's 12px minimum.
 - Radii are `Small` 4, `Medium` 6 and `Large` 10; tables, trees and document
   tab bars are square, except the current document tab's `Medium` top corners.
   Pane tabs are a segmented control: a `Large` track with `Medium` segments.

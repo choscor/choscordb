@@ -10,8 +10,8 @@ QHeaderView::section {
   padding: 0 12px;
   background: @surface-raised;
   color: @fg-muted;
-  font-size: @font-subheadline;
-  font-weight: @font-subheadline-weight;
+  font-size: @font-callout;
+  font-weight: @font-callout-weight;
 }
 
 QTableCornerButton::section {

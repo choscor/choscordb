@@ -35,8 +35,8 @@ QString statusLabel(const QString& status) {
 QSize RecentHistoryRowDelegate::sizeHint(const QStyleOptionViewItem& option,
                                          const QModelIndex&) const {
     const int height = typographySpec(TextStyle::Callout, FontDesign::Monospaced).lineHeight +
-                       2 * typographySpec(TextStyle::Subheadline).lineHeight +
-                       spacing(Spacing::Two) + spacing(Spacing::Half);
+                       2 * typographySpec(TextStyle::Callout).lineHeight + spacing(Spacing::Two) +
+                       spacing(Spacing::Half);
     return {option.rect.width(), height};
 }
 
@@ -70,7 +70,7 @@ void RecentHistoryRowDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     painter->drawText(QRect(bounds.left() + inset, firstY, textWidth, sqlLineHeight),
                       Qt::AlignLeft | Qt::AlignVCenter, shown);
 
-    const QFont detailFont = resolveTypography(TextStyle::Subheadline);
+    const QFont detailFont = resolveTypography(TextStyle::Callout);
     const QFontMetrics detailMetrics(detailFont);
     painter->setFont(detailFont);
     const int dateY = bounds.bottom() - spacing(Spacing::One) - detailMetrics.height();

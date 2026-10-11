@@ -26,7 +26,7 @@ class TooltipSurface final : public QWidget {
         setAttribute(Qt::WA_TranslucentBackground);
         setAttribute(Qt::WA_NoSystemBackground);
         setAttribute(Qt::WA_ShowWithoutActivating);
-        setFont(resolveTypography(TextStyle::Subheadline));
+        setFont(resolveTypography(TextStyle::Callout));
         const auto available = owner->window()->rect();
         const qreal contentWidth = qMax(1, qMin(296, available.width() - 40));
         const qreal contentHeight = qMax(1, available.height() - 34);

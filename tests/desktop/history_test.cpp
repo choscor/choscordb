@@ -69,7 +69,7 @@ class HistoryTest : public QObject {
         auto* range = history.findChild<QLabel*>("historyRange");
         auto* status = history.findChild<QLabel*>("historyStatus");
         QVERIFY(range && status);
-        QCOMPARE(footer->font().pixelSize(), 13);
+        QCOMPARE(footer->font().pixelSize(), 14);
         QCOMPARE(range->font().pixelSize(), footer->font().pixelSize());
         QCOMPARE(status->font().pixelSize(), footer->font().pixelSize());
         QVERIFY(footer->isAncestorOf(range));
@@ -110,14 +110,16 @@ class HistoryTest : public QObject {
         model->setEntries({entry});
         QVERIFY(!table->horizontalHeader()->isVisible());
         using namespace choscordb::design;
-        QCOMPARE(table->rowHeight(0), 3 * spacing(Spacing::Two) +
-                                          typographySpec(TextStyle::Callout, FontDesign::Monospaced).lineHeight +
-                                          dimension(Dimension::Badge));
+        QCOMPARE(table->rowHeight(0),
+                 3 * spacing(Spacing::Two) +
+                     typographySpec(TextStyle::Callout, FontDesign::Monospaced).lineHeight +
+                     dimension(Dimension::Badge));
         QCOMPARE(table->columnWidth(2), table->viewport()->width());
         auto* preview = history.findChild<QPlainTextEdit*>("historyPreview");
         QVERIFY(!preview->isVisible());
         QCOMPARE(preview->property("designRole").toString(), QString("codePreview"));
-        QCOMPARE(preview->font().family(), resolveTypography(TextStyle::Body, FontDesign::Monospaced).family());
+        QCOMPARE(preview->font().family(),
+                 resolveTypography(TextStyle::Body, FontDesign::Monospaced).family());
         table->selectRow(0);
         QVERIFY(!preview->isVisible());
         auto* manage = history.findChild<QToolButton*>("historyManage");

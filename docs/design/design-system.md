@@ -98,27 +98,28 @@ One name per value; aliases are not allowed. Phase 2 values:
 
 ## Typography
 
-The app uses the macOS built-in text styles from Apple's
-[Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/typography)
-on the platform UI font (SF Pro on macOS): 13 pt default, 10 pt minimum. Sizes
-are logical pixels, which equal points on macOS. Letter spacing is left to the
-platform font, which tracks itself per size.
+The app sets eight text styles, named after Apple's macOS built-in
+[text styles](https://developer.apple.com/design/human-interface-guidelines/typography),
+in the bundled Geist family (`desktop/resources/fonts/`, OFL 1.1), so every
+platform renders the same face. Sizes follow Geist's own scale: 14px body,
+13px dense UI text and a 12px minimum, because Geist loses legibility below
+12px on low-DPI screens.
+Sizes are logical pixels. Titles and headlines use 600, Geist's heading weight.
+Fonts prefer vertical-only hinting, which keeps small text crisp on Windows and
+Linux without changing Geist's spacing.
 
 | `TextStyle` | Spec | Used for |
 | --- | --- | --- |
-| `LargeTitle` | 26/32, 400 | |
-| `Title1` | 22/26, 400 | |
-| `Title2` | 17/22, 400 | |
-| `Title3` | 15/20, 400 | |
-| `Headline` | 13/16, 700 | Headings and dialog titles (`@font-headline`) |
-| `Body` | 13/16, 400 | Default UI text |
-| `Callout` | 12/15, 400; field values 500 | Table cells, tree, list and menu items, tooltips, fields (`@font-callout`) |
-| `Subheadline` | 11/14, 400 | Secondary detail, table headers, field errors, tab labels; sidebar section labels at 500 in `fg-muted` (`@font-subheadline`) |
-| `Footnote` | 10/13, 400 | |
-| `Caption1` | 10/13, 400 | |
-| `Caption2` | 10/13, 500 | Badges, kbd (`@font-caption2`) |
+| `LargeTitle` | 28/36, 600 | |
+| `Title1` | 22/28, 600 | |
+| `Title2` | 18/24, 600 | |
+| `Title3` | 16/24, 600 | |
+| `Headline` | 14/20, 600 | Headings and dialog titles (`@font-headline`) |
+| `Body` | 14/20, 400 | Default UI text |
+| `Callout` | 13/18, 400; field values 500 | Table cells and headers, tree, list and menu items, tooltips, fields, tab labels, secondary detail, field errors; sidebar section labels at 500 in `fg-muted` (`@font-callout`) |
+| `Caption` | 12/16, 500 | Badges, kbd (`@font-caption`) |
 
-`FontDesign::Monospaced` sets a style in the platform fixed-pitch font, as
+`FontDesign::Monospaced` sets a style in Geist Mono, as
 SwiftUI's `.monospaced()` does: `Body` for read-only SQL previews
 (`designRole="codePreview"`) and `Callout` for SQL excerpts in history rows.
 QSS reads each used style's size and weight as `@font-<style>` and

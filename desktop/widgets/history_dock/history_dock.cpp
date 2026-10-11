@@ -40,7 +40,8 @@ class HistoryRowDelegate final : public QStyledItemDelegate {
     using QStyledItemDelegate::QStyledItemDelegate;
     static int rowHeight() {
         return design::spacing(design::Spacing::Two) +
-               design::typographySpec(design::TextStyle::Callout, design::FontDesign::Monospaced).lineHeight +
+               design::typographySpec(design::TextStyle::Callout, design::FontDesign::Monospaced)
+                   .lineHeight +
                design::spacing(design::Spacing::Two) + design::dimension(design::Dimension::Badge) +
                design::spacing(design::Spacing::Two);
     }
@@ -61,16 +62,19 @@ class HistoryRowDelegate final : public QStyledItemDelegate {
                                                                         : colors.surface);
         painter->setPen(colors.border);
         painter->drawLine(bounds.bottomLeft(), bounds.bottomRight());
-        const auto sqlFont = design::resolveTypography(design::TextStyle::Callout, design::FontDesign::Monospaced);
+        const auto sqlFont =
+            design::resolveTypography(design::TextStyle::Callout, design::FontDesign::Monospaced);
         painter->setFont(sqlFont);
         painter->setPen(colors.fg);
         const int width = qMax(0, bounds.width() - 2 * inset);
-        const QRect sqlRect(bounds.left() + inset, bounds.top() + gap, width,
-                            design::typographySpec(design::TextStyle::Callout, design::FontDesign::Monospaced).lineHeight);
+        const QRect sqlRect(
+            bounds.left() + inset, bounds.top() + gap, width,
+            design::typographySpec(design::TextStyle::Callout, design::FontDesign::Monospaced)
+                .lineHeight);
         painter->drawText(
             sqlRect, Qt::AlignLeft | Qt::AlignVCenter,
             QFontMetrics(sqlFont).elidedText(index.data().toString(), Qt::ElideRight, width));
-        const auto small = design::resolveTypography(design::TextStyle::Subheadline);
+        const auto small = design::resolveTypography(design::TextStyle::Callout);
         painter->setFont(small);
         const auto status = index.siblingAtColumn(4).data().toString();
         const int badgeWidth = QFontMetrics(small).horizontalAdvance(status) +
@@ -208,7 +212,8 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     preview_->setObjectName("historyPreview");
     preview_->setReadOnly(true);
     preview_->setProperty("designRole", "codePreview");
-    preview_->setFont(design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
+    preview_->setFont(
+        design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
     preview_->setFrameShape(QFrame::NoFrame);
     previewLayout->addWidget(preview_, 1);
     footer_ = new design::StatusLine(body);

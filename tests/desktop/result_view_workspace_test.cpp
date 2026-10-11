@@ -72,7 +72,7 @@ class ResultViewWorkspaceTest : public QObject {
         auto* header = grid->horizontalHeader();
         const auto primary = QFontMetrics(header->font());
         const auto secondary = QFontMetrics(
-            choscordb::design::resolveTypography(choscordb::design::TextStyle::Subheadline));
+            choscordb::design::resolveTypography(choscordb::design::TextStyle::Callout));
         const int shortText =
             primary.horizontalAdvance("id") + secondary.horizontalAdvance("· bigint");
         const int longText = primary.horizontalAdvance("created_at") +
@@ -102,7 +102,7 @@ class ResultViewWorkspaceTest : public QObject {
         QVERIFY(model->setPage({column}, {{QString("x")}}, 0));
         const auto primary = QFontMetrics(grid->horizontalHeader()->font());
         const auto secondary = QFontMetrics(
-            choscordb::design::resolveTypography(choscordb::design::TextStyle::Subheadline));
+            choscordb::design::resolveTypography(choscordb::design::TextStyle::Callout));
         const int label = primary.horizontalAdvance(column.name) +
                           secondary.horizontalAdvance("· " + column.databaseType);
         QVERIFY(grid->columnWidth(0) >= label + 24);

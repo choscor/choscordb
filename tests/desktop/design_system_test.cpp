@@ -224,21 +224,21 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(changed.count(), explicitThemeNotifications);
     }
 
-    void platformUiTypographyUsesReferenceFontAndPreservesMonospace() {
+    void uiTypographyUsesGeistAndPreservesMonospace() {
         using namespace choscordb::design;
         const auto ui = resolveTypography(TextStyle::Body);
-        QCOMPARE(ui.family(), QFontDatabase::systemFont(QFontDatabase::GeneralFont).family());
-        QCOMPARE(QFontInfo(ui).family(),
-                 QFontInfo(QFontDatabase::systemFont(QFontDatabase::GeneralFont)).family());
-        QCOMPARE(ui.pixelSize(), 13);
+        QCOMPARE(ui.family(), QString("Geist"));
+        QCOMPARE(QFontInfo(ui).family(), QString("Geist"));
+        QCOMPARE(ui.pixelSize(), 14);
         QCOMPARE(ui.weight(), QFont::Normal);
         const auto heading = resolveTypography(TextStyle::Headline);
         QCOMPARE(heading.family(), ui.family());
-        QCOMPARE(heading.pixelSize(), 13);
-        QCOMPARE(heading.weight(), QFont::Bold);
-        auto expectedMonospace = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-        expectedMonospace.setPixelSize(13);
-        QCOMPARE(resolveTypography(TextStyle::Body, FontDesign::Monospaced), expectedMonospace);
+        QCOMPARE(heading.pixelSize(), 14);
+        QCOMPARE(heading.weight(), QFont::DemiBold);
+        const auto monospace = resolveTypography(TextStyle::Body, FontDesign::Monospaced);
+        QCOMPARE(QFontInfo(monospace).family(), QString("Geist Mono"));
+        QVERIFY(QFontInfo(monospace).fixedPitch());
+        QCOMPARE(monospace.pixelSize(), 14);
     }
 
     void tokensExposeCopyableReferenceValuesAndDefinitionSources() {
@@ -258,7 +258,7 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(value("size.row"), QString("28px"));
         QCOMPARE(value("focus.width"), QString("2px"));
         QCOMPARE(value("motion.popup"), QString("100ms"));
-        QCOMPARE(value("typography.body.lineHeight"), QString("16px"));
+        QCOMPARE(value("typography.body.lineHeight"), QString("20px"));
         QCOMPARE(value("elevation.popover.blur"), QString("40px"));
         for (const auto& token : tokens) {
             QVERIFY2(

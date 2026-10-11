@@ -65,9 +65,7 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
          {std::pair{"largeTitle", TextStyle::LargeTitle}, std::pair{"title1", TextStyle::Title1},
           std::pair{"title2", TextStyle::Title2}, std::pair{"title3", TextStyle::Title3},
           std::pair{"headline", TextStyle::Headline}, std::pair{"body", TextStyle::Body},
-          std::pair{"callout", TextStyle::Callout}, std::pair{"subheadline", TextStyle::Subheadline},
-          std::pair{"footnote", TextStyle::Footnote}, std::pair{"caption1", TextStyle::Caption1},
-          std::pair{"caption2", TextStyle::Caption2}}) {
+          std::pair{"callout", TextStyle::Callout}, std::pair{"caption", TextStyle::Caption}}) {
         const auto spec = typographySpec(style);
         const auto prefix = QStringLiteral("typography.%1.").arg(QLatin1String(name));
         add(prefix + QStringLiteral("family"), spec.family);

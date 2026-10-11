@@ -882,7 +882,7 @@ void PreviewTest::statusLineSpecimenUsesSharedSurfaceInBothThemes() {
         QVERIFY(available->isVisible());
         QVERIFY(unavailable->isVisible());
         const auto colors = resolvedThemeForWidget(*host).colors;
-        QCOMPARE(available->font().pixelSize(), 13);
+        QCOMPARE(available->font().pixelSize(), 14);
         QCOMPARE(unavailable->font().pixelSize(), available->font().pixelSize());
         QCOMPARE(loaded->font().pixelSize(), available->font().pixelSize());
         QCOMPARE(loaded->palette().color(loaded->foregroundRole()), colors.success);

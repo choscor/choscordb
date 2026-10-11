@@ -336,9 +336,8 @@ void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections(
                  qPrintable(QString("sidebar pixel at %1,%2").arg(point.x()).arg(point.y())));
     // Section labels read as quiet sentence-case group labels, like "Platform" in the reference.
     QCOMPARE(title->text(), QString("Connections"));
-    QCOMPARE(
-        title->font().pixelSize(),
-        choscordb::design::typographySpec(choscordb::design::TextStyle::Subheadline).pixelSize);
+    QCOMPARE(title->font().pixelSize(),
+             choscordb::design::typographySpec(choscordb::design::TextStyle::Callout).pixelSize);
     QCOMPARE(title->font().weight(), QFont::Medium);
     QCOMPARE(
         title->palette().color(title->foregroundRole()),

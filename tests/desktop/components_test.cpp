@@ -463,9 +463,9 @@ class ComponentsTest final : public QObject {
         Button button("Save");
         button.setButtonSize(ButtonSize::Small);
         const auto footerWidth = button.sizeHint().width();
-        QCOMPARE(button.font().pixelSize(), 11);
+        QCOMPARE(button.font().pixelSize(), typographySpec(TextStyle::Callout).pixelSize);
         button.setButtonContext(ButtonContext::EditorAction);
-        QCOMPARE(button.font().pixelSize(), 12);
+        QCOMPARE(button.font().pixelSize(), typographySpec(TextStyle::Callout).pixelSize);
         QCOMPARE(button.font().letterSpacing(), 0.0);
         QCOMPARE(button.height(), 28);
         QVERIFY(button.sizeHint().width() >= footerWidth + 6);

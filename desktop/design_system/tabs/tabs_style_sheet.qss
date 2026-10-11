@@ -27,7 +27,7 @@ QTabBar::tab {
   border-radius: @radius-md;
   padding: 0 @space-2;
   margin: @space-half 0;
-  font-size: @font-subheadline;
+  font-size: @font-callout;
   color: @fg-muted;
   background: transparent;
 }

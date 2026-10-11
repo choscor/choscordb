@@ -446,7 +446,7 @@ void ControlStyleTest::inputUsesUntrackedCalloutFontAndRemainsEditable() {
     field.ensurePolished();
     QCOMPARE(root.font().letterSpacing(), 0.0);
     QCOMPARE(field.font().letterSpacing(), 0.0);
-    QCOMPARE(field.font().pixelSize(), 12);
+    QCOMPARE(field.font().pixelSize(), 13);
     QCOMPARE(field.font().weight(), QFont::Medium);
     QTest::keyClicks(&field, "Connection");
     QCOMPARE(field.text(), QString("Connection"));

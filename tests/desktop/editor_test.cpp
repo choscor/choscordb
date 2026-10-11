@@ -100,7 +100,7 @@ class EditorTest : public QObject {
         // produced when QScintilla receives a pixel QFont as pointSizeF == -1.
         const auto defaultCaps = capHeight();
         QVERIFY2(defaultCaps >= 8, qPrintable(QString::number(defaultCaps)));
-        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 16L);
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 20L);
         const auto defaultWidth =
             editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH,
                                  static_cast<std::uintptr_t>(QsciLexerSQL::Default), "MMMM");
@@ -112,7 +112,7 @@ class EditorTest : public QObject {
         editor.setEditorFont(custom);
         QCoreApplication::processEvents();
         QVERIFY(capHeight() >= 16);
-        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 16L);
+        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 20L);
         QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH,
                                      static_cast<std::uintptr_t>(QsciLexerSQL::Default),
                                      "MMMM") > defaultWidth * 1.5);
@@ -120,7 +120,7 @@ class EditorTest : public QObject {
         editor.setSelection(0, 1, 0, 3);
         const auto revision = editor.revision();
         editor.setEditorFont(resolveTypography(TextStyle::Body, FontDesign::Monospaced));
-        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 16L);
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 20L);
         QCOMPARE(editor.selectedText(), QString("MM"));
         QCOMPARE(editor.revision(), revision);
         QCOMPARE(editor.text(), QString("MMMM\nMMMM;"));
@@ -133,10 +133,10 @@ class EditorTest : public QObject {
         font.setPointSize(13);
         editor.setEditorFont(font);
         QCOMPARE(editor.lexer()->font(QsciLexerSQL::Default).pointSize(), 13);
-        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 20L);
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 23L);
         font.setPointSize(32);
         editor.setEditorFont(font);
-        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 20L);
+        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 23L);
         QCOMPARE(editor.extraAscent(), 0);
         QCOMPARE(editor.extraDescent(), 0);
     }

@@ -162,7 +162,7 @@ class ResultColumnHeader final : public QHeaderView {
     }
     const QFont& secondaryFont() const {
         if (!secondaryFont_)
-            secondaryFont_ = design::resolveTypography(design::TextStyle::Subheadline);
+            secondaryFont_ = design::resolveTypography(design::TextStyle::Callout);
         return *secondaryFont_;
     }
     void clearPaintCache() {

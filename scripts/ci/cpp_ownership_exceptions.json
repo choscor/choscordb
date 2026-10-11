@@ -32,7 +32,7 @@
   {
     "path": "desktop/tools/preview/preview_window.cpp",
     "rule": "sql-text",
-    "sha256": "1388d9c0b658e9a3af3e237bfaa5086ee1e7a09b0f34bfeea0022dfcec1e1a27",
+    "sha256": "bbd7cf383a9688fb462f10a9fe6a6e75259c39b9cc066267191b59151dd8fefb",
     "reason": "The SELECT literal is synthetic content for the SQL-editor gallery specimen in Light and Dark themes. The gallery does not execute it or generate database requests."
   },
   {

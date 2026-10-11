@@ -316,7 +316,7 @@ void PreviewTest::buttonsUseProductionVariantsAndStates() {
     auto* smallest = light->findChild<Button*>("button-size-xs");
     QVERIFY(smallest);
     QCOMPARE(smallest->buttonSize(), ButtonSize::ExtraSmall);
-    QCOMPARE(smallest->font().pixelSize(), typographySpec(TextStyle::Caption2).pixelSize);
+    QCOMPARE(smallest->font().pixelSize(), typographySpec(TextStyle::Caption).pixelSize);
     QCOMPARE(pressed->font().pixelSize(), typographySpec(TextStyle::Body).pixelSize);
     auto* largest = light->findChild<Button*>("button-size-icon");
     QVERIFY(largest);
@@ -573,9 +573,9 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
                      .toString(),
                  QString("postgres"));
         QVERIFY(dynamic_cast<choscordb::design::NavigationProfileDelegate*>(list->itemDelegate()));
-        QCOMPARE(choscordb::design::resolveTypography(choscordb::design::TextStyle::Subheadline)
-                     .pixelSize(),
-                 11);
+        QCOMPARE(
+            choscordb::design::resolveTypography(choscordb::design::TextStyle::Callout).pixelSize(),
+            13);
         const auto height = list->visualItemRect(list->item(0)).height();
         QCOMPARE(height, choscordb::design::dimension(choscordb::design::Dimension::Row));
     }
@@ -845,7 +845,9 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         QCOMPARE(qobject_cast<QLabel*>(tabs->widget(0))->text(),
                  QString("Neutral document chrome"));
         QVERIFY(!tabs->tabIcon(0).isNull());
-        QCOMPARE(tabs->tabBar()->font().pixelSize(), 11);
+        QCOMPARE(
+            tabs->tabBar()->font().pixelSize(),
+            choscordb::design::typographySpec(choscordb::design::TextStyle::Callout).pixelSize);
         QCOMPARE(tabs->tabBar()->tabRect(0).width(), tabs->tabBar()->tabRect(1).width());
         QVERIFY(tabs->tabBar()->tabRect(0).width() >= 138);
         QVERIFY(tabs->tabBar()->tabRect(0).width() <= 150);
