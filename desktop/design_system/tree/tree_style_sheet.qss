@@ -4,6 +4,10 @@ QTreeView {
   qproperty-indentation: 9;
 }
 
+/* The leading padding sits outside the viewport, so the row highlight can start at
+   the viewport edge and still enclose the top-level branch indicator. */
 QTreeView[designNavigationTree="true"] {
   selection-background-color: transparent;
+  padding-left: @space-1;
+  qproperty-indentation: 16;
 }

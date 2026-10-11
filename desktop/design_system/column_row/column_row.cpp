@@ -4,6 +4,8 @@
 #include "design_system/metrics/metrics.h"
 #include "design_system/theme.h"
 
+#include <QAbstractItemView>
+#include <QItemSelectionModel>
 #include <QPainter>
 #include <QStyle>
 #include <QStyleOptionViewItem>
@@ -55,8 +57,14 @@ void ColumnRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opt
                           ? name
                           : nameMetrics.elidedText(name, Qt::ElideRight, nameWidth));
     if (detailWidth > 0) {
+        // NavigationTreeView paints the selection itself and clears State_Selected, and
+        // `fg-muted` is below 4.5:1 on `sidebar-selection`.
+        const auto* view = qobject_cast<const QAbstractItemView*>(option.widget);
+        const bool selected =
+            (option.state & QStyle::State_Selected) ||
+            (view && view->selectionModel() && view->selectionModel()->isSelected(index));
         painter->setFont(detailFont);
-        painter->setPen(colors.fgMuted);
+        painter->setPen(selected ? colors.fg : colors.fgMuted);
         painter->drawText(QRect(textRect.right() - detailWidth + 1, textRect.top(), detailWidth,
                                 textRect.height()),
                           Qt::AlignRight | Qt::AlignVCenter,

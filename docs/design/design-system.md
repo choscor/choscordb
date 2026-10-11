@@ -32,7 +32,7 @@ One name per value; aliases are not allowed. Phase 2 values:
 | Token | Use | Light | Dark |
 | --- | --- | --- | --- |
 | `bg` | Window canvas | #f6f7f8 | #171d20 |
-| `surface` | Panels, editors, editor toolbar, tables (including headers and row gutter), fields, dialogs, popovers, sidebar hover and selection | #ffffff | #20272b |
+| `surface` | Panels, editors (including the line-number gutter), editor toolbar, tables (including headers and row gutter), fields, dialogs, popovers | #ffffff | #20272b |
 | `surface-raised` | Tab bars, sidebar, non-table headers, footers, hover, kbd, neutral badges | #eef1f2 | #283135 |
 | `fg` | Primary text | #222b32 | #e0e8e8 |
 | `fg-muted` | Help, metadata, inactive tabs, placeholders | #5f6b72 | #93a2a8 |
@@ -43,6 +43,8 @@ One name per value; aliases are not allowed. Phase 2 values:
 | `primary-pressed` | Primary pressed | #9a330a | #f07800 |
 | `primary-fg` | Text and glyphs on primary | #ffffff | #1f1206 |
 | `selection` | Selected rows, checked segments, text selection | #fde4d3 | #4a2c14 |
+| `sidebar-hover` | Hovered sidebar rows | #eaedef | #2c3539 |
+| `sidebar-selection` | Selected sidebar rows; their muted detail text turns `fg` | #d9dfe2 | #3c484f |
 | `ring` | Focus ring, focused field border | = `primary` | = `primary` |
 | `success` / `success-surface` | Success status | #2b7a4b / #e7f3eb | #6cc08b / #213a2b |
 | `warning` / `warning-surface` | Warning status | #7d5a00 / #fff4d1 | #e8c35a / #3d3418 |
@@ -57,8 +59,9 @@ One name per value; aliases are not allowed. Phase 2 values:
 - The brand is orange. Green is reserved for `success`; no other token falls in
   the 90°–170° hue range.
 - Every text pair is at least 4.5:1 (WCAG 2) in both themes: `fg` on `bg`,
-  `surface`, `surface-raised` and `selection`;
-  `fg-muted` on `bg`, `surface` and `surface-raised`; `primary-fg` on each primary state; `primary` on
+  `surface`, `surface-raised`, `selection` and `sidebar-selection`;
+  `fg-muted` on `bg`, `surface`, `surface-raised` and `sidebar-hover`, and at
+  least 3:1 on `sidebar-selection`, where muted text turns `fg`; `primary-fg` on each primary state; `primary` on
   `surface`; each status color on its own surface and on `surface`; `code-*` on
   `surface`. `ring` is at least 3:1 on `bg` and `surface`.
 - Computed, not tokens: the switch thumb (`surface` in Light, white in Dark) and
@@ -135,8 +138,8 @@ The SQL editor keeps the font the user saved.
 - **Selected:** `selection` with `fg` text for every tree, list, table,
   quick-search, history and connection row, and for checked buttons and
   segments. The sidebar rests on `surface-raised`, like the tab bars; its
-  hovered and selected rows and its tabs lift to `surface`, like a selected
-  tab. Selected rows are not bold.
+  rows step darker, to `sidebar-hover` and `sidebar-selection`, and its tabs
+  lift to `surface`, like a selected tab. Selected rows are not bold.
 - **Menu highlight:** `surface-raised` with `fg`; disabled items `fg-disabled`.
 - **Primary:** `primary` → `primary-hover` → `primary-pressed`, text always
   `primary-fg`.

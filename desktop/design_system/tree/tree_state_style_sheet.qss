@@ -7,10 +7,13 @@ QTreeView::item:selected {
   color: @fg;
 }
 
-/* On the gray sidebar, hover and selection lift to surface, like a selected tab. */
-QTreeView[designSurface="sidebar"]::item:hover,
+/* On the gray sidebar, hover and selection step darker. */
+QTreeView[designSurface="sidebar"]::item:hover {
+  background: @sidebar-hover;
+}
+
 QTreeView[designSurface="sidebar"]::item:selected {
-  background: @surface;
+  background: @sidebar-selection;
 }
 
 /* NavigationTreeView paints its own rounded row fill. */

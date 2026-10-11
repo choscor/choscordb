@@ -202,6 +202,7 @@ class EditorTest : public QObject {
         const QColor paper = resolveColors(ResolvedAppearance::Light).surface;
         QCOMPARE(image.pixelColor(image.width() - 1, 100), paper);
         QCOMPARE(image.pixelColor(200, 0), paper);
+        QCOMPARE(image.pixelColor(1, 100), paper);
     }
     void restoresBufferAndSelectionWithoutReadingFile() {
         choscordb::SqlEditor editor;

@@ -6,6 +6,6 @@ QTreeView::item {
 
 QTreeView[designNavigationTree="true"]::item {
   min-height: @nav-item-min-height;
-  padding: @space-half 3px;
+  padding: @space-half @space-2 @space-half 3px;
   margin: 0px;
 }

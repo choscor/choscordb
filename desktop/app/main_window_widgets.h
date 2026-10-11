@@ -274,9 +274,10 @@ class WorkspaceTabBar final : public design::DocumentTabBar {
   public:
     using design::DocumentTabBar::DocumentTabBar;
 
+    // The header spans the tab widget, beneath the tab row and over its trailing corner.
     void setHeader(QWidget* header) {
         header_ = header;
-        header_->setParent(this);
+        header_->setParent(parentWidget());
         header_->show();
         updateGeometry();
         layoutHeader();
@@ -305,18 +306,25 @@ class WorkspaceTabBar final : public design::DocumentTabBar {
         layoutHeader();
     }
 
+    void layoutHeader() {
+        if (header_ && !header_->isHidden()) {
+            header_->setGeometry(0, y() + QTabBar::sizeHint().height(), parentWidget()->width(),
+                                 header_->sizeHint().height());
+            header_->raise();
+        }
+    }
+
   protected:
     void resizeEvent(QResizeEvent* event) override {
         QTabBar::resizeEvent(event);
         layoutHeader();
     }
+    void moveEvent(QMoveEvent* event) override {
+        QTabBar::moveEvent(event);
+        layoutHeader();
+    }
 
   private:
-    void layoutHeader() {
-        if (header_ && !header_->isHidden())
-            header_->setGeometry(0, QTabBar::sizeHint().height(), width(),
-                                 header_->sizeHint().height());
-    }
     QPointer<QWidget> header_;
 };
 
@@ -331,6 +339,12 @@ class WorkspaceTabs final : public QTabWidget {
     }
     WorkspaceTabBar* workspaceBar() const { return static_cast<WorkspaceTabBar*>(tabBar()); }
     design::Button* addButton() const { return addCorner_->addButton(); }
+
+  protected:
+    void resizeEvent(QResizeEvent* event) override {
+        QTabWidget::resizeEvent(event);
+        workspaceBar()->layoutHeader();
+    }
 
   private:
     design::TabAddCorner* addCorner_;

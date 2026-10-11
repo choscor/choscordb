@@ -216,7 +216,7 @@ void SqlEditor::applyPalette() {
     for (const auto style :
          {QsciLexerSQL::Comment, QsciLexerSQL::CommentLine, QsciLexerSQL::CommentDoc})
         lexer()->setColor(readable(colors.codeComment), style);
-    setMarginsBackgroundColor(palette().color(QPalette::AlternateBase));
+    setMarginsBackgroundColor(base);
     setMarginsForegroundColor(foreground);
     setFoldMarginColors(base, base);
     setCaretForegroundColor(foreground);

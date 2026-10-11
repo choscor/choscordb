@@ -27,7 +27,7 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     painter->setPen(selected ? colors.border : Qt::transparent);
     // Idle rows stay unfilled so the sidebar surface shows through.
     if (selected || hovered) {
-        painter->setBrush(colors.surface);
+        painter->setBrush(selected ? colors.sidebarSelection : colors.sidebarHover);
         // Keep the selected outline inside the highlight so the seam stays clear.
         painter->drawRoundedRect(highlight.adjusted(.5, .5, -.5, -.5), rowRadius, rowRadius);
     }

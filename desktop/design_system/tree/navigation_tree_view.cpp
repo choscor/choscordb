@@ -51,6 +51,24 @@ bool NavigationTreeView::viewportEvent(QEvent* event) {
     return QTreeView::viewportEvent(event);
 }
 
+void NavigationTreeView::paintHighlight(QPainter* painter, int top, int height, bool selected,
+                                        bool outline) const {
+    const auto theme = resolvedThemeForWidget(*this);
+    const auto& colors = theme.colors;
+    const qreal gap = layoutMetrics().navigationHighlightGap;
+    const int rounding = radius(Radius::Medium);
+    const QRectF highlight(0, top + gap / 2, viewport()->width() - spacing(Spacing::One),
+                           height - gap);
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing);
+    painter->setPen(outline && theme.forcedContrast && selected
+                        ? QPen(colors.ring, focusSpec().ringWidth)
+                        : QPen(Qt::NoPen));
+    painter->setBrush(selected ? colors.sidebarSelection : colors.sidebarHover);
+    painter->drawRoundedRect(highlight, rounding, rounding);
+    painter->restore();
+}
+
 void NavigationTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& option,
                                  const QModelIndex& index) const {
     const bool selected = selectionModel() && selectionModel()->isSelected(index);
@@ -59,22 +77,7 @@ void NavigationTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& 
         QTreeView::drawRow(painter, option, index);
         return;
     }
-
-    const auto theme = resolvedThemeForWidget(*this);
-    const auto& colors = theme.colors;
-    const qreal gap = layoutMetrics().navigationHighlightGap;
-    const int inset = spacing(Spacing::One);
-    const int rounding = radius(Radius::Medium);
-    const QRectF highlight(inset, option.rect.top() + gap / 2, viewport()->width() - 2 * inset,
-                           option.rect.height() - gap);
-    painter->save();
-    painter->setRenderHint(QPainter::Antialiasing);
-    painter->setPen(theme.forcedContrast && selected ? QPen(colors.ring, focusSpec().ringWidth)
-                                                     : QPen(Qt::NoPen));
-    painter->setBrush(colors.surface);
-    painter->drawRoundedRect(highlight, rounding, rounding);
-    painter->restore();
-
+    paintHighlight(painter, option.rect.top(), option.rect.height(), selected, true);
     QStyleOptionViewItem unselected(option);
     unselected.state &= ~(QStyle::State_Selected | QStyle::State_MouseOver);
     QTreeView::drawRow(painter, unselected, index);
@@ -84,18 +87,10 @@ void NavigationTreeView::drawBranches(QPainter* painter, const QRect& rect,
                                       const QModelIndex& index) const {
     const bool selected = selectionModel() && selectionModel()->isSelected(index);
     if (selected || hoveredIndex_ == index) {
-        const auto& colors = resolvedThemeForWidget(*this).colors;
         painter->save();
-        painter->setRenderHint(QPainter::Antialiasing);
         painter->setClipRect(rect);
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(colors.surface);
-        const qreal gap = layoutMetrics().navigationHighlightGap;
-        const int inset = spacing(Spacing::One);
-        const int rounding = radius(Radius::Medium);
-        painter->drawRoundedRect(QRectF(inset, rect.top() + gap / 2,
-                                        viewport()->width() - 2 * inset, rect.height() - gap),
-                                 rounding, rounding);
+        // drawRow already stroked the forced-contrast ring; refill without restroking it.
+        paintHighlight(painter, rect.top(), rect.height(), selected, false);
         painter->restore();
     }
     QTreeView::drawBranches(painter, rect, index);

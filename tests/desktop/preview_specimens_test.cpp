@@ -443,7 +443,7 @@ void PreviewTest::componentFamiliesAreRendered() {
         QVERIFY(dynamic_cast<choscordb::design::NavigationTreeView*>(tree));
         QCOMPARE(tree->property("designSurface").toString(), QString("sidebar"));
         QVERIFY(tree->currentIndex().isValid());
-        QCOMPARE(tree->indentation(), 9);
+        QCOMPARE(tree->indentation(), 16);
         QVERIFY(tree->model()->index(0, 0).data(Qt::DecorationRole).isNull());
         QVERIFY(!tree->model()
                      ->index(0, 0, tree->model()->index(0, 0))
@@ -561,9 +561,9 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
         QCoreApplication::sendEvent(list->viewport(), &leave);
         const auto image = list->viewport()->grab().toImage();
         QCOMPARE(image.pixelColor(firstSelectedRow.right() - 30, firstSelectedRow.center().y()),
-                 colors.surface);
+                 colors.sidebarSelection);
         QCOMPARE(image.pixelColor(selectedRow.right() - 30, selectedRow.center().y()),
-                 colors.surface);
+                 colors.sidebarSelection);
         QCOMPARE(image.pixelColor(regularRow.right() - 30, regularRow.center().y()),
                  colors.surfaceRaised);
         QVERIFY(list->visualItemRect(list->item(1)).bottom() < list->viewport()->height());

@@ -360,7 +360,17 @@ void NavigatorSqlWorkspaceTest::sqlToolbarInsetsControls() {
     const auto colors = choscordb::design::resolvedThemeForWidget(*controls).colors;
     const auto sample =
         controls->mapTo(&window, QPoint(controls->width() - 70, controls->height() / 2));
-    QCOMPARE(window.grab().toImage().pixelColor(sample), colors.surface);
+    const auto image = window.grab().toImage();
+    QCOMPARE(image.pixelColor(sample * image.devicePixelRatio()), colors.surface);
+    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+    QCOMPARE(toolbar->width(), tabs->width());
+    const auto trailing =
+        tabs->mapTo(&window, QPoint(tabs->width() - 2,
+                                    toolbar->mapTo(tabs, QPoint()).y() + toolbar->height() / 2));
+    QCOMPARE(image.pixelColor(trailing * image.devicePixelRatio()), colors.surface);
+    window.resize(window.width() + 120, window.height());
+    QCoreApplication::processEvents();
+    QCOMPARE(toolbar->width(), tabs->width());
 }
 
 void NavigatorSqlWorkspaceTest::tabContextMenuFollowsCursor() {

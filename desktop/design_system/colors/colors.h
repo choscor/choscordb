@@ -26,6 +26,8 @@ struct Colors final {
     QColor primaryPressed;
     QColor primaryFg;
     QColor selection;
+    QColor sidebarHover;
+    QColor sidebarSelection;
     QColor ring;
     QColor success;
     QColor successSurface;

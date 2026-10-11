@@ -22,7 +22,7 @@ wrapper subclasses. `docs/design/design-system.md` is the full reference.
   Sizes sit on the 4px grid: controls 24/28/32, rows and headers 28, tabs and
   toolbar 32.
 - State model: hover `surface-raised`; selected `selection` with `fg`, not bold
-  (both `surface` on the `surface-raised` sidebar);
+  (`sidebar-hover` and `sidebar-selection` on the `surface-raised` sidebar);
   menu highlight `surface-raised`; primary → `primary-hover` →
   `primary-pressed`; 2px `ring` for keyboard focus only; status uses
   `<status>-surface` with `<status>` text.

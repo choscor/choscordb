@@ -318,6 +318,13 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(dark.surfaceRaised, QColor("#283135"));
         QCOMPARE(dark.border, QColor("#343e43"));
         QCOMPARE(dark.primary, QColor("#ff8a18"));
+        // Sidebar rows step darker than the sidebar, and selection reads apart from hover.
+        for (const auto& colors : {light, dark}) {
+            QVERIFY(colors.sidebarHover != colors.surfaceRaised);
+            QVERIFY(colors.sidebarHover != colors.surface);
+            QVERIFY(colors.sidebarSelection != colors.sidebarHover);
+            QVERIFY(colors.sidebarSelection != colors.surface);
+        }
     }
 
     void layoutMetricsKeepWindowDefaults() {
@@ -363,6 +370,8 @@ class DesignSystemTest final : public QObject {
                                    "primary-pressed",
                                    "primary-fg",
                                    "selection",
+                                   "sidebar-hover",
+                                   "sidebar-selection",
                                    "ring",
                                    "success",
                                    "success-surface",
@@ -409,6 +418,8 @@ class DesignSystemTest final : public QObject {
                 {"fg/surface", c.fg, c.surface},
                 {"fg/surface-raised", c.fg, c.surfaceRaised},
                 {"fg/selection", c.fg, c.selection},
+                {"fg/sidebar-selection", c.fg, c.sidebarSelection},
+                {"fg-muted/sidebar-hover", c.fgMuted, c.sidebarHover},
                 {"fg-muted/bg", c.fgMuted, c.bg},
                 {"fg-muted/surface", c.fgMuted, c.surface},
                 {"fg-muted/surface-raised", c.fgMuted, c.surfaceRaised},
@@ -428,6 +439,8 @@ class DesignSystemTest final : public QObject {
                 {"code-comment/surface", c.codeComment, c.surface}};
             for (const auto& [name, foreground, background] : text)
                 QVERIFY2(contrastRatio(foreground, background) >= 4.5, name);
+            // Branch arrows and object icons stay muted on selected sidebar rows.
+            QVERIFY(contrastRatio(c.fgMuted, c.sidebarSelection) >= 3.0);
             QVERIFY(contrastRatio(c.ring, c.bg) >= 3.0);
             QVERIFY(contrastRatio(c.ring, c.surface) >= 3.0);
         }

@@ -1,5 +1,6 @@
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
+#include "design_system/column_row/column_row.h"
 #include "design_system/control_style.h"
 #include "design_system/history_row/history_row.h"
 #include "design_system/icons.h"
@@ -91,7 +92,7 @@ class ComponentsTest final : public QObject {
         QCOMPARE(at(documentRect.left(), documentRect.top()), colors.surfaceRaised);
         QCOMPARE(at(documentRect.left(), documentRect.bottom()), colors.surface);
     }
-    void sidebarTreeSelectionHasRoundedSurfaceFill() {
+    void sidebarTreeSelectionHasRoundedGrayFill() {
         using namespace choscordb::design;
         for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
             QWidget root;
@@ -119,9 +120,10 @@ class ComponentsTest final : public QObject {
             const auto rect = tree.visualRect(model.index(0, 0));
             const auto image = tree.viewport()->grab().toImage();
             const auto colors = resolvedThemeForWidget(tree).colors;
-            QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()), colors.surface);
-            QCOMPARE(image.pixelColor(6, rect.center().y()), colors.surface);
-            QCOMPARE(image.pixelColor(10, rect.top() + 3), colors.surface);
+            QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()),
+                     colors.sidebarSelection);
+            QCOMPARE(image.pixelColor(6, rect.center().y()), colors.sidebarSelection);
+            QCOMPARE(image.pixelColor(10, rect.top() + 3), colors.sidebarSelection);
             QVERIFY(image.pixelColor(6, rect.top() + 1) != colors.surfaceRaised);
             const auto hoverRect = tree.visualRect(model.index(1, 0));
             QVERIFY(tree.viewport()->hasMouseTracking());
@@ -130,7 +132,7 @@ class ComponentsTest final : public QObject {
             QCoreApplication::processEvents();
             const auto hovered = tree.viewport()->grab().toImage();
             QCOMPARE(hovered.pixelColor(hoverRect.right() - 8, hoverRect.center().y()),
-                     colors.surface);
+                     colors.sidebarHover);
             tree.verticalScrollBar()->setValue(tree.verticalScrollBar()->value() + 2);
             QCoreApplication::processEvents();
             const auto underPointer = tree.indexAt(hoverRect.center());
@@ -139,8 +141,124 @@ class ComponentsTest final : public QObject {
             const auto scrolled = tree.viewport()->grab().toImage();
             QCOMPARE(scrolled.pixelColor(tree.visualRect(underPointer).right() - 8,
                                          hoverRect.center().y()),
-                     colors.surface);
+                     colors.sidebarHover);
         }
+    }
+    void sidebarTreeTopLevelBranchSitsInsideHighlight() {
+        using namespace choscordb::design;
+        for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
+            QWidget root;
+            root.setProperty("designSurface", "sidebar");
+            root.setAttribute(Qt::WA_StyledBackground);
+            ThemeManager theme;
+            theme.setMode(mode);
+            theme.applyTo(root);
+            NavigationTreeView tree(&root);
+            QStandardItemModel model;
+            auto* parent = new QStandardItem("Connection");
+            parent->appendRow(new QStandardItem("main"));
+            model.appendRow(parent);
+            tree.setModel(&model);
+            tree.setHeaderHidden(true);
+            tree.resize(220, 80);
+            root.resize(230, 100);
+            root.show();
+            tree.expandAll();
+            tree.selectionModel()->select(model.index(0, 0), QItemSelectionModel::ClearAndSelect |
+                                                                 QItemSelectionModel::Rows);
+            QCoreApplication::processEvents();
+            const auto image = tree.grab().toImage();
+            const auto colors = resolvedThemeForWidget(tree).colors;
+            const auto rect = tree.visualRect(model.index(0, 0));
+            const int y = tree.viewport()->mapTo(&tree, rect.center()).y();
+            const auto pixel = [&](int x, int row) {
+                return image.pixelColor(QPoint(x, row) * image.devicePixelRatio());
+            };
+            int highlightLeft = 0;
+            while (highlightLeft < rect.left() &&
+                   pixel(highlightLeft, y - 5) != colors.sidebarSelection)
+                ++highlightLeft;
+            QVERIFY2(highlightLeft < rect.left(), "the selected row has no highlight");
+            int inkLeft = 0;
+            const auto ink = [&](int x) {
+                for (int row = y - 3; row <= y + 3; ++row)
+                    if (pixel(x, row) != colors.sidebarSelection &&
+                        pixel(x, row) != colors.surfaceRaised)
+                        return true;
+                return false;
+            };
+            while (inkLeft < rect.left() && !ink(inkLeft))
+                ++inkLeft;
+            QVERIFY2(inkLeft < rect.left(), "the expand chevron was not painted");
+            QVERIFY2(highlightLeft >= spacing(Spacing::One), "the highlight lost its leading gap");
+            QVERIFY2(inkLeft >= highlightLeft + spacing(Spacing::Half),
+                     qPrintable(QString("chevron starts at %1, highlight at %2")
+                                    .arg(inkLeft)
+                                    .arg(highlightLeft)));
+            tree.resize(260, 90);
+            theme.applyTo(root);
+            QCoreApplication::processEvents();
+            QCOMPARE(tree.viewport()->x(), spacing(Spacing::One));
+        }
+    }
+    void sidebarTreeColumnDetailSitsInsideHighlight() {
+        using namespace choscordb::design;
+        constexpr int detailRole = Qt::UserRole + 1;
+        QWidget root;
+        root.setProperty("designSurface", "sidebar");
+        root.setAttribute(Qt::WA_StyledBackground);
+        ThemeManager theme;
+        theme.setMode(ThemeMode::Light);
+        theme.applyTo(root);
+        NavigationTreeView tree(&root);
+        tree.setItemDelegate(new ColumnRowDelegate(detailRole, &tree));
+        QStandardItemModel model;
+        auto* column = new QStandardItem("unit_price");
+        column->setData("NUMERIC", detailRole);
+        model.appendRow(column);
+        tree.setModel(&model);
+        tree.setHeaderHidden(true);
+        tree.resize(220, 60);
+        root.resize(230, 70);
+        root.show();
+        tree.selectionModel()->select(model.index(0, 0), QItemSelectionModel::ClearAndSelect |
+                                                             QItemSelectionModel::Rows);
+        QCoreApplication::processEvents();
+        const auto image = tree.viewport()->grab().toImage();
+        const auto colors = resolvedThemeForWidget(tree).colors;
+        const auto rect = tree.visualRect(model.index(0, 0));
+        const auto pixel = [&](int x, int row) {
+            return image.pixelColor(QPoint(x, row) * image.devicePixelRatio());
+        };
+        int highlightRight = tree.viewport()->width() - 1;
+        while (highlightRight > rect.center().x() &&
+               pixel(highlightRight, rect.center().y() - 5) != colors.sidebarSelection)
+            --highlightRight;
+        int inkRight = highlightRight;
+        const auto ink = [&](int x) {
+            for (int row = rect.center().y() - 3; row <= rect.center().y() + 3; ++row)
+                if (pixel(x, row) != colors.sidebarSelection &&
+                    pixel(x, row) != colors.surfaceRaised)
+                    return true;
+            return false;
+        };
+        while (inkRight > rect.center().x() && !ink(inkRight))
+            --inkRight;
+        QVERIFY2(inkRight > rect.center().x(), "the column detail was not painted");
+        QVERIFY2(
+            inkRight <= highlightRight - spacing(Spacing::Half),
+            qPrintable(
+                QString("detail ends at %1, highlight at %2").arg(inkRight).arg(highlightRight)));
+        // Muted text is below 4.5:1 on the selection, so the selected detail turns fg.
+        bool fgDetail = false;
+        bool mutedDetail = false;
+        for (int x = inkRight - 40; x <= inkRight; ++x)
+            for (int row = rect.top(); row <= rect.bottom(); ++row) {
+                fgDetail |= pixel(x, row) == colors.fg;
+                mutedDetail |= pixel(x, row) == colors.fgMuted;
+            }
+        QVERIFY(fgDetail);
+        QVERIFY(!mutedDetail);
     }
     void sidebarTreeLeaveFromBlankSpaceDoesNotLeaveStaleHover() {
         using namespace choscordb::design;
@@ -178,7 +296,7 @@ class ComponentsTest final : public QObject {
                                   image.devicePixelRatio()),
                  resolvedThemeForWidget(tree).colors.surfaceRaised);
     }
-    void sidebarSavedFilesSelectionUsesSurface() {
+    void sidebarSavedFilesSelectionUsesSidebarSelection() {
         using namespace choscordb::design;
         for (auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
             QWidget root;
@@ -204,7 +322,7 @@ class ComponentsTest final : public QObject {
             const auto rect = tree.visualItemRect(item);
             const auto image = tree.viewport()->grab().toImage();
             QCOMPARE(image.pixelColor(rect.right() - 8, rect.center().y()),
-                     resolvedThemeForWidget(tree).colors.surface);
+                     resolvedThemeForWidget(tree).colors.sidebarSelection);
             auto* other = new QTreeWidgetItem(&tree, {"Other query"});
             const auto otherRect = tree.visualItemRect(other);
             QTest::mouseMove(tree.viewport(), QPoint(1, tree.viewport()->height() - 2));
@@ -212,7 +330,7 @@ class ComponentsTest final : public QObject {
             QCoreApplication::processEvents();
             QTRY_COMPARE_WITH_TIMEOUT(tree.viewport()->grab().toImage().pixelColor(
                                           otherRect.right() - 8, otherRect.center().y()),
-                                      resolvedThemeForWidget(tree).colors.surface, 1000);
+                                      resolvedThemeForWidget(tree).colors.sidebarHover, 1000);
         }
     }
     void selectedConnectionRowUsesNeutralColors() {
@@ -238,7 +356,7 @@ class ComponentsTest final : public QObject {
             const auto row = list.visualItemRect(item);
             const auto image = list.viewport()->grab().toImage();
             const auto colors = resolvedThemeForWidget(list).colors;
-            QCOMPARE(image.pixelColor(row.left() + 7, row.center().y()), colors.surface);
+            QCOMPARE(image.pixelColor(row.left() + 7, row.center().y()), colors.sidebarSelection);
         }
     }
     void adjacentSelectedConnectionRowsLeaveTheTreeSeam() {
@@ -416,7 +534,11 @@ class ComponentsTest final : public QObject {
             QCoreApplication::processEvents();
             const auto row = tree.visualRect(model.index(0, 0));
             const auto rendered = tree.viewport()->grab().toImage();
-            QCOMPARE(rendered.pixelColor(5, row.center().y()), muted);
+            bool mutedBranch = false;
+            for (int y = row.top(); y <= row.bottom(); ++y)
+                for (int x = 0; x < row.left(); ++x)
+                    mutedBranch |= rendered.pixelColor(x, y) == muted;
+            QVERIFY(mutedBranch);
         }
     }
     void primaryKeyboardFocusContrastsWithTheActionFill_data() {

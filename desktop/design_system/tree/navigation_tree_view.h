@@ -21,6 +21,7 @@ class NavigationTreeView final : public QTreeView {
   private:
     void updateHoveredIndex();
     void updateRow(const QModelIndex& index);
+    void paintHighlight(QPainter* painter, int top, int height, bool selected, bool outline) const;
     QPoint hoveredPosition_{-1, -1};
     QPersistentModelIndex hoveredIndex_;
 };
