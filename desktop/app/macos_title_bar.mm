@@ -27,6 +27,9 @@ void MainWindow::updateNativeTitleBar() {
     // a Qt top margin leaves a blank strip above the tabs and navigator.
     window.styleMask &= ~NSWindowStyleMaskFullSizeContentView;
     window.titleVisibility = NSWindowTitleVisible;
+    // Qt 6.8 keeps this property across window flag updates; 6.9+ also takes
+    // it from Qt::NoTitleBarBackgroundHint in MainWindow.
+    window.titlebarAppearsTransparent = YES;
     window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
     window.backgroundColor = [NSColor colorWithSRGBRed:color.redF()
                                                  green:color.greenF()
