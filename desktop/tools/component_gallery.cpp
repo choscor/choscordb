@@ -1,4 +1,5 @@
 #include "design_system/control_style.h"
+#include "design_system/fonts/fonts.h"
 #include "tools/preview/preview_window.h"
 
 #include <QApplication>
@@ -10,6 +11,8 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setApplicationName("ChoscorDB Component Gallery");
     QApplication::setStyle(new choscordb::design::ControlStyle);
+    // Match the application font the main window installs through ThemeManager.
+    QApplication::setFont(choscordb::design::resolveTypography(choscordb::design::TextStyle::Body));
     QCommandLineParser parser;
     parser.setApplicationDescription(
         "Offline native design-system preview; no profile or database is opened.");
