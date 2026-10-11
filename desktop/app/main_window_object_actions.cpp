@@ -138,7 +138,8 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         preview->setAccessibleName(tr("SQL preview"));
         preview->setReadOnly(true);
         preview->setProperty("designRole", "codePreview");
-        preview->setFont(design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
+        preview->setFont(
+            design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
         preview->setFrameShape(QFrame::NoFrame);
         layout->addWidget(preview);
         auto* status = dialog.createInlineStatus(&dialog);

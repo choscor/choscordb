@@ -36,10 +36,10 @@ void PreviewTest::jsonTextViewSpecimenColorsSyntaxInBothThemes() {
         QVERIFY(editor->inherits("choscordb::design::JsonTextView"));
         QVERIFY(editor->isReadOnly());
         QCOMPARE(editor->toPlainText(), json);
-        QCOMPARE(
-            editor->font().family(),
-            choscordb::design::resolveTypography(choscordb::design::TextStyle::Body,
-                                                 choscordb::design::FontDesign::Monospaced).family());
+        QCOMPARE(editor->font().family(),
+                 choscordb::design::resolveTypography(choscordb::design::TextStyle::Body,
+                                                      choscordb::design::FontDesign::Monospaced)
+                     .family());
         const auto colors = resolvedThemeForWidget(*editor).colors;
         const auto block = editor->document()->firstBlock().next();
         QVERIFY(block.isValid());

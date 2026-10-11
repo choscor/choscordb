@@ -439,9 +439,10 @@ EditorPreferences PreferencesDialog::draft() const {
 }
 void PreferencesDialog::fill(const EditorPreferences& value) {
     system_->setChecked(value.fontFamily.isEmpty());
-    font_->setCurrentFont(value.fontFamily.isEmpty()
-                              ? design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced)
-                              : QFont(value.fontFamily));
+    font_->setCurrentFont(
+        value.fontFamily.isEmpty()
+            ? design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced)
+            : QFont(value.fontFamily));
     size_->setValue(value.fontSize);
     for (qsizetype i = 0; i < catalog_.size(); ++i) {
         QString sequence = catalog_[i].defaultSequence;
@@ -455,8 +456,10 @@ void PreferencesDialog::fill(const EditorPreferences& value) {
 }
 void PreferencesDialog::updatePreview() {
     font_->setEnabled(!system_->isChecked());
-    QFont selected = system_->isChecked() ? design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced)
-                                          : font_->currentFont();
+    QFont selected =
+        system_->isChecked()
+            ? design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced)
+            : font_->currentFont();
     selected.setPointSize(size_->value());
     preview_->setEditorFont(selected);
 }

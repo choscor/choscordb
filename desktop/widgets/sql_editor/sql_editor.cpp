@@ -31,7 +31,8 @@ SqlEditor::SqlEditor(QWidget* parent) : QsciScintilla(parent) {
     setUtf8(true);
     setAccessibleName(tr("SQL editor"));
     setFrameShape(QFrame::NoFrame);
-    const auto font = design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced);
+    const auto font =
+        design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced);
     setMarginType(0, QsciScintilla::NumberMargin);
     updateLineNumberMargin();
     setBraceMatching(QsciScintilla::SloppyBraceMatch);
@@ -115,7 +116,8 @@ void SqlEditor::setEditorFont(const QFont& requestedFont) {
     setExtraAscent(0);
     setExtraDescent(0);
     const auto naturalHeight = SendScintilla(SCI_TEXTHEIGHT, 0UL);
-    const auto lineHeight = design::typographySpec(design::TextStyle::Body, design::FontDesign::Monospaced).lineHeight;
+    const auto lineHeight =
+        design::typographySpec(design::TextStyle::Body, design::FontDesign::Monospaced).lineHeight;
     const auto padding = qMax(0, lineHeight - static_cast<int>(naturalHeight));
     setExtraAscent(padding / 2);
     setExtraDescent(padding - padding / 2);

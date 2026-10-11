@@ -230,7 +230,8 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     ddl_->setAccessibleName(tr("Object DDL"));
     ddl_->setReadOnly(true);
     ddl_->setProperty("designRole", "codePreview");
-    ddl_->setFont(design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
+    ddl_->setFont(
+        design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
     ddl_->setFrameShape(QFrame::NoFrame);
     new DdlHighlighter(ddl_);
     pages_->addWidget(ddl_);
@@ -648,7 +649,8 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
     const auto mutedText = design::resolvedThemeForWidget(*this).colors.fgMuted;
     const QIcon keyIcon = design::themedIcon(design::Icon::Key, mutedText, objectIconSize());
     const QIcon fileIcon = design::themedIcon(design::Icon::File, mutedText, objectIconSize());
-    const QFont metadataFont = design::resolveTypography(design::TextStyle::Callout, design::FontDesign::Monospaced);
+    const QFont metadataFont =
+        design::resolveTypography(design::TextStyle::Callout, design::FontDesign::Monospaced);
     // Grow the model once, then fill cells, instead of one insertion per row.
     const int firstRow = model_->rowCount();
     model_->setRowCount(firstRow + int(inspection.rows.size()));

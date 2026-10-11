@@ -74,12 +74,14 @@ QSize Text::minimumSizeHint() const {
         return sizeHint();
     }
     const auto padding = 2 * (margin() + frameWidth());
-    const auto minimum = measure(text(), font(), typographySpec(style_, design_).lineHeight, 1, true);
+    const auto minimum =
+        measure(text(), font(), typographySpec(style_, design_).lineHeight, 1, true);
     return {padding + minimum.width(), padding + typographySpec(style_, design_).lineHeight};
 }
 int Text::heightForWidth(int width) const {
     const auto padding = 2 * (margin() + frameWidth());
-    return measure(text(), font(), typographySpec(style_, design_).lineHeight, width - padding, wordWrap())
+    return measure(text(), font(), typographySpec(style_, design_).lineHeight, width - padding,
+                   wordWrap())
                .height() +
            padding;
 }
