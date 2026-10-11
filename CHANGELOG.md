@@ -12,6 +12,7 @@
 - Fixed a failed sidebar or quick-search history request being mistaken for a failed workspace save or shutdown flush.
 - Fixed document tab titles eliding and confirmation dialogs scrolling when their text fits.
 - Fixed a separator line appearing under the macOS title bar.
+- Fixed SSH host key approval on Windows rejecting every known-hosts file path.
 
 ## [0.1.9]
 
