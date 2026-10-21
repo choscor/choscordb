@@ -80,9 +80,6 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     layout->addWidget(sections);
     auto* headerLayout = sections->headerLayout();
     auto* header = headerLayout->parentWidget();
-    header->setFixedHeight(design::layoutMetrics().modalHeaderHeight);
-    headerLayout->setContentsMargins(design::spacing(design::Spacing::Four), 0,
-                                     design::spacing(design::Spacing::Four), 0);
     auto* heading = new design::Text(tr("Export results"), header);
     heading->setTextStyle(design::TextStyle::Headline);
     headerLayout->addWidget(heading);
@@ -99,9 +96,6 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     auto* body = bodyLayout->parentWidget();
     body->setProperty("designSurface", "panel");
     body->setAttribute(Qt::WA_StyledBackground);
-    bodyLayout->setContentsMargins(
-        design::spacing(design::Spacing::Four), design::layoutMetrics().modalFooterInset,
-        design::spacing(design::Spacing::Four), design::layoutMetrics().modalFooterInset);
     bodyLayout->addWidget(scope_);
     setResultViewActive(false);
     bodyLayout->addLayout(form);
@@ -120,9 +114,6 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     auto* footer = buttons->parentWidget();
     footer->setProperty("designSurface", "muted");
     footer->setAttribute(Qt::WA_StyledBackground);
-    buttons->setContentsMargins(
-        design::layoutMetrics().modalFooterInset, design::layoutMetrics().modalFooterVerticalInset,
-        design::layoutMetrics().modalFooterInset, design::layoutMetrics().modalFooterVerticalInset);
     buttons->addStretch();
     auto* close = new design::Button(tr("Close"), footer);
     close->setObjectName("exportClose");

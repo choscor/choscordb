@@ -21,6 +21,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStringList>
@@ -41,9 +42,6 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     layout->addWidget(sections);
     auto* headerLayout = sections->headerLayout();
     auto* header = headerLayout->parentWidget();
-    header->setFixedHeight(design::layoutMetrics().modalHeaderHeight);
-    headerLayout->setContentsMargins(design::spacing(design::Spacing::Four), 0,
-                                     design::spacing(design::Spacing::Four), 0);
     auto* heading = new design::Text(tr("Preferences"), header);
     heading->setTextStyle(design::TextStyle::Headline);
     headerLayout->addWidget(heading);
@@ -63,9 +61,9 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     pages->setProperty("designTabVariant", "pane");
     pages->setUsesScrollButtons(true);
     pages_ = pages;
+    // The pane tabs span the dialog; each page applies the shared inset.
     auto* body = sections->bodyLayout();
     body->setContentsMargins(0, 0, 0, 0);
-    body->setSpacing(0);
     body->addWidget(pages, 1);
     statusLine_ = new design::StatusLine(this);
     statusLine_->setObjectName("preferencesStatusLine");
@@ -83,10 +81,15 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
         page->setProperty("designSurface", "panel");
         page->setAttribute(Qt::WA_StyledBackground);
         page->setBackgroundRole(QPalette::Base);
+        // Match the sibling settings forms on every platform style.
+        if (auto* form = qobject_cast<QFormLayout*>(page->layout())) {
+            form->setRowWrapPolicy(QFormLayout::WrapLongRows);
+            form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+        }
         if (page->layout())
             page->layout()->setContentsMargins(
-                design::spacing(design::Spacing::Four), design::layoutMetrics().modalFooterInset,
-                design::spacing(design::Spacing::Four), design::layoutMetrics().modalFooterInset);
+                design::spacing(design::Spacing::Three), design::spacing(design::Spacing::Three),
+                design::spacing(design::Spacing::Three), design::spacing(design::Spacing::Three));
         scroll->setWidget(page);
         pages->addTab(scroll, title);
     };
@@ -139,6 +142,12 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     preview_->setObjectName("preferencesPreview");
     preview_->setText("SELECT name, count(*)\nFROM sample\nWHERE active = true\nGROUP BY name;");
     preview_->setReadOnly(true);
+    preview_->setFocusPolicy(Qt::NoFocus);
+    // fitPreview shows every sample line; only lines wider than the preview scroll sideways.
+    preview_->SendScintilla(QsciScintillaBase::SCI_SETVSCROLLBAR, 0UL);
+    preview_->SendScintilla(QsciScintillaBase::SCI_SETSCROLLWIDTHTRACKING, 1UL);
+    connect(preview_->horizontalScrollBar(), &QScrollBar::rangeChanged, this,
+            &PreferencesDialog::fitPreview);
     form->addRow(preview_);
     addPage(editor, tr("SQL editor"));
     auto* results = new QWidget(pages);
@@ -211,9 +220,6 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     auto* footer = buttons->parentWidget();
     footer->setProperty("designSurface", "muted");
     footer->setAttribute(Qt::WA_StyledBackground);
-    buttons->setContentsMargins(
-        design::layoutMetrics().modalFooterInset, design::layoutMetrics().modalFooterVerticalInset,
-        design::layoutMetrics().modalFooterInset, design::layoutMetrics().modalFooterVerticalInset);
     auto* reset = new design::Button(tr("Restore defaults"), footer);
     reset_ = reset;
     reset->setObjectName("preferencesReset");
@@ -461,7 +467,16 @@ void PreferencesDialog::updatePreview() {
             ? design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced)
             : font_->currentFont();
     selected.setPointSize(size_->value());
+    // Tracking only widens the scroll width; restart it so a smaller font drops the bar.
+    preview_->SendScintilla(QsciScintillaBase::SCI_SETSCROLLWIDTH, 1UL);
     preview_->setEditorFont(selected);
+    fitPreview();
+}
+void PreferencesDialog::fitPreview() {
+    const auto lineHeight = preview_->SendScintilla(QsciScintillaBase::SCI_TEXTHEIGHT, 0UL);
+    const auto* sideways = preview_->horizontalScrollBar();
+    preview_->setFixedHeight(static_cast<int>(lineHeight) * preview_->lines() +
+                             (sideways->maximum() > 0 ? sideways->sizeHint().height() : 0));
 }
 void PreferencesDialog::setBusy(bool busy) {
     statusLine_->setBusy(busy);
@@ -594,5 +609,6 @@ void PreferencesDialog::closeEvent(QCloseEvent* event) {
 }
 void PreferencesDialog::setStatus(const QString& message) {
     statusLine_->setMessage(message);
+    statusLine_->setVisible(!message.isEmpty());
 }
 } // namespace choscordb

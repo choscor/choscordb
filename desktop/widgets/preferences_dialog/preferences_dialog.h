@@ -43,6 +43,7 @@ class PreferencesDialog final : public DialogShell {
     EditorPreferences draft() const;
     void fill(const EditorPreferences& preferences);
     void updatePreview();
+    void fitPreview();
     void updateAppearanceStatus();
     void apply();
     void setBusy(bool busy);

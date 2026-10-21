@@ -2,11 +2,13 @@
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/shortcut_catalog.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/preferences_dialog/preferences_dialog.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
@@ -16,7 +18,11 @@
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
+#include <QFormLayout>
+#include <QProxyStyle>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTemporaryDir>
@@ -48,11 +54,17 @@ class PreferencesTest : public QObject {
         auto* header = sections->headerLayout()->parentWidget();
         auto* body = sections->bodyLayout()->parentWidget();
         auto* footer = sections->footerLayout()->parentWidget();
-        const auto layout = choscordb::design::layoutMetrics();
-        QCOMPARE(header->height(), layout.modalHeaderHeight);
-        QCOMPARE(sections->headerLayout()->contentsMargins().left(),
-                 choscordb::design::spacing(choscordb::design::Spacing::Four));
-        QCOMPARE(sections->footerLayout()->contentsMargins().left(), layout.modalFooterInset);
+        // App tools keep the shared compact bars instead of screen-owned insets.
+        const choscordb::design::DialogSections reference;
+        QCOMPARE(sections->headerLayout()->contentsMargins(),
+                 reference.headerLayout()->contentsMargins());
+        // Preferences pane tabs span the body; export content uses the shared body inset.
+        if (exportTool)
+            QCOMPARE(sections->bodyLayout()->contentsMargins(),
+                     reference.bodyLayout()->contentsMargins());
+        QCOMPARE(sections->footerLayout()->contentsMargins(),
+                 reference.footerLayout()->contentsMargins());
+        QCOMPARE(header->height(), header->sizeHint().height());
         QCOMPARE(footer->property("designSurface").toString(), QString("muted"));
         auto* dismiss =
             dialog->findChild<QPushButton*>(exportTool ? "exportDismiss" : "preferencesDismiss");
@@ -135,6 +147,106 @@ class PreferencesTest : public QObject {
         QTRY_VERIFY(dialog.findChild<QPushButton*>("preferencesApply")->isEnabled());
         QCOMPARE(failed.count(), 0);
         dialog.close();
+    }
+
+    void preferencesSectionsFitWithoutScrollingAndHideIdleStatus() {
+        choscordb::EngineAdapter adapter;
+        choscordb::PreferencesDialog dialog(&adapter, {});
+        dialog.show();
+        auto* statusLine =
+            dialog.findChild<choscordb::design::StatusLine*>("preferencesStatusLine");
+        QVERIFY(statusLine);
+        // Loading feedback is visible until the stored preferences arrive.
+        QVERIFY(statusLine->isVisible());
+        QTRY_VERIFY(dialog.findChild<QPushButton*>("preferencesApply")->isEnabled());
+        QVERIFY(!statusLine->isVisible());
+        auto* sections = dialog.findChild<QTabWidget*>("preferencesSections");
+        QVERIFY(sections);
+        // Keyboard shortcuts grow with the catalog; the other sections fit the initial size.
+        for (int index = 0; index < 5; ++index) {
+            sections->setCurrentIndex(index);
+            auto* scroll = qobject_cast<QScrollArea*>(sections->currentWidget());
+            QVERIFY(scroll);
+            // Loading resizes the preview; wait for the page relayout before measuring.
+            QTRY_VERIFY(scroll->widget()->height() <= scroll->viewport()->height());
+            QCOMPARE(scroll->verticalScrollBar()->maximum(), 0);
+        }
+        auto* preview = dialog.findChild<choscordb::SqlEditor*>("preferencesPreview");
+        QVERIFY(preview);
+        sections->setCurrentIndex(1);
+        auto* size = dialog.findChild<QSpinBox*>("preferencesFontSize");
+        auto* sideways = preview->horizontalScrollBar();
+        const int defaultSize = choscordb::EditorPreferences{}.fontSize;
+        const auto showsEveryLine = [preview] {
+            return preview->SendScintilla(QsciScintillaBase::SCI_LINESONSCREEN) >=
+                       preview->lines() &&
+                   preview->SendScintilla(QsciScintillaBase::SCI_GETFIRSTVISIBLELINE) == 0;
+        };
+        // The default size fits without scrolling; the largest font is reachable
+        // sideways, and returning to the default drops the bar again.
+        for (const int points : {defaultSize, size->maximum(), defaultSize}) {
+            size->setValue(points);
+            if (points == defaultSize)
+                QTRY_VERIFY(!sideways->isVisible());
+            else
+                QTRY_VERIFY(sideways->isVisible() && sideways->maximum() > 0);
+            QTRY_VERIFY(showsEveryLine());
+        }
+        // A mid size fits the dialog; a narrower dialog scrolls it sideways without
+        // covering a line.
+        size->setValue(24);
+        QTRY_VERIFY(!sideways->isVisible());
+        dialog.resize(dialog.width() / 2, dialog.height());
+        QTRY_VERIFY(sideways->isVisible() && sideways->maximum() > 0);
+        QTRY_VERIFY(showsEveryLine());
+        dialog.close();
+    }
+
+    void preferencesFieldsFillTheirSectionLikeSiblingForms() {
+        choscordb::EngineAdapter adapter;
+        choscordb::PreferencesDialog dialog(&adapter, {{"find", "Find", "Ctrl+F"}});
+        dialog.show();
+        QTRY_VERIFY(dialog.findChild<QPushButton*>("preferencesApply")->isEnabled());
+        auto* sections = dialog.findChild<QTabWidget*>("preferencesSections");
+        QVERIFY(sections);
+        // Report macOS form defaults on every platform, where fields keep their size hint.
+        class SizeHintFormStyle final : public QProxyStyle {
+          public:
+            int styleHint(StyleHint hint, const QStyleOption* option, const QWidget* widget,
+                          QStyleHintReturn* result) const override {
+                if (hint == SH_FormLayoutFieldGrowthPolicy)
+                    return QFormLayout::FieldsStayAtSizeHint;
+                if (hint == SH_FormLayoutWrapPolicy)
+                    return QFormLayout::DontWrapRows;
+                return QProxyStyle::styleHint(hint, option, widget, result);
+            }
+        };
+        SizeHintFormStyle formStyle;
+        for (int index = 0; index < sections->count(); ++index)
+            qobject_cast<QScrollArea*>(sections->widget(index))->widget()->setStyle(&formStyle);
+        // Query settings and Export grow their fields to the form edge; so do these sections.
+        const QList<QPair<int, QString>> fields{{0, "appearanceTheme"},
+                                                {1, "preferencesFont"},
+                                                {2, "queryPageSize"},
+                                                {3, "connectionTimeoutSeconds"},
+                                                {4, "preferencesHistoryDays"},
+                                                {5, "shortcut_find"}};
+        for (const auto& [index, name] : fields) {
+            sections->setCurrentIndex(index);
+            auto* scroll = qobject_cast<QScrollArea*>(sections->currentWidget());
+            QVERIFY(scroll);
+            auto* page = scroll->widget();
+            auto* field = page->findChild<QWidget*>(name);
+            QVERIFY2(field, qPrintable(name));
+            // macOS widgets may overhang their layout cell for the focus ring.
+            const int formEdge =
+                page->contentsRect().right() + 1 - page->layout()->contentsMargins().right();
+            QTRY_VERIFY2(field->mapTo(page, QPoint(field->width(), 0)).x() >= formEdge,
+                         qPrintable(name));
+        }
+        dialog.close();
+        for (int index = 0; index < sections->count(); ++index)
+            qobject_cast<QScrollArea*>(sections->widget(index))->widget()->setStyle(nullptr);
     }
 
     void preferencesExposeSixSectionsAndCloseOnlyAfterSave() {
@@ -424,10 +536,14 @@ class PreferencesTest : public QObject {
         auto* status = dialog.findChild<QLabel*>("preferencesStatus");
         QVERIFY(status);
         QTRY_VERIFY(!status->text().isEmpty());
+        auto* statusLine =
+            dialog.findChild<choscordb::design::StatusLine*>("preferencesStatusLine");
+        QVERIFY(statusLine && statusLine->isVisible());
         QVERIFY(status->textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
         QVERIFY(dialog.findChild<choscordb::ToastRegion*>("toastRegion") == nullptr);
         reset->click();
         QVERIFY(apply->isEnabled());
+        QVERIFY(!statusLine->isVisible());
     }
     void shortcutConflictAppearsBelowTheShortcutField() {
         choscordb::EngineAdapter adapter;

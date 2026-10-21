@@ -74,9 +74,6 @@ struct MotionSpec final {
 // Layout-only constants: window defaults and minimums, initial pane sizes and
 // label limits. Sizes on the design scale come from Dimension, Spacing and Radius.
 struct LayoutMetrics final {
-    int modalHeaderHeight = 58;
-    int modalFooterInset = 14;
-    int modalFooterVerticalInset = 9;
     int connectionContentInset = 21;
     int connectionDriverHeight = 44;
     int connectionLabelCharacters = 16;
