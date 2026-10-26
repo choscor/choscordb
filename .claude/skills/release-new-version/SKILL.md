@@ -17,9 +17,9 @@ Determine the requested version and whether the user wants preparation only,
 upload of an existing build, or the full release. A request to release end to end
 authorizes the release-specific commit, upload, tag push, and GitHub release;
 carry it through without repeatedly requesting the same permission. An upload-only
-request does not authorize tags or a GitHub release. Creating this skill does not
-authorize running it. If scope is missing, prepare the notes and verified artifacts
-before asking for the remaining publication decision.
+request does not authorize tags or a GitHub release. If scope is missing, prepare
+the notes and verified artifacts before asking for the remaining publication
+decision.
 
 Use the checked-out repository and its configured Git remote; never embed a
 maintainer's checkout path, username, email, account ID, or private repository URL
@@ -39,7 +39,9 @@ or commit unrelated work. Resolve a genuinely ambiguous destination with the use
 Inspect both local and remote `vX.Y.Z` tags and any existing GitHub release.
 Treat network/authentication failures as errors, not missing tags or releases.
 An existing tag is reusable only when its peeled commit equals the selected source
-commit. Never force-push or move a conflicting tag.
+commit. Never force-push or move a conflicting tag, unless the user explicitly
+authorizes the replacement of an unpublished tag; then follow
+[the tag rules](../../../docs/release-lessons.md#tags-and-assets).
 
 For a new build, update `workspace.package.version` in Cargo.toml and run
 `cargo check --workspace` to refresh Cargo.lock. Draft the matching `## [X.Y.Z]`

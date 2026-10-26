@@ -27,7 +27,7 @@ wrapper subclasses. `docs/design-system.md` is the full reference.
   `primary-pressed`; 2px `ring` for keyboard focus only; status uses
   `<status>-surface` with `<status>` text.
 - Icons are unmodified upstream Lucide files (pinned in
-  `resources/icons/SOURCE-LUCIDE.json`) at Lucide's stroke, or square, unsized
+  `desktop/resources/icons/SOURCE-LUCIDE.json`) at Lucide's stroke, or square, unsized
   SVG brand logos; they render only at `Dimension::IconSmall` or
   `Dimension::Icon`. `ui_policy.py` enforces this.
 - QSS goes through the one assembly in `style/stylesheet.cpp`. Use named
