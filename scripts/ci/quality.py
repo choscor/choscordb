@@ -133,6 +133,10 @@ def perf_policy():
     run_command([PYTHON, "scripts/ci/perf_policy.py"])
 
 
+def docs_policy():
+    run_command([PYTHON, "scripts/ci/docs_policy.py"])
+
+
 def source_inventory():
     run_command([PYTHON, "scripts/ci/source_inventory.py"])
 
@@ -307,6 +311,7 @@ STAGES = {
     "ui-consistency": ui_consistency,
     "perf-policy": perf_policy,
     "source-inventory": source_inventory,
+    "docs-policy": docs_policy,
     "python-lint": python_lint,
     "python-format": python_format,
     "actionlint": actionlint,
@@ -330,6 +335,7 @@ FAST_STAGES = (
     "ui-consistency",
     "perf-policy",
     "source-inventory",
+    "docs-policy",
     "python-lint",
     "python-format",
     "actionlint",

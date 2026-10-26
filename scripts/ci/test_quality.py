@@ -45,6 +45,7 @@ class QualityCommandTest(unittest.TestCase):
                 [quality.PYTHON, "scripts/ci/ui_consistency.py"],
                 [quality.PYTHON, "scripts/ci/perf_policy.py"],
                 [quality.PYTHON, "scripts/ci/source_inventory.py"],
+                [quality.PYTHON, "scripts/ci/docs_policy.py"],
                 ["ruff", "check", "scripts", "examples"],
                 ["ruff", "format", "--check", "scripts", "examples"],
                 ["actionlint", "-color"],
@@ -101,6 +102,13 @@ class QualityCommandTest(unittest.TestCase):
                 [quality.PYTHON, "scripts/ci/desktop.py", "build"],
                 [quality.PYTHON, "scripts/ci/desktop.py", "test"],
             ],
+        )
+
+    def test_docs_policy_is_a_fast_stage(self):
+        self.assertIn("docs-policy", quality.FAST_STAGES)
+        self.assertEqual(
+            self.run_stage("docs-policy"),
+            [[quality.PYTHON, "scripts/ci/docs_policy.py"]],
         )
 
     def test_each_gate_is_a_focused_stage(self):

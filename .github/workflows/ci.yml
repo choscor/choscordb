@@ -20,6 +20,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
@@ -36,6 +37,12 @@ jobs:
           echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
       - name: Run fast repository quality gates
         run: python scripts/ci/quality.py fast
+      - name: Check that owning docs follow code changes
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.base_ref }}
+        run: python scripts/ci/docs_policy.py --changed --base "origin/$BASE_REF"
   platform:
     name: Rust and native (macos-15)
     runs-on: macos-15

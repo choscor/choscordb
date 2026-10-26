@@ -12,6 +12,8 @@
 
 <!-- List commands or manual checks you actually ran and their results. Name relevant checks not run and why. Do not call offscreen CTest a visual, accessibility, or installer check. -->
 
+Docs: <!-- Name the updated docs/ or user-guide/ page, or write "none needed, <reason>". -->
+
 ## Review notes
 
 <!-- Optional: point reviewers to a non-obvious decision, risk, migration step, or useful before/after screenshot. Remove this section if none. -->

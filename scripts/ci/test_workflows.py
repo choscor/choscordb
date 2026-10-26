@@ -64,8 +64,15 @@ def validate_ci(ci):
             'echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"',
             "cargo install cargo-deny --version 0.20.2 --locked",
             "brew install clang-format",
+            "fetch-depth: 0",
+            "if: github.event_name == 'pull_request'",
+            'docs_policy.py --changed --base "origin/$BASE_REF"',
+            "PR_BODY: ${{ github.event.pull_request.body }}",
+            "BASE_REF: ${{ github.base_ref }}",
         ),
     )
+    if re.search(r"run:[^\n]*\$\{\{\s*github\.(?:event|base_ref)", quality):
+        raise AssertionError("pull request data must reach scripts through env")
 
     platform = yaml_block(ci, "platform", 2)
     require_values(
