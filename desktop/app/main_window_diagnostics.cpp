@@ -220,13 +220,14 @@ void MainWindow::showDiagnosticsExport() {
     dialog->setWindowTitle(tr("Export Diagnostics"));
     dialog->setAppModal();
     dialog->setAttribute(Qt::WA_DeleteOnClose);
-    auto* layout = new QVBoxLayout(dialog);
-    layout->setContentsMargins(0, 0, 0, 0);
-    auto* sections = new design::DialogSections(dialog);
-    layout->addWidget(sections);
+    auto* sections = dialog->createSections();
     auto* heading = new design::Text(tr("Export Diagnostics"), sections);
     heading->setTextStyle(design::TextStyle::Headline);
     sections->headerLayout()->addWidget(heading);
+    auto* dismiss = sections->addDismissButton(tr("Close diagnostics export"));
+    dismiss->setObjectName("diagnosticsDismiss");
+    connect(dismiss, &QPushButton::clicked, dialog, &QDialog::reject);
+    sections->bodyLayout()->setSpacing(design::spacing(design::Spacing::Two));
     auto* summary = dialog->createDescription(
         diagnostics_ ? tr("Reading local diagnostics…")
                      : tr("Local diagnostics are unavailable in this session."),

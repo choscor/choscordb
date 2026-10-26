@@ -1,17 +1,21 @@
 #include "design_system/toast_region/toast_region.h"
+#include "design_system/button/button.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/icons.h"
 #include "design_system/metrics/metrics.h"
+#include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include <QAccessible>
 #include <QDialog>
-#include <QDialogButtonBox>
 #include <QEvent>
 #include <QGraphicsOpacityEffect>
+#include <QHBoxLayout>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPropertyAnimation>
+#include <QPushButton>
 #include <QStyle>
 #include <QTimer>
 #include <QToolButton>
@@ -213,16 +217,25 @@ void ToastRegion::openDetails() {
     dialog->setWindowTitle(tr("Notification details"));
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->resize(design::dialogInitialSize(design::DialogSize::Detail));
-    auto* layout = new QVBoxLayout(dialog);
-    auto* text = new QPlainTextEdit(dialog);
+    auto* sections = dialog->createSections();
+    auto* heading = new design::Text(dialog->windowTitle(), sections);
+    heading->setTextStyle(design::TextStyle::Headline);
+    sections->headerLayout()->addWidget(heading);
+    auto* dismiss = sections->addDismissButton(tr("Close notification details"));
+    dismiss->setObjectName("toastDetailsDismiss");
+    connect(dismiss, &QPushButton::clicked, dialog, &QDialog::reject);
+    auto* text = new QPlainTextEdit(sections);
     text->setObjectName("toastDetailsText");
     text->setAccessibleName(tr("Full notification details"));
     text->setReadOnly(true);
     text->setPlainText(fullTitle_ + QStringLiteral("\n\n") + fullBody_);
-    layout->addWidget(text);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
-    layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    sections->bodyLayout()->addWidget(text);
+    auto* close = new design::Button(tr("Close"), sections);
+    close->setObjectName("toastDetailsClose");
+    close->setVariant(design::ButtonVariant::Outline);
+    sections->footerLayout()->addStretch();
+    sections->footerLayout()->addWidget(close);
+    connect(close, &QPushButton::clicked, dialog, &QDialog::reject);
     detailsDialog_ = dialog;
     connect(dialog, &QDialog::finished, this, [this] {
         detailsDialog_.clear();

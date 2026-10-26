@@ -58,12 +58,13 @@ ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     auto* close = new design::Button(tr("Close"), this);
     close->setObjectName("valueClose");
     close->setVariant(design::ButtonVariant::Outline);
-    auto* layout = new QVBoxLayout(this);
-    auto* sections = new design::DialogSections(this);
-    layout->addWidget(sections);
+    auto* sections = createSections();
     auto* heading = new design::Text(tr("Value detail"), sections);
     heading->setTextStyle(design::TextStyle::Headline);
     sections->headerLayout()->addWidget(heading);
+    auto* dismiss = sections->addDismissButton(tr("Close value detail"));
+    dismiss->setObjectName("valueDismiss");
+    connect(dismiss, &QPushButton::clicked, this, &ValueDetailDialog::reject);
     auto* body = sections->bodyLayout();
     body->setSpacing(design::spacing(design::Spacing::Two));
     body->addWidget(createDescription(
@@ -150,11 +151,6 @@ void ValueDetailDialog::clearValue() {
     retry_->hide();
     updateActions();
     hide();
-}
-void ValueDetailDialog::showEvent(QShowEvent* event) {
-    DialogShell::showEvent(event);
-    layout()->setContentsMargins(0, 0, 0, 0);
-    layout()->setSpacing(0);
 }
 void ValueDetailDialog::closeEvent(QCloseEvent* event) {
     clearValue();

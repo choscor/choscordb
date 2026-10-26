@@ -14,9 +14,6 @@ class QuerySettingsDialog final : public DialogShell {
   public:
     explicit QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent = nullptr);
 
-  protected:
-    void showEvent(QShowEvent* event) override;
-
   signals:
     void queryPreferencesConfirmed(const choscordb::QueryPreferences& value);
     void queryPreferencesSaveSubmitted(quint64 token);

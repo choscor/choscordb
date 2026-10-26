@@ -17,6 +17,9 @@ class PreviewTest final : public QObject {
     void documentTabsShowKeyboardFocusInBothThemes();
     void tableHeadersCanBeDraggedInBothThemes();
     void dialogSectionsHaveMutedPaddedFooterInBothThemes();
+    void dialogSectionsHideEmptyFooterInBothThemes();
+    void dialogSpecimensUseSharedSections_data();
+    void dialogSpecimensUseSharedSections();
     void modalSpecimenNamesTheDialogSurface();
     void workspaceToolbarSpecimenUsesSurfaceInBothThemes();
     void statusLineSpecimenUsesSharedSurfaceInBothThemes();

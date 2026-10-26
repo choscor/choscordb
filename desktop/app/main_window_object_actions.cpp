@@ -116,14 +116,15 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         DialogShell dialog(this);
         dialog.setObjectName("renameObjectDialog");
         dialog.setWindowTitle(tr("Rename %1").arg(displayKind));
-        auto* root = new QVBoxLayout(&dialog);
-        root->setContentsMargins(0, 0, 0, 0);
-        auto* sections = new design::DialogSections(&dialog);
-        root->addWidget(sections);
+        auto* sections = dialog.createSections();
         auto* heading = new design::Text(dialog.windowTitle(), sections);
         heading->setTextStyle(design::TextStyle::Headline);
         sections->headerLayout()->addWidget(heading);
+        auto* dismiss = sections->addDismissButton(tr("Close rename dialog"));
+        dismiss->setObjectName("renameObjectDismiss");
+        connect(dismiss, &QPushButton::clicked, &dialog, &QDialog::reject);
         auto* layout = sections->bodyLayout();
+        layout->setSpacing(design::spacing(design::Spacing::Two));
         layout->addWidget(dialog.createDescription(
             tr("Rename %1 %2 in the same schema or database.").arg(displayKind, qualifiedName),
             &dialog));

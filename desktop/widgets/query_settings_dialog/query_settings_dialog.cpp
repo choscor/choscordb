@@ -16,12 +16,13 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
       connectionTimeoutSeconds_(QueryPreferences().connectionTimeoutSeconds) {
     setObjectName("querySettingsDialog");
     setWindowTitle(tr("Query settings"));
-    auto* root = new QVBoxLayout(this);
-    auto* sections = new design::DialogSections(this);
-    root->addWidget(sections);
+    auto* sections = createSections();
     auto* heading = new design::Text(tr("Query settings"), sections);
     heading->setTextStyle(design::TextStyle::Headline);
     sections->headerLayout()->addWidget(heading);
+    auto* dismiss = sections->addDismissButton(tr("Close query settings"));
+    dismiss->setObjectName("querySettingsDismiss");
+    connect(dismiss, &QPushButton::clicked, this, &QDialog::reject);
     auto* layout = sections->bodyLayout();
     layout->setSpacing(design::spacing(design::Spacing::Two));
     auto* form = new QFormLayout;
@@ -158,11 +159,6 @@ void QuerySettingsDialog::apply() {
     emit queryPreferencesSaveSubmitted(token);
     if (adapter)
         adapter->setQueryPreferences(value, token);
-}
-void QuerySettingsDialog::showEvent(QShowEvent* event) {
-    DialogShell::showEvent(event);
-    layout()->setContentsMargins(0, 0, 0, 0);
-    layout()->setSpacing(0);
 }
 void QuerySettingsDialog::setStatus(const QString& message) {
     statusLine_->setMessage(message);

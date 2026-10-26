@@ -1,5 +1,6 @@
 #include "design_system/status_line/status_line.h"
 #include "design_system/toast_region/toast_region.h"
+#include "dialog_sections_checks.h"
 #include "preview_test.h"
 #include "tools/preview/preview_window.h"
 
@@ -189,7 +190,14 @@ void PreviewTest::longToastKeepsFullDetailsInsideReadableSurface() {
     auto* text = dialog->findChild<QPlainTextEdit*>();
     QVERIFY(text && text->isReadOnly());
     QVERIFY(text->toPlainText().contains(body));
-    dialog->reject();
+    QCOMPARE(headerHeadline(*dialog), QString("Notification details"));
+    QCOMPARE(sectionedSpacing(*dialog), compactSectionedSpacing());
+    QCOMPARE(footerOverrides(*dialog), QString());
+    QVERIFY(dialog->findChild<QPushButton*>("toastDetailsClose"));
+    auto* dismiss = headerDismiss(*dialog, "toastDetailsDismiss");
+    QVERIFY(dismiss);
+    dismiss->click();
+    QVERIFY(!dialog->isVisible());
     QVERIFY(toast.isVisible());
     QVERIFY(toast.accessibleDescription().contains("FINAL DETAIL"));
 }
@@ -218,7 +226,14 @@ void PreviewTest::statusLineLongErrorKeepsControlsAndFullDetails() {
     QVERIFY(text && text->isReadOnly());
     QCOMPARE(text->toPlainText(), message);
     QCOMPARE(line->accessibleDescription(), message);
-    dialog->reject();
+    QCOMPARE(headerHeadline(*dialog), QString("Status details"));
+    QCOMPARE(sectionedSpacing(*dialog), compactSectionedSpacing());
+    QCOMPARE(footerOverrides(*dialog), QString());
+    QVERIFY(dialog->findChild<QPushButton*>("statusDetailsClose"));
+    auto* dismiss = headerDismiss(*dialog, "statusDetailsDismiss");
+    QVERIFY(dismiss);
+    dismiss->click();
+    QVERIFY(!dialog->isVisible());
 }
 
 void PreviewTest::toastVariantsShowTitleBodyAndUseConfiguredTimeout() {

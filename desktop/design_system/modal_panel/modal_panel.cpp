@@ -1,10 +1,11 @@
 #include "design_system/modal_panel/modal_panel.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/theme.h"
 
-#include <QEvent>
 #include <QHideEvent>
 #include <QLayout>
 #include <QShowEvent>
+#include <QVBoxLayout>
 
 namespace choscordb::design {
 ModalDialog::ModalDialog(QWidget* parent) : QDialog(parent), presentation_(*this) {
@@ -17,13 +18,13 @@ ModalDialog::ModalDialog(QWidget* parent) : QDialog(parent), presentation_(*this
     setProperty("appDialog", true);
 }
 ModalDialog::~ModalDialog() = default;
-void ModalDialog::setEdgeToEdgeContent(bool enabled) {
-    edgeToEdgeContent_ = enabled;
-    if (layout()) {
-        const int padding = enabled ? 0 : spacing(Spacing::Four);
-        layout()->setContentsMargins(padding, padding, padding, padding);
-        layout()->setSpacing(padding);
-    }
+DialogSections* ModalDialog::createSections() {
+    auto* root = new QVBoxLayout(this);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+    auto* sections = new DialogSections(this);
+    root->addWidget(sections);
+    return sections;
 }
 void ModalDialog::open() {
     // Keep the asynchronous QDialog contract without requesting a native sheet.
@@ -41,14 +42,6 @@ QSize ModalDialog::sizeHint() const {
         hint.setHeight(layout()->heightForWidth(width));
     }
     return hint;
-}
-bool ModalDialog::event(QEvent* event) {
-    if (event->type() == QEvent::Polish && layout()) {
-        const int padding = edgeToEdgeContent_ ? 0 : spacing(Spacing::Four);
-        layout()->setContentsMargins(padding, padding, padding, padding);
-        layout()->setSpacing(padding);
-    }
-    return QDialog::event(event);
 }
 void ModalDialog::paintEvent(QPaintEvent*) {
     paintDialogSurface(*this);

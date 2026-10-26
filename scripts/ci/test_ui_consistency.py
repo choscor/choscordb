@@ -339,6 +339,82 @@ class UiConsistencyTest(unittest.TestCase):
             report = ui_consistency.audit(root)
         self.assertEqual(report["screens"]["app/main_window"]["composite"], 2)
 
+    def test_rejects_unsectioned_dialogs_and_show_event_layout_resets(self):
+        temporary, root = self.fixture()
+        with temporary:
+            (root / "desktop/app/main_window_ui.cpp").write_text(
+                "void MainWindow::rename() {\n"
+                "    DialogShell dialog(this);\n"
+                "    auto* layout = new QVBoxLayout(&dialog);\n"
+                "}\n"
+                "void MainWindow::review() {\n"
+                "    design::ModalDialog box(this);\n"
+                "    auto* sections = new design::DialogSections(&box);\n"
+                "}\n"
+                "void MainWindow::diagnostics() {\n"
+                "    auto* dialog = new DialogShell(this);\n"
+                "    auto* sections = dialog->createSections();\n"
+                "    auto details = std::make_unique<design::ModalDialog>(this);\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            (
+                root / "desktop/widgets/preferences_dialog/preferences_dialog.cpp"
+            ).write_text(
+                "class Progress final : public DialogShell {\n"
+                "  public:\n"
+                "    explicit Progress(QWidget* parent) : DialogShell(parent) {\n"
+                "        auto* layout = new QVBoxLayout(this);\n"
+                "    }\n"
+                "};\n"
+                "PreferencesDialog::PreferencesDialog(QWidget* parent)\n"
+                "    : DialogShell(parent), scope_(createDescription({}, this)) {\n"
+                "    auto* sections = createSections();\n"
+                "}\n"
+                "void PreferencesDialog::showEvent(QShowEvent* event) {\n"
+                "    DialogShell::showEvent(event);\n"
+                "    layout()->setContentsMargins(0, 0, 0, 0);\n"
+                "    layout()->setSpacing(0);\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            problems = ui_consistency.audit(root)["violations"]
+        dialog = "dialog content must use DialogSections"
+        reset = "showEvent must not reset layout margins or spacing"
+        self.assertEqual(
+            problems,
+            [
+                f"desktop/app/main_window_ui.cpp:12: {dialog}",
+                f"desktop/app/main_window_ui.cpp:2: {dialog}",
+                f"desktop/widgets/preferences_dialog/preferences_dialog.cpp:13: {reset}",
+                f"desktop/widgets/preferences_dialog/preferences_dialog.cpp:14: {reset}",
+                f"desktop/widgets/preferences_dialog/preferences_dialog.cpp:3: {dialog}",
+            ],
+        )
+
+    def test_dialog_rule_reads_brace_initializers_and_each_construction(self):
+        temporary, root = self.fixture()
+        with temporary:
+            (root / "desktop/app/main_window_ui.cpp").write_text(
+                "Review::Review(QWidget* parent)\n"
+                "    : DialogShell(parent), candidates_{parent} {\n"
+                "    auto* sections = createSections();\n"
+                "}\n"
+                "void MainWindow::show() {\n"
+                "    DialogShell bare(this);\n"
+                "    DialogShell sectioned(this);\n"
+                "    auto* sections = sectioned.createSections();\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            problems = ui_consistency.audit(root)["violations"]
+        self.assertEqual(
+            problems,
+            [
+                "desktop/app/main_window_ui.cpp:6: dialog content must use DialogSections"
+            ],
+        )
+
     def test_census_recognizes_quick_search_dialog_construction(self):
         temporary, root = self.fixture()
         with temporary:

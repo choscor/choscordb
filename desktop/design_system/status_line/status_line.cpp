@@ -2,15 +2,16 @@
 
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/fonts/fonts.h"
 #include "design_system/icons.h"
 #include "design_system/metrics/metrics.h"
+#include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include <QStyle>
 
 #include <QAccessible>
-#include <QDialogButtonBox>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -337,16 +338,25 @@ void StatusLine::openDetails() {
     dialog->setWindowTitle(tr("Status details"));
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->resize(dialogInitialSize(DialogSize::Detail));
-    auto* layout = new QVBoxLayout(dialog);
-    auto* text = new QPlainTextEdit(dialog);
+    auto* sections = dialog->createSections();
+    auto* heading = new Text(dialog->windowTitle(), sections);
+    heading->setTextStyle(TextStyle::Headline);
+    sections->headerLayout()->addWidget(heading);
+    auto* dismiss = sections->addDismissButton(tr("Close status details"));
+    dismiss->setObjectName("statusDetailsDismiss");
+    connect(dismiss, &QPushButton::clicked, dialog, &QDialog::reject);
+    auto* text = new QPlainTextEdit(sections);
     text->setObjectName("statusDetailsText");
     text->setAccessibleName(tr("Full status details"));
     text->setReadOnly(true);
     text->setPlainText(fullMessage_);
-    layout->addWidget(text);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
-    layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    sections->bodyLayout()->addWidget(text);
+    auto* close = new Button(tr("Close"), sections);
+    close->setObjectName("statusDetailsClose");
+    close->setVariant(ButtonVariant::Outline);
+    sections->footerLayout()->addStretch();
+    sections->footerLayout()->addWidget(close);
+    connect(close, &QPushButton::clicked, dialog, &QDialog::reject);
     detailsDialog_ = dialog;
     detailsText_ = text;
     connect(dialog, &QDialog::finished, this, [this] {

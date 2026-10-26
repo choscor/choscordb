@@ -164,6 +164,7 @@ if(BUILD_TESTING)
     desktop/tools/preview/preview_window.cpp
     desktop/tools/preview/preview_capture.cpp
     desktop/tools/preview/preview_standard.cpp
+    desktop/tools/preview/preview_dialogs.cpp
   )
   target_link_libraries(choscordb-preview PUBLIC choscordb-design-system PRIVATE choscordb-rust Qt6::Concurrent)
   target_link_libraries(choscordb-desktop PUBLIC choscordb-preview)

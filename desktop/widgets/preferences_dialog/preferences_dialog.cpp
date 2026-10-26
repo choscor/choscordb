@@ -37,22 +37,14 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     setWindowTitle(tr("Preferences"));
     setObjectName("preferencesDialog");
     resize(design::dialogInitialSize(design::DialogSize::Preferences));
-    auto* layout = new QVBoxLayout(this);
-    auto* sections = new design::DialogSections(this);
-    layout->addWidget(sections);
+    auto* sections = createSections();
     auto* headerLayout = sections->headerLayout();
     auto* header = headerLayout->parentWidget();
     auto* heading = new design::Text(tr("Preferences"), header);
     heading->setTextStyle(design::TextStyle::Headline);
     headerLayout->addWidget(heading);
-    headerLayout->addStretch();
-    auto* dismiss = new design::Button({}, header);
+    auto* dismiss = sections->addDismissButton(tr("Close preferences"));
     dismiss->setObjectName("preferencesDismiss");
-    dismiss->setAccessibleName(tr("Close preferences"));
-    dismiss->setVariant(design::ButtonVariant::Ghost);
-    dismiss->setButtonSize(design::ButtonSize::IconSmall);
-    dismiss->setDesignIcon(design::Icon::Close);
-    headerLayout->addWidget(dismiss);
     connect(dismiss, &QPushButton::clicked, this, &PreferencesDialog::reject);
     auto* pages = new QTabWidget(this);
     pages->setObjectName("preferencesSections");
@@ -218,24 +210,19 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     pages->setCurrentIndex(0);
     auto* buttons = sections->footerLayout();
     auto* footer = buttons->parentWidget();
-    footer->setProperty("designSurface", "muted");
-    footer->setAttribute(Qt::WA_StyledBackground);
     auto* reset = new design::Button(tr("Restore defaults"), footer);
     reset_ = reset;
     reset->setObjectName("preferencesReset");
     reset->setVariant(design::ButtonVariant::Outline);
-    reset->setButtonSize(design::ButtonSize::Small);
     buttons->addWidget(reset);
     buttons->addStretch();
     auto* close = new design::Button(tr("Close"), footer);
     close->setObjectName("preferencesClose");
     close->setVariant(design::ButtonVariant::Outline);
-    close->setButtonSize(design::ButtonSize::Small);
     buttons->addWidget(close);
     auto* apply = new design::Button(tr("Save preferences"), footer);
     apply_ = apply;
     apply->setObjectName("preferencesApply");
-    apply->setButtonSize(design::ButtonSize::Small);
     buttons->addWidget(apply);
     connect(close, &QPushButton::clicked, this, &PreferencesDialog::reject);
     connect(this, &QDialog::rejected, this, [this] {
@@ -593,11 +580,6 @@ void PreferencesDialog::reject() {
         return;
     }
     DialogShell::reject();
-}
-void PreferencesDialog::showEvent(QShowEvent* event) {
-    DialogShell::showEvent(event);
-    layout()->setContentsMargins(0, 0, 0, 0);
-    layout()->setSpacing(0);
 }
 void PreferencesDialog::closeEvent(QCloseEvent* event) {
     if (saving_) {

@@ -36,7 +36,6 @@ class PreferencesDialog final : public DialogShell {
   protected:
     void reject() override;
     void closeEvent(QCloseEvent* event) override;
-    void showEvent(QShowEvent* event) override;
 
   private:
     void setStatus(const QString& message);
