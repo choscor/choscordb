@@ -1,260 +1,224 @@
 # Repository instructions
 
 ChoscorDB is a native, cross-platform SQL client.
-It has a Qt 6 Widgets frontend in C++ and an engine in Rust.
+The desktop frontend uses Qt 6 Widgets in C++. The Rust engine contains all other code.
+Write this file in ASD-STE100 Simplified Technical English, as `docs/style-guide.md` specifies.
 
 ## Repository map
 
-- `crates/`: the Rust engine, database drivers, storage and the CXX bridge.
-- `desktop/`: the Qt Widgets frontend, the design system and the bridge adapter.
+- `crates/`: the Rust engine, the drivers, storage and the CXX bridge.
+- `desktop/`: the desktop frontend, the design system and the bridge adapter.
 - `docs/`: developer documentation. Start at `docs/README.md`.
-- `user-guide/`: documentation for people who use ChoscorDB.
+- `user-guide/`: documentation for the users of ChoscorDB.
 - `scripts/`: quality gates (`scripts/ci/`), release tools and fixtures.
 - `tests/`: C++ tests and the performance harness.
 - `examples/`: sample databases.
 
-## Quality gates
+## Core principles
 
-Before you finish a C++/Qt change, run `python3 scripts/ci/quality.py fast`.
-If you cannot run it, run at least these gates in `scripts/ci/`:
+- Keep each layer in its position. A layer uses only the layers below it.
+- Give one feature the same behavior and the same UI in all screens and drivers.
+- Write each rule, helper and component one time. Use it again. Do not copy it.
+- Use C++/Qt only for the UI. Put all behavior in safe Rust.
+- Use unsafe Rust only at FFI boundaries. Isolate each unsafe part.
+- Make each failure loud. Do not hide a failure.
 
-- `cpp_ownership.py`
-- `ui_policy.py`
-- `qss_policy.py`
-- `ui_consistency.py`
-- `perf_policy.py`
-- `source_inventory.py`
-- `docs_policy.py`
+## Layers
 
-Fix the findings.
-Do not add markers or exceptions to hide findings.
-If an exception is necessary, give the reason in the marker or the exception entry.
+`docs/architecture.md` gives the crate map and the dependencies.
+The layers are in this order, from the bottom to the top:
 
-## Rust and C++ ownership
+1. `driver-api`: the contracts and traits for drivers and services.
+2. The drivers and the services, for example `storage`, `export` and `result-cache`.
+3. `core`: the composition of the services and the connection actors.
+4. `bridge`: the CXX bridge and the composition root.
+5. `desktop/bridge`: `EngineAdapter` and the conversion of DTOs.
+6. `desktop/models`: the display models.
+7. `desktop/widgets` and then `desktop/app`: the screens.
 
-- C++/Qt owns only the application frontend.
-  This includes widgets, display models, user interaction and transient view state.
-  It also includes the Qt event loop, native UI integration and conversion at the CXX bridge.
+- Do not include or import a higher layer from a lower layer.
+- Do not skip a layer. Screens use the Rust engine only through `EngineAdapter`.
+- `core` uses only `driver-api`. Only `bridge` creates the drivers.
+- `desktop/design_system` is below all screens. It does not use `app`, `widgets`, `models` or `bridge`.
+- If two layers need the same type, move the type down to the lower layer.
+- Do not add a cycle between crates, directories or files.
+
+## Rust engine and desktop frontend
+
+The Rust engine owns all behavior. The desktop frontend owns only presentation.
+
+- The Rust engine owns the drivers, SQL rules, result rules and domain validation.
+- The Rust engine owns stored data, document I/O, network, diagnostics, exports and update policy.
+- The Rust engine owns defaults, limits, budgets, intervals and policy messages.
+- The Rust engine owns stored encodings: IDs, context strings, file names and storage locations.
+- The Rust engine owns the policy to filter, sort, search, rank, cap and show rows.
+- The desktop frontend shows rows in the order that the Rust engine returns.
+- The desktop frontend owns widgets, display models, user input, transient view state and the event loop.
+- The desktop frontend collects input and shows results and errors.
+- The Rust engine validates and executes each request.
+- Do not check a Rust rule again in C++. A UI input hint is not a validation.
+- Keep Rust engine work off the UI thread.
 - Keep the CXX bridge small and typed.
-- Rust owns all application behavior other than presentation.
-  This includes the engine, database drivers, SQL and result rules, and domain validation.
-  It also includes durable state, application data, document I/O and network operations.
-  It also includes diagnostics, exports and update policy.
-- Put this behavior in `crates/core` or in the applicable Rust crate.
-  Do not copy its rules into C++ or into the bridge.
-- Qt can collect a path from a native dialog or show a backend result.
-  Send the request to Rust for validation and execution.
-- UI input hints do not replace Rust validation.
-- Keep backend work off the UI thread.
-- Rust is the source of truth for behavior, policy, limits, persisted encodings and backend contracts.
-  Expose them as typed DTOs over the CXX bridge.
-- Visual tokens (colors, sizes, radii, typography) belong to the C++ frontend.
-  They never cross the bridge.
-- Rust is the single source of defaults, limits, budgets, intervals and user-facing policy messages.
-  It is also the source of persisted encodings: IDs, context strings, file names and storage locations.
-  Expose these values through the bridge.
-  Do not state them again in C++.
-- C++ shows the Rust errors.
-  C++ does not check a rule again before or after it calls Rust.
-- Do not branch on object-kind or driver-name literals in screens, models or the bridge.
-  This applies to equality, list membership, prefix and comparison.
-- Use `EngineAdapter::objectKindTraits` or a Rust driver DTO instead.
-  The DTOs are `driverWorkflow`, `profileDriverForm` and `transactionGuard`.
-  If new behavior needs a trait, add a Rust trait.
-- Keep kind-to-icon and kind-to-label maps in `desktop/app/object_kind_icon.h`.
+- Do not send visual tokens across the bridge.
+- Read Rust values through the cached `EngineAdapter` accessors. Do not copy the values into C++.
+- If a UI-only number is equal to a Rust limit, put `// ui-budget: <reason>` on or above its line.
+- Do not compare object-kind or driver-name literals in screens, models or the bridge.
+- Use `EngineAdapter::objectKindTraits` or the `driverWorkflow`, `profileDriverForm` and `transactionGuard` DTOs.
+- If new behavior needs a trait, add a Rust trait.
+- If `data()` or a delegate needs a trait, store the trait on the node or page when you build it.
+- Keep the maps from kind to icon and from kind to label in `desktop/app/object_kind_icon.h`.
+- If a display row has a new meaning, add a display kind. A folder row is not a `"schema"`.
 - Filter lists and trees with `TextFilter` (`desktop/bridge/text_filter.h`).
-  Do not use `Qt::CaseInsensitive` matches, lowercased searches or `QSortFilterProxyModel` text filters.
-- Rank and cap search results in Rust, as `QuickSearchNeedle::plan` does.
-  C++ shows the rows in the order that Rust returns.
-- Do not give a display row the kind of a different meaning.
-  For example, a folder row is not a `"schema"`.
-  Add a display kind to `object_kind_icon.h` instead.
-- Never compare or search `tr()` text to decide behavior.
-- Read Rust policy through cached `EngineAdapter` accessors.
-- A model's `data()` or a delegate can need a trait.
-  Then store the trait on the node or page when you build it.
-- A UI-only number can be equal to a Rust limit.
-  Then put `// ui-budget: <reason>` on its line or on the line above.
-- Existing C++ backend code is migration work.
-  It is not a precedent for new code.
-- When you change existing C++ backend code, move the affected non-frontend behavior to Rust.
-  Keep the C++ tests on UI and bridge behavior.
-  Test policy in Rust.
-- After changes to C++/Qt code, the bridge or native build dependencies, run `python3 scripts/ci/cpp_ownership.py`.
-  Use `--json` to see the file census and the findings.
-- Resolve the findings that the change adds or touches.
-  Report explicitly the remaining findings that existed before the change.
-- Presentation exceptions must be narrow and documented.
-  Review them against the current content.
-- A passing scan enforces only the implemented checks.
-  Also review the changed C++ for backend behavior that static rules cannot find.
-- If a review finds a new type of drift, add a failing fixture to `test_cpp_ownership.py`.
-  Add a rule for it in the same change.
+- Do not use case-insensitive matches, lowercase searches or proxy-model text filters.
+- Do not use `tr()` text to make a decision.
+- Existing C++ engine code is migration work. Do not use it as an example.
+- When you change C++ engine code, move its behavior to the Rust engine.
+- Test policy in Rust. Test only UI and bridge behavior in C++.
+- Examine changed C++ for engine behavior that `cpp_ownership.py` cannot find.
+- If you find a new type of drift, add a rule and a failing fixture in `test_cpp_ownership.py`.
 
-## Desktop UI ownership
+## Safe Rust
 
-These rules apply to the Qt Widgets UI in `desktop/app/` and `desktop/widgets/`.
-For changes in `desktop/design_system/`, also obey `desktop/design_system/CLAUDE.md`.
+The workspace sets `unsafe_code = "deny"` in `Cargo.toml`.
 
-### Design system
+- Write all Rust engine code as safe Rust.
+- Use `unsafe` only at an FFI boundary. Examples are the `cxx::bridge` module and operating-system calls.
+- Put each unsafe part in one small function or module. Give it a safe API.
+- Do not let unsafe code or raw pointers go out of that function or module.
+- Put `#[allow(unsafe_code, reason = "<reason>")]` on the smallest item that needs it.
+- Put a `// SAFETY:` comment above each `unsafe` block. Give the invariant that makes it safe.
+- Add a test for each unsafe part.
+- If a safe crate or a safe API can do the work, use it. Do not write unsafe code.
+- Do not change the workspace lint to allow unsafe code.
 
-- `desktop/design_system/` is the single, compact source of visual tokens and components.
-  `docs/design-system.md` lists the vocabulary.
-- Each screen in `desktop/app/` and `desktop/widgets/` uses the design-system tokens, roles and components.
-  It has no local colors, sizes, radii, font sizes or stylesheet strings.
-- There is one stylesheet assembly.
-  It uses only named tokens.
-- A new token needs a real second use and a gallery specimen.
-- Do not add aliases (two names for one value).
-- Use the presentation in `desktop/design_system/` again.
-  Stock Qt controls that `ThemeManager`, `ControlStyle` or shared QSS style are shared components.
-  Do not add an empty subclass only to increase the subclass count.
-- Use a semantic design component when it owns behavior or presentation that a stock control does not have.
-- Keep UI workflow and transient view state in `app/` and `widgets/`.
-  Keep database and durable state in Rust.
-  Keep reusable appearance in the design system.
-- In screen code, select semantic roles, theme colors, typography roles and spacing tokens.
-- Do not add screen-owned QSS, literal visual colors, font families or font sizes.
-  Do not add a second implementation of an existing component.
-- Keep the SQL editor fonts that the user selects as user settings.
-- Use `ConfirmationDialog` for message boxes.
-  Use the shared dialog shells for modal content when their contracts fit.
-- Keep sibling screens on one pattern:
-  - Use `TextStyle::Headline` for dialog titles.
-  - Use `design::DialogSections` for the dialog header, body and footer.
-  - Use `design::Button` (Outline for Cancel/Close), not stock `QDialogButtonBox` buttons.
-  - Use `FieldValidation` or `designRole="fieldError"` for errors.
-  - Use the description role for help text.
-  - Use `TextStyle::Body` with `FontDesign::Monospaced` and `designRole="codePreview"` for SQL previews.
-  - Use `design::popupContextMenu` or `execContextMenu` for menus.
-  - Use `design::Icon` roles, not Qt standard icons, outside macOS native menus.
-- Each value that you set on `designRole`, `variant`, `state` or `designSurface` must be a value that the design system styles.
-  Use a property that has no style for workflow-only state.
-- Use metrics, spacing, radius and icon-size tokens in all argument positions.
-  This includes paint geometry, column widths, section sizes and `themedIcon` sizes.
-- Map object kinds to icons through the shared app helper.
-  Do not write a switch for each screen.
-- UI icons are unmodified upstream Lucide files from the release that `SOURCE-LUCIDE.json` pins.
-  Each file has its upstream name and renders at the Lucide stroke width.
-- Never edit or draw an icon by hand.
-  To add an icon, get it from the pinned Lucide release and record its sha256.
-- Only the app mark and the database logos are exempt from Lucide.
-  They are SVG files with a square `viewBox` and no `width` or `height`.
-  They keep their brand colors.
-- Record each exempt logo in `SOURCE-DATABASE-LOGOS.json` or in the `adaptations` of `SOURCE-LUCIDE.json`.
-- Do not add raster icons.
-- Icons render only at `Dimension::IconSmall` or `Dimension::Icon`.
-- `ui_policy.py` enforces these icon rules.
+## Failures
+
+Make each failure loud and visible.
+
+- Return a typed error to the caller. Do not ignore a `Result` or an error code.
+- Do not replace a failure with a default value, an empty result or a log line only.
+- Do not use `unwrap_or_default`, `ok()` or `let _ =` to drop an error that can occur.
+- Do not panic for a failure that can occur at run time. Return an error.
+- Do not let a panic cross the bridge.
+- The desktop frontend shows each Rust error to the user.
+- Do not show a success message for a failed or partial operation.
+- If a quality gate or a test fails, find the cause. Do not retry it blindly.
+- Do not skip a check or only increase a timeout to make it pass.
+
+## Desktop UI
+
+These rules apply to `desktop/app/` and `desktop/widgets/`.
+For `desktop/design_system/`, also obey `desktop/design_system/CLAUDE.md`.
+For the vocabulary and the component map, read `docs/design-system.md` and `desktop/design_system/README.md`.
+
+- Give one feature the same UI, labels, shortcuts and behavior on each screen.
+- Before you add a screen, find a sibling screen. Use its pattern.
+- `desktop/design_system/` is the single source of tokens, components and the stylesheet.
+- Do not put local colors, sizes, radii, fonts or stylesheet strings in screens.
+- The SQL editor fonts that the user selects are user settings. They are not tokens.
+- Use tokens for all sizes. This includes paint geometry, column widths and icon sizes.
+- Set `designRole`, `variant`, `state` and `designSurface` only to values that the design system styles.
+- Add a new token only for a real second use. Add a gallery specimen for it.
+- Do not add two names for one value.
+- Use the existing components again. Do not add copies or empty subclasses.
+- A stock control that the shared style covers is a shared component.
+- Extract a component only for repeated code that has the same contract.
+- Keep the object names, accessibility names, focus and signals.
+- Make sure that the `ui_consistency.py --json` census includes each new component call site.
+- Use one pattern for sibling screens:
+  - For dialogs, use a `TextStyle::Headline` title, `design::DialogSections` and `design::Button`.
+  - For Cancel and Close, use the Outline button. Do not use `QDialogButtonBox` buttons.
+  - For message boxes, use `ConfirmationDialog`. For modal content, use the shared dialog shells.
+  - For errors, use `FieldValidation` or `designRole="fieldError"`.
+  - For help text, use the description role.
+  - For SQL previews, use `TextStyle::Body`, `FontDesign::Monospaced` and `designRole="codePreview"`.
+  - For menus, use `design::popupContextMenu` or `execContextMenu`.
+- For icons, obey these rules:
+  - Use `design::Icon` roles. Use Qt standard icons only in macOS native menus.
+  - Use unchanged Lucide files from the release that `SOURCE-LUCIDE.json` pins.
+  - Record the sha256 of each icon file.
+  - Do not edit or draw an icon. Do not add raster icons.
+  - Only the app mark and the database logos can be other files.
+  - Record each logo in `SOURCE-DATABASE-LOGOS.json`.
+  - A logo has a square `viewBox`, no `width` or `height`, and its brand colors.
+  - Show icons only at `Dimension::IconSmall` or `Dimension::Icon` through `design::themedIcon`.
+
+## Driver consistency
+
+- Give each driver the same workflow for one feature.
+- Put the differences between drivers in Rust driver traits and DTOs.
+- Do not add a feature to one driver only. If a driver cannot support it, return a typed Rust error or trait.
 
 ## Large-data performance
 
-Result pages hold up to 10,000 rows.
-Navigator trees, pins and history can hold tens of thousands of nodes.
-On these paths, the work for each paint, keystroke or signal must not scale with the page, the selection or the tree.
+A result page has up to 10,000 rows.
+The navigator, pins and history can have tens of thousands of nodes.
+The work for each paint, keystroke or signal must not increase with the quantity of data.
 
 - These paths are hot: paint, size hint, `data()`, `headerData()`, `flags()`, `parent()` and highlighters.
-  Keep them free of bridge calls, SVG parsing and image file loads.
-  Keep them free of regex compilation and linear searches.
-- Calculate values before, for each page, or keep them in a cache for each theme.
-- Use the cached `design::themedIcon` for icons.
-- Make `parent()` and index lookup O(1).
-  Keep maps from ID to node instead of tree walks.
-- Walk `QItemSelection` ranges.
-  Do not make a list from `selectedIndexes()`.
-- Apply bulk edits for each range.
-  Emit one change signal for each batch.
-- Do not size result columns or rows to their contents.
-  Measure a bounded sample.
-- Use a member `QTimer` to debounce keystroke-driven filters and searches.
-- Use one single-shot member timer to join bursts of model signals.
-  Do not use one zero-delay timer for each signal.
-- Keep navigator trees at uniform row heights.
-  On hover, repaint only the changed rectangles.
-  Expand only known ancestors.
-- Filter, sort, search and visibility policy belong in Rust.
-  C++ applies the result to the view.
-- Run `python3 scripts/ci/perf_policy.py`.
-  Use `--json` to see the findings.
-- Exempt a line only with a reviewed `// perf-ok: <reason>` marker on it or on the line above.
+- Do not put bridge calls, SVG parse, file loads, regex compilation or linear searches in hot paths.
+- Calculate values before you need them, for each page. Or keep them in a cache for each theme.
+- Use maps from ID to node. Then `parent()` and index lookup are O(1).
+- Use `QItemSelection` ranges. Do not use `selectedIndexes()`.
+- Apply bulk edits for each range. Send one signal for each batch.
+- Measure a limited sample of rows to size result columns and rows.
+- Use a member `QTimer` to delay filters and searches until the user stops to type.
+- Use one single-shot member timer to join a burst of model signals.
+- Keep all navigator rows at one height.
+- On hover, paint again only the changed rectangles.
+- Expand only known ancestors.
 
 ## Dead and duplicated code
 
-- When the last production caller of code goes, delete the code.
-  Do not keep wrappers, legacy paths, unused parameters (`Q_UNUSED`) or unconnected signals for tests.
-- Move tests to the production API.
-  If they test policy, move them to Rust.
-- Share helpers instead of copies.
-  Use `desktop/bridge/rust_text.h` for `rust::String`/`QString` conversion.
-  Use `desktop/bridge/request_token.h` for request tokens.
-  Counters in each file with selected start values can collide.
-- Run `python3 scripts/ci/source_inventory.py`.
-  It rejects sources that CMake does not list and headers that no file includes.
-  It also rejects uncalled members, unconnected signals, copied anonymous-namespace helpers and stale `ui_consistency.py` list names.
-- Record a reviewed exception in its `EXCEPTIONS` map only for a deliberate seam.
+- Before you write code, search for an existing helper, component or Rust function. Use it.
+- Write each rule in one location. Do not write a rule again in a different layer or language.
+- If two copies have the same contract, merge them into one shared helper.
+- When code has no production caller, delete it.
+- Do not keep wrappers, old paths, unused parameters or signals only for tests.
+- Make tests use the production API.
+- Use `desktop/bridge/rust_text.h` to convert strings.
+- Use `desktop/bridge/request_token.h` for request tokens.
+- `source_inventory.py` finds unlisted, unused and copied code.
+- Add an `EXCEPTIONS` entry only for a deliberate seam.
 
-## Component changes
+## Quality gates
 
-- Before you extract a component, read the ownership map in `desktop/design_system/README.md`.
-  Also read the call sites.
-- Extract only repeated presentation or behavior that has the same contract.
-  Workflow code that looks similar can stay separate.
-- Keep changes compact.
-  Keep object names, accessibility names, focus and signal behavior.
-- For each new UI component, make sure that its call site is in the census of `python3 scripts/ci/ui_consistency.py --json`.
-  If it uses a new construction pattern, extend the checker and add a regression test.
-
-## Verification checklist for UI changes
-
-- [ ] Run `python3 scripts/ci/ui_consistency.py`.
-      Use `--json` to see the census of each screen and the visual-ownership violations.
-- [ ] Run `python3 scripts/ci/ui_policy.py` and `python3 scripts/ci/qss_policy.py`.
-      New audit rules accept a reviewed `// ui-ok: <reason>` marker only where no design token or component fits.
-- [ ] Run `python3 scripts/ci/perf_policy.py` and `python3 scripts/ci/source_inventory.py`.
-- [ ] For native UI changes, build and run the applicable CTest targets.
-      If the dependencies are available, run the full native suite.
-- [ ] For design-system edits, obey `desktop/design_system/CLAUDE.md`.
-      This includes its Light and Dark gallery specimen and the matching test.
-
-The construction-site percentage in the consistency report includes design controls that the code creates.
-It also includes stock Qt controls that the shared style covers.
-It is a static estimate, not a runtime or pixel-level measurement.
-The canonical quality runner includes the consistency gate and the Python tests.
+- Before you complete a C++ change, run `python3 scripts/ci/quality.py fast`.
+- If you cannot run it, run these quality gates in `scripts/ci/`:
+  `cpp_ownership.py`, `ui_policy.py`, `qss_policy.py`, `ui_consistency.py`,
+  `perf_policy.py`, `source_inventory.py` and `docs_policy.py`.
+- To see the details, add `--json`.
+- Before you complete a Rust change, run `cargo clippy --workspace --all-targets --locked` and `cargo test --workspace --locked`.
+- Fix the findings. Do not hide findings with markers or exceptions.
+- Give a reason in each necessary marker (`ui-ok`, `perf-ok`, `ui-budget`) or exception.
+- Use `// ui-ok: <reason>` only where no token or component is applicable.
+- Fix the findings that your change adds or touches. Report the older findings.
+- For native changes, build and run the applicable CTest targets.
+- If the dependencies are available, run the full native suite.
 
 ## Documentation
 
-- A change that alters documented behavior must update the owning page in the same change.
-  The map in `docs/README.md` gives the owning page for each code path.
-- Write documentation in ASD-STE100 Simplified Technical English.
-  Obey `docs/style-guide.md`.
-- If a mapped change needs no documentation update, add `Docs: none needed, <reason>` to the pull request body or a commit message.
-- Run `python3 scripts/ci/docs_policy.py`.
-  It checks links and sentence length.
-  In pull requests, CI also runs it with `--changed` to check the owning pages.
+- Put developer documentation in `docs/`.
+- Put documentation for the users of ChoscorDB in `user-guide/`.
+- Update the owning page in the same change. `docs/README.md` gives the owning page for each code path.
+- If a change needs no update, add `Docs: none needed, <reason>` to the PR body or a commit message.
+- Write in ASD-STE100 Simplified Technical English. Obey `docs/style-guide.md`.
 
 ## Release verification
 
-- Before you prepare a release, read `.claude/skills/release-new-version/SKILL.md` and `docs/release-lessons.md`.
-  The procedures are in `docs/release-macos.md` and `docs/release-windows-linux.md`.
-- Run the focused Windows installer and production-updater configuration checks first.
-  Run them before expensive packaging or tagging.
-- The final commit needs the GCC and MSVC native gates and the production package smoke checks.
-  A passing macOS suite or a diagnostic branch does not show that another platform is ready.
-- Find the cause of each failure.
-  Do not add blind retries, skip checks or only increase a timeout.
-- Synchronize Qt tests with the real recovery, request or operation readiness.
-  An idle snapshot or one event-loop turn can come before deferred work.
-- Track shared transient activity by its source.
-  Keep the navigation guards for each active source.
-  Make destruction callbacks safe during parent-window teardown.
-- Keep the verified manifest, both candidate receipts and the remote tag on one exact source commit.
-- An explicitly authorized replacement of an unpublished tag needs an exact force-with-lease.
-  It also needs new packages for all three platforms.
+Before you start a release, read `.claude/skills/release-new-version/SKILL.md` and `docs/release-lessons.md`.
+
+- Before you package or tag, check the Windows installer and updater configuration.
+- The final commit must pass the GCC and MSVC native gates and the package smoke checks.
+- A macOS pass does not show that the other platforms are ready.
+- Keep the manifest, the two receipts and the remote tag on one exact commit.
 - Do not change published tags or asset bytes.
-- GitHub Release publication and Pages feed deployment are separate steps.
-- Announce completion only after you verify the selected version.
-  Verify exactly three public package assets and all three live signed feeds.
-- Report a partial rollout honestly.
-  Record manual attestations separately from automated evidence.
+- To replace an unpublished tag, get explicit approval. Use an exact force-with-lease.
+- After you replace a tag, make new packages for all three platforms.
+- GitHub Release publication and Pages feed deployment are two separate steps.
+- Verify three public assets and three live signed feeds. Then announce the release.
+- If a rollout is partial, report it.
+- Keep manual attestations separate from automated evidence.
 
 ## Commit messages
 
