@@ -59,7 +59,7 @@ uses semantic theme colors and metrics in the feature widget.
 ## Foundations and integration
 
 The token vocabulary, scales, typography roles and state model are documented in
-`docs/design/design-system.md`.
+`docs/design-system.md`.
 
 - `colors/`: `design::Colors` (26 named colors), contrast and forced-contrast
   resolution. Literal palette colors live only here.
@@ -67,7 +67,8 @@ The token vocabulary, scales, typography roles and state model are documented in
   motion, and `LayoutMetrics` for window defaults and initial pane sizes.
 - `fonts/`: font registration and the macOS built-in `TextStyle` text styles.
 - `tokens/`: discoverable token catalog used by the developer gallery.
-- `icons.h/.cpp`: icon roles, resource lookup and themed rendering.
+- `icons.h/.cpp`: icon roles, resource lookup and themed rendering of upstream
+  Lucide icons and brand logos.
 - `theme.h/.cpp`: resolved-theme value, widget-scope lookup and Qt palette.
 - `theme_manager.h/.cpp`: application/root theme lifecycle.
 - `platform_accessibility.h/.cpp`: platform preference integration.
@@ -160,5 +161,4 @@ Compact design system, 2026-10-10: the phase 1 consolidation (one stylesheet
 assembly, named tokens, removed density and accent) rendered every offscreen
 Light/Dark gallery capture byte-identical except the token catalog, whose names
 changed. Phase 2 changed values deliberately (orange brand, compact sizes,
-unified states, seven type roles); its acceptance checks are listed in
-`docs/specs/2026-10-10-compact-design-system.md`.
+unified states, seven type roles).

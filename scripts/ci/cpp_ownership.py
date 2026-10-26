@@ -475,7 +475,7 @@ def main(argv=None):
                     f"{f['path']}:{f['line']}: {f['severity']} [{f['rule']}] {f['evidence']}"
                 )
         print(
-            "Scan coverage is not semantic compliance. Review findings require ownership review; see docs/architecture/cpp-ownership.md."
+            "Scan coverage is not semantic compliance. Review findings require ownership review; see docs/architecture.md."
         )
     return int(report["status"] != "pass")
 

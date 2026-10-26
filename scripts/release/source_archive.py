@@ -14,7 +14,16 @@ import stat
 import subprocess
 import tarfile
 
-SOURCE_ROOTS = (".github", "cmake", "crates", "desktop", "docs", "scripts", "tests")
+SOURCE_ROOTS = (
+    ".github",
+    "cmake",
+    "crates",
+    "desktop",
+    "docs",
+    "scripts",
+    "tests",
+    "user-guide",
+)
 ROOT_FILES = (
     ".clang-format",
     ".gitignore",

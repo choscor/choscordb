@@ -1,4 +1,4 @@
-//! Requires the disposable MySQL fixture described in docs/testing/mysql.md.
+//! Requires the disposable MySQL fixture described in docs/testing.md.
 use choscordb_driver_api::*;
 use choscordb_driver_mysql::MysqlDriver;
 

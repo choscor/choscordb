@@ -35,7 +35,7 @@ the command queue, and disconnect interrupts a busy portal. Deferred text/bytea
 values use a temporary file with authenticated position-bound handles; independent
 readers survive cursor close, a subsequent query, and connection close.
 
-Current limits (not full PRD completion):
+Current limits:
 
 - tokio-postgres buffers an individual wire DataRow and prepared metadata before
   this adapter can inspect them. Returned pages and deferred read chunks have

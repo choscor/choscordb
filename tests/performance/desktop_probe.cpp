@@ -220,7 +220,7 @@ class Probe : public QObject {
         QTimer::singleShot(1000, this, [this] {
             if (!rss("idle_rss_bytes"))
                 return;
-            // The MVP starts on Start; measure connection/input on the same
+            // The app starts on Start; measure connection/input on the same
             // visible SQL workspace used by the original probe.
             if (!window_.showScreen(choscordb::MainWindow::Screen::Sql)) {
                 finish("Could not open SQL workspace for measurement");

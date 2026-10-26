@@ -12,7 +12,7 @@ namespace choscordb::design {
 enum class ThemeMode { System, Light, Dark };
 enum class ResolvedAppearance { Light, Dark };
 // ChoscorDB color roles. Kebab-case names (`surface-raised`) are used in QSS
-// and the gallery token catalog; see docs/design/design-system.md.
+// and the gallery token catalog; see docs/design-system.md.
 struct Colors final {
     QColor bg;
     QColor surface;

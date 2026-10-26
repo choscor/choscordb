@@ -46,7 +46,7 @@ python scripts/ci/quality.py full
 ```
 
 Focused commands and platform-specific prerequisites are documented in
-`docs/CI.md`. Pre-commit hooks are optional; the checked-in commands and CI are
+[docs/ci.md](docs/ci.md). Pre-commit hooks are optional; the checked-in commands and CI are
 canonical.
 
 ## C++ file size
@@ -65,8 +65,17 @@ together, keep private implementation details out of public headers, and registe
 new translation units in CMake. Prefer smaller functions with one logical task;
 moving a large function to another file alone does not simplify it. Do not meet
 the limit by compressing formatting, removing useful comments, or including
-implementation `.cpp` files. See [the C++ size audit](docs/cpp-file-size.md) for
-the initial splits and tool choices.
+implementation `.cpp` files.
+
+## Documentation
+
+A change that alters documented behavior must update its owning page in the same
+change. The map in [docs/README.md](docs/README.md) gives the owning page for
+each code path. Write the update in Simplified Technical English, as
+[docs/style-guide.md](docs/style-guide.md) tells you. If a mapped change needs no
+update, add the line `Docs: none needed, <reason>` to the pull request body or a
+commit message. Run `python scripts/ci/docs_policy.py` to check links and
+sentence length.
 
 ## Exceptions and suppressions
 

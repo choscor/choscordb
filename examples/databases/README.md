@@ -15,7 +15,7 @@ Python 3 is the only prerequisite:
 python3 examples/databases/setup_sqlite.py
 ```
 
-In ChoscorDB, choose **Connection → New SQLite session** and use the absolute
+In ChoscorDB, choose **File → New SQLite session…** and use the absolute
 path printed by the command (normally `build/examples/choscordb-demo.sqlite`).
 To rebuild it from scratch, add `--force`. Use `--output PATH` to choose another
 location.

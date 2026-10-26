@@ -32,6 +32,13 @@ class SourceArchiveTest(unittest.TestCase):
         with tarfile.open(output / "choscordb-source.tar.gz") as archive:
             self.assertIn("choscordb-source/desktop/app/icon.png", archive.getnames())
 
+    def test_developer_docs_and_user_guide_are_in_source_archive(self):
+        output = self.generate()
+        with tarfile.open(output / "choscordb-source.tar.gz") as archive:
+            names = archive.getnames()
+        self.assertIn("choscordb-source/docs/example.txt", names)
+        self.assertIn("choscordb-source/user-guide/example.txt", names)
+
     def test_repository_postgres_patch_is_shipped_with_sources_and_licenses(self):
         repository = Path(__file__).resolve().parents[2]
         manifest = tomllib.loads((repository / "Cargo.toml").read_text())

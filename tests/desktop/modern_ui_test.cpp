@@ -612,7 +612,7 @@ void ModernUiTest::captureScreenFixtures() {
                 "BLOB)");
             run->trigger();
             QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
-            // Literal customer fixture from docs/mvp-design/prototype.js.
+            // Literal customer fixture from docs/mvp-design/prototype.js at commit b298239.
             // SQLite's real affinity/types remain visible instead of pretending PostgreSQL.
             editor->setText(
                 "INSERT INTO customers(id,name,email,plan,status,created_at,total_spent) "

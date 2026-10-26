@@ -30,7 +30,4 @@ venv/
 
 # Local screenshots (all PNG files)
 *.[pP][nN][gG]
-!docs/design/mvp-reference/**/*.png
-!docs/design/mvp-native/**/*.png
-!docs/design/mvp-screens/**/*.png
 

@@ -1,42 +1,45 @@
 # ChoscorDB
 
-A native, cross-platform SQL client built with Qt 6 Widgets and a Qt-independent Rust engine. PostgreSQL, SQLite, and MySQL are supported drivers. See [MySQL support and testing](docs/testing/mysql.md) for its current capabilities. Licensed under GPL-3.0-or-later.
+ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend and a Rust engine.
 
-Implementation is in progress. See [the PRD](docs/prd-mvp.md), [UI reference](docs/design/README.md), and [verification status](docs/architecture/implementation-status.md). The visual reference is a design artifact, not a working desktop application.
+## Features
 
-To try the application with sample data, use the runnable
-[PostgreSQL and SQLite examples](examples/databases/README.md).
-For support reports, see [local diagnostics](docs/diagnostics.md).
+- Save connection profiles with credentials in the system credential store, and SSH tunnel and TLS options.
+- Write SQL in an editor with completion, search and query settings.
+- Read large results page by page in the result grid, and edit table rows.
+- Copy rows, and export results to CSV, JSON, JSON Lines or SQL `INSERT` statements.
+- Browse schemas, tables, views and columns in the navigator, and find objects with quick search.
+- Run queries again from the history, and get unsaved SQL editor text back after an unexpected stop.
 
-## Downloads
+## Supported databases
 
-Versioned binaries are hosted on [GitHub Releases](https://github.com/choscor/choscordb/releases).
-macOS downloads use the signed and notarized DMG. Windows ZIP and Linux AppImage
-assets are added after their native build and package checks pass; see the
-[platform release guide](docs/WINDOWS_LINUX_RELEASE.md). The Windows ZIP is
-unsigned and may trigger Windows security warnings or be blocked by device
-policy.
+ChoscorDB supports SQLite, PostgreSQL and MySQL.
 
-## Development
+## Download
 
-Install the pinned tools, then use the repository-owned quality interface:
+Get ChoscorDB from [GitHub Releases](https://github.com/choscor/choscordb/releases). The macOS DMG is signed and notarized. The Windows and Linux packages are unsigned, so your system can show a security warning.
+The [installation guide](user-guide/install.md) gives the steps.
+
+## Build from source
 
 ```sh
-python -m pip install -r scripts/ci/requirements.txt
-python scripts/ci/quality.py fast
-python scripts/ci/quality.py native-dependencies
-python scripts/ci/quality.py full
+python3 -m pip install -r scripts/ci/requirements.txt
+python3 scripts/ci/quality.py native-dependencies
+python3 scripts/ci/quality.py native-build
 ```
 
-`fast` checks C/C++ and Rust formatting, Ruff lint/format, workflow syntax, full
-Cargo dependency policy, both Python test suites, and all ordinary Rust
-targets/features. `full` adds the strict native build and all CTest tests using
-Qt's offscreen platform. Every included gate is also available as a focused
-stage; run `python scripts/ci/quality.py --help` and see [CI and quality gate
-documentation](docs/CI.md). Native build and run instructions are in
-[docs/BUILD.md](docs/BUILD.md), and contribution policy is in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[docs/build.md](docs/build.md) gives the full build procedure.
 
-## Dependency direction
+## Documentation
 
-`driver-api` defines shared contracts without Qt or concrete drivers. Database adapters implement these contracts. `storage` owns local metadata and migrations, never database credentials. `core` composes services and schedules I/O; `bridge` translates plain commands/events; `desktop` owns rendering and input. A driver is a compiled adapter registered by the composition root, not a third-party binary plugin.
+- [User guide](user-guide/README.md): install and use ChoscorDB.
+- [Developer documentation](docs/README.md): build, test, architecture and release.
+
+## Contributing
+
+You can create an issue to report a bug or to ask for a change. ChoscorDB does not accept external pull requests.
+[CONTRIBUTING.md](CONTRIBUTING.md) gives the full policy.
+
+## License
+
+ChoscorDB is licensed under GPL-3.0-or-later. See [LICENSE](LICENSE).

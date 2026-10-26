@@ -5,7 +5,7 @@ Prefer to define component styles in a `.qss` file and load them from that file.
 Keep literal palette colors in `colors/` and reusable dimensions in `metrics/`.
 Component QSS and painting code should use those semantic values. Stock Qt
 widgets styled by the shared cascade remain valid components and do not need
-wrapper subclasses. `docs/design/design-system.md` is the full reference.
+wrapper subclasses. `docs/design-system.md` is the full reference.
 
 - Tokens: `colors/colors.h` (`design::Colors`, kebab names from `colorTokens`),
   `metrics/metrics.h` (`Dimension`, `Spacing`, `Radius`, `Elevation`, `Motion`,
@@ -26,6 +26,10 @@ wrapper subclasses. `docs/design/design-system.md` is the full reference.
   menu highlight `surface-raised`; primary → `primary-hover` →
   `primary-pressed`; 2px `ring` for keyboard focus only; status uses
   `<status>-surface` with `<status>` text.
+- Icons are unmodified upstream Lucide files (pinned in
+  `resources/icons/SOURCE-LUCIDE.json`) at Lucide's stroke, or square, unsized
+  SVG brand logos; they render only at `Dimension::IconSmall` or
+  `Dimension::Icon`. `ui_policy.py` enforces this.
 - QSS goes through the one assembly in `style/stylesheet.cpp`. Use named
   `@token` placeholders only: no `%N` placeholders and no literal `font-size`
   or `border-radius` values. Define each selector and property pair in one file

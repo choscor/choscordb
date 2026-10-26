@@ -6,8 +6,8 @@ description: Release ChoscorDB with three verified platform packages from one ta
 
 # Release ChoscorDB
 
-Work from the repository root. Read [the release guide](../../../docs/MACOS_RELEASE.md),
-[the Windows/Linux guide](../../../docs/WINDOWS_LINUX_RELEASE.md),
+Work from the repository root. Read [the release guide](../../../docs/release-macos.md),
+[the Windows/Linux guide](../../../docs/release-windows-linux.md),
 [the contribution checks](../../../CONTRIBUTING.md), and the current changelog.
 Use this repository's Python release tools; packaging does not create tags.
 
@@ -159,7 +159,7 @@ specific workflow run and require both native build/test/package jobs to pass.
 Review its Windows installer, Linux AppImage, inventories, checksums, candidate
 source commit provenance, and smoke-test
 evidence, plus the clean-machine checks in the [platform release
-guide](../../../docs/WINDOWS_LINUX_RELEASE.md). Do not infer Windows/Linux
+guide](../../../docs/release-windows-linux.md). Do not infer Windows/Linux
 readiness from macOS CTest. Candidate Actions artifacts expire and are not
 public release downloads. Download the two selected packages to an ignored
 local directory. Their provenance must equal the macOS manifest's exact
