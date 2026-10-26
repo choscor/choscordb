@@ -114,6 +114,76 @@ MESSAGE_BOX = re.compile(
     r"\bQMessageBox::(?:information|warning|critical|question|about|aboutQt)\s*\("
 )
 
+SECTIONED_DIALOG = r"(?:[A-Za-z_]\w*::)*(?:DialogShell|ModalDialog|ModalPanel)"
+# Inline dialogs and subclass constructors; ConfirmationDialog, RightSheet and
+# QuickSearchDialog are separate shared components.
+INLINE_DIALOG = re.compile(
+    rf"\bnew\s+{SECTIONED_DIALOG}\s*[({{]|"
+    rf"\b(?:std::)?make_(?:unique|shared)\s*<\s*{SECTIONED_DIALOG}\s*>|"
+    rf"(?<![\w:<])(?:const\s+)?{SECTIONED_DIALOG}\s+[A-Za-z_]\w*\s*[({{]"
+)
+DIALOG_BASE_INIT = re.compile(rf"[:,]\s*{SECTIONED_DIALOG}\s*\(")
+SECTIONS_USE = re.compile(r"\bcreateSections\s*\(|\bDialogSections\b")
+SHOW_EVENT = re.compile(r"\bvoid\s+(?:[A-Za-z_]\w*::)?showEvent\s*\([^)]*\)[^;{]*\{")
+LAYOUT_RESET = re.compile(r"\bset(?:ContentsMargins|Spacing)\s*\(")
+
+
+def block_end(code, start):
+    """Return the offset that closes the brace block containing `start`."""
+    depth = 0
+    for index in range(start, len(code)):
+        if code[index] == "{":
+            depth += 1
+        elif code[index] == "}":
+            depth -= 1
+            if depth < 0:
+                return index
+    return len(code)
+
+
+def constructor_body(code, start):
+    """Return the body brace after a member initializer list that opened at `start`."""
+    depth = 1
+    for index in range(start, len(code)):
+        character = code[index]
+        # A brace right after a member name initializes that member, not the body.
+        if character == "{" and depth == 0 and code[:index].rstrip()[-1:] in ")}":
+            return index
+        if character in "({":
+            depth += 1
+        elif character in ")}":
+            depth -= 1
+    return len(code)
+
+
+def dialog_problems(code, starts, relative):
+    """Dialog content must use DialogSections, and showEvent must not restyle layouts."""
+    problems = []
+    inline = [match.start() for match in INLINE_DIALOG.finditer(code)]
+    for pattern in (INLINE_DIALOG, DIALOG_BASE_INIT):
+        for match in pattern.finditer(code):
+            if pattern is DIALOG_BASE_INIT:
+                body = constructor_body(code, match.end())
+                scope = code[body : block_end(code, body + 1)]
+            else:
+                # Sections that follow a later dialog belong to that dialog.
+                later = inline[bisect_right(inline, match.start()) :]
+                end = min([block_end(code, match.end()), *later[:1]])
+                scope = code[match.end() : end]
+            if not SECTIONS_USE.search(scope):
+                number = bisect_right(starts, match.start())
+                problems.append(
+                    f"{relative}:{number}: dialog content must use DialogSections"
+                )
+    for match in SHOW_EVENT.finditer(code):
+        end = block_end(code, match.end())
+        for reset in LAYOUT_RESET.finditer(code, match.end(), end):
+            number = bisect_right(starts, reset.start())
+            problems.append(
+                f"{relative}:{number}: showEvent must not reset layout margins or spacing"
+            )
+    return problems
+
 
 def screen_sources(desktop):
     """Group every production C++ source, including loose and nested widgets."""
@@ -292,6 +362,7 @@ def audit(root=ROOT):
         source = cpp_without_comments(path.read_text(encoding="utf-8"))
         code = cpp_without_comments(source, mask_literals=True)
         starts = [0] + [match.end() for match in re.finditer("\n", source)]
+        problems.extend(dialog_problems(code, starts, path.relative_to(root)))
         for pattern, label in (
             (FONT_FAMILY, "local font family"),
             (FONT_FAMILY_SETTER, "local font family"),

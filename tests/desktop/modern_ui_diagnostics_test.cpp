@@ -3,6 +3,7 @@
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "diagnostics_legacy_lock.h"
+#include "dialog_sections_checks.h"
 #include "modern_ui_test.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
@@ -43,7 +44,15 @@ void ModernUiTest::helpOpensDiagnosticsExportSummary() {
     QVERIFY(dialog->findChild<QPushButton*>("diagnosticsSave"));
     QVERIFY(dialog->findChild<QPushButton*>("diagnosticsShowFolder"));
     QVERIFY(dialog->findChild<QPushButton*>("diagnosticsClear"));
-    dialog->close();
+    QCOMPARE(headerHeadline(*dialog), QString("Export Diagnostics"));
+    QCOMPARE(sectionedSpacing(*dialog), compactSectionedSpacing());
+    QCOMPARE(dialog->findChild<choscordb::design::DialogSections*>()->geometry(), dialog->rect());
+    QCOMPARE(footerOverrides(*dialog), QString());
+    auto* dismiss = headerDismiss(*dialog, "diagnosticsDismiss");
+    QVERIFY(dismiss);
+    QSignalSpy rejected(dialog, &QDialog::rejected);
+    dismiss->click();
+    QCOMPARE(rejected.count(), 1);
 }
 
 void ModernUiTest::diagnosticsClearRequiresConfirmation() {

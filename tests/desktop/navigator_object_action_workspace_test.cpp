@@ -10,6 +10,7 @@
 #include "design_system/status_line/status_line.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
+#include "dialog_sections_checks.h"
 #include "models/navigator_model.h"
 #include "navigator_sql_workspace_test.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -102,6 +103,21 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QVERIFY(status);
     QVERIFY(status->accessibleDescription().contains("Finish or cancel active database work"));
     workspace->setExternalWork(false);
+    bool renameDismissed = false;
+    QTimer::singleShot(0, &window, [&] {
+        auto* dialog = window.findChild<QDialog*>("renameObjectDialog");
+        auto* dismiss = dialog ? headerDismiss(*dialog, "renameObjectDismiss") : nullptr;
+        renameDismissed = dismiss && headerHeadline(*dialog) == dialog->windowTitle() &&
+                          sectionedSpacing(*dialog) == compactSectionedSpacing() &&
+                          footerOverrides(*dialog).isEmpty();
+        if (dismiss)
+            dismiss->click();
+        else if (dialog)
+            dialog->reject();
+    });
+    rename->trigger();
+    QVERIFY(renameDismissed);
+    QCOMPARE(finished, settledFinished);
     bool renameDialogChecked = false;
     QTimer::singleShot(0, &window, [&] {
         auto* dialog = window.findChild<QDialog*>("renameObjectDialog");

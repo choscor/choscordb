@@ -2,6 +2,7 @@
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
 #include "design_system/toast_region/toast_region.h"
+#include "dialog_sections_checks.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "workspace_test.h"
 #include "workspace_test_fixture.h"
@@ -60,6 +61,14 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
     dialog->findChild<QPushButton*>("profileTest")->click();
     QVERIFY(progress->isVisible());
     QVERIFY(progress->isModal() || progress->property("embeddedModal").toBool());
+    auto* progressSections = progress->findChild<choscordb::design::DialogSections*>();
+    QVERIFY(progressSections);
+    QCOMPARE(headerHeadline(*progress), QString("Profiles"));
+    QCOMPARE(sectionedSpacing(*progress), compactSectionedSpacing());
+    QVERIFY(!progressSections->footerLayout()->parentWidget()->isVisible());
+    QVERIFY(!progressSections->findChild<QWidget*>("dialogSectionsFooterSeparator")->isVisible());
+    QVERIFY(progressSections->bodyLayout()->parentWidget()->isAncestorOf(
+        progress->findChild<QWidget*>("profileProgressBar")));
     QCOMPARE(progress->findChild<QLabel*>("profileProgressMessage")->text(),
              QString("Testing connection…"));
     QTRY_VERIFY(!progress->isVisible());
@@ -99,8 +108,7 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     QVERIFY(!dialog.findChild<QPushButton*>("profileSecurity"));
     auto* sections = dialog.findChild<choscordb::design::DialogSections*>("profileSections");
     QVERIFY(sections);
-    auto* footer = sections->footerLayout()->parentWidget();
-    QCOMPARE(footer->property("designSurface").toString(), QString("muted"));
+    QCOMPARE(footerOverrides(dialog), QString());
     auto* scroll = dialog.findChild<QScrollArea*>("profileFormScroll");
     dialog.show();
     QCoreApplication::processEvents();

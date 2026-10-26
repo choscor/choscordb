@@ -3,10 +3,12 @@
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/modal_panel/modal_panel.h"
 #include "design_system/theme_manager.h"
+#include "dialog_sections_checks.h"
 #include <QAbstractItemView>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -266,6 +268,61 @@ class ModalPanelTest final : public QObject {
                 QCOMPARE(frame->geometry().right(), sections.rect().right());
             }
         }
+    }
+    void sectionedShellKeepsCompactSpacingWhileShown() {
+        QWidget owner;
+        owner.resize(960, 640);
+        choscordb::design::ThemeManager theme;
+        theme.setMode(choscordb::design::ThemeMode::Light);
+        theme.applyTo(owner);
+        owner.show();
+        choscordb::DialogShell shell(&owner);
+        shell.setAppModal();
+        auto* sections = shell.createSections();
+        sections->headerLayout()->addWidget(new QLabel("Settings", sections));
+        auto* fields = new QHBoxLayout;
+        fields->setSpacing(0);
+        fields->addWidget(new QLineEdit(sections));
+        fields->addWidget(new QLineEdit(sections));
+        sections->bodyLayout()->addLayout(fields);
+        sections->footerLayout()->addWidget(new QPushButton("Save", sections));
+        const auto built = [&] {
+            return sectionedSpacing(shell) + " body=" + layoutSpacing(sections->bodyLayout()) +
+                   " fields=" + layoutSpacing(fields);
+        };
+        const auto expected = built();
+        QCOMPARE(sectionedSpacing(shell), compactSectionedSpacing());
+        shell.show();
+        QCoreApplication::processEvents();
+        QCOMPARE(built(), expected);
+        QCOMPARE(sections->geometry(), shell.rect());
+        shell.resize(shell.width() + 40, shell.height() + 40);
+        theme.setMode(choscordb::design::ThemeMode::Dark);
+        theme.applyTo(owner);
+        QCoreApplication::processEvents();
+        QCOMPARE(built(), expected);
+        shell.reject();
+    }
+    void dialogSectionsHideAnEmptyFooter() {
+        choscordb::design::DialogSections sections;
+        sections.bodyLayout()->addWidget(new QLabel("Working…", &sections));
+        sections.resize(400, 200);
+        sections.show();
+        QCoreApplication::processEvents();
+        auto* footer = sections.footerLayout()->parentWidget();
+        auto* separator = sections.findChild<QFrame*>("dialogSectionsFooterSeparator");
+        QVERIFY(separator);
+        QVERIFY(!footer->isVisible());
+        QVERIFY(!separator->isVisible());
+        QCOMPARE(sections.bodyLayout()->parentWidget()->geometry().bottom(),
+                 sections.rect().bottom());
+        auto* action = new QPushButton("Close", &sections);
+        sections.footerLayout()->addWidget(action);
+        QVERIFY(footer->isVisible());
+        QVERIFY(separator->isVisible());
+        delete action;
+        QVERIFY(!footer->isVisible());
+        QVERIFY(!separator->isVisible());
     }
     void embeddedModalsBlockOwnerAndRestoreFocus_data() {
         QTest::addColumn<bool>("confirmation");
@@ -727,14 +784,14 @@ class ModalPanelTest final : public QObject {
         theme.applyTo(parent);
         parent.show();
         choscordb::DialogShell dialog(&parent);
-        QVBoxLayout content(&dialog);
-        content.addWidget(new QLineEdit(&dialog));
+        auto* sections = dialog.createSections();
+        sections->bodyLayout()->addWidget(new QLineEdit(sections));
         dialog.resize(320, 160);
         dialog.show();
         QVERIFY(!dialog.isModal());
         QVERIFY(!dialog.windowFlags().testFlag(Qt::FramelessWindowHint));
         QVERIFY(!parent.findChild<QWidget*>("modalBackdrop"));
-        QCOMPARE(content.contentsMargins(), QMargins(16, 16, 16, 16));
+        QCOMPARE(sectionedSpacing(dialog), compactSectionedSpacing());
         const auto capture = dialog.grab();
         const auto scale = capture.devicePixelRatio();
         QCOMPARE(capture.toImage().pixelColor(qRound(160 * scale), qRound(140 * scale)),
@@ -767,18 +824,18 @@ class ModalPanelTest final : public QObject {
         QVERIFY(!dialog.isVisible());
         QVERIFY(!backdrop->isVisible());
     }
-    void panelUsesReferenceWidthAndContentSpacing() {
+    void panelUsesReferenceWidthAndSectionedContent() {
         QWidget parent;
         parent.resize(640, 480);
         parent.show();
         choscordb::design::ModalPanel panel(&parent);
-        QVBoxLayout content(&panel);
-        content.addWidget(new QLineEdit(&panel));
-        content.addWidget(new QPushButton("Cancel", &panel));
+        auto* sections = panel.createSections();
+        sections->bodyLayout()->addWidget(new QLineEdit(sections));
+        sections->footerLayout()->addWidget(new QPushButton("Cancel", sections));
         panel.show();
         QCOMPARE(panel.width(), 608);
-        QCOMPARE(content.contentsMargins(), QMargins(16, 16, 16, 16));
-        QCOMPARE(content.spacing(), 16);
+        QCOMPARE(sectionedSpacing(panel), compactSectionedSpacing());
+        QCOMPARE(sections->geometry(), panel.rect());
         panel.reject();
     }
     void panelRendersRoundedPopoverSurface() {

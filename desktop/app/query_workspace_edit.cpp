@@ -3,6 +3,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/fonts/fonts.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/modal_panel/modal_panel.h"
@@ -10,6 +11,7 @@
 #include <QEventLoop>
 #include <QFutureWatcher>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -163,20 +165,28 @@ bool QueryWorkspace::applyStagedEdits() {
         return false;
     design::ModalDialog box(widgets_.dialogParent);
     box.setWindowTitle(tr("Review grid changes"));
-    auto* layout = new QVBoxLayout(&box);
-    layout->setContentsMargins(
-        design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Four),
-        design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Four));
-    layout->setSpacing(design::spacing(design::Spacing::Three));
-    layout->addWidget(new design::Text(tr("Statements and bound parameter values"), &box));
-    auto* preview = new QPlainTextEdit(review, &box);
+    auto* sections = box.createSections();
+    auto* heading = new design::Text(box.windowTitle(), sections);
+    heading->setTextStyle(design::TextStyle::Headline);
+    sections->headerLayout()->addWidget(heading);
+    auto* dismiss = sections->addDismissButton(tr("Close grid change review"));
+    dismiss->setObjectName("gridEditDismiss");
+    connect(dismiss, &QPushButton::clicked, &box, &QDialog::reject);
+    auto* layout = sections->bodyLayout();
+    layout->setSpacing(design::spacing(design::Spacing::Two));
+    auto* description = new QLabel(tr("Statements and bound parameter values"), sections);
+    description->setProperty("designRole", "description");
+    description->setTextFormat(Qt::PlainText);
+    description->setWordWrap(true);
+    layout->addWidget(description);
+    auto* preview = new QPlainTextEdit(review, sections);
     preview->setObjectName("gridEditReview");
     preview->setReadOnly(true);
     preview->setProperty("designRole", "codePreview");
     preview->setFont(
         design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
     layout->addWidget(preview);
-    auto* buttons = new QHBoxLayout;
+    auto* buttons = sections->footerLayout();
     buttons->addStretch();
     auto* cancel = new design::Button(tr("Cancel"), &box);
     cancel->setObjectName("gridEditCancel");
@@ -189,7 +199,6 @@ bool QueryWorkspace::applyStagedEdits() {
     connect(apply, &QPushButton::clicked, &box, &QDialog::accept);
     buttons->addWidget(cancel);
     buttons->addWidget(apply);
-    layout->addLayout(buttons);
     if (widgets_.dialogParent)
         box.resize(widgets_.dialogParent->size() * (2.0 / 3.0));
     const auto accepted = box.exec() == QDialog::Accepted;

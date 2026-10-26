@@ -7,6 +7,7 @@ class QVBoxLayout;
 class QString;
 
 namespace choscordb::design {
+class Button;
 struct ResolvedTheme;
 
 // Three-part dialog content with compact, separated action bars.
@@ -16,10 +17,13 @@ class DialogSections : public QWidget {
     explicit DialogSections(QWidget* parent = nullptr);
     QHBoxLayout* headerLayout() const;
     QVBoxLayout* bodyLayout() const;
+    // The footer and its separator are hidden while the footer layout is empty.
     QHBoxLayout* footerLayout() const;
-    void applyCompactSpacing();
+    // Ends the header with the shared dismiss: a ghost close icon button.
+    Button* addDismissButton(const QString& accessibleName);
 
   private:
+    void applyCompactSpacing();
     QVBoxLayout* root_ = nullptr;
     QHBoxLayout* header_ = nullptr;
     QVBoxLayout* body_ = nullptr;

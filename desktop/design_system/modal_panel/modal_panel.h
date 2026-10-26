@@ -3,6 +3,7 @@
 #include <QDialog>
 
 namespace choscordb::design {
+class DialogSections;
 
 // Owner-window modal dialog. DialogPresentation owns its separate dimmed backdrop.
 class ModalDialog : public QDialog {
@@ -11,20 +12,19 @@ class ModalDialog : public QDialog {
     explicit ModalDialog(QWidget* parent);
     ~ModalDialog() override;
     [[nodiscard]] QSize sizeHint() const override;
-    void setEdgeToEdgeContent(bool enabled);
+    // Installs edge-to-edge dialog content. The sections own their compact spacing.
+    [[nodiscard]] DialogSections* createSections();
 
   public slots:
     void open() override;
 
   protected:
-    bool event(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
 
   private:
     DialogPresentation presentation_;
-    bool edgeToEdgeContent_ = false;
 };
 using ModalPanel = ModalDialog;
 } // namespace choscordb::design

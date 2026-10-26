@@ -7,6 +7,7 @@
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/toast_region/toast_region.h"
+#include "dialog_sections_checks.h"
 #include "models/result_table_model.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -314,6 +315,7 @@ class GridEditWorkspaceTest : public QObject {
         QVERIFY(explorer.findChild<QPushButton*>("objectDataApply")->isEnabled());
         QTimer reviewPoll;
         bool firstReview = false;
+        bool reviewSectioned = false;
         const auto firstReviewConnection = connect(&reviewPoll, &QTimer::timeout, &data, [&] {
             auto* dialog =
                 qobject_cast<QDialog*>(choscordb::design::DialogPresentation::activeDialog());
@@ -322,13 +324,32 @@ class GridEditWorkspaceTest : public QObject {
                 return;
             firstReview = true;
             QVERIFY(review->toPlainText().contains("UPDATE"));
-            dialog->reject();
+            auto* sections = dialog->findChild<choscordb::design::DialogSections*>();
+            if (!sections) {
+                dialog->reject();
+                return;
+            }
+            auto* body = sections->bodyLayout()->parentWidget();
+            auto* footer = sections->footerLayout()->parentWidget();
+            auto* description = body->findChild<QLabel*>();
+            auto* apply = footer->findChild<QPushButton*>("gridEditApply");
+            reviewSectioned =
+                headerHeadline(*dialog) == QStringLiteral("Review grid changes") &&
+                sectionedSpacing(*dialog) == compactSectionedSpacing() &&
+                footerOverrides(*dialog).isEmpty() && body->isAncestorOf(review) && description &&
+                description->text() == QStringLiteral("Statements and bound parameter values") &&
+                footer->findChild<QPushButton*>("gridEditCancel") && apply && apply->isDefault();
+            if (auto* dismiss = headerDismiss(*dialog, "gridEditDismiss"))
+                dismiss->click();
+            else
+                dialog->reject();
         });
         reviewPoll.start(10);
         explorer.findChild<QPushButton*>("objectDataApply")->click();
         reviewPoll.stop();
         disconnect(firstReviewConnection);
         QVERIFY(firstReview);
+        QVERIFY(reviewSectioned);
         QCOMPARE(grid->model()->index(0, 1).data().toString(), QString("after"));
         QTimer::singleShot(0, &data, [] {
             auto* dialog =
@@ -348,7 +369,7 @@ class GridEditWorkspaceTest : public QObject {
             if (!dialog || !dialog->findChild<QPlainTextEdit*>("gridEditReview"))
                 return;
             secondReview = true;
-            dialog->accept();
+            dialog->findChild<QPushButton*>("gridEditApply")->click();
         });
         reviewPoll.start(10);
         explorer.findChild<QPushButton*>("objectDataApply")->click();

@@ -55,7 +55,7 @@ choscordb_add_executable(choscordb-components-tests tests/desktop/components_tes
 target_link_libraries(choscordb-components-tests PRIVATE choscordb-design-system Qt6::Test)
 add_test(NAME components COMMAND choscordb-components-tests)
 set_tests_properties(components PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-choscordb_add_executable(choscordb-preview-tests tests/desktop/preview_test.cpp tests/desktop/preview_test.h tests/desktop/preview_quick_search_test.cpp tests/desktop/preview_specimens_test.cpp tests/desktop/preview_cell_test.cpp tests/desktop/preview_basic_controls_test.cpp tests/desktop/preview_toast_test.cpp tests/desktop/preview_json_text_view_test.cpp tests/desktop/preview_column_row_test.cpp tests/desktop/preview_tokens_test.cpp)
+choscordb_add_executable(choscordb-preview-tests tests/desktop/preview_test.cpp tests/desktop/preview_test.h tests/desktop/preview_quick_search_test.cpp tests/desktop/preview_specimens_test.cpp tests/desktop/preview_dialog_sections_test.cpp tests/desktop/preview_cell_test.cpp tests/desktop/preview_basic_controls_test.cpp tests/desktop/preview_toast_test.cpp tests/desktop/preview_json_text_view_test.cpp tests/desktop/preview_column_row_test.cpp tests/desktop/preview_tokens_test.cpp)
 target_link_libraries(choscordb-preview-tests PRIVATE choscordb-desktop Qt6::Test)
 add_test(NAME preview COMMAND choscordb-preview-tests)
 set_tests_properties(preview PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

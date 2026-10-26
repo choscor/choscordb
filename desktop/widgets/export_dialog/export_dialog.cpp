@@ -75,33 +75,20 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     sqlForm->addRow(tr("&Schema:"), schema_);
     tableValidation_ = new design::FieldValidation(table_, this);
     sqlForm->addRow(tr("&Table:"), tableValidation_);
-    auto* layout = new QVBoxLayout(this);
-    auto* sections = new design::DialogSections(this);
-    layout->addWidget(sections);
+    auto* sections = createSections();
     auto* headerLayout = sections->headerLayout();
     auto* header = headerLayout->parentWidget();
-    header->setFixedHeight(design::layoutMetrics().modalHeaderHeight);
-    headerLayout->setContentsMargins(design::spacing(design::Spacing::Four), 0,
-                                     design::spacing(design::Spacing::Four), 0);
     auto* heading = new design::Text(tr("Export results"), header);
     heading->setTextStyle(design::TextStyle::Headline);
     headerLayout->addWidget(heading);
-    headerLayout->addStretch();
-    auto* dismiss = new design::Button({}, header);
+    auto* dismiss = sections->addDismissButton(tr("Close export"));
     dismiss->setObjectName("exportDismiss");
-    dismiss->setAccessibleName(tr("Close export"));
-    dismiss->setVariant(design::ButtonVariant::Ghost);
-    dismiss->setButtonSize(design::ButtonSize::IconSmall);
-    dismiss->setDesignIcon(design::Icon::Close);
-    headerLayout->addWidget(dismiss);
     connect(dismiss, &QPushButton::clicked, this, &ExportDialog::reject);
     auto* bodyLayout = sections->bodyLayout();
     auto* body = bodyLayout->parentWidget();
     body->setProperty("designSurface", "panel");
     body->setAttribute(Qt::WA_StyledBackground);
-    bodyLayout->setContentsMargins(
-        design::spacing(design::Spacing::Four), design::layoutMetrics().modalFooterInset,
-        design::spacing(design::Spacing::Four), design::layoutMetrics().modalFooterInset);
+    bodyLayout->setSpacing(design::spacing(design::Spacing::Two));
     bodyLayout->addWidget(scope_);
     setResultViewActive(false);
     bodyLayout->addLayout(form);
@@ -118,18 +105,10 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     bodyLayout->addWidget(statusLine_);
     auto* buttons = sections->footerLayout();
     auto* footer = buttons->parentWidget();
-    footer->setProperty("designSurface", "muted");
-    footer->setAttribute(Qt::WA_StyledBackground);
-    buttons->setContentsMargins(
-        design::layoutMetrics().modalFooterInset, design::layoutMetrics().modalFooterVerticalInset,
-        design::layoutMetrics().modalFooterInset, design::layoutMetrics().modalFooterVerticalInset);
     buttons->addStretch();
     auto* close = new design::Button(tr("Close"), footer);
     close->setObjectName("exportClose");
     close->setVariant(design::ButtonVariant::Outline);
-    close->setButtonSize(design::ButtonSize::Small);
-    start_->setButtonSize(design::ButtonSize::Small);
-    cancel_->setButtonSize(design::ButtonSize::Small);
     buttons->addWidget(close);
     buttons->addWidget(cancel_);
     buttons->addWidget(start_);
@@ -362,11 +341,6 @@ void ExportDialog::finish(const QString& message, Outcome outcome) {
         }
     }
     emit exportRunningChanged(false);
-}
-void ExportDialog::showEvent(QShowEvent* event) {
-    DialogShell::showEvent(event);
-    layout()->setContentsMargins(0, 0, 0, 0);
-    layout()->setSpacing(0);
 }
 void ExportDialog::closeEvent(QCloseEvent* event) {
     if (isRunning()) {

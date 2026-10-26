@@ -18,9 +18,6 @@ class SshHostKeyDialog final : public DialogShell {
     void showFailure(const QString& error);
     void invalidate();
 
-  protected:
-    void showEvent(QShowEvent* event) override;
-
   signals:
     void approvalRequested(const choscordb::SshHostKeyCandidate& candidate, const QString& path);
     void retryRequested();

@@ -42,8 +42,8 @@ preserved by the component extraction.
 | Modal dialog | `modal_panel/`: `ModalDialog` surface; the dimmed overlay belongs to `dialog_presentation/` |
 | Right sheet | `right_sheet/`: right-aligned modal shell with header, scrolling body and fixed muted footer |
 | Quick search | `quick_search/`: compact modal search field, reusable icon/title/detail result rows, states and keyboard/pointer interaction |
-| Dialog shell | `dialog_shell/`: reusable nonmodal `QDialog` shell and content/status styles |
-| Dialog sections | `dialog_sections/`: compact header, growing body, and muted padded footer for dialogs |
+| Dialog shell | `dialog_shell/`: reusable nonmodal `QDialog` shell, content/status styles, and `createSections()` for edge-to-edge dialog sections (`ModalDialog` has the same) |
+| Dialog sections | `dialog_sections/`: compact header, growing body, and muted padded footer for dialogs; an empty footer and its separator stay hidden; `addDismissButton()` adds the shared header close button |
 | Confirmation dialog | `confirmation_dialog/`: reusable QMessageBox contract and presentation |
 | Toast region | `toast_region/`: host-attached queued notices with `<status>-surface` fills, status text and a status icon; a neutral progress notice; reading-time and focus/hover pauses, pinned failures, and bounded full Details |
 | Shared glyphs | `control_glyphs/`: select/spin overlays and arrow painting; Qt retains hit testing |

@@ -31,7 +31,6 @@ class ExportDialog final : public DialogShell {
 
   protected:
     void closeEvent(QCloseEvent* event) override;
-    void showEvent(QShowEvent* event) override;
     void reject() override;
 
   private:

@@ -36,13 +36,13 @@ class PreferencesDialog final : public DialogShell {
   protected:
     void reject() override;
     void closeEvent(QCloseEvent* event) override;
-    void showEvent(QShowEvent* event) override;
 
   private:
     void setStatus(const QString& message);
     EditorPreferences draft() const;
     void fill(const EditorPreferences& preferences);
     void updatePreview();
+    void fitPreview();
     void updateAppearanceStatus();
     void apply();
     void setBusy(bool busy);

@@ -22,6 +22,7 @@
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "design_system/tree/navigation_tree_view.h"
+#include "tools/preview/preview_dialogs.h"
 #include "tools/preview/preview_standard.h"
 #include <QApplication>
 #include <QCheckBox>
@@ -48,7 +49,6 @@
 #include <QMenu>
 #include <QPainter>
 #include <QPlainTextEdit>
-#include <QProgressBar>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QScopeGuard>
@@ -72,17 +72,8 @@
 namespace choscordb::design {
 void applySpecimenTheme(QWidget& host);
 namespace {
-// Dialogs open in the window overlay, outside the themed host, so each one
-// takes the host's theme, stylesheet and palette itself.
-void applyHostTheme(QWidget& surface, const QWidget& host) {
-    for (auto* ancestor = &host; ancestor; ancestor = ancestor->parentWidget()) {
-        if (auto* manager =
-                ancestor->findChild<ThemeManager*>(QString{}, Qt::FindDirectChildrenOnly)) {
-            manager->applyTo(surface);
-            return;
-        }
-    }
-}
+using preview_detail::applyHostTheme;
+using preview_detail::populateDialogSections;
 struct Specimen {
     QString section;
     QString id;
@@ -308,87 +299,6 @@ void populateQuickSearch(QWidget* host, QVBoxLayout* layout) {
     layout->addStretch();
 }
 
-void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
-    layout->addWidget(new QLabel("Open the connection layout in either theme.", host));
-    auto* open = new Button("Open sectioned modal", host);
-    open->setObjectName("previewOpenDialogSections");
-    layout->addWidget(open);
-    auto* dialog = new ModalDialog(host);
-    dialog->setEdgeToEdgeContent(true);
-    dialog->setObjectName("previewDialogSectionsModal");
-    open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
-    applyHostTheme(*dialog, *host);
-    dialog->resize(560, 440);
-    auto* root = new QVBoxLayout(dialog);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
-    auto* sections = new DialogSections(dialog);
-    sections->setObjectName("previewDialogSections");
-    root->addWidget(sections);
-    auto* heading = new Text("New connection", sections);
-    heading->setTextStyle(TextStyle::Headline);
-    sections->headerLayout()->addWidget(heading);
-    sections->headerLayout()->addStretch();
-    auto* close = new Button({}, sections);
-    close->setObjectName("previewDialogSectionsDismiss");
-    close->setAccessibleName("Close sectioned modal");
-    close->setVariant(ButtonVariant::Ghost);
-    close->setButtonSize(ButtonSize::IconSmall);
-    close->setDesignIcon(Icon::Close);
-    sections->headerLayout()->addWidget(close);
-    auto* description = new QLabel("Connect to a server or open a local database file.", sections);
-    sections->bodyLayout()->addWidget(description);
-    auto* fields = new QGridLayout;
-    fields->setColumnStretch(0, 5);
-    fields->setColumnStretch(1, 1);
-    fields->setColumnStretch(2, 5);
-    const auto field = [sections, fields](const QString& title, QWidget* control, int row,
-                                          int column, int span = 1) {
-        auto* group = new QVBoxLayout;
-        auto* label = new QLabel(title, sections);
-        label->setBuddy(control);
-        group->addWidget(label);
-        group->addWidget(control);
-        fields->addLayout(group, row, column, 1, span);
-    };
-    auto* hostField = new QLineEdit(sections);
-    hostField->setObjectName("previewProfileHost");
-    hostField->setText("db.example.com");
-    field("Host", hostField, 0, 0);
-    auto* port = new QSpinBox(sections);
-    port->setObjectName("previewProfilePort");
-    port->setRange(1, 65535);
-    port->setValue(5432);
-    field("Port", port, 0, 1);
-    auto* database = new QLineEdit(sections);
-    database->setObjectName("previewProfileDatabase");
-    database->setText("app");
-    field("Database", database, 0, 2);
-    auto* username = new QLineEdit(sections);
-    username->setObjectName("previewProfileUsername");
-    username->setText("operator");
-    field("Username", username, 1, 0);
-    auto* password = new QLineEdit(sections);
-    password->setObjectName("previewProfilePassword");
-    password->setEchoMode(QLineEdit::Password);
-    field("Password", password, 1, 1, 2);
-    sections->bodyLayout()->addLayout(fields);
-    auto* saveCredentials = new QCheckBox("Save credentials in OS credential store", sections);
-    saveCredentials->setObjectName("previewProfileSaveCredentials");
-    sections->bodyLayout()->addWidget(saveCredentials);
-    sections->bodyLayout()->addStretch();
-    sections->footerLayout()->addStretch();
-    auto* cancel = new Button("Cancel", sections);
-    cancel->setVariant(ButtonVariant::Outline);
-    sections->footerLayout()->addWidget(cancel);
-    auto* save = new Button("Save profile", sections);
-    sections->footerLayout()->addWidget(save);
-    QObject::connect(open, &QPushButton::clicked, dialog, &QDialog::open);
-    QObject::connect(close, &QPushButton::clicked, dialog, &QDialog::reject);
-    QObject::connect(cancel, &QPushButton::clicked, dialog, &QDialog::reject);
-    QObject::connect(save, &QPushButton::clicked, dialog, &QDialog::accept);
-    layout->addStretch();
-}
 void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool destructive) {
     layout->addWidget(new QLabel("Overlays stay inside this window. Check Tab/Shift+Tab, Escape, "
                                  "backdrop and focus restoration.",
@@ -420,39 +330,46 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
                          [confirmation] { confirmation->open(); });
         return;
     }
-    QDialog* dialog = modeless ? static_cast<QDialog*>(new choscordb::DialogShell(host))
-                               : static_cast<QDialog*>(new ModalDialog(host));
+    QDialog* dialog = nullptr;
+    DialogSections* sections = nullptr;
+    if (modeless) {
+        auto* shell = new choscordb::DialogShell(host);
+        sections = shell->createSections();
+        dialog = shell;
+    } else {
+        auto* modal = new ModalDialog(host);
+        sections = modal->createSections();
+        dialog = modal;
+    }
     dialog->setAttribute(Qt::WA_WindowPropagation);
     applyHostTheme(*dialog, *host);
     dialog->setObjectName("previewActualDialog");
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(dialog));
     dialog->setWindowTitle("Synthetic component preview");
-    auto* content = new QVBoxLayout(dialog);
-    auto* heading = new Text(destructive ? "Delete synthetic record?" : "Panel details", dialog);
+    auto* heading = new Text("Panel details", sections);
     heading->setTextStyle(TextStyle::Headline);
-    content->addWidget(heading);
-    auto* description =
-        new Text(destructive ? "This preview records your choice only. No data is changed."
-                             : "A reusable panel with a real keyboard focus boundary.",
-                 dialog);
+    sections->headerLayout()->addWidget(heading);
+    auto* dismiss = sections->addDismissButton("Close panel");
+    dismiss->setObjectName("previewDialogDismiss");
+    QObject::connect(dismiss, &QPushButton::clicked, dialog, &QDialog::reject);
+    auto* content = sections->bodyLayout();
+    content->setSpacing(spacing(Spacing::Two));
+    auto* description = new Text("A reusable panel with a real keyboard focus boundary.", sections);
     description->setObjectName("previewDialogDescription");
     description->setWordWrap(true);
     content->addWidget(description);
-    auto* input = new QLineEdit(dialog);
+    auto* input = new QLineEdit(sections);
     input->setPlaceholderText("Synthetic label");
     input->setAccessibleName("Synthetic label");
     content->addWidget(input);
-    auto* actions = new QHBoxLayout;
-    auto* cancel = new Button("Cancel", dialog);
+    auto* actions = sections->footerLayout();
+    auto* cancel = new Button("Cancel", sections);
     cancel->setVariant(ButtonVariant::Outline);
     cancel->setDefault(true);
-    auto* confirm = new Button(destructive ? "Delete" : "Done", dialog);
-    if (destructive)
-        confirm->setVariant(ButtonVariant::Destructive);
+    auto* confirm = new Button("Done", sections);
     actions->addStretch();
     actions->addWidget(cancel);
     actions->addWidget(confirm);
-    content->addLayout(actions);
     QObject::connect(cancel, &QPushButton::clicked, dialog, &QDialog::reject);
     QObject::connect(confirm, &QPushButton::clicked, dialog, &QDialog::accept);
     QObject::connect(dialog, &QDialog::finished, status, [status](int result) {

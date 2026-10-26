@@ -1,6 +1,7 @@
 #include "design_system/dialog_shell/dialog_shell.h"
 
 #include "design_system/dialog_presentation/dialog_presentation.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/theme_manager.h"
 
 #include <QHideEvent>
@@ -8,6 +9,7 @@
 #include <QLayout>
 #include <QResizeEvent>
 #include <QShowEvent>
+#include <QVBoxLayout>
 
 namespace choscordb {
 
@@ -32,6 +34,15 @@ void DialogShell::open() {
     }
 }
 
+design::DialogSections* DialogShell::createSections() {
+    auto* root = new QVBoxLayout(this);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+    auto* sections = new design::DialogSections(this);
+    root->addWidget(sections);
+    return sections;
+}
+
 QLabel* DialogShell::createDescription(const QString& text, QWidget* parent) {
     auto* description = new QLabel(text, parent);
     description->setProperty("dialogDescription", true);
@@ -50,7 +61,6 @@ QLabel* DialogShell::createInlineStatus(QWidget* parent) {
 }
 
 void DialogShell::showEvent(QShowEvent* event) {
-    applyLayoutMetrics();
     ensureContentHeight();
     QDialog::showEvent(event);
     presentation_->shown();
@@ -66,17 +76,6 @@ void DialogShell::hideEvent(QHideEvent* event) {
 }
 void DialogShell::paintEvent(QPaintEvent*) {
     design::paintDialogSurface(*this, false);
-}
-
-void DialogShell::applyLayoutMetrics() {
-    if (auto* root = layout()) {
-        root->setContentsMargins(
-            design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Four),
-            design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Four));
-    }
-    for (auto* childLayout : findChildren<QLayout*>()) {
-        childLayout->setSpacing(design::spacing(design::Spacing::Two));
-    }
 }
 
 void DialogShell::ensureContentHeight() {

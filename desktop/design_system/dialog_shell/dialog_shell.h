@@ -9,7 +9,8 @@ class QShowEvent;
 namespace choscordb {
 namespace design {
 class DialogPresentation;
-}
+class DialogSections;
+} // namespace design
 
 class DialogShell : public QDialog {
     Q_OBJECT
@@ -18,6 +19,8 @@ class DialogShell : public QDialog {
     explicit DialogShell(QWidget* parent = nullptr);
     void setAppModal();
     void open() override;
+    // Installs edge-to-edge dialog content. The sections own their compact spacing.
+    [[nodiscard]] design::DialogSections* createSections();
     [[nodiscard]] QLabel* createDescription(const QString& text, QWidget* parent);
     [[nodiscard]] QLabel* createInlineStatus(QWidget* parent);
 
@@ -28,7 +31,6 @@ class DialogShell : public QDialog {
     void paintEvent(QPaintEvent* event) override;
 
   private:
-    void applyLayoutMetrics();
     void ensureContentHeight();
     design::DialogPresentation* presentation_ = nullptr;
 };

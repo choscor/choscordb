@@ -36,18 +36,20 @@ class ProfileProgressDialog final : public DialogShell {
     explicit ProfileProgressDialog(QWidget* parent) : DialogShell(parent) {
         setObjectName("profileProgressDialog");
         setWindowTitle(tr("Profiles"));
-        auto* content = new QVBoxLayout(this);
-        auto* heading = new design::Text(tr("Profiles"), this);
+        auto* sections = createSections();
+        auto* heading = new design::Text(tr("Profiles"), sections);
         heading->setTextStyle(design::TextStyle::Headline);
-        content->addWidget(heading);
-        message_ = createDescription({}, this);
+        sections->headerLayout()->addWidget(heading);
+        auto* body = sections->bodyLayout();
+        body->setSpacing(design::spacing(design::Spacing::Two));
+        message_ = createDescription({}, sections);
         message_->setObjectName("profileProgressMessage");
-        content->addWidget(message_);
-        auto* progress = new QProgressBar(this);
+        body->addWidget(message_);
+        auto* progress = new QProgressBar(sections);
         progress->setObjectName("profileProgressBar");
         progress->setRange(0, 0);
         progress->setTextVisible(false);
-        content->addWidget(progress);
+        body->addWidget(progress);
         setAppModal();
     }
 
@@ -70,25 +72,17 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     const auto margin = design::spacing(design::Spacing::Four);
     resize(design::dialogInitialSize(design::DialogSize::Profiles)
                .boundedTo(available - QSize(margin * 2, margin * 2)));
-    auto* outer = new QVBoxLayout(this);
-    auto* sections = new design::DialogSections(this);
+    auto* sections = createSections();
     sections->setObjectName("profileSections");
-    outer->addWidget(sections);
     auto* headerLayout = sections->headerLayout();
     auto* header = sections;
     auto* heading = new design::Text(tr("New connection"), header);
     heading->setObjectName("profileHeading");
     heading->setTextStyle(design::TextStyle::Headline);
     headerLayout->addWidget(heading);
-    headerLayout->addStretch();
-    auto* dismiss = new design::Button({}, header);
+    auto* dismiss = sections->addDismissButton(tr("Close connection dialog"));
     dismiss->setObjectName("profileDismiss");
-    dismiss->setAccessibleName(tr("Close connection dialog"));
-    dismiss->setVariant(design::ButtonVariant::Ghost);
-    dismiss->setButtonSize(design::ButtonSize::IconSmall);
-    dismiss->setDesignIcon(design::Icon::Close);
     connect(dismiss, &QPushButton::clicked, this, &QDialog::close);
-    headerLayout->addWidget(dismiss);
     // Saved profiles are managed by the sidebar. Retain the internal selection
     // model for the asynchronous profile-management service contract.
     list_ = new QListWidget(this);
@@ -107,6 +101,10 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     form_->setProperty("designSurface", "panel");
     form_->setAttribute(Qt::WA_StyledBackground);
     formScroll->setWidget(form_);
+    // The scroll area's own bar takes the body's right inset.
+    auto bodyMargins = sections->bodyLayout()->contentsMargins();
+    bodyMargins.setRight(0);
+    sections->bodyLayout()->setContentsMargins(bodyMargins);
     sections->bodyLayout()->addWidget(formScroll);
     auto* formLayout = new QFormLayout(form_);
     formLayout->setContentsMargins(0, 0, design::spacing(design::Spacing::Three),
@@ -346,7 +344,6 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     progressDialog_ = progress;
     progressMessage_ = progress->message();
     auto* buttons = sections->footerLayout();
-    buttons->parentWidget()->setProperty("designSurface", "muted");
     auto* footer = sections;
     auto button = [this](const QString& title, const char* object) {
         auto* result = new design::Button(title, this);
@@ -623,13 +620,6 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
 }
 void ProfileDialog::showEvent(QShowEvent* event) {
     DialogShell::showEvent(event);
-    layout()->setContentsMargins(0, 0, 0, 0);
-    layout()->setSpacing(0);
-    auto* sections = findChild<design::DialogSections*>("profileSections");
-    sections->applyCompactSpacing();
-    auto margins = sections->bodyLayout()->contentsMargins();
-    margins.setRight(0);
-    sections->bodyLayout()->setContentsMargins(margins);
     if (busy_ && progressDialog_)
         progressDialog_->open();
 }

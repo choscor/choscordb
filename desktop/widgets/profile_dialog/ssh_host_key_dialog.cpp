@@ -17,12 +17,13 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
     : DialogShell(parent), candidates_(candidates) {
     setObjectName("sshHostKeyDialog");
     setWindowTitle(tr("Verify SSH host key"));
-    auto* root = new QVBoxLayout(this);
-    auto* sections = new design::DialogSections(this);
-    root->addWidget(sections);
+    auto* sections = createSections();
     auto* heading = new design::Text(windowTitle(), sections);
     heading->setTextStyle(design::TextStyle::Headline);
     sections->headerLayout()->addWidget(heading);
+    auto* dismiss = sections->addDismissButton(tr("Close host key verification"));
+    dismiss->setObjectName("sshHostKeyDismiss");
+    connect(dismiss, &QPushButton::clicked, this, &QDialog::reject);
     auto* layout = sections->bodyLayout();
     layout->setSpacing(design::spacing(design::Spacing::Two));
     layout->addWidget(createDescription(
@@ -121,11 +122,6 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
     updateActions();
     // Focusing the list can implicitly select its first row on some platforms.
     path_->setFocus();
-}
-void SshHostKeyDialog::showEvent(QShowEvent* event) {
-    DialogShell::showEvent(event);
-    layout()->setContentsMargins(0, 0, 0, 0);
-    layout()->setSpacing(0);
 }
 void SshHostKeyDialog::selectCandidate() {
     const auto row = list_->currentRow();

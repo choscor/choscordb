@@ -5,6 +5,7 @@
 #include "bridge/rust_text.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/icons.h"
 #include "design_system/metrics/metrics.h"
@@ -15,6 +16,7 @@
 #include <QDesktopServices>
 #include <QEvent>
 #include <QFutureWatcher>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
@@ -78,22 +80,28 @@ class UpdateProgressDialog final : public DialogShell {
     explicit UpdateProgressDialog(QWidget* parent) : DialogShell(parent) {
         setObjectName(QStringLiteral("updateDownloadProgress"));
         setWindowTitle(tr("ChoscorDB update"));
-        auto* layout = new QVBoxLayout(this);
-        auto* title = new design::Text(tr("Updating ChoscorDB"), this);
+        auto* sections = createSections();
+        auto* title = new design::Text(tr("Updating ChoscorDB"), sections);
         title->setTextStyle(design::TextStyle::Headline);
-        layout->addWidget(title);
-        message_ = createDescription(tr("Downloading update…"), this);
-        layout->addWidget(message_);
-        progress_ = new QProgressBar(this);
+        sections->headerLayout()->addWidget(title);
+        auto* dismiss = sections->addDismissButton(tr("Cancel update download"));
+        dismiss->setObjectName(QStringLiteral("updateDownloadDismiss"));
+        connect(dismiss, &QPushButton::clicked, this, &QDialog::reject);
+        auto* body = sections->bodyLayout();
+        body->setSpacing(design::spacing(design::Spacing::Two));
+        message_ = createDescription(tr("Downloading update…"), sections);
+        body->addWidget(message_);
+        progress_ = new QProgressBar(sections);
         progress_->setObjectName(QStringLiteral("updateDownloadProgressBar"));
         progress_->setRange(0, 1000);
         progress_->setValue(0);
         progress_->setTextVisible(false);
-        layout->addWidget(progress_);
-        auto* cancel = new design::Button(tr("Cancel"), this);
+        body->addWidget(progress_);
+        auto* cancel = new design::Button(tr("Cancel"), sections);
         cancel->setObjectName(QStringLiteral("cancelUpdateDownload"));
         cancel->setVariant(design::ButtonVariant::Outline);
-        layout->addWidget(cancel);
+        sections->footerLayout()->addStretch();
+        sections->footerLayout()->addWidget(cancel);
         connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
         setAppModal();
     }
