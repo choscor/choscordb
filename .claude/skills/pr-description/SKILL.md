@@ -14,5 +14,3 @@ Write for an open source reviewer who has not followed the implementation. Follo
 5. Link related issues or design context when available. Use `Closes #N` only when merging this PR fully resolves that issue; otherwise use `Refs #N` or a normal link. Remove empty sections and template instructions from the final body. Recheck the description when the diff changes during review.
 
 Return a ready-to-paste title and Markdown body when asked to draft. Creating or editing a remote PR is a separate action and requires that the user has asked for it.
-
-The structure follows [GitHub's PR guidance](https://docs.github.com/en/pull-requests/get-started/pull-request-quickstart) and [Google's change-description guidance](https://google.github.io/eng-practices/review/developer/cl-descriptions.html); the local template supplies this project's review prompts.

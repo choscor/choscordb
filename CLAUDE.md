@@ -187,7 +187,7 @@ The work for each paint, keystroke or signal must not increase with the quantity
 - If you cannot run it, run these quality gates in `scripts/ci/`:
   `cpp_ownership.py`, `ui_policy.py`, `qss_policy.py`, `ui_consistency.py`,
   `perf_policy.py`, `source_inventory.py` and `docs_policy.py`.
-- To see the details, add `--json`.
+- To see the details, add `--json` to `cpp_ownership.py`, `ui_consistency.py`, `perf_policy.py`, `source_inventory.py` or `docs_policy.py`.
 - Before you complete a Rust change, run `cargo clippy --workspace --all-targets --locked` and `cargo test --workspace --locked`.
 - Fix the findings. Do not hide findings with markers or exceptions.
 - Give a reason in each necessary marker (`ui-ok`, `perf-ok`, `ui-budget`) or exception.

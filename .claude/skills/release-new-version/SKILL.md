@@ -175,9 +175,10 @@ manifest's `base_url` is `https://github.com/OWNER/REPO/releases`. The app
 embeds `https://OWNER.github.io/REPO/updates/choscordb-appcast.xml`; its
 enclosure uses `BASE/download/vX.Y.Z/ChoscorDB-X.Y.Z.dmg`. Forks select their
 repository at packaging time with `--base-url`; never rewrite a signed app.
-Bootstrap and publicly verify Pages before packaging, using the existing
-signed `v0.1.7` appcast as described in the platform guide. Abort if the URL
-does not serve the expected bytes or Pages cache is stale.
+Before packaging, publicly verify that Pages serves the current signed feeds.
+Only a repository without Pages needs the one-time bootstrap from the signed
+`v0.1.7` appcast in the platform guide. Abort if the URL does not serve the
+expected bytes or Pages cache is stale.
 
 Run the checked-in publisher rather than assembling independent upload commands:
 

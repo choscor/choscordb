@@ -1,47 +1,74 @@
 # Design-system component work
 
-Prefer to define component styles in a `.qss` file and load them from that file. Run the QSS lint check after changing styles.
+Write this file in ASD-STE100 Simplified Technical English, as `docs/style-guide.md` specifies.
+`docs/design-system.md` is the full reference.
 
-Keep literal palette colors in `colors/` and reusable dimensions in `metrics/`.
-Component QSS and painting code should use those semantic values. Stock Qt
-widgets styled by the shared cascade remain valid components and do not need
-wrapper subclasses. `docs/design-system.md` is the full reference.
+## Tokens
 
-- Tokens: `colors/colors.h` (`design::Colors`, kebab names from `colorTokens`),
-  `metrics/metrics.h` (`Dimension`, `Spacing`, `Radius`, `Elevation`, `Motion`,
-  `LayoutMetrics`), `fonts/fonts.h` (`TextStyle`, `FontDesign`). One name per value; no
-  aliases. A new token needs a real second use and a gallery specimen.
-- Typography uses eight text styles named after Apple's macOS built-in styles:
-  `LargeTitle`, `Title1`, `Title2`, `Title3`, `Headline`, `Body`, `Callout` and
-  `Caption`, with `FontDesign::Monospaced` for fixed-pitch text, set in the
-  bundled Geist and Geist Mono. Keep their values equal to the
-  table in the reference; no style goes below Geist's 12px minimum.
-- Radii are `Small` 4, `Medium` 6 and `Large` 10; tables, trees and document
-  tab bars are square, except the current document tab's `Medium` top corners.
-  Pane tabs are a segmented control: a `Large` track with `Medium` segments.
-  Sizes sit on the 4px grid: controls 24/28/32, rows and headers 28, tabs and
-  toolbar 32.
-- State model: hover `surface-raised`; selected `selection` with `fg`, not bold
-  (`sidebar-hover` and `sidebar-selection` on the `surface-raised` sidebar);
-  menu highlight `surface-raised`; primary → `primary-hover` →
-  `primary-pressed`; 2px `ring` for keyboard focus only; status uses
-  `<status>-surface` with `<status>` text.
-- Icons are unmodified upstream Lucide files (pinned in
-  `desktop/resources/icons/SOURCE-LUCIDE.json`) at Lucide's stroke, or square, unsized
-  SVG brand logos; they render only at `Dimension::IconSmall` or
-  `Dimension::Icon`. `ui_policy.py` enforces this.
-- QSS goes through the one assembly in `style/stylesheet.cpp`. Use named
-  `@token` placeholders only: no `%N` placeholders and no literal `font-size`
-  or `border-radius` values. Define each selector and property pair in one file
-  of the shared cascade.
+- Keep literal palette colors in `colors/`. Keep reusable dimensions in `metrics/`.
+- Component QSS and painting code use only those semantic values.
+- A stock Qt widget that the shared cascade styles is a valid component. It needs no wrapper subclass.
+- The token headers are:
+  - `colors/colors.h`: `design::Colors`, with the kebab names from `colorTokens`.
+  - `metrics/metrics.h`: `Dimension`, `Spacing`, `Radius`, `Elevation`, `Motion` and `LayoutMetrics`.
+  - `fonts/fonts.h`: `TextStyle` and `FontDesign`.
+- Give each value one name. Do not add aliases.
+- Add a new token only for a real second use. Add a gallery specimen for it.
 
-When adding or changing code in a component under this directory, add or update its visible Light and Dark specimen in `desktop/tools/preview/preview_window.cpp`. Use the real component with synthetic content.
+## Typography
 
-Add or update the matching check in `tests/desktop/preview_test.cpp` so it selects the specimen and verifies the real component is present in both themes.
+- Use the eight text styles. Their names come from the macOS built-in styles:
+  `LargeTitle`, `Title1`, `Title2`, `Title3`, `Headline`, `Body`, `Callout` and `Caption`.
+- Use `FontDesign::Monospaced` for fixed-pitch text.
+- The styles use the bundled Geist and Geist Mono fonts.
+- Keep the style values equal to the table in the reference.
+- Do not make a style smaller than 12px, the Geist minimum.
 
-When introducing a component family, update the specimen table in `desktop/design_system/README.md` in the same change.
+## Shapes and sizes
 
-Run `python3 scripts/ci/ui_consistency.py`, `python3 scripts/ci/ui_policy.py`,
-and `python3 scripts/ci/qss_policy.py` after visual edits. The first reports
-source-level screen coverage and rejects visual constants outside foundations;
-it does not measure rendered pixels or runtime branches.
+- The radii are `Small` 4, `Medium` 6 and `Large` 10.
+- Tables, trees and document tab bars are square.
+  Only the current document tab has `Medium` top corners.
+- Pane tabs are a segmented control: a `Large` track with `Medium` segments.
+- Put sizes on the 4px grid.
+  Controls are 24, 28 or 32. Rows and headers are 28. Tabs and the toolbar are 32.
+
+## States
+
+- Hover uses `surface-raised`.
+- Selection uses `selection` with `fg`. Do not make selected text bold.
+- Navigator rows use `sidebar-hover` and `sidebar-selection` on the `surface-raised` surface.
+- The menu highlight uses `surface-raised`.
+- A primary control goes from `primary` to `primary-hover` to `primary-pressed`.
+- Use the 2px `ring` only for keyboard focus.
+- A status uses `<status>-surface` with `<status>` text.
+
+## Icons
+
+- Use unchanged upstream Lucide files at the Lucide stroke.
+  `desktop/resources/icons/SOURCE-LUCIDE.json` pins the release.
+- A brand logo is a square SVG with no size.
+- Show icons only at `Dimension::IconSmall` or `Dimension::Icon`. `ui_policy.py` enforces this.
+
+## Stylesheets
+
+- If possible, put the styles of a component in a `.qss` file. Load them from that file.
+- Send all QSS through the one assembly in `style/stylesheet.cpp`.
+- Use only named `@token` placeholders.
+  Do not use `%N` placeholders or literal `font-size` or `border-radius` values.
+- Define each pair of selector and property in one file of the shared cascade.
+
+## Specimens and tests
+
+When you add or change a component in this directory, do these steps:
+
+1. Add or update its Light and Dark specimen in `desktop/tools/preview/preview_window.cpp`.
+   Use the real component with synthetic content.
+2. Add or update the check in `tests/desktop/preview_test.cpp`.
+   The check selects the specimen and finds the real component in the two themes.
+3. If you add a component family, update the specimen table in `desktop/design_system/README.md`.
+4. After a visual change, run `python3 scripts/ci/ui_consistency.py`, `python3 scripts/ci/ui_policy.py` and `python3 scripts/ci/qss_policy.py`.
+
+`ui_consistency.py` reports the screen coverage of the source.
+It also rejects visual constants outside the foundations.
+It does not measure rendered pixels or runtime branches.
