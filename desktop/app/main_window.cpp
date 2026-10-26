@@ -72,7 +72,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath, DiagnosticsS
     connect(theme_, &design::ThemeManager::themeChanged, this, [this] { updateNativeTitleBar(); });
 #endif
     setWindowIcon(design::themedIcon(design::Icon::AppMark, theme_->resolvedTheme().colors.primary,
-                                     design::dimension(design::Dimension::Control)));
+                                     design::dimension(design::Dimension::Icon)));
     const auto ui = buildUi();
     connectWorkspace(ui, storagePath);
     connectDiagnostics();

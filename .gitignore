@@ -34,4 +34,3 @@ venv/
 !docs/design/mvp-native/**/*.png
 !docs/design/mvp-screens/**/*.png
 
-!desktop/resources/icons/mysql.png

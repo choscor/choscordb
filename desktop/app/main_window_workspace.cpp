@@ -608,7 +608,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 item->setData(Qt::UserRole, QVariant::fromValue(profile));
                 item->setData(design::NavigationProfileDelegate::DriverRole, profile.driver);
                 item->setIcon(design::themedIcon(design::driverIcon(profile.driver),
-                                                 theme_->resolvedTheme().colors.fgMuted, 16));
+                                                 theme_->resolvedTheme().colors.fgMuted,
+                                                 design::dimension(design::Dimension::Icon)));
                 item->setToolTip(profile.name);
                 if (profile.id == focused)
                     savedConnections->setCurrentItem(item, QItemSelectionModel::NoUpdate);

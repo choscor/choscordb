@@ -261,7 +261,8 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         for (int i = 0; i < 8; ++i) {
             const auto icon = i >= 1 && i <= 3 ? Icon::Table : Icon::Code;
             tabs->addTab(new QLabel("Neutral document chrome", tabs),
-                         themedIcon(icon, resolvedThemeForWidget(*host).colors.fgMuted, 16),
+                         themedIcon(icon, resolvedThemeForWidget(*host).colors.fgMuted,
+                                    dimension(Dimension::Icon)),
                          i == 0   ? "Untitled query 1"
                          : i == 1 ? "orders"
                          : i == 2 ? "customers"

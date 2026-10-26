@@ -157,7 +157,7 @@ void ModernUiTest::startListsRealSavedProfilesAndConnectsWithoutExecuting() {
     QVERIFY(!profiles->item(0)->icon().isNull());
     auto* startIcon = window.findChild<QLabel*>("startDatabaseIcon");
     QVERIFY(startIcon);
-    QCOMPARE(startIcon->pixmap().deviceIndependentSize(), QSizeF(32, 32));
+    QCOMPARE(startIcon->pixmap().deviceIndependentSize(), QSizeF(16, 16));
     int queued = 0;
     connect(
         workspace->adapter(), &choscordb::EngineAdapter::eventReady, &window,

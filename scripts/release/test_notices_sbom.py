@@ -67,13 +67,14 @@ class NoticesTest(unittest.TestCase):
         icons = repository / "desktop/resources/icons"
         for name in [
             "LICENSE-LUCIDE",
+            "LICENSE-DEVICON",
             "SOURCE-LUCIDE.json",
             "SOURCE-DATABASE-LOGOS.json",
         ]:
             payload["choscordb.app/Contents/Resources/licenses/" + name] = (
                 icons / name
             ).read_bytes()
-        for icon in [*icons.glob("*.svg"), *icons.glob("*.png")]:
+        for icon in icons.glob("*.svg"):
             payload["choscordb.app/Contents/Resources/icons/" + icon.name] = (
                 icon.read_bytes()
             )
@@ -277,11 +278,12 @@ class NoticesTest(unittest.TestCase):
             ("icons/eye-off.svg", "Icon"),
             ("icons/postgresql.svg", "Icon"),
             ("icons/sqlite.svg", "Icon"),
-            ("icons/mysql.png", "Icon"),
+            ("icons/mysql.svg", "Icon"),
             ("icons/mariadb.svg", "Icon"),
             ("licenses/SOURCE-DATABASE-LOGOS.json", "Database logo"),
             ("licenses/SOURCE-LUCIDE.json", "Lucide"),
             ("licenses/LICENSE-LUCIDE", "Lucide"),
+            ("licenses/LICENSE-DEVICON", "devicon"),
             ("licenses/SOURCE-GEIST.json", "Geist"),
             ("licenses/OFL.txt", "Geist"),
         ]:
@@ -301,7 +303,7 @@ class NoticesTest(unittest.TestCase):
             "SOURCE-DATABASE-LOGOS.json",
             "postgresql.svg",
             "sqlite.svg",
-            "mysql.png",
+            "mysql.svg",
         ]:
             with self.subTest(name=name):
                 source = json.loads(original)
@@ -362,19 +364,25 @@ class NoticesTest(unittest.TestCase):
         self.assertEqual(len(icons), 33)
         self.assertEqual(icons["grid-2x2.svg"], "Lucide Icons")
         self.assertEqual(icons["refresh-cw.svg"], "Lucide Icons")
-        self.assertEqual(icons["commit.svg"], "ChoscorDB")
+        self.assertEqual(icons["save.svg"], "Lucide Icons")
         self.assertEqual(icons["eye-off.svg"], "Lucide Icons")
-        self.assertEqual(icons["code.svg"], "ChoscorDB")
+        self.assertEqual(icons["code.svg"], "Lucide Icons")
         self.assertEqual(icons["app-mark.svg"], "ChoscorDB")
         self.assertEqual(icons["postgresql.svg"], "ChoscorDB")
         self.assertEqual(icons["sqlite.svg"], "ChoscorDB")
-        self.assertEqual(icons["mysql.png"], "ChoscorDB")
+        self.assertEqual(icons["mysql.svg"], "devicon")
         self.assertEqual(icons["mariadb.svg"], "ChoscorDB")
         unknown = self.stage / "choscordb.app/Contents/Resources/icons/mystery.svg"
         unknown.write_bytes(b"unreviewed")
         self.refresh_manifest()
         with self.assertRaisesRegex(ValueError, "icon"):
             self.generate("unknown-icon")
+        unknown.unlink()
+        raster = self.stage / "choscordb.app/Contents/Resources/icons/mysql.png"
+        raster.write_bytes(b"raster")
+        self.refresh_manifest()
+        with self.assertRaisesRegex(ValueError, "icon inventory"):
+            self.generate("raster-icon")
 
     def test_deterministic_spdx_ownership_licenses_and_checksums(self):
         first, second = self.generate(), self.generate("second")
@@ -476,13 +484,19 @@ class NoticesTest(unittest.TestCase):
                 "QScintilla",
                 "Lucide Icons",
                 "Geist",
+                "devicon",
                 "dependency",
             },
         )
         lucide = next(p for p in document["packages"] if p["name"] == "Lucide Icons")
-        self.assertEqual(lucide["versionInfo"], "1.27.0")
+        self.assertEqual(lucide["versionInfo"], "1.61.0")
         self.assertEqual(lucide["licenseDeclared"], "ISC AND MIT")
-        self.assertIn("4aec3f892fd6c23063bc2fead83c899b5d412b1c", lucide["sourceInfo"])
+        self.assertIn("c29c276f16590cf017126671535ad8c792be64d8", lucide["sourceInfo"])
+        devicon = next(p for p in document["packages"] if p["name"] == "devicon")
+        self.assertEqual(devicon["licenseDeclared"], "MIT")
+        self.assertEqual(
+            devicon["versionInfo"], "ff435a0fff0391aefbf70d63a3fe7cfe64f82df0"
+        )
         self.cargo["packages"][0]["name"] = "different-root"
         self.metadata.write_text(json.dumps(self.cargo))
         with self.assertRaisesRegex(ValueError, "root"):

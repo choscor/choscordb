@@ -25,10 +25,6 @@ int backdropBlurRadius() {
     return 3;
 }
 
-double iconStrokeWidth() {
-    return 1.6;
-}
-
 int spacing(Spacing value) {
     switch (value) {
     case Spacing::Half:

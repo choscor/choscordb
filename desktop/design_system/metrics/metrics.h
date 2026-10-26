@@ -62,7 +62,6 @@ struct MotionSpec final {
     QString easing;
 };
 
-[[nodiscard]] double iconStrokeWidth();
 [[nodiscard]] int backdropBlurRadius();
 [[nodiscard]] int spacing(Spacing value);
 [[nodiscard]] int dimension(Dimension value);

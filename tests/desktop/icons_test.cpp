@@ -3,10 +3,36 @@
 
 #include <QCryptographicHash>
 #include <QFile>
+#include <QFileInfo>
 #include <QPainter>
 #include <QSvgRenderer>
 #include <QtTest>
 #include <algorithm>
+
+namespace {
+// Element markup copied from the upstream Lucide 1.61.0 files, independent of the assets.
+QByteArray lucideSvg(const QColor& color, const QByteArray& elements) {
+    return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" "
+           "stroke=\"" +
+           color.name().toUtf8() +
+           "\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">" + elements +
+           "</svg>";
+}
+
+QImage renderReference(const QByteArray& svg) {
+    QPixmap expected(48, 48);
+    expected.setDevicePixelRatio(2);
+    expected.fill(Qt::transparent);
+    QSvgRenderer reference(svg);
+    QPainter painter(&expected);
+    reference.render(&painter, QRectF(0, 0, 24, 24));
+    painter.end();
+    return expected.toImage();
+}
+
+const QByteArray playElements = "<path d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 "
+                                ".003 3.458l-12 7A2 2 0 0 1 5 19z\"/>";
+} // namespace
 
 class IconsTest final : public QObject {
     Q_OBJECT
@@ -38,111 +64,74 @@ class IconsTest final : public QObject {
         QPainter vectorPainter(&expected);
         vectorPainter.scale(painterScale, painterScale);
         // Reference path, directly rasterized at the final device transform.
-        QSvgRenderer reference(
-            QByteArrayLiteral("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" "
-                              "fill=\"none\" stroke=\"#000000\" stroke-width=\"1.6\" "
-                              "stroke-linecap=\"round\" stroke-linejoin=\"round\">"
-                              "<path d=\"m7 4 14 8-14 8z\"/></svg>"));
+        QSvgRenderer reference(lucideSvg(Qt::black, playElements));
         reference.render(&vectorPainter, QRectF(0, 0, 24, 24));
         vectorPainter.end();
         QCOMPARE(actual, expected);
     }
-    void referenceGlyphSilhouettesMatchAuthority() {
+    void lucideGlyphsMatchUpstreamInBothThemes() {
         using namespace choscordb::design;
-        // Literal paths from docs/mvp-design/prototype.js, independent of assets.
         const QList<std::pair<Icon, QByteArray>> specimens{
-            {Icon::Run, "m7 4 14 8-14 8z"},
-            {Icon::Database,
-             "M4 6c0-4 16-4 16 0s-16 4-16 0m0 0v12c0 4 16 4 16 0V6M4 12c0 4 16 4 16 0"},
-            {Icon::Export, "M12 3v12m-4-4 4 4 4-4M4 15v6h16v-6"}};
-        for (const auto& [role, path] : specimens) {
-            QPixmap expected(48, 48);
-            expected.setDevicePixelRatio(2);
-            expected.fill(Qt::transparent);
-            QSvgRenderer renderer("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" "
-                                  "fill=\"none\" stroke=\"#000000\" stroke-width=\"1.6\" "
-                                  "stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"" +
-                                  path + "\"/></svg>");
-            QPainter painter(&expected);
-            renderer.render(&painter, QRectF(0, 0, 24, 24));
-            painter.end();
-            QCOMPARE(themedIcon(role, Qt::black, 24).pixmap(QSize(24, 24), 2.0).toImage(),
-                     expected.toImage());
-        }
-    }
-    void explorerGlyphsRenderTheReferenceShapes() {
-        using namespace choscordb::design;
-        // Independent path literals from the approved prototype.js icon map.
-        const QList<std::pair<QString, QByteArray>> specimens{
-            {"code", "m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"},
-            {"table", "M3 4h18v16H3zM3 9h18M9 9v11"},
-            {"folder", "M3 6h7l2 3h9v11H3z"},
-            {"file", "M5 3h9l5 5v13H5zM14 3v6h5"},
-            {"key", "M8 3a5 5 0 1 0 0 10A5 5 0 0 0 8 3m4 9 9 9m-5-5 3-3"}};
-        const auto catalog = iconCatalog();
-        for (const auto& [name, path] : specimens) {
-            const auto found =
-                std::find_if(catalog.cbegin(), catalog.cend(),
-                             [&name](const auto& entry) { return entry.name == name; });
-            QVERIFY2(found != catalog.cend(), qPrintable("Missing shared explorer icon: " + name));
+            {Icon::Run, playElements},
+            {Icon::Database, "<ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"/>"
+                             "<path d=\"M3 5V19A9 3 0 0 0 21 19V5\"/>"
+                             "<path d=\"M3 12A9 3 0 0 0 21 12\"/>"},
+            {Icon::Export, "<path d=\"M12 15V3\"/>"
+                           "<path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/>"
+                           "<path d=\"m7 10 5 5 5-5\"/>"},
+            {Icon::Code, "<path d=\"m16 18 6-6-6-6\"/><path d=\"m8 6-6 6 6 6\"/>"},
+            {Icon::Table, "<path d=\"M12 3v18\"/>"
+                          "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/>"
+                          "<path d=\"M3 9h18\"/><path d=\"M3 15h18\"/>"},
+            {Icon::Folder, "<path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9"
+                           "L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\"/>"},
+            {Icon::File, "<path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706"
+                         "l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\"/>"
+                         "<path d=\"M14 2v5a1 1 0 0 0 1 1h5\"/>"},
+            {Icon::Key,
+             "<path d=\"m2 21 9.6-9.6\"/>"
+             "<path d=\"m7.5 15.5 2.3 2.3a1 1 0 0 1 0 1.4l-2.1 2.1a1 1 0 0 1-1.4 0L4 19\"/>"
+             "<circle cx=\"15.5\" cy=\"7.5\" r=\"5.5\"/>"},
+            {Icon::Grid2x2, "<path d=\"M12 3v18\"/><path d=\"M3 12h18\"/>"
+                            "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/>"},
+            {Icon::Commit, "<path d=\"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1"
+                           "-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z\"/>"
+                           "<path d=\"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7\"/>"
+                           "<path d=\"M7 3v4a1 1 0 0 0 1 1h7\"/>"},
+            {Icon::Cancel, "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/>"}};
+        for (const auto& [role, elements] : specimens) {
+            QVERIFY(choscordb::test::iconResourceDecodes(role));
             for (const QColor color : {QColor("#171717"), QColor("#fafafa")}) {
-                QPixmap expected(48, 48);
-                expected.setDevicePixelRatio(2);
-                expected.fill(Qt::transparent);
-                QSvgRenderer reference(
-                    "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" "
-                    "fill=\"none\" stroke=\"" +
-                    color.name().toUtf8() +
-                    "\" stroke-width=\"1.6\" stroke-linecap=\"round\" "
-                    "stroke-linejoin=\"round\"><path d=\"" +
-                    path + "\"/></svg>");
-                QPainter painter(&expected);
-                reference.render(&painter, QRectF(0, 0, 24, 24));
-                painter.end();
-                const auto actual = themedIcon(found->role, color, 24).pixmap(QSize(24, 24), 2.0);
-                QVERIFY2(!actual.isNull(), qPrintable(name));
-                QCOMPARE(actual.toImage(), expected.toImage());
+                const auto actual = themedIcon(role, color, 24).pixmap(QSize(24, 24), 2.0);
+                QVERIFY2(!actual.isNull(), qPrintable(iconResourcePath(role)));
+                QCOMPARE(actual.toImage(), renderReference(lucideSvg(color, elements)));
             }
         }
     }
-    void grid2x2UsesThePinnedLucideShapeInBothThemes() {
+    void rolesUseTheirLucideFiles() {
         using namespace choscordb::design;
-        const auto catalog = iconCatalog();
-        const auto found = std::find_if(catalog.cbegin(), catalog.cend(),
-                                        [](const auto& entry) { return entry.name == "grid-2x2"; });
-        QVERIFY(found != catalog.cend());
-        QCOMPARE(iconResourcePath(found->role), QString(":/icons/grid-2x2.svg"));
-        QVERIFY(choscordb::test::iconResourceDecodes(found->role));
-        for (const QColor color : {QColor("#171717"), QColor("#fafafa")}) {
-            const auto actual =
-                themedIcon(found->role, color, 24).pixmap(QSize(24, 24), 2.0).toImage();
-            QPixmap expected(48, 48);
-            expected.setDevicePixelRatio(2);
-            expected.fill(Qt::transparent);
-            QSvgRenderer reference(
-                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" "
-                "fill=\"none\" stroke=\"" +
-                color.name().toUtf8() +
-                "\" stroke-width=\"1.6\" stroke-linecap=\"round\" "
-                "stroke-linejoin=\"round\"><path d=\"M12 3v18\"/>"
-                "<path d=\"M3 12h18\"/><rect x=\"3\" y=\"3\" width=\"18\" "
-                "height=\"18\" rx=\"2\"/></svg>");
-            QPainter painter(&expected);
-            reference.render(&painter, QRectF(0, 0, 24, 24));
-            painter.end();
-            QCOMPARE(actual, expected.toImage());
+        QCOMPARE(iconResourcePath(Icon::Commit), QString(":/icons/save.svg"));
+        QCOMPARE(iconResourcePath(Icon::Rollback), QString(":/icons/undo-2.svg"));
+        QCOMPARE(iconResourcePath(Icon::Settings), QString(":/icons/sliders-horizontal.svg"));
+        QCOMPARE(iconResourcePath(Icon::Cancel), QString(":/icons/square.svg"));
+        QCOMPARE(iconResourcePath(Icon::Square), QString(":/icons/square.svg"));
+        QCOMPARE(iconResourcePath(Icon::Run), QString(":/icons/play.svg"));
+        for (const auto& definition : iconCatalog()) {
+            const auto stem = QFileInfo(iconResourcePath(definition.role)).completeBaseName();
+            QCOMPARE(definition.name, stem);
+            QCOMPARE(QFileInfo(definition.source).completeBaseName(), stem);
         }
     }
-    void strokeCoverageMatchesMvpAtRetinaScale() {
+    void strokeCoverageMatchesLucideAtRetinaScale() {
         using namespace choscordb::design;
         const auto image =
             themedIcon(Icon::Add, Qt::black, 24).pixmap(QSize(24, 24), 2.0).toImage();
-        // The reference plus has a 1.6px stroke. Away from its intersection
-        // and round end caps, the two-times render covers 3.2 physical pixels.
+        // Lucide draws a 2px stroke. Away from the plus intersection and round
+        // end caps, the two-times render covers 4 physical pixels.
         double coverage = 0;
         for (int y = 0; y < image.height(); ++y)
             coverage += image.pixelColor(16, y).alphaF();
-        QVERIFY2(qAbs(coverage - 3.2) < 0.1, qPrintable(QString::number(coverage)));
+        QVERIFY2(qAbs(coverage - 4.0) < 0.1, qPrintable(QString::number(coverage)));
     }
     void semanticAssetsRenderTheRequestedColorAndScale() {
         using namespace choscordb::design;
@@ -176,17 +165,29 @@ class IconsTest final : public QObject {
         }
     }
 
-    void databaseLogosKeepDistinctBrandColorsAcrossThemes() {
+    void brandLogosKeepTheirColorsAndSquareViewBoxesAcrossThemes() {
         using namespace choscordb::design;
-        QList<QImage> images;
-        for (const auto role : {Icon::PostgreSQL, Icon::SQLite}) {
+        for (const auto role :
+             {Icon::AppMark, Icon::PostgreSQL, Icon::SQLite, Icon::MySQL, Icon::MariaDB}) {
             QVERIFY(choscordb::test::iconResourceDecodes(role));
             const auto light = themedIcon(role, Qt::black, 32).pixmap(QSize(32, 32), 2.0);
             const auto dark = themedIcon(role, Qt::white, 32).pixmap(QSize(32, 32), 2.0);
             QCOMPARE(light.devicePixelRatio(), 2.0);
             QCOMPARE(light.size(), QSize(64, 64));
             QCOMPARE(light.toImage(), dark.toImage());
-            const auto image = light.toImage();
+            QFile source(iconResourcePath(role));
+            QVERIFY(source.open(QIODevice::ReadOnly));
+            const auto viewBox = QSvgRenderer(source.readAll()).viewBoxF();
+            QVERIFY2(qFuzzyCompare(viewBox.width(), viewBox.height()),
+                     qPrintable(iconResourcePath(role)));
+        }
+    }
+
+    void databaseLogosKeepDistinctBrandColorsAcrossThemes() {
+        using namespace choscordb::design;
+        QList<QImage> images;
+        for (const auto role : {Icon::PostgreSQL, Icon::SQLite}) {
+            const auto image = themedIcon(role, Qt::black, 32).pixmap(QSize(32, 32), 2.0).toImage();
             bool hasBlue = false;
             for (int y = 0; y < image.height(); ++y)
                 for (int x = 0; x < image.width(); ++x) {
@@ -199,36 +200,32 @@ class IconsTest final : public QObject {
         QVERIFY(images.at(0) != images.at(1));
     }
 
-    void mysqlUsesOfficialOfflineArtworkAcrossThemes() {
+    void mysqlUsesTheDeviconDolphinSvg() {
         using namespace choscordb::design;
-        const auto catalog = iconCatalog();
-        const auto found = std::find_if(catalog.cbegin(), catalog.cend(),
-                                        [](const auto& entry) { return entry.name == "mysql"; });
-        QVERIFY(found != catalog.cend());
-        QVERIFY(choscordb::test::iconResourceDecodes(found->role));
-        QCOMPARE(iconResourcePath(found->role), QString(":/icons/mysql.png"));
-        const auto light = themedIcon(found->role, Qt::black, 32).pixmap(QSize(32, 32), 2.0);
-        const auto dark = themedIcon(found->role, Qt::white, 32).pixmap(QSize(32, 32), 2.0);
-        QVERIFY(!light.isNull());
-        QCOMPARE(light.toImage(), dark.toImage());
-        // The compact engine icon uses the dolphin mark without the wordmark.
-        int opaquePixels = 0;
-        for (int y = 0; y < light.height(); ++y)
-            for (int x = 0; x < light.width(); ++x) {
-                const auto pixel = light.toImage().pixelColor(x, y);
-                if (pixel.alpha() <= 128)
+        QCOMPARE(driverIcon("mysql"), Icon::MySQL);
+        QCOMPARE(iconResourcePath(Icon::MySQL), QString(":/icons/mysql.svg"));
+        const auto image =
+            themedIcon(Icon::MySQL, Qt::white, 32).pixmap(QSize(32, 32), 2.0).toImage();
+        int dolphinBlue = 0;
+        for (int y = 0; y < image.height(); ++y)
+            for (int x = 0; x < image.width(); ++x) {
+                const auto pixel = image.pixelColor(x, y);
+                if (pixel.alpha() <= 200)
                     continue;
-                ++opaquePixels;
+                // The devicon dolphin is a single #00618A fill.
+                dolphinBlue += qAbs(pixel.red() - 0x00) < 12 && qAbs(pixel.green() - 0x61) < 12 &&
+                               qAbs(pixel.blue() - 0x8a) < 12;
                 QVERIFY2(!(pixel.red() > pixel.blue() + 50 && pixel.red() > pixel.green() + 25),
                          "MySQL wordmark orange must not appear in the icon");
             }
-        QVERIFY(opaquePixels > 20);
-        QFile artwork(iconResourcePath(found->role));
+        QVERIFY2(dolphinBlue > 20, qPrintable(QString::number(dolphinBlue)));
+        QFile artwork(iconResourcePath(Icon::MySQL));
         QVERIFY(artwork.open(QIODevice::ReadOnly));
-        // Pin the unmodified artwork downloaded from mysql.com's logo download page.
+        // Pin the unmodified devicon v2.18.0 icons/mysql/mysql-original.svg.
         QCOMPARE(QCryptographicHash::hash(artwork.readAll(), QCryptographicHash::Sha256).toHex(),
-                 QByteArray("2d59bc428916752528280eac03330d712164163e2f3c476409f5c25d8a7c2778"));
+                 QByteArray("f73fa5d6b9da33fbf540ff96f5360c24b6d29d883ecfe6fcaecf89a8d3456067"));
     }
+
     void mariadbUsesTheBrownSealAcrossThemes() {
         using namespace choscordb::design;
         QCOMPARE(driverIcon("mariadb"), Icon::MariaDB);
@@ -293,9 +290,10 @@ class IconsTest final : public QObject {
         QVERIFY(names.contains("database"));
         QVERIFY(names.contains("mysql"));
         QVERIFY(names.contains("copy"));
-        QVERIFY(names.contains("cancel"));
+        QVERIFY(names.contains("save"));
         QVERIFY(names.contains("square"));
-        QCOMPARE(names.removeDuplicates(), 0);
+        // Cancel and Square share the Lucide square file and so its name.
+        QCOMPARE(names.removeDuplicates(), 1);
     }
 
     void driversMapToTheirLogos() {

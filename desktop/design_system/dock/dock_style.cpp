@@ -24,8 +24,9 @@ void styleDockWidget(QDockWidget& dock, const ResolvedTheme& theme) {
         button->setObjectName(name);
         button->setProperty("iconOnly", true);
         button->setToolTip(tooltip);
-        button->setIcon(themedIcon(icon, theme.colors.fg, 14));
-        button->setIconSize(QSize(14, 14));
+        const auto iconSize = dimension(Dimension::IconSmall);
+        button->setIcon(themedIcon(icon, theme.colors.fg, iconSize));
+        button->setIconSize(QSize(iconSize, iconSize));
         button->setFixedSize(30, 30);
         row->addWidget(button);
         return button;

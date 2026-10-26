@@ -189,23 +189,30 @@ class IconDisplay final : public QLabel {
 void populateIcons(QWidget* host, QVBoxLayout* layout) {
     auto* grid = new QGridLayout;
     int row = 0;
+    QStringList shown;
     for (const auto& entry : iconCatalog()) {
+        // Roles that share one Lucide file share its name; show the file once.
+        if (shown.contains(entry.name))
+            continue;
+        shown.append(entry.name);
         auto* name = new QLabel(entry.name, host);
         name->setTextInteractionFlags(Qt::TextSelectableByMouse);
         name->setToolTip(entry.source);
         grid->addWidget(name, row, 0);
         int column = 1;
-        for (int size : {12, 14, 16, 20, 24}) {
+        for (int size : {dimension(Dimension::IconSmall), dimension(Dimension::Icon)}) {
             auto* icon = new IconDisplay(entry.role, size, false, host);
             icon->setObjectName(QString("icon-%1-%2").arg(entry.name).arg(size));
             icon->setAccessibleName(QString("%1 · %2 pixels").arg(entry.name).arg(size));
             grid->addWidget(icon, row, column++);
         }
-        auto* disabled = new IconDisplay(entry.role, 16, true, host);
+        auto* disabled = new IconDisplay(entry.role, dimension(Dimension::Icon), true, host);
         grid->addWidget(disabled, row++, column);
     }
-    layout->addWidget(
-        new QLabel("Semantic name · 12 / 14 / 16 / 20 / 24 logical pixels · disabled", host));
+    layout->addWidget(new QLabel(QString("Lucide name · %1 / %2 logical pixels · disabled")
+                                     .arg(dimension(Dimension::IconSmall))
+                                     .arg(dimension(Dimension::Icon)),
+                                 host));
     layout->addLayout(grid);
     layout->addStretch();
 }
@@ -394,7 +401,8 @@ void populateMenu(QWidget* host, QVBoxLayout* layout) {
         host, &QWidget::customContextMenuRequested, menu,
         [host, menu](const QPoint& point) { popupContextMenu(*menu, host->mapToGlobal(point)); });
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(menu));
-    menu->addAction(themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.fg, 16),
+    menu->addAction(themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.fg,
+                               dimension(Dimension::Icon)),
                     "Primary action")
         ->setShortcut(QKeySequence("Ctrl+Return"));
     auto* toggle = menu->addAction("Wrap text");
@@ -442,14 +450,16 @@ void populateFields(QWidget* host, QVBoxLayout* layout) {
             field->setText("synthetic-password");
             const auto iconColor = resolvedThemeForWidget(*host).colors.fg;
             auto* toggle =
-                field->addAction(themedIcon(Icon::Eye, iconColor, 16), QLineEdit::TrailingPosition);
+                field->addAction(themedIcon(Icon::Eye, iconColor, dimension(Dimension::Icon)),
+                                 QLineEdit::TrailingPosition);
             toggle->setObjectName("field-password-toggle");
             toggle->setText("Show password");
             static_cast<PasswordLineEdit*>(field)->centerTrailingAction();
             QObject::connect(toggle, &QAction::triggered, field, [field, toggle, iconColor] {
                 const bool show = field->echoMode() == QLineEdit::Password;
                 field->setEchoMode(show ? QLineEdit::Normal : QLineEdit::Password);
-                toggle->setIcon(themedIcon(show ? Icon::EyeOff : Icon::Eye, iconColor, 16));
+                toggle->setIcon(themedIcon(show ? Icon::EyeOff : Icon::Eye, iconColor,
+                                           dimension(Dimension::Icon)));
                 toggle->setText(show ? "Hide password" : "Show password");
             });
         }

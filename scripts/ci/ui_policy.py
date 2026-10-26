@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""Reject local desktop visual constants/stylesheets and missing icon resources.
+"""Reject local desktop visual constants/stylesheets and drifted icon resources.
 
 Rules added after the design-system consistency audit accept a reviewed
-``// ui-ok: <reason>`` marker on the line or the line above.
+``// ui-ok: <reason>`` marker on the line or the line above. Icon assets and
+icon sizes have no marker: every icon is an upstream Lucide file or a recorded
+brand logo, and renders at an icon-size token.
 """
 
+import hashlib
+import json
 from pathlib import Path
 import re
 import sys
+import xml.etree.ElementTree as ElementTree
 
 ROOT = Path(__file__).resolve().parents[2]
 CPP_SUFFIXES = {".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".mm"}
@@ -21,7 +26,7 @@ METRIC = re.compile(
 FEATURE_INCLUDE = re.compile(
     r'^\s*#\s*include\s*[<"](?:\.\./)*(?:app|widgets|bridge|models|tools)/'
 )
-REQUIRED_ICONS = {"app-mark.svg", "play.svg", "square.svg", "plus.svg"}
+REQUIRED_ICONS = {"app-mark.svg", "mysql.svg", "play.svg", "square.svg", "plus.svg"}
 MARKER = re.compile(r"//\s*ui-ok:\s*\S")
 LITERAL = re.compile(r"^\s*[1-9][0-9]*\s*$")
 # Calls whose listed argument positions are presentation metrics.
@@ -36,10 +41,12 @@ METRIC_ARGUMENTS = {
     "setMinimumSectionSize": (0,),
     "setColumnWidth": (1,),
     "resizeSection": (1,),
-    "themedIcon": (2,),
-    "pixmap": (0, 1),
 }
 CALL = re.compile(r"\b(" + "|".join(METRIC_ARGUMENTS) + r")\s*\(")
+# Calls whose listed argument positions are icon sizes; QSize arguments are unpacked.
+ICON_SIZE_ARGUMENTS = {"themedIcon": (2,), "setIconSize": (0,), "pixmap": (0, 1)}
+ICON_SIZE_CALL = re.compile(r"\b(themedIcon|setIconSize|pixmap)\s*\(")
+QSIZE = re.compile(r"^\s*QSize\s*\(")
 RGB_COLOR = re.compile(
     r"\bQColor\s*\(\s*[0-9]|\bQt::(?:red|green|blue|black|white|gray|"
     r"darkGray|lightGray|yellow|cyan|magenta|darkRed|darkGreen|darkBlue)\b"
@@ -119,10 +126,10 @@ def audit_rules(path, root, text, known):
             continue
         for match in CALL.finditer(stripped):
             name = match.group(1)
-            if name == "pixmap" and not re.search(
-                r"(?:\.|->)\s*pixmap\s*\($", stripped[: match.end()]
+            if name == "QSize" and re.search(
+                r"setIconSize\s*\(\s*$", stripped[: match.start()]
             ):
-                continue
+                continue  # Reported by the icon-size rule.
             args = arguments(stripped, match.end() - 1)
             positions = METRIC_ARGUMENTS[name] or range(len(args))
             if any(i < len(args) and LITERAL.match(args[i]) for i in positions):
@@ -161,16 +168,110 @@ def audit_rules(path, root, text, known):
     return problems
 
 
+def icon_size_rules(path, root, text):
+    """Icons render only at Dimension::IconSmall or Dimension::Icon."""
+    problems = []
+    # Calls often wrap, so read arguments across lines with comments removed.
+    code = "\n".join(line.split("//", 1)[0] for line in text.splitlines())
+    for match in ICON_SIZE_CALL.finditer(code):
+        name = match.group(1)
+        if name == "pixmap" and not re.search(
+            r"(?:\.|->)\s*pixmap\s*\($", code[: match.end()]
+        ):
+            continue
+        args = arguments(code, match.end() - 1)
+        sizes = []
+        for position in ICON_SIZE_ARGUMENTS[name]:
+            if position < len(args):
+                argument = args[position]
+                if QSIZE.match(argument):
+                    sizes += arguments(argument, argument.index("("))
+                else:
+                    sizes.append(argument)
+        if any(LITERAL.match(size) for size in sizes):
+            line = code.count("\n", 0, match.start()) + 1
+            problems.append(
+                f"{path.relative_to(root)}:{line}: literal icon size in "
+                f"{name}() (use Dimension::IconSmall or Dimension::Icon)"
+            )
+    return problems
+
+
+def svg_root(path):
+    try:
+        return ElementTree.parse(path).getroot()
+    except ElementTree.ParseError:
+        return None
+
+
+def icon_asset_rules(root, manifest):
+    """Icons are recorded upstream Lucide files or square, unsized brand SVGs."""
+    problems = []
+    icon_dir = root / "desktop/resources/icons"
+    relative = "desktop/resources/icons/"
+    try:
+        lucide = json.loads(
+            (icon_dir / "SOURCE-LUCIDE.json").read_text(encoding="utf-8")
+        )
+        logos = json.loads(
+            (icon_dir / "SOURCE-DATABASE-LOGOS.json").read_text(encoding="utf-8")
+        )
+        brands = {
+            name: record["sha256"]
+            for name, record in {
+                **lucide.get("adaptations", {}),
+                **logos["icons"],
+            }.items()
+        }
+        records = {**lucide["icons"], **brands}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return [f"{relative}SOURCE-*.json: missing or invalid icon provenance"]
+    for path in sorted(icon_dir.iterdir()):
+        name = path.name
+        if name.startswith("LICENSE-") or (
+            name.startswith("SOURCE-") and name.endswith(".json")
+        ):
+            continue
+        if path.suffix != ".svg":
+            problems.append(f"{relative}{name}: icon assets must be SVG")
+            continue
+        if name not in records:
+            problems.append(f"{relative}{name}: not recorded in SOURCE-LUCIDE.json")
+            continue
+        if hashlib.sha256(path.read_bytes()).hexdigest() != records[name]:
+            source = "SOURCE-LUCIDE.json" if name in lucide["icons"] else "provenance"
+            problems.append(f"{relative}{name}: differs from its {source} record")
+        if name in brands:
+            svg = svg_root(path)
+            box = (svg.get("viewBox", "") if svg is not None else "").split()
+            if len(box) != 4 or box[2] != box[3]:
+                problems.append(f"{relative}{name}: brand logo needs a square viewBox")
+            if svg is not None and ("width" in svg.attrib or "height" in svg.attrib):
+                problems.append(
+                    f"{relative}{name}: brand logo must not set width or height"
+                )
+    listed = set(re.findall(r">\s*icons/([^<\s]+)\s*<", manifest))
+    for name in sorted(listed - set(records)):
+        problems.append(f"{relative}{name}: qrc icon has no provenance record")
+    for name in sorted(records):
+        if not (icon_dir / name).is_file():
+            problems.append(f"{relative}{name}: provenance record has no file")
+    return problems
+
+
 def violations(root=ROOT):
     problems = []
     desktop = root / "desktop"
     allowed = desktop / "design_system"
     preview = desktop / "tools/preview"
+    metrics = allowed / "metrics"
     known = styled_values(allowed) if allowed.is_dir() else {}
     for path in sorted(desktop.rglob("*")):
         if path.suffix not in CPP_SUFFIXES:
             continue
         text = path.read_text(encoding="utf-8")
+        if metrics not in path.parents:
+            problems.extend(icon_size_rules(path, root, text))
         if allowed not in path.parents and preview not in path.parents:
             problems.extend(audit_rules(path, root, text, known))
         for line_number, line in enumerate(text.splitlines(), 1):
@@ -210,6 +311,8 @@ def violations(root=ROOT):
         problems.append(
             "desktop/resources/icons/SOURCE-LUCIDE.json: missing provenance"
         )
+        return problems
+    problems.extend(icon_asset_rules(root, manifest))
     return problems
 
 

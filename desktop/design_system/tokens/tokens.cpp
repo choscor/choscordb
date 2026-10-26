@@ -55,7 +55,6 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     pixels(QStringLiteral("size.sheet.width"), dimension(Dimension::SheetWidth));
     pixels(QStringLiteral("size.completion.width"), dimension(Dimension::CompletionPopupWidth));
     pixels(QStringLiteral("size.table.column"), dimension(Dimension::TableColumn));
-    add(QStringLiteral("icon.stroke"), QString::number(iconStrokeWidth()) + "px");
 
     pixels(QStringLiteral("border.width"), focusSpec().borderWidth);
     pixels(QStringLiteral("focus.width"), focusSpec().ringWidth);

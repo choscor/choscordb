@@ -539,7 +539,7 @@ MainWindow::Ui MainWindow::buildUi() {
         toolbar->setIconSize(QSize(design::dimension(design::Dimension::Icon),
                                    design::dimension(design::Dimension::Icon)));
         setWindowIcon(design::themedIcon(design::Icon::AppMark, resolved.colors.primary,
-                                         design::dimension(design::Dimension::Control)));
+                                         design::dimension(design::Dimension::Icon)));
         run->setIcon(design::themedIcon(design::Icon::Run, resolved.colors.fg,
                                         design::dimension(design::Dimension::Icon)));
         cancel->setIcon(design::themedIcon(design::Icon::Cancel, resolved.colors.fg,
@@ -847,7 +847,7 @@ MainWindow::Ui MainWindow::buildUi() {
     startIcon->setObjectName("startDatabaseIcon");
     startIcon->setAlignment(Qt::AlignCenter);
     const auto colorStartIcon = [this, startIcon] {
-        const int size = design::dimension(design::Dimension::Control);
+        const int size = design::dimension(design::Dimension::Icon);
         startIcon->setPixmap(
             design::themedIcon(design::Icon::Database, theme_->resolvedTheme().colors.fgMuted, size)
                 .pixmap(size, size));

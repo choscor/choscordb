@@ -1,10 +1,22 @@
 """Tests for the desktop design-system source and resource boundary."""
 
+import hashlib
+import json
 from pathlib import Path
 import tempfile
 import unittest
 
 import ui_policy
+
+LUCIDE = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+    'viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>'
+)
+BRAND = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path d="M0 0h1"/></svg>'
+
+
+def sha256(text):
+    return hashlib.sha256(text.encode()).hexdigest()
 
 
 class UiPolicyTest(unittest.TestCase):
@@ -15,13 +27,148 @@ class UiPolicyTest(unittest.TestCase):
         (root / "desktop/design_system").mkdir(parents=True)
         icons = root / "desktop/resources/icons"
         icons.mkdir(parents=True)
-        for name in (*ui_policy.REQUIRED_ICONS, "LICENSE-LUCIDE", "SOURCE-LUCIDE.json"):
-            (icons / name).write_text("asset", encoding="utf-8")
-        (root / "desktop/resources/resources.qrc").write_text(
-            " ".join(ui_policy.REQUIRED_ICONS), encoding="utf-8"
+        brands = {"app-mark.svg", "mysql.svg"}
+        lucide = {}
+        for name in ui_policy.REQUIRED_ICONS:
+            text = BRAND if name in brands else LUCIDE.replace("M5", "M" + name[:1])
+            (icons / name).write_text(text, encoding="utf-8")
+            if name not in brands:
+                lucide[name] = sha256(text)
+        (icons / "LICENSE-LUCIDE").write_text("license", encoding="utf-8")
+        (icons / "SOURCE-LUCIDE.json").write_text(
+            json.dumps(
+                {
+                    "icons": lucide,
+                    "adaptations": {"app-mark.svg": {"sha256": sha256(BRAND)}},
+                }
+            ),
+            encoding="utf-8",
         )
+        (icons / "SOURCE-DATABASE-LOGOS.json").write_text(
+            json.dumps({"icons": {"mysql.svg": {"sha256": sha256(BRAND)}}}),
+            encoding="utf-8",
+        )
+        self.write_qrc(root, sorted(ui_policy.REQUIRED_ICONS))
         (root / "desktop/widgets/sample.cpp").write_text(source, encoding="utf-8")
         return temporary, root
+
+    def write_qrc(self, root, names):
+        (root / "desktop/resources/resources.qrc").write_text(
+            '<RCC><qresource prefix="/icons">'
+            + "".join(f'<file alias="{name}">icons/{name}</file>' for name in names)
+            + "</qresource></RCC>",
+            encoding="utf-8",
+        )
+
+    def test_rejects_changed_lucide_bytes(self):
+        temporary, root = self.fixture("")
+        with temporary:
+            play = root / "desktop/resources/icons/play.svg"
+            play.write_bytes(play.read_bytes() + b" ")
+            found = ui_policy.violations(root)
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("play.svg: differs from its SOURCE-LUCIDE.json record", found[0])
+
+    def test_rejects_unrecorded_icon_and_record_without_file(self):
+        temporary, root = self.fixture("")
+        with temporary:
+            icons = root / "desktop/resources/icons"
+            (icons / "drawn.svg").write_text(LUCIDE, encoding="utf-8")
+            (icons / "plus.svg").unlink()
+            self.write_qrc(root, [*sorted(ui_policy.REQUIRED_ICONS), "drawn.svg"])
+            found = ui_policy.violations(root)
+        self.assertIn(
+            "desktop/resources/icons/drawn.svg: not recorded in SOURCE-LUCIDE.json",
+            found,
+        )
+        self.assertIn(
+            "desktop/resources/icons/plus.svg: provenance record has no file", found
+        )
+        self.assertIn("desktop/resources/icons/plus.svg: missing required icon", found)
+
+    def test_reports_provenance_without_required_fields(self):
+        temporary, root = self.fixture("")
+        with temporary:
+            (root / "desktop/resources/icons/SOURCE-DATABASE-LOGOS.json").write_text(
+                '{"icons": {"mysql.svg": {}}}', encoding="utf-8"
+            )
+            found = ui_policy.violations(root)
+        self.assertEqual(
+            found,
+            [
+                "desktop/resources/icons/SOURCE-*.json: missing or invalid icon provenance"
+            ],
+        )
+
+    def test_rejects_qrc_icon_without_provenance(self):
+        temporary, root = self.fixture("")
+        with temporary:
+            self.write_qrc(root, [*sorted(ui_policy.REQUIRED_ICONS), "ghost.svg"])
+            found = ui_policy.violations(root)
+        self.assertEqual(
+            found,
+            ["desktop/resources/icons/ghost.svg: qrc icon has no provenance record"],
+        )
+
+    def test_rejects_raster_icons(self):
+        temporary, root = self.fixture("")
+        with temporary:
+            (root / "desktop/resources/icons/mysql.png").write_bytes(b"raster")
+            found = ui_policy.violations(root)
+        self.assertEqual(
+            found, ["desktop/resources/icons/mysql.png: icon assets must be SVG"]
+        )
+
+    def test_rejects_non_square_or_sized_brand_logos(self):
+        temporary, root = self.fixture("")
+        with temporary:
+            icons = root / "desktop/resources/icons"
+            logos = json.loads((icons / "SOURCE-DATABASE-LOGOS.json").read_text())
+            for name, text in [
+                ("wide.svg", BRAND.replace("0 0 128 128", "0 0 432 445")),
+                ("sized.svg", BRAND.replace("<svg ", '<svg width="128" height="128" ')),
+            ]:
+                (icons / name).write_text(text, encoding="utf-8")
+                logos["icons"][name] = {"sha256": sha256(text)}
+            (icons / "SOURCE-DATABASE-LOGOS.json").write_text(json.dumps(logos))
+            self.write_qrc(
+                root, [*sorted(ui_policy.REQUIRED_ICONS), "wide.svg", "sized.svg"]
+            )
+            found = ui_policy.violations(root)
+        self.assertEqual(
+            sorted(found),
+            [
+                "desktop/resources/icons/sized.svg: brand logo must not set width or height",
+                "desktop/resources/icons/wide.svg: brand logo needs a square viewBox",
+            ],
+        )
+
+    def test_rejects_literal_icon_sizes_in_the_design_system(self):
+        temporary, root = self.fixture("")
+        with temporary:
+            design = root / "desktop/design_system"
+            (design / "dock.cpp").write_text(
+                "button->setIconSize(QSize(14, 14));\n"
+                "auto icon = themedIcon(role, color, 24);\n"
+                "label->setPixmap(icon.pixmap(QSize(24, 24), scale));\n"
+                "label->setPixmap(icon->pixmap(16));\n"
+                "button->setIconSize(QSize(size, size));\n"
+                "item->setIcon(themedIcon(driverIcon(driver),\n"
+                "                         colors.fgMuted, 16));\n"
+                "auto token = themedIcon(role, color, dimension(Dimension::Icon));\n",
+                encoding="utf-8",
+            )
+            (design / "metrics").mkdir()
+            (design / "metrics/metrics.cpp").write_text(
+                "auto icon = themedIcon(role, color, 16);\n", encoding="utf-8"
+            )
+            found = ui_policy.violations(root)
+        self.assertEqual(len(found), 5, found)
+        self.assertIn(
+            "design_system/dock.cpp:6: literal icon size in themedIcon()", found[4]
+        )
+        self.assertTrue(all("literal icon size" in item for item in found))
+        self.assertTrue(all("design_system/dock.cpp" in item for item in found))
 
     def test_rejects_screen_owned_color_and_stylesheet(self):
         temporary, root = self.fixture(
@@ -93,7 +240,10 @@ class UiPolicyTest(unittest.TestCase):
         with temporary:
             found = ui_policy.violations(root)
         self.assertEqual(len(found), 6, found)
-        self.assertTrue(all("literal presentation metric" in item for item in found))
+        self.assertEqual(sum("literal icon size" in item for item in found), 3, found)
+        self.assertEqual(
+            sum("literal presentation metric" in item for item in found), 3, found
+        )
 
     def test_rejects_rgb_colors_menus_standard_icons_and_stock_buttons(self):
         temporary, root = self.fixture(

@@ -3,7 +3,6 @@
 #include "design_system/icons.h"
 
 #include <QFile>
-#include <QPixmap>
 #include <QSvgRenderer>
 #include <QXmlStreamReader>
 
@@ -16,8 +15,6 @@ namespace choscordb::test {
 inline bool iconResourceDecodes(design::Icon icon) {
     ::qInitResources_resources();
     const auto path = design::iconResourcePath(icon);
-    if (icon == design::Icon::MySQL)
-        return !QPixmap(path).isNull();
     QFile source(path);
     if (!source.open(QIODevice::ReadOnly))
         return false;

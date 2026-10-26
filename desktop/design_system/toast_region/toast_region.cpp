@@ -43,7 +43,8 @@ ToastRegion::ToastRegion(QWidget* parent)
     dismiss_->setAccessibleName(tr("Dismiss notification"));
     dismiss_->setToolTip(tr("Dismiss notification"));
     dismiss_->installEventFilter(this);
-    dismiss_->setIconSize(QSize(14, 14));
+    dismiss_->setIconSize(QSize(design::dimension(design::Dimension::IconSmall),
+                                design::dimension(design::Dimension::IconSmall)));
     dismiss_->setFixedSize(24, 24);
     connect(dismiss_, &QToolButton::clicked, this, &ToastRegion::dismissNotice);
     details_ = new QToolButton(this);
@@ -370,8 +371,8 @@ void ToastRegion::display(const QString& text) {
     timer_->stop();
     fade_->stop();
     dismissing_ = false;
-    dismiss_->setIcon(
-        design::themedIcon(design::Icon::Close, palette().color(QPalette::WindowText), 14));
+    dismiss_->setIcon(design::themedIcon(design::Icon::Close, palette().color(QPalette::WindowText),
+                                         design::dimension(design::Dimension::IconSmall)));
     setText(text);
     setVisible(!text.isEmpty());
     if (!text.isEmpty())

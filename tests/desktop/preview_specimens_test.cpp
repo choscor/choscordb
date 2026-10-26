@@ -110,7 +110,7 @@ void PreviewTest::workspaceToolbarSpecimenUsesSurfaceInBothThemes() {
 void PreviewTest::displayedIconsRasterizeAtTargetScale_data() {
     QTest::addColumn<int>("size");
     QTest::addColumn<qreal>("scale");
-    for (const int size : {12, 14, 16, 20, 24}) {
+    for (const int size : {12, 16}) {
         for (const qreal scale : {qreal(1), qreal(1.5), qreal(2)})
             QTest::newRow(qPrintable(QString("%1px-%2x").arg(size).arg(scale))) << size << scale;
     }
@@ -139,13 +139,14 @@ void PreviewTest::displayedIconsRasterizeAtTargetScale() {
     expected.setDevicePixelRatio(scale);
     expected.fill(Qt::transparent);
     QPainter vectorPainter(&expected);
-    // Real gallery display versus the independent literal MVP database path.
+    // Real gallery display versus the independent literal Lucide 1.61.0 database shape.
     QSvgRenderer reference(
         QByteArrayLiteral("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" "
-                          "fill=\"none\" stroke=\"#222b32\" stroke-width=\"1.6\" "
-                          "stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\""
-                          "M4 6c0-4 16-4 16 0s-16 4-16 0m0 0v12c0 4 16 4 16 0V6"
-                          "M4 12c0 4 16 4 16 0\"/></svg>"));
+                          "fill=\"none\" stroke=\"#222b32\" stroke-width=\"2\" "
+                          "stroke-linecap=\"round\" stroke-linejoin=\"round\">"
+                          "<ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"/>"
+                          "<path d=\"M3 5V19A9 3 0 0 0 21 19V5\"/>"
+                          "<path d=\"M3 12A9 3 0 0 0 21 12\"/></svg>"));
     reference.render(&vectorPainter, QRectF(0, 0, size, size));
     vectorPainter.end();
     QCOMPARE(actual, expected);
@@ -158,8 +159,9 @@ void PreviewTest::iconsShowNamedProductionAssetsAtSupportedSizes() {
         auto* host = window.findChild<QWidget*>(theme);
         QVERIFY(host);
         for (const auto* name :
-             {"database", "grid-2x2", "cancel", "square", "postgresql", "sqlite"}) {
-            for (int size : {12, 14, 16, 20, 24}) {
+             {"database", "grid-2x2", "square", "save", "postgresql", "sqlite", "mysql"}) {
+            QVERIFY(host->findChildren<QLabel*>(QString("icon-%1-24").arg(name)).isEmpty());
+            for (int size : {12, 16}) {
                 const auto icons =
                     host->findChildren<QLabel*>(QString("icon-%1-%2").arg(name).arg(size));
                 QCOMPARE(icons.size(), 1);

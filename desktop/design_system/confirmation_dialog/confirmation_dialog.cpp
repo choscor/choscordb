@@ -49,7 +49,8 @@ void ConfirmationDialog::refreshIcon() {
         return;
     }
     iconTint_ = color;
-    setIconPixmap(design::themedIcon(role, color, 24).pixmap(QSize(24, 24), scale));
+    const auto size = design::dimension(design::Dimension::Icon);
+    setIconPixmap(design::themedIcon(role, color, size).pixmap(QSize(size, size), scale));
 }
 bool ConfirmationDialog::event(QEvent* event) {
     if (event->type() == QEvent::LayoutRequest && heading_) {

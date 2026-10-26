@@ -1,5 +1,4 @@
 #include "design_system/icons.h"
-#include "design_system/theme.h"
 
 #include <QDebug>
 #include <QHash>
@@ -25,17 +24,12 @@ QByteArray themedSvg(Icon icon, const QColor& color) {
         return {};
     }
     auto svg = source.uncompressedData();
-    // Database logos retain their upstream brand colors in both themes.
-    if (icon == Icon::PostgreSQL || icon == Icon::SQLite || icon == Icon::MariaDB) {
+    // The app mark and database logos retain their brand colors in both themes.
+    if (icon == Icon::AppMark || icon == Icon::PostgreSQL || icon == Icon::SQLite ||
+        icon == Icon::MySQL || icon == Icon::MariaDB) {
         return svg;
     }
-    const auto replacement = color.name(QColor::HexRgb).toUtf8();
-    svg.replace("currentColor", replacement);
-    svg.replace("stroke-width=\"2\"",
-                "stroke-width=\"" + QByteArray::number(iconStrokeWidth()) + "\"");
-    svg.replace("#334155", replacement);
-    svg.replace("#2F7DD3", replacement);
-    return svg;
+    return svg.replace("currentColor", color.name(QColor::HexRgb).toUtf8());
 }
 
 QPixmap renderSvg(const QByteArray& svg, const QSize& logicalSize, qreal scale) {
@@ -121,7 +115,7 @@ QList<IconDefinition> iconCatalog() {
         {Icon::AppMark, QStringLiteral("app-mark"),
          QStringLiteral("desktop/resources/icons/app-mark.svg")},
         {Icon::Run, QStringLiteral("play"), QStringLiteral("desktop/resources/icons/play.svg")},
-        {Icon::Cancel, QStringLiteral("cancel"),
+        {Icon::Cancel, QStringLiteral("square"),
          QStringLiteral("desktop/resources/icons/square.svg")},
         {Icon::Add, QStringLiteral("plus"), QStringLiteral("desktop/resources/icons/plus.svg")},
         {Icon::Refresh, QStringLiteral("refresh-cw"),
@@ -139,7 +133,7 @@ QList<IconDefinition> iconCatalog() {
          QStringLiteral("desktop/resources/icons/search.svg")},
         {Icon::PostgreSQL, QStringLiteral("postgresql"),
          QStringLiteral("desktop/resources/icons/postgresql.svg")},
-        {Icon::MySQL, QStringLiteral("mysql"), QStringLiteral("desktop/resources/icons/mysql.png")},
+        {Icon::MySQL, QStringLiteral("mysql"), QStringLiteral("desktop/resources/icons/mysql.svg")},
         {Icon::MariaDB, QStringLiteral("mariadb"),
          QStringLiteral("desktop/resources/icons/mariadb.svg")},
         {Icon::SQLite, QStringLiteral("sqlite"),
@@ -147,12 +141,11 @@ QList<IconDefinition> iconCatalog() {
         {Icon::Database, QStringLiteral("database"),
          QStringLiteral("desktop/resources/icons/database.svg")},
         {Icon::Check, QStringLiteral("check"), QStringLiteral("desktop/resources/icons/check.svg")},
-        {Icon::Commit, QStringLiteral("commit"),
-         QStringLiteral("desktop/resources/icons/commit.svg")},
-        {Icon::Rollback, QStringLiteral("rollback"),
-         QStringLiteral("desktop/resources/icons/rollback.svg")},
-        {Icon::Settings, QStringLiteral("settings"),
-         QStringLiteral("desktop/resources/icons/settings.svg")},
+        {Icon::Commit, QStringLiteral("save"), QStringLiteral("desktop/resources/icons/save.svg")},
+        {Icon::Rollback, QStringLiteral("undo-2"),
+         QStringLiteral("desktop/resources/icons/undo-2.svg")},
+        {Icon::Settings, QStringLiteral("sliders-horizontal"),
+         QStringLiteral("desktop/resources/icons/sliders-horizontal.svg")},
         {Icon::Warning, QStringLiteral("triangle-alert"),
          QStringLiteral("desktop/resources/icons/triangle-alert.svg")},
         {Icon::Error, QStringLiteral("circle-alert"),
@@ -210,7 +203,7 @@ QString iconResourcePath(Icon icon) {
     case Icon::PostgreSQL:
         return QStringLiteral(":/icons/postgresql.svg");
     case Icon::MySQL:
-        return QStringLiteral(":/icons/mysql.png");
+        return QStringLiteral(":/icons/mysql.svg");
     case Icon::MariaDB:
         return QStringLiteral(":/icons/mariadb.svg");
     case Icon::SQLite:
@@ -220,11 +213,11 @@ QString iconResourcePath(Icon icon) {
     case Icon::Check:
         return QStringLiteral(":/icons/check.svg");
     case Icon::Commit:
-        return QStringLiteral(":/icons/commit.svg");
+        return QStringLiteral(":/icons/save.svg");
     case Icon::Rollback:
-        return QStringLiteral(":/icons/rollback.svg");
+        return QStringLiteral(":/icons/undo-2.svg");
     case Icon::Settings:
-        return QStringLiteral(":/icons/settings.svg");
+        return QStringLiteral(":/icons/sliders-horizontal.svg");
     case Icon::Warning:
         return QStringLiteral(":/icons/triangle-alert.svg");
     case Icon::Error:
@@ -244,22 +237,12 @@ struct IconKey {
     Icon icon;
     QRgb color;
     int size;
-    double strokeWidth;
     bool operator==(const IconKey&) const = default;
 };
 size_t qHash(const IconKey& key, size_t seed = 0) {
-    return qHashMulti(seed, static_cast<int>(key.icon), key.color, key.size, key.strokeWidth);
+    return qHashMulti(seed, static_cast<int>(key.icon), key.color, key.size);
 }
 QIcon createThemedIcon(Icon icon, const QColor& color, int size) {
-    if (icon == Icon::MySQL) {
-        // The upstream raster includes a wordmark beneath the dolphin. Compact
-        // engine badges need the dolphin alone; keep the original asset intact.
-        auto mark = QImage(iconResourcePath(icon)).copy(QRect(101, 0, 74, 72));
-        for (int y = 68; y < mark.height(); ++y)
-            for (int x = 0; x < 49; ++x)
-                mark.setPixelColor(x, y, Qt::transparent);
-        return QIcon(QPixmap::fromImage(mark));
-    }
     auto svg = themedSvg(icon, color);
     if (!renderSvg(svg, QSize(size, size), 1.0).isNull()) {
         return QIcon(new SvgIconEngine(std::move(svg)));
@@ -272,11 +255,10 @@ QIcon createThemedIcon(Icon icon, const QColor& color, int size) {
 QIcon themedIcon(Icon icon, const QColor& color, int size) {
     ::qInitResources_resources();
     // Item delegates request icons per painted row. Parsing and validating the SVG
-    // each time dominates large trees, so reuse icons for identical inputs. The
-    // stroke width is part of the key because metrics can change it at run time.
+    // each time dominates large trees, so reuse icons for identical inputs.
     static QMutex mutex;
     static QHash<IconKey, QIcon> cache;
-    const IconKey key{icon, color.rgba(), size, iconStrokeWidth()};
+    const IconKey key{icon, color.rgba(), size};
     const QMutexLocker locker(&mutex);
     if (const auto found = cache.constFind(key); found != cache.cend())
         return found.value();

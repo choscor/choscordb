@@ -14,13 +14,17 @@ from prepare_qt_notices import SHA256 as QTBASE_SHA256, SVG_SHA256 as QTSVG_SHA2
 
 QT_SOURCE_HASHES = {"qtbase": QTBASE_SHA256, "qtsvg": QTSVG_SHA256}
 LUCIDE_SOURCE_SHA256 = (
-    "cd392716d027919686deaa22b24a8cc6e2877656cd8c614fad02345405a7bfd3"
+    "7640ddbe205da2304d987eaa0478b567e3cd2e0d6f4c39c3251392862f11bf57"
 )
 
 GEIST_SOURCE_SHA256 = "6cd982f83ab1f9c4f1a4746789fdcdb5087a8e235a18dd310c2790e267813eba"
 
 DATABASE_LOGOS_SOURCE_SHA256 = (
-    "2352e20caff999c4500510c1125f2a17108bd72a7536e16e887f8463192a8e88"
+    "c6e1f8bb033b0ae8baaa96e248f16c369ab54489c5ccaaab6d5b97dfb0ddbdb8"
+)
+
+DEVICON_LICENSE_SHA256 = (
+    "121194741d4a915b9f5890fdd6dd95121f9b1f816517c792358d72d7c838d664"
 )
 
 QT_PLUGINS = {
@@ -277,13 +281,8 @@ def generate(
         raise ValueError("Lucide icon license does not match reviewed source")
     lucide_icons = lucide_record["icons"]
     local_icons = {
-        name: record["sha256"]
-        for name, record in lucide_record["referenceAdditions"]["icons"].items()
+        name: record["sha256"] for name, record in lucide_record["adaptations"].items()
     }
-    local_icons.update(
-        (name, record["sha256"])
-        for name, record in lucide_record["localAdditions"]["icons"].items()
-    )
     source_hashes = {entry["path"]: entry["sha256"] for entry in source["files"]}
     for path, expected in [
         ("desktop/resources/icons/SOURCE-LUCIDE.json", LUCIDE_SOURCE_SHA256),
@@ -312,11 +311,7 @@ def generate(
     icon_hashes = {**lucide_icons, **local_icons, **database_icons}
     icon_prefix = app_licenses[0].removesuffix("licenses/LICENSE") + "icons/"
     staged_icons = {icon: icon_prefix + icon for icon in icon_hashes}
-    actual_icon_paths = {
-        name
-        for name in payload
-        if "/Resources/icons/" in name and name.endswith((".svg", ".png"))
-    }
+    actual_icon_paths = {name for name in payload if "/Resources/icons/" in name}
     if actual_icon_paths != set(staged_icons.values()):
         raise ValueError("Staged icon inventory differs from reviewed assets")
     for icon, expected in icon_hashes.items():
@@ -358,6 +353,16 @@ def generate(
         "c683bfbcc7e087f5d37a54ef628f10387c451a83ddc459b151403a164ac46c90",
         "Geist",
     )
+
+    devicon_license = reviewed_asset(
+        "LICENSE-DEVICON", DEVICON_LICENSE_SHA256, "devicon"
+    )
+    if (
+        source_hashes.get("desktop/resources/icons/LICENSE-DEVICON")
+        != DEVICON_LICENSE_SHA256
+    ):
+        raise ValueError("devicon license does not match reviewed source")
+    devicon_record = database_record["icons"]["mysql.svg"]
 
     packages, package_ids, license_outputs = [], {}, {}
 
@@ -450,6 +455,15 @@ def generate(
             entry["local"] + "=" + entry["sha256"] for entry in geist_record["files"]
         )
     )
+    devicon_id = package(
+        "devicon",
+        "devicon",
+        devicon_record["commit"],
+        devicon_record["license"],
+        {"LICENSE": payload[devicon_license]},
+        "https://github.com/devicons/devicon",
+    )
+    packages[-1]["sourceInfo"] = "Reviewed source commit " + devicon_record["commit"]
     sparkle_id = None
     sparkle_files = [name for name in payload if "/Sparkle.framework/" in name]
     if sparkle_files:
@@ -623,6 +637,7 @@ def generate(
         qsci_id,
         lucide_id,
         geist_id,
+        devicon_id,
         *([sparkle_id] if sparkle_id else []),
         *cargo_ids,
     ]:
@@ -661,6 +676,8 @@ def generate(
             )
         ) or name in {staged_icons[icon] for icon in lucide_icons}:
             owner = lucide_id
+        elif name in {devicon_license, staged_icons["mysql.svg"]}:
+            owner = devicon_id
         elif name in {geist_source, geist_license}:
             owner = geist_id
         elif "/Sparkle.framework/" in name or "/licenses/Sparkle/" in name:
