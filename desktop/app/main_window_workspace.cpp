@@ -777,6 +777,9 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             }
             design::popupContextMenu(*menu, savedConnections->viewport()->mapToGlobal(position));
         });
+    connect(workspace_, &QueryWorkspace::connectionNotice, this, [this](const QString& notice) {
+        showStatus(notice, ToastVariant::Warning, QStringLiteral("connection"));
+    });
     connect(workspace_, &QueryWorkspace::connectionReady, this, [this, syncVisible](quint64 id) {
         const auto profileId = workspace_->profileIdForConnection(id);
         if (profileId.isEmpty())

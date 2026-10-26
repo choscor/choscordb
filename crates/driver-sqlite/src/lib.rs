@@ -239,8 +239,10 @@ impl Connection for SqliteConnection {
     async fn open_object(
         &mut self,
         object: &ObjectId,
+        time: &ObjectDataTime,
         max: usize,
     ) -> Result<Box<dyn ResultCursor>> {
+        time.require_current()?;
         object_data::open(self.client.clone(), object, max).await
     }
     async fn load_metadata(&mut self, parent: Option<ObjectId>) -> Result<Vec<SchemaObject>> {

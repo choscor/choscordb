@@ -485,6 +485,37 @@ class NavigatorModelTest : public QObject {
         }
     }
 
+    void sequenceActionsFollowTheDriverWithoutSqlTemplates() {
+        for (const auto& driver : {QStringLiteral("mariadb"), QStringLiteral("mysql")}) {
+            EngineAdapter engine;
+            QTreeView tree;
+            QLineEdit filter;
+            NavigatorController controller(&engine, &tree, &filter);
+            controller.setDriverResolver([driver](quint64) { return driver; });
+            auto* model = controller.model();
+            QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                                &EngineAdapter::loadMetadata);
+            QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+            QVERIFY(model->addConnection(9, "fixture"));
+            const auto root = model->index(0, 0);
+            model->fetchMore(root);
+            QTRY_COMPARE(requested.count(), 1);
+            QVERIFY(model->applyChildren(
+                9, {}, requested.last().at(2).toULongLong(),
+                {{"[\"db\",\"ids\"]", "ids", "`db`.`ids`", "sequence", false}}));
+            QMenu menu;
+            controller.populateContextMenu(&menu, model->index(0, 0, root));
+            auto* drop = menu.findChild<QAction*>("dropObject");
+            auto* rename = menu.findChild<QAction*>("renameObject");
+            QVERIFY(drop && rename);
+            const bool supported = driver == QStringLiteral("mariadb");
+            QCOMPARE(drop->isEnabled(), supported);
+            QCOMPARE(rename->isEnabled(), supported);
+            QCOMPARE(drop->toolTip().contains("sequence"), !supported);
+            QVERIFY(!menu.findChild<QAction*>("generate_select"));
+        }
+    }
+
     void metadataPagesAppendOnlyAfterExplicitContinuation() {
         NavigatorModel model;
         QAbstractItemModelTester tester(&model,

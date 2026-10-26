@@ -117,6 +117,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     driver_->addItem(tr("SQLite"), "sqlite");
     driver_->addItem(tr("PostgreSQL"), "postgres");
     driver_->addItem(tr("MySQL"), "mysql");
+    driver_->addItem(tr("MariaDB"), "mariadb");
     driver_->hide();
     auto* drivers = new QHBoxLayout;
     driverChoices_ = new QButtonGroup(this);
@@ -125,9 +126,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         button->setObjectName(object);
         button->setVariant(design::ButtonVariant::Outline);
         button->setButtonContext(design::ButtonContext::Choice);
-        button->setDesignIcon(index == 0   ? design::Icon::SQLite
-                              : index == 1 ? design::Icon::PostgreSQL
-                                           : design::Icon::MySQL);
+        button->setDesignIcon(design::driverIcon(driver_->itemData(index).toString()));
         button->setCheckable(true);
         button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         driverChoices_->addButton(button, index);
@@ -137,6 +136,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     };
     choice(tr("PostgreSQL"), "profileDriverPostgres", 1);
     choice(tr("MySQL"), "profileDriverMysql", 2);
+    choice(tr("MariaDB"), "profileDriverMariadb", 3);
     choice(tr("SQLite"), "profileDriverSqlite", 0);
     formLayout->addRow(drivers);
     auto line = [this](const char* object) {

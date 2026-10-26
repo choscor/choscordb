@@ -9,7 +9,7 @@ fn request(source: ffi::GridEditRequestDto) -> Result<GridEditRequest, GridEditE
     let driver = match source.driver.as_str() {
         "sqlite" => GridEditDriver::Sqlite,
         "postgres" | "postgresql" => GridEditDriver::Postgres,
-        "mysql" => GridEditDriver::Mysql,
+        "mysql" | "mariadb" => GridEditDriver::Mysql,
         _ => return Err(GridEditError::UnsupportedTarget),
     };
     let columns = source

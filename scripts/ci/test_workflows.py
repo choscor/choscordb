@@ -114,6 +114,18 @@ def validate_ci(ci):
             "mysql_ci_fixture.py stop",
         ),
     )
+    mariadb = yaml_block(ci, "mariadb-integration", 2)
+    require_values(
+        mariadb,
+        (
+            "brew install mariadb@11.4",
+            'CHOSCORDB_MARIADB_PORT: "33307"',
+            "mysql_ci_fixture.py start --flavor mariadb",
+            "--test mariadb",
+            "if: failure()",
+            "mysql_ci_fixture.py stop --flavor mariadb",
+        ),
+    )
     if "cargo audit" in ci or re.search(r"retry|rerun-failed", ci, re.IGNORECASE):
         raise AssertionError(
             "required gates must not be duplicated or automatically retried"

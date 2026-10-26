@@ -332,6 +332,11 @@ pub trait Connection: Send {
         .map_err(|_| DriverError::new(ErrorKind::Timeout, "SQL keepalive timed out"))?
     }
     fn cancellation_handle(&self) -> Arc<dyn CancelHandle>;
+    /// Non-blocking messages about this session, such as a server that is a
+    /// different family than the profile's driver.
+    fn notices(&self) -> Vec<String> {
+        Vec::new()
+    }
     async fn inspect_edit_target(&mut self, _object: &ObjectId) -> Result<EditTarget> {
         Err(DriverError::new(
             ErrorKind::Unsupported,
@@ -382,9 +387,11 @@ pub trait Connection: Send {
     ) -> Result<Box<dyn ResultCursor>>;
     /// Opens a bounded read-only object source alongside the existing SQL cursor.
     /// Must neither release that cursor nor begin, commit, or roll back a transaction.
+    /// History modes read the past rows of a system-versioned relation.
     async fn open_object(
         &mut self,
         _object: &ObjectId,
+        _time: &ObjectDataTime,
         _max_schema_bytes: usize,
     ) -> Result<Box<dyn ResultCursor>> {
         Err(DriverError::new(

@@ -222,7 +222,8 @@ ObjectKindTraits EngineAdapter::objectKindTraits(const QString& kind) {
                             dto.column,
                             dto.diagram,
                             dto.has_initial_pane ? int(dto.initial_pane) : -1,
-                            dto.repeats_across_parents};
+                            dto.repeats_across_parents,
+                            dto.object_actions};
     cache.insert(kind, traits);
     return traits;
 }
@@ -260,6 +261,17 @@ bool EngineAdapter::sidebarChildVisible(const QString& parentKind, const QString
     const bool visible = sidebar_child_visible_policy(utf8View(parentBytes), utf8View(kindBytes));
     cache.insert(key, visible);
     return visible;
+}
+bool EngineAdapter::relationSubtypeHasHistory(const QString& subtype) {
+    static QMutex mutex;
+    static QHash<QString, bool> cache;
+    const QMutexLocker lock(&mutex);
+    if (const auto found = cache.constFind(subtype); found != cache.cend())
+        return *found;
+    const auto bytes = subtype.toUtf8();
+    const bool history = relation_subtype_history_policy(utf8View(bytes));
+    cache.insert(subtype, history);
+    return history;
 }
 QString EngineAdapter::objectActionUnavailableReason(bool rename, const QString& driver,
                                                      const QString& kind, const QString& subtype) {

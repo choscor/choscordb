@@ -13,6 +13,7 @@
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
+#include "models/navigator_model.h"
 #include "widgets/object_erd_widget.h"
 #include <QAction>
 #include <QEvent>
@@ -566,7 +567,8 @@ void ObjectExplorer::requestPane() {
     if (tabs_->currentIndex() == 5) {
         pages_->setCurrentIndex(3);
         setStatus("ready", tr("%1 · Data").arg(label_));
-        emit dataRequested(*connection_, object_, label_);
+        emit dataRequested(*connection_, object_, label_,
+                           NavigatorModel::relationSubtype(properties_));
         updateFooter();
         return;
     }

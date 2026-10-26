@@ -496,3 +496,21 @@ fn exports_always_write_zip_archives() {
     assert_eq!(export_destination("/tmp/report.ZIP"), "/tmp/report.ZIP");
     assert_eq!(export_destination("/tmp/report.zip"), "/tmp/report.zip");
 }
+
+#[test]
+fn mariadb_connections_are_recorded_and_exported_under_their_own_driver() {
+    let root = tempfile::tempdir().unwrap();
+    let service = Service::new(root.path(), "1.2.3", "build-4");
+    assert!(service.start());
+    service.record(Record {
+        event: Event::ConnectionFailed,
+        driver: Driver::MariaDB,
+        ..Record::default()
+    });
+    let report = root.path().join("report.zip");
+    let outcome = service.export_zip(&report, None);
+    assert!(outcome.success, "{}", outcome.error);
+    let exported = String::from_utf8(zip_member(&report, b"events.jsonl")).unwrap();
+    assert!(exported.contains("\"driver\":\"mariadb\""), "{exported}");
+    service.stop();
+}

@@ -575,13 +575,13 @@ void QueryWorkspace::applyQueryPreferences(const QueryPreferences& preferences) 
 QueryPreferences QueryWorkspace::queryPreferences() const {
     return querySettings_->preferences();
 }
-void QueryWorkspace::openObjectData(quint64 connection, const QString& object, const QString& label,
+bool QueryWorkspace::openObjectData(quint64 connection, const QString& object, const QString& label,
                                     const QueryPreferences& preferences, bool preserveView,
-                                    const QString& initialFilter) {
+                                    const QString& initialFilter, const ObjectDataTime& time) {
     if (!widgets_.objectReadOnly || !adapter_ || workInFlight() || stopping_)
-        return;
+        return false;
     if (!resolvePendingEdits())
-        return;
+        return false;
     preserveViewOnRefresh_ = preserveView;
     viewRefreshQuery_.reset();
     if (!preserveView)
@@ -608,6 +608,7 @@ void QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
     }
     resultOrigin_ = label;
     objectId_ = object;
+    objectTime_ = time;
     editQualifiedName_.clear();
     editReason_ = tr("Checking edit eligibility…");
     editColumnNames_.clear();
@@ -617,7 +618,7 @@ void QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
     widgets_.messages->clear();
     message(tr("Object data: %1").arg(label));
     commandError_.clear();
-    query_ = adapter_->openObjectData(connection, object, preferences);
+    query_ = adapter_->openObjectData(connection, object, preferences, time);
     if (preserveView && query_)
         viewRefreshQuery_ = query_;
     else if (preserveView && !query_) {
@@ -628,7 +629,7 @@ void QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
     // The driver checks the catalog; a navigator label can be stale or approximate.
     if (query_) {
         editTargetToken_ = nextEditRequestToken();
-        adapter_->inspectEditTarget(connection, object, editTargetToken_);
+        adapter_->inspectEditTarget(connection, object, editTargetToken_, time);
     }
     busy_ = query_.has_value();
     executionFinished_ = !busy_;
@@ -636,6 +637,7 @@ void QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
                       busy_ ? tr("Loading object data…")
                             : tr("Object read could not be submitted: %1").arg(commandError_));
     updateActions();
+    return true;
 }
 void QueryWorkspace::invalidateResult(bool connectionLost) {
     if (!resolvePendingEdits())

@@ -276,12 +276,19 @@ impl Engine {
         &mut self,
         connection: ConnectionId,
         object: ObjectId,
+        time: ObjectDataTime,
         options: QueryOptions,
     ) -> std::result::Result<QueryId, SubmitError> {
         if object.0.is_empty() || object.0.len() > 16384 {
             return Err(SubmitError::InvalidInput);
         }
-        self.execute_source(connection, String::new(), options, None, Some(object))
+        self.execute_source(
+            connection,
+            String::new(),
+            options,
+            None,
+            Some((object, time)),
+        )
     }
     pub fn execute_with_profile(
         &mut self,
@@ -298,7 +305,7 @@ impl Engine {
         sql: String,
         options: QueryOptions,
         profile_id: Option<String>,
-        object: Option<ObjectId>,
+        object: Option<(ObjectId, ObjectDataTime)>,
     ) -> std::result::Result<QueryId, SubmitError> {
         self.ensure_running()?;
         if profile_id
@@ -627,10 +634,13 @@ impl Engine {
             },
         )
     }
+    /// History reads are never editable, so their targets say so without a
+    /// catalog request.
     pub fn edit_target_request(
         &self,
         connection: ConnectionId,
         object: ObjectId,
+        time: ObjectDataTime,
         request_token: u64,
     ) -> std::result::Result<(), SubmitError> {
         if object.0.is_empty() || object.0.len() > 16384 {
@@ -640,6 +650,7 @@ impl Engine {
             connection,
             actor::Command::EditTarget {
                 object,
+                time,
                 request_token,
             },
         )

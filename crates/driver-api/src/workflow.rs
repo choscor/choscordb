@@ -11,7 +11,7 @@ pub struct DriverWorkflow {
 }
 
 pub fn driver_workflow(driver: &str) -> DriverWorkflow {
-    let mysql = driver.eq_ignore_ascii_case("mysql");
+    let mysql = driver.eq_ignore_ascii_case("mysql") || driver.eq_ignore_ascii_case("mariadb");
     DriverWorkflow {
         inspect_after_result: mysql,
         sql_mode_before_execution: mysql,

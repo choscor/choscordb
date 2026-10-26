@@ -118,7 +118,7 @@ const MAX_NAME_BYTES: usize = 1024;
 const MAX_PATH_BYTES: usize = 16 * 1024;
 
 fn server(driver: &str) -> bool {
-    driver == "postgres" || driver == "mysql"
+    matches!(driver, "postgres" | "mysql" | "mariadb")
 }
 
 /// Which connection fields a driver uses and what their blank values mean.
@@ -134,7 +134,7 @@ pub struct DriverForm {
 }
 
 pub fn driver_form(driver: &str) -> DriverForm {
-    let mysql = driver == "mysql";
+    let mysql = matches!(driver, "mysql" | "mariadb");
     DriverForm {
         server: server(driver),
         user_optional: mysql,
@@ -146,7 +146,7 @@ pub fn driver_form(driver: &str) -> DriverForm {
 pub fn default_port(driver: &str) -> u16 {
     match driver {
         "postgres" => 5432,
-        "mysql" => 3306,
+        "mysql" | "mariadb" => 3306,
         _ => 0,
     }
 }

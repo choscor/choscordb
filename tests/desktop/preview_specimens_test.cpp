@@ -486,7 +486,14 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
         QVERIFY(host);
         auto* list = host->findChild<QListWidget*>("previewNavigationProfiles");
         QVERIFY(list);
-        QCOMPARE(list->count(), 3);
+        QCOMPARE(list->count(), 4);
+        QCOMPARE(list->item(3)->text(), QString("test mariadb"));
+        QCOMPARE(list->item(3)->toolTip(), QString("MariaDB · Seal icon"));
+        const auto mariadbRow = list->visualItemRect(list->item(3));
+        const auto seal = list->viewport()->grab(mariadbRow).toImage();
+        list->item(3)->setData(choscordb::design::NavigationProfileDelegate::DriverRole, "unknown");
+        QVERIFY(seal != list->viewport()->grab(mariadbRow).toImage());
+        list->item(3)->setData(choscordb::design::NavigationProfileDelegate::DriverRole, "mariadb");
         QCOMPARE(list->item(2)->text(), QString("test mysql"));
         QCOMPARE(list->item(2)->toolTip(), QString("MySQL · Dolphin icon"));
         const auto mysqlRow = list->visualItemRect(list->item(2));

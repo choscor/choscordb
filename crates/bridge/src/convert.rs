@@ -619,8 +619,10 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             transaction_active,
             connection,
             capabilities: c,
+            notices,
         } => {
             e.id = pack(connection);
+            e.warnings = notices;
             e.capabilities = capabilities(c);
             e.has_transaction_state = transaction_active.is_some();
             e.transaction_active = transaction_active.unwrap_or(false);
@@ -882,9 +884,10 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
             .unwrap_or_default(),
         ..Default::default()
     };
+    let driver = value.configuration.driver_id();
     match value.configuration {
         choscordb_core::ProfileConfiguration::Sqlite { path, read_only } => {
-            dto.driver = "sqlite".into();
+            dto.driver = driver.into();
             dto.path = path;
             dto.read_only = read_only;
         }
@@ -896,8 +899,17 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
             user,
             tls,
             ssh,
+        }
+        | choscordb_core::ProfileConfiguration::Mariadb {
+            proxy,
+            host,
+            port,
+            database,
+            user,
+            tls,
+            ssh,
         } => {
-            dto.driver = "mysql".into();
+            dto.driver = driver.into();
             dto.proxy_options = proxy
                 .map(|proxy| serde_json::to_string(&proxy).expect("proxy settings serialize"))
                 .unwrap_or_default();
@@ -945,7 +957,7 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
             tls,
             ssh,
         } => {
-            dto.driver = "postgres".into();
+            dto.driver = driver.into();
             dto.proxy_options = proxy
                 .map(|proxy| serde_json::to_string(&proxy).expect("proxy settings serialize"))
                 .unwrap_or_default();

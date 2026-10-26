@@ -3,6 +3,7 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
 #include "modern_ui_test.h"
@@ -295,6 +296,24 @@ void ModernUiTest::narrowResultFooterPreservesOutcomeNavigationAndDetails() {
     QTest::mouseClick(previous, Qt::LeftButton);
     QTRY_COMPARE(source->property("state").toString(), QString("failed"));
     QTRY_VERIFY(outcome->text().contains("Failed"));
+}
+
+void ModernUiTest::connectionNoticesAppearInTheConnectionStatusLine() {
+    choscordb::MainWindow window;
+    window.show();
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* adapter = window.findChild<choscordb::QueryWorkspace*>()->adapter();
+    // Fixture for a session whose server is another family than its driver.
+    choscordb::BridgeEvent connected{};
+    connected.kind = "connected";
+    connected.id = 4242;
+    connected.warnings.push_back(
+        "This server is MariaDB; use a MariaDB connection for MariaDB features");
+    adapter->eventReady(connected);
+    auto* status = window.findChild<choscordb::design::StatusLine*>("connectionStatusLine");
+    QVERIFY(status && status->isVisible());
+    QVERIFY(
+        status->accessibleDescription().contains("use a MariaDB connection for MariaDB features"));
 }
 
 void ModernUiTest::operationFailureRemainsRedAfterDisconnectCleanup() {

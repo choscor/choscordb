@@ -62,6 +62,7 @@ pub enum Driver {
     SQLite,
     PostgreSQL,
     MySQL,
+    MariaDB,
 }
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ErrorClass {

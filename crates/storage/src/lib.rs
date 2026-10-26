@@ -102,6 +102,17 @@ pub enum ProfileConfiguration {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ssh: Option<SshTunnel>,
     },
+    Mariadb {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        proxy: Option<choscordb_driver_api::SocksProxy>,
+        host: String,
+        port: u16,
+        database: String,
+        user: String,
+        tls: PostgresTls,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ssh: Option<SshTunnel>,
+    },
     Postgres {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         proxy: Option<choscordb_driver_api::SocksProxy>,
@@ -222,6 +233,9 @@ impl Default for HistoryPolicy {
     }
 }
 
+/// The schema version written with the first MariaDB profile.
+const MARIADB_PROFILES_SCHEMA: i64 = 4;
+
 pub struct Storage {
     db: Connection,
 }
@@ -244,7 +258,7 @@ impl Storage {
             [],
             |r| r.get(0),
         )?;
-        if version > 3 {
+        if version > MARIADB_PROFILES_SCHEMA {
             return Err(StorageError::NewerSchema);
         }
         if version == 0 {
@@ -301,6 +315,14 @@ impl Storage {
             check_profile_capacity(&tx)?;
         }
         tx.execute("INSERT INTO connection_profiles(id, data) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET data=excluded.data", params![profile.id, data])?;
+        // Builds that predate MariaDB profiles cannot decode them, so the first
+        // one marks the schema as newer for those builds.
+        if matches!(profile.configuration, ProfileConfiguration::Mariadb { .. }) {
+            tx.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version) VALUES (?1)",
+                [MARIADB_PROFILES_SCHEMA],
+            )?;
+        }
         for reference in previous.into_iter().flatten().filter(|reference| {
             Some(reference) != profile.credential_ref.as_ref()
                 && Some(reference) != profile.ssh_credential_ref.as_ref()
@@ -754,6 +776,15 @@ impl std::fmt::Debug for HistoryEntry {
 }
 
 impl ProfileConfiguration {
+    /// The id of the driver that opens this profile.
+    pub fn driver_id(&self) -> &'static str {
+        match self {
+            Self::Sqlite { .. } => "sqlite",
+            Self::Mysql { .. } => "mysql",
+            Self::Mariadb { .. } => "mariadb",
+            Self::Postgres { .. } => "postgres",
+        }
+    }
     /// Convert all stored options without weakening TLS. Resolve the credential
     /// separately through the OS adapter; credentials never enter this DTO.
     pub fn connection_options(
@@ -775,6 +806,36 @@ impl ProfileConfiguration {
                 tls,
                 ssh,
             } => ConnectionOptions::Mysql {
+                proxy: proxy.clone(),
+                proxy_secret: None,
+                host: host.clone(),
+                port: *port,
+                database: database.clone(),
+                user: user.clone(),
+                password,
+                ssh_secret,
+                ssh_private_key: None,
+                ssh_jump_secrets: Default::default(),
+                ssh_jump_private_keys: Default::default(),
+                ssh: ssh.clone(),
+                tls: tls.mode.clone(),
+                root_certificate: tls.root_certificate_path.as_ref().map(Into::into),
+                tls_identity: tls.client_identity_path.as_ref().map(|path| {
+                    choscordb_driver_api::TlsIdentity {
+                        path: path.into(),
+                        password: None,
+                    }
+                }),
+            },
+            Self::Mariadb {
+                proxy,
+                host,
+                port,
+                database,
+                user,
+                tls,
+                ssh,
+            } => ConnectionOptions::Mariadb {
                 proxy: proxy.clone(),
                 proxy_secret: None,
                 host: host.clone(),
@@ -891,7 +952,8 @@ impl ConnectionProfile {
         }
         let credential_hops = match &self.configuration {
             ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+            | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => ssh
                 .options
                 .jump_hosts
                 .iter()
@@ -909,7 +971,8 @@ impl ConnectionProfile {
         }
         let inline_target = match &self.configuration {
             ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => {
+            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+            | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => {
                 ssh.authentication == choscordb_driver_api::SshAuthentication::PublicKey
                     && ssh.identity_source == choscordb_driver_api::SshIdentitySource::Inline
             }
@@ -920,7 +983,8 @@ impl ConnectionProfile {
         }
         let inline_hops = match &self.configuration {
             ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+            | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => ssh
                 .options
                 .jump_hosts
                 .iter()
@@ -968,6 +1032,15 @@ impl ConnectionProfile {
                 user,
                 tls,
                 ssh,
+            }
+            | ProfileConfiguration::Mariadb {
+                proxy,
+                host,
+                port,
+                database,
+                user,
+                tls,
+                ssh,
             } => {
                 if let Some(ssh) = ssh {
                     ssh.validate().map_err(|_| StorageError::InvalidProfile)?;
@@ -985,7 +1058,7 @@ impl ConnectionProfile {
                 if !user.is_empty() {
                     validate_field(user, 16 * 1024)?;
                 }
-                // MySQL permits anonymous login and no selected default database.
+                // MySQL and MariaDB permit anonymous login and no selected default database.
                 if !database.is_empty() {
                     validate_field(database, 16 * 1024)?;
                 }

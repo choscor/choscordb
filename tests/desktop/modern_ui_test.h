@@ -85,6 +85,7 @@ class ModernUiTest final : public QObject {
     void resultFooterTracksOperationOutcome();
     void connectionAttemptFailureIsAnOperationError();
     void operationFailureRemainsRedAfterDisconnectCleanup();
+    void connectionNoticesAppearInTheConnectionStatusLine();
     void embeddedDataFailureRemainsVisibleAfterDisconnectCleanup_data();
     void embeddedDataFailureRemainsVisibleAfterDisconnectCleanup();
     void sqlDocumentSwitchKeepsFooterAndResultOwnershipTogether();

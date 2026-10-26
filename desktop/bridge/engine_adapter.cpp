@@ -677,14 +677,30 @@ void EngineAdapter::loadMetadataPage(quint64 connection, const QString& parent,
 void EngineAdapter::loadMetadata(quint64 connection, const QString& parent, quint64 requestToken) {
     loadMetadataPage(connection, parent, requestToken, 0);
 }
+namespace {
+ObjectDataTimeMode rustTimeMode(ObjectDataTime::Mode mode) {
+    switch (mode) {
+    case ObjectDataTime::Mode::AsOf:
+        return ObjectDataTimeMode::AsOf;
+    case ObjectDataTime::Mode::All:
+        return ObjectDataTimeMode::All;
+    case ObjectDataTime::Mode::Current:
+        break;
+    }
+    return ObjectDataTimeMode::Current;
+}
+} // namespace
 std::optional<quint64> EngineAdapter::openObjectData(quint64 connection, const QString& object,
-                                                     const QueryPreferences& preferences) {
+                                                     const QueryPreferences& preferences,
+                                                     const ObjectDataTime& time) {
     if (d_->closing || d_->stopping) {
         emit commandFailed(tr("Workspace is closing."));
         return std::nullopt;
     }
     const auto bytes = object.toUtf8();
-    auto reply = open_object_data(*d_->engine, connection, utf8View(bytes), preferences.pageSize,
+    const auto asOf = time.asOf.toUtf8();
+    auto reply = open_object_data(*d_->engine, connection, utf8View(bytes), rustTimeMode(time.mode),
+                                  utf8View(asOf), preferences.pageSize,
                                   quint64(preferences.timeoutSeconds) * 1000);
     if (!reply.accepted) {
         emit commandFailed(fromRust(reply.error));
@@ -692,9 +708,12 @@ std::optional<quint64> EngineAdapter::openObjectData(quint64 connection, const Q
     }
     return reply.id;
 }
-bool EngineAdapter::inspectEditTarget(quint64 connection, const QString& object, quint64 token) {
+bool EngineAdapter::inspectEditTarget(quint64 connection, const QString& object, quint64 token,
+                                      const ObjectDataTime& time) {
     const auto bytes = object.toUtf8();
-    auto reply = edit_target_request(*d_->engine, connection, utf8View(bytes), token);
+    const auto asOf = time.asOf.toUtf8();
+    auto reply = edit_target_request(*d_->engine, connection, utf8View(bytes),
+                                     rustTimeMode(time.mode), utf8View(asOf), token);
     if (!reply.accepted)
         emit commandFailed(fromRust(reply.error));
     return reply.accepted;

@@ -69,6 +69,7 @@ pub fn object_kind_traits_policy(kind: &str) -> ffi::ObjectKindTraitsDto {
         has_initial_pane: traits.initial_pane.is_some(),
         initial_pane: traits.initial_pane.unwrap_or_default(),
         repeats_across_parents: traits.repeats_across_parents,
+        object_actions: traits.object_actions,
     }
 }
 
@@ -101,6 +102,10 @@ pub fn navigator_search_budget() -> ffi::NavigatorSearchBudgetDto {
 
 pub fn sidebar_child_visible_policy(parent_kind: &str, kind: &str) -> bool {
     choscordb_driver_api::sidebar_child_visible(parent_kind, kind)
+}
+
+pub fn relation_subtype_history_policy(relation_subtype: &str) -> bool {
+    choscordb_driver_api::relation_subtype_has_history(relation_subtype)
 }
 
 pub fn object_action_unavailable_reason(

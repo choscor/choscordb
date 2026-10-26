@@ -542,6 +542,7 @@ pub mod ffi {
         has_initial_pane: bool,
         initial_pane: u8,
         repeats_across_parents: bool,
+        object_actions: bool,
     }
     /// How the desktop sequences requests for one driver.
     struct DriverWorkflowDto {
@@ -591,6 +592,13 @@ pub mod ffi {
         quick_results: u32,
         filter_visits: u32,
         filter_requests: u32,
+    }
+    /// Which rows an object data read returns.
+    #[derive(Debug)]
+    enum ObjectDataTimeMode {
+        Current,
+        AsOf,
+        All,
     }
     /// How a staged result cell is represented in the grid.
     #[derive(Debug)]
@@ -1220,6 +1228,7 @@ pub mod ffi {
             has_column: bool,
         ) -> String;
         fn sidebar_child_visible_policy(parent_kind: &str, kind: &str) -> bool;
+        fn relation_subtype_history_policy(relation_subtype: &str) -> bool;
         fn navigator_search_budget() -> NavigatorSearchBudgetDto;
         fn driver_workflow_policy(driver: &str) -> DriverWorkflowDto;
         fn transaction_guard_policy(transaction_active: bool) -> TransactionGuardDto;
@@ -1482,10 +1491,13 @@ pub mod ffi {
             auto_commit: bool,
             profile_id: &str,
         ) -> Submit;
+        /// `as_of` is the "As of" mode's time, validated by Rust.
         fn open_object_data(
             engine: &mut BridgeEngine,
             connection: u64,
             object: &str,
+            mode: ObjectDataTimeMode,
+            as_of: &str,
             page_size: u32,
             timeout_ms: u64,
         ) -> Submit;
@@ -1499,6 +1511,8 @@ pub mod ffi {
             engine: &mut BridgeEngine,
             connection: u64,
             object: &str,
+            mode: ObjectDataTimeMode,
+            as_of: &str,
             request_token: u64,
         ) -> Submit;
         fn edit_query_request(
@@ -1653,6 +1667,7 @@ fn make_engine(config: EngineConfig) -> Box<BridgeEngine> {
                 Arc::new(choscordb_driver_sqlite::SqliteDriver),
                 Arc::new(choscordb_driver_postgres::PostgresDriver),
                 Arc::new(choscordb_driver_mysql::MysqlDriver::new()),
+                Arc::new(choscordb_driver_mysql::MariadbDriver),
             ],
             credentials,
         )
@@ -1988,9 +2003,12 @@ pub fn sql_execution_range(
 ) -> ffi::SqlRange {
     use choscordb_sql_language as language;
     catch_unwind(|| {
-        let mysql = driver
-            .eq_ignore_ascii_case("mysql")
-            .then(|| language::MysqlSqlMode::from_sql_mode(sql_mode));
+        let mariadb = driver.eq_ignore_ascii_case("mariadb");
+        let mysql =
+            (mariadb || driver.eq_ignore_ascii_case("mysql")).then(|| language::MysqlSqlMode {
+                mariadb,
+                ..language::MysqlSqlMode::from_sql_mode(sql_mode)
+            });
         let Ok(cursor) = usize::try_from(cursor) else {
             return ffi::SqlRange::default();
         };
@@ -2326,14 +2344,15 @@ fn profile_with_session_timeout(
             path: dto.path,
             read_only: dto.read_only,
         },
-        "mysql" => ProfileConfiguration::Mysql {
-            proxy: proxy_options(&dto.proxy_options)?,
-            ssh,
-            host: dto.host,
-            port: dto.port,
-            database: dto.database,
-            user: dto.user,
-            tls: PostgresTls {
+        "mysql" | "mariadb" => {
+            let (proxy, host, port, database, user) = (
+                proxy_options(&dto.proxy_options)?,
+                dto.host,
+                dto.port,
+                dto.database,
+                dto.user,
+            );
+            let tls = PostgresTls {
                 client_identity_path: (!dto.tls_client_identity.is_empty())
                     .then_some(dto.tls_client_identity),
                 mode: match dto.tls.as_str() {
@@ -2346,8 +2365,29 @@ fn profile_with_session_timeout(
                 },
                 root_certificate_path: (!dto.root_certificate.is_empty())
                     .then_some(dto.root_certificate),
-            },
-        },
+            };
+            if dto.driver == "mariadb" {
+                ProfileConfiguration::Mariadb {
+                    proxy,
+                    ssh,
+                    host,
+                    port,
+                    database,
+                    user,
+                    tls,
+                }
+            } else {
+                ProfileConfiguration::Mysql {
+                    proxy,
+                    ssh,
+                    host,
+                    port,
+                    database,
+                    user,
+                    tls,
+                }
+            }
+        }
         "postgres" => ProfileConfiguration::Postgres {
             proxy: proxy_options(&dto.proxy_options)?,
             host: dto.host,
@@ -2405,7 +2445,8 @@ fn profile_with_session_timeout(
     };
     let active_hops = match &profile.configuration {
         ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => ssh
             .options
             .jump_hosts
             .iter()
@@ -2419,7 +2460,8 @@ fn profile_with_session_timeout(
         .retain(|id, _| active_hops.contains(id.as_str()));
     let inline_hops = match &profile.configuration {
         ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => ssh
             .options
             .jump_hosts
             .iter()
@@ -2436,7 +2478,8 @@ fn profile_with_session_timeout(
         .retain(|id, _| inline_hops.contains(id.as_str()));
     let target_inline = match &profile.configuration {
         ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => {
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => {
             ssh.authentication == choscordb_driver_api::SshAuthentication::PublicKey
                 && ssh.identity_source == choscordb_driver_api::SshIdentitySource::Inline
         }
@@ -2786,10 +2829,25 @@ pub fn object_ddl_request(
     })
 }
 
+fn object_data_time(
+    mode: ffi::ObjectDataTimeMode,
+    as_of: &str,
+) -> std::result::Result<ObjectDataTime, String> {
+    Ok(match mode {
+        ffi::ObjectDataTimeMode::Current => ObjectDataTime::Current,
+        ffi::ObjectDataTimeMode::AsOf => {
+            ObjectDataTime::AsOf(HistoryTimestamp::parse(as_of).map_err(|error| error.message)?)
+        }
+        ffi::ObjectDataTimeMode::All => ObjectDataTime::All,
+        _ => return Err("Unknown object data time mode".into()),
+    })
+}
 pub fn open_object_data(
     engine: &mut BridgeEngine,
     connection: u64,
     object: &str,
+    mode: ffi::ObjectDataTimeMode,
+    as_of: &str,
     page_size: u32,
     timeout_ms: u64,
 ) -> ffi::Submit {
@@ -2797,6 +2855,7 @@ pub fn open_object_data(
         e.open_object_data(
             unpack(connection),
             ObjectId(object.into()),
+            object_data_time(mode, as_of)?,
             query_options(page_size, timeout_ms, false)?,
         )
         .map(pack)
@@ -2850,12 +2909,19 @@ pub fn edit_target_request(
     engine: &mut BridgeEngine,
     connection: u64,
     object: &str,
+    mode: ffi::ObjectDataTimeMode,
+    as_of: &str,
     request_token: u64,
 ) -> ffi::Submit {
     submit(engine, |e| {
-        e.edit_target_request(unpack(connection), ObjectId(object.into()), request_token)
-            .map(|()| connection)
-            .map_err(|error| error.to_string())
+        e.edit_target_request(
+            unpack(connection),
+            ObjectId(object.into()),
+            object_data_time(mode, as_of)?,
+            request_token,
+        )
+        .map(|()| connection)
+        .map_err(|error| error.to_string())
     })
 }
 pub fn edit_query_request(

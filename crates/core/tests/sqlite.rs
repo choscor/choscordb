@@ -588,6 +588,7 @@ fn object_result_has_independent_pages_export_and_sql_cursor() {
         .open_object_data(
             c,
             ObjectId(r#"["main","data"]"#.into()),
+            ObjectDataTime::Current,
             QueryOptions {
                 page_size: PageSize::new(100).unwrap(),
                 ..Default::default()
@@ -651,7 +652,12 @@ fn cancelling_object_read_preserves_sql_and_new_object_can_read_deferred_values(
         Event::StoredPage { .. }
     ));
     let slow = engine
-        .open_object_data(c, ObjectId(r#"["main","slow"]"#.into()), paged())
+        .open_object_data(
+            c,
+            ObjectId(r#"["main","slow"]"#.into()),
+            ObjectDataTime::Current,
+            paged(),
+        )
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -674,7 +680,12 @@ fn cancelling_object_read_preserves_sql_and_new_object_can_read_deferred_values(
         matches!(result_event(&mut engine),Event::StoredPage{query,page,..} if query==sql && page.rows[0][0]==Value::Integer(101))
     );
     let object = engine
-        .open_object_data(c, ObjectId(r#"["main","data"]"#.into()), paged())
+        .open_object_data(
+            c,
+            ObjectId(r#"["main","data"]"#.into()),
+            ObjectDataTime::Current,
+            paged(),
+        )
         .unwrap();
     engine.fetch_page_at(object, 0).unwrap();
     let Event::StoredPage { page, .. } = result_event(&mut engine) else {
@@ -783,4 +794,38 @@ fn queries_remember_the_page_size_they_started_with() {
             other => panic!("unexpected {other:?}"),
         }
     }
+}
+
+#[test]
+fn history_reads_are_unsupported_on_sqlite() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("history.sqlite");
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute_batch("CREATE TABLE data(x)")
+        .unwrap();
+    let mut engine = Engine::new(EngineConfig::default(), vec![Arc::new(SqliteDriver)]).unwrap();
+    let c = engine
+        .connect(
+            "sqlite",
+            ConnectionOptions::Sqlite {
+                path,
+                read_only: false,
+            },
+        )
+        .unwrap();
+    let object = engine
+        .open_object_data(
+            c,
+            ObjectId(r#"["main","data"]"#.into()),
+            ObjectDataTime::All,
+            paged(),
+        )
+        .unwrap();
+    engine.fetch_page_at(object, 0).unwrap();
+    let Event::QueryFailed { query, error } = result_event(&mut engine) else {
+        panic!("a history read on SQLite must fail")
+    };
+    assert_eq!(query, object);
+    assert_eq!(error.kind, ErrorKind::Unsupported);
 }

@@ -108,6 +108,7 @@ async fn verified_tls_queries_cancellation_and_object_reads_use_proxy() {
     let mut object = connection
         .open_object(
             &ObjectId(r#"["information_schema","SCHEMATA"]"#.into()),
+            &ObjectDataTime::Current,
             1024 * 1024,
         )
         .await

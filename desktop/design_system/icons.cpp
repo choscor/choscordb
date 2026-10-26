@@ -26,7 +26,7 @@ QByteArray themedSvg(Icon icon, const QColor& color) {
     }
     auto svg = source.uncompressedData();
     // Database logos retain their upstream brand colors in both themes.
-    if (icon == Icon::PostgreSQL || icon == Icon::SQLite) {
+    if (icon == Icon::PostgreSQL || icon == Icon::SQLite || icon == Icon::MariaDB) {
         return svg;
     }
     const auto replacement = color.name(QColor::HexRgb).toUtf8();
@@ -140,6 +140,8 @@ QList<IconDefinition> iconCatalog() {
         {Icon::PostgreSQL, QStringLiteral("postgresql"),
          QStringLiteral("desktop/resources/icons/postgresql.svg")},
         {Icon::MySQL, QStringLiteral("mysql"), QStringLiteral("desktop/resources/icons/mysql.png")},
+        {Icon::MariaDB, QStringLiteral("mariadb"),
+         QStringLiteral("desktop/resources/icons/mariadb.svg")},
         {Icon::SQLite, QStringLiteral("sqlite"),
          QStringLiteral("desktop/resources/icons/sqlite.svg")},
         {Icon::Database, QStringLiteral("database"),
@@ -209,6 +211,8 @@ QString iconResourcePath(Icon icon) {
         return QStringLiteral(":/icons/postgresql.svg");
     case Icon::MySQL:
         return QStringLiteral(":/icons/mysql.png");
+    case Icon::MariaDB:
+        return QStringLiteral(":/icons/mariadb.svg");
     case Icon::SQLite:
         return QStringLiteral(":/icons/sqlite.svg");
     case Icon::Database:
@@ -290,6 +294,8 @@ Icon driverIcon(const QString& driver) {
         return Icon::PostgreSQL;
     if (driver == QLatin1String("mysql"))
         return Icon::MySQL;
+    if (driver == QLatin1String("mariadb"))
+        return Icon::MariaDB;
     return Icon::Database;
 }
 } // namespace choscordb::design

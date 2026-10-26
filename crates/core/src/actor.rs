@@ -24,6 +24,7 @@ pub(crate) enum Command {
     },
     EditTarget {
         object: ObjectId,
+        time: ObjectDataTime,
         request_token: u64,
     },
     EditQuery {
@@ -67,7 +68,7 @@ pub(crate) enum Command {
     Execute {
         query: QueryId,
         sql: Arc<String>,
-        object: Option<ObjectId>,
+        object: Option<(ObjectId, ObjectDataTime)>,
         history: Option<crate::query_history::Ticket>,
         options: QueryOptions,
         cancellation: watch::Receiver<bool>,
@@ -151,6 +152,7 @@ impl EventSink {
             "sqlite" => choscordb_diagnostics::Driver::SQLite,
             "postgres" | "postgresql" => choscordb_diagnostics::Driver::PostgreSQL,
             "mysql" => choscordb_diagnostics::Driver::MySQL,
+            "mariadb" => choscordb_diagnostics::Driver::MariaDB,
             _ => choscordb_diagnostics::Driver::Unknown,
         };
         Self {
@@ -382,7 +384,9 @@ async fn complete_result(current: &mut Active, events: &EventSink) {
 }
 fn session_probe_timeout(options: &ConnectionOptions) -> Duration {
     match options {
-        ConnectionOptions::Postgres { ssh, .. } | ConnectionOptions::Mysql { ssh, .. } => {
+        ConnectionOptions::Postgres { ssh, .. }
+        | ConnectionOptions::Mysql { ssh, .. }
+        | ConnectionOptions::Mariadb { ssh, .. } => {
             ssh.as_ref().map_or(Duration::from_secs(15), |settings| {
                 Duration::from_secs(u64::from(settings.options.connect_timeout_seconds))
             })
@@ -488,6 +492,7 @@ pub(crate) async fn run(
             connection: id,
             capabilities: driver.capabilities(),
             transaction_active,
+            notices: connection.notices(),
         },
     )
     .await;
@@ -764,11 +769,20 @@ pub(crate) async fn run(
             }
             Command::EditTarget {
                 object,
+                time,
                 request_token,
             } => {
-                match metadata_operation(connection.inspect_edit_target(&object), &mut shutdown)
-                    .await
-                {
+                let target = async {
+                    if time == ObjectDataTime::Current {
+                        connection.inspect_edit_target(&object).await
+                    } else {
+                        Ok(EditTarget {
+                            reason: "History rows are read-only".into(),
+                            ..Default::default()
+                        })
+                    }
+                };
+                match metadata_operation(target, &mut shutdown).await {
                     Ok(target) => {
                         send(
                             &events,
@@ -874,9 +888,9 @@ pub(crate) async fn run(
                     },
                 )
                 .await;
-                let outcome = if let Some(object) = object {
+                let outcome = if let Some((object, time)) = object {
                     let result = metadata_operation(
-                        connection.open_object(&object, raw_limit),
+                        connection.open_object(&object, &time, raw_limit),
                         &mut shutdown,
                     )
                     .await;

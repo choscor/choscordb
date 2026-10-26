@@ -19,6 +19,7 @@ enum class Icon {
     PostgreSQL,
     SQLite,
     MySQL,
+    MariaDB,
     Check,
     Commit,
     Rollback,
@@ -46,6 +47,7 @@ struct IconDefinition final {
 [[nodiscard]] QList<IconDefinition> iconCatalog();
 [[nodiscard]] QString iconResourcePath(Icon icon);
 [[nodiscard]] QIcon themedIcon(Icon icon, const QColor& color, int size);
-// The logo for a connection driver id ("sqlite", "postgres", "mysql"); Database otherwise.
+// The logo for a connection driver id ("sqlite", "postgres", "mysql", "mariadb"); Database
+// otherwise.
 [[nodiscard]] Icon driverIcon(const QString& driver);
 } // namespace choscordb::design

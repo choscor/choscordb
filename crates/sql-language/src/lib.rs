@@ -146,6 +146,32 @@ mod mysql_tests {
         assert_eq!(classify_mysql("SELECT 1 /* harmless */"), Safety::Ordinary);
     }
     #[test]
+    fn mariadb_executable_comments_require_confirmation_only_in_mariadb() {
+        let mariadb = MysqlSqlMode {
+            mariadb: true,
+            ..MysqlSqlMode::default()
+        };
+        let sql = "/*M!100000 DROP TABLE t */";
+        assert_eq!(
+            classify_mysql_with_mode(sql, mariadb),
+            Safety::ConfirmationRequired
+        );
+        assert_eq!(
+            classify_mysql_with_mode("SELECT 1 /*M!100000 INTO OUTFILE '/tmp/data' */", mariadb),
+            Safety::ConfirmationRequired
+        );
+        assert_eq!(
+            statement_ranges_mysql_with_mode(sql, mariadb),
+            vec![0..sql.len()]
+        );
+        assert_eq!(classify_mysql(sql), Safety::Ordinary);
+        assert!(statement_ranges_mysql(sql).is_empty());
+        assert_eq!(
+            classify_mysql_with_mode("SELECT 1 /* harmless */", mariadb),
+            Safety::Ordinary
+        );
+    }
+    #[test]
     fn mysql_statement_selection_understands_escaped_quotes_and_hash_comments() {
         let sql = "SELECT 'a\\';b'; # ignored ;\nSELECT 2;";
         let ranges = statement_ranges_mysql(sql);
@@ -165,6 +191,8 @@ mod mysql_tests {
 pub struct MysqlSqlMode {
     pub no_backslash_escapes: bool,
     pub ansi_quotes: bool,
+    /// MariaDB also executes `/*M!` comments, which MySQL ignores.
+    pub mariadb: bool,
 }
 impl MysqlSqlMode {
     pub fn from_sql_mode(value: &str) -> Self {
@@ -176,6 +204,7 @@ impl MysqlSqlMode {
             ansi_quotes: modes
                 .iter()
                 .any(|m| m.eq_ignore_ascii_case("ANSI_QUOTES") || m.eq_ignore_ascii_case("ANSI")),
+            mariadb: false,
         }
     }
 }

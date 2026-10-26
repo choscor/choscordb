@@ -146,7 +146,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             preserveViewOnRefresh_ = true;
             if (widgets_.objectReadOnly && queryConnection_)
                 openObjectData(*queryConnection_, objectId_, resultOrigin_,
-                               querySettings_->preferences(), true);
+                               querySettings_->preferences(), true, {}, objectTime_);
             else if (queryConnection_ && !executedSql_.isEmpty()) {
                 if (query_)
                     adapter_->releaseQuery(*query_);
@@ -215,6 +215,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                 setDocumentStatus(editor, QStringLiteral("disconnected"),
                                   tr("Connect and run a query to see results."), {});
         }
+        for (const auto& notice : e.warnings)
+            emit connectionNotice(text(notice));
         documentChanged();
         emit connectionReady(e.id);
         updateActions();

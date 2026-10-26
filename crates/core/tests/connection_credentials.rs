@@ -39,6 +39,7 @@ impl DatabaseDriver for Driver {
     ) -> choscordb_driver_api::Result<Box<dyn Connection>> {
         match options {
             ConnectionOptions::Mysql { ssh_secret, .. }
+            | ConnectionOptions::Mariadb { ssh_secret, .. }
             | ConnectionOptions::Postgres { ssh_secret, .. } => assert!(ssh_secret.is_none()),
             ConnectionOptions::Sqlite { .. } => (),
         }

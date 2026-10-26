@@ -149,7 +149,7 @@ class IconsTest final : public QObject {
         for (const auto& definition : iconCatalog()) {
             const auto role = definition.role;
             if (role == Icon::AppMark || role == Icon::PostgreSQL || role == Icon::SQLite ||
-                role == Icon::MySQL) {
+                role == Icon::MySQL || role == Icon::MariaDB) {
                 continue; // Brand identities keep their own colors, checked below.
             }
             for (const auto& color : {QColor("#171717"), QColor("#fafafa")}) {
@@ -228,6 +228,26 @@ class IconsTest final : public QObject {
         // Pin the unmodified artwork downloaded from mysql.com's logo download page.
         QCOMPARE(QCryptographicHash::hash(artwork.readAll(), QCryptographicHash::Sha256).toHex(),
                  QByteArray("2d59bc428916752528280eac03330d712164163e2f3c476409f5c25d8a7c2778"));
+    }
+    void mariadbUsesTheBrownSealAcrossThemes() {
+        using namespace choscordb::design;
+        QCOMPARE(driverIcon("mariadb"), Icon::MariaDB);
+        QCOMPARE(iconResourcePath(Icon::MariaDB), QString(":/icons/mariadb.svg"));
+        QVERIFY(choscordb::test::iconResourceDecodes(Icon::MariaDB));
+        const auto light = themedIcon(Icon::MariaDB, Qt::black, 32).pixmap(QSize(32, 32), 2.0);
+        const auto dark = themedIcon(Icon::MariaDB, Qt::white, 32).pixmap(QSize(32, 32), 2.0);
+        QCOMPARE(light.toImage(), dark.toImage());
+        const auto image = light.toImage();
+        bool brown = false;
+        for (int y = 0; y < image.height(); ++y)
+            for (int x = 0; x < image.width(); ++x) {
+                const auto pixel = image.pixelColor(x, y);
+                brown |= pixel.alpha() > 200 && qAbs(pixel.red() - 0xc0) < 12 &&
+                         qAbs(pixel.green() - 0x76) < 12 && qAbs(pixel.blue() - 0x5a) < 12;
+            }
+        QVERIFY2(brown, "The MariaDB seal keeps its brand brown");
+        QVERIFY(image !=
+                themedIcon(Icon::MySQL, Qt::black, 32).pixmap(QSize(32, 32), 2.0).toImage());
     }
 
     void appIdentityKeepsWhitePawAndOrangeGradientAcrossThemes() {

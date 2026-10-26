@@ -6,8 +6,10 @@ pub struct ObjectKindTraits {
     pub opens_object_tab: bool,
     /// Offers "Show DDL".
     pub ddl: bool,
-    /// A table or view: drop/rename actions and SQL templates apply.
+    /// A table or view: SQL templates apply.
     pub relation: bool,
+    /// Drop and rename may apply; the driver decides whether they do.
+    pub object_actions: bool,
     /// Can hold navigator children (pinned rows may expand).
     pub container: bool,
     pub pinnable: bool,
@@ -43,6 +45,7 @@ pub fn object_kind_traits(kind: &str) -> ObjectKindTraits {
         opens_object_tab: inspectable,
         ddl: inspectable,
         relation,
+        object_actions: relation || kind == "sequence",
         container: relation || kind == "schema",
         pinnable: inspectable
             || matches!(

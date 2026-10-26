@@ -1,4 +1,4 @@
-use crate::{error, id, normalize, parse_table, quote};
+use crate::{Flavor, error, id, normalize, parse_table, quote};
 use choscordb_driver_api::*;
 use mysql_async::{Conn, prelude::Queryable};
 
@@ -12,7 +12,11 @@ type ForeignKeyCatalogRow = (
     Option<String>,
 );
 
-pub(crate) async fn inspect_target(conn: &mut Conn, object: &ObjectId) -> Result<EditTarget> {
+pub(crate) async fn inspect_target(
+    conn: &mut Conn,
+    flavor: Flavor,
+    object: &ObjectId,
+) -> Result<EditTarget> {
     let (database, table) = parse_table(object)?;
     let mut target = EditTarget {
         qualified_name: format!("{}.{}", quote(&database), quote(&table)),
@@ -23,14 +27,15 @@ pub(crate) async fn inspect_target(conn: &mut Conn, object: &ObjectId) -> Result
         "SELECT TABLE_TYPE, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
         (&database, &table),
     ).await.map_err(normalize)?;
-    if !kind
-        .is_some_and(|(kind, engine)| kind == "BASE TABLE" && engine.as_deref() == Some("InnoDB"))
-    {
+    if !kind.is_some_and(|(kind, engine)| {
+        flavor.base_table(&kind) && engine.as_deref() == Some("InnoDB")
+    }) {
         target.reason = "Only transactional InnoDB base tables can be edited".into();
         return Ok(target);
     }
+    // MariaDB maintains system-versioning period columns itself; they are never written.
     let columns: Vec<(String, String, String, String, String)> = conn.exec(
-        "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, EXTRA, COLUMN_KEY FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+        "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, EXTRA, COLUMN_KEY FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COALESCE(GENERATION_EXPRESSION, '') NOT IN ('ROW START', 'ROW END') ORDER BY ORDINAL_POSITION",
         (&database, &table),
     ).await.map_err(normalize)?;
     for (name, database_type, nullable, extra, key) in columns {
@@ -102,6 +107,7 @@ fn query_shape(sql: &str, columns: &[String]) -> Option<SimpleSelect> {
 
 pub(crate) async fn inspect_query(
     conn: &mut Conn,
+    flavor: Flavor,
     sql: &str,
     columns: Vec<String>,
 ) -> Result<EditQueryTarget> {
@@ -120,7 +126,7 @@ pub(crate) async fn inspect_query(
             .map_err(normalize)?
             .ok_or_else(|| error(ErrorKind::Query, "No MySQL database selected"))?,
     };
-    let target = inspect_target(conn, &id(&[&database, &shape.table])).await?;
+    let target = inspect_target(conn, flavor, &id(&[&database, &shape.table])).await?;
     let sources = shape.source_columns;
     if target.columns.is_empty()
         || sources.len() != columns.len()
@@ -183,6 +189,7 @@ fn enum_labels(database_type: &str) -> Option<Vec<String>> {
 }
 pub(crate) async fn result_cells(
     conn: &mut Conn,
+    flavor: Flavor,
     object: Option<&ObjectId>,
     sql: &str,
     result_columns: Vec<String>,
@@ -209,7 +216,7 @@ pub(crate) async fn result_cells(
         (database, shape.table, shape.source_columns)
     };
     let kind: Option<String> = conn.exec_first("SELECT TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA=? AND TABLE_NAME=?", (&database, &table)).await.map_err(normalize)?;
-    if kind.as_deref() != Some("BASE TABLE") {
+    if !kind.is_some_and(|kind| flavor.base_table(&kind)) {
         return Ok(output);
     }
     let columns: Vec<(String,String,String,String)> = conn.exec("SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION LIMIT 10001", (&database, &table)).await.map_err(normalize)?;
@@ -272,7 +279,7 @@ pub(crate) async fn result_cells(
             target_schema,
             target_table,
             target_column,
-            kind.as_deref() == Some("BASE TABLE") && found_column.is_some(),
+            kind.is_some_and(|kind| flavor.base_table(&kind)) && found_column.is_some(),
         ));
     }
     let mut fks = std::collections::HashMap::<String, Vec<(String, String, String, bool)>>::new();

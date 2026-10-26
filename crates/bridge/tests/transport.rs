@@ -839,6 +839,19 @@ fn mysql_sql_ranges_keep_escaped_quote_and_hash_comment_in_statement() {
 }
 
 #[test]
+fn mariadb_executable_comments_need_confirmation_only_on_mariadb_connections() {
+    let sql = "/*M!100000 DROP TABLE t */";
+    let mariadb = sql_execution_range(sql, 0, 0, 0, "mariadb", "");
+    assert!(mariadb.valid);
+    assert_eq!(mariadb.end as usize, sql.len());
+    assert!(mariadb.confirmation_required);
+    assert!(!sql_execution_range(sql, 0, 0, 0, "mysql", "").valid);
+    let quoted = "SELECT \"a\" # note;\nFROM dual;";
+    let ansi = sql_execution_range(quoted, 0, 0, 0, "mariadb", "ANSI_QUOTES");
+    assert_eq!(ansi.end as usize, quoted.len());
+}
+
+#[test]
 fn execution_ranges_follow_the_connection_dialect() {
     let sql = "SELECT 1 # note;\nFROM dual; SELECT 2;";
     let mysql = sql_execution_range(sql, 0, 0, 0, "mysql", "");
@@ -1145,4 +1158,36 @@ fn navigator_structure_and_templates_come_from_rust() {
         sql_template_unavailable_reason("merge", true, true),
         "Unknown SQL template."
     );
+}
+
+#[test]
+fn history_reads_validate_their_time_in_rust() {
+    let mut engine = new_engine();
+    for submit in [
+        open_object_data(
+            &mut engine,
+            1,
+            r#"["db","t"]"#,
+            ffi::ObjectDataTimeMode::AsOf,
+            "yesterday",
+            100,
+            0,
+        ),
+        edit_target_request(
+            &mut engine,
+            1,
+            r#"["db","t"]"#,
+            ffi::ObjectDataTimeMode::AsOf,
+            "2026-10-26 25:00:00",
+            1,
+        ),
+    ] {
+        assert!(!submit.accepted);
+        assert_eq!(
+            submit.error,
+            "Enter a time as YYYY-MM-DD HH:MM:SS with up to six fraction digits"
+        );
+    }
+    assert!(relation_subtype_history_policy("system_versioned"));
+    assert!(!relation_subtype_history_policy("materialized_view"));
 }

@@ -202,7 +202,8 @@ impl choscordb_driver_api::DatabaseDriver for Driver {
         use choscordb_driver_api::*;
         let secret = match options {
             ConnectionOptions::Postgres { proxy_secret, .. }
-            | ConnectionOptions::Mysql { proxy_secret, .. } => proxy_secret,
+            | ConnectionOptions::Mysql { proxy_secret, .. }
+            | ConnectionOptions::Mariadb { proxy_secret, .. } => proxy_secret,
             ConnectionOptions::Sqlite { .. } => None,
         };
         self.seen

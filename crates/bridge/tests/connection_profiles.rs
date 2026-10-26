@@ -330,3 +330,24 @@ fn draft_validation_reports_a_cleared_host_instead_of_defaulting_it() {
     cleared.host.clear();
     assert_eq!(profile_draft_validate(cleared, &none).field, "host");
 }
+
+#[test]
+fn mariadb_profiles_save_reload_as_mariadb_with_server_defaults() {
+    let mut engine = new_engine();
+    let profile = ffi::ProfileDto {
+        id: "maria".into(),
+        name: "MariaDB server".into(),
+        driver: "mariadb".into(),
+        tls: "require".into(),
+        ..Default::default()
+    };
+    let submitted = profile_save(&mut engine, profile, 75);
+    assert!(submitted.accepted, "{}", submitted.error);
+    let saved = event(&mut engine).profiles.pop().unwrap();
+    assert_eq!(saved.driver, "mariadb");
+    assert_eq!(saved.host, "localhost");
+    assert_eq!(saved.port, 3306);
+    assert_eq!(saved.tls, "require");
+    assert!(saved.user.is_empty() && saved.database.is_empty());
+    assert!(validate_connection_profile(saved).is_empty());
+}

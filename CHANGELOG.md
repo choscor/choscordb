@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added MariaDB 10.11+ connections with their own profile choice and icon, including sequences, system-versioned tables with Current, As of and All history views, JSON values, and ed25519 accounts. A MySQL connection to a MariaDB server (or the reverse) still connects and shows a notice suggesting the matching connection type.
+- Scripts in MariaDB connections now ask for confirmation before running `/*M! ... */` executable comments.
+- Saving the first MariaDB connection upgrades the profile store, after which earlier ChoscorDB versions cannot open it.
+
 ## [0.1.10]
 
 - Refreshed the interface with an orange brand palette, compact 4px sizing, flat sidebars, segmented pane tabs, and consistent hover and selection highlights.

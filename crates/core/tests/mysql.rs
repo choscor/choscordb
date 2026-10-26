@@ -1,11 +1,44 @@
-//! Run only against the repository's disposable MySQL fixture.
+//! Run only against the repository's disposable MySQL or MariaDB fixture.
 use choscordb_core::{ConnectionProfile, Engine, Event, PostgresTls, ProfileConfiguration};
 use choscordb_driver_api::{PageSize, QueryOptions, Secret, TlsMode, Value};
-use choscordb_driver_mysql::MysqlDriver;
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+#[path = "../../driver-mysql/tests/support/server.rs"]
+mod server;
+use std::time::{Duration, Instant};
+
+fn server_profile() -> ProfileConfiguration {
+    let (host, port, database, user) = (
+        "127.0.0.1".into(),
+        server::port(),
+        "choscordb_test".into(),
+        "root".into(),
+    );
+    let tls = PostgresTls {
+        mode: TlsMode::Disable,
+        client_identity_path: None,
+        root_certificate_path: None,
+    };
+    if server::mariadb() {
+        ProfileConfiguration::Mariadb {
+            proxy: None,
+            ssh: None,
+            host,
+            port,
+            database,
+            user,
+            tls,
+        }
+    } else {
+        ProfileConfiguration::Mysql {
+            proxy: None,
+            ssh: None,
+            host,
+            port,
+            database,
+            user,
+            tls,
+        }
+    }
+}
 
 /// Queries that page 100 rows at a time, as these tests fetch.
 fn paged() -> QueryOptions {
@@ -39,7 +72,7 @@ fn until(engine: &mut Engine, predicate: impl Fn(&Event) -> bool) -> Event {
 #[test]
 #[ignore = "requires disposable MySQL server on localhost:33306"]
 fn mysql_profile_connects_streams_typed_rows_and_disconnects_through_engine() {
-    let mut engine = Engine::new(Default::default(), vec![Arc::new(MysqlDriver::new())]).unwrap();
+    let mut engine = Engine::new(Default::default(), vec![server::driver()]).unwrap();
     let connection = engine
         .connect_profile(
             ConnectionProfile {
@@ -53,22 +86,7 @@ fn mysql_profile_connects_streams_typed_rows_and_disconnects_through_engine() {
                 tls_credential_ref: None,
                 ssh_credential_ref: None,
                 ssh_private_key_ref: None,
-                configuration: ProfileConfiguration::Mysql {
-                    proxy: None,
-                    ssh: None,
-                    host: "127.0.0.1".into(),
-                    port: std::env::var("CHOSCORDB_MYSQL_PORT")
-                        .unwrap_or_else(|_| "33306".into())
-                        .parse()
-                        .unwrap(),
-                    database: "choscordb_test".into(),
-                    user: "root".into(),
-                    tls: PostgresTls {
-                        mode: TlsMode::Disable,
-                        client_identity_path: None,
-                        root_certificate_path: None,
-                    },
-                },
+                configuration: server_profile(),
             },
             Some(Secret::new("choscordb-test-password")),
         )
@@ -129,31 +147,12 @@ fn mysql_profile_connects_streams_typed_rows_and_disconnects_through_engine() {
 #[ignore = "requires disposable MySQL server on localhost:33306"]
 fn cancelling_slow_mysql_object_is_prompt_and_preserves_main_session() {
     use choscordb_core::QueryState;
-    use choscordb_driver_api::{ConnectionOptions, DatabaseDriver, ErrorKind, ObjectId};
+    use choscordb_driver_api::{ErrorKind, ObjectDataTime, ObjectId};
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let options = || ConnectionOptions::Mysql {
-        proxy: None,
-        proxy_secret: None,
-        ssh: None,
-        host: "127.0.0.1".into(),
-        port: std::env::var("CHOSCORDB_MYSQL_PORT")
-            .unwrap_or_else(|_| "33306".into())
-            .parse()
-            .unwrap(),
-        database: "choscordb_test".into(),
-        user: "root".into(),
-        password: Some(Secret::new("choscordb-test-password")),
-        ssh_secret: None,
-        ssh_private_key: None,
-        ssh_jump_secrets: Default::default(),
-        ssh_jump_private_keys: Default::default(),
-        tls: TlsMode::Disable,
-        tls_identity: None,
-        root_certificate: None,
-    };
+    let options = || server::options(TlsMode::Disable);
     let view = format!("choscordb_slow_{}", uuid::Uuid::new_v4().simple());
     let mut setup = runtime
-        .block_on(MysqlDriver::new().connect(options()))
+        .block_on(server::driver().connect(options()))
         .unwrap();
     runtime
         .block_on(setup.execute(
@@ -161,8 +160,8 @@ fn cancelling_slow_mysql_object_is_prompt_and_preserves_main_session() {
             paged(),
         ))
         .unwrap();
-    let mut engine = Engine::new(Default::default(), vec![Arc::new(MysqlDriver::new())]).unwrap();
-    let connection = engine.connect("mysql", options()).unwrap();
+    let mut engine = Engine::new(Default::default(), vec![server::driver()]).unwrap();
+    let connection = engine.connect(server::driver().id(), options()).unwrap();
     until(&mut engine, |event| {
         matches!(event, Event::Connected { .. })
     });
@@ -170,6 +169,7 @@ fn cancelling_slow_mysql_object_is_prompt_and_preserves_main_session() {
         .open_object_data(
             connection,
             ObjectId(format!(r#"["choscordb_test","{view}"]"#)),
+            ObjectDataTime::Current,
             paged(),
         )
         .unwrap();
@@ -226,31 +226,9 @@ fn cancelling_slow_mysql_object_is_prompt_and_preserves_main_session() {
 }
 
 fn direct_engine() -> (Engine, choscordb_driver_api::ConnectionId) {
-    let mut engine = Engine::new(Default::default(), vec![Arc::new(MysqlDriver::new())]).unwrap();
+    let mut engine = Engine::new(Default::default(), vec![server::driver()]).unwrap();
     let connection = engine
-        .connect(
-            "mysql",
-            choscordb_driver_api::ConnectionOptions::Mysql {
-                proxy: None,
-                proxy_secret: None,
-                host: "127.0.0.1".into(),
-                port: std::env::var("CHOSCORDB_MYSQL_PORT")
-                    .unwrap_or_else(|_| "33306".into())
-                    .parse()
-                    .unwrap(),
-                database: "choscordb_test".into(),
-                user: "root".into(),
-                password: Some(Secret::new("choscordb-test-password")),
-                ssh_secret: None,
-                ssh_private_key: None,
-                ssh_jump_secrets: Default::default(),
-                ssh_jump_private_keys: Default::default(),
-                tls: TlsMode::Disable,
-                tls_identity: None,
-                root_certificate: None,
-                ssh: None,
-            },
-        )
+        .connect(server::driver().id(), server::options(TlsMode::Disable))
         .unwrap();
     until(&mut engine, |e| matches!(e, Event::Connected { .. }));
     (engine, connection)
@@ -342,4 +320,62 @@ fn mysql_metadata_continuation_reaches_later_schemas() {
     assert_eq!(offset, 1);
     assert_eq!(objects.len(), 1);
     assert_ne!(objects[0].name, first);
+}
+
+#[test]
+#[ignore = "requires disposable MySQL server on localhost:33306"]
+fn a_mariadb_connection_to_mysql_connects_with_a_notice() {
+    if server::mariadb() {
+        eprintln!("skipped: the server is MariaDB");
+        return;
+    }
+    let mut engine = Engine::new(
+        Default::default(),
+        vec![std::sync::Arc::new(choscordb_driver_mysql::MariadbDriver)],
+    )
+    .unwrap();
+    let options = choscordb_driver_api::ConnectionOptions::Mariadb {
+        proxy: None,
+        proxy_secret: None,
+        host: "127.0.0.1".into(),
+        port: server::port(),
+        database: "choscordb_test".into(),
+        user: "root".into(),
+        password: Some(Secret::new("choscordb-test-password")),
+        ssh_secret: None,
+        ssh_jump_secrets: Default::default(),
+        ssh_private_key: None,
+        ssh_jump_private_keys: Default::default(),
+        tls: TlsMode::Disable,
+        root_certificate: None,
+        tls_identity: None,
+        ssh: None,
+    };
+    let connection = engine.connect("mariadb", options).unwrap();
+    let Event::Connected { notices, .. } = until(
+        &mut engine,
+        |event| matches!(event, Event::Connected { connection: id, .. } if *id == connection),
+    ) else {
+        unreachable!()
+    };
+    assert_eq!(
+        notices,
+        ["This server is MySQL; use a MySQL connection for MySQL behavior"]
+    );
+    // MariaDB's JSON catalog lookup fails on MySQL; the query still runs.
+    let query = engine
+        .execute(
+            connection,
+            "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_NAME = 'TABLES'".into(),
+            paged(),
+        )
+        .unwrap();
+    engine.fetch_page(query).unwrap();
+    let Event::Page { page, .. } = until(
+        &mut engine,
+        |event| matches!(event, Event::Page { query: id, .. } if *id == query),
+    ) else {
+        unreachable!()
+    };
+    assert_eq!(page.rows, vec![vec![Value::Text("TABLES".into())]]);
 }

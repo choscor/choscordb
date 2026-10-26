@@ -121,3 +121,14 @@ fn only_tables_open_on_data_and_offer_diagrams() {
         assert_eq!(traits.initial_pane, None, "{kind}");
     }
 }
+
+#[test]
+fn relations_and_sequences_offer_object_actions_but_only_relations_offer_sql_templates() {
+    for kind in ["table", "view", "sequence"] {
+        assert!(object_kind_traits(kind).object_actions, "{kind}");
+    }
+    for kind in ["index", "function", "schema", "column"] {
+        assert!(!object_kind_traits(kind).object_actions, "{kind}");
+    }
+    assert!(!object_kind_traits("sequence").relation);
+}

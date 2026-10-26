@@ -30,7 +30,7 @@ enum class DiagnosticEvent {
     Error,
     MemorySample
 };
-enum class DiagnosticDriver { Unknown, SQLite, PostgreSQL, MySQL };
+enum class DiagnosticDriver { Unknown, SQLite, PostgreSQL, MySQL, MariaDB };
 enum class DiagnosticErrorClass { Unknown, Connection, Authentication, Query, IO, Internal };
 enum class DiagnosticDurationBucket { Unknown, Under100Ms, Under1s, Under10s, Over10s };
 

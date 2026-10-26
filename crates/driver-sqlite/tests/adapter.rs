@@ -1407,7 +1407,11 @@ async fn bounded_object_pages_preserve_sql_cursor_and_manual_transaction() {
     assert_eq!(first.rows[0], vec![Value::Integer(101)]);
     assert_eq!(first.rows[99], vec![Value::Integer(200)]);
     let mut object = c
-        .open_object(&ObjectId(r#"["main","dữ\" liệu"]"#.into()), 4096)
+        .open_object(
+            &ObjectId(r#"["main","dữ\" liệu"]"#.into()),
+            &ObjectDataTime::Current,
+            4096,
+        )
         .await
         .unwrap();
     let page = object

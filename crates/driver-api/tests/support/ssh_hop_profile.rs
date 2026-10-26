@@ -193,6 +193,7 @@ pub async fn verify(driver: &dyn DatabaseDriver, options: ConnectionOptions, mod
             let mut cursor = connection
                 .open_object(
                     &ObjectId(r#"["choscordb_test","ssh_hop_objects"]"#.into()),
+                    &ObjectDataTime::Current,
                     1024 * 1024,
                 )
                 .await

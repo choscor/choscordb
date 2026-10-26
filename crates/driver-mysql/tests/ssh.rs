@@ -86,7 +86,10 @@ async fn ssh_queries_cancellation_and_independent_object_reads() {
     .await
     .unwrap();
     let object = ObjectId(r#"["choscordb_test","mysql_ssh_object"]"#.into());
-    let mut cursor = conn.open_object(&object, 1024 * 1024).await.unwrap();
+    let mut cursor = conn
+        .open_object(&object, &ObjectDataTime::Current, 1024 * 1024)
+        .await
+        .unwrap();
     assert_eq!(
         cursor.fetch_page(PageSize::default()).await.unwrap().rows,
         vec![vec![Value::Integer(733)]]

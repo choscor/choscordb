@@ -173,3 +173,33 @@ jobs:
       - name: Stop local MySQL fixture
         if: always()
         run: python scripts/integration/mysql_ci_fixture.py stop
+
+  mariadb-integration:
+    name: MariaDB 11.4 integration
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      CHOSCORDB_MARIADB_PORT: "33307"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Start local MariaDB 11.4 fixture
+        run: |
+          brew install mariadb@11.4
+          python scripts/integration/mysql_ci_fixture.py start --flavor mariadb --bin-dir "$(brew --prefix mariadb@11.4)/bin"
+      - name: Run MariaDB driver integration tests
+        run: cargo test -p choscordb-driver-mysql --lib --test live --test editing --test driver_contract --test mariadb --locked -- --include-ignored --test-threads=1
+      - name: Run MariaDB core integration tests
+        run: cargo test -p choscordb-core --test mysql --test mariadb --locked -- --include-ignored --test-threads=1
+      - name: Preserve MariaDB failure logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mariadb-11.4-logs
+          path: build/integration/mariadb/server.log
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Stop local MariaDB fixture
+        if: always()
+        run: python scripts/integration/mysql_ci_fixture.py stop --flavor mariadb

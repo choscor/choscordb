@@ -231,15 +231,14 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         list->setProperty("designSurface", "sidebar");
         list->setMouseTracking(true);
         list->setSelectionMode(QAbstractItemView::MultiSelection);
-        for (const auto& driver :
-             {QStringLiteral("sqlite"), QStringLiteral("postgres"), QStringLiteral("mysql")}) {
-            auto* item = new QListWidgetItem(driver == "sqlite"     ? "test sqlite"
-                                             : driver == "postgres" ? "test postgres"
-                                                                    : "test mysql",
-                                             list);
+        for (const auto& driver : {QStringLiteral("sqlite"), QStringLiteral("postgres"),
+                                   QStringLiteral("mysql"), QStringLiteral("mariadb")}) {
+            auto* item = new QListWidgetItem(QStringLiteral("test %1").arg(driver), list);
             item->setData(NavigationProfileDelegate::DriverRole, driver);
             if (driver == "mysql")
                 item->setToolTip("MySQL · Dolphin icon");
+            if (driver == "mariadb")
+                item->setToolTip("MariaDB · Seal icon");
         }
         list->setCurrentRow(1);
         list->item(0)->setSelected(true);

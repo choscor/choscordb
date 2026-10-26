@@ -276,6 +276,7 @@ class NoticesTest(unittest.TestCase):
             ("icons/postgresql.svg", "Icon"),
             ("icons/sqlite.svg", "Icon"),
             ("icons/mysql.png", "Icon"),
+            ("icons/mariadb.svg", "Icon"),
             ("licenses/SOURCE-DATABASE-LOGOS.json", "Database logo"),
             ("licenses/SOURCE-LUCIDE.json", "Lucide"),
             ("licenses/LICENSE-LUCIDE", "Lucide"),
@@ -343,6 +344,7 @@ class NoticesTest(unittest.TestCase):
         notices = (self.generate() / "THIRD_PARTY_NOTICES.md").read_text()
         self.assertIn("MySQL is a trademark of Oracle", notices)
         self.assertIn("https://www.mysql.com/about/legal/logos.html", notices)
+        self.assertIn("MariaDB is a trademark of MariaDB Corporation Ab", notices)
 
     def test_current_icon_inventory_uses_reviewed_assets(self):
         document = json.loads((self.generate() / "sbom.spdx.json").read_text())
@@ -356,7 +358,7 @@ class NoticesTest(unittest.TestCase):
             if r["relationshipType"] == "CONTAINS"
             and "/icons/" in files[r["relatedSpdxElement"]]
         }
-        self.assertEqual(len(icons), 32)
+        self.assertEqual(len(icons), 33)
         self.assertEqual(icons["grid-2x2.svg"], "Lucide Icons")
         self.assertEqual(icons["refresh-cw.svg"], "Lucide Icons")
         self.assertEqual(icons["commit.svg"], "ChoscorDB")
@@ -366,6 +368,7 @@ class NoticesTest(unittest.TestCase):
         self.assertEqual(icons["postgresql.svg"], "ChoscorDB")
         self.assertEqual(icons["sqlite.svg"], "ChoscorDB")
         self.assertEqual(icons["mysql.png"], "ChoscorDB")
+        self.assertEqual(icons["mariadb.svg"], "ChoscorDB")
         unknown = self.stage / "choscordb.app/Contents/Resources/icons/mystery.svg"
         unknown.write_bytes(b"unreviewed")
         self.refresh_manifest()

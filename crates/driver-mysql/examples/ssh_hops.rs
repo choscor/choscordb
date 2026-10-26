@@ -82,7 +82,7 @@ async fn auxiliary_preflight_cancellation(options: ConnectionOptions) {
     std::fs::write(profile::value("CHOSCORDB_SSH_STALL_FLAG"), "owned-fixture").unwrap();
     let mut observed = {
         let object = ObjectId(r#"["choscordb_test","pending_preflight"]"#.into());
-        let attempt = connection.open_object(&object, 1024 * 1024);
+        let attempt = connection.open_object(&object, &ObjectDataTime::Current, 1024 * 1024);
         tokio::pin!(attempt);
         tokio::select! {
             accepted=listener.accept()=>accepted.unwrap().0,

@@ -1,6 +1,7 @@
-//! MySQL adapter with disk-backed results and bounded pages.
+//! MySQL and MariaDB adapters with disk-backed results and bounded pages.
 mod connection;
 mod editing;
+mod flavor;
 mod graph;
 mod idle;
 mod proxy;
@@ -15,6 +16,7 @@ fn reserve_transport() -> Result<Arc<tokio::sync::OwnedSemaphorePermit>> {
     TRANSPORTS.clone().try_acquire_owned().map(Arc::new).map_err(|_| error(ErrorKind::ResourceLimit, "MySQL native transport budget is full; close an unused MySQL connection or object tab"))
 }
 use choscordb_driver_api::*;
+use flavor::Flavor;
 use mysql_async::{Conn, Opts, OptsBuilder, prelude::Queryable};
 use std::{
     io::{Read, Seek, SeekFrom, Write},
@@ -32,6 +34,8 @@ impl MysqlDriver {
         Self
     }
 }
+#[derive(Default)]
+pub struct MariadbDriver;
 struct Cancellation {
     cancelled: AtomicBool,
     changed: tokio::sync::Notify,
@@ -53,6 +57,8 @@ impl CancelHandle for Cancellation {
     }
 }
 struct MysqlConnection {
+    flavor: Flavor,
+    notices: Vec<String>,
     idle: idle::Tracker,
     connect_timeout: Duration,
     conn: Option<Conn>,
@@ -85,6 +91,16 @@ fn normalize(e: mysql_async::Error) -> DriverError {
             e.message,
         )
         .with_code(e.code.to_string()),
+        mysql_async::Error::Driver(mysql_async::DriverError::UnknownAuthPlugin { name }) => {
+            DriverError::new(
+                ErrorKind::Authentication,
+                if name == "parsec" {
+                    "The server requires MariaDB parsec authentication, which is unsupported; use an account with mysql_native_password or ed25519".to_owned()
+                } else {
+                    format!("The server requires the unsupported {name} authentication plugin")
+                },
+            )
+        }
         _ => error(
             ErrorKind::Connection,
             "MySQL communication failed; check server, network, and TLS settings",
@@ -100,38 +116,57 @@ fn limit() -> DriverError {
         "MySQL result exceeds memory budget",
     )
 }
+fn capabilities() -> DriverCapabilities {
+    DriverCapabilities {
+        schemas: true,
+        transactions: true,
+        ddl: true,
+        explain_plans: true,
+        native_cancellation: true,
+        editable_results: true,
+        multiple_result_sets: true,
+        stored_procedures: true,
+        ..Default::default()
+    }
+}
 #[async_trait]
 impl DatabaseDriver for MysqlDriver {
     fn id(&self) -> &'static str {
-        "mysql"
+        Flavor::Mysql.id()
     }
     fn capabilities(&self) -> DriverCapabilities {
-        DriverCapabilities {
-            schemas: true,
-            transactions: true,
-            ddl: true,
-            explain_plans: true,
-            native_cancellation: true,
-            editable_results: true,
-            multiple_result_sets: true,
-            stored_procedures: true,
-            ..Default::default()
-        }
+        capabilities()
     }
     async fn connect(&self, options: ConnectionOptions) -> Result<Box<dyn Connection>> {
-        self.connect_native(options, false).await
+        connect_native(Flavor::Mysql, options, false).await
     }
     async fn reconnect(&self, options: ConnectionOptions) -> Result<Box<dyn Connection>> {
-        self.connect_native(options, true).await
+        connect_native(Flavor::Mysql, options, true).await
     }
 }
-impl MysqlDriver {
-    async fn connect_native(
-        &self,
-        options: ConnectionOptions,
-        fresh: bool,
-    ) -> Result<Box<dyn Connection>> {
-        let ConnectionOptions::Mysql {
+#[async_trait]
+impl DatabaseDriver for MariadbDriver {
+    fn id(&self) -> &'static str {
+        Flavor::Mariadb.id()
+    }
+    fn capabilities(&self) -> DriverCapabilities {
+        capabilities()
+    }
+    async fn connect(&self, options: ConnectionOptions) -> Result<Box<dyn Connection>> {
+        connect_native(Flavor::Mariadb, options, false).await
+    }
+    async fn reconnect(&self, options: ConnectionOptions) -> Result<Box<dyn Connection>> {
+        connect_native(Flavor::Mariadb, options, true).await
+    }
+}
+async fn connect_native(
+    flavor: Flavor,
+    options: ConnectionOptions,
+    fresh: bool,
+) -> Result<Box<dyn Connection>> {
+    let ((
+        Flavor::Mysql,
+        ConnectionOptions::Mysql {
             proxy,
             proxy_secret,
             host,
@@ -147,57 +182,91 @@ impl MysqlDriver {
             root_certificate,
             tls_identity,
             ssh,
-        } = options
-        else {
-            return Err(error(ErrorKind::InvalidInput, "MySQL options required"));
-        };
-        let unix_socket = host.starts_with('/');
-        if unix_socket
-            && (!cfg!(unix) || !matches!(tls, TlsMode::Disable | TlsMode::Prefer) || ssh.is_some())
-        {
-            return Err(DriverError::new(
-                ErrorKind::InvalidInput,
-                "Unix sockets require a local connection without explicit TLS",
-            ));
-        }
-        let host = if unix_socket {
-            host
-        } else {
-            choscordb_driver_api::tcp_host(&host)?.to_owned()
-        };
-        if host.is_empty()
-            || host.contains('\0')
-            || port == 0
-            || user.contains('\0')
-            || database.contains('\0')
-        {
-            return Err(error(
-                ErrorKind::InvalidInput,
-                "Invalid MySQL connection settings",
-            ));
-        }
-        if let Some(proxy) = &proxy {
-            proxy.validate_transport(&host, port, ssh.is_some())?;
-            validate_socks_secret(proxy, proxy_secret.as_ref())?;
-        }
-        if let Some(settings) = &ssh {
-            settings.validate()?;
-        }
-        let connect_timeout = ssh.as_ref().map_or(Duration::from_secs(15), |settings| {
-            Duration::from_secs(u64::from(settings.options.connect_timeout_seconds))
-        });
-        // The budget includes queued TLS preparation, DNS, tunnel establishment, and authentication.
-        tokio::time::timeout(connect_timeout, async move {
-            let prefer_tls = tls == TlsMode::Prefer && !unix_socket;
-            let ssl = tls::options(
-                if unix_socket { TlsMode::Disable } else { tls },
-                root_certificate,
-                tls_identity,
+        },
+    )
+    | (
+        Flavor::Mariadb,
+        ConnectionOptions::Mariadb {
+            proxy,
+            proxy_secret,
+            host,
+            port,
+            database,
+            user,
+            password,
+            ssh_secret,
+            ssh_jump_secrets,
+            ssh_private_key,
+            ssh_jump_private_keys,
+            tls,
+            root_certificate,
+            tls_identity,
+            ssh,
+        },
+    )) = (flavor, options)
+    else {
+        return Err(error(ErrorKind::InvalidInput, "MySQL options required"));
+    };
+    let unix_socket = host.starts_with('/');
+    if unix_socket
+        && (!cfg!(unix) || !matches!(tls, TlsMode::Disable | TlsMode::Prefer) || ssh.is_some())
+    {
+        return Err(DriverError::new(
+            ErrorKind::InvalidInput,
+            "Unix sockets require a local connection without explicit TLS",
+        ));
+    }
+    let host = if unix_socket {
+        host
+    } else {
+        choscordb_driver_api::tcp_host(&host)?.to_owned()
+    };
+    if host.is_empty()
+        || host.contains('\0')
+        || port == 0
+        || user.contains('\0')
+        || database.contains('\0')
+    {
+        return Err(error(
+            ErrorKind::InvalidInput,
+            "Invalid MySQL connection settings",
+        ));
+    }
+    if let Some(proxy) = &proxy {
+        proxy.validate_transport(&host, port, ssh.is_some())?;
+        validate_socks_secret(proxy, proxy_secret.as_ref())?;
+    }
+    if let Some(settings) = &ssh {
+        settings.validate()?;
+    }
+    let connect_timeout = ssh.as_ref().map_or(Duration::from_secs(15), |settings| {
+        Duration::from_secs(u64::from(settings.options.connect_timeout_seconds))
+    });
+    // The budget includes queued TLS preparation, DNS, tunnel establishment, and authentication.
+    tokio::time::timeout(connect_timeout, async move {
+        let prefer_tls = tls == TlsMode::Prefer && !unix_socket;
+        let ssl = tls::options(
+            if unix_socket { TlsMode::Disable } else { tls },
+            root_certificate,
+            tls_identity,
+        )
+        .await?;
+        if fresh && let Some(settings) = &ssh {
+            SshForward::invalidate_shared_context(
+                settings,
+                ssh_secret.as_ref(),
+                &ssh_jump_secrets,
+                ssh_private_key.as_ref(),
+                &ssh_jump_private_keys,
+                &host,
+                port,
             )
             .await?;
-            if fresh && let Some(settings) = &ssh {
-                SshForward::invalidate_shared_context(
-                    settings,
+        }
+        let tunnel = match ssh {
+            Some(ssh) => Some(
+                ssh::Tunnel::open(
+                    &ssh,
                     ssh_secret.as_ref(),
                     &ssh_jump_secrets,
                     ssh_private_key.as_ref(),
@@ -205,88 +274,78 @@ impl MysqlDriver {
                     &host,
                     port,
                 )
-                .await?;
-            }
-            let tunnel = match ssh {
-                Some(ssh) => Some(
-                    ssh::Tunnel::open(
-                        &ssh,
-                        ssh_secret.as_ref(),
-                        &ssh_jump_secrets,
-                        ssh_private_key.as_ref(),
-                        &ssh_jump_private_keys,
-                        &host,
-                        port,
-                    )
+                .await?,
+            ),
+            None => None,
+        };
+        let proxy = match proxy {
+            Some(settings) => Some(
+                proxy::Tunnel::open(settings, proxy_secret, host.clone(), port, connect_timeout)
                     .await?,
-                ),
-                None => None,
-            };
-            let proxy = match proxy {
-                Some(settings) => Some(
-                    proxy::Tunnel::open(
-                        settings,
-                        proxy_secret,
-                        host.clone(),
-                        port,
-                        connect_timeout,
-                    )
-                    .await?,
-                ),
-                None => None,
-            };
-            let forwarding_port = tunnel
-                .as_ref()
-                .map(|t| t.port())
-                .or_else(|| proxy.as_ref().map(|p| p.port()));
-            let builder = OptsBuilder::default()
-                .ip_or_hostname(if unix_socket {
-                    "localhost".to_owned()
-                } else {
-                    host.clone()
-                })
-                .socket(unix_socket.then_some(host))
-                .tcp_port(forwarding_port.unwrap_or(port))
-                .resolved_ips(
-                    tunnel
-                        .as_ref()
-                        .map(|t| vec![t.connect_address().ip()])
-                        .or_else(|| {
-                            proxy
-                                .as_ref()
-                                .map(|_| vec![std::net::Ipv4Addr::LOCALHOST.into()])
-                        }),
-                )
-                .db_name((!database.is_empty()).then_some(database))
-                .user(Some(user))
-                .pass(password.as_ref().map(Secret::expose))
-                .ssl_opts(ssl)
-                .client_found_rows(true)
-                .prefer_socket(false)
-                .max_allowed_packet(Some(64 * 1024 * 1024));
-            let opts: Opts = builder.into();
-            let transport = reserve_transport()?;
-            let pending = connection::connect(opts.clone(), prefer_tls).await?;
-            let idle = pending.1.clone();
+            ),
+            None => None,
+        };
+        let forwarding_port = tunnel
+            .as_ref()
+            .map(|t| t.port())
+            .or_else(|| proxy.as_ref().map(|p| p.port()));
+        let builder = OptsBuilder::default()
+            .ip_or_hostname(if unix_socket {
+                "localhost".to_owned()
+            } else {
+                host.clone()
+            })
+            .socket(unix_socket.then_some(host))
+            .tcp_port(forwarding_port.unwrap_or(port))
+            .resolved_ips(
+                tunnel
+                    .as_ref()
+                    .map(|t| vec![t.connect_address().ip()])
+                    .or_else(|| {
+                        proxy
+                            .as_ref()
+                            .map(|_| vec![std::net::Ipv4Addr::LOCALHOST.into()])
+                    }),
+            )
+            .db_name((!database.is_empty()).then_some(database))
+            .user(Some(user))
+            .pass(password.as_ref().map(Secret::expose))
+            .ssl_opts(ssl)
+            .client_found_rows(true)
+            .prefer_socket(false)
+            .max_allowed_packet(Some(64 * 1024 * 1024));
+        let opts: Opts = builder.into();
+        let transport = reserve_transport()?;
+        let pending = connection::connect(opts.clone(), prefer_tls).await?;
+        let idle = pending.1.clone();
 
-            let conn = pending.ready();
-            Ok(Box::new(MysqlConnection {
-                idle,
-                connect_timeout,
-                conn: Some(conn),
-                opts,
-                prefer_tls,
-                next: Cancellation::new(),
-                pending: None,
-                active: None,
-                _tunnel: tunnel,
-                _proxy: proxy,
-                transport: Some(transport),
-            }) as Box<dyn Connection>)
-        })
-        .await
-        .map_err(|_| DriverError::new(ErrorKind::Timeout, "MySQL connection timed out"))?
-    }
+        let mut conn = pending.ready();
+        // The version only selects an optional notice, so an account limited to
+        // changing its password still connects.
+        let version: Option<String> = conn.query_first("SELECT VERSION()").await.unwrap_or(None);
+        let notices = flavor
+            .mismatch_notice(Flavor::of_server(version.as_deref().unwrap_or_default()))
+            .into_iter()
+            .map(String::from)
+            .collect();
+        Ok(Box::new(MysqlConnection {
+            flavor,
+            notices,
+            idle,
+            connect_timeout,
+            conn: Some(conn),
+            opts,
+            prefer_tls,
+            next: Cancellation::new(),
+            pending: None,
+            active: None,
+            _tunnel: tunnel,
+            _proxy: proxy,
+            transport: Some(transport),
+        }) as Box<dyn Connection>)
+    })
+    .await
+    .map_err(|_| DriverError::new(ErrorKind::Timeout, "MySQL connection timed out"))?
 }
 fn columns(input: &[mysql_async::Column], max: usize) -> Result<Vec<Column>> {
     let bytes = input
@@ -315,7 +374,7 @@ fn columns(input: &[mysql_async::Column], max: usize) -> Result<Vec<Column>> {
         })
         .collect())
 }
-fn value(v: mysql_async::Value, c: &mysql_async::Column) -> Result<Value> {
+fn value(v: mysql_async::Value, c: &mysql_async::Column, json: bool) -> Result<Value> {
     use mysql_async::{Value as M, consts::ColumnType as T};
     Ok(match v {
         M::NULL => Value::Null,
@@ -339,6 +398,7 @@ fn value(v: mysql_async::Value, c: &mysql_async::Column) -> Result<Value> {
                 match c.column_type() {
                     T::MYSQL_TYPE_DECIMAL | T::MYSQL_TYPE_NEWDECIMAL => Value::Decimal(s),
                     T::MYSQL_TYPE_JSON => Value::Json(s),
+                    _ if json => Value::Json(s),
                     _ => Value::Text(s),
                 }
             }
@@ -386,13 +446,24 @@ impl MysqlConnection {
 }
 #[async_trait]
 impl Connection for MysqlConnection {
+    fn notices(&self) -> Vec<String> {
+        self.notices.clone()
+    }
     async fn inspect_result_cells(
         &mut self,
         object: Option<&ObjectId>,
         sql: &str,
         result_columns: Vec<String>,
     ) -> Result<Vec<ResultCellMetadata>> {
-        editing::result_cells(self.connection().await?, object, sql, result_columns).await
+        let flavor = self.flavor;
+        editing::result_cells(
+            self.connection().await?,
+            flavor,
+            object,
+            sql,
+            result_columns,
+        )
+        .await
     }
     async fn idle_transaction_state(&mut self) -> Result<Option<IdleTransactionState>> {
         let idle = self.idle.clone();
@@ -430,6 +501,7 @@ impl Connection for MysqlConnection {
             self.opts.clone(),
             self.prefer_tls,
             runtime::Start {
+                flavor: self.flavor,
                 sql: sql.to_owned(),
                 options,
                 max,
@@ -449,14 +521,16 @@ impl Connection for MysqlConnection {
         cursor.map(|c| Box::new(c) as Box<dyn ResultCursor>)
     }
     async fn inspect_edit_target(&mut self, object: &ObjectId) -> Result<EditTarget> {
-        editing::inspect_target(self.connection().await?, object).await
+        let flavor = self.flavor;
+        editing::inspect_target(self.connection().await?, flavor, object).await
     }
     async fn inspect_edit_query(
         &mut self,
         sql: &str,
         result_columns: Vec<String>,
     ) -> Result<EditQueryTarget> {
-        editing::inspect_query(self.connection().await?, sql, result_columns).await
+        let flavor = self.flavor;
+        editing::inspect_query(self.connection().await?, flavor, sql, result_columns).await
     }
     async fn apply_edit_batch(&mut self, batch: EditBatch) -> Result<EditBatchSummary> {
         editing::apply_batch(self.connection().await?, batch).await
@@ -471,10 +545,14 @@ impl Connection for MysqlConnection {
     async fn open_object(
         &mut self,
         object: &ObjectId,
+        time: &ObjectDataTime,
         max: usize,
     ) -> Result<Box<dyn ResultCursor>> {
         if self.conn.is_none() && self.pending.is_none() {
             return Err(closed());
+        }
+        if self.flavor == Flavor::Mysql {
+            time.require_current()?;
         }
         let (db, table) = parse_table(object)?;
         let transport = reserve_transport()?;
@@ -493,14 +571,17 @@ impl Connection for MysqlConnection {
         // COM_STMT_PREPARE metadata may replace the last OK status flags.
         // It cannot change the live transaction, so retain its pre-prepare state.
         let transaction_started = transaction_active(conn.connection()).unwrap_or(false);
-        let sql = format!("SELECT * FROM {}.{}", quote(&db), quote(&table));
-        let stmt = tokio::time::timeout(Duration::from_secs(15), conn.connection().prep(&sql))
-            .await
-            .map_err(|_| error(ErrorKind::Timeout, "MySQL object metadata timed out"))?
-            .map_err(normalize)?;
+        let (sql, stmt) = tokio::time::timeout(Duration::from_secs(15), async {
+            let sql = object_select(conn.connection(), &db, &table, time).await?;
+            let stmt = conn.connection().prep(&sql).await.map_err(normalize)?;
+            Ok::<_, DriverError>((sql, stmt))
+        })
+        .await
+        .map_err(|_| error(ErrorKind::Timeout, "MySQL object metadata timed out"))??;
         let schema = columns(stmt.columns(), max)?;
         conn.connection().close(stmt).await.map_err(normalize)?;
         Ok(Box::new(ObjectCursor {
+            flavor: self.flavor,
             transaction_started,
             conn: Some(conn.ready()),
             sql,
@@ -534,9 +615,10 @@ impl Connection for MysqlConnection {
         Ok(objects)
     }
     async fn load_object_graph(&mut self, object: &ObjectId) -> Result<ObjectGraph> {
+        let flavor = self.flavor;
         tokio::time::timeout(
             Duration::from_secs(15),
-            graph::object_graph(self.connection().await?, object),
+            graph::object_graph(self.connection().await?, flavor, object),
         )
         .await
         .map_err(|_| error(ErrorKind::Timeout, "MySQL ER diagram metadata timed out"))?
@@ -550,8 +632,10 @@ impl Connection for MysqlConnection {
         if page_size == 0 || page_size > 10000 {
             return Err(error(ErrorKind::InvalidInput, "Invalid metadata page size"));
         }
+        let flavor = self.flavor;
         let mut objects = metadata(
             self.connection().await?,
+            flavor,
             parent,
             offset,
             u64::from(page_size) + 1,
@@ -611,7 +695,47 @@ impl Connection for MysqlConnection {
         Ok(())
     }
 }
+/// The object read for `time`. History reads add MariaDB's period columns,
+/// which `*` omits while they are invisible.
+async fn object_select(
+    conn: &mut Conn,
+    db: &str,
+    table: &str,
+    time: &ObjectDataTime,
+) -> Result<String> {
+    let relation = format!("{}.{}", quote(db), quote(table));
+    let clause = match time {
+        ObjectDataTime::Current => return Ok(format!("SELECT * FROM {relation}")),
+        ObjectDataTime::AsOf(at) => format!("FOR SYSTEM_TIME AS OF TIMESTAMP '{}'", at.as_str()),
+        ObjectDataTime::All => "FOR SYSTEM_TIME ALL".to_owned(),
+    };
+    let periods: Vec<(String, String)> = conn
+        .exec(
+            "SELECT COLUMN_NAME, EXTRA FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND GENERATION_EXPRESSION IN ('ROW START', 'ROW END') ORDER BY GENERATION_EXPRESSION DESC",
+            (db, table),
+        )
+        .await
+        .map_err(normalize)?;
+    // Implicit period columns are absent from the catalog and always hidden.
+    let extra: Vec<String> = if periods.is_empty() {
+        vec!["ROW_START".into(), "ROW_END".into()]
+    } else {
+        periods
+            .into_iter()
+            .filter(|(_, extra)| extra.contains("INVISIBLE"))
+            .map(|(name, _)| quote(&name))
+            .collect()
+    };
+    Ok(format!(
+        "SELECT *{} FROM {relation} {clause}",
+        extra
+            .iter()
+            .map(|name| format!(", {name}"))
+            .collect::<String>()
+    ))
+}
 struct ObjectCursor {
+    flavor: Flavor,
     transaction_started: bool,
     conn: Option<Conn>,
     sql: String,
@@ -656,6 +780,7 @@ impl ResultCursor for ObjectCursor {
                 self.opts.clone(),
                 self.prefer_tls,
                 runtime::Start {
+                    flavor: self.flavor,
                     sql: self.sql.clone(),
                     options: QueryOptions::default(),
                     max: self.max,
@@ -783,6 +908,7 @@ fn parse_table(object: &ObjectId) -> Result<(String, String)> {
 }
 async fn metadata(
     conn: &mut Conn,
+    flavor: Flavor,
     parent: Option<ObjectId>,
     offset: u64,
     count: u64,
@@ -793,20 +919,21 @@ async fn metadata(
             .map_err(|_| error(ErrorKind::InvalidInput, "Invalid MySQL object"))?;
         if parts.len() == 1 {
             let rows: Vec<(String,String)> = conn.exec("SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME LIMIT ? OFFSET ?", (&parts[0],count,offset)).await.map_err(normalize)?;
-            for (name, kind) in rows {
+            for (name, table_type) in rows {
+                let relation = flavor.relation(&table_type);
                 out.push(SchemaObject {
                     id: id(&[&parts[0], &name]),
                     parent: Some(parent.clone()),
                     qualified_name: format!("{}.{}", quote(&parts[0]), quote(&name)),
                     name,
-                    kind: if kind == "VIEW" {
-                        ObjectKind::View
-                    } else {
-                        ObjectKind::Table
-                    },
-                    has_children: true,
+                    has_children: relation.kind != ObjectKind::Sequence,
+                    kind: relation.kind,
                     column: None,
-                    properties: vec![],
+                    properties: relation
+                        .subtype
+                        .map(|subtype| MetadataProperty::available("Relation subtype", subtype))
+                        .into_iter()
+                        .collect(),
                 });
             }
         } else if parts.len() == 2 {
@@ -861,6 +988,87 @@ mod tests {
         assert_eq!(MysqlDriver.id(), "mysql");
         assert!(MysqlDriver.capabilities().transactions);
         assert!(!MysqlDriver.capabilities().server_cursors);
+    }
+
+    #[test]
+    fn identifies_mariadb_with_the_mysql_feature_set() {
+        assert_eq!(MariadbDriver.id(), "mariadb");
+        assert_eq!(
+            serde_json::to_value(MariadbDriver.capabilities()).unwrap(),
+            serde_json::to_value(MysqlDriver.capabilities()).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn each_flavor_accepts_only_its_own_options() {
+        let options = |mariadb: bool| {
+            let (host, port, database, user) =
+                ("127.0.0.1".into(), 1, String::new(), String::new());
+            if mariadb {
+                ConnectionOptions::Mariadb {
+                    proxy: None,
+                    proxy_secret: None,
+                    host,
+                    port,
+                    database,
+                    user,
+                    password: None,
+                    ssh_secret: None,
+                    ssh_jump_secrets: Default::default(),
+                    ssh_private_key: None,
+                    ssh_jump_private_keys: Default::default(),
+                    tls: TlsMode::Disable,
+                    root_certificate: None,
+                    tls_identity: None,
+                    ssh: None,
+                }
+            } else {
+                ConnectionOptions::Mysql {
+                    proxy: None,
+                    proxy_secret: None,
+                    host,
+                    port,
+                    database,
+                    user,
+                    password: None,
+                    ssh_secret: None,
+                    ssh_jump_secrets: Default::default(),
+                    ssh_private_key: None,
+                    ssh_jump_private_keys: Default::default(),
+                    tls: TlsMode::Disable,
+                    root_certificate: None,
+                    tls_identity: None,
+                    ssh: None,
+                }
+            }
+        };
+        let kind = |result: Result<Box<dyn Connection>>| result.err().map(|error| error.kind);
+        assert_eq!(
+            kind(MariadbDriver.connect(options(false)).await),
+            Some(ErrorKind::InvalidInput)
+        );
+        assert_eq!(
+            kind(MysqlDriver.connect(options(true)).await),
+            Some(ErrorKind::InvalidInput)
+        );
+    }
+
+    #[test]
+    fn unsupported_authentication_plugins_are_authentication_errors() {
+        let unknown = |name: &str| {
+            normalize(mysql_async::Error::Driver(
+                mysql_async::DriverError::UnknownAuthPlugin { name: name.into() },
+            ))
+        };
+        let parsec = unknown("parsec");
+        assert_eq!(parsec.kind, ErrorKind::Authentication);
+        assert!(parsec.message.contains("parsec"), "{}", parsec.message);
+        assert!(parsec.message.contains("mysql_native_password"));
+        assert!(parsec.message.contains("ed25519"));
+        let other = unknown("authentication_ldap_sasl");
+        assert_eq!(other.kind, ErrorKind::Authentication);
+        assert!(other.message.contains("authentication_ldap_sasl"));
+        assert!(!other.message.contains("ed25519"));
     }
 
     #[test]

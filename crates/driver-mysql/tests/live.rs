@@ -1,28 +1,10 @@
-//! Run with CHOSCORDB_MYSQL_TEST=1 against the disposable MySQL test server.
+//! Run against the disposable MySQL or MariaDB test server; see support/server.rs.
 use choscordb_driver_api::*;
-use choscordb_driver_mysql::MysqlDriver;
+#[path = "support/server.rs"]
+mod server;
 async fn connect() -> Box<dyn Connection> {
-    MysqlDriver
-        .connect(ConnectionOptions::Mysql {
-            ssh_jump_secrets: Default::default(),
-            ssh_private_key: None,
-            ssh_jump_private_keys: Default::default(),
-            proxy: None,
-            proxy_secret: None,
-            host: "127.0.0.1".into(),
-            port: std::env::var("CHOSCORDB_MYSQL_PORT")
-                .unwrap_or_else(|_| "33306".into())
-                .parse()
-                .unwrap(),
-            database: "choscordb_test".into(),
-            user: "root".into(),
-            password: Some(Secret::new("choscordb-test-password")),
-            ssh_secret: None,
-            tls: TlsMode::Disable,
-            tls_identity: None,
-            root_certificate: None,
-            ssh: None,
-        })
+    server::driver()
+        .connect(server::options(TlsMode::Disable))
         .await
         .unwrap()
 }
@@ -83,7 +65,9 @@ async fn object_graph_preserves_direct_composite_parallel_self_and_cross_schema_
             .collect::<Vec<_>>(),
         vec!["id", "parent_id", "peer_id", "peer_code"]
     );
-    assert_eq!(center.columns[0].database_type, "int");
+    // MariaDB keeps the integer display width in COLUMN_TYPE.
+    let int = if server::mariadb() { "int(11)" } else { "int" };
+    assert_eq!(center.columns[0].database_type, int);
     assert!(center.columns[0].primary_key);
     assert!(center.columns[1].foreign_key);
     assert!(center.columns[2].foreign_key);
@@ -141,7 +125,12 @@ async fn object_graph_preserves_direct_composite_parallel_self_and_cross_schema_
     assert_eq!(solo.availability, MetadataAvailability::Available);
     assert_eq!(solo.tables.len(), 1);
     assert!(solo.edges.is_empty());
-    assert_eq!(solo.tables[0].columns[0].database_type, "bigint");
+    let bigint = if server::mariadb() {
+        "bigint(20)"
+    } else {
+        "bigint"
+    };
+    assert_eq!(solo.tables[0].columns[0].database_type, bigint);
     let view = conn
         .load_object_graph(&ObjectId(r#"["choscordb_test","erd_graph_view"]"#.into()))
         .await
@@ -639,7 +628,10 @@ async fn metadata_ddl_and_independent_object_cursor() {
         .execute("SELECT 73", QueryOptions::default())
         .await
         .unwrap();
-    let mut object = conn.open_object(&table.id, 1024 * 1024).await.unwrap();
+    let mut object = conn
+        .open_object(&table.id, &ObjectDataTime::Current, 1024 * 1024)
+        .await
+        .unwrap();
     assert_eq!(
         object.fetch_page(PageSize::default()).await.unwrap().rows,
         vec![vec![Value::Integer(9), Value::Text("nine".into())]]
@@ -657,27 +649,8 @@ async fn metadata_ddl_and_independent_object_cursor() {
 #[tokio::test]
 #[ignore = "requires disposable MySQL server on localhost:33306"]
 async fn verified_tls_rejects_untrusted_server_as_tls_error() {
-    let result = MysqlDriver
-        .connect(ConnectionOptions::Mysql {
-            ssh_jump_secrets: Default::default(),
-            ssh_private_key: None,
-            ssh_jump_private_keys: Default::default(),
-            proxy: None,
-            proxy_secret: None,
-            host: "127.0.0.1".into(),
-            port: std::env::var("CHOSCORDB_MYSQL_PORT")
-                .unwrap_or_else(|_| "33306".into())
-                .parse()
-                .unwrap(),
-            database: "choscordb_test".into(),
-            user: "root".into(),
-            password: Some(Secret::new("choscordb-test-password")),
-            ssh_secret: None,
-            tls: TlsMode::VerifyFull,
-            tls_identity: None,
-            root_certificate: None,
-            ssh: None,
-        })
+    let result = server::driver()
+        .connect(server::options(TlsMode::VerifyFull))
         .await;
     assert_eq!(result.err().unwrap().kind, ErrorKind::Tls);
 }
@@ -793,7 +766,7 @@ async fn slow_object_can_be_cancelled_without_closing_sql_session() {
         .unwrap();
     let mut object = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        conn.open_object(&view.id, 1024 * 1024),
+        conn.open_object(&view.id, &ObjectDataTime::Current, 1024 * 1024),
     )
     .await
     .expect("opening object must not execute rows")
@@ -828,12 +801,7 @@ async fn object_browsing_cannot_write_through_a_stored_function() {
     let mut fixture = mysql_async::Conn::new(
         mysql_async::OptsBuilder::default()
             .ip_or_hostname("127.0.0.1")
-            .tcp_port(
-                std::env::var("CHOSCORDB_MYSQL_PORT")
-                    .unwrap_or_else(|_| "33306".into())
-                    .parse()
-                    .unwrap(),
-            )
+            .tcp_port(server::port())
             .user(Some("root"))
             .pass(Some("choscordb-test-password"))
             .db_name(Some("choscordb_test"))
@@ -866,7 +834,10 @@ async fn object_browsing_cannot_write_through_a_stored_function() {
         .into_iter()
         .find(|o| o.name == "mysql_write_view")
         .unwrap();
-    let mut cursor = conn.open_object(&view.id, 1024 * 1024).await.unwrap();
+    let mut cursor = conn
+        .open_object(&view.id, &ObjectDataTime::Current, 1024 * 1024)
+        .await
+        .unwrap();
     let result = cursor.fetch_page(PageSize::default()).await;
     let mut count = conn
         .execute(
@@ -987,12 +958,7 @@ async fn stored_procedure_results_preserve_each_schema() {
     let mut fixture = mysql_async::Conn::new(
         mysql_async::OptsBuilder::default()
             .ip_or_hostname("127.0.0.1")
-            .tcp_port(
-                std::env::var("CHOSCORDB_MYSQL_PORT")
-                    .unwrap_or_else(|_| "33306".into())
-                    .parse()
-                    .unwrap(),
-            )
+            .tcp_port(server::port())
             .db_name(Some("choscordb_test"))
             .user(Some("root"))
             .pass(Some("choscordb-test-password"))
@@ -1062,12 +1028,7 @@ async fn metadata_pages_browse_more_than_ten_thousand_objects() {
     let mut fixture = mysql_async::Conn::new(
         mysql_async::OptsBuilder::default()
             .ip_or_hostname("127.0.0.1")
-            .tcp_port(
-                std::env::var("CHOSCORDB_MYSQL_PORT")
-                    .unwrap_or_else(|_| "33306".into())
-                    .parse()
-                    .unwrap(),
-            )
+            .tcp_port(server::port())
             .user(Some("root"))
             .pass(Some("choscordb-test-password"))
             .prefer_socket(false),
@@ -1192,38 +1153,29 @@ async fn native_transport_admission_releases_on_close_and_drop() {
     for _ in 0..8 {
         connections.push(connect().await);
     }
-    let options = || ConnectionOptions::Mysql {
-        ssh_jump_secrets: Default::default(),
-        ssh_private_key: None,
-        ssh_jump_private_keys: Default::default(),
-        proxy: None,
-        proxy_secret: None,
-        host: "127.0.0.1".into(),
-        port: std::env::var("CHOSCORDB_MYSQL_PORT")
-            .unwrap_or_else(|_| "33306".into())
-            .parse()
-            .unwrap(),
-        database: "choscordb_test".into(),
-        user: "root".into(),
-        password: Some(Secret::new("choscordb-test-password")),
-        ssh_secret: None,
-        tls: TlsMode::Disable,
-        tls_identity: None,
-        root_certificate: None,
-        ssh: None,
-    };
+    let options = || server::options(TlsMode::Disable);
     assert_eq!(
-        MysqlDriver.connect(options()).await.err().unwrap().kind,
+        server::driver()
+            .connect(options())
+            .await
+            .err()
+            .unwrap()
+            .kind,
         ErrorKind::ResourceLimit
     );
     connections[0].close().await.unwrap();
-    let replacement = MysqlDriver.connect(options()).await.unwrap();
+    let replacement = server::driver().connect(options()).await.unwrap();
     assert_eq!(
-        MysqlDriver.connect(options()).await.err().unwrap().kind,
+        server::driver()
+            .connect(options())
+            .await
+            .err()
+            .unwrap()
+            .kind,
         ErrorKind::ResourceLimit
     );
     drop(replacement);
-    let mut replacement = MysqlDriver.connect(options()).await.unwrap();
+    let mut replacement = server::driver().connect(options()).await.unwrap();
     replacement.close().await.unwrap();
     for connection in &mut connections {
         connection.close().await.unwrap();
@@ -1246,14 +1198,65 @@ async fn ambiguous_text_fallback_is_rejected_before_side_effects() {
             QueryOptions::default(),
         )
         .await;
-    let failure = result
-        .err()
-        .expect("compound fallback must not bypass statement cancellation boundaries");
-    assert_eq!(failure.kind, ErrorKind::Unsupported);
+    // MariaDB prepares the whole routine as one statement, so nothing is split.
+    let created = if server::mariadb() {
+        drop(result.unwrap());
+        1
+    } else {
+        let failure = result
+            .err()
+            .expect("compound fallback must not bypass statement cancellation boundaries");
+        assert_eq!(failure.kind, ErrorKind::Unsupported);
+        0
+    };
     let mut observer = connect().await;
-    let mut cursor = observer.execute("SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA='choscordb_test' AND ROUTINE_NAME='mysql_ambiguous_routine'", QueryOptions::default()).await.unwrap();
+    let mut cursor = observer.execute("SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA='choscordb_test' AND ROUTINE_NAME='mysql_ambiguous_routine' AND ROUTINE_DEFINITION='BEGIN SELECT 1; END'", QueryOptions::default()).await.unwrap();
     assert_eq!(
         cursor.fetch_page(PageSize::default()).await.unwrap().rows,
-        vec![vec![Value::Integer(0)]]
+        vec![vec![Value::Integer(created)]]
     );
+}
+
+#[tokio::test]
+#[ignore = "requires disposable MySQL server on localhost:33306"]
+async fn json_columns_decode_as_json_and_checked_text_follows_the_server() {
+    let mut conn = connect().await;
+    for sql in [
+        "DROP TABLE IF EXISTS json_values",
+        "CREATE TABLE json_values (id INT PRIMARY KEY, doc JSON, note LONGTEXT CHECK (json_valid(note)), plain LONGTEXT)",
+        "INSERT INTO json_values VALUES (1, '{\"a\": 1}', '[1]', '{}')",
+    ] {
+        conn.execute(sql, QueryOptions::default()).await.unwrap();
+    }
+    let mut cursor = conn
+        .execute(
+            "SELECT doc, note, plain, JSON_OBJECT('b', 2) FROM json_values",
+            QueryOptions::default(),
+        )
+        .await
+        .unwrap();
+    let row = cursor
+        .fetch_page(PageSize::default())
+        .await
+        .unwrap()
+        .rows
+        .remove(0);
+    assert!(
+        matches!(&row[0], Value::Json(text) if text.contains("\"a\"")),
+        "{row:?}"
+    );
+    // MariaDB stores JSON as LONGTEXT with a json_valid check, so a checked
+    // LONGTEXT is JSON there; MySQL keeps its own JSON type distinct.
+    if server::mariadb() {
+        assert_eq!(row[1], Value::Json("[1]".into()));
+    } else {
+        assert_eq!(row[1], Value::Text("[1]".into()));
+    }
+    assert_eq!(row[2], Value::Text("{}".into()));
+    let object = match &row[3] {
+        Value::Json(text) | Value::Text(text) => text.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert!(object.contains("\"b\""));
+    cursor.close().await.unwrap();
 }

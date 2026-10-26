@@ -16,7 +16,8 @@ impl Engine {
         profile.validate().map_err(|_| SubmitError::InvalidInput)?;
         let ssh = match &profile.configuration {
             ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh.clone(),
+            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+            | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => ssh.clone(),
             _ => return Err(SubmitError::InvalidInput),
         };
         let count = match &target {

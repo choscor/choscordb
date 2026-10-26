@@ -1,4 +1,4 @@
-use crate::{error, id, normalize, parse_table, quote};
+use crate::{Flavor, error, id, normalize, parse_table, quote};
 use choscordb_driver_api::{
     ErrorKind, MetadataAvailability, ObjectGraph, ObjectGraphColumn, ObjectGraphEdge,
     ObjectGraphTable, ObjectId, Result,
@@ -159,7 +159,11 @@ async fn table_columns(
     })
 }
 
-pub(crate) async fn object_graph(conn: &mut Conn, object: &ObjectId) -> Result<ObjectGraph> {
+pub(crate) async fn object_graph(
+    conn: &mut Conn,
+    flavor: Flavor,
+    object: &ObjectId,
+) -> Result<ObjectGraph> {
     let (schema, table) = parse_table(object)?;
     let kind: Option<String> = conn
         .exec_first(
@@ -169,7 +173,7 @@ pub(crate) async fn object_graph(conn: &mut Conn, object: &ObjectId) -> Result<O
         .await
         .map_err(normalize)?;
     match kind.as_deref() {
-        Some("BASE TABLE") => {}
+        Some(kind) if flavor.base_table(kind) => {}
         Some(_) => {
             return Ok(ObjectGraph {
                 availability: MetadataAvailability::Unsupported,

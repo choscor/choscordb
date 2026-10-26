@@ -39,7 +39,8 @@ class ObjectExplorer final : public QWidget {
     void installDataWidget(QWidget* widget);
     void setOperationBusy(bool busy);
   signals:
-    void dataRequested(quint64 connection, const QString& object, const QString& label);
+    void dataRequested(quint64 connection, const QString& object, const QString& label,
+                       const QString& relationSubtype);
     void objectChanged();
     void sqlGenerated(quint64 connection, const QString& sql);
     void reconnectRequested();

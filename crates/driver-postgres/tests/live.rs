@@ -128,6 +128,7 @@ async fn unfamiliar_values_keep_server_text_and_native_binary_across_results() {
         let mut cursor = connection
             .open_object(
                 &ObjectId(format!("pg:relation:{relation}")),
+                &ObjectDataTime::Current,
                 4 * 1024 * 1024,
             )
             .await
@@ -350,7 +351,11 @@ async fn invalid_server_text_marks_only_the_affected_cell_unavailable() {
     for object in [true, false] {
         let mut cursor = if object {
             connection
-                .open_object(&ObjectId(format!("pg:relation:{oid}")), 4 * 1024 * 1024)
+                .open_object(
+                    &ObjectId(format!("pg:relation:{oid}")),
+                    &ObjectDataTime::Current,
+                    4 * 1024 * 1024,
+                )
                 .await
                 .unwrap()
         } else {
@@ -1461,7 +1466,10 @@ async fn object_pages_preserve_sql_portal_and_uncommitted_work() {
             .rows[0],
         vec![Value::Integer(101)]
     );
-    let mut object = c.open_object(&table.id, 4096).await.unwrap();
+    let mut object = c
+        .open_object(&table.id, &ObjectDataTime::Current, 4096)
+        .await
+        .unwrap();
     let page = object
         .fetch_page_bounded(PageSize::new(100).unwrap(), 65536)
         .await
@@ -1543,7 +1551,10 @@ async fn cancelling_object_read_keeps_user_savepoint_transaction_and_sql_portal(
             .rows[0],
         vec![Value::Integer(101)]
     );
-    let mut object = c.open_object(&view.id, 4096).await.unwrap();
+    let mut object = c
+        .open_object(&view.id, &ObjectDataTime::Current, 4096)
+        .await
+        .unwrap();
     let cancel = object.independent_cancellation_handle().unwrap();
     let read = tokio::spawn(async move {
         let result = object

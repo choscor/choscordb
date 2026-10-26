@@ -17,6 +17,7 @@
     <file alias="search.svg">icons/search.svg</file>
     <file alias="postgresql.svg">icons/postgresql.svg</file>
     <file alias="mysql.png">icons/mysql.png</file>
+    <file alias="mariadb.svg">icons/mariadb.svg</file>
     <file alias="sqlite.svg">icons/sqlite.svg</file>
     <file alias="database.svg">icons/database.svg</file>
     <file alias="check.svg">icons/check.svg</file>

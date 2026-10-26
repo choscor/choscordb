@@ -12,6 +12,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QStringList>
@@ -101,6 +102,28 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     statusLine->configure({summary, outcome, duration, memory, page, rows, previous, next});
     statusLine->setContent({{}, tr("Open Data to read an object."), {}, {}, {}, {}},
                            design::StatusLine::State::Neutral);
+    // Shown only for relations that keep history; Rust validates the time.
+    history_ = new QWidget(toolbar_);
+    history_->setObjectName("objectDataHistory");
+    auto* historyLayout = new QHBoxLayout(history_);
+    historyLayout->setContentsMargins(0, 0, 0, 0);
+    historyLayout->setSpacing(design::spacing(design::Spacing::One));
+    timeMode_ = new QComboBox(history_);
+    timeMode_->setObjectName("objectDataTimeMode");
+    timeMode_->setAccessibleName(tr("Rows to show"));
+    timeMode_->setToolTip(tr("Rows to show"));
+    timeMode_->addItem(tr("Current"), int(ObjectDataTime::Mode::Current));
+    timeMode_->addItem(tr("As of…"), int(ObjectDataTime::Mode::AsOf));
+    timeMode_->addItem(tr("All history"), int(ObjectDataTime::Mode::All));
+    asOf_ = new QLineEdit(history_);
+    asOf_->setObjectName("objectDataAsOf");
+    asOf_->setAccessibleName(tr("History time"));
+    asOf_->setPlaceholderText(tr("YYYY-MM-DD HH:MM:SS"));
+    asOf_->hide();
+    historyLayout->addWidget(timeMode_);
+    historyLayout->addWidget(asOf_);
+    toolbar->addWidget(history_);
+    history_->hide();
     auto* exportButton =
         makeButton(toolbar, tr("Export…"), "objectDataExport", design::Icon::Export);
     auto* addRow = makeButton(toolbar, tr("Add row"), "objectDataAddRow", design::Icon::Add);
@@ -213,16 +236,59 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     });
     connect(result_, &QueryWorkspace::foreignKeyRequested, this,
             &ObjectDataWorkspace::foreignKeyRequested);
+    connect(result_, &QueryWorkspace::activityChanged, history_,
+            [this](bool busy) { history_->setEnabled(!busy); });
+    connect(timeMode_, &QComboBox::currentIndexChanged, this, [this] {
+        const bool asOf = time().mode == ObjectDataTime::Mode::AsOf;
+        asOf_->setVisible(asOf);
+        if (asOf) {
+            asOf_->setFocus();
+            return;
+        }
+        readSelectedTime();
+    });
+    connect(asOf_, &QLineEdit::returnPressed, this, &ObjectDataWorkspace::readSelectedTime);
     connect(sql_, &QueryWorkspace::transactionStateChanged, this,
             [this](quint64, bool) { result_->refreshEditActions(); });
 }
 void ObjectDataWorkspace::openObject(quint64 connection, const QString& object,
-                                     const QString& label) {
-    if (!sql_ || !sql_->navigationAllowed() || !result_->navigationAllowed() || object.isEmpty())
+                                     const QString& label, const QString& relationSubtype) {
+    if (!canRead() || object.isEmpty())
         return;
-    const auto filter = std::exchange(initialFilter_, {});
-    result_->setDriverForConnection(connection, sql_->driverForConnection(connection));
-    result_->openObjectData(connection, object, label, sql_->queryPreferences(), false, filter);
+    const bool history = EngineAdapter::relationSubtypeHasHistory(relationSubtype);
+    if (!history || connection != connection_ || object != object_) {
+        const QSignalBlocker blocker(timeMode_);
+        timeMode_->setCurrentIndex(0);
+        shownTimeMode_ = 0;
+        asOf_->clear();
+        asOf_->hide();
+    }
+    history_->setVisible(history);
+    connection_ = connection;
+    object_ = object;
+    label_ = label;
+    read(std::exchange(initialFilter_, {}));
+}
+bool ObjectDataWorkspace::canRead() const {
+    return sql_ && sql_->navigationAllowed() && result_->navigationAllowed();
+}
+ObjectDataTime ObjectDataWorkspace::time() const {
+    const auto mode = ObjectDataTime::Mode(timeMode_->currentData().toInt());
+    return {mode, mode == ObjectDataTime::Mode::AsOf ? asOf_->text() : QString{}};
+}
+bool ObjectDataWorkspace::read(const QString& filter) {
+    result_->setDriverForConnection(connection_, sql_->driverForConnection(connection_));
+    return result_->openObjectData(connection_, object_, label_, sql_->queryPreferences(), false,
+                                   filter, time());
+}
+void ObjectDataWorkspace::readSelectedTime() {
+    if (canRead() && read({})) {
+        shownTimeMode_ = timeMode_->currentIndex();
+        return;
+    }
+    const QSignalBlocker blocker(timeMode_);
+    timeMode_->setCurrentIndex(shownTimeMode_);
+    asOf_->setVisible(time().mode == ObjectDataTime::Mode::AsOf);
 }
 void ObjectDataWorkspace::invalidate(bool connectionLost) {
     if (!resolvePendingEdits())

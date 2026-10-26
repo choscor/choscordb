@@ -784,6 +784,7 @@ fn driver_name(driver: Driver) -> &'static str {
         Driver::SQLite => "sqlite",
         Driver::PostgreSQL => "postgresql",
         Driver::MySQL => "mysql",
+        Driver::MariaDB => "mariadb",
     }
 }
 fn error_name(error: ErrorClass) -> &'static str {
@@ -1261,7 +1262,8 @@ const EVENT_NAMES: &[&str] = &[
     "error",
     "memory_sample",
 ];
-const DRIVER_NAMES: &[&str] = &["unknown", "sqlite", "postgresql", "mysql"];
+// Persisted in exported reports; append new drivers, never reorder.
+const DRIVER_NAMES: &[&str] = &["unknown", "sqlite", "postgresql", "mysql", "mariadb"];
 const ERROR_NAMES: &[&str] = &[
     "unknown",
     "connection",

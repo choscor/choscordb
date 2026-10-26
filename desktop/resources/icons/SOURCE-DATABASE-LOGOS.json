@@ -18,6 +18,12 @@
       "url": "https://www.mysql.com/common/logos/logo-mysql-170x115.png",
       "adaptation": "Unmodified official MySQL logo, downloaded 2026-09-21; original colors and proportions retained. MySQL is a trademark of Oracle and/or its affiliates. Logo usage policy: https://www.mysql.com/about/legal/logos.html. This provenance record does not grant trademark or logo-use permission.",
       "upstreamSha256": "2d59bc428916752528280eac03330d712164163e2f3c476409f5c25d8a7c2778"
+    },
+    "mariadb.svg": {
+      "sha256": "1ae3ebab21d34b3aac7106b67ad643d392fb09655796e1f6f62307afbcbe12fa",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/c/ca/MariaDB_colour_logo.svg",
+      "adaptation": "Extracted the sea lion symbol (the seven paths of the translate(-1614 -14.18) group), removed the wordmark, cropped a square viewBox; original paths and colors unchanged. Downloaded 2026-10-26 from Wikimedia Commons (GPL; vectorised from the MariaDB Foundation's mariadb_org_rgb_h.svg). MariaDB is a trademark of MariaDB Corporation Ab. This provenance record does not grant trademark or logo-use permission.",
+      "upstreamSha256": "a813eec16b9f31e0746f048ccf3a0226c6762f59292b818f5b53f9056724b44e"
     }
   }
 }

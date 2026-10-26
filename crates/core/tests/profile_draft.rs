@@ -40,6 +40,7 @@ fn field(draft: &ProfileDraft, secrets: &DraftSecrets<'_>) -> Option<DraftField>
 fn server_drivers_use_their_standard_ports() {
     assert_eq!(default_port("postgres"), 5432);
     assert_eq!(default_port("mysql"), 3306);
+    assert_eq!(default_port("mariadb"), 3306);
 }
 
 #[test]
@@ -47,6 +48,8 @@ fn switching_driver_moves_only_a_default_port() {
     assert_eq!(port_for_driver(5432, "mysql"), 3306);
     assert_eq!(port_for_driver(3306, "postgres"), 5432);
     assert_eq!(port_for_driver(6543, "mysql"), 6543);
+    assert_eq!(port_for_driver(5432, "mariadb"), 3306);
+    assert_eq!(port_for_driver(3306, "mariadb"), 3306);
     assert_eq!(port_for_driver(5432, "sqlite"), 5432);
 }
 
@@ -394,4 +397,5 @@ fn driver_forms_describe_the_fields_each_driver_uses() {
             database_selects_server: true,
         }
     );
+    assert_eq!(driver_form("mariadb"), driver_form("mysql"));
 }

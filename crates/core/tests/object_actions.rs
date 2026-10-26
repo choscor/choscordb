@@ -304,3 +304,111 @@ fn availability_needs_no_identity_and_matches_preparation() {
             .is_err()
     );
 }
+
+#[test]
+fn mariadb_relations_use_the_mysql_dialect() {
+    let drop = prepare_object_action(
+        ObjectAction::Drop,
+        "mariadb",
+        "table",
+        "[\"db\",\"a`b\"]",
+        "ignored",
+        "",
+        "",
+    )
+    .unwrap();
+    assert_eq!(drop.sql, "DROP TABLE `db`.`a``b`;");
+    let rename = prepare_object_action(
+        ObjectAction::Rename,
+        "mariadb",
+        "view",
+        "[\"db\",\"order\"]",
+        "ignored",
+        "x`y",
+        "",
+    )
+    .unwrap();
+    assert_eq!(rename.sql, "RENAME TABLE `db`.`order` TO `db`.`x``y`;");
+    assert_eq!(rename.new_object_id, "[\"db\",\"x`y\"]");
+    assert!(
+        prepare_object_action(
+            ObjectAction::Rename,
+            "mariadb",
+            "table",
+            "[\"db\",\"old\"]",
+            "ignored",
+            &"x".repeat(65),
+            "",
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn mariadb_sequences_drop_and_rename_like_tables() {
+    let drop = prepare_object_action(
+        ObjectAction::Drop,
+        "mariadb",
+        "sequence",
+        "[\"db\",\"order_ids\"]",
+        "ignored",
+        "",
+        "",
+    )
+    .unwrap();
+    assert_eq!(drop.sql, "DROP SEQUENCE `db`.`order_ids`;");
+    let rename = prepare_object_action(
+        ObjectAction::Rename,
+        "mariadb",
+        "sequence",
+        "[\"db\",\"order_ids\"]",
+        "ignored",
+        "invoice_ids",
+        "",
+    )
+    .unwrap();
+    assert_eq!(
+        rename.sql,
+        "RENAME TABLE `db`.`order_ids` TO `db`.`invoice_ids`;"
+    );
+    assert_eq!(rename.new_object_id, "[\"db\",\"invoice_ids\"]");
+    for driver in ["mysql", "postgres", "sqlite"] {
+        assert_eq!(
+            object_action_availability(ObjectAction::Drop, driver, "sequence", ""),
+            Err("This connection does not support sequence actions."),
+            "{driver}"
+        );
+    }
+}
+
+#[test]
+fn mariadb_system_versioned_tables_drop_and_rename() {
+    for action in [ObjectAction::Drop, ObjectAction::Rename] {
+        assert_eq!(
+            object_action_availability(action, "mariadb", "table", "system_versioned"),
+            Ok(())
+        );
+    }
+    assert_eq!(
+        prepare_object_action(
+            ObjectAction::Drop,
+            "mariadb",
+            "table",
+            "[\"db\",\"audit\"]",
+            "ignored",
+            "",
+            "system_versioned",
+        )
+        .unwrap()
+        .sql,
+        "DROP TABLE `db`.`audit`;"
+    );
+    assert!(
+        object_action_availability(ObjectAction::Drop, "mysql", "table", "system_versioned")
+            .is_err()
+    );
+    assert!(
+        object_action_availability(ObjectAction::Drop, "mariadb", "view", "system_versioned")
+            .is_err()
+    );
+}

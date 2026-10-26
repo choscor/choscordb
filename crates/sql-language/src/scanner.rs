@@ -27,9 +27,13 @@ pub(crate) fn scan_with_mode(
                 i += 1;
             }
         } else if b[i..].starts_with(b"/*") {
-            // MySQL executes version comments as SQL. Preserve a selectable
-            // statement and require confirmation rather than treating it as inert.
-            if mysql && b[i..].starts_with(b"/*!") {
+            // MySQL executes version comments as SQL, and MariaDB also runs its
+            // own `/*M!` form. Preserve a selectable statement and require
+            // confirmation rather than treating it as inert.
+            if mysql
+                && (b[i..].starts_with(b"/*!")
+                    || (mode.is_some_and(|mode| mode.mariadb) && b[i..].starts_with(b"/*M!")))
+            {
                 valid = false;
                 tokens.push(Token {
                     word: String::new(),

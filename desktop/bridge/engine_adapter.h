@@ -185,6 +185,12 @@ struct GridCellPolicy {
     bool inlineEditable = false, blocksRowDelete = false, blocksRowDuplicate = false,
          duplicateRequiresLoad = false;
 };
+// Which rows an object data read returns; Rust validates `asOf`.
+struct ObjectDataTime {
+    enum class Mode : uint8_t { Current, AsOf, All };
+    Mode mode = Mode::Current;
+    QString asOf;
+};
 // What the desktop may offer for a navigator object kind; Rust owns the table.
 struct ObjectKindTraits {
     bool opensObjectTab = false, ddl = false, relation = false, container = false, pinnable = false,
@@ -195,6 +201,8 @@ struct ObjectKindTraits {
     // The pane an object tab opens on when its object is selected; -1 for the default.
     int initialPane = -1;
     bool repeatsAcrossParents = false;
+    // Drop and rename may apply; objectActionUnavailableReason decides per driver.
+    bool objectActions = false;
 };
 // How the desktop sequences requests for one driver; Rust owns the rules.
 struct DriverWorkflow {
@@ -366,8 +374,10 @@ class EngineAdapter final : public QObject {
     void loadMetadataPage(quint64 connection, const QString& parent, quint64 requestToken,
                           quint64 offset);
     std::optional<quint64> openObjectData(quint64 connection, const QString& object,
-                                          const QueryPreferences& preferences = {});
-    bool inspectEditTarget(quint64 connection, const QString& object, quint64 token);
+                                          const QueryPreferences& preferences = {},
+                                          const ObjectDataTime& time = {});
+    bool inspectEditTarget(quint64 connection, const QString& object, quint64 token,
+                           const ObjectDataTime& time = {});
     bool inspectQueryEdit(quint64 connection, const QString& sql, const QStringList& resultColumns,
                           quint64 token);
     bool inspectResultCells(quint64 connection, const QString& object, const QString& sql,
@@ -398,6 +408,8 @@ class EngineAdapter final : public QObject {
     static const TransactionGuard& transactionGuard(bool transactionActive);
     // Whether a child of `parentKind` appears in the sidebar tree (cached per pair).
     static bool sidebarChildVisible(const QString& parentKind, const QString& kind);
+    // Whether objects of this relation subtype browse history (cached per subtype).
+    static bool relationSubtypeHasHistory(const QString& subtype);
     // Why drop or rename is unavailable for this object; empty when it applies.
     static QString objectActionUnavailableReason(bool rename, const QString& driver,
                                                  const QString& kind, const QString& subtype);

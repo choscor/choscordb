@@ -516,7 +516,8 @@ impl Engine {
         let inline_ids = inline_hop_ids(&profile);
         let all_hop_ids: Vec<&str> = match &profile.configuration {
             ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+            | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+            | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => ssh
                 .options
                 .jump_hosts
                 .iter()
@@ -570,6 +571,9 @@ impl Engine {
                 proxy: Some(proxy), ..
             }
             | ProfileConfiguration::Mysql {
+                proxy: Some(proxy), ..
+            }
+            | ProfileConfiguration::Mariadb {
                 proxy: Some(proxy), ..
             } = &profile.configuration
             && proxy.needs_password()
@@ -682,11 +686,7 @@ impl Engine {
         {
             validate_secret(secret)?;
         }
-        let driver_id = match profile.configuration {
-            ProfileConfiguration::Sqlite { .. } => "sqlite",
-            ProfileConfiguration::Postgres { .. } => "postgres",
-            ProfileConfiguration::Mysql { .. } => "mysql",
-        };
+        let driver_id = profile.configuration.driver_id();
         let driver = self
             .drivers
             .get(driver_id)
@@ -709,7 +709,8 @@ impl Engine {
                 result = tokio::time::timeout(test_timeout, async {
                     let mut options = profile_options(&profile, secrets);
                     if let ConnectionOptions::Postgres { ssh: Some(ssh), .. }
-                    | ConnectionOptions::Mysql { ssh: Some(ssh), .. } = &mut options {
+                    | ConnectionOptions::Mysql { ssh: Some(ssh), .. }
+                    | ConnectionOptions::Mariadb { ssh: Some(ssh), .. } = &mut options {
                         ssh.options.share_tunnels = false;
                     }
                     resolve_options(&commands, references, &mut options).await?;
@@ -730,7 +731,8 @@ impl Engine {
 fn credential_hop_ids(profile: &ConnectionProfile) -> Vec<&str> {
     match &profile.configuration {
         ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => ssh
             .options
             .jump_hosts
             .iter()
@@ -743,7 +745,8 @@ fn credential_hop_ids(profile: &ConnectionProfile) -> Vec<&str> {
 fn inline_target(profile: &ConnectionProfile) -> bool {
     match &profile.configuration {
         ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => {
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => {
             ssh.authentication == choscordb_driver_api::SshAuthentication::PublicKey
                 && ssh.identity_source == choscordb_driver_api::SshIdentitySource::Inline
         }
@@ -753,7 +756,8 @@ fn inline_target(profile: &ConnectionProfile) -> bool {
 fn inline_hop_ids(profile: &ConnectionProfile) -> Vec<&str> {
     match &profile.configuration {
         ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => ssh
             .options
             .jump_hosts
             .iter()
@@ -803,7 +807,8 @@ fn validate_hop_secrets(
     }
     let ssh = match &profile.configuration {
         ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh,
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => ssh,
         _ => return Ok(()),
     };
     for (id, secret) in secrets {
@@ -838,7 +843,8 @@ fn validate_inline_secrets(
     }
     let ssh = match &profile.configuration {
         ProfileConfiguration::Postgres { ssh: Some(ssh), .. }
-        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. } => ssh,
+        | ProfileConfiguration::Mysql { ssh: Some(ssh), .. }
+        | ProfileConfiguration::Mariadb { ssh: Some(ssh), .. } => ssh,
         _ => return Ok(()),
     };
     for (id, key) in &secrets.ssh_jump_private_keys {
@@ -915,12 +921,17 @@ fn profile_options(profile: &ConnectionProfile, secrets: ProfileSecrets) -> Conn
     | ConnectionOptions::Mysql {
         tls_identity: Some(identity),
         ..
+    }
+    | ConnectionOptions::Mariadb {
+        tls_identity: Some(identity),
+        ..
     } = &mut options
     {
         identity.password = secrets.tls;
     }
     if let ConnectionOptions::Postgres { proxy_secret, .. }
-    | ConnectionOptions::Mysql { proxy_secret, .. } = &mut options
+    | ConnectionOptions::Mysql { proxy_secret, .. }
+    | ConnectionOptions::Mariadb { proxy_secret, .. } = &mut options
     {
         *proxy_secret = secrets.proxy;
     }
@@ -928,6 +939,9 @@ fn profile_options(profile: &ConnectionProfile, secrets: ProfileSecrets) -> Conn
         ssh_jump_secrets, ..
     }
     | ConnectionOptions::Mysql {
+        ssh_jump_secrets, ..
+    }
+    | ConnectionOptions::Mariadb {
         ssh_jump_secrets, ..
     } = &mut options
     {
@@ -939,6 +953,11 @@ fn profile_options(profile: &ConnectionProfile, secrets: ProfileSecrets) -> Conn
         ..
     }
     | ConnectionOptions::Mysql {
+        ssh_private_key,
+        ssh_jump_private_keys,
+        ..
+    }
+    | ConnectionOptions::Mariadb {
         ssh_private_key,
         ssh_jump_private_keys,
         ..
@@ -994,6 +1013,19 @@ async fn resolve_options(
         ..
     }
     | ConnectionOptions::Mysql {
+        password,
+        ssh_secret,
+        ssh_private_key,
+        ssh_jump_secrets,
+        ssh_jump_private_keys,
+        ssh,
+        tls,
+        tls_identity,
+        proxy,
+        proxy_secret,
+        ..
+    }
+    | ConnectionOptions::Mariadb {
         password,
         ssh_secret,
         ssh_private_key,
@@ -1101,7 +1133,9 @@ async fn resolve_options(
 
 fn connection_budget(options: &ConnectionOptions) -> Duration {
     let connection = match options {
-        ConnectionOptions::Postgres { ssh, .. } | ConnectionOptions::Mysql { ssh, .. } => {
+        ConnectionOptions::Postgres { ssh, .. }
+        | ConnectionOptions::Mysql { ssh, .. }
+        | ConnectionOptions::Mariadb { ssh, .. } => {
             ssh.as_ref().map_or(Duration::from_secs(15), |settings| {
                 Duration::from_secs(u64::from(settings.options.connect_timeout_seconds))
             })
@@ -1190,11 +1224,7 @@ impl Engine {
         {
             validate_secret(secret)?;
         }
-        let id = match profile.configuration {
-            ProfileConfiguration::Sqlite { .. } => "sqlite",
-            ProfileConfiguration::Postgres { .. } => "postgres",
-            ProfileConfiguration::Mysql { .. } => "mysql",
-        };
+        let id = profile.configuration.driver_id();
         let inner = self
             .drivers
             .get(id)

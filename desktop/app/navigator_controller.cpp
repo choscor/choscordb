@@ -545,7 +545,7 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
                               index.data(NavigatorModel::KindRole).toString(),
                               index.data(NavigatorModel::PropertiesRole).toList());
     });
-    if (!traits.relation)
+    if (!traits.objectActions)
         return;
     const auto connection = index.data(NavigatorModel::ConnectionRole).toULongLong();
     const auto objectId = index.data(NavigatorModel::ObjectIdRole).toString();
@@ -586,6 +586,8 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
     };
     connect(drop, &QAction::triggered, this, [dispatch] { dispatch(QStringLiteral("drop")); });
     connect(rename, &QAction::triggered, this, [dispatch] { dispatch(QStringLiteral("rename")); });
+    if (!traits.relation)
+        return;
     menu->addSeparator();
     auto* generate = menu->addMenu(tr("Generate SQL"));
     const auto columnNames = [this](const QModelIndex& relation, bool firstOnly) {

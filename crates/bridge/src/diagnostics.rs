@@ -191,6 +191,7 @@ fn driver(value: u16) -> Option<Driver> {
         1 => Driver::SQLite,
         2 => Driver::PostgreSQL,
         3 => Driver::MySQL,
+        4 => Driver::MariaDB,
         _ => return None,
     })
 }

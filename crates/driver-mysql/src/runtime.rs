@@ -43,6 +43,7 @@ struct State {
     failure: Option<(usize, DriverError)>,
 }
 struct Shared {
+    flavor: Flavor,
     state: Mutex<State>,
     changed: tokio::sync::Notify,
     spool: spool::Spool,
@@ -69,6 +70,7 @@ pub(super) struct StreamCursor {
 }
 
 pub(super) struct Start {
+    pub flavor: Flavor,
     pub idle: idle::Tracker,
     pub sql: String,
     pub options: QueryOptions,
@@ -88,6 +90,7 @@ pub(super) async fn start(
     request: Start,
 ) -> Result<(Result<StreamCursor>, tokio::task::JoinHandle<Option<Conn>>)> {
     let Start {
+        flavor,
         idle,
         sql,
         options,
@@ -101,6 +104,7 @@ pub(super) async fn start(
         proxy,
     } = request;
     let shared = Arc::new(Shared {
+        flavor,
         state: Mutex::new(State {
             sets: Vec::new(),
             done: false,
@@ -310,6 +314,13 @@ pub(super) async fn start(
     }
 }
 
+/// The splitter's dialect: MariaDB also executes `/*M!` comments.
+fn sql_mode(flavor: Flavor, mode: Option<&str>) -> choscordb_sql_language::MysqlSqlMode {
+    choscordb_sql_language::MysqlSqlMode {
+        mariadb: flavor == Flavor::Mariadb,
+        ..choscordb_sql_language::MysqlSqlMode::from_sql_mode(mode.unwrap_or(""))
+    }
+}
 async fn produce(
     conn: &mut Conn,
     sql: &str,
@@ -353,9 +364,7 @@ async fn produce(
                     .query_first("SELECT @@SESSION.sql_mode")
                     .await
                     .map_err(normalize)?;
-                let mode = choscordb_sql_language::MysqlSqlMode::from_sql_mode(
-                    mode.as_deref().unwrap_or(""),
-                );
+                let mode = sql_mode(shared.flavor, mode.as_deref());
                 let ranges =
                     choscordb_sql_language::statement_ranges_mysql_with_mode(remaining, mode);
                 let Some(range) = ranges.first() else {
@@ -400,7 +409,7 @@ async fn produce(
                 .map_err(normalize)?;
             let ranges = choscordb_sql_language::statement_ranges_mysql_with_mode(
                 sql,
-                choscordb_sql_language::MysqlSqlMode::from_sql_mode(mode.as_deref().unwrap_or("")),
+                sql_mode(shared.flavor, mode.as_deref()),
             );
             if ranges.len() != 1 {
                 return Err(error(
@@ -434,7 +443,14 @@ async fn produce_statement(
     shared: &Arc<Shared>,
 ) -> Result<()> {
     let (expected, more_statements, cancel, transaction_started) = shape;
+    let mut json = Arc::from([]);
     if let Some(stmt) = &stmt {
+        if shared.flavor == Flavor::Mariadb {
+            // Without the catalog checks, values decode as text.
+            json = json_columns(conn, stmt.columns())
+                .await
+                .unwrap_or_else(|_| Arc::from([]));
+        }
         let schema = columns(stmt.columns(), max)?;
         if expected
             .as_ref()
@@ -459,13 +475,13 @@ async fn produce_statement(
     let first = shared.lock()?.sets.len();
     if let Some(stmt) = stmt {
         let result = conn.exec_iter(&stmt, ()).await.map_err(normalize)?;
-        collect(result, max, shared).await?;
+        collect(result, max, json.clone(), shared).await?;
         conn.close(stmt).await.map_err(normalize)?;
     } else {
         // Administrative SQL unsupported by the prepared protocol is one server
         // statement, validated by the mode-aware splitter above.
         let result = conn.query_iter(sql).await.map_err(normalize)?;
-        collect(result, max, shared).await?;
+        collect(result, max, json, shared).await?;
     }
     shared.idle.observe(conn, sql, started);
     let transaction_active = transaction_active(conn);
@@ -486,9 +502,52 @@ async fn produce_statement(
     shared.changed.notify_waiters();
     Ok(())
 }
+/// MariaDB's JSON type is an alias for LONGTEXT with a `json_valid` column
+/// check, so the wire type cannot identify JSON. Read the checks of the source
+/// tables once per statement, never per row.
+async fn json_columns(conn: &mut Conn, columns: &[mysql_async::Column]) -> Result<Arc<[bool]>> {
+    let mut tables: Vec<(String, String)> = columns
+        .iter()
+        .filter(|column| !column.org_table_ref().is_empty())
+        .map(|column| {
+            (
+                column.schema_str().into_owned(),
+                column.org_table_str().into_owned(),
+            )
+        })
+        .collect();
+    tables.sort();
+    tables.dedup();
+    let mut checks = std::collections::HashSet::new();
+    for (schema, table) in tables {
+        let clauses: Vec<String> = conn
+            .exec(
+                "SELECT CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = ? AND TABLE_NAME = ? AND LEVEL = 'Column'",
+                (&schema, &table),
+            )
+            .await
+            .map_err(normalize)?;
+        checks.extend(
+            clauses
+                .into_iter()
+                .map(|clause| (schema.clone(), table.clone(), clause)),
+        );
+    }
+    Ok(columns
+        .iter()
+        .map(|column| {
+            checks.contains(&(
+                column.schema_str().into_owned(),
+                column.org_table_str().into_owned(),
+                format!("json_valid({})", quote(&column.org_name_str())),
+            ))
+        })
+        .collect())
+}
 async fn collect<P: mysql_async::prelude::Protocol>(
     mut result: mysql_async::QueryResult<'_, '_, P>,
     max: usize,
+    json: Arc<[bool]>,
     shared: &Arc<Shared>,
 ) -> Result<()> {
     loop {
@@ -511,6 +570,7 @@ async fn collect<P: mysql_async::prelude::Protocol>(
         shared.changed.notify_waiters();
         while let Some(row) = result.next().await.map_err(normalize)? {
             let wire_columns = wire_columns.clone();
+            let json = json.clone();
             let file = file.clone();
             let mut spool = shared.spool.clone();
             // Blocking disk work cannot be aborted. Keep its admission alive if
@@ -526,7 +586,8 @@ async fn collect<P: mysql_async::prelude::Protocol>(
                     .unwrap()
                     .into_iter()
                     .zip(wire_columns.iter())
-                    .map(|(v, c)| value(v, c))
+                    .enumerate()
+                    .map(|(i, (v, c))| value(v, c, json.get(i).copied().unwrap_or(false)))
                     .collect::<Result<_>>()?;
                 let mut inline_bytes = 0usize;
                 for value in &mut row {

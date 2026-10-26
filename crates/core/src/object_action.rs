@@ -1,4 +1,4 @@
-//! Validation and SQL generation for navigator relation actions.
+//! Validation and SQL generation for navigator relation and sequence actions.
 use serde_json::Value;
 
 const MAX_NAME_UNITS: usize = 1024 * 1024;
@@ -25,7 +25,7 @@ fn valid_name(name: &str, driver: &str, is_new: bool) -> bool {
         return false;
     }
     match driver {
-        "mysql" => {
+        "mysql" | "mariadb" => {
             name.encode_utf16().count() <= 64
                 && !name.ends_with(' ')
                 && name.chars().all(|character| character.len_utf16() == 1)
@@ -100,7 +100,7 @@ fn identity(driver: &str, object_id: &str, qualified_name: &str) -> Option<(Stri
         }
         return Some((schema, name));
     }
-    if driver != "sqlite" && driver != "mysql" {
+    if !matches!(driver, "sqlite" | "mysql" | "mariadb") {
         return None;
     }
     let Value::Array(parts) = serde_json::from_str::<Value>(object_id).ok()? else {
@@ -124,17 +124,22 @@ pub fn object_action_availability(
     kind: &str,
     relation_subtype: &str,
 ) -> Result<(), &'static str> {
-    if kind != "table" && kind != "view" {
-        return Err("Only tables and views support this action.");
+    if !matches!(kind, "table" | "view" | "sequence") {
+        return Err("Only tables, views and sequences support this action.");
     }
-    if !matches!(driver, "sqlite" | "postgres" | "mysql") {
+    if !matches!(driver, "sqlite" | "postgres" | "mysql" | "mariadb") {
         return Err("This connection does not support this action.");
     }
-    if !relation_subtype.is_empty()
-        && !(driver == "postgres"
-            && ((relation_subtype == "materialized_view" && kind == "view")
-                || (relation_subtype == "foreign_table" && kind == "table")))
-    {
+    if kind == "sequence" && driver != "mariadb" {
+        return Err("This connection does not support sequence actions.");
+    }
+    if !matches!(
+        (driver, kind, relation_subtype),
+        (_, _, "")
+            | ("postgres", "view", "materialized_view")
+            | ("postgres", "table", "foreign_table")
+            | ("mariadb", "table", "system_versioned")
+    ) {
         return Err("The selected relation type is not supported.");
     }
     if action == ObjectAction::Rename && driver == "sqlite" && kind == "view" {
@@ -155,7 +160,8 @@ pub fn prepare_object_action(
     object_action_availability(action, driver, kind, relation_subtype)?;
     let (schema, old_name) = identity(driver, object_id, qualified_name)
         .ok_or("The selected object has an invalid identity.")?;
-    let delimiter = if driver == "mysql" { '`' } else { '"' };
+    let mysql = matches!(driver, "mysql" | "mariadb");
+    let delimiter = if mysql { '`' } else { '"' };
     let original = format!(
         "{}.{}",
         quoted(&schema, delimiter),
@@ -165,6 +171,7 @@ pub fn prepare_object_action(
         "materialized_view" => "MATERIALIZED VIEW",
         "foreign_table" => "FOREIGN TABLE",
         _ if kind == "table" => "TABLE",
+        _ if kind == "sequence" => "SEQUENCE",
         _ => "VIEW",
     };
     if action == ObjectAction::Drop {
@@ -185,7 +192,7 @@ pub fn prepare_object_action(
         quoted(&schema, delimiter),
         quoted(new_name, delimiter)
     );
-    let sql = if driver == "mysql" {
+    let sql = if mysql {
         format!("RENAME TABLE {original} TO {target};")
     } else {
         format!(

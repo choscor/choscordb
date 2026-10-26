@@ -102,9 +102,10 @@ class QueryWorkspace final : public QObject {
     QueryPreferences queryPreferences() const;
     void setExternalWork(bool busy);
     void setExternalWork(QObject* source, bool busy);
-    void openObjectData(quint64 connection, const QString& object, const QString& label,
+    // False when the read did not start, such as when pending edits were kept.
+    bool openObjectData(quint64 connection, const QString& object, const QString& label,
                         const QueryPreferences& preferences, bool preserveView = false,
-                        const QString& initialFilter = {});
+                        const QString& initialFilter = {}, const ObjectDataTime& time = {});
     void invalidateResult(bool connectionLost = false);
     bool hasPendingEdits() const { return model_->hasPendingEdits(); }
     bool activeManualTransaction(quint64 connection) const {
@@ -115,6 +116,7 @@ class QueryWorkspace final : public QObject {
     bool navigationAllowed() const { return !workInFlight() && !stopping_; }
   signals:
     void connectionReady(quint64 connection);
+    void connectionNotice(const QString& notice);
     void documentTargetChanged();
     void openQueryRequested(quint64 connection);
     void activityChanged(bool busy);
@@ -259,6 +261,7 @@ class QueryWorkspace final : public QObject {
     QString completedAffectedRows_;
     std::optional<quint64> completedDurationMs_;
     QString objectId_;
+    ObjectDataTime objectTime_;
     QString executedSql_, editParameterStyle_;
     QString editQualifiedName_, editReason_;
     std::vector<QString> editColumnNames_;

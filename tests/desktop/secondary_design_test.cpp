@@ -284,6 +284,39 @@ class SecondaryDesignTest final : public QObject {
                     .contains("passwordless", Qt::CaseInsensitive));
     }
 
+    void mariadbProfileChoiceUsesServerFieldsDefaultPortAndSealIcon() {
+        using namespace choscordb;
+        EngineAdapter adapter;
+        ProfileDialog dialog(&adapter);
+        dialog.show();
+        auto* driver = dialog.findChild<QComboBox*>("profileDriver");
+        QTRY_VERIFY(driver->isEnabled());
+        dialog.findChild<QPushButton*>("profileDriverPostgres")->click();
+        auto* port = dialog.findChild<QSpinBox*>("profilePort");
+        QCOMPARE(port->value(), 5432);
+        auto* mariadb = dialog.findChild<QPushButton*>("profileDriverMariadb");
+        QVERIFY(mariadb);
+        mariadb->click();
+        QCOMPARE(driver->currentData().toString(), QString("mariadb"));
+        QVERIFY(mariadb->isChecked());
+        QVERIFY(!dialog.findChild<QPushButton*>("profileDriverMysql")->isChecked());
+        QCOMPARE(port->value(), 3306);
+        QVERIFY(dialog.findChild<QLineEdit*>("profileHost")->isVisible());
+        QVERIFY(!dialog.findChild<QLineEdit*>("profilePath")->isVisible());
+        QVERIFY(dialog.findChild<QCheckBox*>("profileSshEnabled")->isVisible());
+        QVERIFY(
+            dialog.findChild<QLineEdit*>("profileUser")->placeholderText().contains("anonymous"));
+        const auto icon = mariadb->icon().pixmap(QSize(32, 32), 2.0).toImage();
+        bool brown = false;
+        for (int y = 0; y < icon.height(); ++y)
+            for (int x = 0; x < icon.width(); ++x) {
+                const auto pixel = icon.pixelColor(x, y);
+                brown |= pixel.alpha() > 200 && qAbs(pixel.red() - 0xc0) < 16 &&
+                         qAbs(pixel.green() - 0x76) < 16 && qAbs(pixel.blue() - 0x5a) < 16;
+            }
+        QVERIFY2(brown, "The MariaDB choice shows the MariaDB seal");
+    }
+
     void mysqlProfileChoiceUsesServerFieldsAndDefaultPortWithSsh() {
         using namespace choscordb;
         EngineAdapter adapter;

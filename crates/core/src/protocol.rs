@@ -252,6 +252,8 @@ pub enum Event {
         connection: ConnectionId,
         capabilities: DriverCapabilities,
         transaction_active: Option<bool>,
+        /// Non-blocking messages to show with the new session.
+        notices: Vec<String>,
     },
     Disconnected {
         connection: ConnectionId,
