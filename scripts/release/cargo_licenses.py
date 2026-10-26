@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Collect license texts for the normal Rust dependency closure into a local sidecar."""
+"""Collect license texts for the normal Rust dependency closure into a local sidecar.
+
+A package without license files is recorded as spdx-only: its declared license
+expression and repository URL, with no text files.
+"""
 
 import argparse
 import hashlib
@@ -17,11 +21,11 @@ def license_files(root):
         return []
     result = []
     for path in sorted(root.iterdir(), key=lambda item: item.name.lower()):
-        if (
-            path.is_file()
-            and not path.is_symlink()
-            and path.name.lower().startswith(LICENSE_PREFIXES)
-        ):
+        if not path.name.lower().startswith(LICENSE_PREFIXES):
+            continue
+        if path.is_symlink():
+            raise ValueError(f"Symlinked Cargo license text: {path.name}")
+        if path.is_file():
             data = path.read_bytes()
             if not data.strip():
                 raise ValueError(f"Empty Cargo license text: {path.name}")
@@ -30,9 +34,8 @@ def license_files(root):
     return result
 
 
-def collect(metadata_path, fallback, output, root_package):
+def collect(metadata_path, output, root_package):
     metadata_path = Path(metadata_path).resolve(strict=True)
-    fallback = Path(fallback).resolve(strict=True)
     output = Path(output).absolute()
     if output.exists() or output.is_symlink():
         raise FileExistsError(output)
@@ -51,35 +54,16 @@ def collect(metadata_path, fallback, output, root_package):
         ):
             raise ValueError(f"Cargo manifest is missing or unsafe: {coordinate}")
         texts = license_files(manifest.parent)
-        origin = "cargo-package"
-        verification = None
-        if not texts:
-            override = fallback / coordinate
-            texts = license_files(override)
-            source_record = override / "source.json"
-            if not texts or source_record.is_symlink() or not source_record.is_file():
-                raise ValueError(f"License texts unavailable for {coordinate}")
-            verification = json.loads(source_record.read_text())
-            expected = verification.get("files")
-            actual = {name: hashlib.sha256(data).hexdigest() for name, data in texts}
-            if (
-                verification.get("coordinate") != coordinate
-                or expected != actual
-                or not str(verification.get("url", "")).startswith("https://")
-            ):
-                raise ValueError(
-                    f"Verified fallback digest or source mismatch for {coordinate}"
-                )
-            origin = "verified-fallback"
-        prepared.append((coordinate, texts))
+        if texts:
+            prepared.append((coordinate, texts))
         rows.append(
             {
                 "name": package["name"],
                 "version": package["version"],
                 "license": package.get("license"),
                 "source": package.get("source"),
-                "origin": origin,
-                "verification": verification,
+                "repository": package.get("repository") or package.get("homepage"),
+                "origin": "cargo-package" if texts else "spdx-only",
                 "files": [
                     {"path": name, "sha256": hashlib.sha256(data).hexdigest()}
                     for name, data in texts
@@ -111,15 +95,10 @@ def collect(metadata_path, fallback, output, root_package):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cargo-metadata", type=Path, required=True)
-    parser.add_argument("--fallback", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cargo-root-package", required=True)
     args = parser.parse_args()
-    print(
-        collect(
-            args.cargo_metadata, args.fallback, args.output, args.cargo_root_package
-        )
-    )
+    print(collect(args.cargo_metadata, args.output, args.cargo_root_package))
 
 
 if __name__ == "__main__":

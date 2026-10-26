@@ -955,7 +955,6 @@ def package(args):
     )
     cargo_licenses.collect(
         metadata,
-        root / "docs/licenses/cargo-fallbacks",
         output / "cargo-licenses",
         "choscordb-bridge",
     )

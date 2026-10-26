@@ -82,6 +82,68 @@ class PackagingSafetyTests(unittest.TestCase):
                     root / "stage", root / "qsci", qt, "x86_64-unknown-linux-gnu"
                 )
 
+    def test_notices_name_spdx_only_cargo_packages_without_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "stage/share/licenses/choscordb").mkdir(parents=True)
+            (root / "qsci/share/licenses/QScintilla").mkdir(parents=True)
+            qt = root / "qt-notices"
+            qt.mkdir()
+            (qt / "source.json").write_text(
+                json.dumps(
+                    {
+                        "version": "6.8.3",
+                        "modules": {
+                            "qtbase": {
+                                "sha256": cross_platform.QTBASE_SHA256,
+                                "copied_files": [],
+                            },
+                            "qtsvg": {
+                                "sha256": cross_platform.QTSVG_SHA256,
+                                "copied_files": [],
+                            },
+                        },
+                    }
+                )
+            )
+
+            def collect(metadata, output, root_package):
+                output.mkdir()
+                packages = [
+                    {
+                        "name": "texts",
+                        "version": "1.0",
+                        "license": "MIT",
+                        "repository": "https://example.org/texts",
+                        "origin": "cargo-package",
+                    },
+                    {
+                        "name": "bare",
+                        "version": "2.0",
+                        "license": "Apache-2.0",
+                        "repository": "https://example.org/bare",
+                        "origin": "spdx-only",
+                    },
+                ]
+                (output / "index.json").write_text(json.dumps({"packages": packages}))
+
+            with (
+                patch.object(cross_platform, "run"),
+                patch.object(cross_platform.cargo_licenses, "collect", collect),
+            ):
+                cross_platform.add_notices(
+                    root / "stage", root / "qsci", qt, "x86_64-unknown-linux-gnu"
+                )
+            notices = (
+                root / "stage/share/licenses/choscordb/THIRD_PARTY_NOTICES.md"
+            ).read_text()
+        self.assertIn("- texts 1.0 — MIT; license texts: Cargo/texts@1.0/", notices)
+        self.assertIn(
+            "- bare 2.0 — Apache-2.0; license text is not packaged; "
+            "source: https://example.org/bare",
+            notices,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

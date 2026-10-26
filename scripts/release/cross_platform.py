@@ -147,7 +147,6 @@ def add_notices(prefix, qsci, qt_notices, cargo_target):
         )
     cargo_licenses.collect(
         metadata,
-        ROOT / "docs/licenses/cargo-fallbacks",
         licenses / "Cargo",
         "choscordb-bridge",
     )
@@ -163,9 +162,14 @@ def add_notices(prefix, qsci, qt_notices, cargo_target):
         "",
     ]
     for package in packages:
+        texts = (
+            f"license text is not packaged; source: {package['repository'] or 'NOASSERTION'}"
+            if package["origin"] == "spdx-only"
+            else f"license texts: Cargo/{package['name']}@{package['version']}/"
+        )
         lines.append(
             f"- {package['name']} {package['version']} — {package['license'] or 'NOASSERTION'}; "
-            f"license texts: Cargo/{package['name']}@{package['version']}/"
+            + texts
         )
     (licenses / "THIRD_PARTY_NOTICES.md").write_text("\n".join(lines) + "\n")
 

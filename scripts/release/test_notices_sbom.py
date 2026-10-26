@@ -82,14 +82,6 @@ class NoticesTest(unittest.TestCase):
             payload["choscordb.app/Contents/Resources/licenses/" + name] = (
                 fonts / name
             ).read_bytes()
-        shadcn = repository / "docs/licenses/shadcn"
-        for source_name, staged_name in [
-            ("LICENSE.md", "LICENSE-SHADCN"),
-            ("manifest.json", "SOURCE-SHADCN.json"),
-        ]:
-            payload["choscordb.app/Contents/Resources/licenses/" + staged_name] = (
-                shadcn / source_name
-            ).read_bytes()
         for name, data in payload.items():
             path = self.stage / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -105,9 +97,7 @@ class NoticesTest(unittest.TestCase):
                             "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                             "size": path.stat().st_size,
                         }
-                        for path in sorted(
-                            [*icons.iterdir(), *fonts.iterdir(), *shadcn.iterdir()]
-                        )
+                        for path in sorted([*icons.iterdir(), *fonts.iterdir()])
                         if path.is_file()
                     ],
                 }
@@ -232,22 +222,34 @@ class NoticesTest(unittest.TestCase):
             "aarch64-apple-darwin",
         )
 
-    def test_shadcn_adaptations_have_verified_attribution(self):
-        document = json.loads((self.generate() / "sbom.spdx.json").read_text())
-        shadcn = [p for p in document["packages"] if p["name"] == "shadcn/ui"]
-        self.assertEqual(len(shadcn), 1)
+    def test_cargo_package_without_license_files_is_recorded_spdx_only(self):
+        (self.licenses / "dependency@1.0/LICENSE").unlink()
+        (self.licenses / "dependency@1.0").rmdir()
+        index = json.loads((self.licenses / "index.json").read_text())
+        index["packages"][0].update(
+            {
+                "files": [],
+                "origin": "spdx-only",
+                "repository": "https://example.org/dependency",
+            }
+        )
+        (self.licenses / "index.json").write_text(json.dumps(index))
+        self.cargo["packages"][1]["repository"] = "https://example.org/dependency"
+        self.metadata.write_text(json.dumps(self.cargo))
+        result = self.generate()
+        document = json.loads((result / "sbom.spdx.json").read_text())
+        dependency = next(p for p in document["packages"] if p["name"] == "dependency")
+        self.assertEqual(dependency["licenseDeclared"], "MIT")
         self.assertEqual(
-            shadcn[0]["versionInfo"], "2b3e6d4f8d9161fe5c19340dc383aade392012dd"
+            dependency["downloadLocation"], "https://example.org/dependency"
         )
-        self.assertEqual(shadcn[0]["licenseDeclared"], "MIT")
-        self.assertIn("base-nova", shadcn[0]["sourceInfo"])
-        license_path = (
-            self.stage / "choscordb.app/Contents/Resources/licenses/LICENSE-SHADCN"
-        )
-        license_path.write_text("unreviewed replacement")
-        self.refresh_manifest()
-        with self.assertRaisesRegex(ValueError, "shadcn"):
-            self.generate("changed-shadcn-license")
+        self.assertIn("License text is not packaged", dependency["comment"])
+        notices = (result / "THIRD_PARTY_NOTICES.md").read_text()
+        self.assertIn("License text is not packaged", notices)
+        index["packages"][0]["origin"] = "cargo-package"
+        (self.licenses / "index.json").write_text(json.dumps(index))
+        with self.assertRaises(ValueError):
+            self.generate("files-missing")
 
     def test_embedded_geist_has_license_and_verified_source_hashes(self):
         document = json.loads((self.generate() / "sbom.spdx.json").read_text())
@@ -282,7 +284,6 @@ class NoticesTest(unittest.TestCase):
             ("licenses/LICENSE-LUCIDE", "Lucide"),
             ("licenses/SOURCE-GEIST.json", "Geist"),
             ("licenses/OFL.txt", "Geist"),
-            ("licenses/SOURCE-SHADCN.json", "shadcn"),
         ]:
             with self.subTest(relative=relative):
                 path = self.stage / "choscordb.app/Contents/Resources" / relative
@@ -475,7 +476,6 @@ class NoticesTest(unittest.TestCase):
                 "QScintilla",
                 "Lucide Icons",
                 "Geist",
-                "shadcn/ui",
                 "dependency",
             },
         )

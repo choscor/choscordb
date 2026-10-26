@@ -19,10 +19,6 @@ LUCIDE_SOURCE_SHA256 = (
 
 GEIST_SOURCE_SHA256 = "6cd982f83ab1f9c4f1a4746789fdcdb5087a8e235a18dd310c2790e267813eba"
 
-SHADCN_SOURCE_SHA256 = (
-    "8e2b3b92fdc4aa4a8b9b81b372ced0cd2a785e25365d157ef450b0773d44f81f"
-)
-
 DATABASE_LOGOS_SOURCE_SHA256 = (
     "2352e20caff999c4500510c1125f2a17108bd72a7536e16e887f8463192a8e88"
 )
@@ -363,25 +359,11 @@ def generate(
         "Geist",
     )
 
-    shadcn_source = reviewed_asset("SOURCE-SHADCN.json", SHADCN_SOURCE_SHA256, "shadcn")
-    shadcn_record = json.loads(payload[shadcn_source])
-    shadcn_license = reviewed_asset(
-        "LICENSE-SHADCN",
-        "1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f",
-        "shadcn",
-    )
-    for path, expected in [
-        ("docs/licenses/shadcn/manifest.json", SHADCN_SOURCE_SHA256),
-        ("docs/licenses/shadcn/LICENSE.md", digest(payload[shadcn_license])),
-    ]:
-        if source_hashes.get(path) != expected:
-            raise ValueError(
-                "shadcn attribution/source hashes do not match reviewed source"
-            )
-
     packages, package_ids, license_outputs = [], {}, {}
 
-    def package(key, name, version, license_expression, license_texts, url=None):
+    def package(
+        key, name, version, license_expression, license_texts, url=None, spdx_only=False
+    ):
         if (
             not isinstance(version, str)
             or not version
@@ -397,9 +379,11 @@ def generate(
             destination = "licenses/" + package_id + "/" + str(relative(path))
             license_outputs[destination] = data
             paths.append(destination)
-        if not paths:
+        if bool(paths) == spdx_only:
             raise ValueError("Package license text is missing")
-        if url and not url.startswith(("https://", "http://")):
+        if (spdx_only and not url) or (
+            url and not url.startswith(("https://", "http://"))
+        ):
             raise ValueError("Package source must be a public HTTP(S) URL")
         row = {
             "SPDXID": package_id,
@@ -410,7 +394,11 @@ def generate(
             "licenseConcluded": "NOASSERTION",
             "licenseDeclared": license_expression,
             "copyrightText": "NOASSERTION",
-            "comment": "Included license texts: " + ", ".join(paths),
+            "comment": (
+                "License text is not packaged; see the SPDX license and source."
+                if spdx_only
+                else "Included license texts: " + ", ".join(paths)
+            ),
         }
         packages.append(row)
         package_ids[key] = package_id
@@ -461,22 +449,6 @@ def generate(
         + ", ".join(
             entry["local"] + "=" + entry["sha256"] for entry in geist_record["files"]
         )
-    )
-    shadcn_id = package(
-        "shadcn-ui",
-        "shadcn/ui",
-        shadcn_record["revision"],
-        "MIT",
-        {"LICENSE.md": payload[shadcn_license]},
-        shadcn_record["repository"],
-    )
-    packages[-1]["sourceInfo"] = (
-        "Native Qt style adaptations of "
-        + shadcn_record["preset"]
-        + "; reviewed upstream revision "
-        + shadcn_record["revision"]
-        + "; provenance SHA256 "
-        + SHADCN_SOURCE_SHA256
     )
     sparkle_id = None
     sparkle_files = [name for name in payload if "/Sparkle.framework/" in name]
@@ -535,13 +507,17 @@ def generate(
             for key in ["name", "version", "license", "source"]
         ):
             raise ValueError("Cargo license package metadata mismatch")
+        spdx_only = record.get("origin") == "spdx-only"
         package_id = package(
             "cargo:" + row["id"],
             row["name"],
             row["version"],
             row.get("license"),
-            checked_texts(cargo_licenses / coordinate, record["files"]),
+            {}
+            if spdx_only and not record["files"]
+            else checked_texts(cargo_licenses / coordinate, record["files"]),
             row.get("repository") or row.get("homepage"),
+            spdx_only,
         )
         cargo_ids.append(package_id)
         if any(
@@ -647,7 +623,6 @@ def generate(
         qsci_id,
         lucide_id,
         geist_id,
-        shadcn_id,
         *([sparkle_id] if sparkle_id else []),
         *cargo_ids,
     ]:
@@ -686,8 +661,6 @@ def generate(
             )
         ) or name in {staged_icons[icon] for icon in lucide_icons}:
             owner = lucide_id
-        elif name in {shadcn_source, shadcn_license}:
-            owner = shadcn_id
         elif name in {geist_source, geist_license}:
             owner = geist_id
         elif "/Sparkle.framework/" in name or "/licenses/Sparkle/" in name:
