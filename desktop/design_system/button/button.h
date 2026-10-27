@@ -45,4 +45,6 @@ class Button : public QPushButton {
     bool loading_ = false;
     bool enabledBeforeLoading_ = true;
 };
+// The shared ghost Close button for dialog headers and notifications.
+Button* createDismissButton(const QString& accessibleName, QWidget* parent);
 } // namespace choscordb::design

@@ -262,4 +262,14 @@ void Button::paintEvent(QPaintEvent*) {
         painter.drawText(QRect(x, 0, textWidth, height()), Qt::AlignCenter | Qt::TextShowMnemonic,
                          label);
 }
+Button* createDismissButton(const QString& accessibleName, QWidget* parent) {
+    auto* dismiss = new Button({}, parent);
+    dismiss->setAccessibleName(accessibleName);
+    dismiss->setToolTip(accessibleName);
+    dismiss->setVariant(ButtonVariant::Ghost);
+    dismiss->setButtonSize(ButtonSize::IconSmall);
+    dismiss->setDesignIcon(Icon::Close);
+    dismiss->setAutoDefault(false);
+    return dismiss;
+}
 } // namespace choscordb::design

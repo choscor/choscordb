@@ -20,7 +20,7 @@ pub use completion::{
     MAX_COMPLETION_METADATA_ENTRIES, MAX_COMPLETION_METADATA_VISITS, MAX_COMPLETION_PREFIX_BYTES,
     MAX_COMPLETION_RESULTS, bounded_completions, completions,
 };
-pub use editor::execution_range;
+pub use editor::{ExecutionScope, execution_range};
 pub use safety::{Safety, classify, parse};
 pub use scanner::statement_ranges;
 pub use templates::{
@@ -66,6 +66,30 @@ mod safety_tests {
             assert_eq!(classify(sql), Safety::Ordinary, "{sql}");
         }
     }
+    #[test]
+    fn transaction_control_needs_no_confirmation() {
+        for sql in [
+            "BEGIN",
+            "begin;",
+            "BEGIN TRANSACTION",
+            "START TRANSACTION;",
+            "COMMIT",
+            "COMMIT WORK;",
+            "ROLLBACK",
+            "rollback work",
+            "END",
+        ] {
+            assert_eq!(classify(sql), Safety::Ordinary, "{sql}");
+            assert_eq!(classify_mysql(sql), Safety::Ordinary, "{sql}");
+        }
+        for sql in [
+            "BEGIN; DROP TABLE users",
+            "ROLLBACK TO SAVEPOINT x; DELETE FROM users",
+            "COMMIT garbage ???",
+        ] {
+            assert_eq!(classify(sql), Safety::ConfirmationRequired, "{sql}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -74,10 +98,35 @@ mod editor_tests {
     #[test]
     fn selection_and_utf8_cursor() {
         let sql = "SELECT 'é'; SELECT 2;";
-        assert_eq!(execution_range(sql, 0, Some(13..21)), Some(13..21));
-        assert_eq!(execution_range(sql, 9, None), None);
-        assert_eq!(execution_range(sql, 15, None), Some(13..22));
-        assert_eq!(execution_range(sql, 0, Some(500..600)), None);
+        let current = ExecutionScope::Current;
+        assert_eq!(execution_range(sql, 0, Some(13..21), current), Some(13..21));
+        assert_eq!(execution_range(sql, 9, None, current), None);
+        assert_eq!(execution_range(sql, 15, None, current), Some(13..22));
+        assert_eq!(execution_range(sql, 0, Some(500..600), current), None);
+    }
+    #[test]
+    fn all_scope_runs_the_whole_document_without_a_selection() {
+        let all = ExecutionScope::All;
+        let sql = "-- lead\nSELECT 1;\n  SELECT 2;\n-- trail\n";
+        let range = execution_range(sql, 0, None, all).unwrap();
+        assert_eq!(&sql[range], "-- lead\nSELECT 1;\n  SELECT 2;");
+        assert_eq!(
+            execution_range("SELECT 1; SELECT 2;", 0, None, ExecutionScope::Current),
+            Some(0..9)
+        );
+        assert_eq!(
+            execution_range("SELECT 1; SELECT 2;", 0, None, all),
+            Some(0..19)
+        );
+        assert_eq!(execution_range("", 0, None, all), None);
+        assert_eq!(execution_range("  -- only a comment\n", 0, None, all), None);
+    }
+    #[test]
+    fn selection_overrides_both_scopes() {
+        let sql = "SELECT 1; SELECT 2; SELECT 3;";
+        for scope in [ExecutionScope::Current, ExecutionScope::All] {
+            assert_eq!(execution_range(sql, 0, Some(10..19), scope), Some(10..19));
+        }
     }
     #[test]
     fn nested_comments_and_dollar_tags() {
@@ -218,9 +267,10 @@ pub fn execution_range_mysql_with_mode(
     sql: &str,
     cursor: usize,
     selection: Option<std::ops::Range<usize>>,
+    scope: ExecutionScope,
     mode: MysqlSqlMode,
 ) -> Option<std::ops::Range<usize>> {
-    editor::execution_range_with_mode(sql, cursor, selection, Some(mode))
+    editor::execution_range_with_mode(sql, cursor, selection, scope, Some(mode))
 }
 pub fn classify_mysql_with_mode(sql: &str, mode: MysqlSqlMode) -> Safety {
     safety::classify_with_mode(sql, Some(mode))

@@ -9,9 +9,13 @@ fn session_modes_change_quote_boundaries() {
     assert_eq!(ranges.len(), 2);
     assert_eq!(&sql[ranges[0].clone()], r"SELECT 'a\';");
     assert_eq!(
-        &sql[execution_range_mysql_with_mode(sql, sql.len(), None, mode).unwrap()],
+        &sql[execution_range_mysql_with_mode(sql, sql.len(), None, ExecutionScope::Current, mode)
+            .unwrap()],
         "SELECT 2;"
     );
+    // Run All uses the same session mode to find the statement boundaries.
+    let all = execution_range_mysql_with_mode(sql, 0, None, ExecutionScope::All, mode).unwrap();
+    assert_eq!(&sql[all], sql);
     let quoted = "SELECT \"a\\\"; SELECT 3;";
     assert_eq!(statement_ranges_mysql(quoted).len(), 1);
     assert_eq!(

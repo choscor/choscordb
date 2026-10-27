@@ -34,6 +34,7 @@ pub(crate) fn classify_with_mode(sql: &str, mode: Option<crate::MysqlSqlMode>) -
         let source = &sql[range.clone()];
         if parse(source).is_none_or(|tree| tree.root_node().has_error())
             && !(mode.is_some() && mysql_metadata_statement(source))
+            && !transaction_control_statement(source)
         {
             return Safety::ConfirmationRequired;
         }
@@ -57,6 +58,25 @@ pub(crate) fn classify_with_mode(sql: &str, mode: Option<crate::MysqlSqlMode>) -
         }
     }
     Safety::Ordinary
+}
+
+// The shared grammar does not cover plain transaction control. Users run these
+// statements to open and end a transaction, so recognize a closed subset.
+fn transaction_control_statement(sql: &str) -> bool {
+    use std::sync::OnceLock;
+    static CONTROL: OnceLock<regex::Regex> = OnceLock::new();
+    CONTROL
+        .get_or_init(|| {
+            regex::Regex::new(
+                r"(?ix)\A\s*(?:
+                    (?:BEGIN|END)(?:\s+(?:WORK|TRANSACTION))?
+                    | START\s+TRANSACTION
+                    | (?:COMMIT|ROLLBACK)(?:\s+WORK)?
+                )\s*;?\s*\z",
+            )
+            .expect("constant transaction control grammar")
+        })
+        .is_match(sql)
 }
 
 // The shared grammar does not cover several MySQL metadata commands. Recognize

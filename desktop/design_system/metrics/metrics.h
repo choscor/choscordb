@@ -33,6 +33,7 @@ enum class Dimension {
     Progress,
     Scrollbar,
     ToastProgress,
+    ToastWidth,
     Badge,
     SwitchWidth,
     SwitchHeight,
@@ -75,8 +76,6 @@ struct MotionSpec final {
 struct LayoutMetrics final {
     int connectionContentInset = 21;
     int connectionDriverHeight = 44;
-    int connectionLabelCharacters = 16;
-    int transactionLabelCharacters = 12;
     int navigationHighlightGap = 1;
     int narrowWorkspaceWidth = 1100;
     int defaultWorkspaceWidth = 1280;

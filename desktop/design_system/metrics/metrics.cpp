@@ -89,6 +89,8 @@ int dimension(Dimension value) {
         return 10;
     case Dimension::ToastProgress:
         return 82;
+    case Dimension::ToastWidth:
+        return 320;
     case Dimension::Badge:
         return 20;
     case Dimension::SwitchWidth:

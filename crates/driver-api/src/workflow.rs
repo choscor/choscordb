@@ -6,7 +6,8 @@ pub struct DriverWorkflow {
     /// arrived, because the session cannot run catalog queries while streaming.
     pub inspect_after_result: bool,
     /// Statement splitting depends on the session's SQL mode, which must be
-    /// refreshed before choosing what to execute.
+    /// known before choosing what to execute. The connection keeps the mode that
+    /// it last read and reads it again only after a failure makes it unknown.
     pub sql_mode_before_execution: bool,
 }
 

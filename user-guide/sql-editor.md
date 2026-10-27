@@ -22,12 +22,30 @@ For the location of the application data directory, see [Your data](install.md#y
 
 ## Run a query
 
-1. Select a connection in the connection list of the toolbar.
-2. Put the cursor in a statement, or select the SQL text that you want to run.
-3. Choose `Query` > `Run statement`, or press `Ctrl+Return` (`Command+Return` on macOS).
+Each SQL editor tab uses one connection.
+A new tab gets the connection of the current tab or of the selected database.
+When no result shows, the status line shows the connection of the current tab.
 
-If you select text, ChoscorDB runs the selection.
-If you do not select text, ChoscorDB runs the statement at the cursor.
+To change the connection of a tab, right-click the tab and choose `Change connection`.
+Then choose a connection.
+You cannot change the connection while a query runs.
+
+1. Put the cursor in a statement, or select the SQL text that you want to run.
+2. Do one of these steps:
+   - To run the statement at the cursor, click `Run` in the toolbar.
+     Or choose `Query` > `Run current`, or press `Ctrl+Return` (`Command+Return` on macOS).
+   - To run all statements in the SQL editor, click the arrow next to `Run` and choose `Run all`.
+     Or choose `Query` > `Run all`, or press `Ctrl+Shift+Return` (`Command+Shift+Return` on macOS).
+
+If you select text, ChoscorDB runs only the selection.
+
+MySQL and MariaDB connections run more than one statement as a script.
+ChoscorDB runs the statements one after the other.
+Execution stops at the first error.
+To see the result of the next statement, go to the last page of the current result and click `Next result`.
+
+PostgreSQL and SQLite connections run only one statement at a time.
+If the text has more than one statement, the database shows an error and runs no statement.
 The rows show in the result grid below the SQL editor.
 The status line below the result grid shows the state, the duration and the row count.
 If the query fails, the status line shows the error.
@@ -41,15 +59,14 @@ The default button of this dialog is `Cancel`.
 
 ## Transactions
 
-The toolbar has a transaction mode list.
+Each statement commits when it completes.
 
-- In `Auto-commit` mode, each statement commits when it completes.
-- In `Manual transaction` mode, the changes stay in a transaction.
-  Choose `Query` > `Commit` to keep the changes.
-  Choose `Query` > `Rollback` to discard the changes.
+To keep changes in a transaction, run `BEGIN` before the statements.
+Then run `COMMIT` to keep the changes, or `ROLLBACK` to discard them.
 
 If you disconnect or close ChoscorDB, an open transaction rolls back.
 ChoscorDB asks you to confirm this first.
+You cannot apply grid changes while a transaction is open.
 
 ## Completion
 
@@ -152,5 +169,10 @@ The `Keyboard shortcuts` page shows the commands and their shortcuts.
 
 To remove the shortcut of a command, clear its field.
 The command stays available in its menu.
-If two commands use the same shortcut, ChoscorDB shows an error and does not save.
+The `Result grid` group shows the shortcuts for the edit commands of the result grid.
+These shortcuts work only when the result grid has the keyboard focus.
+Thus, a grid command and a window command can use the same shortcut.
+If two commands in the same group use the same shortcut, ChoscorDB shows an error and does not save.
+A grid shortcut must be one key combination. A sequence of two or more key combinations is an error.
+You cannot change the grid shortcuts for `Copy`, `Open referenced row` and the `Backspace` key of `Set NULL`.
 `Restore defaults` sets the platform default shortcuts again.

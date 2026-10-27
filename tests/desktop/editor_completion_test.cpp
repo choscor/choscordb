@@ -232,10 +232,8 @@ class EditorCompletionTest : public QObject {
         auto* tabs = window.findChild<QTabWidget*>("editorTabs");
         QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
         window.findChild<QAction*>("newQuery")->trigger();
-        const auto target = window.findChild<QComboBox*>("connectionSelector")->currentData();
-        QVERIFY(target.isValid());
-        QCOMPARE(target.toULongLong(), id);
         auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+        QCOMPARE(editor->connectionTarget(), std::optional<quint64>(id));
         editor->setText("ma");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 2);
         QCoreApplication::processEvents();
@@ -248,21 +246,14 @@ class EditorCompletionTest : public QObject {
         QTRY_VERIFY(completer->popup()->isVisible());
         QCOMPARE(completer->completionModel()->rowCount(), 1);
         QVERIFY(completer->completionModel()->index(0, 0).data().toString().startsWith("main"));
-        auto* selectorForNone = window.findChild<QComboBox*>("connectionSelector");
-        const int selectedIndex = selectorForNone->currentIndex();
-        int noneIndex = -1;
-        for (int i = 0; i < selectorForNone->count(); ++i)
-            if (!selectorForNone->itemData(i).isValid())
-                noneIndex = i;
-        QVERIFY(noneIndex >= 0);
-        selectorForNone->setCurrentIndex(noneIndex);
+        editor->setConnectionTarget(std::nullopt, {});
         window.activateWindow();
         editor->setFocus();
         QTRY_VERIFY(editor->hasFocus());
         action->trigger();
         QTRY_COMPARE(completer->completionModel()->rowCount(), 0);
         QVERIFY(!completer->popup()->isVisible());
-        selectorForNone->setCurrentIndex(selectedIndex);
+        QVERIFY(workspace->changeDocumentConnection(editor, id));
         const int beforeTyping = metadataRequests;
         editor->setText("SELECT users.na");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 15);
@@ -278,8 +269,8 @@ class EditorCompletionTest : public QObject {
         QCOMPARE(metadataRequests, beforeTyping);
         workspace->connectSqlite(":memory:");
         QTRY_COMPARE(connected.count(), 2);
-        QCOMPARE(selectorForNone->currentData().toULongLong(), id);
-        selectorForNone->setCurrentIndex(selectorForNone->findData(connected.last().at(0)));
+        QCOMPARE(editor->connectionTarget(), std::optional<quint64>(id));
+        QVERIFY(workspace->changeDocumentConnection(editor, connected.last().at(0).toULongLong()));
         editor->setText("us");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 2);
         QCoreApplication::processEvents();
@@ -289,8 +280,7 @@ class EditorCompletionTest : public QObject {
         action->trigger();
         QTRY_COMPARE(completer->completionModel()->rowCount(), 0);
         QVERIFY(!completer->popup()->isVisible());
-        auto* selector = window.findChild<QComboBox*>("connectionSelector");
-        selector->setCurrentIndex(selector->findData(QVariant::fromValue<qulonglong>(id)));
+        QVERIFY(workspace->changeDocumentConnection(editor, id));
         window.activateWindow();
         editor->setFocus();
         QTRY_VERIFY(editor->hasFocus());
