@@ -483,11 +483,15 @@ void WorkspaceTest::postgresProfileExecutesPagesAndCancels() {
     profile.tls = "verify_full";
     dialog->saveDraft(profile);
     QTRY_VERIFY(save->isEnabled());
+    // Dismiss the save notice, so the test outcome does not wait behind it in the toast queue.
+    auto* toast = choscordb::windowToast(dialog);
+    QTRY_VERIFY(toast->text().contains("Profile saved."));
+    toast->findChild<QAbstractButton*>("toastDismiss")->click();
+    QTRY_VERIFY(toast->isHidden());
     password->setText(qEnvironmentVariable("CHOSCORDB_TEST_POSTGRES_PASSWORD"));
     password->setModified(true);
     dialog->testDraft(profile);
-    QTRY_VERIFY2(choscordb::windowToast(dialog)->text().contains("succeeded"),
-                 qPrintable(status->text()));
+    QTRY_VERIFY2(toast->text().contains("succeeded"), qPrintable(status->text()));
     QCOMPARE(f.workspace.liveConnections().size(), 1);
     dialog->findChild<QPushButton*>("profileConnect")->click();
     QTRY_COMPARE(f.workspace.liveConnections().size(), 2);
