@@ -128,7 +128,8 @@ class DisconnectWorkspaceTest : public QObject {
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         f.run.trigger();
         QTRY_COMPARE(finished, 4);
-        QCOMPARE(f.grid.model()->index(0, 0).data().toString(), QString("1"));
+        // The page builds off the UI thread after the query finishes.
+        QTRY_COMPARE(f.grid.model()->index(0, 0).data().toString(), QString("1"));
         QTimer::singleShot(0, &f.window, [&] {
             auto* box =
                 qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
@@ -159,7 +160,7 @@ class DisconnectWorkspaceTest : public QObject {
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         f.run.trigger();
         QTRY_COMPARE(finished, 5);
-        QCOMPARE(f.grid.model()->index(0, 0).data().toString(), QString("0"));
+        QTRY_COMPARE(f.grid.model()->index(0, 0).data().toString(), QString("0"));
     }
     void activeWorkShowsCancellationAndDisconnects() {
         Fixture f;

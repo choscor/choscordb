@@ -388,9 +388,10 @@ class CellEditSqlWorkspaceTest : public QObject {
         QVERIFY(model->hasPendingEdits());
         QCOMPARE(model->index(1, 1).data().toString(), QString("saved via alias"));
         observer.openObject(connection, R"(["main","sql_sheet_rows"])", "sql_sheet_rows");
+        // The page builds off the UI thread after Completed, so wait for its rows.
+        QTRY_COMPARE(database->model()->index(1, 1).data().toString(), QString("second"));
         QTRY_COMPARE(observer.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
                      QString("completed"));
-        QCOMPARE(database->model()->index(1, 1).data().toString(), QString("second"));
 
         QVERIFY(reviewEdits(apply, &window, true));
         QTRY_VERIFY(!model->hasPendingEdits());
@@ -465,13 +466,14 @@ class CellEditSqlWorkspaceTest : public QObject {
         QCOMPARE(model->index(1, 1).data(Qt::EditRole).toString(), saved);
         QVERIFY(model->hasPendingEdits());
         execute("SELECT note FROM sheet_rows ORDER BY id");
-        QCOMPARE(sqlGrid->model()->index(1, 0).data().toString(), QString("second"));
+        // The page builds off the UI thread after Completed, so wait for its rows.
+        QTRY_COMPARE(sqlGrid->model()->index(1, 0).data().toString(), QString("second"));
 
         QVERIFY(reviewEdits(apply, &data, true));
         QTRY_VERIFY(!model->hasPendingEdits());
         QTRY_VERIFY(!apply->isEnabled());
         execute("SELECT note FROM sheet_rows ORDER BY id");
-        QCOMPARE(sqlGrid->model()->index(0, 0).data().toString(), QString("other staged"));
+        QTRY_COMPARE(sqlGrid->model()->index(0, 0).data().toString(), QString("other staged"));
         QCOMPARE(sqlGrid->model()->index(1, 0).data(Qt::EditRole).toString(), saved);
     }
 };

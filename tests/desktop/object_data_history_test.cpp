@@ -53,7 +53,7 @@ class ObjectDataHistoryTest : public QObject {
         QVERIFY(!asOf->isVisibleTo(&data));
         QCOMPARE(timeMode->currentIndex(), 0);
         QTRY_VERIFY(timeMode->isEnabled());
-        QCOMPARE(grid->model()->rowCount(), 1);
+        QTRY_COMPARE(grid->model()->rowCount(), 1);
 
         // A mode whose read cannot start must not label the current rows.
         sql->setExternalWork(true);

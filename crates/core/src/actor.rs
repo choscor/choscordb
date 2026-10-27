@@ -640,16 +640,8 @@ pub(crate) async fn run(
             return;
         }
     };
-    send(
-        &events,
-        Event::Connected {
-            connection: id,
-            capabilities: driver.capabilities(),
-            transaction_active,
-            notices: connection.notices(),
-        },
-    )
-    .await;
+    // Route the catalog reads before Connected, so the first read after it
+    // goes to the catalog session.
     route.follow(Ok(transaction_active));
     route.start(
         &*connection,
@@ -662,6 +654,16 @@ pub(crate) async fn run(
         },
         commands.max_capacity(),
     );
+    send(
+        &events,
+        Event::Connected {
+            connection: id,
+            capabilities: driver.capabilities(),
+            transaction_active,
+            notices: connection.notices(),
+        },
+    )
+    .await;
     if let Some(mode) = mode {
         send(
             &events,
