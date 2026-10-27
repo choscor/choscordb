@@ -58,6 +58,14 @@ void Text::setTextStyle(TextStyle style, FontDesign design) {
     updateGeometry();
     update();
 }
+void Text::setSectionLabel() {
+    style_ = TextStyle::Caption;
+    design_ = FontDesign::Default;
+    setFont(resolveSectionLabelTypography());
+    setProperty("designRole", "description");
+    updateGeometry();
+    update();
+}
 void Text::setWeight(QFont::Weight weight) {
     auto updated = font();
     updated.setWeight(weight);

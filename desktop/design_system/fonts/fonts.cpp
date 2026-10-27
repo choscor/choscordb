@@ -71,4 +71,13 @@ QFont resolveTypography(TextStyle style, FontDesign design) {
     return font;
 }
 
+QFont resolveSectionLabelTypography() {
+    constexpr qreal letterSpacing = 0.6;
+    auto font = resolveTypography(TextStyle::Caption);
+    font.setWeight(QFont::DemiBold);
+    font.setCapitalization(QFont::AllUppercase);
+    font.setLetterSpacing(QFont::AbsoluteSpacing, letterSpacing);
+    return font;
+}
+
 } // namespace choscordb::design

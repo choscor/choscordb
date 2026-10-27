@@ -108,6 +108,61 @@ void PreviewTest::columnRowSpecimenUsesRealDelegateInBothThemes() {
     }
 }
 
+void PreviewTest::statusRowSpecimenShowsTrailingIconAndRedFailedRow() {
+    using namespace choscordb::design;
+    PreviewWindow window;
+    QVERIFY(window.selectSpecimen("column-row"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* tree = window.findChild<QWidget*>(name)->findChild<QTreeView*>("previewStatusRows");
+        QVERIFY(tree && tree->isVisible());
+        QVERIFY(dynamic_cast<ColumnRowDelegate*>(tree->itemDelegate()));
+        const auto colors = resolvedThemeForWidget(*tree).colors;
+        const auto image = tree->viewport()->grab().toImage();
+        const auto scale = image.devicePixelRatio();
+        const auto pixel = [&](int x, int y) {
+            return image.pixelColor(qRound(x * scale), qRound(y * scale));
+        };
+        // Antialiased strokes rarely hit the exact token, so ink is a near match.
+        const auto near = [](const QColor& a, const QColor& b) {
+            return qAbs(a.red() - b.red()) + qAbs(a.green() - b.green()) +
+                       qAbs(a.blue() - b.blue()) <
+                   120;
+        };
+        // Counts the pixels of one color in the trailing icon square of a row.
+        const auto iconInk = [&](const QRect& row, const QColor& color) {
+            const int size = dimension(Dimension::IconSmall);
+            int count = 0;
+            for (int y = row.center().y() - size / 2; y <= row.center().y() + size / 2; ++y)
+                for (int x = row.right() - size - spacing(Spacing::Two); x <= row.right(); ++x)
+                    count += near(pixel(x, y), color);
+            return count;
+        };
+        QStringList names;
+        for (int row = 0; row < tree->model()->rowCount(); ++row)
+            names << tree->model()->index(row, 0).data().toString();
+        QCOMPARE(names, QStringList({"orders", "customers", "archive", "invoices"}));
+        const auto failed = tree->visualRect(tree->model()->index(0, 0));
+        const auto loading = tree->visualRect(tree->model()->index(1, 0));
+        const auto unavailable = tree->visualRect(tree->model()->index(2, 0));
+        const auto plain = tree->visualRect(tree->model()->index(3, 0));
+        QCOMPARE(pixel(failed.center().x(), failed.top() + 2), colors.dangerSurface);
+        QVERIFY(pixel(loading.center().x(), loading.top() + 2) != colors.dangerSurface);
+        QVERIFY(iconInk(failed, colors.danger) > 0);
+        QCOMPARE(iconInk(loading, colors.danger), 0);
+        QVERIFY(iconInk(loading, colors.fgMuted) > 0);
+        QVERIFY(iconInk(unavailable, colors.fgMuted) > 0);
+        QCOMPARE(iconInk(plain, colors.fgMuted), 0);
+        // The failed name is red; the status is never text in the name.
+        int redName = 0;
+        for (int y = failed.top(); y <= failed.bottom(); ++y)
+            for (int x = failed.left(); x < failed.center().x(); ++x)
+                redName += near(pixel(x, y), colors.danger);
+        QVERIFY(redName > 0);
+    }
+}
+
 void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen("lists-navigation"));

@@ -36,5 +36,8 @@ struct TypographySpec final {
                                             FontDesign design = FontDesign::Default);
 [[nodiscard]] bool bundledFontsAvailable();
 [[nodiscard]] QFont resolveTypography(TextStyle style, FontDesign design = FontDesign::Default);
+// The section label treatment: Caption, DemiBold, uppercase display and a small letter spacing.
+// It is not a ninth text style. The source text keeps its case.
+[[nodiscard]] QFont resolveSectionLabelTypography();
 
 } // namespace choscordb::design

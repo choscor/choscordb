@@ -30,7 +30,7 @@ preserved by the component extraction.
 | Item view | `item_view/`: selectors genuinely shared by table/tree/list |
 | Saved connection row | `navigation_profile_row/`: compact database profile delegate, neutral driver-logo tile and selection state |
 | Recent history row | `history_row/`: SQL excerpt, database metadata, status badge (`historyStatusTint`, shared with the history dock), and hover delegate |
-| Column row | `column_row/`: iconless navigation name with a right-aligned database type on the same row |
+| Column row | `column_row/`: iconless navigation name with a right-aligned database type on the same row; `RowMark` rows with a trailing status icon and a red failed row (`previewStatusRows`) |
 | Header | `header/`: header and table-corner styles |
 | Scrollbar | `scrollbar/`: scrollbar dimensions and states |
 | Splitter, separator | `splitter/`, `separator/`: handles and horizontal/vertical rules |
@@ -45,7 +45,7 @@ preserved by the component extraction.
 | Dialog shell | `dialog_shell/`: reusable nonmodal `QDialog` shell, content/status styles, and `createSections()` for edge-to-edge dialog sections (`ModalDialog` has the same) |
 | Dialog sections | `dialog_sections/`: compact header, growing body, and muted padded footer for dialogs; an empty footer and its separator stay hidden; `addDismissButton()` adds the shared header close button |
 | Confirmation dialog | `confirmation_dialog/`: reusable QMessageBox contract and presentation |
-| Toast region | `toast_region/`: host-attached queued notices with `<status>-surface` fills, status text and a status icon; a neutral progress notice; reading-time and focus/hover pauses, pinned failures, and bounded full Details |
+| Toast region | `toast_region/`: host-attached queued notices with `<status>-surface` fills, status text and a status icon; a neutral progress notice; reading-time and focus/hover pauses, pinned failures, one replacing notice with a count (`previewToast_replacing`), and bounded full Details |
 | Shared glyphs | `control_glyphs/`: select/spin overlays and arrow painting; Qt retains hit testing |
 
 Stock Qt widgets remain stock widgets. Their owning modules supply styles and,

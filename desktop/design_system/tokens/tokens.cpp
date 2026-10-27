@@ -50,6 +50,7 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     pixels(QStringLiteral("size.scrollbar"), dimension(Dimension::Scrollbar));
     pixels(QStringLiteral("size.badge"), dimension(Dimension::Badge));
     pixels(QStringLiteral("size.toast.progress"), dimension(Dimension::ToastProgress));
+    pixels(QStringLiteral("size.toast.width"), dimension(Dimension::ToastWidth));
     pixels(QStringLiteral("size.modal.width"), dimension(Dimension::ModalWidth));
     pixels(QStringLiteral("size.quickSearch.width"), dimension(Dimension::QuickSearchWidth));
     pixels(QStringLiteral("size.sheet.width"), dimension(Dimension::SheetWidth));

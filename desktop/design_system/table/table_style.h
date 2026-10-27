@@ -26,6 +26,8 @@ inline constexpr int CellNullRole = Qt::UserRole + 24;
 inline constexpr int ForeignKeyLinkRole = Qt::UserRole + 25;
 // Staged-change state painted with theme surfaces by ResultTableDelegate.
 inline constexpr int CellChangeRole = Qt::UserRole + 26;
+// Opens the row that the current cell references.
+inline constexpr QKeyCombination OpenReferenceKey = Qt::CTRL | Qt::ALT | Qt::Key_Return;
 enum class CellChange { None, Changed, Inserted, Deleted };
 
 class ResultTableDelegate final : public QStyledItemDelegate {

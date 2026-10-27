@@ -44,7 +44,7 @@ ResultTableDelegate::ResultTableDelegate(QTableView& table)
     : QStyledItemDelegate(&table), table_(table) {
     linkAction_ = new QAction(tr("Open referenced row"), &table);
     linkAction_->setObjectName(QStringLiteral("resultCellOpenReference"));
-    linkAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_Return));
+    linkAction_->setShortcut(QKeySequence(OpenReferenceKey));
     linkAction_->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     table.addAction(linkAction_);
     connect(linkAction_, &QAction::triggered, this, [this] {
@@ -143,11 +143,11 @@ void ResultTableDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
     }
     const bool link = hasLink(index);
     if (link) {
-        auto fullBackground = rowOption;
-        fullBackground.text.clear();
-        style->drawControl(QStyle::CE_ItemViewItem, &fullBackground, painter,
-                           fullBackground.widget);
-        rowOption.rect.setRight(linkRect(option.rect).left() - 1);
+        // Only the link strip needs the cell background; the item paints the rest once.
+        auto strip = rowOption;
+        strip.rect.setLeft(linkRect(option.rect).left());
+        style->drawPrimitive(QStyle::PE_PanelItemViewItem, &strip, painter, strip.widget);
+        rowOption.rect.setRight(strip.rect.left() - 1);
     }
     style->drawControl(QStyle::CE_ItemViewItem, &rowOption, painter, rowOption.widget);
     if (!link || !option.widget)

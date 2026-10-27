@@ -39,11 +39,12 @@ class SecondaryDesignTest final : public QObject {
 
     void mysqlExecutionRangeKeepsEscapedSemicolonInsideStatement() {
         const QString sql = QStringLiteral("SELECT 'a\\';b'; SELECT 2;");
-        const auto range = choscordb::EngineAdapter::executionRange(sql, 12, 0, 0, "mysql");
+        const auto range = choscordb::EngineAdapter::executionRange(
+            sql, 12, 0, 0, choscordb::RunScope::Current, "mysql");
         QVERIFY(range.valid);
         QCOMPARE(sql.mid(range.start, range.end - range.start), QString("SELECT 'a\\';b';"));
-        const auto destructive =
-            choscordb::EngineAdapter::executionRange("# note\nDELETE FROM t", 9, 0, 0, "mysql");
+        const auto destructive = choscordb::EngineAdapter::executionRange(
+            "# note\nDELETE FROM t", 9, 0, 0, choscordb::RunScope::Current, "mysql");
         QVERIFY(destructive.confirmation);
     }
 

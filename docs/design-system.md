@@ -99,6 +99,7 @@ The values are logical pixels on a 4px grid.
 | `SwitchWidth` × `SwitchHeight`, `SwitchThumb` | 32 × 18, 12 | Switch |
 | `Progress` / `Scrollbar` | 4 / 10 | Progress bars and scrollbars |
 | `ToastProgress` | 82 | Toast progress bar width |
+| `ToastWidth` | 320 | Toast width |
 | `ModalWidth` / `QuickSearchWidth` / `SheetWidth` / `CompletionPopupWidth` / `TableColumn` | 700 / 640 / 480 / 420 / 160 | Layout widths |
 
 - **Spacing:** `Half` 2, `One` 4, `OneHalf` 6, `Two` 8, `Three` 12, `Four` 16, `Six` 24, `Eight` 32.
@@ -145,7 +146,9 @@ This keeps small text sharp on Windows and Linux and does not change the Geist s
 | `Callout` | 13/18, 400; field values 500 | Table cells and headers, tree, list and menu items, tooltips, fields, tab labels, secondary detail, field errors (`@font-callout`) |
 | `Caption` | 12/16, 500 | Badges and kbd (`@font-caption`) |
 
-Navigator section labels use `Callout` at weight 500 in `fg-muted`.
+Sidebar section labels use the section label treatment: `Caption` at weight 600, uppercase display, a small letter spacing and `fg-muted`.
+Call `design::Text::setSectionLabel()` to apply it. It is not a ninth text style.
+The source text, the `tr()` text and the accessible name keep their case.
 
 `FontDesign::Monospaced` sets a style in Geist Mono, as the SwiftUI `.monospaced()` modifier does.
 Read-only SQL previews use `Body` with `designRole="codePreview"`.
@@ -180,7 +183,7 @@ Icons render only at `Dimension::IconSmall` (12) or `Dimension::Icon` (16).
 
 These rules accept no `ui-ok` marker.
 Map object kinds to icons with `desktop/app/object_kind_icon.h`.
-Use `design::Icon` roles in place of Qt standard icons, except in native macOS menus.
+Use `design::Icon` roles. Do not use Qt standard icons. Do not show icons in menu bar menus.
 
 ## State model
 
@@ -203,6 +206,26 @@ Use `design::Icon` roles in place of Qt standard icons, except in native macOS m
   Toasts also show a status icon.
   The neutral status uses `surface-raised` with `fg-muted`.
   Danger toasts stay until the user closes them.
+- **Toast card:** A toast is `ToastWidth` wide and has `Spacing::Three` padding on all sides.
+  Row 1 has the status icon, the bold title and the shared ghost Close button (`design::createDismissButton`).
+  The icon and the Close button are centered on the title line.
+  Row 2 has the body in `fg-muted`.
+- **One outcome, one place:** A success or a warning outcome shows only in a toast.
+  A dialog status line shows only work in progress, errors and the neutral cancelled state.
+  If no toast host is available, the status line keeps the outcome.
+- **Replacing toast:** `ToastRegion::showReplacingToast` shows background errors and blocked-action warnings.
+  A new call replaces the text and adds to the count in the title, for example `Warning · 2 notices`.
+  It never queues a second copy.
+  It waits while other notices show, and it stays until the user closes it.
+- **Status line notice:** `StatusLine::showNotice` shows a short notice in place of the message.
+  The caller gives the expiry time. Rust owns the time (`EngineAdapter::panelNoticeMs`).
+  The notice clears only if it still shows. New content stops the expiry.
+  A notice with no expiry stays until new content replaces it.
+- **Row status:** `ColumnRowDelegate` paints a row that has a `RowMark` in its mark role.
+  The navigator delegate gives `NavigatorModel::StatusRole` as the mark role.
+  It paints the name and one trailing `IconSmall` icon: `Loader` for loading, `Error` for failed and `Warning` for unavailable.
+  A failed row has a `danger-surface` fill, and its name and icon use `danger`.
+  The status text is only in the tooltip and the accessible description, never in the name.
 - **Driver badge:** The Badge `driver` variant has a `surface-raised` fill, a `border` outline and `fg` text.
   It shows next to the unmodified driver logo.
   Connection profile rows show the logo on the same neutral tile.

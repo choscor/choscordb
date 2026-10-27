@@ -66,14 +66,9 @@ QHBoxLayout* DialogSections::footerLayout() const {
 
 Button* DialogSections::addDismissButton(const QString& accessibleName) {
     header_->addStretch();
-    auto* dismiss = new Button({}, header_->parentWidget());
-    dismiss->setAccessibleName(accessibleName);
-    dismiss->setVariant(ButtonVariant::Ghost);
-    dismiss->setButtonSize(ButtonSize::IconSmall);
-    dismiss->setDesignIcon(Icon::Close);
+    auto* dismiss = createDismissButton(accessibleName, header_->parentWidget());
     // Escape dismisses from the keyboard. Kept out of the tab chain and auto-default,
     // the X never takes initial focus or Enter from the dialog's content.
-    dismiss->setAutoDefault(false);
     dismiss->setFocusPolicy(Qt::ClickFocus);
     header_->addWidget(dismiss);
     return dismiss;

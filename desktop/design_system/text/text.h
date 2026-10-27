@@ -13,6 +13,8 @@ class Text final : public QLabel {
     explicit Text(const QString& text = {}, QWidget* parent = nullptr);
     void setTextStyle(TextStyle style, FontDesign design = FontDesign::Default);
     void setWeight(QFont::Weight weight);
+    // A muted, uppercase Caption label for sidebar and gallery section headers.
+    void setSectionLabel();
 
     [[nodiscard]] QSize sizeHint() const override;
     [[nodiscard]] QSize minimumSizeHint() const override;

@@ -159,7 +159,7 @@ void PreviewTest::iconsShowNamedProductionAssetsAtSupportedSizes() {
         auto* host = window.findChild<QWidget*>(theme);
         QVERIFY(host);
         for (const auto* name :
-             {"database", "grid-2x2", "square", "save", "postgresql", "sqlite", "mysql"}) {
+             {"database", "grid-2x2", "square", "copy", "postgresql", "sqlite", "mysql"}) {
             QVERIFY(host->findChildren<QLabel*>(QString("icon-%1-24").arg(name)).isEmpty());
             for (int size : {12, 16}) {
                 const auto icons =

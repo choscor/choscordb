@@ -251,6 +251,10 @@ void populateTypography(QWidget* host, QVBoxLayout* layout) {
     constrained->setWordWrap(true);
     constrained->setMaximumWidth(260);
     layout->addWidget(constrained);
+    auto* sectionLabel = new Text("Schema & objects", host);
+    sectionLabel->setObjectName("previewSectionLabel");
+    sectionLabel->setSectionLabel();
+    layout->addWidget(sectionLabel);
     auto* keyboardHint = new QLabel("Ctrl / ⌘ + Enter", host);
     keyboardHint->setProperty("designRole", "kbd");
     layout->addWidget(keyboardHint);
@@ -830,6 +834,24 @@ void PreviewWindow::rebuildSpecimens() {
             pinnedLayout->addWidget(pinnedTree);
             pinnedSurface->setFixedHeight(250);
             contentLayout->addWidget(pinnedSurface);
+            // Row status: an icon after the name; a failed row is red.
+            constexpr int markRole = Qt::UserRole + 2;
+            auto* statusTree = new NavigationTreeView(content);
+            statusTree->setObjectName("previewStatusRows");
+            auto* statusModel = new QStandardItemModel(statusTree);
+            for (const auto& [name, mark] :
+                 {std::pair{"orders", RowMark::Failed}, std::pair{"customers", RowMark::Loading},
+                  std::pair{"archive", RowMark::Unavailable},
+                  std::pair{"invoices", RowMark::None}}) {
+                auto* item = new QStandardItem(QString::fromLatin1(name));
+                item->setData(int(mark), markRole);
+                statusModel->appendRow(item);
+            }
+            statusTree->setModel(statusModel);
+            statusTree->setItemDelegate(new ColumnRowDelegate(detailRole, statusTree, markRole));
+            statusTree->setHeaderHidden(true);
+            statusTree->setFixedSize(220, 150);
+            contentLayout->addWidget(statusTree);
             contentLayout->addStretch();
         } else if (id == "typography") {
             populateTypography(content, contentLayout);
