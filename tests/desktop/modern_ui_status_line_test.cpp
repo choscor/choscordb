@@ -6,7 +6,9 @@
 #include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
+#include "design_system/toast_region/toast_region.h"
 #include "modern_ui_test.h"
+#include "widgets/editor_completion/editor_completion.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
@@ -182,9 +184,7 @@ void ModernUiTest::sqlDocumentSwitchKeepsFooterAndResultOwnershipTogether() {
     QVERIFY(!grid->isVisible());
     const auto ownerConnection = *first->connectionTarget();
     QVERIFY(workspace->adapter()->disconnectConnection(ownerConnection));
-    QTRY_COMPARE(window.findChild<QComboBox*>("connectionSelector")
-                     ->findData(QVariant::fromValue<qulonglong>(ownerConnection)),
-                 -1);
+    QTRY_VERIFY(!workspace->liveConnectionLabel(ownerConnection));
     QVERIFY(!grid->isVisible());
     QVERIFY(!summary->toolTip().contains(secondTitle));
 }
@@ -298,7 +298,7 @@ void ModernUiTest::narrowResultFooterPreservesOutcomeNavigationAndDetails() {
     QTRY_VERIFY(outcome->text().contains("Failed"));
 }
 
-void ModernUiTest::connectionNoticesAppearInTheConnectionStatusLine() {
+void ModernUiTest::connectionNoticesAppearInTheNoticeToast() {
     choscordb::MainWindow window;
     window.show();
     window.findChild<QAction*>("newQuery")->trigger();
@@ -310,10 +310,72 @@ void ModernUiTest::connectionNoticesAppearInTheConnectionStatusLine() {
     connected.warnings.push_back(
         "This server is MariaDB; use a MariaDB connection for MariaDB features");
     adapter->eventReady(connected);
-    auto* status = window.findChild<choscordb::design::StatusLine*>("connectionStatusLine");
-    QVERIFY(status && status->isVisible());
-    QVERIFY(
-        status->accessibleDescription().contains("use a MariaDB connection for MariaDB features"));
+    auto* toast = window.findChild<choscordb::ToastRegion*>("toastRegion");
+    QVERIFY(toast && toast->isVisible());
+    QVERIFY(toast->text().contains("use a MariaDB connection for MariaDB features"));
+}
+
+void ModernUiTest::sidebarAndMainPanelHaveNoFeedbackStatusLines() {
+    choscordb::MainWindow window;
+    window.show();
+    for (const auto* name : {"pinsStatusLine", "navigatorStatusLine", "savedStatusLine",
+                             "navigatorStatus", "workspaceStatusLine", "appearanceStatusLine",
+                             "applicationStatusLine", "preferencesStatusLine",
+                             "completionStatusLine", "connectionStatusLine", "lifecycleStatusLine"})
+        QVERIFY2(!window.findChild<QWidget*>(QString::fromLatin1(name)), name);
+}
+
+void ModernUiTest::backgroundNoticesReplaceOneToastWithACount() {
+    choscordb::MainWindow window;
+    window.show();
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* adapter = window.findChild<choscordb::QueryWorkspace*>()->adapter();
+    auto* toast = window.findChild<choscordb::ToastRegion*>("toastRegion");
+    QVERIFY(toast);
+    for (const auto* warning : {"First server notice", "Second server notice"}) {
+        choscordb::BridgeEvent connected{};
+        connected.kind = "connected";
+        connected.id = 4243;
+        connected.warnings.push_back(warning);
+        adapter->eventReady(connected);
+    }
+    QVERIFY(toast->isVisible());
+    QVERIFY(toast->text().contains("Second server notice"));
+    QVERIFY(!toast->text().contains("First server notice"));
+    QVERIFY(toast->text().contains("2 notices"));
+    // Dismissal ends the notice; nothing queued behind it repeats the first warning.
+    toast->findChild<QPushButton*>("toastDismiss")->click();
+    QTRY_VERIFY(!toast->text().contains("server notice"));
+}
+
+void ModernUiTest::objectFooterNoticeIsBusyUntilReplacedAndInfoExpires() {
+    choscordb::EngineAdapter adapter;
+    choscordb::ObjectExplorer explorer(&adapter);
+    explorer.show();
+    auto* footer = explorer.findChild<choscordb::design::StatusLine*>("objectFooter");
+    QVERIFY(footer);
+    explorer.showNotice("Reconnecting…", true);
+    QVERIFY(footer->property("busy").toBool());
+    QVERIFY(footer->accessibleDescription().contains("Reconnecting…"));
+    explorer.showNotice("Connected.");
+    QVERIFY(!footer->property("busy").toBool());
+    QVERIFY(footer->accessibleDescription().contains("Connected."));
+    QTRY_VERIFY_WITH_TIMEOUT(!footer->accessibleDescription().contains("Connected."),
+                             choscordb::EngineAdapter::panelNoticeMs() + 2000);
+    QVERIFY(footer->accessibleDescription().contains("Select a table or view"));
+}
+
+void ModernUiTest::partialCompletionCatalogNoticeUsesTheResultFooter() {
+    choscordb::MainWindow window;
+    window.show();
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* completion = window.findChild<choscordb::EditorCompletionController*>();
+    auto* footer = window.findChild<choscordb::design::StatusLine*>("sqlResultFooter");
+    auto* toast = window.findChild<choscordb::ToastRegion*>("toastRegion");
+    QVERIFY(completion && footer && toast);
+    emit completion->partialCatalog(true);
+    QVERIFY(footer->accessibleDescription().contains("Suggestions use loaded navigator objects"));
+    QVERIFY(!toast->text().contains("Suggestions"));
 }
 
 void ModernUiTest::operationFailureRemainsRedAfterDisconnectCleanup() {
@@ -336,8 +398,7 @@ void ModernUiTest::operationFailureRemainsRedAfterDisconnectCleanup() {
     editor->setText("SELECT 1");
     run->trigger();
     QTRY_VERIFY(queryId.has_value());
-    const auto connection =
-        window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+    const auto connection = editor->connectionTarget().value_or(0);
     // Fixture for the backend's ordered query failure, then connection cleanup.
     choscordb::BridgeEvent failure{};
     failure.kind = "query_failed";
@@ -387,8 +448,7 @@ void ModernUiTest::embeddedDataFailureRemainsVisibleAfterDisconnectCleanup() {
     run->trigger();
     QTRY_COMPARE(window.findChild<QLabel*>("executionSummary")->property("state").toString(),
                  QString("completed"));
-    const auto connection =
-        window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+    const auto connection = editor->connectionTarget().value_or(0);
     std::optional<quint64> queryId;
     connect(adapter, &choscordb::EngineAdapter::eventReady, &window,
             [&queryId](const choscordb::BridgeEvent& event) {

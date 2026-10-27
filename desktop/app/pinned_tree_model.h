@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/pin_store.h"
+#include "bridge/engine_adapter.h"
 
 #include <QAbstractItemModel>
 #include <QHash>
@@ -31,9 +32,9 @@ class PinnedTreeModel final : public QAbstractItemModel {
 
     void setPins(const QList<PinRecord>& pins);
     bool setResolved(const QString& key, const QModelIndex& verifiedSourceIndex);
-    // Every status appears in the tooltip; a Label status also follows the name.
-    enum class StatusPlacement { TooltipOnly, Label };
-    void setStatus(const QString& key, const QString& status, StatusPlacement placement);
+    // The message joins the tooltip; the kind is the row's StatusRole. An unavailable pin
+    // accepts only an unavailable status, for example one with the reason.
+    void setStatus(const QString& key, const RowStatus& status);
     QModelIndex sourceIndex(const QModelIndex& index) const;
     QString pinKey(const QModelIndex& root) const;
     bool isPinnedRoot(const QModelIndex& index) const;
@@ -47,6 +48,7 @@ class PinnedTreeModel final : public QAbstractItemModel {
     std::unique_ptr<Entry> makeEntry(const QModelIndex& sourceIndex, Entry* parent, int row);
     void unregisterSources(Entry* entry);
     void clearResolution(Entry* root);
+    static void markAvailability(Entry& root);
     bool sourceRowsIncludeRoot(const QModelIndex& parent, int first, int last,
                                const Entry* root) const;
 

@@ -5,7 +5,10 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
+#include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
@@ -15,6 +18,7 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPointer>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTabBar>
@@ -138,11 +142,15 @@ class PinningFlowTest : public QObject {
         QSignalSpy opened(workspace, &QueryWorkspace::connectionReady);
         clickPin(pins);
         QVERIFY(guardRaised);
-        QTRY_VERIFY(window.findChild<QMessageBox*>("sidebarConnectionFailure"));
+        auto* toast = window.findChild<ToastRegion*>("toastRegion");
+        QVERIFY(toast);
+        // The blocked open reports once; the pin adds no second message.
+        QTRY_VERIFY(toast->text().contains("Finish or cancel active database work"));
+        QVERIFY(!toast->text().contains("notices"));
+        QVERIFY(!window.findChild<QMessageBox*>("errorFeedbackDialog"));
         QCOMPARE(opened.count(), 0);
         QCOMPARE(pinCount(pins), 1);
         workspace->setExternalWork(false);
-        window.findChild<QMessageBox*>("sidebarConnectionFailure")->accept();
         clickPin(pins);
         QTRY_COMPARE(opened.count(), 1);
     }
@@ -482,14 +490,19 @@ class PinningFlowTest : public QObject {
         auto* tree = restored.findChild<QTreeView*>("databaseNavigator");
         auto* filter = restored.findChild<QLineEdit*>("navigatorFilter");
         auto* profiles = restored.findChild<QListWidget*>("savedConnections");
-        auto* selector = restored.findChild<QComboBox*>("connectionSelector");
         auto* workspace = restored.findChild<QueryWorkspace*>();
-        QVERIFY(pins && tree && filter && profiles && selector && workspace);
+        QVERIFY(pins && tree && filter && profiles && workspace);
+        const auto editorTargets = [&restored] {
+            QList<std::optional<quint64>> targets;
+            for (const auto* editor : restored.findChildren<SqlEditor*>())
+                targets.append(editor->connectionTarget());
+            return targets;
+        };
         QTRY_COMPARE(pinCount(pins), 1);
         QCOMPARE(tree->model()->rowCount(), 0);
         QVERIFY(pinRoot(pins).data(Qt::ToolTipRole).toString().contains("Alpha"));
         QTRY_COMPARE(profiles->count(), 1);
-        const auto editorTarget = selector->currentData();
+        const auto editorTarget = editorTargets();
         filter->setText("nothing_matches");
         QCOMPARE(pinCount(pins), 1);
         QSignalSpy reopened(workspace, &QueryWorkspace::connectionReady);
@@ -500,7 +513,7 @@ class PinningFlowTest : public QObject {
         QCOMPARE(tree->currentIndex().data(NavigatorModel::QualifiedNameRole).toString(),
                  QString("\"main\".\"orders\""));
         QVERIFY(filter->text().isEmpty());
-        QCOMPARE(selector->currentData(), editorTarget);
+        QCOMPARE(editorTargets(), editorTarget);
         const QVariant renamedData = profiles->item(0)->data(Qt::UserRole);
         auto renamedProfile = renamedData.value<SavedProfile>();
         renamedProfile.name = "Alpha Renamed";
@@ -589,6 +602,11 @@ class PinningFlowTest : public QObject {
         QTRY_VERIFY(pins->isExpanded(root));
         QTRY_VERIFY(root.data(Qt::ToolTipRole).toString().contains("retry", Qt::CaseInsensitive));
         QCOMPARE(reopened.count(), 0);
+        // Active work blocks the expansion, so it is a notice and not an error.
+        auto* toast = restored.findChild<ToastRegion*>("toastRegion");
+        QVERIFY(toast);
+        QTRY_VERIFY(toast->isVisible() && toast->text().contains("Connection unavailable"));
+        QVERIFY(!restored.findChild<ConfirmationDialog*>("errorFeedbackDialog"));
         QTest::mouseClick(pins->viewport(), Qt::LeftButton, Qt::NoModifier, arrow);
         QTRY_VERIFY(!pins->isExpanded(root));
         workspace->setExternalWork(false);
@@ -635,7 +653,9 @@ class PinningFlowTest : public QObject {
         QTRY_VERIFY(!pins->isExpanded(root));
         clickArrow(pins, root);
         QTRY_VERIFY(pins->isExpanded(root));
-        QTRY_VERIFY(root.data(Qt::ToolTipRole).toString().contains("Unavailable"));
+        QTRY_COMPARE(root.data(NavigatorModel::StatusRole).toInt(),
+                     int(RowStatusKind::Unavailable));
+        QVERIFY(root.data(Qt::ToolTipRole).toString().contains("saved location"));
         QCOMPARE(pins->model()->rowCount(root), 0);
         QCOMPARE(pinCount(pins), 1);
     }
@@ -724,7 +744,27 @@ class PinningFlowTest : public QObject {
         QTRY_VERIFY(pins->isExpanded(badRoot));
         QTRY_VERIFY(
             badRoot.data(Qt::ToolTipRole).toString().contains("retry", Qt::CaseInsensitive));
+        QCOMPARE(badRoot.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Failed));
+        QCOMPARE(badRoot.data().toString(), QString("orders"));
         QVERIFY(goodRoot.data(Qt::ToolTipRole).toString().contains("Loading"));
+        // The failed pin has the same Refresh action as a failed navigator row.
+        pins->customContextMenuRequested(pins->visualRect(badRoot).center());
+        QPointer<QMenu> pinMenu = window.findChild<QMenu*>("pinnedMenu");
+        QVERIFY(pinMenu);
+        auto* refresh = pinMenu->findChild<QAction*>("refreshFailedRow");
+        QVERIFY(refresh);
+        QCOMPARE(pinMenu->actions().first(), refresh);
+        refresh->trigger();
+        pinMenu->close();
+        QCOMPARE(badRoot.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Loading));
+        QTRY_COMPARE(badRoot.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Failed));
+        // A healthy pin has no Refresh action.
+        pins->customContextMenuRequested(pins->visualRect(goodRoot).center());
+        QTRY_VERIFY(window.findChild<QMenu*>("pinnedMenu"));
+        for (auto* menu : window.findChildren<QMenu*>("pinnedMenu")) {
+            QVERIFY(menu == pinMenu || !menu->findChild<QAction*>("refreshFailedRow"));
+            menu->close();
+        }
         QVERIFY(pins->isExpanded(goodRoot));
         QModelIndex goodModelRoot;
         for (int row = 0; row < model->rowCount(); ++row) {

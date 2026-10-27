@@ -17,9 +17,7 @@
 #include <limits>
 namespace choscordb {
 bool showsSidebarChild(const QModelIndex& index) {
-    return EngineAdapter::sidebarChildVisible(
-        index.parent().data(NavigatorModel::KindRole).toString(),
-        index.data(NavigatorModel::KindRole).toString());
+    return index.data(NavigatorModel::SidebarChildRole).toBool();
 }
 namespace {
 constexpr auto text = &bridge_detail::fromRust;
@@ -49,7 +47,9 @@ class SelectedConnectionProxy final : public QSortFilterProxyModel {
             return false;
         if (!ordered_.contains(index.data(NavigatorModel::ConnectionRole).toULongLong()))
             return false;
-        if (!parent.isValid() && index.data(NavigatorModel::KindRole).toString() == "loading")
+        // A root that is still connecting stays visible under any filter.
+        if (!parent.isValid() &&
+            index.data(NavigatorModel::StatusRole).toInt() == int(RowStatusKind::Loading))
             return true;
         return filter_.blank() || filter_.matches(index.data(Qt::DisplayRole).toString());
     }
@@ -148,21 +148,28 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
     connect(tree, &QTreeView::activated, this, [this](const QModelIndex& index) {
         const auto source = proxy_->mapToSource(index);
         if (source.data(NavigatorModel::KindRole).toString() == "load_more")
-            model_->requestNextPage(source);
+            userLoad(source, &NavigatorModel::requestNextPage);
+    });
+    // A failed row loads again when the user expands it.
+    connect(tree, &QTreeView::expanded, this, [this](const QModelIndex& index) {
+        const auto source = proxy_->mapToSource(index);
+        userLoad(source,
+                 source.data(NavigatorModel::StatusRole).toInt() == int(RowStatusKind::Failed)
+                     ? &NavigatorModel::refresh
+                     : nullptr);
     });
     connect(engine, &EngineAdapter::metadataSubmissionFailed, this,
             [this](quint64 connection, const QString& parent, quint64 token, const QString& error) {
-                const bool wasPending = matchesSearchRequest(connection, parent, token);
-                const bool accepted = model_->failChildren(connection, parent, token, error);
-                searchRequestFinished(accepted && wasPending, true, error);
+                childrenFailed(connection, parent, token, error);
             });
     connect(
         engine, &EngineAdapter::eventReady, this,
         [this](const BridgeEvent& e) {
             const auto kind = text(e.kind);
-            if (kind == "disconnected")
+            if (kind == "disconnected") {
                 model_->removeConnection(e.id);
-            else if (kind == "metadata") {
+                userLoads_.removeIf([&e](const auto& load) { return load->connection == e.id; });
+            } else if (kind == "metadata") {
                 const bool wasPending = matchesSearchRequest(e.id, text(e.parent), e.request_token);
                 std::vector<NavigatorObject> objects;
                 objects.reserve(e.objects.size());
@@ -182,15 +189,19 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
                         entry.databaseType = text(object.column.database_type);
                     objects.push_back(std::move(entry));
                 }
+                // Saved children show while the live children load.
+                if (e.metadata_cached) {
+                    model_->applyCachedChildren(e.id, text(e.parent), e.request_token,
+                                                std::move(objects));
+                    return;
+                }
+                userLoads_.remove(e.request_token);
                 const bool accepted = model_->applyChildrenPage(
                     e.id, text(e.parent), e.request_token, std::move(objects), e.metadata_offset,
                     e.has_more_metadata, e.next_metadata_offset);
                 searchRequestFinished(accepted && wasPending, false);
             } else if (kind == "metadata_failed") {
-                const bool wasPending = matchesSearchRequest(e.id, text(e.parent), e.request_token);
-                const bool accepted =
-                    model_->failChildren(e.id, text(e.parent), e.request_token, text(e.error));
-                searchRequestFinished(accepted && wasPending, true, text(e.error));
+                childrenFailed(e.id, text(e.parent), e.request_token, text(e.error));
             }
         },
         Qt::DirectConnection);
@@ -208,7 +219,28 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
 void NavigatorController::refreshCurrent() {
     const auto source = proxy_->mapToSource(tree_->currentIndex());
     if (source.isValid())
-        model_->refresh(source);
+        userLoad(source, &NavigatorModel::refresh);
+}
+void NavigatorController::userLoad(const QModelIndex& source,
+                                   void (NavigatorModel::*load)(const QModelIndex&)) {
+    // A load on a "Load more" row replaces that row, so its parent holds the request.
+    const QPersistentModelIndex node(source), parent(source.parent());
+    if (load)
+        (model_->*load)(source);
+    const QModelIndex target = node.isValid() ? node : parent;
+    if (const auto token = model_->pendingRequestToken(target))
+        userLoads_.insert(token, {target.data(NavigatorModel::ConnectionRole).toULongLong(),
+                                  target.data(Qt::DisplayRole).toString()});
+}
+void NavigatorController::childrenFailed(quint64 connection, const QString& parent, quint64 token,
+                                         const QString& error) {
+    const auto load = userLoads_.take(token);
+    const bool wasPending = matchesSearchRequest(connection, parent, token);
+    const bool accepted = model_->failChildren(connection, parent, token, error);
+    searchRequestFinished(accepted && wasPending, true, error);
+    if (accepted && !load.name.isNull())
+        emit loadFailed(tr("%1: %2").arg(
+            load.name, EngineAdapter::rowStatus(RowStatusCause::ChildrenFailed, error).message));
 }
 void NavigatorController::disconnectCurrent() {
     const auto source = proxy_->mapToSource(tree_->currentIndex());
@@ -284,8 +316,7 @@ bool NavigatorController::revealObject(quint64 connection, const QStringList& an
             const auto visible = proxy_->mapFromSource(target);
             if (!visible.isValid()) {
                 if (finished)
-                    finished(RevealResult::Retry,
-                             tr("The object could not be shown. Activate the pin to retry."));
+                    finished(RevealResult::Retry, tr("The object could not be shown."));
                 return;
             }
             if (hiddenTableDetail) {
@@ -301,8 +332,8 @@ bool NavigatorController::revealObject(quint64 connection, const QStringList& an
             }
             if (tree_->currentIndex() != visible) {
                 if (finished)
-                    finished(RevealResult::Retry, tr("Finish active database work before opening "
-                                                     "this pin. Activate it to retry."));
+                    finished(RevealResult::Retry,
+                             tr("Finish active database work before opening this pin."));
                 return;
             }
             tree_->scrollTo(visible);
@@ -381,8 +412,7 @@ bool NavigatorController::lookupObject(
         }
         if (!state->parent.isValid() || (state->requireVisibleConnection &&
                                          !visibleConnections().contains(state->connection))) {
-            finish(RevealResult::Retry,
-                   tr("The connection is no longer visible. Activate the pin to retry."));
+            finish(RevealResult::Retry, tr("The connection is no longer visible."));
             return;
         }
         const auto parent = QModelIndex(state->parent);
@@ -392,8 +422,7 @@ bool NavigatorController::lookupObject(
             const auto parentId = parent.data(NavigatorModel::ObjectIdRole).toString();
             if (!model_->canFetchMore(parent) && !state->requestedParents.contains(parentId)) {
                 if (++state->requests > 32) {
-                    finish(RevealResult::Retry,
-                           tr("The metadata lookup limit was reached. Activate the pin to retry."));
+                    finish(RevealResult::Retry, tr("The metadata lookup limit was reached."));
                     return;
                 }
                 state->requestedParents.insert(parentId);
@@ -410,8 +439,7 @@ bool NavigatorController::lookupObject(
                 model_->refresh(parent);
                 return;
             }
-            finish(RevealResult::Retry,
-                   tr("Metadata could not load: %1. Activate the pin to retry.").arg(error));
+            finish(RevealResult::Retry, tr("Metadata could not load: %1.").arg(error));
             return;
         }
         const auto expected =
@@ -445,8 +473,7 @@ bool NavigatorController::lookupObject(
             return;
         }
         if (++state->requests > 32) {
-            finish(RevealResult::Retry,
-                   tr("The metadata lookup limit was reached. Activate the pin to retry."));
+            finish(RevealResult::Retry, tr("The metadata lookup limit was reached."));
             return;
         }
         if (model_->canFetchMore(parent)) {
@@ -466,17 +493,29 @@ bool NavigatorController::lookupObject(
     stepTimer->start();
     return true;
 }
+QAction* NavigatorController::addRetryAction(QMenu* menu) {
+    auto* refresh = menu->addAction(tr("Refresh"));
+    refresh->setObjectName("refreshFailedRow");
+    return refresh;
+}
 void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex) {
     if (!menu || !sourceIndex.isValid() || sourceIndex.model() != model_)
         return;
     const QPersistentModelIndex index(sourceIndex);
+    if (index.data(NavigatorModel::RetryRole).toInt() == int(RowRetry::Refresh)) {
+        connect(addRetryAction(menu), &QAction::triggered, this, [this, index] {
+            if (index.isValid())
+                userLoad(index, &NavigatorModel::refresh);
+        });
+        menu->addSeparator();
+    }
     if (index.data(NavigatorModel::KindRole).toString() == "load_more" ||
         index.data(NavigatorModel::HasMoreRole).toBool()) {
         auto* more = menu->addAction(tr("Load more objects"));
         more->setObjectName("loadMoreMetadata");
         connect(more, &QAction::triggered, this, [this, index] {
             if (index.isValid())
-                model_->requestNextPage(index);
+                userLoad(index, &NavigatorModel::requestNextPage);
         });
         if (index.data(NavigatorModel::KindRole).toString() == "load_more")
             return;
@@ -525,7 +564,7 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
     auto* refresh = menu->addAction(tr("Refresh"));
     connect(refresh, &QAction::triggered, this, [this, index] {
         if (index.isValid())
-            model_->refresh(index);
+            userLoad(index, &NavigatorModel::refresh);
     });
     auto* copy = menu->addAction(tr("Copy qualified name"));
     copy->setEnabled(!index.data(NavigatorModel::QualifiedNameRole).toString().isEmpty());

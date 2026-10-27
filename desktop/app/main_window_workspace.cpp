@@ -22,10 +22,10 @@
 #include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
 #include "widgets/editor_completion/editor_completion.h"
+#include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemModel>
 #include <QAction>
-#include <QComboBox>
 #include <QDir>
 #include <QDockWidget>
 #include <QFileDialog>
@@ -121,14 +121,12 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto tree = ui.tree;
     const auto savedSearch = ui.savedSearch;
     const auto savedStatus = ui.savedStatus;
+    const auto savedSection = ui.savedSection;
     const auto savedFiles = ui.savedFiles;
-    const auto connections = ui.connections;
     const auto run = ui.run;
+    const auto runAll = ui.runAll;
     const auto cancel = ui.cancel;
     const auto cancelButton = ui.cancelButton;
-    const auto mode = ui.mode;
-    const auto commitAction = ui.commitAction;
-    const auto rollbackAction = ui.rollbackAction;
     const auto querySettings = ui.querySettings;
     const auto results = ui.results;
     const auto empty = ui.empty;
@@ -148,15 +146,14 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto discardResultEdits = ui.discardResultEdits;
     const auto applyResultEdits = ui.applyResultEdits;
     const auto messages = ui.messages;
+    // A partial catalog is a notice on the result footer of the SQL screen.
     connect(completion_, &EditorCompletionController::partialCatalog, this,
-            [this, partialShown = false](bool partial) mutable {
-                const auto hint =
-                    tr("Suggestions use loaded navigator objects. Expand nodes for more "
-                       "names; large catalogs may be limited.");
+            [resultFooter = ui.resultFooter, partialShown = false](bool partial) mutable {
                 if (partial && !partialShown)
-                    showStatus(hint, ToastVariant::Warning, QStringLiteral("completion"));
-                else if (!partial)
-                    clearStatus(QStringLiteral("completion"), hint);
+                    resultFooter->showNotice(
+                        tr("Suggestions use loaded navigator objects. Expand nodes for more "
+                           "names; large catalogs may be limited."),
+                        EngineAdapter::panelNoticeMs());
                 partialShown = partial;
             });
     connect(newQuery, &QAction::triggered, this, [this] { addEditor(); });
@@ -217,24 +214,26 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     };
     connect(savedSearch, &QLineEdit::textChanged, this, filterSavedFiles);
     const auto savedRefreshGeneration = std::make_shared<quint64>(0);
-    auto refreshSavedFiles = [this, savedFiles, savedStatus, savedDirectory, filterSavedFiles,
-                              savedRefreshGeneration] {
+    auto refreshSavedFiles = [this, savedFiles, savedStatus, savedSection, savedDirectory,
+                              filterSavedFiles, savedRefreshGeneration] {
         const auto generation = ++*savedRefreshGeneration;
         savedFiles->clear();
-        savedStatus->show();
-        savedStatus->setText(QObject::tr("Loading saved queries…"));
+        savedStatus->hide();
+        savedSection->setBusy(true, QObject::tr("Loading saved queries…"));
         auto* watcher = new QFutureWatcher<SavedSqlListing>(this);
         connect(
             watcher, &QFutureWatcher<SavedSqlListing>::finished, this,
-            [watcher, savedFiles, savedStatus, savedDirectory, filterSavedFiles,
+            [this, watcher, savedFiles, savedStatus, savedSection, savedDirectory, filterSavedFiles,
              savedRefreshGeneration, generation] {
                 const auto result = watcher->result();
                 watcher->deleteLater();
                 if (generation != *savedRefreshGeneration)
                     return;
+                savedSection->setBusy(false);
                 if (!result.error.isEmpty()) {
-                    savedStatus->setText(
-                        QObject::tr("Saved SQL directory cannot be read: %1").arg(savedDirectory));
+                    reportNotice(
+                        QObject::tr("Saved SQL directory cannot be read: %1").arg(savedDirectory),
+                        ToastVariant::Danger);
                     return;
                 }
                 QHash<QString, QTreeWidgetItem*> folders;
@@ -285,8 +284,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             return;
         if (!allowDocumentChange() || databaseClosePending_ ||
             (recovery_ && (!recovery_->isReady() || recovery_->isClosing()))) {
-            showStatus(tr("Saved file cannot be opened while the workspace is busy."),
-                       ToastVariant::Warning, QStringLiteral("saved"), path);
+            reportNotice(tr("Saved file cannot be opened while the workspace is busy."));
             return;
         }
         pendingSavedOpens->insert(path);
@@ -310,17 +308,16 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     if (!allowDocumentChange() || databaseClosePending_ ||
                         (recovery_ && (!recovery_->isReady() || recovery_->isClosing()))) {
                         pendingSavedOpens->remove(path);
-                        showStatus(tr("Saved file cannot be opened while the workspace is busy."),
-                                   ToastVariant::Warning, QStringLiteral("saved"), path);
+                        reportNotice(
+                            tr("Saved file cannot be opened while the workspace is busy."));
                         return;
                     }
                     if (identities.isEmpty() || !identities.front().error.isEmpty()) {
                         pendingSavedOpens->remove(path);
-                        showStatus(tr("Could not open %1: %2")
-                                       .arg(QFileInfo(path).fileName(),
-                                            identities.isEmpty() ? tr("Path is invalid.")
-                                                                 : identities.front().error),
-                                   ToastVariant::Danger, QStringLiteral("saved"), path);
+                        reportError(tr("Could not open %1: %2")
+                                        .arg(QFileInfo(path).fileName(),
+                                             identities.isEmpty() ? tr("Path is invalid.")
+                                                                  : identities.front().error));
                         return;
                     }
                     for (int i = 0; i < openEditors.size(); ++i) {
@@ -329,7 +326,6 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                             identities.at(i + 1).error.isEmpty() &&
                             identities.at(i + 1).path == identities.front().path) {
                             pendingSavedOpens->remove(path);
-                            clearStatus(QStringLiteral("saved"), {}, path);
                             if (focusRequested) {
                                 editors_->setCurrentWidget(existing);
                                 showScreen(Screen::Sql);
@@ -344,15 +340,12 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                                                                         const QString& error) {
                                     pendingSavedOpens->remove(path);
                                     editor->setProperty("savedSqlOpen", false);
-                                    if (error.isEmpty()) {
-                                        clearStatus(QStringLiteral("saved"), {}, path);
+                                    if (error.isEmpty())
                                         return;
-                                    }
                                     if (editors_->indexOf(editor) < 0)
                                         return;
-                                    showStatus(tr("Could not open %1: %2")
-                                                   .arg(QFileInfo(openedPath).fileName(), error),
-                                               ToastVariant::Danger, QStringLiteral("saved"), path);
+                                    reportError(tr("Could not open %1: %2")
+                                                    .arg(QFileInfo(openedPath).fileName(), error));
                                     editors_->removeTab(editors_->indexOf(editor));
                                     editor->deleteLater();
                                     if (!editors_->count())
@@ -399,12 +392,10 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     const auto error = watcher->result();
                     watcher->deleteLater();
                     if (!error.isEmpty()) {
-                        showStatus(tr("Could not create saved SQL directory %1: %2")
-                                       .arg(savedDirectory, error),
-                                   ToastVariant::Danger, QStringLiteral("saved"), savedDirectory);
+                        reportError(tr("Could not create saved SQL directory %1: %2")
+                                        .arg(savedDirectory, error));
                         return;
                     }
-                    clearStatus(QStringLiteral("saved"), {}, savedDirectory);
                     showDialog();
                 });
         watcher->setFuture(QtConcurrent::run(
@@ -429,12 +420,9 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     });
     connect(run, &QAction::triggered, this, [this] { showScreen(Screen::Sql); });
     workspace_ =
-        new QueryWorkspace({connections,
-                            mode,
-                            run,
+        new QueryWorkspace({run,
+                            runAll,
                             cancel,
-                            commitAction,
-                            rollbackAction,
                             newConnection,
                             nextPage,
                             empty,
@@ -460,6 +448,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                             rowsMetric,
                             visibleSizeMetric},
                            this);
+    preferences_->addGrid(workspace_);
     connect(workspace_, &QueryWorkspace::foreignKeyRequested, this, &MainWindow::openReferencedRow);
     connect(grid->model(), &QAbstractItemModel::modelReset, grid, [grid, fitted = false]() mutable {
         if (!grid->model()->columnCount()) {
@@ -512,7 +501,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         profileListToken_ = nextRequestToken();
         workspace_->adapter()->listProfiles(profileListToken_);
     };
-    const auto syncVisible = [this, savedConnections, connections] {
+    const auto syncVisible = [this, savedConnections] {
         QList<quint64> ordered;
         std::optional<quint64> firstUsable;
         const QSignalBlocker selectionBlocked(savedConnections->selectionModel());
@@ -532,10 +521,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             }
             std::optional<quint64> session;
             const auto preferred = selectedSessionIds_.value(profile.id, 0);
-            for (int i = 0; i < connections->count(); ++i) {
-                if (!connections->itemData(i).isValid())
-                    continue;
-                const auto id = connections->itemData(i).toULongLong();
+            for (const auto& live : workspace_->liveConnections()) {
+                const auto id = live.id;
                 if (id == preferred && workspace_->profileIdForConnection(id) == profile.id) {
                     session = id;
                     sessionProfileIds_.insert(id, profile.id);
@@ -543,10 +530,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 }
             }
             if (!session)
-                for (int i = 0; i < connections->count(); ++i) {
-                    if (!connections->itemData(i).isValid())
-                        continue;
-                    const auto id = connections->itemData(i).toULongLong();
+                for (const auto& live : workspace_->liveConnections()) {
+                    const auto id = live.id;
                     if (workspace_->profileIdForConnection(id) == profile.id &&
                         !retiredBrowseConnections_.contains(id)) {
                         session = id;
@@ -565,18 +550,9 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         if (navigatorController_)
             navigatorController_->setVisibleConnections(ordered);
     };
-    const auto showBrowseFailure = [this](const QString& name, const QString& reason) {
-        auto* dialog = new ConfirmationDialog(QMessageBox::Warning, tr("Connection failed"),
-                                              tr("Could not open %1: %2").arg(name, reason),
-                                              QMessageBox::Ok, this);
-        dialog->setObjectName("sidebarConnectionFailure");
-        dialog->setAttribute(Qt::WA_DeleteOnClose);
-        dialog->open();
-    };
     connect(
         workspace_->adapter(), &EngineAdapter::profilesReady, this,
-        [this, savedConnections, connections, syncVisible](quint64 token,
-                                                           const QList<SavedProfile>& profiles) {
+        [this, savedConnections, syncVisible](quint64 token, const QList<SavedProfile>& profiles) {
             if (token != profileListToken_)
                 return;
             const auto focused =
@@ -613,10 +589,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 item->setToolTip(profile.name);
                 if (profile.id == focused)
                     savedConnections->setCurrentItem(item, QItemSelectionModel::NoUpdate);
-                for (int i = 0; i < connections->count(); ++i) {
-                    if (!connections->itemData(i).isValid())
-                        continue;
-                    const auto id = connections->itemData(i).toULongLong();
+                for (const auto& live : workspace_->liveConnections()) {
+                    const auto id = live.id;
                     if (workspace_->profileIdForConnection(id) == profile.id &&
                         navigatorController_)
                         navigatorController_->renameConnection(id, profile.name);
@@ -649,8 +623,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 syncVisible();
                 refreshProfiles();
             });
-    const auto selectProfile = [this, connections, syncVisible,
-                                showBrowseFailure](QListWidgetItem* item) {
+    const auto selectProfile = [this, syncVisible](QListWidgetItem* item) {
         if (!item)
             return;
         const auto profile = item->data(Qt::UserRole).value<SavedProfile>();
@@ -667,10 +640,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             return;
         }
         selectedProfileIds_.insert(profile.id);
-        for (int i = 0; i < connections->count(); ++i) {
-            if (!connections->itemData(i).isValid())
-                continue;
-            const auto id = connections->itemData(i).toULongLong();
+        for (const auto& live : workspace_->liveConnections()) {
+            const auto id = live.id;
             if (workspace_->profileIdForConnection(id) == profile.id) {
                 retiredBrowseConnections_.remove(id);
                 selectedSessionIds_.insert(profile.id, id);
@@ -697,15 +668,17 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 pendingBrowseProfiles_[profile.id].connection = submitted;
             return;
         }
-        const auto reason = submissionError_.isEmpty()
-                                ? tr("Finish or cancel active database work before connecting.")
-                                : submissionError_;
         pendingBrowseProfiles_.remove(profile.id);
         if (navigatorController_)
             navigatorController_->removePendingConnection(placeholder);
         selectedProfileIds_.remove(profile.id);
         syncVisible();
-        showBrowseFailure(profile.name, reason);
+        if (submissionError_.isEmpty())
+            reportNotice(tr("Could not open %1: %2")
+                             .arg(profile.name,
+                                  tr("Finish or cancel active database work before connecting.")));
+        else
+            reportError(tr("Could not open %1: %2").arg(profile.name, submissionError_));
     };
     reconnectProfile_ = [this, savedConnections, selectProfile](const QString& id) {
         for (int i = 0; i < savedConnections->count(); ++i) {
@@ -717,6 +690,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 selectProfile(item);
             return selectedProfileIds_.contains(id) || pendingBrowseProfiles_.contains(id);
         }
+        reportError(tr("The saved connection is unavailable. %1")
+                        .arg(EngineAdapter::recoveryHint(RecoveryHint::RestoreConnection)));
         return false;
     };
     savedConnectionsList_ = savedConnections;
@@ -729,67 +704,59 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     connect(savedConnections, &QListWidget::itemClicked, this, selectProfile);
     connect(savedConnections, &QListWidget::itemActivated, this, selectProfile);
     savedConnections->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(
-        savedConnections, &QWidget::customContextMenuRequested, this,
-        [this, savedConnections, connections, selectProfile, syncVisible](const QPoint& position) {
-            auto* item = savedConnections->itemAt(position);
-            if (!item || !allowDocumentChange())
-                return;
-            savedConnections->setCurrentItem(item, QItemSelectionModel::NoUpdate);
-            syncVisible();
-            const auto profileData = item->data(Qt::UserRole);
-            const auto profile = profileData.value<SavedProfile>();
-            std::optional<quint64> session;
-            for (int i = 0; i < connections->count(); ++i) {
-                if (connections->itemData(i).isValid()) {
-                    const auto id = connections->itemData(i).toULongLong();
-                    if (workspace_->profileIdForConnection(id) == profile.id)
-                        session = id;
+    connect(savedConnections, &QWidget::customContextMenuRequested, this,
+            [this, savedConnections, selectProfile, syncVisible](const QPoint& position) {
+                auto* item = savedConnections->itemAt(position);
+                if (!item || !allowDocumentChange())
+                    return;
+                savedConnections->setCurrentItem(item, QItemSelectionModel::NoUpdate);
+                syncVisible();
+                const auto profileData = item->data(Qt::UserRole);
+                const auto profile = profileData.value<SavedProfile>();
+                std::optional<quint64> session;
+                for (const auto& live : workspace_->liveConnections())
+                    if (workspace_->profileIdForConnection(live.id) == profile.id)
+                        session = live.id;
+                auto* menu = new QMenu(savedConnections);
+                menu->setObjectName("savedConnectionMenu");
+                menu->setAttribute(Qt::WA_DeleteOnClose);
+                auto* connectAction = menu->addAction(tr("Connect"));
+                connectAction->setObjectName("connectSavedConnection");
+                connectAction->setEnabled(!selectedProfileIds_.contains(profile.id) &&
+                                          !pendingBrowseProfiles_.contains(profile.id));
+                connect(connectAction, &QAction::triggered, this,
+                        [selectProfile, item] { selectProfile(item); });
+                auto* disconnectAction = menu->addAction(tr("Disconnect"));
+                disconnectAction->setObjectName("disconnectSavedConnection");
+                disconnectAction->setEnabled(session.has_value());
+                connect(disconnectAction, &QAction::triggered, this, [this, session] {
+                    if (session)
+                        workspace_->disconnectConnection(*session);
+                });
+                menu->addSeparator();
+                const QList<QPair<QString, QString>> management = {{"edit", tr("Edit…")},
+                                                                   {"test", tr("Test connection")},
+                                                                   {"duplicate", tr("Duplicate")},
+                                                                   {"delete", tr("Delete…")}};
+                for (const auto& entry : management) {
+                    auto* action = menu->addAction(entry.second);
+                    action->setObjectName(entry.first + "SavedConnection");
+                    connect(action, &QAction::triggered, this,
+                            [this, profile, operation = entry.first] {
+                                workspace_->manageSavedProfile(profile.id, operation);
+                            });
                 }
-            }
-            auto* menu = new QMenu(savedConnections);
-            menu->setObjectName("savedConnectionMenu");
-            menu->setAttribute(Qt::WA_DeleteOnClose);
-            auto* connectAction = menu->addAction(tr("Connect"));
-            connectAction->setObjectName("connectSavedConnection");
-            connectAction->setEnabled(!selectedProfileIds_.contains(profile.id) &&
-                                      !pendingBrowseProfiles_.contains(profile.id));
-            connect(connectAction, &QAction::triggered, this,
-                    [selectProfile, item] { selectProfile(item); });
-            auto* disconnectAction = menu->addAction(tr("Disconnect"));
-            disconnectAction->setObjectName("disconnectSavedConnection");
-            disconnectAction->setEnabled(session.has_value());
-            connect(disconnectAction, &QAction::triggered, this, [this, session] {
-                if (session)
-                    workspace_->disconnectConnection(*session);
+                design::popupContextMenu(*menu,
+                                         savedConnections->viewport()->mapToGlobal(position));
             });
-            menu->addSeparator();
-            const QList<QPair<QString, QString>> management = {{"edit", tr("Edit…")},
-                                                               {"test", tr("Test connection")},
-                                                               {"duplicate", tr("Duplicate")},
-                                                               {"delete", tr("Delete…")}};
-            for (const auto& entry : management) {
-                auto* action = menu->addAction(entry.second);
-                action->setObjectName(entry.first + "SavedConnection");
-                connect(action, &QAction::triggered, this,
-                        [this, profile, operation = entry.first] {
-                            workspace_->manageSavedProfile(profile.id, operation);
-                        });
-            }
-            design::popupContextMenu(*menu, savedConnections->viewport()->mapToGlobal(position));
-        });
-    connect(workspace_, &QueryWorkspace::connectionNotice, this, [this](const QString& notice) {
-        showStatus(notice, ToastVariant::Warning, QStringLiteral("connection"));
-    });
+    connect(workspace_, &QueryWorkspace::connectionNotice, this,
+            [this](const QString& notice) { reportNotice(notice); });
     connect(workspace_, &QueryWorkspace::connectionReady, this, [this, syncVisible](quint64 id) {
         const auto profileId = workspace_->profileIdForConnection(id);
         if (profileId.isEmpty())
             return;
-        if (reconnectingProfile_ == profileId) {
-            reconnectingProfile_.clear();
-            showStatus(tr("Connected. Select the object tab to load fresh metadata."),
-                       ToastVariant::Success, QStringLiteral("connection"));
-        }
+        if (reconnectingProfile_ == profileId)
+            finishReconnect(true);
         sessionProfileIds_.insert(id, profileId);
         if (retiredBrowseConnections_.contains(id))
             return;
@@ -815,7 +782,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     });
     connect(
         workspace_->adapter(), &EngineAdapter::eventReady, this,
-        [this, syncVisible, showBrowseFailure](const BridgeEvent& event) {
+        [this, syncVisible](const BridgeEvent& event) {
             const auto kind = fromRust(event.kind);
             if (kind == "connection_failed") {
                 retiredBrowseConnections_.remove(event.id);
@@ -824,19 +791,21 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     if (it->connection != event.id)
                         continue;
                     const auto profileId = it.key();
-                    if (reconnectingProfile_ == profileId) {
-                        reconnectingProfile_.clear();
-                        showStatus(
-                            tr("Could not reconnect %1: %2").arg(it->name, fromRust(event.error)),
-                            ToastVariant::Danger, QStringLiteral("connection"));
-                    }
                     const auto pending = it.value();
                     pendingBrowseProfiles_.erase(it);
                     if (navigatorController_)
                         navigatorController_->removePendingConnection(pending.placeholder);
-                    if (selectedProfileIds_.remove(profileId)) {
+                    const bool selected = selectedProfileIds_.remove(profileId);
+                    if (selected)
                         syncVisible();
-                        showBrowseFailure(pending.name, fromRust(event.error));
+                    // One failure gives one report.
+                    if (reconnectingProfile_ == profileId) {
+                        finishReconnect(false);
+                        reportError(tr("Could not reconnect %1: %2")
+                                        .arg(pending.name, fromRust(event.error)));
+                    } else if (selected) {
+                        reportError(
+                            tr("Could not open %1: %2").arg(pending.name, fromRust(event.error)));
                     }
                     break;
                 }
@@ -844,17 +813,15 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 for (auto it = pendingBrowseProfiles_.cbegin(); it != pendingBrowseProfiles_.cend();
                      ++it) {
                     if (it->connection == event.id && reconnectingProfile_ == it.key()) {
-                        reconnectingProfile_.clear();
-                        showStatus(tr("The connection closed before reconnecting completed."),
-                                   ToastVariant::Danger, QStringLiteral("connection"));
+                        finishReconnect(false);
+                        reportError(tr("The connection closed before reconnecting completed."));
                         break;
                     }
                 }
                 const auto profileId = sessionProfileIds_.take(event.id);
                 if (!profileId.isEmpty() && reconnectingProfile_ == profileId) {
-                    reconnectingProfile_.clear();
-                    showStatus(tr("The connection closed before reconnecting completed."),
-                               ToastVariant::Danger, QStringLiteral("connection"));
+                    finishReconnect(false);
+                    reportError(tr("The connection closed before reconnecting completed."));
                 }
                 retiredBrowseConnections_.remove(event.id);
                 if (!profileId.isEmpty() && selectedSessionIds_.value(profileId) == event.id) {
@@ -868,13 +835,12 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     connect(workspace_->adapter(), &EngineAdapter::profileFailed, this,
             [this](quint64 token, const QString& error) {
                 if (token == profileListToken_)
-                    showStatus(tr("Saved connections: %1").arg(error), ToastVariant::Danger,
-                               QStringLiteral("connection"));
+                    reportNotice(tr("Saved connections: %1").arg(error), ToastVariant::Danger);
             });
     connect(workspace_->adapter(), &EngineAdapter::profileConnectFailed, this,
             [this](const QString& error) {
                 if (!submittingBrowseProfile_ || submittingBrowseProfileId_.isEmpty()) {
-                    showStatus(error, ToastVariant::Danger, QStringLiteral("connection"));
+                    reportError(error);
                     return;
                 }
                 submissionError_ = error;

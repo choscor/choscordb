@@ -1,5 +1,6 @@
 #pragma once
 #include "models/navigator_model.h"
+#include <QHash>
 #include <QList>
 #include <QModelIndex>
 #include <QObject>
@@ -14,6 +15,7 @@
 #include <optional>
 #include <utility>
 #include <vector>
+class QAction;
 class QMenu;
 class QTreeView;
 class QLineEdit;
@@ -92,6 +94,8 @@ class NavigatorController final : public QObject {
     void setPinStateResolver(std::function<std::optional<bool>(const QModelIndex&)> resolver);
     void setShowSystemSchemas(bool show);
     void populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex);
+    // The one retry action of a failed navigator or pin row; the caller connects it.
+    static QAction* addRetryAction(QMenu* menu);
     bool revealObject(quint64 connection, const QStringList& ancestryIds, const QString& objectId,
                       const QString& kind, const QString& qualifiedName,
                       const QString& relationSubtype,
@@ -114,7 +118,11 @@ class NavigatorController final : public QObject {
     void ddlRequested(quint64 connection, const QString& objectId, const QString& label,
                       const QString& kind, const QVariantList& properties);
     void generationFailed(const QString& error);
-    void searchStatusChanged(const QString& status);
+    // A metadata load that the user started (expand, Refresh, Load more) failed.
+    void loadFailed(const QString& message);
+    // The filter search runs while busy; the notice tells why a finished search is incomplete.
+    void searchBusyChanged(bool busy);
+    void searchNoticeChanged(const QString& notice);
     void quickObjectSearchChanged();
     void objectActionRequested(const QString& action, quint64 connection, const QString& objectId,
                                const QString& shortName, const QString& kind,
@@ -148,6 +156,12 @@ class NavigatorController final : public QObject {
     bool searchIncomplete_ = false;
     bool searchFinished_ = false;
     QTimer* filterTimer_ = nullptr;
+    // Pending user loads by request token, with the row name for the error message.
+    struct UserLoad {
+        quint64 connection = 0;
+        QString name;
+    };
+    QHash<quint64, UserLoad> userLoads_;
     void resetSearch() {
         searchStack_.clear();
         searchMatches_.clear();
@@ -157,8 +171,13 @@ class NavigatorController final : public QObject {
         searchFinished_ = false;
     }
     void searchRequestFinished(bool accepted, bool failed, const QString& error = {});
+    // Runs a load that the user started and keeps its request token, so a failure is reported.
+    void userLoad(const QModelIndex& source, void (NavigatorModel::*load)(const QModelIndex&));
+    void childrenFailed(quint64 connection, const QString& parent, quint64 token,
+                        const QString& error);
     // Starts a new search generation; without `advance` the caller schedules the traversal.
     void restartSearch(bool advance = true);
+    void finishSearch(const QString& notice);
     bool matchesSearchRequest(quint64 connection, const QString& parent, quint64 token) const;
     QList<QuickObjectResult> quickObjectResults_;
     QString quickObjectStatus_;

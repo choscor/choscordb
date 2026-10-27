@@ -8,6 +8,7 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/field/field.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/history_model.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/history_dock/history_dock.h"
@@ -16,6 +17,7 @@
 #include "widgets/sql_editor/sql_editor.h"
 #include "workspace_test.h"
 #include "workspace_test_fixture.h"
+#include <QAbstractButton>
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
@@ -44,7 +46,7 @@
 
 void WorkspaceTest::savedProfilesCreateDuplicateTestDeleteAndConnect() {
     WorkspaceFixture f;
-    QTRY_COMPARE(f.connections.count(), 1);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 1);
     f.newConnection.trigger();
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
     QVERIFY(dialog);
@@ -61,9 +63,13 @@ void WorkspaceTest::savedProfilesCreateDuplicateTestDeleteAndConnect() {
     dialog->saveDraft(profile);
     QTRY_COMPARE(list->count(), 1);
     QTRY_VERIFY(save->isEnabled());
+    auto* toast = choscordb::windowToast(dialog);
+    QTRY_VERIFY(toast->text().contains("Profile saved."));
+    toast->findChild<QAbstractButton*>("toastDismiss")->click();
     dialog->testDraft(profile);
-    QTRY_VERIFY(status->text().contains("succeeded"));
-    QCOMPARE(f.connections.count(), 1);
+    QTRY_VERIFY(toast->text().contains("succeeded"));
+    QVERIFY(!dialog->findChild<QWidget*>("profileStatusLine")->isVisible());
+    QCOMPARE(f.workspace.liveConnections().size(), 1);
     dialog->findChild<QPushButton*>("profileDuplicate")->click();
     QTRY_COMPARE(list->count(), 2);
     QTRY_VERIFY(save->isEnabled());
@@ -76,16 +82,18 @@ void WorkspaceTest::savedProfilesCreateDuplicateTestDeleteAndConnect() {
     QTRY_COMPARE(list->count(), 1);
     dialog->selectProfile(profile.id);
     dialog->findChild<QPushButton*>("profileConnect")->click();
-    QTRY_COMPARE(f.connections.count(), 2);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 2);
     // Connecting another session leaves this draft's existing target intact.
-    QCOMPARE(f.connections.currentIndex(), 0);
-    f.connections.setCurrentIndex(1);
-    QCOMPARE(f.connections.currentText(), QString("Saved SQLite"));
+    QCOMPARE(f.editor.connectionTarget(), f.workspace.liveConnections().at(0).id);
+    QVERIFY(
+        f.workspace.changeDocumentConnection(&f.editor, f.workspace.liveConnections().at(1).id));
+    QCOMPARE(f.editor.targetLabel(), QString("Saved SQLite"));
     QVERIFY(dialog->grab().save("native-profiles.png"));
     f.execute("SELECT 7");
     QTRY_VERIFY(f.run.isEnabled());
     QCOMPARE(f.editor.property("profileId").toString(), profile.id);
-    f.connections.setCurrentIndex(0);
+    QVERIFY(
+        f.workspace.changeDocumentConnection(&f.editor, f.workspace.liveConnections().at(0).id));
     f.messages.clear();
     f.execute("SELECT 8");
     QTRY_VERIFY(f.run.isEnabled());
@@ -138,7 +146,7 @@ void WorkspaceTest::profileFailuresKeepDraftAndShowConnectionCodes() {
     WorkspaceFixture f;
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    QTRY_COMPARE(f.connections.count(), 1);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 1);
     f.newConnection.trigger();
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
     QVERIFY(dialog);
@@ -161,7 +169,7 @@ void WorkspaceTest::profileFailuresKeepDraftAndShowConnectionCodes() {
     profile.path = directory.filePath("missing/data.sqlite");
     dialog->testDraft(profile);
     QTRY_VERIFY(status->text().contains("[Code: 14]"));
-    QCOMPARE(f.connections.count(), 1);
+    QCOMPARE(f.workspace.liveConnections().size(), 1);
     dialog->saveDraft(profile);
     QTRY_VERIFY(save->isEnabled());
     auto* open = dialog->findChild<QPushButton*>("profileConnect");
@@ -171,12 +179,12 @@ void WorkspaceTest::profileFailuresKeepDraftAndShowConnectionCodes() {
     QTRY_VERIFY(open->isEnabled());
     QVERIFY(status->text().contains("[Code: 14]"));
     QCOMPARE(status->textFormat(), Qt::PlainText);
-    QCOMPARE(f.connections.count(), 1);
+    QCOMPARE(f.workspace.liveConnections().size(), 1);
 }
 
 void WorkspaceTest::passwordDraftSurvivesTestConnectAndFailedRemember() {
     WorkspaceFixture f;
-    QTRY_COMPARE(f.connections.count(), 1);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 1);
     f.newConnection.trigger();
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
     QVERIFY(dialog);
@@ -221,7 +229,7 @@ void WorkspaceTest::passwordDraftSurvivesTestConnectAndFailedRemember() {
 
 void WorkspaceTest::sshSecretDraftSurvivesFailedSecureSave() {
     WorkspaceFixture f;
-    QTRY_COMPARE(f.connections.count(), 1);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 1);
     f.newConnection.trigger();
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
     QVERIFY(dialog);
@@ -255,12 +263,27 @@ void WorkspaceTest::sshSecretDraftSurvivesFailedSecureSave() {
     QVERIFY(!status->text().contains("ssh-private-marker"));
 }
 
+void WorkspaceTest::mysqlRunAllReachesEachStatementResult() {
+    if (qEnvironmentVariable("CHOSCORDB_TEST_MYSQL").isEmpty())
+        QSKIP("Requires the isolated MySQL fixture environment");
+    WorkspaceFixture f;
+    f.connectMysqlLive();
+    f.editor.setText("SELECT 11 AS first_answer;\nSELECT 'second' AS second_answer;");
+    f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+    QTRY_VERIFY(f.runAll.isEnabled());
+    f.runAll.trigger();
+    QTRY_COMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("11"));
+    QTRY_VERIFY(f.next.isEnabled());
+    f.next.click();
+    QTRY_COMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("second"));
+}
+
 void WorkspaceTest::mysqlSelectedScriptNavigatesDifferentResultSchemas() {
     if (qEnvironmentVariable("CHOSCORDB_TEST_MYSQL").isEmpty())
         QSKIP("Requires the isolated MySQL fixture environment");
     WorkspaceFixture f;
     f.connectMysqlLive();
-    QTRY_COMPARE(f.connections.count(), 2);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 2);
     f.editor.setText("SELECT 11 AS first_answer; SELECT 'second' AS second_answer;");
     f.editor.selectAll();
     f.runConfirmedSql();
@@ -302,7 +325,7 @@ void WorkspaceTest::mysqlGridEditsReviewBoundValuesAndPersistChanges() {
         QSKIP("Requires the isolated MySQL fixture environment");
     WorkspaceFixture f(true);
     f.connectMysqlLive();
-    QTRY_COMPARE(f.connections.count(), 2);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 2);
     for (const QString& sql :
          {QString("DROP TABLE IF EXISTS mysql_workspace_edits"),
           QString("CREATE TABLE mysql_workspace_edits (id INT PRIMARY KEY, label VARCHAR(100))"),
@@ -370,6 +393,12 @@ void WorkspaceTest::mysqlModeRefreshDoesNotExecuteChangedEditorInput() {
                 if (e.kind == "session_sql_mode" && e.request_token != 0)
                     ++replies;
             });
+    // A failed statement leaves the session mode unknown, so the next run reads it first.
+    f.editor.setText("SELEC 40");
+    f.runConfirmedSql();
+    QTRY_VERIFY(f.run.isEnabled());
+    QCOMPARE(replies, 0);
+    states.clear();
     f.editor.setText("SELECT 41");
     f.run.trigger();
     // The asynchronous reply has not entered the GUI event loop yet.
@@ -382,12 +411,32 @@ void WorkspaceTest::mysqlModeRefreshDoesNotExecuteChangedEditorInput() {
     QCOMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("42"));
 }
 
+void WorkspaceTest::mysqlKnownSessionModeRunsWithoutAProbe() {
+    if (qEnvironmentVariable("CHOSCORDB_TEST_MYSQL").isEmpty())
+        QSKIP("Requires the isolated MySQL fixture environment");
+    WorkspaceFixture f;
+    f.connectMysqlLive();
+    int probes = 0;
+    connect(f.workspace.adapter(), &choscordb::EngineAdapter::eventReady, &f.parent,
+            [&](const choscordb::BridgeEvent& e) {
+                if (e.kind == "session_sql_mode" && e.request_token != 0)
+                    ++probes;
+            });
+    for (const QString column : {"first_run", "second_run"}) {
+        f.editor.setText("SELECT 1 AS " + column);
+        f.runConfirmedSql();
+        QTRY_VERIFY(f.grid.model()->headerData(0, Qt::Horizontal).toString().startsWith(column));
+        QTRY_VERIFY(f.run.isEnabled());
+    }
+    QCOMPARE(probes, 0);
+}
+
 void WorkspaceTest::mysqlSessionModeChangesSubsequentCursorExecution() {
     if (qEnvironmentVariable("CHOSCORDB_TEST_MYSQL").isEmpty())
         QSKIP("Requires the isolated MySQL fixture environment");
     WorkspaceFixture f;
     f.connectMysqlLive();
-    QTRY_COMPARE(f.connections.count(), 2);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 2);
     f.editor.setText("SET SESSION sql_mode='NO_BACKSLASH_ESCAPES'");
     f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
     f.runConfirmedSql();
@@ -413,7 +462,7 @@ void WorkspaceTest::postgresProfileExecutesPagesAndCancels() {
     if (qEnvironmentVariable("CHOSCORDB_TEST_POSTGRES_PORT").isEmpty())
         QSKIP("Requires the isolated PostgreSQL fixture environment");
     WorkspaceFixture f;
-    QTRY_COMPARE(f.connections.count(), 1);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 1);
     f.newConnection.trigger();
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
     QVERIFY(dialog);
@@ -437,11 +486,13 @@ void WorkspaceTest::postgresProfileExecutesPagesAndCancels() {
     password->setText(qEnvironmentVariable("CHOSCORDB_TEST_POSTGRES_PASSWORD"));
     password->setModified(true);
     dialog->testDraft(profile);
-    QTRY_VERIFY2(status->text().contains("succeeded"), qPrintable(status->text()));
-    QCOMPARE(f.connections.count(), 1);
+    QTRY_VERIFY2(choscordb::windowToast(dialog)->text().contains("succeeded"),
+                 qPrintable(status->text()));
+    QCOMPARE(f.workspace.liveConnections().size(), 1);
     dialog->findChild<QPushButton*>("profileConnect")->click();
-    QTRY_COMPARE(f.connections.count(), 2);
-    f.connections.setCurrentIndex(1);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 2);
+    QVERIFY(
+        f.workspace.changeDocumentConnection(&f.editor, f.workspace.liveConnections().at(1).id));
     f.execute("SELECT i::numeric(30,8) AS value FROM generate_series(1,1001) AS i");
     QTRY_COMPARE(f.grid.model()->rowCount(), 1000);
     QCOMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("1.00000000"));
@@ -477,27 +528,28 @@ void WorkspaceTest::postgresProfileExecutesPagesAndCancels() {
     QVERIFY(entries[2].hasRowCount);
 }
 
-void WorkspaceTest::writesCommitAndRollbackComplete() {
+void WorkspaceTest::sqlTransactionsCommitAndRollBack() {
     WorkspaceFixture f;
     QTRY_VERIFY(f.run.isEnabled());
     f.execute("CREATE TABLE t(x INTEGER)");
     QTRY_VERIFY(f.messages.toPlainText().contains("rows affected"));
     QTRY_VERIFY(f.run.isEnabled());
-    f.mode.setCurrentIndex(1);
+    const auto connection = f.editor.connectionTarget().value_or(0);
+    QVERIFY(!f.workspace.activeTransaction(connection));
+    f.execute("BEGIN");
+    QTRY_VERIFY(f.workspace.activeTransaction(connection));
     f.messages.clear();
     f.execute("INSERT INTO t VALUES(1)");
     QTRY_VERIFY(f.messages.toPlainText().contains("1 rows affected"));
-    QTRY_VERIFY(f.rollback.isEnabled());
-    f.mode.setCurrentIndex(0);
-    QCOMPARE(f.mode.currentIndex(), 1);
-    QVERIFY(f.messages.toPlainText().contains("Commit or roll back"));
-    f.rollback.trigger();
-    QTRY_VERIFY(f.messages.toPlainText().contains("rolled back"));
+    f.execute("ROLLBACK");
+    QTRY_VERIFY(!f.workspace.activeTransaction(connection));
+    f.execute("BEGIN");
+    QTRY_VERIFY(f.workspace.activeTransaction(connection));
     f.messages.clear();
     f.execute("INSERT INTO t VALUES(2)");
     QTRY_VERIFY(f.messages.toPlainText().contains("1 rows affected"));
-    f.commit.trigger();
-    QTRY_VERIFY(f.messages.toPlainText().contains("committed"));
+    f.execute("COMMIT");
+    QTRY_VERIFY(!f.workspace.activeTransaction(connection));
     f.execute("SELECT x FROM t");
     QTRY_COMPARE(f.grid.model()->rowCount(), 1);
     QCOMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("2"));

@@ -1,11 +1,15 @@
 #include "app/appearance_controller.h"
 #include "app/main_window.h"
+#include "app/pin_store.h"
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
+#include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/toast_region/toast_region.h"
+#include "models/navigator_model.h"
 #include "navigator_sql_workspace_test.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include <QAbstractButton>
 #include <QAction>
 #include <QFile>
 #include <QLabel>
@@ -16,6 +20,7 @@
 #include <QTemporaryDir>
 #include <QToolBar>
 #include <QToolButton>
+#include <QTreeView>
 #include <QtTest>
 
 void NavigatorSqlWorkspaceTest::recoveryActionsRemainInMenuWithoutToolButtons() {
@@ -117,7 +122,7 @@ void NavigatorSqlWorkspaceTest::recoveryToastDismissalKeepsActionsAndLaterFailur
     QVERIFY(QMetaObject::invokeMethod(recovery, "errorOccurred", Qt::DirectConnection,
                                       Q_ARG(QString, QStringLiteral("dismissed save error")),
                                       Q_ARG(bool, false)));
-    auto* dismiss = toast->findChild<QToolButton*>("toastDismiss");
+    auto* dismiss = toast->findChild<QAbstractButton*>("toastDismiss");
     QVERIFY(dismiss);
     dismiss->click();
     QTRY_VERIFY(!toast->accessibleDescription().contains(QStringLiteral("dismissed save error")));
@@ -241,20 +246,99 @@ void NavigatorSqlWorkspaceTest::startNavigationPreservesDocumentsAndIndependentF
     QCOMPARE(tabs->count(), 1);
     QCOMPARE(editor->text(), QString("SELECT 123;"));
     QVERIFY(window.showScreen(choscordb::MainWindow::Screen::Sql));
-    window.showStatus("Settings storage failed", choscordb::ToastVariant::Danger, "preferences");
-    window.showStatus("Wait for database work", choscordb::ToastVariant::Warning);
-    window.showStatus("Saved file could not open", choscordb::ToastVariant::Danger, "saved");
-    auto* preferences = window.findChild<choscordb::design::StatusLine*>("preferencesStatusLine");
-    auto* saved = window.findChild<choscordb::design::StatusLine*>("savedStatusLine");
-    QVERIFY(preferences && saved);
-    QCOMPARE(preferences->accessibleDescription(), QString("Settings storage failed"));
-    QCOMPARE(saved->accessibleDescription(), QString("Saved file could not open"));
+    auto* toast = window.findChild<choscordb::ToastRegion*>("toastRegion");
+    QVERIFY(toast);
+    window.reportNotice("Wait for database work");
+    QVERIFY(toast->text().contains("Wait for database work"));
+    // A resolved appearance warning does not remove a different notice.
     auto* appearance = window.findChild<choscordb::AppearanceController*>();
     QVERIFY(appearance);
-    window.showToast("Export complete", choscordb::ToastVariant::Success);
     QVERIFY(QMetaObject::invokeMethod(appearance, "warningChanged", Qt::DirectConnection,
                                       Q_ARG(QString, QString{})));
-    auto* toast = window.findChild<choscordb::ToastRegion*>("toastRegion");
-    QVERIFY(toast->text().contains("Export complete"));
-    QCOMPARE(preferences->accessibleDescription(), QString("Settings storage failed"));
+    QVERIFY(toast->text().contains("Wait for database work"));
+    window.clearNotice("Wait for database work");
+    QTRY_VERIFY(!toast->text().contains("Wait for database work"));
+    window.reportError("Saved file could not open");
+    auto* dialog = window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog");
+    QTRY_VERIFY(dialog && dialog->isVisible());
+    QCOMPARE(dialog->text(), QString("1 error:\n\n• Saved file could not open"));
+    dialog->reject();
+    // An error after the list closes starts a new list.
+    window.reportError("Second file could not open");
+    QTRY_VERIFY(
+        (dialog = window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog")) &&
+        dialog->isVisible());
+    QCOMPARE(dialog->text(), QString("1 error:\n\n• Second file could not open"));
+    dialog->reject();
+    QTRY_VERIFY(!window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog"));
+    // An error waits until the open modal closes, and then shows.
+    auto* blocker = new choscordb::ConfirmationDialog(QMessageBox::Information, "Busy", "Busy",
+                                                      QMessageBox::Close, &window);
+    blocker->setAttribute(Qt::WA_DeleteOnClose);
+    blocker->open();
+    QTRY_VERIFY(blocker->isVisible());
+    window.reportError("Third file could not open");
+    QCoreApplication::processEvents();
+    QVERIFY(!window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog"));
+    // A modal that only hides also releases the list.
+    blocker->hide();
+    QTRY_VERIFY(
+        (dialog = window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog")) &&
+        dialog->isVisible());
+    QCOMPARE(dialog->text(), QString("1 error:\n\n• Third file could not open"));
+    dialog->reject();
+    delete blocker;
+}
+
+void NavigatorSqlWorkspaceTest::userActionErrorsShareOneModalWithACount() {
+    using namespace choscordb;
+    QTemporaryDir storage;
+    const auto path = storage.filePath("workspace");
+    auto pin = [](const QString& profileId, const QString& name) {
+        PinRecord record;
+        record.profileId = profileId;
+        record.profileName = profileId;
+        record.objectId = QStringLiteral("[\"main\",\"%1\"]").arg(name);
+        record.name = name;
+        record.qualifiedName = QStringLiteral("\"main\".\"%1\"").arg(name);
+        record.kind = QStringLiteral("table");
+        record.parentObjectId = QStringLiteral("[\"main\"]");
+        record.ancestryIds = {record.parentObjectId};
+        return record;
+    };
+    QString error;
+    // Pins of saved connections that no longer exist fail when they expand.
+    QVERIFY2(
+        PinStore(path).save({pin("missing-a", "orders"), pin("missing-b", "invoices")}, &error),
+        qPrintable(error));
+    MainWindow window(nullptr, path);
+    window.show();
+    auto* pins = window.findChild<QTreeView*>("pinnedList");
+    QVERIFY(pins);
+    QTRY_COMPARE(pins->model()->rowCount(), 2);
+    const auto dialogs = [&window] {
+        QList<ConfirmationDialog*> shown;
+        for (auto* dialog : window.findChildren<ConfirmationDialog*>())
+            if (dialog->isVisible())
+                shown.append(dialog);
+        return shown;
+    };
+    pins->expand(pins->model()->index(0, 0));
+    QTRY_COMPARE(dialogs().size(), 1);
+    const auto first = dialogs().first()->text();
+    // The missing profile reports once, from the reconnect.
+    QVERIFY2(first.contains("saved connection is unavailable") && !first.contains("errors"),
+             qPrintable(first));
+    pins->expand(pins->model()->index(1, 0));
+    QTRY_VERIFY(dialogs().first()->text() != first);
+    QCOMPARE(dialogs().size(), 1);
+    QVERIFY(dialogs().first()->text().contains("2 errors"));
+    // Each failed pin stays red with its own message.
+    for (int row = 0; row < 2; ++row)
+        QCOMPARE(pins->model()->index(row, 0).data(NavigatorModel::StatusRole).toInt(),
+                 int(RowStatusKind::Failed));
+    // The sidebar has no status text line for pins.
+    QVERIFY(!window.findChild<QWidget*>("pinsStatusLine"));
+    dialogs().first()->reject();
+    QTRY_VERIFY(dialogs().isEmpty());
 }

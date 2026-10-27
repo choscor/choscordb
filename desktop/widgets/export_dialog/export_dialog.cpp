@@ -321,12 +321,20 @@ void ExportDialog::finish(const QString& message, Outcome outcome) {
     submitting_ = false;
     cancelling_ = false;
     statusLine_->setBusy(false);
-    if (outcome == Outcome::Cancelled)
-        statusLine_->setNeutral();
-    else
-        statusLine_->setAvailable(outcome == Outcome::Success);
-    statusLine_->setMessage(message);
-    statusLine_->show();
+    // A toast owns the success outcome. The status line keeps it only when no toast can show it.
+    auto* toast = outcome == Outcome::Success ? windowToast(this) : nullptr;
+    if (toast) {
+        toast->showToast(tr("Success"), message, ToastVariant::Success);
+        statusLine_->setMessage({});
+        statusLine_->hide();
+    } else {
+        if (outcome == Outcome::Cancelled)
+            statusLine_->setNeutral();
+        else
+            statusLine_->setAvailable(outcome == Outcome::Success);
+        statusLine_->setMessage(message);
+        statusLine_->show();
+    }
     submissionError_.clear();
     start_->setText(outcome == Outcome::Failed ? tr("&Retry") : tr("&Export"));
     updateActions();
@@ -334,11 +342,6 @@ void ExportDialog::finish(const QString& message, Outcome outcome) {
         closeAfter_ = false;
         if (outcome != Outcome::Failed)
             hide();
-    }
-    if (outcome == Outcome::Success) {
-        if (auto* toast = windowToast(this)) {
-            toast->showToast(tr("Success"), message, ToastVariant::Success);
-        }
     }
     emit exportRunningChanged(false);
 }

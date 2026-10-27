@@ -1,5 +1,6 @@
 #include "app/main_window.h"
 #include "app/workspace_recovery.h"
+#include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/toast_region/toast_region.h"
 #include "navigator_sql_workspace_test.h"
@@ -184,11 +185,14 @@ void NavigatorSqlWorkspaceTest::savedPanelRejectsFileReplacedBySymlink() {
     QVERIFY(original.remove());
     QVERIFY(QFile::link(target, path));
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
-    auto* status = window.findChild<choscordb::design::StatusLine*>("savedStatusLine");
-    QVERIFY(tabs && status);
+    QVERIFY(tabs);
     const int before = tabs->count();
     emit list->itemClicked(matches.front(), 0);
-    QTRY_VERIFY(status->accessibleDescription().contains("Could not open"));
+    choscordb::ConfirmationDialog* error = nullptr;
+    QTRY_VERIFY((error = window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog")) &&
+                error->isVisible());
+    QVERIFY(error->text().contains("Could not open"));
+    error->reject();
     QCOMPARE(tabs->count(), before);
     QVERIFY(QFile::remove(path));
 #endif

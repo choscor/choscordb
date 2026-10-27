@@ -12,7 +12,6 @@
 #include "models/navigator_model.h"
 #include <QAbstractItemModel>
 #include <QAction>
-#include <QComboBox>
 #include <QFutureWatcher>
 #include <QHash>
 #include <QItemSelectionModel>
@@ -33,16 +32,24 @@ namespace choscordb {
 namespace {
 void showPinActivationStatus(MainWindow* window, const QString& key, const QString& message,
                              ToastVariant variant) {
+    if (variant == ToastVariant::Danger) {
+        window->reportError(message);
+        return;
+    }
+    // One pin warning shows at a time.
+    if (const auto earlier = window->property("pinActivationNoticeMessage").toString();
+        !earlier.isEmpty())
+        window->clearNotice(earlier);
     window->setProperty("pinActivationNoticeKey", key);
     window->setProperty("pinActivationNoticeMessage", message);
-    window->showStatus(message, variant, QStringLiteral("pins"));
+    window->reportNotice(message, variant);
 }
 void clearPinActivationStatus(MainWindow* window, const QString& key) {
     if (window->property("pinActivationNoticeKey").toString() != key)
         return;
     const auto message = window->property("pinActivationNoticeMessage").toString();
     if (!message.isEmpty())
-        window->clearStatus(QStringLiteral("pins"), message);
+        window->clearNotice(message);
     window->setProperty("pinActivationNoticeKey", QVariant{});
     window->setProperty("pinActivationNoticeMessage", QVariant{});
 }
@@ -166,8 +173,8 @@ void MainWindow::initializePins(const Ui& ui) {
                 pinExpansionRebinding_.insert(key);
                 pinExpansionConnectionIds_.insert(key, selectedSessionIds_.value(pin->profileId));
                 ++pinExpansionGenerations_[key];
-                pinnedModel_->setStatus(key, tr("Loading children…"),
-                                        PinnedTreeModel::StatusPlacement::Label);
+                pinnedModel_->setStatus(key,
+                                        EngineAdapter::rowStatus(RowStatusCause::ChildrenLoading));
             }
             tryExpandPendingPins();
         }
@@ -208,8 +215,8 @@ void MainWindow::initializePins(const Ui& ui) {
                     updatePinnedGeometry();
                 }
                 if (!error.isEmpty())
-                    showStatus(tr("Some saved pins could not be loaded: %1").arg(error),
-                               ToastVariant::Warning, QStringLiteral("pins"));
+                    reportNotice(tr("Some saved pins could not be loaded: %1").arg(error),
+                                 ToastVariant::Danger);
             });
     loadWatcher->setFuture(QtConcurrent::run(&pinIoPool_, [store = pinStore_] {
         QString error;
@@ -236,8 +243,7 @@ void MainWindow::initializePins(const Ui& ui) {
                 const auto connection = index.data(NavigatorModel::ConnectionRole).toULongLong();
                 const auto profileId = workspace_->profileIdForConnection(connection);
                 if (profileId.isEmpty()) {
-                    showStatus(tr("Save this connection before pinning its objects."),
-                               ToastVariant::Warning, QStringLiteral("pins"));
+                    reportNotice(tr("Save this connection before pinning its objects."));
                     return;
                 }
                 QString profileName;
@@ -298,6 +304,22 @@ void MainWindow::initializePins(const Ui& ui) {
         auto* menu = new QMenu(pinnedList_);
         menu->setObjectName("pinnedMenu");
         menu->setAttribute(Qt::WA_DeleteOnClose);
+        if (index.data(NavigatorModel::RetryRole).toInt() == int(RowRetry::Refresh)) {
+            connect(NavigatorController::addRetryAction(menu), &QAction::triggered, this,
+                    [this, key] {
+                        // Expanding a collapsed pin loads it; an expanded pin loads again.
+                        for (int row = 0; row < pinnedModel_->rowCount(); ++row) {
+                            const auto root = pinnedModel_->index(row, 0);
+                            if (pinnedModel_->pinKey(root) != key)
+                                continue;
+                            if (pinnedList_->isExpanded(root))
+                                expandPin(key);
+                            else
+                                pinnedList_->expand(root);
+                        }
+                    });
+            menu->addSeparator();
+        }
         auto* unpin = menu->addAction(tr("Unpin"));
         unpin->setObjectName("unpinPinnedObject");
         connect(unpin, &QAction::triggered, this, [this, key] {
@@ -335,12 +357,16 @@ void MainWindow::initializePins(const Ui& ui) {
                     if (!pinExpansionConnectionIds_.contains(key) ||
                         pinExpansionConnectionIds_.value(key) != event.id)
                         continue;
-                    const auto reason = tr("Connection failed. Collapse and expand to retry.");
-                    pinExpansionErrors_.insert(key, reason);
-                    pinnedModel_->setStatus(key, reason, PinnedTreeModel::StatusPlacement::Label);
                     pendingExpansionKeys_.remove(key);
                     pinExpansionInFlight_.remove(key);
-                    pinExpansionRebinding_.remove(key);
+                    const auto status = EngineAdapter::rowStatus(RowStatusCause::ConnectionFailed);
+                    if (pinExpansionRebinding_.remove(key)) {
+                        failPinExpansion(key, status, true);
+                        continue;
+                    }
+                    // The failed open already reported the error of a user expansion.
+                    pinExpansionErrors_.insert(key, status);
+                    pinnedModel_->setStatus(key, status);
                 }
             }
             if (event.kind == "connection_failed" || event.kind == "disconnected")
@@ -374,8 +400,8 @@ void MainWindow::renderPins() {
         pinExpansionRebinding_.remove(key);
         pinExpansionConnectionIds_.remove(key);
         ++pinExpansionGenerations_[key];
-        pinExpansionErrors_.insert(
-            key, tr("Connection no longer selected. Collapse and expand to retry."));
+        pinExpansionErrors_.insert(key,
+                                   EngineAdapter::rowStatus(RowStatusCause::ConnectionDeselected));
     }
     QHash<QString, QString> profileNames;
     if (savedConnectionsList_)
@@ -386,12 +412,9 @@ void MainWindow::renderPins() {
                 profileNames.insert(profile.id, profile.name);
         }
     QSet<QString> liveProfiles;
-    auto* connections = findChild<QComboBox*>("connectionSelector");
-    if (connections)
-        for (int row = 0; row < connections->count(); ++row)
-            if (connections->itemData(row).isValid())
-                liveProfiles.insert(
-                    workspace_->profileIdForConnection(connections->itemData(row).toULongLong()));
+    if (workspace_)
+        for (const auto& live : workspace_->liveConnections())
+            liveProfiles.insert(workspace_->profileIdForConnection(live.id));
     QList<PinRecord> displayPins;
     displayPins.reserve(pins_.size());
     for (auto pin : pins_) {
@@ -402,23 +425,20 @@ void MainWindow::renderPins() {
     pinnedModel_->setPins(displayPins);
     for (qsizetype row = 0; row < displayPins.size(); ++row) {
         const auto& pin = displayPins[row];
-        const bool liveHidden = connections && !selectedSessionIds_.contains(pin.profileId) &&
-                                liveProfiles.contains(pin.profileId);
+        const bool liveHidden =
+            !selectedSessionIds_.contains(pin.profileId) && liveProfiles.contains(pin.profileId);
         const bool loading = pendingBrowseProfiles_.contains(pin.profileId);
-        const auto status = pin.unavailable                               ? tr("Unavailable")
-                            : loading                                     ? tr("Loading")
-                            : selectedSessionIds_.contains(pin.profileId) ? tr("Connected")
-                            : liveHidden                                  ? tr("Hidden")
-                                                                          : tr("Disconnected");
+        const auto cause = loading ? RowStatusCause::Connecting
+                           : selectedSessionIds_.contains(pin.profileId) ? RowStatusCause::Connected
+                           : liveHidden ? RowStatusCause::Hidden
+                                        : RowStatusCause::Disconnected;
         // setPins() keyed each root row in displayPins order.
         const auto key = pinnedModel_->pinKey(pinnedModel_->index(static_cast<int>(row), 0));
         if (!pendingExpansionKeys_.contains(key)) {
             const auto error = pinExpansionErrors_.constFind(key);
-            const bool notice = error != pinExpansionErrors_.cend() || loading;
-            pinnedModel_->setStatus(key,
-                                    error != pinExpansionErrors_.cend() ? error.value() : status,
-                                    notice ? PinnedTreeModel::StatusPlacement::Label
-                                           : PinnedTreeModel::StatusPlacement::TooltipOnly);
+            pinnedModel_->setStatus(key, error != pinExpansionErrors_.cend()
+                                             ? error.value()
+                                             : EngineAdapter::rowStatus(cause));
         }
         if (!selectedSessionIds_.contains(pin.profileId))
             pinnedModel_->setResolved(key, {});
@@ -429,8 +449,6 @@ void MainWindow::expandPin(const QString& key) {
     const auto* found = pinFor(pins_, pinRows_, key);
     if (!found || found->unavailable)
         return;
-    if (pinExpansionErrors_.contains(key))
-        clearStatus(QStringLiteral("pins"), pinExpansionErrors_.value(key));
     pendingExpansionKeys_.insert(key);
     pinExpansionErrors_.remove(key);
     pinExpansionConnectionIds_.remove(key);
@@ -438,15 +456,17 @@ void MainWindow::expandPin(const QString& key) {
     ++pinExpansionGenerations_[key];
     pinExpansionAttempts_.remove(key);
     pinnedModel_->setResolved(key, {});
-    pinnedModel_->setStatus(key, tr("Loading children…"), PinnedTreeModel::StatusPlacement::Label);
-    if (databaseClosePending_ || !workspace_->navigationAllowed() ||
-        workspace_->hasPendingEdits() || !reconnectProfile_ ||
-        !reconnectProfile_(found->profileId)) {
+    pinnedModel_->setStatus(key, EngineAdapter::rowStatus(RowStatusCause::ChildrenLoading));
+    const bool blocked = databaseClosePending_ || !workspace_->navigationAllowed() ||
+                         workspace_->hasPendingEdits() || !reconnectProfile_;
+    // A failed reconnect has already reported its own error.
+    if (blocked || !reconnectProfile_(found->profileId)) {
         pendingExpansionKeys_.remove(key);
-        const auto reason = tr("Connection unavailable. Collapse and expand to retry.");
-        pinExpansionErrors_.insert(key, reason);
-        pinnedModel_->setStatus(key, reason, PinnedTreeModel::StatusPlacement::Label);
-        showStatus(reason, ToastVariant::Warning, QStringLiteral("pins"));
+        const auto status = EngineAdapter::rowStatus(RowStatusCause::ConnectionUnavailable);
+        pinExpansionErrors_.insert(key, status);
+        pinnedModel_->setStatus(key, status);
+        if (blocked)
+            reportNotice(status.message);
         return;
     }
     if (pendingBrowseProfiles_.contains(found->profileId) &&
@@ -479,9 +499,10 @@ void MainWindow::tryExpandPendingPins() {
         if (navigatorController_->resolveObject(
                 connection, pin.ancestryIds, pin.objectId, pin.kind, pin.qualifiedName,
                 pin.relationSubtype,
-                [this, key, generation, profileId = pin.profileId,
-                 connection](NavigatorController::RevealResult result, const QString& reason,
-                             const QModelIndex& source) {
+                [this, key, generation, profileId = pin.profileId, connection,
+                 rebinding = pinExpansionRebinding_.contains(key)](
+                    NavigatorController::RevealResult result, const QString& reason,
+                    const QModelIndex& source) {
                     if (generation != pinExpansionGenerations_.value(key) ||
                         !pendingExpansionKeys_.contains(key) ||
                         !selectedProfileIds_.contains(profileId) ||
@@ -493,8 +514,8 @@ void MainWindow::tryExpandPendingPins() {
                     pinExpansionAttempts_.remove(key);
                     if (result == NavigatorController::RevealResult::Found &&
                         pinnedModel_->setResolved(key, source)) {
-                        pinnedModel_->setStatus(key, tr("Connected"),
-                                                PinnedTreeModel::StatusPlacement::TooltipOnly);
+                        pinnedModel_->setStatus(
+                            key, EngineAdapter::rowStatus(RowStatusCause::Connected));
                         for (int row = 0; row < pinnedModel_->rowCount(); ++row) {
                             const auto root = pinnedModel_->index(row, 0);
                             if (pinnedModel_->pinKey(root) == key &&
@@ -509,18 +530,15 @@ void MainWindow::tryExpandPendingPins() {
                             if (PinStore::identityKey(entry) == key)
                                 entry.unavailable = true;
                         savePinsAsync(std::move(updated),
-                                      tr("Could not save unavailable pin state: %1"));
+                                      tr("Could not save unavailable pin state: %1"), rebinding);
                     }
-                    auto visibleReason = reason;
-                    visibleReason.replace(tr("Activate the pin to retry."),
-                                          tr("Collapse and expand to retry."));
-                    if (visibleReason.isEmpty())
-                        visibleReason =
-                            tr("Could not load children. Collapse and expand to retry.");
-                    pinExpansionErrors_.insert(key, visibleReason);
-                    pinnedModel_->setStatus(key, visibleReason,
-                                            PinnedTreeModel::StatusPlacement::Label);
-                    showStatus(visibleReason, ToastVariant::Warning, QStringLiteral("pins"));
+                    failPinExpansion(key,
+                                     EngineAdapter::rowStatus(
+                                         result == NavigatorController::RevealResult::Unavailable
+                                             ? RowStatusCause::ObjectUnavailable
+                                             : RowStatusCause::RevealFailed,
+                                         reason),
+                                     rebinding);
                 },
                 [this, key, generation, profileId = pin.profileId, connection] {
                     return generation == pinExpansionGenerations_.value(key) &&
@@ -533,9 +551,8 @@ void MainWindow::tryExpandPendingPins() {
         pinExpansionInFlight_.remove(key);
         if (++pinExpansionAttempts_[key] >= 20) {
             pendingExpansionKeys_.remove(key);
-            const auto reason = tr("Connection not ready. Collapse and expand to retry.");
-            pinExpansionErrors_.insert(key, reason);
-            pinnedModel_->setStatus(key, reason, PinnedTreeModel::StatusPlacement::Label);
+            failPinExpansion(key, EngineAdapter::rowStatus(RowStatusCause::ConnectionNotReady),
+                             pinExpansionRebinding_.remove(key));
             continue;
         }
         QTimer::singleShot(50, this, [this, key, generation] {
@@ -579,11 +596,6 @@ void MainWindow::activatePin(const QString& key) {
     }
     if (!reconnectProfile_(found->profileId)) {
         pendingPinKey_.clear();
-        showPinActivationStatus(
-            this, key,
-            tr("The saved connection could not be opened. Fix the connection or finish "
-               "active work, then activate the pin to retry."),
-            ToastVariant::Warning);
         return;
     }
     renderPins();
@@ -645,7 +657,13 @@ void MainWindow::tryRevealPendingPin() {
                     savePinsAsync(std::move(updated),
                                   tr("Could not save unavailable pin state: %1"));
                 }
-                showPinActivationStatus(this, key, reason, ToastVariant::Warning);
+                showPinActivationStatus(
+                    this, key,
+                    result == NavigatorController::RevealResult::Unavailable
+                        ? reason
+                        : tr("%1 %2").arg(reason,
+                                          EngineAdapter::recoveryHint(RecoveryHint::ActivatePin)),
+                    ToastVariant::Danger);
             },
             [this, key, generation] {
                 return generation == pinActivationGeneration_ && pendingPinKey_ == key;
@@ -658,8 +676,9 @@ void MainWindow::tryRevealPendingPin() {
         pendingPinKey_.clear();
         pinStartAttempts_ = 0;
         showPinActivationStatus(this, key,
-                                tr("The connection is not ready. Activate the pin to retry."),
-                                ToastVariant::Warning);
+                                tr("The connection is not ready. %1")
+                                    .arg(EngineAdapter::recoveryHint(RecoveryHint::ActivatePin)),
+                                ToastVariant::Danger);
         return;
     }
     QTimer::singleShot(50, this, [this, key] {
@@ -668,30 +687,41 @@ void MainWindow::tryRevealPendingPin() {
     });
 }
 
-void MainWindow::savePinsAsync(QList<PinRecord> updated, const QString& failureMessage) {
+void MainWindow::failPinExpansion(const QString& key, const RowStatus& status, bool rebinding) {
+    pinExpansionErrors_.insert(key, status);
+    pinnedModel_->setStatus(key, status);
+    // A rebind at startup is background work; an expansion is a user action.
+    if (rebinding)
+        reportNotice(status.message, ToastVariant::Danger);
+    else
+        reportError(status.message);
+}
+
+void MainWindow::savePinsAsync(QList<PinRecord> updated, const QString& failureMessage,
+                               bool background) {
     const auto generation = ++pinSaveGeneration_;
     pins_ = updated;
     pinRows_ = pinRowsFor(pins_);
     renderPins();
     auto* watcher = new QFutureWatcher<QString>(this);
     connect(watcher, &QFutureWatcher<QString>::finished, this,
-            [this, watcher, generation, updated, failureMessage] {
+            [this, watcher, generation, updated, failureMessage, background] {
                 const auto error = watcher->result();
                 watcher->deleteLater();
                 if (error.isEmpty() && generation > pinPersistedGeneration_) {
                     pinPersistedGeneration_ = generation;
                     savedPins_ = updated;
-                    const auto priorFailure = property("pinSaveNoticeMessage").toString();
-                    if (!priorFailure.isEmpty())
-                        clearStatus(QStringLiteral("pins"), priorFailure);
-                    setProperty("pinSaveNoticeMessage", QVariant{});
+                    clearNotice(std::exchange(pinSaveNotice_, {}));
                 } else if (!error.isEmpty() && generation == pinSaveGeneration_) {
                     pins_ = savedPins_;
                     pinRows_ = pinRowsFor(pins_);
                     renderPins();
-                    const auto message = failureMessage.arg(error);
-                    setProperty("pinSaveNoticeMessage", message);
-                    showStatus(message, ToastVariant::Danger, QStringLiteral("pins"));
+                    if (background) {
+                        clearNotice(pinSaveNotice_);
+                        pinSaveNotice_ = failureMessage.arg(error);
+                        reportNotice(pinSaveNotice_, ToastVariant::Danger);
+                    } else
+                        reportError(failureMessage.arg(error));
                 }
             });
     watcher->setFuture(

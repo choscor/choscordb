@@ -226,7 +226,8 @@ class NavigatorSqlTest : public QObject {
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
                             &EngineAdapter::loadMetadata);
         QSignalSpy requests(model, &NavigatorModel::childrenRequested);
-        QSignalSpy status(&controller, &NavigatorController::searchStatusChanged);
+        QSignalSpy status(&controller, &NavigatorController::searchNoticeChanged);
+        QSignalSpy busy(&controller, &NavigatorController::searchBusyChanged);
         controller.addConnection(9, "PostgreSQL");
         controller.setSelectedConnection(9);
         const auto root = model->index(0, 0);
@@ -252,7 +253,8 @@ class NavigatorSqlTest : public QObject {
         emit engine.metadataSubmissionFailed(9, "temp", hiddenToken, "Hidden error");
         QVERIFY(!status.last().first().toString().contains("Hidden error"));
         QVERIFY(model->applyChildren(9, "public", visibleToken, {}));
-        QTRY_VERIFY(!status.isEmpty() && status.last().first().toString().isEmpty());
+        QTRY_VERIFY(!busy.isEmpty() && !busy.last().first().toBool());
+        QVERIFY(status.last().first().toString().isEmpty());
     }
     void metadataContinuationMenuRequestsTheNextBoundedPage() {
         choscordb::EngineAdapter engine;

@@ -1,5 +1,6 @@
 #pragma once
 #include "bridge/completion_service.h"
+#include "bridge/engine_adapter.h"
 #include <QAbstractItemModel>
 #include <QHash>
 #include <QMultiHash>
@@ -49,7 +50,12 @@ class NavigatorModel final : public QAbstractItemModel {
         ChildrenLoadedRole,
         PropertiesRole,
         HasMoreRole,
-        DatabaseTypeRole
+        DatabaseTypeRole,
+        // The RowStatusKind and RowRetry values from Rust's row status policy.
+        StatusRole,
+        RetryRole,
+        // Whether Rust shows this node in the sidebar tree rather than only in its object tab.
+        SidebarChildRole
     };
     explicit NavigatorModel(QObject* parent = nullptr);
     ~NavigatorModel() override;
@@ -72,6 +78,9 @@ class NavigatorModel final : public QAbstractItemModel {
     bool applyChildrenPage(quint64 connection, const QString& parentObjectId, quint64 token,
                            std::vector<NavigatorObject> children, quint64 offset, bool hasMore,
                            quint64 nextOffset);
+    // Saved children show under a node that still loads. Its live page replaces them.
+    bool applyCachedChildren(quint64 connection, const QString& parentObjectId, quint64 token,
+                             std::vector<NavigatorObject> children);
     void requestNextPage(const QModelIndex& index);
     bool failChildren(quint64 connection, const QString& parentObjectId, quint64 token,
                       const QString& error);
@@ -99,7 +108,9 @@ class NavigatorModel final : public QAbstractItemModel {
     void completionChanged(quint64 connection);
     // Dispatched on the next event-loop turn so fetchMore callers cannot be
     // reentered by a synchronous metadata provider.
-    void childrenRequested(quint64 connection, const QString& parentObjectId, quint64 requestToken);
+    // A fresh request is a manual refresh, which skips saved children.
+    void childrenRequested(quint64 connection, const QString& parentObjectId, quint64 requestToken,
+                           bool fresh);
 
     void childrenPageRequested(quint64 connection, const QString& parentObjectId,
                                quint64 requestToken, quint64 offset);
@@ -112,6 +123,14 @@ class NavigatorModel final : public QAbstractItemModel {
     bool isBrowsable(const Node* node) const;
     bool hiddenBySystemSchema(const Node* node) const;
     void clearChildren(Node* node);
+    // Starts a load of the first page or the next page. A fresh load skips saved children.
+    void request(Node* node, bool fresh);
+    bool insertChildren(Node* node, std::vector<NavigatorObject> children, bool hasMore,
+                        quint64 nextOffset, bool cached);
+    std::unique_ptr<Node> makeChild(Node* parent, NavigatorObject object) const;
+    // Applies a live page to saved children in place. False when the order changed.
+    bool reconcileSaved(Node* node, std::vector<NavigatorObject>& children);
+    void setStatus(Node* node, RowStatusCause cause, const QString& detail = {});
     void registerNode(Node* node);
     void unregisterSubtree(const Node* node);
     std::vector<std::unique_ptr<Node>> roots_;

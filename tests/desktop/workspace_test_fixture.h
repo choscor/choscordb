@@ -42,8 +42,7 @@
 
 struct WorkspaceFixture {
     QWidget parent;
-    QComboBox connections, mode;
-    QAction run, cancel, commit, rollback, newConnection;
+    QAction run, runAll, cancel, newConnection;
     QPushButton next, previous, exportResult;
     QPushButton addRow, deleteRows, setNull, applyEdits, discardEdits;
     QLabel summary;
@@ -52,12 +51,9 @@ struct WorkspaceFixture {
     choscordb::SqlEditor editor;
     choscordb::QueryWorkspace workspace;
     explicit WorkspaceFixture(bool editing = false)
-        : workspace({&connections,
-                     &mode,
-                     &run,
+        : workspace({&run,
+                     &runAll,
                      &cancel,
-                     &commit,
-                     &rollback,
                      &newConnection,
                      &next,
                      &summary,
@@ -77,13 +73,10 @@ struct WorkspaceFixture {
                      editing ? &discardEdits : nullptr}) {
         parent.resize(960, 640);
         parent.show();
-        mode.addItems({"Auto-commit", "Manual"});
-        connections.setEnabled(false);
-        mode.setEnabled(false);
         workspace.connectSqlite(":memory:");
     }
     void connectMysqlLive() {
-        QTRY_COMPARE(connections.count(), 1);
+        QTRY_COMPARE(workspace.liveConnections().size(), 1);
         newConnection.trigger();
         auto* dialog = parent.findChild<choscordb::ProfileDialog*>("profileDialog");
         QVERIFY(dialog);
@@ -106,10 +99,10 @@ struct WorkspaceFixture {
         password->setText("choscordb-test-password");
         password->setModified(true);
         connect->click();
-        QTRY_COMPARE(connections.count(), 2);
-        connections.setCurrentIndex(1);
+        QTRY_COMPARE(workspace.liveConnections().size(), 2);
+        QVERIFY(workspace.changeDocumentConnection(&editor, workspace.liveConnections().at(1).id));
         QTRY_VERIFY(run.isEnabled());
-        QCOMPARE(workspace.driverForConnection(connections.currentData().toULongLong()),
+        QCOMPARE(workspace.driverForConnection(editor.connectionTarget().value_or(0)),
                  QString("mysql"));
     }
     void runConfirmedSql() {
@@ -131,8 +124,10 @@ struct WorkspaceFixture {
     }
     void execute(const QString& sql) {
         QTRY_VERIFY(run.isEnabled());
-        QVERIFY2(!choscordb::EngineAdapter::executionRange(sql, 0, 0, 0).confirmation,
-                 "Test SQL must not trigger confirmation");
+        QVERIFY2(
+            !choscordb::EngineAdapter::executionRange(sql, 0, 0, 0, choscordb::RunScope::Current)
+                 .confirmation,
+            "Test SQL must not trigger confirmation");
         editor.setText(sql);
         editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         run.trigger();

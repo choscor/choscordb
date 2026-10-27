@@ -202,7 +202,7 @@ fn read(
         ));
     }
     let mut source = statement.query([]).map_err(normalize)?;
-    let mut rows = Vec::new();
+    let mut rows = Vec::with_capacity(size.get() as usize);
     let mut used = overhead;
     let mut has_more = false;
     while let Some(row) = super::worker::next_row(&mut source, width, spool, max - overhead)? {
@@ -220,10 +220,11 @@ fn read(
             has_more = true;
             break;
         }
-        rows.reserve_exact(1);
         rows.push(row);
         used += bytes;
     }
+    // The page estimate counts capacity; the budget above counted only the rows.
+    rows.shrink_to_fit();
     Ok(ResultPage {
         index,
         rows,

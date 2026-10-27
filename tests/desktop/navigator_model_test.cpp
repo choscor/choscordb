@@ -270,6 +270,69 @@ class NavigatorModelTest : public QObject {
         QCOMPARE(controller.quickObjectResults().size(), 0);
     }
 
+    void expandingAFailedRowRetriesAndCollapsingKeepsItsStatus() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter);
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        controller.addConnection(7, "Selected");
+        controller.setSelectedConnection(7);
+        tree.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&tree));
+        const auto row = tree.model()->index(0, 0);
+        tree.expand(row);
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(model->failChildren(7, {}, requested.last().at(2).toULongLong(), "timeout"));
+        tree.collapse(row);
+        QCOMPARE(row.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Failed));
+        QCOMPARE(requested.count(), 1);
+        tree.expand(row);
+        QTRY_COMPARE(requested.count(), 2);
+        QCOMPARE(row.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Loading));
+    }
+
+    void aFailedLoadThatTheUserStartedIsReportedAndABackgroundScanIsNot() {
+        EngineAdapter engine;
+        QTreeView tree;
+        QLineEdit filter;
+        NavigatorController controller(&engine, &tree, &filter);
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        QSignalSpy failed(&controller, &NavigatorController::loadFailed);
+        controller.addConnection(7, "Selected");
+        controller.setSelectedConnection(7);
+        controller.startQuickObjectSearch("customer");
+        QTRY_COMPARE(requested.count(), 1);
+        emit engine.metadataSubmissionFailed(7, {}, requested.last().at(2).toULongLong(), "busy");
+        QCOMPARE(failed.count(), 0);
+
+        tree.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&tree));
+        const auto row = tree.model()->index(0, 0);
+        tree.expand(row);
+        QTRY_COMPARE(requested.count(), 2);
+        emit engine.metadataSubmissionFailed(7, {}, requested.last().at(2).toULongLong(),
+                                             "timeout");
+        QCOMPARE(failed.count(), 1);
+        const auto message = failed.last().at(0).toString();
+        QVERIFY2(message.contains("Selected") && message.contains("timeout"), qPrintable(message));
+
+        controller.refreshCurrent();
+        tree.setCurrentIndex(row);
+        controller.refreshCurrent();
+        QTRY_COMPARE(requested.count(), 3);
+        emit engine.metadataSubmissionFailed(7, {}, requested.last().at(2).toULongLong(),
+                                             "refused");
+        QCOMPARE(failed.count(), 2);
+        QVERIFY(failed.last().at(0).toString().contains("refused"));
+    }
+
     void quickObjectSearchProvidesColumnAndKeyActivationTargets() {
         EngineAdapter engine;
         QTreeView tree;
@@ -571,8 +634,8 @@ class NavigatorModelTest : public QObject {
                                          2));
         QVERIFY(firstIndex.isValid());
         QCOMPARE(firstIndex.data().toString(), QString("Index"));
-        QCOMPARE(model.index(1, 0, root).data(NavigatorModel::KindRole).toString(),
-                 QString("error"));
+        QCOMPARE(model.rowCount(root), 1);
+        QCOMPARE(root.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Failed));
     }
 
     void refreshRejectsInFlightContinuationAndRestartsAtFirstPage() {
@@ -653,45 +716,6 @@ class NavigatorModelTest : public QObject {
         QCOMPARE(model.index(0, 0, group).data().toString(), QString("idx"));
         QVERIFY(model.matchesObject(1, "index-id", "index", "idx", "table"));
         QVERIFY(model.matchesObject(1, "index-id", "index", "idx", "group"));
-    }
-    void failedChildrenStayVisibleUntilExplicitRefresh() {
-        NavigatorModel model;
-        QAbstractItemModelTester tester(&model,
-                                        QAbstractItemModelTester::FailureReportingMode::QtTest);
-        tester.setUseFetchMore(false);
-        QSignalSpy requested(&model, &NavigatorModel::childrenRequested);
-        QVERIFY(model.addConnection(7, "Disconnected database"));
-        const auto root = model.index(0, 0);
-        model.fetchMore(root);
-        QTRY_COMPARE(requested.count(), 1);
-        const auto failedToken = requested.last().at(2).toULongLong();
-        QVERIFY(model.failChildren(7, {}, failedToken, "Connection is disconnected"));
-        const QPersistentModelIndex failure(model.index(0, 0, root));
-        QVERIFY(failure.data().toString().contains("refresh to retry"));
-        QVERIFY(!model.canFetchMore(root));
-        QSignalSpy removed(&model, &QAbstractItemModel::rowsRemoved);
-        model.fetchMore(root); // A view probing again must not remove its error row.
-        bool nextTurn = false;
-        QTimer::singleShot(0, &model, [&nextTurn] { nextTurn = true; });
-        QTRY_VERIFY(nextTurn);
-        QCOMPARE(requested.count(), 1);
-        QCOMPARE(removed.count(), 0);
-        QVERIFY(failure.isValid());
-        QCOMPARE(failure.data(NavigatorModel::KindRole).toString(), QString("error"));
-        QCOMPARE(root.data(NavigatorModel::ErrorRole).toString(),
-                 QString("Connection is disconnected"));
-        model.refresh(failure);
-        QTRY_COMPARE(requested.count(), 2);
-        const auto retryToken = requested.last().at(2).toULongLong();
-        QVERIFY(retryToken > failedToken);
-        QVERIFY(!failure.isValid());
-        QVERIFY(!model.failChildren(7, {}, failedToken, "Late error"));
-        QVERIFY(!model.applyChildren(7, {}, failedToken, {}));
-        QVERIFY(model.applyChildren(
-            7, {}, retryToken, {{"customers", "Customers", "public.customers", "table", false}}));
-        QCOMPARE(model.index(0, 0, root).data().toString(), QString("Customers"));
-        QVERIFY(root.data(NavigatorModel::ErrorRole).toString().isEmpty());
-        QVERIFY(root.data(NavigatorModel::ChildrenLoadedRole).toBool());
     }
     void expandingThroughRecursiveProxyHandlesImmediateMetadata() {
         NavigatorModel model;
@@ -897,10 +921,10 @@ class NavigatorModelTest : public QObject {
         QVERIFY(!model.canFetchMore(root));
         QCOMPARE(model.data(root, NavigatorModel::ErrorRole).toString(),
                  QString("<script>error</script>"));
-        const auto failure = model.index(0, 0, root);
-        QCOMPARE(model.data(failure, NavigatorModel::KindRole).toString(), QString("error"));
-        QVERIFY(!model.data(failure, Qt::ToolTipRole).isValid());
-        model.refresh(failure);
+        QCOMPARE(model.rowCount(root), 0);
+        QCOMPARE(model.data(root, NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Failed));
+        QCOMPARE(model.data(root).toString(), QString("<b>untrusted</b>"));
+        model.refresh(root);
         QTRY_COMPARE(requested.count(), 2);
         const auto retry = requested.last().at(2).toULongLong();
         QVERIFY(retry != old);
@@ -926,9 +950,8 @@ class NavigatorModelTest : public QObject {
             1, "", requested.last().at(2).toULongLong(),
             {{"a", "A", "A", "table", false}, {"a", "B", "B", "table", false}}));
         QVERIFY(!model.canFetchMore(root));
-        QCOMPARE(model.rowCount(root), 1);
-        QCOMPARE(model.data(model.index(0, 0, root), NavigatorModel::KindRole).toString(),
-                 QString("error"));
+        QCOMPARE(model.rowCount(root), 0);
+        QCOMPARE(model.data(root, NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Failed));
     }
     void lazilyLoadsOnlyRequestedNodes() {
         NavigatorModel model;
@@ -944,9 +967,8 @@ class NavigatorModelTest : public QObject {
         QCOMPARE(requested.count(), 0);
         model.fetchMore(root);
         QTRY_COMPARE(requested.count(), 1);
-        QCOMPARE(model.rowCount(root), 1);
-        QCOMPARE(model.data(model.index(0, 0, root), NavigatorModel::KindRole).toString(),
-                 QString("loading"));
+        QCOMPARE(model.rowCount(root), 0);
+        QCOMPARE(model.data(root, NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Loading));
         const auto token = requested.at(0).at(2).toULongLong();
         QVERIFY(model.applyChildren(0, "", token, {{"table:t", "t", "\"t\"", "table", true}}));
         QCOMPARE(model.rowCount(root), 1);

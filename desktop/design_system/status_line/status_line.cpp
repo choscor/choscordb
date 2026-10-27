@@ -20,6 +20,7 @@
 #include <QPlainTextEdit>
 #include <QResizeEvent>
 #include <QStringList>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <array>
@@ -28,6 +29,12 @@ namespace choscordb::design {
 
 StatusLine::StatusLine(QWidget* parent) : QWidget(parent) {
     setFont(resolveTypography(TextStyle::Body));
+    noticeExpiry_ = new QTimer(this);
+    noticeExpiry_->setSingleShot(true);
+    connect(noticeExpiry_, &QTimer::timeout, this, [this] {
+        if ((configured_ ? feedbackMessage_ : fullMessage_) == notice_)
+            setMessage({});
+    });
     content_ = new QHBoxLayout(this);
     content_->setContentsMargins(spacing(Spacing::Two), spacing(Spacing::One),
                                  spacing(Spacing::Two), spacing(Spacing::One));
@@ -116,6 +123,7 @@ void StatusLine::configure(const Fields& fields, bool centered) {
     fitContent();
 }
 void StatusLine::setContent(const Content& content, State state) {
+    noticeExpiry_->stop();
     values_ = content;
     feedbackMessage_.clear();
     setState(state);
@@ -365,6 +373,14 @@ void StatusLine::openDetails() {
     });
     dialog->setAppModal();
     dialog->open();
+}
+void StatusLine::showNotice(const QString& message, int expiryMs) {
+    notice_ = message;
+    setMessage(message);
+    if (expiryMs > 0)
+        noticeExpiry_->start(expiryMs);
+    else
+        noticeExpiry_->stop();
 }
 void StatusLine::setBusy(bool busy) {
     setProperty("busy", busy);

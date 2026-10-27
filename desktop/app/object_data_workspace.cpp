@@ -132,8 +132,10 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     auto* restoreRows =
         makeButton(toolbar, tr("Restore selected"), "objectDataRestoreRows", design::Icon::Refresh);
     auto* setNull = makeButton(toolbar, tr("Set NULL"), "objectDataSetNull", design::Icon::Square);
+    auto* discardEdits =
+        makeButton(toolbar, tr("Discard"), "objectDataDiscardEdits", design::Icon::Cancel);
     // Keep the shared edit controls as command/state bindings for the table menu.
-    for (auto* button : {addRow, deleteRows, restoreRows, setNull}) {
+    for (auto* button : {addRow, deleteRows, restoreRows, setNull, discardEdits}) {
         toolbar->removeWidget(button);
         button->hide();
     }
@@ -146,22 +148,14 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     layout->addWidget(footer_);
     // Reuse the production result lifecycle on the same engine. Object mode has
     // no SQL document and never enables execution/transaction/profile commands.
-    auto* connections = new QComboBox(this);
-    auto* mode = new QComboBox(this);
-    connections->hide();
-    mode->hide();
     auto* run = new QAction(this);
+    auto* runAll = new QAction(this);
     auto* cancel = new QAction(tr("Cancel"), this);
-    auto* commit = new QAction(this);
-    auto* rollback = new QAction(this);
     auto* newConnection = new QAction(this);
     result_ = new QueryWorkspace(
-        {connections,
-         mode,
-         run,
+        {run,
+         runAll,
          cancel,
-         commit,
-         rollback,
          newConnection,
          next,
          summary,
@@ -178,8 +172,8 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
          deleteRows,
          setNull,
          applyEdits,
-         nullptr,
-         [this](quint64 connection) { return sql_ && sql_->activeManualTransaction(connection); },
+         discardEdits,
+         [this](quint64 connection) { return sql_ && sql_->activeTransaction(connection); },
          restoreRows,
          outcome,
          duration,

@@ -82,11 +82,9 @@ void NavigatorController::advanceQuickObjectSearch(quint64 generation) {
         if (!model_->isBrowsable(current))
             continue;
         const auto kind = current.data(NavigatorModel::KindRole).toString();
-        if (kind == QStringLiteral("loading")) {
+        if (current.data(NavigatorModel::StatusRole).toInt() == int(RowStatusKind::Loading))
             loading = true;
-            continue;
-        }
-        if (kind == QStringLiteral("load_more") || kind == QStringLiteral("error"))
+        if (kind == QStringLiteral("load_more"))
             continue;
         const auto nodeError = current.data(NavigatorModel::ErrorRole).toString();
         if (error.isEmpty() && !nodeError.isEmpty())
@@ -161,7 +159,9 @@ void NavigatorController::advanceQuickObjectSearch(quint64 generation) {
     if (limited)
         quickObjectStatus_ = tr("Object search incomplete: limit reached. Refine the query.");
     else if (!error.isEmpty())
-        quickObjectStatus_ = tr("Object search incomplete: %1. Refine or retry.").arg(error);
+        quickObjectStatus_ =
+            tr("Object search incomplete: %1. %2")
+                .arg(error, EngineAdapter::recoveryHint(RecoveryHint::RefineOrRetry));
     else if (loading)
         quickObjectStatus_ = tr("Searching objects…");
     else
@@ -175,10 +175,11 @@ void NavigatorController::restartSearch(bool advance) {
     searchError_.clear();
     resetSearch();
     if (filter_->text().trimmed().isEmpty()) {
-        emit searchStatusChanged({});
+        finishSearch({});
         return;
     }
-    emit searchStatusChanged(tr("Searching objects…"));
+    emit searchNoticeChanged({});
+    emit searchBusyChanged(true);
     if (advance)
         advanceSearch(searchGeneration_);
 }
@@ -198,7 +199,7 @@ void NavigatorController::advanceSearch(quint64 generation, bool resume) {
         return;
     const auto& visible = visibleConnections();
     if (visible.isEmpty()) {
-        emit searchStatusChanged({});
+        finishSearch({});
         return;
     }
     // A finished request continues the paused traversal; anything else starts over.
@@ -219,7 +220,7 @@ void NavigatorController::advanceSearch(quint64 generation, bool resume) {
         resetSearch();
         searchStateGeneration_ = searchGeneration_;
         searchFinished_ = true;
-        emit searchStatusChanged(tr("Search incomplete: limit reached. Refine the text."));
+        finishSearch(tr("Search incomplete: limit reached. Refine the text."));
     };
     while (!searchStack_.empty()) {
         const auto entry = std::move(searchStack_.back());
@@ -233,7 +234,7 @@ void NavigatorController::advanceSearch(quint64 generation, bool resume) {
             if (++searchVisited_ > EngineAdapter::navigatorSearchBudget().filterVisits)
                 return limitReached();
             const auto kind = current.data(NavigatorModel::KindRole).toString();
-            if (kind == "loading" || kind == "error")
+            if (current.data(NavigatorModel::StatusRole).toInt() == int(RowStatusKind::Loading))
                 searchIncomplete_ = true;
             if (match.matches(current.data(Qt::DisplayRole).toString()))
                 searchMatches_.emplace_back(current);
@@ -274,13 +275,17 @@ void NavigatorController::advanceSearch(quint64 generation, bool resume) {
                 tree_->expand(visibleAncestor);
         }
     }
-    if (!searchError_.isEmpty())
-        emit searchStatusChanged(
-            tr("Search incomplete: %1. Refine the text or retry.").arg(searchError_));
-    else if (searchIncomplete_)
-        emit searchStatusChanged(tr("Search incomplete. Refine the text or retry."));
-    else
-        emit searchStatusChanged({});
+    finishSearch(
+        !searchError_.isEmpty()
+            ? tr("Search incomplete: %1. %2")
+                  .arg(searchError_, EngineAdapter::recoveryHint(RecoveryHint::RefineOrRetry))
+        : searchIncomplete_ ? tr("Search incomplete. %1")
+                                  .arg(EngineAdapter::recoveryHint(RecoveryHint::RefineOrRetry))
+                            : QString{});
+}
+void NavigatorController::finishSearch(const QString& notice) {
+    emit searchBusyChanged(false);
+    emit searchNoticeChanged(notice);
 }
 bool NavigatorController::matchesSearchRequest(quint64 connection, const QString& parent,
                                                quint64 token) const {

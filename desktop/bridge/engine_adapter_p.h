@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QQueue>
 #include <QSet>
+#include <memory>
 
 namespace choscordb {
 namespace engine_adapter_detail {
@@ -89,5 +90,7 @@ struct EngineAdapter::Private {
         bool released = false;
     };
     QHash<quint64, Transfer> transfers;
+    // The event that eventReady delivers now.
+    std::shared_ptr<const BridgeEvent> dispatching;
 };
 } // namespace choscordb

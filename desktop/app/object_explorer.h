@@ -8,6 +8,7 @@
 class QAction;
 class QPushButton;
 class QTabBar;
+class QTimer;
 class QTableView;
 class QStandardItemModel;
 class QStackedWidget;
@@ -38,6 +39,9 @@ class ObjectExplorer final : public QWidget {
     void setDisconnected();
     void installDataWidget(QWidget* widget);
     void setOperationBusy(bool busy);
+    // Shows a main panel notice on the footer. A busy notice stays until the next one;
+    // an info notice expires after the Rust interval.
+    void showNotice(const QString& message, bool busy = false);
   signals:
     void dataRequested(quint64 connection, const QString& object, const QString& label,
                        const QString& relationSubtype);

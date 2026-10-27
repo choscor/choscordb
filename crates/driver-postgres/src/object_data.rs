@@ -42,8 +42,18 @@ pub(super) struct Opened {
     spool: spool::Spool,
     summary: QuerySummary,
 }
+/// The statement and result formats that every page of one object view reuses.
+#[derive(Clone)]
+struct PreparedRead {
+    statement: tokio_postgres::Statement,
+    text_overrides: Arc<Vec<Option<String>>>,
+    result_formats: Vec<i16>,
+}
 pub(super) struct Read {
     sql: String,
+    limit: i64,
+    offset: i64,
+    prepared: Arc<Mutex<Option<PreparedRead>>>,
     width: usize,
     max: usize,
     size: PageSize,
@@ -54,6 +64,7 @@ pub(super) struct Read {
 struct ObjectCursor {
     client: Client,
     source: Opened,
+    prepared: Arc<Mutex<Option<PreparedRead>>>,
     offset: u64,
     index: u64,
     stop: Arc<Stop>,
@@ -63,6 +74,12 @@ fn limit() -> DriverError {
     DriverError::new(
         ErrorKind::ResourceLimit,
         "Object data exceeds the display memory budget",
+    )
+}
+fn changed_columns() -> DriverError {
+    DriverError::new(
+        ErrorKind::StaleHandle,
+        "Object columns changed; refresh the object",
     )
 }
 fn cancelled() -> DriverError {
@@ -81,6 +98,7 @@ pub(super) async fn open(
     Ok(Box::new(ObjectCursor {
         client,
         source,
+        prepared: Default::default(),
         offset: 0,
         index: 0,
         stop: Arc::new(Stop {
@@ -117,7 +135,7 @@ pub(super) async fn prepare<C: GenericClient + Sync>(
     if name.len() > max {
         return Err(limit());
     }
-    let sql = format!("SELECT * FROM {name}");
+    let sql = format!("SELECT * FROM {name} LIMIT $1 OFFSET $2");
     // Catalog columns avoid acquiring a relation lock during schema preparation.
     // The first SELECT runs in the cancellable bounded-read path below.
     let objects = metadata::load_metadata(client, Some(object.clone())).await?;
@@ -151,6 +169,7 @@ pub(super) async fn read<C: GenericClient + Sync>(
     client: &C,
     request: Read,
     transaction: bool,
+    overrides: &mut worker::OverrideCache,
 ) -> Result<Fetched> {
     // A failed SELECT or native cancellation must not abort the user's existing
     // transaction or invalidate its older SQL portal. This savepoint encloses
@@ -175,7 +194,7 @@ pub(super) async fn read<C: GenericClient + Sync>(
         }
     };
     let result = if ready {
-        read_inner(client, &request).await
+        read_inner(client, &request, overrides).await
     } else {
         Err(cancelled())
     };
@@ -199,19 +218,23 @@ pub(super) async fn read<C: GenericClient + Sync>(
         },
     })
 }
-async fn read_inner<C: GenericClient + Sync>(client: &C, request: &Read) -> Result<ResultPage> {
-    let overhead = std::mem::size_of::<ResultPage>();
-    if request.max <= overhead
-        || request.width.saturating_mul(std::mem::size_of::<Value>()) > request.max - overhead
-    {
-        return Err(limit());
+fn poisoned() -> DriverError {
+    DriverError::new(ErrorKind::Internal, "Object read state is unavailable")
+}
+async fn prepared_read<C: GenericClient + Sync>(
+    client: &C,
+    request: &Read,
+    overrides: &mut worker::OverrideCache,
+) -> Result<PreparedRead> {
+    if let Some(prepared) = request.prepared.lock().map_err(|_| poisoned())?.clone() {
+        return Ok(prepared);
     }
     let statement = client.prepare(&request.sql).await.map_err(normalize)?;
-    let text_overrides = super::worker::text_overrides(client, &statement, request.max).await?;
-    let result_formats: Vec<i16> = statement
+    let text_overrides = worker::text_overrides(client, &statement, request.max, overrides).await?;
+    let result_formats = statement
         .columns()
         .iter()
-        .zip(&text_overrides)
+        .zip(text_overrides.iter())
         .map(|(column, override_type)| {
             if override_type.is_none()
                 && choscordb_postgres_values::supports_binary_oid(column.type_().oid())
@@ -222,18 +245,51 @@ async fn read_inner<C: GenericClient + Sync>(client: &C, request: &Read) -> Resu
             }
         })
         .collect();
+    let prepared = PreparedRead {
+        statement,
+        text_overrides,
+        result_formats,
+    };
+    *request.prepared.lock().map_err(|_| poisoned())? = Some(prepared.clone());
+    Ok(prepared)
+}
+async fn read_inner<C: GenericClient + Sync>(
+    client: &C,
+    request: &Read,
+    overrides: &mut worker::OverrideCache,
+) -> Result<ResultPage> {
+    let overhead = std::mem::size_of::<ResultPage>();
+    if request.max <= overhead
+        || request.width.saturating_mul(std::mem::size_of::<Value>()) > request.max - overhead
+    {
+        return Err(limit());
+    }
+    let PreparedRead {
+        statement,
+        text_overrides,
+        result_formats,
+    } = prepared_read(client, request, overrides).await?;
     let stream = client
         .client()
         .query_raw_with_result_formats(
             &statement,
-            std::iter::empty::<&(dyn tokio_postgres::types::ToSql + Sync)>(),
+            [
+                &request.limit as &(dyn tokio_postgres::types::ToSql + Sync),
+                &request.offset,
+            ],
             &result_formats,
         )
         .await
-        .map_err(normalize)?;
+        .map_err(|error| {
+            // PostgreSQL refuses a prepared SELECT * after its columns change.
+            if error.code() == Some(&tokio_postgres::error::SqlState::FEATURE_NOT_SUPPORTED) {
+                changed_columns()
+            } else {
+                normalize(error)
+            }
+        })?;
     futures_util::pin_mut!(stream);
-    let text_overrides = Arc::new(text_overrides);
-    let mut rows = Vec::new();
+    let mut rows = Vec::with_capacity(request.size.get() as usize);
     let mut used = overhead;
     let mut more = false;
     while let Some(row) = stream.try_next().await.map_err(normalize)? {
@@ -241,10 +297,7 @@ async fn read_inner<C: GenericClient + Sync>(client: &C, request: &Read) -> Resu
             return Err(cancelled());
         }
         if row.len() != request.width {
-            return Err(DriverError::new(
-                ErrorKind::StaleHandle,
-                "Object columns changed; refresh the object",
-            ));
+            return Err(changed_columns());
         }
         if more || rows.len() == request.size.get() as usize {
             more = true;
@@ -258,12 +311,7 @@ async fn read_inner<C: GenericClient + Sync>(client: &C, request: &Read) -> Resu
         })
         .await
         .map_err(|_| limit())??;
-        let bytes = std::mem::size_of::<Row>()
-            + values.capacity() * std::mem::size_of::<Value>()
-            + values
-                .iter()
-                .map(|v| v.estimated_bytes() - std::mem::size_of::<Value>())
-                .sum::<usize>();
+        let bytes = std::mem::size_of::<Row>() + choscordb_driver_api::row_estimated_bytes(&values);
         if used.saturating_add(bytes) > request.max {
             if rows.is_empty() {
                 return Err(limit());
@@ -271,10 +319,11 @@ async fn read_inner<C: GenericClient + Sync>(client: &C, request: &Read) -> Resu
             more = true;
             continue;
         }
-        rows.reserve_exact(1);
         rows.push(values);
         used += bytes;
     }
+    // The page estimate counts capacity; the budget above counted only the rows.
+    rows.shrink_to_fit();
     Ok(ResultPage {
         index: request.index,
         rows,
@@ -303,12 +352,10 @@ impl ResultCursor for ObjectCursor {
             ));
         }
         let request = Read {
-            sql: format!(
-                "{} LIMIT {} OFFSET {}",
-                self.source.sql,
-                u64::from(size.get()) + 1,
-                self.offset
-            ),
+            sql: self.source.sql.clone(),
+            limit: i64::from(size.get()) + 1,
+            offset: i64::try_from(self.offset).map_err(|_| limit())?,
+            prepared: self.prepared.clone(),
             width: self.source.columns.len(),
             max,
             size,

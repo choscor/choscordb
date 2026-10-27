@@ -3,7 +3,6 @@
 #include <QList>
 
 class QAction;
-class QComboBox;
 class QDockWidget;
 class QLabel;
 class QLineEdit;
@@ -24,6 +23,7 @@ class WorkspaceTabs;
 }
 namespace design {
 class Button;
+class StatusLine;
 class Text;
 } // namespace design
 // Construction-only widget references; callbacks capture individual pointers by value.
@@ -49,22 +49,21 @@ struct MainWindow::Ui {
     QLineEdit* filter{};
     QTreeView* tree{};
     design::Text* objectsEmpty{};
-    QLabel* navigatorStatus{};
+    SidebarSection* objectSection{};
     QLineEdit* savedSearch{};
+    SidebarSection* savedSection{};
     design::Text* savedStatus{};
     QTreeWidget* savedFiles{};
     QLineEdit* historySearch{};
+    SidebarSection* historySection{};
     design::Text* historyStatus{};
     QListWidget* historyItems{};
     QAction* resetLayout{};
     QToolBar* toolbar{};
-    QComboBox* connections{};
     QAction* run{};
+    QAction* runAll{};
     QAction* cancel{};
     design::Button* cancelButton{};
-    QComboBox* mode{};
-    QAction* commitAction{};
-    QAction* rollbackAction{};
     QAction* querySettings{};
     QSplitter* splitter{};
     main_window_detail::WorkspaceTabs* workspaceTabs{};
@@ -72,6 +71,7 @@ struct MainWindow::Ui {
     QStackedWidget* results{};
     design::Text* empty{};
     QTableView* grid{};
+    design::StatusLine* resultFooter{};
     design::Text* compactState{};
     design::Text* durationMetric{};
     design::Text* pageMetric{};

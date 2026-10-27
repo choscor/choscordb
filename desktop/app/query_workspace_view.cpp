@@ -224,7 +224,8 @@ void QueryWorkspace::setDocumentStatus(SqlEditor* editor, const QString& state,
                                         {"messages", messages + QStringLiteral("\n") + detail}});
     }
     if (editor == widgets_.currentEditor())
-        presentExecutionState(state, detail, {}, source);
+        presentExecutionState(state, detail, {},
+                              source.isEmpty() ? documentTarget(editor) : source);
 }
 
 void QueryWorkspace::presentExecutionState(const QString& state, const QString& detail,

@@ -8,6 +8,7 @@
 #include "design_system/button/button.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/menu.h"
+#include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
@@ -15,9 +16,11 @@
 #include "tools/preview/preview_window.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include <QAbstractButton>
 #include <QAction>
 #include <QComboBox>
 #include <QContextMenuEvent>
+#include <QCursor>
 #include <QDialog>
 #include <QDir>
 #include <QDockWidget>
@@ -387,7 +390,7 @@ void ModernUiTest::minimumWorkspaceKeepsQueryControlsInsideTheWindow() {
     QCoreApplication::processEvents();
     const auto rendered = window.grab();
     QVERIFY(!rendered.isNull());
-    auto* select = window.findChild<QComboBox*>("connectionSelector");
+    auto* select = window.findChild<QPushButton*>("runStatementButton");
     QVERIFY(select->isVisible());
     QVERIFY(!select->visibleRegion().isEmpty());
     QVERIFY(window.rect().contains(QRect(select->mapTo(&window, QPoint()), select->size())));
@@ -468,7 +471,7 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     toast->showToast("Warning", "First notice", choscordb::ToastVariant::Warning, 10000);
     toast->showToast("Warning", "Replacement notice", choscordb::ToastVariant::Warning, 10000);
     QVERIFY(toast->text().contains("First notice"));
-    toast->findChild<QToolButton*>("toastDismiss")->click();
+    toast->findChild<QAbstractButton*>("toastDismiss")->click();
     QVERIFY(toast->text().contains("Replacement notice"));
     QCOMPARE(toast->property("variant").toString(), QString("warning"));
     QCoreApplication::processEvents();
@@ -482,13 +485,13 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     QCoreApplication::processEvents();
     QCOMPARE(toast->geometry().right(), host->width() - 17);
     QCOMPARE(toast->geometry().bottom(), host->height() - 17);
-    toast->findChild<QToolButton*>("toastDismiss")->click();
+    toast->findChild<QAbstractButton*>("toastDismiss")->click();
     window.showToast("Could not save", choscordb::ToastVariant::Danger);
     QCOMPARE(toast->property("variant").toString(), QString("danger"));
     QVERIFY(toast->text().contains("Could not save"));
     QCOMPARE(window.findChildren<choscordb::ToastRegion*>("toastRegion").size(), 1);
     QCOMPARE(choscordb::windowToast(&window), toast);
-    toast->findChild<QToolButton*>("toastDismiss")->click();
+    toast->findChild<QAbstractButton*>("toastDismiss")->click();
     window.showToast("Connected", choscordb::ToastVariant::Success);
     QTRY_VERIFY_WITH_TIMEOUT(
         qobject_cast<QGraphicsOpacityEffect*>(toast->graphicsEffect())->opacity() > 0.99, 2000);
@@ -503,7 +506,7 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     QVERIFY(resetLayout);
     auto* run = window.findChild<QAction*>("runStatement");
     QVERIFY(run);
-    QVERIFY(!run->icon().isNull());
+    QVERIFY(run->icon().isNull());
     QVERIFY(QFile::exists(":/icons/app-mark.svg"));
 }
 
@@ -528,37 +531,44 @@ void ModernUiTest::navigatorContextActionsSupportKeyboardFocusAndMenus() {
     QTRY_VERIFY(refresh->isVisible());
 }
 
-void ModernUiTest::transactionControlsStayInToolbarAtBothWidths() {
+void ModernUiTest::runControlsStayInToolbarAtBothWidths() {
     choscordb::MainWindow window;
     window.findChild<QAction*>("showSql")->trigger();
     window.show();
     auto* toolbar = window.findChild<QToolBar*>("queryToolbar");
     QVERIFY(toolbar);
-    auto* mode = toolbar->findChild<QComboBox*>("transactionMode");
-    QVERIFY(mode);
+    QVERIFY(!window.findChild<QComboBox*>("connectionSelector"));
+    QVERIFY(!window.findChild<QComboBox*>("transactionMode"));
+    QVERIFY(!window.findChild<QPushButton*>("toolbarCommit"));
+    QVERIFY(!window.findChild<QPushButton*>("toolbarRollback"));
     QVERIFY(!window.findChild<QWidget*>("sidebarQueryActions"));
+    auto* runCurrent = window.findChild<QAction*>("runStatement");
+    auto* runAll = window.findChild<QAction*>("runAll");
+    auto* runButton = toolbar->findChild<QPushButton*>("runStatementButton");
+    auto* modeButton = toolbar->findChild<QPushButton*>("runModeButton");
+    QVERIFY(runCurrent && runAll && runButton && modeButton);
+    QCOMPARE(runCurrent->shortcut(), QKeySequence("Ctrl+Return"));
+    QCOMPARE(runAll->shortcut(), QKeySequence("Ctrl+Shift+Return"));
+    QCOMPARE(runButton->text(), QString("Run"));
+    QVERIFY(!runButton->icon().isNull());
+    QCOMPARE(modeButton->accessibleName(), QString("Run options"));
+    QVERIFY(modeButton->menu());
+    QCOMPARE(modeButton->menu()->actions(), (QList<QAction*>{runAll, runCurrent}));
+    QVERIFY(!runButton->isEnabled() && !modeButton->isEnabled());
     auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
     workspace->connectSqlite(":memory:");
-    QTRY_VERIFY(window.findChild<QAction*>("runStatement")->isEnabled());
+    QTRY_VERIFY(runCurrent->isEnabled());
+    QVERIFY(runAll->isEnabled() && runButton->isEnabled() && modeButton->isEnabled());
     for (const int width : {960, 1280}) {
         window.resize(width, 640);
-        QTRY_VERIFY(mode->isVisible());
-        for (const auto* name : {"toolbarCommit", "toolbarRollback", "toolbarQuerySettings"}) {
-            auto* button = toolbar->findChild<QPushButton*>(name);
-            QVERIFY(button);
-            QVERIFY(button->isVisible());
-            QVERIFY(button->text().isEmpty());
+        for (auto* button :
+             {runButton, modeButton, toolbar->findChild<QPushButton*>("toolbarQuerySettings")}) {
+            QTRY_VERIFY(button->isVisible());
             QVERIFY(!button->icon().isNull());
             QVERIFY(!button->accessibleName().isEmpty());
             QVERIFY(
                 window.rect().contains(QRect(button->mapTo(&window, QPoint()), button->size())));
         }
-        mode->setCurrentIndex(1);
-        QVERIFY(toolbar->findChild<QPushButton*>("toolbarCommit")->isEnabled());
-        toolbar->findChild<QPushButton*>("toolbarCommit")->click();
-        QTRY_VERIFY(window.findChild<QAction*>("command_commit")->isEnabled());
-        mode->setCurrentIndex(0);
-        QTRY_VERIFY(!toolbar->findChild<QPushButton*>("toolbarCommit")->isEnabled());
     }
     toolbar->findChild<QPushButton*>("toolbarQuerySettings")->click();
     QTRY_VERIFY(window.findChild<QDialog*>("querySettingsDialog"));
@@ -584,10 +594,59 @@ void ModernUiTest::inactiveEditorCloseButtonAppearsOnHover() {
     QVERIFY(close);
     QVERIFY(!close->isVisible());
     QTest::mouseMove(tabs, tabs->tabRect(inactive).center());
-    QTRY_VERIFY(close->isVisible());
+    QTest::qWait(50);
+    QVERIFY(close->isVisible());
+    QVERIFY(tabs->tabButton(editors->currentIndex(), side)->isVisible());
+
+    // A new tab while the pointer stays on the hovered tab keeps only the current and hovered X.
+    const QPoint hoverPoint = tabs->tabRect(inactive).center();
+    QCursor::setPos(tabs->mapToGlobal(hoverPoint));
+    const auto expectOnlyCurrentAndPointedTab = [&] {
+        QTest::qWait(50);
+        const int pointed = tabs->tabAt(tabs->mapFromGlobal(QCursor::pos()));
+        QVERIFY(pointed >= 0);
+        for (int index = 0; index < tabs->count(); ++index) {
+            QCOMPARE(tabs->tabButton(index, side)->isVisible(),
+                     index == editors->currentIndex() || index == pointed);
+        }
+    };
+    newQuery->trigger();
+    QCOMPARE(editors->count(), 3);
+    expectOnlyCurrentAndPointedTab();
+    // Moving tabs puts a different tab under the pointer.
+    tabs->moveTab(0, tabs->count() - 1);
+    expectOnlyCurrentAndPointedTab();
+
     QEvent leave(QEvent::Leave);
     QCoreApplication::sendEvent(tabs, &leave);
-    QTRY_VERIFY(!close->isVisible());
+    QTest::qWait(50);
+    for (int index = 0; index < tabs->count(); ++index) {
+        QCOMPARE(tabs->tabButton(index, side)->isVisible(), index == editors->currentIndex());
+    }
+}
+
+void ModernUiTest::sidebarSectionTitlesUseUppercaseSectionLabel() {
+    choscordb::MainWindow window;
+    const QStringList titles{"Connections", "Pinned", "Schema & objects", "Saved queries",
+                             "Recent history"};
+    const auto caption = choscordb::design::typographySpec(choscordb::design::TextStyle::Caption);
+    QStringList found;
+    for (auto* label : window.findChildren<choscordb::design::Text*>()) {
+        if (!titles.contains(label->text())) {
+            continue;
+        }
+        found << label->text();
+        QCOMPARE(label->font().capitalization(), QFont::AllUppercase);
+        QCOMPARE(label->font().pixelSize(), caption.pixelSize);
+        QCOMPARE(label->font().weight(), QFont::DemiBold);
+        QVERIFY(label->font().letterSpacing() > 0);
+        QCOMPARE(label->property("designRole").toString(), QString("description"));
+    }
+    found.removeDuplicates();
+    found.sort();
+    auto expected = titles;
+    expected.sort();
+    QCOMPARE(found, expected);
 }
 
 void ModernUiTest::addSqlTabButtonCreatesAndSelectsEditor() {

@@ -101,8 +101,9 @@ AppearanceController::AppearanceController(design::ThemeManager* theme, EngineAd
                     automaticAllowed_ = false;
                     emit readyChanged(true);
                     persistentWarning_ =
-                        tr("Appearance could not be loaded: %1. Retry or reset in Preferences.")
-                            .arg(error);
+                        tr("Appearance could not be loaded: %1. %2")
+                            .arg(error,
+                                 EngineAdapter::recoveryHint(RecoveryHint::RetryOrResetAppearance));
                     emit warningChanged(persistentWarning_);
                 } else if (request == Request::Save)
                     emit saveFinished(false, error);
@@ -194,13 +195,15 @@ void AppearanceController::cancelPreview() {
 }
 void AppearanceController::applyPreview() {
     if (!canSave()) {
-        emit saveFinished(false, persistentWarning_.isEmpty()
-                                     ? tr("Retry loading appearance or reset it before saving.")
-                                     : persistentWarning_);
+        emit saveFinished(false,
+                          persistentWarning_.isEmpty()
+                              ? EngineAdapter::recoveryHint(RecoveryHint::RetryAppearanceBeforeSave)
+                              : persistentWarning_);
         return;
     }
     if (token_) {
-        emit saveFinished(false, tr("Layout settings are still being saved. Please retry."));
+        emit saveFinished(false, tr("Layout settings are still being saved. %1")
+                                     .arg(EngineAdapter::recoveryHint(RecoveryHint::Retry)));
         return;
     }
     // Keep the preview isolated from automatic layout writes until acknowledged.
@@ -210,7 +213,8 @@ void AppearanceController::applyPreview() {
 }
 void AppearanceController::stageReset() {
     if (!loaded_ || token_) {
-        emit warningChanged(tr("Appearance settings are still loading or saving. Please retry."));
+        emit warningChanged(tr("Appearance settings are still loading or saving. %1")
+                                .arg(EngineAdapter::recoveryHint(RecoveryHint::Retry)));
         return;
     }
     saveTimer_->stop();

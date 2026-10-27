@@ -252,8 +252,9 @@ void WorkspaceRecoveryController::requestClose() {
     if (pending_)
         return;
     if (!ready_) {
-        emit errorOccurred(
-            tr("Recovery has not completed. Retry recovery or close without saving."), true);
+        emit errorOccurred(tr("Recovery has not completed. %1")
+                               .arg(EngineAdapter::recoveryHint(RecoveryHint::RetryRecovery)),
+                           true);
         return;
     }
     failed_ = false;

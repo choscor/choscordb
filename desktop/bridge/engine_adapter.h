@@ -11,11 +11,31 @@
 namespace choscordb {
 struct BridgeEvent;
 struct RustDiagnostics;
+// The representation of a cell value, in the order of the Rust DTO enum.
+enum class CellKind : uint8_t {
+    Null,
+    Boolean,
+    Integer,
+    Real,
+    Decimal,
+    Text,
+    Date,
+    Time,
+    Timestamp,
+    Uuid,
+    Json,
+    Binary,
+    FallbackText,
+    DeferredFallback,
+    Unavailable,
+    Deferred,
+    InvalidUnicode
+};
 struct ReviewedEditStatement {
     QString sql;
     std::vector<Cell> params;
     // Exact Rust Value kinds accompany the presentation values through review and apply.
-    std::vector<QString> paramKinds;
+    std::vector<CellKind> paramKinds;
     std::optional<quint64> expectedRows;
 };
 struct GridEditColumn {
@@ -179,12 +199,6 @@ struct PageMemoryUsage {
     quint64 source;
     quint64 peak;
 };
-// How a staged grid cell is represented; Rust owns what each kind permits.
-enum class GridCell : uint8_t { Value, Binary, Deferred, FallbackText, Unavailable };
-struct GridCellPolicy {
-    bool inlineEditable = false, blocksRowDelete = false, blocksRowDuplicate = false,
-         duplicateRequiresLoad = false;
-};
 // Which rows an object data read returns; Rust validates `asOf`.
 struct ObjectDataTime {
     enum class Mode : uint8_t { Current, AsOf, All };
@@ -212,9 +226,59 @@ struct DriverWorkflow {
 struct ProfileDriverForm {
     bool server = false, userOptional = false, databaseSelectsServer = false;
 };
-// Why an open manual transaction blocks an action; empty when it does not.
+// Why an open transaction blocks an action; empty when it does not.
 struct TransactionGuard {
-    QString applyEdits, enableAutoCommit;
+    QString applyEdits;
+};
+// Rust's status of a sidebar row: the icon, the retry gesture and the message.
+// The enumerators have the order of the Rust DTO enums.
+enum class RowStatusKind : uint8_t { None, Loading, Failed, Unavailable };
+enum class RowRetry : uint8_t { None, Refresh };
+enum class RowStatusCause : uint8_t {
+    Connecting,
+    ChildrenLoading,
+    ChildrenFailed,
+    ConnectionFailed,
+    ConnectionUnavailable,
+    ConnectionNotReady,
+    ConnectionDeselected,
+    RevealFailed,
+    ObjectUnavailable,
+    Connected,
+    Hidden,
+    Disconnected,
+    ChildrenCached,
+    ChildrenCachedFailed
+};
+// Rust's sentence that tells the user how to recover from a failure.
+enum class RecoveryHint : uint8_t {
+    Retry,
+    RetryQuery,
+    RefineOrRetry,
+    Refresh,
+    ActivatePin,
+    RetryFromNavigator,
+    RetryFromHistory,
+    OpenPreferences,
+    RetryOrResetAppearance,
+    RetryAppearanceBeforeSave,
+    RestoreConnection,
+    RefreshNavigator,
+    CheckConnection,
+    ReconnectAndRefresh,
+    RetryRecovery,
+    RetryConnection,
+    InspectSshServer,
+    UseApprovedKey,
+    RetryApproval,
+    ReconnectManually,
+    // Keep this hint last: it sizes the hint table in engine_adapter_values.cpp.
+    ReconnectAndRefreshNavigator,
+};
+struct RowStatus {
+    RowStatusKind kind = RowStatusKind::None;
+    RowRetry retry = RowRetry::None;
+    QString message;
 };
 // Rust's work bounds for one navigator search pass.
 struct NavigatorSearchBudget {
@@ -237,6 +301,8 @@ struct TextReplacement {
 struct TextLimits {
     quint64 maxDocumentBytes, maxSearchPatternBytes;
 };
+// What an execution without a selection runs: the statement at the cursor or all statements.
+enum class RunScope { Current, All };
 struct SqlSelection {
     bool valid;
     quint64 start;
@@ -288,7 +354,8 @@ class EngineAdapter final : public QObject {
     ~EngineAdapter() override;
     void attachDiagnostics(const RustDiagnostics& service);
     std::optional<quint64> connectSqlite(const QString& path, bool readOnly = false);
-    std::optional<quint64> execute(quint64 connection, const QString& sql, bool autoCommit = true,
+    // The SQL editor always runs with auto-commit; SQL `BEGIN` opens a transaction.
+    std::optional<quint64> execute(quint64 connection, const QString& sql,
                                    const QString& profileId = {},
                                    const QueryPreferences& preferences = {});
     static QueryPreferenceLimits queryPreferenceLimits();
@@ -370,7 +437,9 @@ class EngineAdapter final : public QObject {
     static QString valueDetailError(quint64 bytes);
     void loadValueChunk(quint64 query, quint64 handle, quint64 offset,
                         quint32 maxBytes = valueChunkBytes());
-    void loadMetadata(quint64 connection, const QString& parent = {}, quint64 requestToken = 0);
+    // A fresh load is a manual refresh, which skips the saved children.
+    void loadMetadata(quint64 connection, const QString& parent = {}, quint64 requestToken = 0,
+                      bool fresh = false);
     void loadMetadataPage(quint64 connection, const QString& parent, quint64 requestToken,
                           quint64 offset);
     std::optional<quint64> openObjectData(quint64 connection, const QString& object,
@@ -406,6 +475,11 @@ class EngineAdapter final : public QObject {
     static const NavigatorSearchBudget& navigatorSearchBudget();
     static DriverWorkflow driverWorkflow(const QString& driver);
     static const TransactionGuard& transactionGuard(bool transactionActive);
+    // Statuses without a detail are cached; a detail is the error or the reason.
+    static RowStatus rowStatus(RowStatusCause cause, const QString& detail = {});
+    static const QString& recoveryHint(RecoveryHint hint);
+    // How long an info notice stays on the main panel bottom line.
+    static int panelNoticeMs();
     // Whether a child of `parentKind` appears in the sidebar tree (cached per pair).
     static bool sidebarChildVisible(const QString& parentKind, const QString& kind);
     // Whether objects of this relation subtype browse history (cached per subtype).
@@ -434,19 +508,22 @@ class EngineAdapter final : public QObject {
                               quint64 requestToken);
     void loadObjectGraph(quint64 connection, const QString& object, quint64 requestToken);
     void objectDdl(quint64 connection, const QString& object);
-    void commitTransaction(quint64 connection);
-    void rollbackTransaction(quint64 connection);
     bool disconnectConnection(quint64 connection);
     void releaseQuery(quint64 query);
     void beginShutdown();
     void shutdown();
     // Single owner; retain during eventReady and release only after dropping the Qt buffers.
     bool retainTransfer(quint64 lease, quint64 payloadBytes);
+    // Keeps the event that eventReady delivers, and its whole transfer reservation, after the
+    // signal returns. Null for any other event. The owner later calls shrinkPageLease or
+    // releasePageLease.
+    std::shared_ptr<const BridgeEvent> retainEvent(const BridgeEvent& event);
+    bool shrinkPageLease(quint64 lease, quint64 payloadBytes);
     void releasePageLease(quint64 lease);
     PageMemoryUsage memoryUsage() const;
     PageCacheUsage cacheUsage() const;
     static SqlSelection executionRange(const QString& sql, quint64 cursor, quint64 start,
-                                       quint64 end, const QString& driver = {},
+                                       quint64 end, RunScope scope, const QString& driver = {},
                                        const QString& sqlMode = {});
   signals:
     void queryPreferencesReady(quint64 token, const choscordb::QueryPreferences& preferences);
@@ -495,6 +572,8 @@ class EngineAdapter final : public QObject {
                                   const QString& error);
 
   private:
+    void requestMetadataPage(quint64 connection, const QString& parent, quint64 requestToken,
+                             quint64 offset, bool fresh);
     void trackHistoryClears();
     // Rust queues storage requests and answers them in order.
     bool submitRecovery(quint64 token, const std::function<Submit()>& command,

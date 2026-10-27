@@ -150,10 +150,11 @@ void SshHostKeyDialog::finishApproval(const QString& outcome) {
     statusLine_->setAvailable(approved_);
     if (!approved_)
         statusLine_->setNeutral();
-    statusLine_->setMessage(approved_
-                                ? tr("Key approved. Retry the connection to use it.")
-                                : tr("Approval outcome is unknown. Check the selected file or "
-                                     "retry approval."));
+    statusLine_->setMessage(
+        approved_
+            ? tr("Key approved. %1").arg(EngineAdapter::recoveryHint(RecoveryHint::UseApprovedKey))
+            : tr("Approval outcome is unknown. %1")
+                  .arg(EngineAdapter::recoveryHint(RecoveryHint::RetryApproval)));
     statusLine_->show();
     retry_->setVisible(approved_);
     updateActions();

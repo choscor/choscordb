@@ -17,6 +17,7 @@
 #include "widgets/search_panel/search_panel.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include "workspace_test_fixture.h"
+#include <QAbstractButton>
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
@@ -66,7 +67,7 @@ void WorkspaceTest::overlappingObjectWorkRetainsNavigationGuardUntilEverySourceF
 void WorkspaceTest::unsavedConnectionsRetainTheirDriver() {
     WorkspaceFixture fixture;
     QTRY_VERIFY(fixture.run.isEnabled());
-    const auto sqliteId = fixture.connections.currentData().toULongLong();
+    const auto sqliteId = fixture.editor.connectionTarget().value_or(0);
     QCOMPARE(fixture.workspace.driverForConnection(sqliteId), QString("sqlite"));
     fixture.workspace.showProfiles();
     auto* dialog = fixture.parent.findChild<choscordb::ProfileDialog*>();
@@ -318,6 +319,61 @@ void WorkspaceTest::cancellationRacingSuccessfulCompletionReleasesNavigation() {
     QVERIFY(navigationAvailable);
 }
 
+void WorkspaceTest::aPageThatFinishesAfterANewerPageIsDropped_data() {
+    QTest::addColumn<bool>("cancel");
+    QTest::newRow("invalidate") << false;
+    QTest::newRow("cancel") << true;
+}
+
+void WorkspaceTest::aPageThatFinishesAfterANewerPageIsDropped() {
+    QFETCH(bool, cancel);
+    WorkspaceFixture f;
+    QTRY_VERIFY(f.run.isEnabled());
+    QStringList shown;
+    bool invalidated = false;
+    auto* adapter = f.workspace.adapter();
+    // The workspace receives the page first and builds it on a worker. The newer request
+    // comes before that build finishes, so the page must not fill the grid.
+    connect(adapter, &choscordb::EngineAdapter::eventReady, &f.parent,
+            [&](const choscordb::BridgeEvent& event) {
+                if (event.kind != "stored_page" || invalidated)
+                    return;
+                invalidated = true;
+                if (!cancel) {
+                    f.workspace.invalidateResult();
+                    return;
+                }
+                QVERIFY(f.cancel.isEnabled());
+                f.cancel.trigger();
+            });
+    connect(f.grid.model(), &QAbstractItemModel::modelReset, &f.parent, [&] {
+        if (invalidated && f.grid.model()->rowCount() > 0)
+            shown << f.grid.model()->index(0, 0).data().toString();
+    });
+    QStringList states;
+    connect(&f.workspace, &choscordb::QueryWorkspace::executionStateChanged, &f.parent,
+            [&](const QString& state) {
+                if (invalidated)
+                    states << state;
+            });
+    // The first page arrives while the query still streams, so the request is newer.
+    f.execute("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE "
+              "x < 100000000) SELECT x FROM n;");
+    QTRY_VERIFY(invalidated);
+    QTRY_VERIFY(f.run.isEnabled());
+    QTest::qWait(100);
+    QCOMPARE(shown, QStringList{});
+    QVERIFY2(!states.contains("failed"), qPrintable(f.messages.toPlainText()));
+    QCOMPARE(f.grid.model()->rowCount(), 0);
+    // With the query released too, no page memory stays: the dropped page returned its lease.
+    f.workspace.invalidateResult();
+    QTRY_COMPARE(adapter->memoryUsage().used, quint64(0));
+    // Only the stale page is dropped. The page of a newer query fills the grid.
+    f.execute("SELECT 'newer' AS v");
+    QTRY_COMPARE(f.grid.model()->rowCount(), 1);
+    QCOMPARE(f.grid.model()->index(0, 0).data().toString(), QString("newer"));
+}
+
 void WorkspaceTest::immediateCancellationDoesNotReenableCancelBeforeAcknowledgement() {
     WorkspaceFixture f;
     QTRY_VERIFY(f.run.isEnabled());
@@ -374,7 +430,7 @@ void WorkspaceTest::connectionPanelRetainsFailedSaveConnectDraftAndRetries() {
         f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
     QVERIFY(completion && completion->isVisible());
     QVERIFY(completion->text().contains("Profile saved."));
-    completion->findChild<QToolButton*>("toastDismiss")->click();
+    completion->findChild<QAbstractButton*>("toastDismiss")->click();
     QTRY_VERIFY(completion->text().contains("Connected."));
 }
 
@@ -440,12 +496,8 @@ void WorkspaceTest::sqlStartedTransactionRequiresCloseConfirmation() {
     WorkspaceFixture f;
     QTRY_VERIFY(f.run.isEnabled());
     const QString begin = "BEGIN TRANSACTION";
-    if (choscordb::EngineAdapter::executionRange(begin, 0, 0, 0).confirmation)
-        QTimer::singleShot(0, &f.parent, [] {
-            for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
-                if (auto* box = qobject_cast<QMessageBox*>(widget))
-                    box->button(QMessageBox::Yes)->click();
-        });
+    QVERIFY(!choscordb::EngineAdapter::executionRange(begin, 0, 0, 0, choscordb::RunScope::Current)
+                 .confirmation);
     f.editor.setText(begin);
     f.run.trigger();
     QTRY_VERIFY(f.messages.toPlainText().contains("Completed"));
@@ -461,43 +513,37 @@ void WorkspaceTest::sqlStartedTransactionRequiresCloseConfirmation() {
     QVERIFY(asked);
     f.messages.clear();
     f.editor.setText("COMMIT");
-    if (choscordb::EngineAdapter::executionRange("COMMIT", 0, 0, 0).confirmation)
-        QTimer::singleShot(0, &f.parent, [] {
-            for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
-                if (auto* box = qobject_cast<QMessageBox*>(widget))
-                    box->button(QMessageBox::Yes)->click();
-        });
+    QVERIFY(
+        !choscordb::EngineAdapter::executionRange("COMMIT", 0, 0, 0, choscordb::RunScope::Current)
+             .confirmation);
     f.run.trigger();
     QTRY_VERIFY(f.messages.toPlainText().contains("Completed"));
     QVERIFY(f.workspace.confirmShutdown());
 }
 
-void WorkspaceTest::manualTransactionKeepsAutoCommitOffUntilItEnds() {
+void WorkspaceTest::sqlBeginKeepsTransactionOpenUntilItEnds() {
     WorkspaceFixture f;
     QTRY_VERIFY(f.run.isEnabled());
-    f.mode.setCurrentIndex(1);
-    QSignalSpy transactionState(&f.workspace, &choscordb::QueryWorkspace::transactionStateChanged);
+    const auto connection = f.editor.connectionTarget().value_or(0);
     f.execute("SELECT 1");
+    QTRY_VERIFY(f.run.isEnabled());
+    QVERIFY(!f.workspace.activeTransaction(connection));
+    QSignalSpy transactionState(&f.workspace, &choscordb::QueryWorkspace::transactionStateChanged);
+    f.execute("BEGIN");
     QTRY_VERIFY(std::any_of(transactionState.begin(), transactionState.end(),
                             [](const auto& args) { return args.at(1).toBool(); }));
+    f.execute("SELECT 1");
     QTRY_VERIFY(f.run.isEnabled());
-    f.messages.clear();
-    f.mode.setCurrentIndex(0);
-    QCOMPARE(f.mode.currentIndex(), 1);
-    QVERIFY(f.messages.toPlainText().contains("Commit or roll back before enabling auto-commit."));
-    f.rollback.trigger();
-    QTRY_VERIFY(f.messages.toPlainText().contains("rolled back"));
-    QTRY_VERIFY(f.run.isEnabled());
-    f.mode.setCurrentIndex(0);
-    QCOMPARE(f.mode.currentIndex(), 0);
+    QVERIFY(f.workspace.activeTransaction(connection));
+    f.execute("ROLLBACK");
+    QTRY_VERIFY(!f.workspace.activeTransaction(connection));
 }
 
 void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
     WorkspaceFixture f;
     QTRY_VERIFY(f.run.isEnabled());
-    f.mode.setCurrentIndex(1);
     QSignalSpy opened(&f.workspace, &choscordb::QueryWorkspace::transactionStateChanged);
-    f.execute("SELECT 1");
+    f.execute("BEGIN");
     QTRY_VERIFY(std::any_of(opened.begin(), opened.end(),
                             [](const auto& args) { return args.at(1).toBool(); }));
     QTRY_VERIFY(f.run.isEnabled());
@@ -543,10 +589,9 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
     QVERIFY(f.workspace.confirmShutdown());
     QVERIFY(approved);
     QSignalSpy transactionState(&f.workspace, &choscordb::QueryWorkspace::transactionStateChanged);
-    f.rollback.trigger();
+    f.execute("ROLLBACK");
     QTRY_VERIFY(std::any_of(transactionState.begin(), transactionState.end(),
                             [](const auto& args) { return !args.at(1).toBool(); }));
-    QTRY_VERIFY(f.messages.toPlainText().contains("rolled back"));
     QTRY_VERIFY(f.run.isEnabled());
     bool unexpectedPrompt = false;
     QTimer finalTimer;
@@ -615,19 +660,20 @@ void WorkspaceTest::mainWindowHistoryRecordsOpensDisablesAndFlushes() {
     QCOMPARE(model->entry(0)->rowCount, quint64(2));
     table->selectRow(0);
     QVERIFY(window.grab().save("native-history.png"));
-    auto* target = window.findChild<QComboBox*>("connectionSelector");
-    const auto connection = target->currentData();
+    const auto connection =
+        qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget())->connectionTarget().value_or(0);
     const int queriesBeforeOpen = finished, tabsBeforeOpen = tabs->count();
     history->findChild<QPushButton*>("openHistoryQuery")->click();
     QCOMPARE(tabs->count(), tabsBeforeOpen + 1);
-    QCOMPARE(qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget())->text(),
-             QString("SELECT 1 UNION ALL SELECT 2"));
+    auto* opened = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+    QCOMPARE(opened->text(), QString("SELECT 1 UNION ALL SELECT 2"));
     QTest::qWait(30);
     QCOMPARE(finished, queriesBeforeOpen);
-    QVERIFY(!target->currentData().isValid());
-    QVERIFY(target->placeholderText().contains("Disconnected"));
+    QVERIFY(!opened->connectionTarget());
+    QVERIFY(window.findChild<QLabel*>("executionSummary")->toolTip().contains("Disconnected"));
     QVERIFY(!run->isEnabled());
-    target->setCurrentIndex(target->findData(connection));
+    QVERIFY(window.findChild<choscordb::QueryWorkspace*>()->changeDocumentConnection(opened,
+                                                                                     connection));
     QTRY_VERIFY(run->isEnabled());
     auto* record = window.findChild<QAction*>("recordHistory");
     QTRY_VERIFY(record->isEnabled());
@@ -796,7 +842,7 @@ void WorkspaceTest::mainWindowSearchActionsTrackCurrentTabAndUndo() {
     first->setText(original);
     auto trigger = [&](QKeySequence shortcut) {
         for (auto* action : window.findChildren<QAction*>())
-            if (action->shortcut() == shortcut) {
+            if (action->shortcut() == shortcut && action->shortcutContext() == Qt::WindowShortcut) {
                 action->trigger();
                 return;
             }

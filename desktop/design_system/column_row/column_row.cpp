@@ -1,6 +1,7 @@
 #include "design_system/column_row/column_row.h"
 
 #include "design_system/fonts/fonts.h"
+#include "design_system/icons.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/theme.h"
 
@@ -11,8 +12,43 @@
 #include <QStyleOptionViewItem>
 
 namespace choscordb::design {
-ColumnRowDelegate::ColumnRowDelegate(int detailRole, QObject* parent)
-    : QStyledItemDelegate(parent), detailRole_(detailRole) {}
+namespace {
+void paintMarkedRow(QPainter* painter, QStyleOptionViewItem item, RowMark mark) {
+    const auto* widget = item.widget;
+    auto* style = widget->style();
+    const auto colors = resolvedThemeForWidget(*widget).colors;
+    const bool failed = mark == RowMark::Failed;
+    const QRect textRect = style->subElementRect(QStyle::SE_ItemViewItemText, &item, widget);
+    const QString name = item.text;
+    item.text.clear();
+    item.features &= ~QStyleOptionViewItem::HasDisplay;
+    if (failed)
+        painter->fillRect(item.rect, colors.dangerSurface);
+    style->drawControl(QStyle::CE_ItemViewItem, &item, painter, widget);
+
+    const int size = dimension(Dimension::IconSmall);
+    const int nameWidth = qMax(0, textRect.width() - size - spacing(Spacing::One));
+    const QFontMetrics metrics(item.font);
+    painter->save();
+    painter->setClipRect(textRect);
+    painter->setFont(item.font);
+    painter->setPen(failed ? colors.danger : colors.fg);
+    painter->drawText(QRect(textRect.left(), textRect.top(), nameWidth, textRect.height()),
+                      Qt::AlignLeft | Qt::AlignVCenter,
+                      metrics.elidedText(name, Qt::ElideRight, nameWidth));
+    const Icon icon = mark == RowMark::Loading ? Icon::Loader
+                      : failed                 ? Icon::Error
+                                               : Icon::Warning;
+    themedIcon(icon, failed ? colors.danger : colors.fgMuted, size)
+        .paint(painter, QRect(textRect.right() - size + 1, textRect.center().y() - size / 2 + 1,
+                              size, size));
+    painter->restore();
+}
+
+} // namespace
+
+ColumnRowDelegate::ColumnRowDelegate(int detailRole, QObject* parent, int markRole)
+    : QStyledItemDelegate(parent), detailRole_(detailRole), markRole_(markRole) {}
 
 void ColumnRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
                               const QModelIndex& index) const {
@@ -22,6 +58,11 @@ void ColumnRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opt
     }
     QStyleOptionViewItem item(option);
     initStyleOption(&item, index);
+    if (const auto mark = markRole_ < 0 ? RowMark::None : RowMark(index.data(markRole_).toInt());
+        mark != RowMark::None) {
+        paintMarkedRow(painter, item, mark);
+        return;
+    }
     const QRect textRect =
         option.widget->style()->subElementRect(QStyle::SE_ItemViewItemText, &item, option.widget);
     const QString name = item.text;

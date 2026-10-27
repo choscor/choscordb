@@ -14,25 +14,25 @@
   {
     "path": "desktop/models/shortcut_catalog.cpp",
     "rule": "domain-parsing",
-    "sha256": "2f4ef57e1593a0607f3c4bb1a720cbe8eaaadfbddfe19a755183a0b14b4175ba",
+    "sha256": "4ff25883af5946426eb2602b7c2a181c259675eb30b986d513ed492e9153f3f8",
     "reason": "QRegularExpression strips modifier names only to compare Qt QKeySequence round trips. Qt owns native key/chord parsing and conflicts between catalog actions; Rust validates the stored preference document (version, font, sizes, duplicate commands)."
   },
   {
     "path": "desktop/models/shortcut_catalog.cpp",
     "rule": "text-matching",
-    "sha256": "2f4ef57e1593a0607f3c4bb1a720cbe8eaaadfbddfe19a755183a0b14b4175ba",
+    "sha256": "4ff25883af5946426eb2602b7c2a181c259675eb30b986d513ed492e9153f3f8",
     "reason": "The case-insensitive compare checks that a Qt QKeySequence PortableText round trip preserved the typed keys; it is native key parsing, not user-text filtering. Rust validates the stored preference document, including sequence size and NUL bytes."
   },
   {
     "path": "desktop/tools/preview/preview_standard.cpp",
     "rule": "sql-text",
-    "sha256": "63f6942500226a01ea868555f9d8167890cd20a087f0743625e460a30d568bc9",
+    "sha256": "284150f988a1cbc0fa1ea84f91815ca8eec3dafd82e0eba7536a40c8043080b4",
     "reason": "The CREATE TABLE literal populates a synthetic read-only SQL-editor specimen. This developer gallery does not execute it or derive application SQL from it."
   },
   {
     "path": "desktop/tools/preview/preview_window.cpp",
     "rule": "sql-text",
-    "sha256": "583db15df04f906383e01236bd9281c2719cf361dae42b923c99284dddc54670",
+    "sha256": "1fe495cd40de0549dc2cc4d1683bb72b142dd24e3f3cf5f59e20300cb698147f",
     "reason": "The SELECT literal is synthetic content for the SQL-editor gallery specimen in Light and Dark themes. The gallery does not execute it or generate database requests."
   },
   {

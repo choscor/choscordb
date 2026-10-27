@@ -57,6 +57,38 @@ class OwnershipTests(unittest.TestCase):
             self.rules('label->setText(tr("Loading")); setStatus(tr("Ready"));'),
         )
 
+    def test_retry_hints_come_from_rust_row_status(self):
+        for source in [
+            'show(tr("Connection failed. Collapse and expand to retry."));',
+            'show(tr("Failed: %1 — refresh to retry").arg(e));',
+            'show(tr("Navigator refresh failed. Choose Refresh " "to retry."));',
+            'show(tr("Activate the pin to retry."));',
+            'show(tr("History search failed: %1. Refine or retry."));',
+            'show(tr("Settings are still being saved. Please retry."));',
+            'show(tr("Inspect the server before retrying."));',
+            'show(tr("%1 · Connection unavailable. Reconnect manually.").arg(n));',
+            'show(tr("Object changed. Reconnect and refresh the navigator."));',
+        ]:
+            with self.subTest(source=source):
+                self.assertIn("retry-policy-text", self.rules(source))
+        # A button label is not a recovery sentence.
+        for label in [
+            'b->setText(tr("&Retry"));',
+            'm->addAction(tr("Retry workspace recovery"));',
+            'a = new QAction(tr("Reconnect…"), this);',
+        ]:
+            with self.subTest(label=label):
+                self.assertNotIn("retry-policy-text", self.rules(label))
+        self.assertNotIn(
+            "retry-policy-text",
+            {
+                f["rule"]
+                for f in policy.scan(
+                    "desktop/design_system/x.cpp", 'show(tr("Refresh to retry."));'
+                )
+            },
+        )
+
     def test_text_matching_uses_the_rust_filter(self):
         for source in [
             "bool m = name.contains(needle, Qt::CaseInsensitive);",

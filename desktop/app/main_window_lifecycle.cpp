@@ -19,9 +19,9 @@
 #include "design_system/toast_region/toast_region.h"
 #include "widgets/history_dock/history_dock.h"
 #include "widgets/search_panel/search_panel.h"
+#include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
-#include <QComboBox>
 #include <QDateTime>
 #include <QDockWidget>
 #include <QHBoxLayout>
@@ -37,6 +37,8 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QWidget>
+#include <memory>
+#include <utility>
 
 namespace choscordb {
 namespace {
@@ -60,6 +62,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     const auto savedConnections = ui.savedConnections;
     const auto historySearch = ui.historySearch;
     const auto historyStatus = ui.historyStatus;
+    const auto historySection = ui.historySection;
     const auto historyItems = ui.historyItems;
     const auto resetLayout = ui.resetLayout;
     const auto toolbar = ui.toolbar;
@@ -173,8 +176,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                         appearanceCloseApproved_ = false;
                         recoveryCloseApproved_ = false;
                         recovery_->cancelClose();
-                        showStatus(tr("Update postponed: %1").arg(error), ToastVariant::Warning,
-                                   QStringLiteral("lifecycle"));
+                        reportNotice(tr("Update postponed: %1").arg(error));
                         return;
                     }
                     const auto title = closing ? tr("Could not save workspace before closing")
@@ -218,15 +220,17 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
         }
     };
     connect(historySearch, &QLineEdit::textChanged, this, filterHistory);
-    auto refreshRecentHistory = [this, historyStatus, historyItems] {
+    auto refreshRecentHistory = [this, historyStatus, historyItems, historySection] {
         if (!workspace_)
             return;
         historyItems->clear();
-        historyStatus->show();
-        historyStatus->setText(tr("Loading recent history…"));
+        historyStatus->hide();
         sidebarHistoryToken_ = nextRequestToken();
-        if (!workspace_->adapter()->listHistory(50, 0, sidebarHistoryToken_))
-            historyStatus->setText(tr("Could not request recent history."));
+        if (!workspace_->adapter()->listHistory(50, 0, sidebarHistoryToken_)) {
+            reportNotice(tr("Could not request recent history."), ToastVariant::Danger);
+            return;
+        }
+        historySection->setBusy(true, tr("Loading recent history…"));
     };
     connect(sidebarPanels, &QStackedWidget::currentChanged, this,
             [refreshRecentHistory](int index) {
@@ -234,10 +238,11 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                     refreshRecentHistory();
             });
     connect(workspace_->adapter(), &EngineAdapter::historyListed, this,
-            [this, historyItems, historyStatus, filterHistory,
+            [this, historyItems, historyStatus, historySection, filterHistory,
              savedConnections](quint64 token, const QList<SavedHistoryEntry>& entries) {
                 if (token != sidebarHistoryToken_ || !token)
                     return;
+                historySection->setBusy(false);
                 historyItems->clear();
                 for (const auto& entry : entries) {
                     const auto preview = historyPreview(entry.sql, 100, false);
@@ -275,9 +280,12 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                                       : QString{});
             });
     connect(workspace_->adapter(), &EngineAdapter::recoveryFailed, this,
-            [this, historyStatus](quint64 token, const QString& error) {
-                if (token == sidebarHistoryToken_)
-                    historyStatus->setText(tr("Recent history could not be loaded: %1").arg(error));
+            [this, historySection](quint64 token, const QString& error) {
+                if (token != sidebarHistoryToken_)
+                    return;
+                historySection->setBusy(false);
+                reportNotice(tr("Recent history could not be loaded: %1").arg(error),
+                             ToastVariant::Danger);
             });
     auto openHistoryItem = [this](QListWidgetItem* item) {
         const auto entryData = item->data(Qt::UserRole);
@@ -296,20 +304,21 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     preferences_->setAppearanceController(appearance_);
     connect(resetLayout, &QAction::triggered, appearance_, &AppearanceController::resetLayout);
     connect(appearance_, &AppearanceController::warningChanged, this,
-            [this](const QString& warning) {
-                if (warning.isEmpty())
-                    clearStatus(QStringLiteral("appearance"));
-                else
-                    showStatus(warning, ToastVariant::Warning, QStringLiteral("appearance"));
+            [this, shown = std::make_shared<QString>()](const QString& warning) {
+                clearNotice(std::exchange(*shown, warning));
+                if (!warning.isEmpty())
+                    reportNotice(warning);
             });
-    connect(appearance_, &AppearanceController::flushFailed, this, [this](const QString& error) {
-        updateInstall_ = {};
-        appearanceCloseApproved_ = false;
-        showStatus(tr("Close postponed: %1").arg(error), ToastVariant::Warning,
-                   QStringLiteral("lifecycle"), QStringLiteral("appearance-close"));
-    });
-    connect(appearance_, &AppearanceController::flushReady, this, [this] {
-        clearStatus(QStringLiteral("lifecycle"), {}, QStringLiteral("appearance-close"));
+    const auto closeNotice = std::make_shared<QString>();
+    connect(appearance_, &AppearanceController::flushFailed, this,
+            [this, closeNotice](const QString& error) {
+                updateInstall_ = {};
+                appearanceCloseApproved_ = false;
+                *closeNotice = tr("Close postponed: %1").arg(error);
+                reportNotice(*closeNotice);
+            });
+    connect(appearance_, &AppearanceController::flushReady, this, [this, closeNotice] {
+        clearNotice(std::exchange(*closeNotice, {}));
         appearanceCloseApproved_ = true;
         QTimer::singleShot(0, this, [this] { close(); });
     });
@@ -321,8 +330,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     connect(history_, &HistoryDock::openRequested, this, [this](const SavedHistoryEntry& entry) {
         if (databaseClosePending_ ||
             (recovery_ && (!recovery_->isReady() || recovery_->isClosing()))) {
-            showStatus(tr("History cannot be opened while the workspace is unavailable."),
-                       ToastVariant::Warning, QStringLiteral("lifecycle"));
+            reportNotice(tr("History cannot be opened while the workspace is unavailable."));
             return;
         }
         for (int i = 0; sidebarHistoryOpen_ && i < editors_->count(); ++i) {
@@ -340,8 +348,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
         if (!editor)
             return;
         if (!editor->restoreDocument(entry.sql.toUtf8(), {}, 0, 0, true)) {
-            showStatus(tr("History text could not be opened."), ToastVariant::Danger,
-                       QStringLiteral("lifecycle"));
+            reportError(tr("History text could not be opened."));
             editors_->removeTab(editors_->indexOf(editor));
             editor->deleteLater();
             if (!editors_->count())
@@ -352,18 +359,9 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
         std::optional<quint64> historyConnection;
         QString historyLabel =
             entry.profileId.isEmpty() ? tr("Unavailable connection") : entry.profileId;
-        if (auto* selector = findChild<QComboBox*>("connectionSelector")) {
-            for (int i = 0; i < selector->count(); ++i) {
-                if (!selector->itemData(i).isValid())
-                    continue;
-                const auto connection = selector->itemData(i).toULongLong();
-                if (workspace_->profileIdForConnection(connection) == entry.profileId &&
-                    !entry.profileId.isEmpty()) {
-                    historyConnection = connection;
-                    historyLabel = selector->itemText(i);
-                    break;
-                }
-            }
+        if (const auto live = workspace_->liveConnectionForProfile(entry.profileId)) {
+            historyConnection = live->id;
+            historyLabel = live->label;
         }
         editor->setConnectionTarget(historyConnection, historyLabel);
         editor->setProperty("historyRecordId", entry.id);
@@ -406,8 +404,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                             recovery_->cancelClose();
                         workspace_->cancelShutdown();
                         history_->setEnabled(true);
-                        showStatus(tr("Update postponed: %1").arg(error), ToastVariant::Warning,
-                                   QStringLiteral("lifecycle"));
+                        reportNotice(tr("Update postponed: %1").arg(error));
                         return;
                     }
                     ConfirmationDialog box(QMessageBox::Warning, tr("History could not be flushed"),

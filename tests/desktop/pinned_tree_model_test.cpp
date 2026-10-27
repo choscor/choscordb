@@ -1,4 +1,5 @@
 #include "app/pinned_tree_model.h"
+#include "bridge/engine_adapter.h"
 #include "models/navigator_model.h"
 
 #include <QAbstractItemModelTester>
@@ -40,24 +41,37 @@ class PinnedTreeModelTest : public QObject {
         QVERIFY(pins.hasChildren(pins.index(1, 0)));
         QVERIFY(pins.hasChildren(pins.index(2, 0)));
         QVERIFY(!pins.sourceIndex(first).isValid());
-        pins.setStatus(PinStore::identityKey(table), "Disconnected",
-                       PinnedTreeModel::StatusPlacement::TooltipOnly);
+        const auto tableKey = PinStore::identityKey(table);
+        pins.setStatus(tableKey, EngineAdapter::rowStatus(RowStatusCause::Disconnected));
         const auto second = pins.index(1, 0);
         QCOMPARE(second.data(Qt::DisplayRole).toString(), QString("orders"));
+        QCOMPARE(second.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::None));
         QVERIFY(second.data(Qt::ToolTipRole).toString().contains("Warehouse"));
         QVERIFY(second.data(Qt::ToolTipRole).toString().contains("Disconnected"));
         QVERIFY(second.data(Qt::AccessibleDescriptionRole).toString().contains("orders"));
-        pins.setStatus(PinStore::identityKey(table), "Loading children…",
-                       PinnedTreeModel::StatusPlacement::Label);
-        QCOMPARE(second.data(Qt::DisplayRole).toString(), QString("orders — Loading children…"));
-        pins.setStatus(PinStore::identityKey(table), "Metadata failed. Expand to retry.",
-                       PinnedTreeModel::StatusPlacement::Label);
-        QCOMPARE(second.data(Qt::DisplayRole).toString(),
-                 QString("orders — Metadata failed. Expand to retry."));
+        pins.setStatus(tableKey, EngineAdapter::rowStatus(RowStatusCause::ChildrenLoading));
+        QCOMPARE(second.data(Qt::DisplayRole).toString(), QString("orders"));
+        QCOMPARE(second.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Loading));
+        QVERIFY(second.data(Qt::ToolTipRole).toString().contains("Loading children…"));
+        const auto failed =
+            EngineAdapter::rowStatus(RowStatusCause::RevealFailed, "Metadata could not load.");
+        pins.setStatus(tableKey, failed);
+        QCOMPARE(second.data(Qt::DisplayRole).toString(), QString("orders"));
+        QCOMPARE(second.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Failed));
+        QCOMPARE(second.data(NavigatorModel::RetryRole).toInt(), int(RowRetry::Refresh));
+        QVERIFY(second.data(Qt::ToolTipRole).toString().contains(failed.message));
+        QVERIFY(second.data(Qt::AccessibleDescriptionRole).toString().contains(failed.message));
         auto unavailable = column;
         unavailable.unavailable = true;
         pins.setPins({unavailable, table, schema});
-        QCOMPARE(pins.index(0, 0).data(Qt::DisplayRole).toString(), QString("id — Unavailable"));
+        const auto missing = pins.index(0, 0);
+        QCOMPARE(missing.data(Qt::DisplayRole).toString(), QString("id"));
+        QCOMPARE(missing.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Unavailable));
+        QVERIFY(missing.data(Qt::ToolTipRole).toString().contains("Unavailable"));
+        // A later connection status does not hide that the object is unavailable.
+        pins.setStatus(PinStore::identityKey(unavailable),
+                       EngineAdapter::rowStatus(RowStatusCause::Connected));
+        QCOMPARE(missing.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Unavailable));
     }
 
     void verifiedRootMirrorsLazyNestedAndPagedLiveRows() {
@@ -183,12 +197,11 @@ class PinnedTreeModelTest : public QObject {
         QCOMPARE(pins.index(0, 0, pins.index(0, 0, schemaRoot)).data(Qt::DisplayRole).toString(),
                  QString("id"));
         navigator.refresh(table);
-        QCOMPARE(pins.index(0, 0, tableRoot).data(NavigatorModel::KindRole).toString(),
-                 QString("loading"));
-        QCOMPARE(pins.index(0, 0, pins.index(0, 0, schemaRoot))
-                     .data(NavigatorModel::KindRole)
-                     .toString(),
-                 QString("loading"));
+        QCOMPARE(pins.rowCount(tableRoot), 0);
+        const auto mirroredTable = pins.index(0, 0, schemaRoot);
+        QCOMPARE(pins.rowCount(mirroredTable), 0);
+        QCOMPARE(mirroredTable.data(NavigatorModel::StatusRole).toInt(),
+                 int(RowStatusKind::Loading));
     }
 };
 

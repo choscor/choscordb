@@ -17,6 +17,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QDialog>
+#include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPlainTextEdit>
@@ -99,9 +100,12 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     rename->trigger();
     QCOMPARE(finished, settledFinished);
     QVERIFY(!window.findChild<QDialog*>("renameObjectDialog"));
-    auto* status = window.findChild<design::StatusLine*>("navigatorStatusLine");
-    QVERIFY(status);
-    QVERIFY(status->accessibleDescription().contains("Finish or cancel active database work"));
+    // A blocked navigator action warns in the notice toast, never on the main panel line.
+    auto* toast = window.findChild<ToastRegion*>("toastRegion");
+    QVERIFY(toast);
+    QVERIFY(toast->text().contains("Finish or cancel active database work"));
+    for (auto* line : window.findChildren<design::StatusLine*>())
+        QVERIFY(!line->accessibleDescription().contains("Finish or cancel active database work"));
     workspace->setExternalWork(false);
     bool renameDismissed = false;
     QTimer::singleShot(0, &window, [&] {
@@ -145,13 +149,25 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
         }
         dialog->reject();
     });
+    // Hold the navigator refresh to see the state between the action and the refresh.
+    QObject::disconnect(model, &NavigatorModel::childrenRequested, adapter,
+                        &EngineAdapter::loadMetadata);
+    QSignalSpy refreshRequested(model, &NavigatorModel::childrenRequested);
     rename->trigger();
     QVERIFY(renameDialogChecked);
     QTRY_VERIFY(finished > settledFinished);
+    QTRY_VERIFY(!refreshRequested.isEmpty());
+    auto* objectsBusy = window.findChild<QWidget*>("sidebarObjectsSection")
+                            ->findChild<QLabel*>("sidebarSectionBusy");
+    QVERIFY(objectsBusy && objectsBusy->isVisible());
+    QVERIFY(!toast->accessibleDescription().contains("new.name"));
+    connect(model, &NavigatorModel::childrenRequested, adapter, &EngineAdapter::loadMetadata);
+    const auto held = refreshRequested.last();
+    adapter->loadMetadata(held.at(0).toULongLong(), held.at(1).toString(),
+                          held.at(2).toULongLong());
     QTRY_VERIFY(group.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    QTRY_VERIFY(!objectsBusy->isVisible());
     QTRY_COMPARE(model->index(0, 0, group).data().toString(), QString("new.name"));
-    auto* toast = window.findChild<ToastRegion*>("toastRegion");
-    QVERIFY(toast);
     QTRY_VERIFY(toast->accessibleDescription().contains("new.name"));
     QVERIFY(!toast->accessibleDescription().contains("Refreshing"));
     QCOMPARE(tabs->count(), 3);
@@ -192,13 +208,16 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     });
     collisionRename->trigger();
     QVERIFY(collisionSubmitted);
-    QTRY_VERIFY2(status->accessibleDescription().contains("Could not rename"),
-                 qPrintable(status->accessibleDescription()));
+    // A failed user action reports in the one error modal.
+    ConfirmationDialog* failure = nullptr;
+    QTRY_VERIFY((failure = window.findChild<ConfirmationDialog*>("errorFeedbackDialog")) &&
+                failure->isVisible());
+    QVERIFY2(failure->text().contains("Could not rename"), qPrintable(failure->text()));
     QCOMPARE(tabs->count(), 3);
     QCOMPARE(object->property("objectId").toString(),
              model->index(0, 0, group).data(NavigatorModel::ObjectIdRole).toString());
-    QTRY_COMPARE(status->palette().color(QPalette::Window),
-                 design::resolvedThemeForWidget(*status).colors.dangerSurface);
+    failure->reject();
+    QTRY_VERIFY(!window.findChild<ConfirmationDialog*>("errorFeedbackDialog"));
 
     const auto renamed = model->index(0, 0, group);
     QMenu dropMenu;

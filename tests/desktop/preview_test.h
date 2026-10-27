@@ -9,8 +9,10 @@ class PreviewTest final : public QObject {
     void codePreviewTextAreaUsesSharedVariantInBothThemes();
     void navigationTreeSpecimenUsesRealTreeInBothThemes();
     void columnRowSpecimenUsesRealDelegateInBothThemes();
+    void statusRowSpecimenShowsTrailingIconAndRedFailedRow();
     void switchSpecimenUsesRealControlsInBothThemes();
     void recentHistoryRowsUseSharedDelegateInBothThemes();
+    void sectionLabelSpecimenIsUppercaseInBothThemes();
     void editorResultsSplitUsesEqualPanesInBothThemes();
     void documentTabSpecimenShowsFixedWidthTabsInBothThemes();
     void documentTabContentsSitAtVerticalCenterInBothThemes();
@@ -36,6 +38,8 @@ class PreviewTest final : public QObject {
     void longToastKeepsFullDetailsInsideReadableSurface();
     void statusLineLongErrorKeepsControlsAndFullDetails();
     void pinnedToastKeepsPriorityAndRestoresLatestNotice();
+    void replacingToastShowsLatestNoticeAndCountWithoutQueueing();
+    void toastCardUsesTokenInsetsWidthAndSharedDismissButton();
     void dismissingPinnedToastPreservesLaterOrdinaryNotice();
     void pinnedToastSpecimenIsPresentInBothThemes();
     void nonmodalDialogSurfaceHasNoOutline();

@@ -1,5 +1,4 @@
 #include "models/navigator_model.h"
-#include "bridge/engine_adapter.h"
 #include <QSet>
 #include <QTimer>
 #include <algorithm>
@@ -13,11 +12,15 @@ struct NavigatorModel::Node {
     bool hasMore = false;
     NavigatorObject object;
     QString error;
+    RowStatus status;
     Node* parent = nullptr;
     int row = 0;
     bool placeholder = false;
+    // The children are saved children that the live page has not replaced yet.
+    bool cached = false;
     // Set from Rust's kind traits when the node is created, so data() never asks.
     bool column = false;
+    bool sidebarChild = true;
     // -1 unknown; otherwise whether this node or an ancestor is a hidden system schema.
     mutable signed char systemSchema = -1;
     std::vector<std::unique_ptr<Node>> children;
@@ -229,6 +232,8 @@ QVariant NavigatorModel::data(const QModelIndex& index, int role) const {
         return value->object.name;
     case Qt::ToolTipRole:
     case Qt::AccessibleDescriptionRole:
+        if (value->status.kind != RowStatusKind::None)
+            return value->status.message;
         if (value->column)
             return value->object.databaseType.isEmpty()
                        ? value->object.name
@@ -253,6 +258,12 @@ QVariant NavigatorModel::data(const QModelIndex& index, int role) const {
         return value->column ? value->object.databaseType : QString();
     case ErrorRole:
         return value->error;
+    case StatusRole:
+        return int(value->status.kind);
+    case RetryRole:
+        return int(value->status.retry);
+    case SidebarChildRole:
+        return value->sidebarChild;
     default:
         return {};
     }
@@ -266,8 +277,8 @@ bool NavigatorModel::hasChildren(const QModelIndex& parent) const {
 }
 bool NavigatorModel::canFetchMore(const QModelIndex& parent) const {
     const auto* value = node(parent);
-    // Failed nodes keep their error row until explicit refresh. An automatic
-    // retry during QTreeView expansion would remove the row being laid out.
+    // Failed nodes stay failed until Refresh or collapse. A view that probes
+    // again during layout must not start a retry loop.
     return value && !value->placeholder && value->object.hasChildren &&
            value->state == Node::Unloaded && nextToken_ < std::numeric_limits<quint64>::max();
 }
@@ -280,10 +291,20 @@ void NavigatorModel::clearChildren(Node* value) {
     value->children.clear();
     endRemoveRows();
 }
+void NavigatorModel::setStatus(Node* value, RowStatusCause cause, const QString& detail) {
+    value->status = EngineAdapter::rowStatus(cause, detail);
+    const auto index = indexFor(value);
+    emit dataChanged(index, index,
+                     {StatusRole, RetryRole, ErrorRole, ChildrenLoadedRole, Qt::ToolTipRole,
+                      Qt::AccessibleDescriptionRole});
+}
 void NavigatorModel::fetchMore(const QModelIndex& parent) {
+    request(node(parent), false);
+}
+void NavigatorModel::request(Node* value, bool fresh) {
+    const auto parent = indexFor(value);
     if (!canFetchMore(parent))
         return;
-    auto* value = node(parent);
     if (!value->children.empty() && value->children.back()->placeholder) {
         const auto last = static_cast<int>(value->children.size()) - 1;
         beginRemoveRows(parent, last, last);
@@ -293,28 +314,17 @@ void NavigatorModel::fetchMore(const QModelIndex& parent) {
     value->state = Node::Loading;
     value->token = ++nextToken_;
     value->error.clear();
-    auto loading = std::make_unique<Node>();
-    loading->connection = value->connection;
-    loading->parent = value;
-    loading->placeholder = true;
-    loading->state = Node::Loaded;
-    loading->object = {QString(), tr("Loading…"), QString(), QString("loading"), false};
-    const auto loadingRow = static_cast<int>(value->children.size());
-    loading->row = loadingRow;
-    beginInsertRows(parent, loadingRow, loadingRow);
-    value->children.push_back(std::move(loading));
-    endInsertRows();
-    emit dataChanged(parent, parent, {ErrorRole, ChildrenLoadedRole});
+    setStatus(value, RowStatusCause::ChildrenLoading);
     const auto connection = value->connection;
     const auto objectId = value->object.id;
     const auto token = value->token;
     // QTreeView calls fetchMore() from inside its expansion layout. Defer the
     // request boundary so even an immediate reply cannot mutate rows reentrantly.
-    QTimer::singleShot(0, this, [this, connection, objectId, token] {
+    QTimer::singleShot(0, this, [this, connection, objectId, token, fresh] {
         const auto* current = find(connection, objectId);
         if (current && current->state == Node::Loading && current->token == token) {
             if (current->offset == 0)
-                emit childrenRequested(connection, objectId, token);
+                emit childrenRequested(connection, objectId, token, fresh);
             else
                 emit childrenPageRequested(connection, objectId, token, current->offset);
         }
@@ -330,6 +340,7 @@ bool NavigatorModel::addConnection(quint64 id, const QString& label) {
     auto value = std::make_unique<Node>();
     value->connection = id;
     value->object = {QString(), label, QString(), QString("connection"), true};
+    value->sidebarChild = EngineAdapter::sidebarChildVisible(QString(), value->object.kind);
     const auto row = static_cast<int>(roots_.size());
     value->row = row;
     beginInsertRows({}, row, row);
@@ -356,12 +367,9 @@ bool NavigatorModel::addPendingConnection(quint64 id, const QString& label) {
     if (!addConnection(id, label))
         return false;
     auto* root = find(id, {});
-    root->object.name = tr("%1 — Loading…").arg(label);
-    root->object.kind = "loading";
     root->object.hasChildren = false;
     root->state = Node::Loaded;
-    const auto rootIndex = indexFor(root);
-    emit dataChanged(rootIndex, rootIndex, {Qt::DisplayRole, KindRole});
+    setStatus(root, RowStatusCause::Connecting);
     return true;
 }
 bool NavigatorModel::removeConnection(quint64 id) {
@@ -389,6 +397,24 @@ bool NavigatorModel::applyChildrenPage(quint64 connection, const QString& parent
     auto* value = find(connection, parentObjectId);
     if (!value || value->state != Node::Loading || value->token != token || value->offset != offset)
         return false;
+    return insertChildren(value, std::move(children), hasMore, nextOffset, false);
+}
+bool NavigatorModel::applyCachedChildren(quint64 connection, const QString& parentObjectId,
+                                         quint64 token, std::vector<NavigatorObject> children) {
+    auto* value = find(connection, parentObjectId);
+    if (!value || value->state != Node::Loading || value->token != token || value->offset != 0 ||
+        value->cached)
+        return false;
+    return insertChildren(value, std::move(children), false, 0, true);
+}
+bool NavigatorModel::insertChildren(Node* value, std::vector<NavigatorObject> children,
+                                    bool hasMore, quint64 nextOffset, bool cached) {
+    const auto connection = value->connection;
+    const auto& parentObjectId = value->object.id;
+    const auto token = value->token;
+    const auto offset = value->offset;
+    // A live page replaces the saved children only after it is valid, so a bad page keeps them.
+    const bool replacing = value->cached;
     if (hasMore && (nextOffset <= offset || children.empty())) {
         failChildren(connection, parentObjectId, token, tr("Invalid metadata continuation."));
         return false;
@@ -398,11 +424,14 @@ bool NavigatorModel::applyChildrenPage(quint64 connection, const QString& parent
         return false;
     }
     QSet<QString> ids;
-    for (const auto& child : value->children)
-        if (!child->placeholder)
-            ids.insert(child->object.id);
+    if (!replacing)
+        for (const auto& child : value->children)
+            if (!child->placeholder)
+                ids.insert(child->object.id);
     for (const auto& object : children) {
         const auto* existing = find(connection, object.id);
+        if (replacing && existing && existing->parent == value)
+            existing = nullptr;
         // Rust names the kinds one object may list under several parents.
         const bool repeated = existing && existing->parent != value &&
                               object.kind == existing->object.kind &&
@@ -416,21 +445,19 @@ bool NavigatorModel::applyChildrenPage(quint64 connection, const QString& parent
         ids.insert(object.id);
     }
     std::vector<std::unique_ptr<Node>> prepared;
-    prepared.reserve(children.size());
-    for (auto& object : children) {
-        auto child = std::make_unique<Node>();
-        child->connection = connection;
-        child->parent = value;
-        child->object = std::move(object);
-        child->column = EngineAdapter::objectKindTraits(child->object.kind).column;
-        prepared.push_back(std::move(child));
+    // The live page keeps the saved nodes that it lists, so their expansion stays.
+    if (replacing && !reconcileSaved(value, children))
+        clearChildren(value);
+    if (!replacing || value->children.empty()) {
+        prepared.reserve(children.size());
+        for (auto& object : children)
+            prepared.push_back(makeChild(value, std::move(object)));
     }
     const auto parentIndex = indexFor(value);
-    const auto loadingRow = static_cast<int>(value->children.size()) - 1;
-    beginRemoveRows(parentIndex, loadingRow, loadingRow);
-    value->children.pop_back();
-    endRemoveRows();
-    value->state = Node::Loaded;
+    // Saved children keep the node loading until its live page arrives.
+    value->cached = cached;
+    value->state = cached ? Node::Loading : Node::Loaded;
+    value->status = cached ? EngineAdapter::rowStatus(RowStatusCause::ChildrenCached) : RowStatus{};
     value->hasMore = hasMore;
     value->offset = nextOffset;
     value->error.clear();
@@ -442,6 +469,8 @@ bool NavigatorModel::applyChildrenPage(quint64 connection, const QString& parent
         continuation->state = Node::Loaded;
         continuation->object = {QString(), tr("Load more…"), QString(), QString("load_more"),
                                 false};
+        continuation->sidebarChild =
+            EngineAdapter::sidebarChildVisible(value->object.kind, continuation->object.kind);
         prepared.push_back(std::move(continuation));
     }
     if (!prepared.empty()) {
@@ -455,8 +484,106 @@ bool NavigatorModel::applyChildrenPage(quint64 connection, const QString& parent
         }
         endInsertRows();
     }
-    emit dataChanged(parentIndex, parentIndex, {ErrorRole, ChildrenLoadedRole, HasMoreRole});
+    emit dataChanged(parentIndex, parentIndex,
+                     {ErrorRole, ChildrenLoadedRole, HasMoreRole, StatusRole, RetryRole,
+                      Qt::ToolTipRole, Qt::AccessibleDescriptionRole});
     emit completionChanged(connection);
+    return true;
+}
+std::unique_ptr<NavigatorModel::Node> NavigatorModel::makeChild(Node* parent,
+                                                                NavigatorObject object) const {
+    auto child = std::make_unique<Node>();
+    child->connection = parent->connection;
+    child->parent = parent;
+    child->object = std::move(object);
+    child->column = EngineAdapter::objectKindTraits(child->object.kind).column;
+    child->sidebarChild =
+        EngineAdapter::sidebarChildVisible(parent->object.kind, child->object.kind);
+    return child;
+}
+bool NavigatorModel::reconcileSaved(Node* value, std::vector<NavigatorObject>& children) {
+    QHash<QString, std::size_t> listed;
+    listed.reserve(static_cast<qsizetype>(children.size()));
+    for (std::size_t i = 0; i < children.size(); ++i)
+        listed.insert(children[i].id, i);
+    const auto keeps = [&](const Node* child) {
+        const auto at = listed.constFind(child->object.id);
+        return at != listed.cend() && children[*at].kind == child->object.kind &&
+               children[*at].hasChildren == child->object.hasChildren;
+    };
+    const auto parentIndex = indexFor(value);
+    auto& rows = value->children;
+    const auto renumber = [&rows](std::size_t from) {
+        for (auto i = from; i < rows.size(); ++i)
+            rows[i]->row = static_cast<int>(i);
+    };
+    // Remove the saved rows that the live page does not list, one range at a time.
+    for (auto last = static_cast<int>(rows.size()) - 1; last >= 0;) {
+        if (keeps(rows[last].get())) {
+            --last;
+            continue;
+        }
+        auto first = last;
+        while (first > 0 && !keeps(rows[first - 1].get()))
+            --first;
+        beginRemoveRows(parentIndex, first, last);
+        for (auto i = first; i <= last; ++i)
+            unregisterSubtree(rows[i].get());
+        rows.erase(rows.begin() + first, rows.begin() + last + 1);
+        renumber(static_cast<std::size_t>(first));
+        endRemoveRows();
+        last = first - 1;
+    }
+    // A changed order rebuilds the rows. A refresh of the parent is the same as that.
+    std::vector<bool> kept(children.size(), false);
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        const auto at = listed.value(rows[i]->object.id);
+        if (i > 0 && at <= listed.value(rows[i - 1]->object.id))
+            return false;
+        kept[at] = true;
+    }
+    for (const auto& child : rows) {
+        auto& object = children[listed.value(child->object.id)];
+        // A renamed node, such as a PostgreSQL schema, finds its system-schema state again.
+        if (object.name != child->object.name)
+            for (std::vector<Node*> stack{child.get()}; !stack.empty();) {
+                auto* current = stack.back();
+                stack.pop_back();
+                current->systemSchema = -1;
+                for (const auto& descendant : current->children)
+                    stack.push_back(descendant.get());
+            }
+        child->object = std::move(object);
+    }
+    if (!rows.empty())
+        emit dataChanged(index(0, 0, parentIndex),
+                         index(static_cast<int>(rows.size()) - 1, 0, parentIndex));
+    // Insert each run of new children at its place.
+    std::size_t row = 0;
+    for (std::size_t i = 0; i < children.size();) {
+        if (kept[i]) {
+            ++row;
+            ++i;
+            continue;
+        }
+        auto end = i;
+        while (end < children.size() && !kept[end])
+            ++end;
+        const auto first = static_cast<int>(row);
+        beginInsertRows(parentIndex, first, first + static_cast<int>(end - i) - 1);
+        std::vector<std::unique_ptr<Node>> run;
+        run.reserve(end - i);
+        for (auto at = i; at < end; ++at) {
+            run.push_back(makeChild(value, std::move(children[at])));
+            registerNode(run.back().get());
+        }
+        rows.insert(rows.begin() + static_cast<std::ptrdiff_t>(row),
+                    std::make_move_iterator(run.begin()), std::make_move_iterator(run.end()));
+        renumber(row);
+        endInsertRows();
+        row += end - i;
+        i = end;
+    }
     return true;
 }
 void NavigatorModel::requestNextPage(const QModelIndex& index) {
@@ -475,14 +602,9 @@ bool NavigatorModel::failChildren(quint64 connection, const QString& parentObjec
         return false;
     value->state = Node::Failed;
     value->error = error.isEmpty() ? tr("Metadata loading failed.") : error;
-    auto& placeholder = value->children.back();
-    placeholder->error = value->error;
-    placeholder->object.name = tr("Failed: %1 — refresh to retry").arg(value->error);
-    placeholder->object.kind = "error";
-    const auto parentIndex = indexFor(value);
-    emit dataChanged(indexFor(placeholder.get()), indexFor(placeholder.get()),
-                     {Qt::DisplayRole, KindRole, ErrorRole});
-    emit dataChanged(parentIndex, parentIndex, {ErrorRole, ChildrenLoadedRole});
+    setStatus(value,
+              value->cached ? RowStatusCause::ChildrenCachedFailed : RowStatusCause::ChildrenFailed,
+              value->error);
     emit completionChanged(connection);
     return true;
 }
@@ -498,9 +620,10 @@ void NavigatorModel::refresh(const QModelIndex& index) {
     value->state = Node::Unloaded;
     value->offset = 0;
     value->hasMore = false;
+    value->cached = false;
     value->error.clear();
     emit completionChanged(value->connection);
-    fetchMore(indexFor(value));
+    request(value, true);
 }
 bool NavigatorModel::refreshObject(quint64 connection, const QString& objectId) {
     auto* value = find(connection, objectId);

@@ -158,6 +158,12 @@ OBJECT_KIND_LITERAL = literal_comparison(OBJECT_KINDS)
 # The bridge event "schema" shares its word with an object kind; event dispatch
 # compares it through a variable named eventKind. No other kind word is exempt.
 EVENT_KIND_SCHEMA = re.compile(r'\beventKind\s*[=!]=\s*"schema"')
+# A recovery sentence comes from Rust. A button label such as "Retry" has no full stop.
+RETRY_HINT = re.compile(
+    r"\b(?:refresh|expand|activate the pin)\s+to\s+retry\b|\bretry(?:ing)?\b[^.]*\."
+    r"|\breconnect\s+(?:manually|and\s+refresh)\b",
+    re.I,
+)
 # Driver names arrive in any case ("MySQL"), so they match case-insensitively.
 DRIVER_LITERAL = literal_comparison(DRIVERS, re.IGNORECASE)
 # A UI-only budget (event-loop slicing, display paging) that happens to equal a
@@ -317,6 +323,8 @@ def scan(path, source, limits=None):
     for pos, value, _ in groups:
         if SQL.search(value):
             add("sql-text", "review", pos, value[:160])
+        if role_for(path) in SEMANTIC_ROLES and RETRY_HINT.search(value):
+            add("retry-policy-text", "error", pos, value[:160])
     # One finding per rule and physical line, regardless of repeated tokens.
     return list({(f["rule"], f["line"]): f for f in findings}.values())
 

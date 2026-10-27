@@ -14,10 +14,10 @@
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "widgets/editor_completion/editor_completion.h"
+#include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemModel>
 #include <QAction>
-#include <QComboBox>
 #include <QDockWidget>
 #include <QItemSelectionModel>
 #include <QLabel>
@@ -43,8 +43,7 @@ void MainWindow::connectNavigator(const Ui& ui) {
     const auto filter = ui.filter;
     const auto tree = ui.tree;
     const auto objectsEmpty = ui.objectsEmpty;
-    const auto navigatorStatus = ui.navigatorStatus;
-    const auto connections = ui.connections;
+    const auto objectSection = ui.objectSection;
     auto* navigatorController = new NavigatorController(workspace_->adapter(), tree, filter);
     navigatorController_ = navigatorController;
     auto* connectionsScroll = findChild<QScrollArea*>("connectionsScroll");
@@ -146,18 +145,19 @@ void MainWindow::connectNavigator(const Ui& ui) {
                     pendingObjectRefresh_->parentObjectId == parent)
                     pendingObjectRefresh_->token = token;
             });
-    connect(workspace_->adapter(), &EngineAdapter::metadataSubmissionFailed, this,
-            [this](quint64 connection, const QString& parent, quint64 token, const QString& error) {
-                if (!pendingObjectRefresh_ || pendingObjectRefresh_->connection != connection ||
-                    pendingObjectRefresh_->parentObjectId != parent ||
-                    (pendingObjectRefresh_->token != 0 && pendingObjectRefresh_->token != token))
-                    return;
-                pendingObjectRefresh_.reset();
-                showStatus(
-                    tr("Object changed, but navigator refresh failed: %1. Choose Refresh to retry.")
-                        .arg(error),
-                    ToastVariant::Warning, QStringLiteral("navigator"));
-            });
+    connect(
+        workspace_->adapter(), &EngineAdapter::metadataSubmissionFailed, this,
+        [this](quint64 connection, const QString& parent, quint64 token, const QString& error) {
+            if (!pendingObjectRefresh_ || pendingObjectRefresh_->connection != connection ||
+                pendingObjectRefresh_->parentObjectId != parent ||
+                (pendingObjectRefresh_->token != 0 && pendingObjectRefresh_->token != token))
+                return;
+            pendingObjectRefresh_.reset();
+            syncObjectSectionBusy();
+            reportError(
+                tr("Object changed, but the navigator did not refresh. %1")
+                    .arg(EngineAdapter::rowStatus(RowStatusCause::ChildrenFailed, error).message));
+        });
     const auto updateObjectsEmpty = [this, tree, filter, objectsEmpty] {
         objectsEmpty->setVisible(tree->model()->rowCount() == 0);
         objectsEmpty->setText(
@@ -173,7 +173,7 @@ void MainWindow::connectNavigator(const Ui& ui) {
     connect(tree->model(), &QAbstractItemModel::modelReset, objectsEmpty, updateObjectsEmpty);
     connect(tree->model(), &QAbstractItemModel::layoutChanged, objectsEmpty, updateObjectsEmpty);
     connect(filter, &QLineEdit::textChanged, objectsEmpty, updateObjectsEmpty);
-    connect(navigatorController, &NavigatorController::searchStatusChanged, objectsEmpty,
+    connect(navigatorController, &NavigatorController::searchBusyChanged, objectsEmpty,
             updateObjectsEmpty);
     updateObjectsEmpty();
     connect(navigatorController, &NavigatorController::ddlRequested, this,
@@ -181,12 +181,16 @@ void MainWindow::connectNavigator(const Ui& ui) {
                    const QString& kind, const QVariantList& properties) {
                 openObjectTab(connection, objectId, label, kind, properties, 3);
             });
-    connect(navigatorController, &NavigatorController::searchStatusChanged, navigatorStatus,
-            [navigatorStatus](const QString& status) {
-                navigatorStatus->setText(status);
-                navigatorStatus->setAccessibleName(
-                    status.isEmpty() ? QString() : tr("Navigator search status: %1").arg(status));
-                navigatorStatus->setVisible(!status.isEmpty());
+    objectSection_ = objectSection;
+    connect(navigatorController, &NavigatorController::searchBusyChanged, this, [this](bool busy) {
+        objectSearchBusy_ = busy;
+        syncObjectSectionBusy();
+    });
+    connect(navigatorController, &NavigatorController::searchNoticeChanged, this,
+            [this, shown = std::make_shared<QString>()](const QString& notice) {
+                clearNotice(std::exchange(*shown, notice));
+                if (!notice.isEmpty())
+                    reportNotice(notice);
             });
     auto* refreshNavigatorAction = new QAction(tr("Refresh selected object"), tree);
     refreshNavigatorAction->setObjectName("navigatorRefreshAction");
@@ -233,22 +237,15 @@ void MainWindow::connectNavigator(const Ui& ui) {
     connect(navigatorController, &NavigatorController::disconnectRequested, workspace_,
             &QueryWorkspace::disconnectConnection);
     connect(navigatorController, &NavigatorController::generationFailed, this,
-            [this](const QString& error) {
-                showStatus(error, ToastVariant::Danger, QStringLiteral("navigator"));
-            });
-    const auto openGeneratedSql = [this, connections](quint64 connection, const QString& sql) {
+            &MainWindow::reportError);
+    connect(navigatorController, &NavigatorController::loadFailed, this, &MainWindow::reportError);
+    const auto openGeneratedSql = [this](quint64 connection, const QString& sql) {
         if (databaseClosePending_ || !editors_->isEnabled() ||
             (recovery_ && (!recovery_->isReady() || recovery_->isClosing())))
             return;
-        const int target = connections->findData(QVariant::fromValue<qulonglong>(connection));
-        if (target < 0) {
-            showStatus(tr("The selected connection is no longer available."), ToastVariant::Danger,
-                       QStringLiteral("navigator"));
-            return;
-        }
-        if (target != connections->currentIndex() && !connections->isEnabled()) {
-            showStatus(tr("Finish the active query before switching connections to generate SQL."),
-                       ToastVariant::Warning, QStringLiteral("navigator"));
+        const auto label = workspace_->liveConnectionLabel(connection);
+        if (!label) {
+            reportError(tr("The selected connection is no longer available."));
             return;
         }
         // Rust bounds generated SQL to the template limit.
@@ -259,12 +256,10 @@ void MainWindow::connectNavigator(const Ui& ui) {
         if (!editor->restoreDocument(bytes, {}, 0, 0, true)) {
             editors_->removeTab(editors_->indexOf(editor));
             editor->deleteLater();
-            showStatus(tr("Generated SQL could not be opened."), ToastVariant::Danger,
-                       QStringLiteral("navigator"));
+            reportError(tr("Generated SQL could not be opened."));
             return;
         }
-        connections->setCurrentIndex(target);
-        editor->setConnectionTarget(connection, connections->itemText(target));
+        editor->setConnectionTarget(connection, *label);
         workspace_->documentChanged();
         editor->setProfileId(workspace_->profileIdForConnection(connection));
         editor->setProperty("documentTitle", tr("Generated SQL %1").arg(nextDocumentNumber_));
@@ -280,14 +275,21 @@ void MainWindow::connectNavigator(const Ui& ui) {
     openGeneratedSql_ = openGeneratedSql;
 
     auto catalogSize = std::make_shared<qsizetype>(0);
-    auto rebuildCompletion = [this, connections, catalogSize,
+    const auto completionConnection = [this]() -> std::optional<quint64> {
+        const auto* editor = qobject_cast<SqlEditor*>(editors_->currentWidget());
+        const auto target = editor ? editor->connectionTarget() : std::nullopt;
+        // A disconnected target keeps its id; it has no catalog to complete from.
+        return target && workspace_->liveConnectionLabel(*target) ? target : std::nullopt;
+    };
+    auto rebuildCompletion = [this, completionConnection, catalogSize,
                               model = navigatorController->model()] {
-        if (!connections->currentData().isValid()) {
+        const auto connection = completionConnection();
+        if (!connection) {
             completion_->setCatalog(CompletionService{});
             return;
         }
         const auto limits = CompletionService::limits();
-        auto snapshot = model->completionSnapshot(connections->currentData().toULongLong(), limits);
+        auto snapshot = model->completionSnapshot(*connection, limits);
         *catalogSize = static_cast<qsizetype>(snapshot.objects.size());
         QList<CompletionCandidate> items;
         items.reserve(*catalogSize);
@@ -296,14 +298,14 @@ void MainWindow::connectNavigator(const Ui& ui) {
                 {std::move(object.name), std::move(object.qualifiedName), std::move(object.kind)});
         completion_->setCatalog(CompletionService(std::move(items), snapshot.partial));
     };
-    connect(connections, &QComboBox::currentIndexChanged, this, rebuildCompletion);
     connect(workspace_, &QueryWorkspace::documentTargetChanged, this, rebuildCompletion);
     // Metadata pages arrive in bursts. Small catalogs stay current on every page; large
     // ones, whose rebuild cost grows with each page, rebuild at most once per interval.
     const auto rebuildLoadedCompletion = coalescedCall(this, 250, rebuildCompletion);
     connect(navigatorController->model(), &NavigatorModel::completionChanged, this,
-            [connections, catalogSize, rebuildCompletion, rebuildLoadedCompletion](quint64 id) {
-                if (id != connections->currentData().toULongLong())
+            [completionConnection, catalogSize, rebuildCompletion,
+             rebuildLoadedCompletion](quint64 id) {
+                if (completionConnection() != id)
                     return;
                 if (*catalogSize < 2000)
                     rebuildCompletion();
@@ -312,9 +314,9 @@ void MainWindow::connectNavigator(const Ui& ui) {
             });
     rebuildCompletion();
     connect(workspace_, &QueryWorkspace::connectionReady, navigatorController,
-            [navigatorController, connections](quint64 id) {
-                navigatorController->addConnection(id, connections->itemText(connections->findData(
-                                                           QVariant::fromValue<qulonglong>(id))));
+            [this, navigatorController](quint64 id) {
+                navigatorController->addConnection(
+                    id, workspace_->liveConnectionLabel(id).value_or(QString{}));
             });
     connect(workspace_, &QueryWorkspace::connectionReady, this, [this](quint64 id) {
         const auto profileId = workspace_->profileIdForConnection(id);

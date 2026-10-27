@@ -11,6 +11,7 @@ class ObjectDataWorkspace final : public QWidget {
     Q_OBJECT
   public:
     explicit ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* parent = nullptr);
+    QueryWorkspace* results() const { return result_; }
     void openObject(quint64 connection, const QString& object, const QString& label,
                     const QString& relationSubtype = {});
     void invalidate(bool connectionLost = false);

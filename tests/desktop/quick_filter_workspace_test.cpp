@@ -80,8 +80,7 @@ class QuickFilterWorkspaceTest : public QObject {
             run->trigger();
             QTRY_VERIFY(messages->toPlainText().contains("Completed"));
         }
-        const auto connection =
-            window_->findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         window_->objectContextSelected(connection, R"(["main","sample"])", "sample", "table");
         object_ = qobject_cast<choscordb::ObjectExplorer*>(tabs->currentWidget());
         QVERIFY(object_);
@@ -293,8 +292,7 @@ class QuickFilterWorkspaceTest : public QObject {
     }
     void replacingResultBeforeActivationKeepsNewResultUnfiltered() {
         auto* workspace = object_->findChild<choscordb::QueryWorkspace*>();
-        const auto connection =
-            window_->findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = object_->property("objectConnection").toULongLong();
         filter_->setText("id > 0");
         menuAt(grid_->visualRect(grid_->model()->index(0, 1)).center(),
                [workspace, connection](QMenu* menu) {
@@ -406,8 +404,7 @@ class QuickFilterWorkspaceTest : public QObject {
         QTRY_VERIFY(messages->toPlainText().contains("Completed"));
         tabs->setCurrentWidget(object_);
         auto* workspace = object_->findChild<choscordb::QueryWorkspace*>();
-        const auto connection =
-            window_->findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         workspace->openObjectData(
             connection, R"(["main","sample"])", "sample",
             window_->findChild<choscordb::QueryWorkspace*>()->queryPreferences());

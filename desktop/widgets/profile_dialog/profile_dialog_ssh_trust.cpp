@@ -78,15 +78,17 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                 if (revision_ != trustRevision_) {
                     if (trustDialog_)
                         trustDialog_->invalidate();
-                    showTrustStatus(tr("The approval request finished for the previous settings. "
-                                       "Inspect the current SSH server before retrying."));
+                    showTrustStatus(
+                        tr("The approval request finished for the previous settings. %1")
+                            .arg(EngineAdapter::recoveryHint(RecoveryHint::InspectSshServer)));
                     return;
                 }
                 if (outcome == "approved") {
                     statusLine_->setBusy(false);
                     statusLine_->setAvailable(true);
                     statusLine_->setMessage(
-                        tr("SSH host key approved. Retry the connection to use it."));
+                        tr("SSH host key approved. %1")
+                            .arg(EngineAdapter::recoveryHint(RecoveryHint::UseApprovedKey)));
                     statusLine_->show();
                 } else {
                     showTrustStatus(tr("SSH host key approval outcome is unknown."));

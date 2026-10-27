@@ -1,9 +1,12 @@
+#include "design_system/button/button.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/toast_region/toast_region.h"
 #include "dialog_sections_checks.h"
 #include "preview_test.h"
 #include "tools/preview/preview_window.h"
 
+#include <QAbstractButton>
 #include <QApplication>
 #include <QDialog>
 #include <QEnterEvent>
@@ -17,6 +20,83 @@
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QtTest>
+
+void PreviewTest::toastCardUsesTokenInsetsWidthAndSharedDismissButton() {
+    using namespace choscordb::design;
+    QWidget host;
+    host.resize(800, 480);
+    host.show();
+    choscordb::ToastRegion toast(&host);
+    toast.attachTo(&host);
+    toast.showToast("Connection test succeeded.", "Example Postgres answered.",
+                    choscordb::ToastVariant::Success, 0);
+    QTRY_VERIFY(toast.isVisible());
+    QCOMPARE(toast.width(), dimension(Dimension::ToastWidth));
+    auto* dismiss = toast.findChild<Button*>("toastDismiss");
+    QVERIFY(dismiss);
+    QCOMPARE(dismiss->variant(), ButtonVariant::Ghost);
+    QCOMPARE(dismiss->buttonSize(), ButtonSize::IconSmall);
+    QCOMPARE(dismiss->accessibleName(), QString("Dismiss notification"));
+    QCOMPARE(dismiss->toolTip(), QString("Dismiss notification"));
+    auto* icon = toast.findChild<QLabel*>("toastIcon");
+    QVERIFY(icon);
+    const int inset = spacing(Spacing::Three);
+    QCOMPARE(icon->geometry().left(), inset);
+    QCOMPARE(dismiss->geometry().top(), inset);
+    QCOMPARE(toast.width() - 1 - dismiss->geometry().right(), inset);
+    // The icon and the X sit on the title line.
+    QCOMPARE(icon->geometry().center().y(), dismiss->geometry().center().y());
+    QVERIFY(toast.contentsRect().top() >= inset);
+    QVERIFY(toast.height() - toast.contentsRect().bottom() - 1 >= inset);
+    QTest::mouseClick(dismiss, Qt::LeftButton);
+    QTRY_VERIFY(toast.isHidden());
+}
+
+void PreviewTest::replacingToastShowsLatestNoticeAndCountWithoutQueueing() {
+    using choscordb::ToastVariant;
+    QWidget host;
+    host.resize(480, 320);
+    host.show();
+    choscordb::ToastRegion toast(&host);
+    toast.attachTo(&host);
+    toast.showReplacingToast("Warning", "First background failure.", ToastVariant::Warning);
+    QTRY_VERIFY(toast.isVisible());
+    QVERIFY(toast.accessibleDescription().contains("First background failure."));
+    toast.showReplacingToast("Error", "Second background failure.", ToastVariant::Danger);
+    QVERIFY(toast.accessibleDescription().contains("Second background failure."));
+    QVERIFY(!toast.accessibleDescription().contains("First background failure."));
+    QVERIFY(toast.accessibleDescription().contains("2 notices"));
+    QCOMPARE(toast.property("variant").toString(), QString("danger"));
+    // A resolved message leaves the notice and its count; the notice hides with the last one.
+    toast.clearReplacingToast("First background failure.");
+    QVERIFY(toast.isVisible());
+    QVERIFY(toast.accessibleDescription().contains("Second background failure."));
+    QVERIFY(!toast.accessibleDescription().contains("notices"));
+    toast.showReplacingToast("Warning", "Third background failure.", ToastVariant::Warning);
+    toast.clearReplacingToast("Third background failure.");
+    QVERIFY(toast.accessibleDescription().contains("Second background failure."));
+    toast.clearReplacingToast("Second background failure.");
+    QTRY_VERIFY(toast.isHidden());
+    // A completion notice in front keeps one replacing notice in the queue.
+    toast.showToast("Saved", "The file was saved.", ToastVariant::Success, 0);
+    toast.showReplacingToast("Warning", "Queued one.", ToastVariant::Warning);
+    toast.showReplacingToast("Warning", "Queued two.", ToastVariant::Warning);
+    QVERIFY(toast.accessibleDescription().contains("The file was saved."));
+    QTest::mouseClick(toast.findChild<QAbstractButton*>("toastDismiss"), Qt::LeftButton);
+    QTRY_VERIFY(toast.accessibleDescription().contains("Queued two."));
+    QVERIFY(toast.accessibleDescription().contains("2 notices"));
+    // A later ordinary notice shows in front; the replacing notice waits, then returns.
+    toast.showToast("Exported", "The export finished.", ToastVariant::Success, 0);
+    QVERIFY(toast.accessibleDescription().contains("The export finished."));
+    QTest::mouseClick(toast.findChild<QAbstractButton*>("toastDismiss"), Qt::LeftButton);
+    QTRY_VERIFY(toast.accessibleDescription().contains("Queued two."));
+    QTest::mouseClick(toast.findChild<QAbstractButton*>("toastDismiss"), Qt::LeftButton);
+    QTRY_VERIFY(toast.isHidden());
+    // A dismissed replacing notice starts its count again.
+    toast.showReplacingToast("Warning", "Fresh notice.", ToastVariant::Warning);
+    QTRY_VERIFY(toast.isVisible());
+    QVERIFY(!toast.accessibleDescription().contains("notices"));
+}
 
 void PreviewTest::pinnedToastKeepsPriorityAndRestoresLatestNotice() {
     QWidget host;
@@ -39,7 +119,7 @@ void PreviewTest::pinnedToastKeepsPriorityAndRestoresLatestNotice() {
     toast.showToast("Synced", "Latest pending notice", choscordb::ToastVariant::Success, 0);
     toast.clearPinnedToast();
     QVERIFY(toast.text().contains("Earlier notice"));
-    auto* dismiss = toast.findChild<QToolButton*>("toastDismiss");
+    auto* dismiss = toast.findChild<QAbstractButton*>("toastDismiss");
     QVERIFY(dismiss);
     QTest::mouseClick(dismiss, Qt::LeftButton);
     QVERIFY(toast.text().contains("First pending notice"));
@@ -70,7 +150,7 @@ void PreviewTest::dismissingPinnedToastPreservesLaterOrdinaryNotice() {
     toast.showPinnedToast("Could not save workspace", "permission denied",
                           choscordb::ToastVariant::Danger);
     toast.showToast("Saved query", "Query export complete", choscordb::ToastVariant::Success, 0);
-    auto* dismiss = toast.findChild<QToolButton*>("toastDismiss");
+    auto* dismiss = toast.findChild<QAbstractButton*>("toastDismiss");
     QVERIFY(dismiss);
     QTest::mouseClick(dismiss, Qt::LeftButton);
     QTRY_VERIFY(toast.isVisible() && toast.text().contains("Query export complete"));
@@ -104,6 +184,16 @@ void PreviewTest::pinnedToastSpecimenIsPresentInBothThemes() {
         QVERIFY(toast->text().contains("Workspace recovery failed"));
         resolvePin->click();
         QVERIFY(toast->text().contains("Queued while recovery is unresolved"));
+        toast->clearNotice();
+        auto* replacing = host->findChild<QPushButton*>("previewToast_replacing");
+        QVERIFY(replacing);
+        replacing->click();
+        replacing->click();
+        QTRY_VERIFY(toast->isVisible());
+        QVERIFY(toast->text().contains("Pin rebind failed"));
+        QVERIFY(toast->text().contains("2 notices"));
+        toast->clearNotice();
+        QTRY_VERIFY(toast->isHidden());
     }
 }
 
@@ -120,7 +210,7 @@ void PreviewTest::ordinaryToastsWaitForReadingAndKeepEveryNotice() {
     toast.showToast("Error", "Second notice", choscordb::ToastVariant::Danger);
     toast.showToast("Saved", "Third notice", choscordb::ToastVariant::Success);
     QVERIFY(toast.text().contains("First notice"));
-    auto* dismiss = toast.findChild<QToolButton*>("toastDismiss");
+    auto* dismiss = toast.findChild<QAbstractButton*>("toastDismiss");
     QVERIFY(dismiss);
     QTest::mouseClick(dismiss, Qt::LeftButton);
     QVERIFY(toast.text().contains("Second notice"));
@@ -143,7 +233,7 @@ void PreviewTest::hiddenHostPreservesUnreadToasts() {
     QVERIFY(!toast.findChild<QTimer*>()->isActive());
     host.show();
     QTRY_VERIFY(toast.isVisible());
-    toast.findChild<QToolButton*>("toastDismiss")->click();
+    toast.findChild<QAbstractButton*>("toastDismiss")->click();
     QVERIFY(toast.text().contains("Second hidden notice"));
 }
 
@@ -164,7 +254,7 @@ void PreviewTest::toastReadingPausesOnHoverAndFocus() {
     QEvent leave(QEvent::Leave);
     QApplication::sendEvent(&toast, &leave);
     QTRY_VERIFY(timer->isActive());
-    auto* dismiss = toast.findChild<QToolButton*>("toastDismiss");
+    auto* dismiss = toast.findChild<QAbstractButton*>("toastDismiss");
     dismiss->setFocus(Qt::TabFocusReason);
     QTRY_VERIFY(dismiss->hasFocus());
     QTRY_VERIFY(!timer->isActive());
@@ -261,7 +351,7 @@ void PreviewTest::toastVariantsShowTitleBodyAndUseConfiguredTimeout() {
             QVERIFY(timer->interval() >= 10000);
         else
             QVERIFY(!timer->isActive());
-        QTest::mouseClick(toast->findChild<QToolButton*>("toastDismiss"), Qt::LeftButton);
+        QTest::mouseClick(toast->findChild<QAbstractButton*>("toastDismiss"), Qt::LeftButton);
         QTRY_VERIFY(toast->isHidden());
     }
     toast->showToast("Warning", "Persistent warning", choscordb::ToastVariant::Warning, 0);

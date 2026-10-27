@@ -247,8 +247,7 @@ class ObjectDataWorkspaceTest : public QObject {
                         ->toPlainText()
                         .contains("Completed"));
         QTRY_VERIFY(run->isEnabled());
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         choscordb::ObjectDataWorkspace data(sql);
         data.resize(900, 400);
         data.openObject(connection, R"(["main","people"])", "people");
@@ -376,7 +375,7 @@ class ObjectDataWorkspaceTest : public QObject {
         grid->setCurrentIndex(model->index(1, 0));
         QVERIFY(data.findChild<QPushButton*>("objectDataDeleteRows")->isEnabled());
         QVERIFY(!data.findChild<QPushButton*>("objectDataRestoreRows")->isEnabled());
-        triggerTableAction(grid, "Delete selected");
+        triggerTableAction(grid, "Delete rows");
         QCOMPARE(model->rowCount(), 1);
         QCOMPARE(model->index(0, 0).data().toString(), QString("existing"));
         QVERIFY(!model->hasPendingEdits());
@@ -410,8 +409,8 @@ class ObjectDataWorkspaceTest : public QObject {
                 labels,
                 QStringList({"Edit cell…", "Quick Filter", "View cell as JSON", "View row as JSON",
                              "View table as JSON", "Copy selected cells", "Copy selected rows",
-                             "Copy current page", "Duplicate row", "Add row", "Delete selected",
-                             "Restore selected", "Set NULL", "Cancel"}));
+                             "Copy current page", "Duplicate row", "Add row", "Delete rows",
+                             "Restore rows", "Set NULL", "Apply…", "Discard", "Cancel"}));
             for (auto* action : actions)
                 if (!action->isSeparator())
                     QVERIFY(!action->isEnabled());
@@ -509,8 +508,7 @@ class ObjectDataWorkspaceTest : public QObject {
         editor->setText("INSERT INTO binary_rows VALUES(1, 'before', x'00ff');");
         run->trigger();
         QTRY_VERIFY(messages->toPlainText().contains("Completed"));
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         choscordb::ObjectDataWorkspace data(sql);
         data.show();
         data.openObject(connection, R"(["main","binary_rows"])", "binary_rows");
@@ -539,8 +537,7 @@ class ObjectDataWorkspaceTest : public QObject {
             "CREATE TABLE default_rows(id INTEGER PRIMARY KEY, name TEXT DEFAULT 'db-default');");
         run->trigger();
         QTRY_VERIFY(messages->toPlainText().contains("Completed"));
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         choscordb::ObjectDataWorkspace data(sql);
         data.show();
         data.openObject(connection, R"(["main","default_rows"])", "default_rows");
@@ -604,8 +601,7 @@ class ObjectDataWorkspaceTest : public QObject {
         editor->setText("INSERT INTO duplicate_rows(name) VALUES('original');");
         run->trigger();
         QTRY_VERIFY(sqlMessages->toPlainText().contains("Completed"));
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         choscordb::ObjectDataWorkspace data(sql);
         data.resize(800, 500);
         data.show();
@@ -713,7 +709,7 @@ class ObjectDataWorkspaceTest : public QObject {
         QTRY_COMPARE(model->index(0, 0).data().toString(), QString("2"));
         QCOMPARE(model->index(0, 1).data().toString(), QString("copy"));
     }
-    void manualTransactionDisablesGridApply() {
+    void openTransactionDisablesGridApply() {
         choscordb::MainWindow window;
         window.show();
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
@@ -728,8 +724,7 @@ class ObjectDataWorkspaceTest : public QObject {
         editor->setText("CREATE TABLE tx_rows(id INTEGER PRIMARY KEY, name TEXT);");
         run->trigger();
         QTRY_VERIFY(messages->toPlainText().contains("Completed"));
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         choscordb::ObjectDataWorkspace data(sql);
         data.show();
         data.openObject(connection, R"(["main","tx_rows"])", "tx_rows");
@@ -738,8 +733,7 @@ class ObjectDataWorkspaceTest : public QObject {
         add->click();
         auto* apply = data.findChild<QPushButton*>("objectDataApply");
         QTRY_VERIFY(apply->isEnabled());
-        window.findChild<QComboBox*>("transactionMode")->setCurrentIndex(1);
-        editor->setText("SELECT 1;");
+        editor->setText("BEGIN;");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         QTRY_VERIFY(run->isEnabled());
         run->trigger();
@@ -824,8 +818,7 @@ class ObjectDataWorkspaceTest : public QObject {
                         ->toPlainText()
                         .contains("Completed"));
         QTRY_VERIFY(run->isEnabled());
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         choscordb::ObjectDataWorkspace data(sql);
         data.show();
         data.openObject(connection, R"(["main","slow_object"])", "slow_object");
@@ -874,8 +867,7 @@ class ObjectDataWorkspaceTest : public QObject {
         QTRY_COMPARE(sqlTable->model()->rowCount(), 1);
         QCOMPARE(sqlTable->model()->index(0, 0).data().toString(), QString("99"));
         QTRY_VERIFY(run->isEnabled());
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         choscordb::ObjectDataWorkspace data(sql);
         data.resize(900, 600);
         data.show();
@@ -953,8 +945,7 @@ class ObjectDataWorkspaceTest : public QObject {
         QCOMPARE(sqlTable->model()->index(0, 0).data().toString(), QString("10001"));
         QTRY_VERIFY(run->isEnabled());
         const auto draft = editor->text();
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         choscordb::ObjectDataWorkspace data(sql);
         data.resize(900, 600);
         data.show();

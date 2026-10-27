@@ -21,7 +21,6 @@
 #include "widgets/sql_editor/sql_editor.h"
 #include <QApplication>
 #include <QCloseEvent>
-#include <QComboBox>
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QPushButton>
@@ -162,14 +161,20 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     }
     finishClose(event);
 }
+void MainWindow::finishReconnect(bool connected) {
+    reconnectingProfile_.clear();
+    if (auto* explorer = std::exchange(reconnectingExplorer_, nullptr).data())
+        explorer->showNotice(
+            connected ? tr("Connected. Select the object tab to load fresh metadata.") : QString());
+}
 bool MainWindow::allowDocumentChange() {
     const auto reason = tr("Finish or cancel the active database work before changing workspace "
                            "tabs. Cancel remains in the active tab.");
     if (!workspace_ || workspace_->navigationAllowed()) {
-        clearStatus(QStringLiteral("workspace"), reason);
+        clearNotice(reason);
         return true;
     }
-    showStatus(reason, ToastVariant::Warning);
+    reportNotice(reason);
     return false;
 }
 bool MainWindow::showScreen(Screen screen) {
@@ -243,6 +248,7 @@ bool MainWindow::showScreen(Screen screen) {
 ObjectExplorer* MainWindow::makeObjectExplorer() {
     auto* explorer = new ObjectExplorer(workspace_->adapter(), this);
     auto* objectData = new ObjectDataWorkspace(workspace_, explorer);
+    preferences_->addGrid(objectData->results());
     explorer->installDataWidget(objectData);
     connect(explorer, &ObjectExplorer::dataRequested, objectData, &ObjectDataWorkspace::openObject);
     connect(objectData, &ObjectDataWorkspace::foreignKeyRequested, this,
@@ -269,22 +275,11 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
             EngineAdapter::parseObjectTabContext(explorer->property("objectProfileId").toString());
         const bool sessionContext = context.session;
         const auto profileId = context.profileId;
-        auto* selector = findChild<QComboBox*>("connectionSelector");
-        std::optional<quint64> target;
-        if (selector) {
-            for (int i = 0; i < selector->count(); ++i) {
-                if (!selector->itemData(i).isValid())
-                    continue;
-                const auto id = selector->itemData(i).toULongLong();
-                if (!sessionContext && !profileId.isEmpty() &&
-                    workspace_->profileIdForConnection(id) == profileId) {
-                    target = id;
-                    break;
-                }
-            }
+        std::optional<quint64> target = browsingConnection_;
+        if (!sessionContext) {
+            const auto live = workspace_->liveConnectionForProfile(profileId);
+            target = live ? std::optional<quint64>(live->id) : std::nullopt;
         }
-        if (!target && sessionContext)
-            target = browsingConnection_;
         if (target) {
             const auto linkedProfile = workspace_->profileIdForConnection(*target);
             const auto reboundContext = EngineAdapter::objectTabContext(
@@ -318,21 +313,19 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
         }
         if (!sessionContext && !profileId.isEmpty() && reconnectProfile_) {
             if (reconnectProfile_(profileId)) {
-                if (selectedSessionIds_.contains(profileId)) {
-                    showStatus(tr("Connected. Select the object tab to load fresh metadata."),
-                               ToastVariant::Success, QStringLiteral("connection"));
-                } else {
-                    reconnectingProfile_ = profileId;
-                    showStatusProgress(tr("Reconnecting the saved connection…"),
-                                       QStringLiteral("connection"));
-                }
-            } else
-                showStatus(tr("The saved connection is unavailable. Restore it in the sidebar, "
-                              "then retry."),
-                           ToastVariant::Danger, QStringLiteral("connection"));
+                // One Reconnect is tracked; an earlier tab stops its progress.
+                if (reconnectingExplorer_ && reconnectingExplorer_ != explorer)
+                    finishReconnect(false);
+                reconnectingProfile_ = profileId;
+                reconnectingExplorer_ = explorer;
+                if (selectedSessionIds_.contains(profileId))
+                    finishReconnect(true);
+                else
+                    explorer->showNotice(tr("Reconnecting the saved connection…"), true);
+            }
         } else {
-            showStatus(tr("Select a live connection in the sidebar, then choose Reconnect again."),
-                       ToastVariant::Warning, QStringLiteral("connection"));
+            reportNotice(
+                tr("Select a live connection in the sidebar, then choose Reconnect again."));
         }
     });
     return explorer;
@@ -410,14 +403,13 @@ void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
     recordQuickObjectVisit(connection, objectId);
 }
 void MainWindow::openConnectionQuery(quint64 connection) {
-    auto* selector = findChild<QComboBox*>("connectionSelector");
-    const auto index = selector->findData(QVariant::fromValue<qulonglong>(connection));
-    if (index < 0 || !allowDocumentChange())
+    const auto label = workspace_->liveConnectionLabel(connection);
+    if (!label || !allowDocumentChange())
         return;
     auto* editor = addEditor();
     if (!editor)
         return;
-    editor->setConnectionTarget(connection, selector->itemText(index));
+    editor->setConnectionTarget(connection, *label);
     editor->setProfileId(workspace_->profileIdForConnection(connection));
     workspace_->documentChanged();
 }
@@ -439,33 +431,17 @@ SqlEditor* MainWindow::addEditor() {
             editor->setProfileId(previous->property("profileId").toString());
         } else if (const auto* object = qobject_cast<ObjectExplorer*>(editors_->currentWidget())) {
             const auto id = object->property("objectConnection").toULongLong();
-            auto* selector = findChild<QComboBox*>("connectionSelector");
-            const auto index = selector->findData(QVariant::fromValue<qulonglong>(id));
-            if (index >= 0) {
-                editor->setConnectionTarget(id, selector->itemText(index));
+            if (const auto label = workspace_->liveConnectionLabel(id)) {
+                editor->setConnectionTarget(id, *label);
                 editor->setProfileId(workspace_->profileIdForConnection(id));
             }
-        } else if (auto* selector = findChild<QComboBox*>("connectionSelector")) {
-            auto target = selector->currentData().isValid()
-                              ? std::optional<quint64>(selector->currentData().toULongLong())
-                              : browsingConnection_;
-            if (!target) {
-                std::optional<quint64> soleConnection;
-                for (int i = 0; i < selector->count(); ++i) {
-                    if (!selector->itemData(i).isValid())
-                        continue;
-                    if (soleConnection) {
-                        soleConnection.reset();
-                        break;
-                    }
-                    soleConnection = selector->itemData(i).toULongLong();
-                }
-                target = soleConnection;
-            }
+        } else {
+            auto target = browsingConnection_;
+            if (!target && workspace_->liveConnections().size() == 1)
+                target = workspace_->liveConnections().constFirst().id;
             if (target) {
-                const auto index = selector->findData(QVariant::fromValue<qulonglong>(*target));
-                if (index >= 0) {
-                    editor->setConnectionTarget(*target, selector->itemText(index));
+                if (const auto label = workspace_->liveConnectionLabel(*target)) {
+                    editor->setConnectionTarget(*target, *label);
                     editor->setProfileId(workspace_->profileIdForConnection(*target));
                 }
             }

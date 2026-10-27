@@ -17,7 +17,6 @@
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
 
 #include <QAction>
-#include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QEventLoop>
@@ -50,11 +49,13 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 &QueryWorkspace::activateForeignKey);
     widgets_.grid->horizontalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
     widgets_.grid->verticalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
-    // Only Set NULL depends on the selection; the current index does not affect any action.
+    // Set NULL and the row commands act on the selection.
     connect(widgets_.grid->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this] {
         ++selectionGeneration_;
         updateSetNullAction();
+        updateGridActions();
     });
+    setupGridCommands();
     setupResultViewControls();
     if (!widgets_.objectReadOnly)
         widgets_.grid->setToolTip(
@@ -141,32 +142,6 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 configureEditability();
         });
     });
-    if (widgets_.addRow)
-        connect(widgets_.addRow, &QPushButton::clicked, model_, &ResultTableModel::addRow);
-    if (widgets_.deleteRows)
-        connect(widgets_.deleteRows, &QPushButton::clicked, this, [this] {
-            // Rust rejects deleting rows it cannot match when the edits are planned.
-            if (widgets_.grid->selectionModel())
-                model_->markRowsDeleted(
-                    model_->selectedRows(widgets_.grid->selectionModel()->selection()), true);
-        });
-    if (widgets_.restoreRows)
-        connect(widgets_.restoreRows, &QPushButton::clicked, this, [this] {
-            if (widgets_.grid->selectionModel())
-                model_->markRowsDeleted(
-                    model_->selectedRows(widgets_.grid->selectionModel()->selection()), false);
-        });
-    if (widgets_.setNull)
-        connect(widgets_.setNull, &QPushButton::clicked, this, [this] {
-            if (widgets_.grid->selectionModel())
-                model_->setNull(widgets_.grid->selectionModel()->selection());
-        });
-    if (widgets_.discardEdits)
-        connect(widgets_.discardEdits, &QPushButton::clicked, model_,
-                &ResultTableModel::discardEdits);
-    if (widgets_.applyEdits)
-        connect(widgets_.applyEdits, &QPushButton::clicked, this,
-                &QueryWorkspace::applyStagedEdits);
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleEvent);
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleRowJsonEvent);
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleCopyEvent);
@@ -225,7 +200,8 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         message(error);
         updateActions();
     });
-    connect(widgets_.run, &QAction::triggered, this, &QueryWorkspace::execute);
+    connect(widgets_.run, &QAction::triggered, this, [this] { execute(RunScope::Current); });
+    connect(widgets_.runAll, &QAction::triggered, this, [this] { execute(RunScope::All); });
     connect(widgets_.cancel, &QAction::triggered, this, [this] {
         if (editPlanRunning_)
             return;
@@ -240,57 +216,13 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             if (!adapter_->cancelQuery(*query_))
                 return;
             cancellationPending_ = true;
+            dropPageBuild();
             setExecutionState(QStringLiteral("cancelling"), tr("Cancelling…"));
             updateActions();
             widgets_.cancel->setEnabled(false);
         }
     });
-    connect(widgets_.commit, &QAction::triggered, this, [this] {
-        if (auto c = selectedConnection(); c && connectionAvailable(*c) && !workInFlight())
-            adapter_->commitTransaction(*c);
-    });
-    connect(widgets_.rollback, &QAction::triggered, this, [this] {
-        if (auto c = selectedConnection(); c && connectionAvailable(*c) && !workInFlight())
-            adapter_->rollbackTransaction(*c);
-    });
     connect(widgets_.newConnection, &QAction::triggered, this, [this] { showProfiles(); });
-    connect(widgets_.connections, &QComboBox::currentIndexChanged, this, [this] {
-        if (auto* editor = widgets_.currentEditor()) {
-            if (workInFlight()) {
-                documentChanged();
-                message(tr("Finish or cancel the active query before changing its connection."));
-                return;
-            }
-            const auto value = widgets_.connections->currentData();
-            editor->setConnectionTarget(
-                value.isValid() ? std::optional<quint64>(value.toULongLong()) : std::nullopt,
-                widgets_.connections->currentText());
-            editor->setProfileId(value.isValid() ? connectionProfiles_.value(value.toULongLong())
-                                                 : QString{});
-        }
-        const QSignalBlocker blocker(widgets_.mode);
-        const auto c = selectedConnection();
-        widgets_.mode->setCurrentIndex(c && manualModes_.value(*c, false) ? 1 : 0);
-        updateActions();
-    });
-    connect(widgets_.mode, &QComboBox::currentIndexChanged, this, [this] {
-        if (const auto c = selectedConnection()) {
-            if (!connectionAvailable(*c) || workInFlight()) {
-                const QSignalBlocker blocker(widgets_.mode);
-                widgets_.mode->setCurrentIndex(manualModes_.value(*c, false) ? 1 : 0);
-                return;
-            }
-            const auto& blocked =
-                EngineAdapter::transactionGuard(pendingTransactions_.contains(*c)).enableAutoCommit;
-            if (widgets_.mode->currentIndex() == 0 && !blocked.isEmpty()) {
-                const QSignalBlocker blocker(widgets_.mode);
-                widgets_.mode->setCurrentIndex(1);
-                message(blocked);
-            } else
-                manualModes_.insert(*c, widgets_.mode->currentIndex() == 1);
-        }
-        updateActions();
-    });
     connect(widgets_.nextPage, &QPushButton::clicked, this, [this] {
         if (query_ && (hasMore_ || hasMoreResults_) && !fetching_ && queryAvailable() &&
             !exporting_) {
@@ -338,7 +270,10 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                                  widgets_.grid->selectionModel()->model() == model_;
             const bool selected = current && widgets_.grid->selectionModel()->hasSelection();
             const QPersistentModelIndex clicked = widgets_.grid->indexAt(point);
-            appendCellEditAction(menu, clicked, current);
+            // The shared grid actions act on the cell under the pointer while the menu is open.
+            menuTarget_ = current ? clicked : QPersistentModelIndex();
+            updateGridActions();
+            menu.addAction(gridAction(GridCommand::EditCell));
             menu.addSeparator();
             appendQuickFilterActions(menu, clicked);
             appendJsonViewActions(menu, clicked, current);
@@ -354,48 +289,22 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                                               : selected);
                 connect(action, &QAction::triggered, this, [this, scope] { copyResult(scope); });
             }
-            if (widgets_.addRow || widgets_.deleteRows || widgets_.restoreRows ||
-                widgets_.setNull) {
+            if (widgets_.addRow) {
                 menu.addSeparator();
-                if (widgets_.addRow) {
-                    auto* duplicate = menu.addAction(tr("Duplicate row"));
-                    duplicate->setObjectName("duplicateRow");
-                    duplicate->setEnabled(current && clicked.isValid() && model_->canInsert() &&
-                                          !workInFlight());
-                    duplicate->setToolTip(model_->canInsert()
-                                              ? tr("Duplicate the row under the pointer")
-                                              : (editReason_.isEmpty()
-                                                     ? tr("This result is read only.")
-                                                     : editReason_));
-                    connect(duplicate, &QAction::triggered, this, [this, clicked] {
-                        if (!clicked.isValid() || clicked.model() != model_)
-                            return;
-                        QString error;
-                        bool duplicated = false;
-                        if (editDuplicable_.size() == static_cast<size_t>(model_->columnCount())) {
-                            duplicated =
-                                model_->duplicateRow(clicked.row(), editDuplicable_, &error);
-                        } else {
-                            duplicated = model_->duplicateRow(clicked.row(), &error);
-                        }
-                        if (!duplicated && !error.isEmpty())
-                            message(error);
-                    });
-                }
-                for (auto* button : {widgets_.addRow, widgets_.deleteRows, widgets_.restoreRows,
-                                     widgets_.setNull}) {
-                    if (!button)
-                        continue;
-                    auto* action = menu.addAction(button->accessibleName());
-                    action->setObjectName(button->objectName());
-                    action->setEnabled(button->isEnabled());
-                    action->setToolTip(button->toolTip());
-                    connect(action, &QAction::triggered, button, &QPushButton::click);
-                }
+                for (auto command :
+                     {GridCommand::DuplicateRow, GridCommand::AddRow, GridCommand::DeleteRows,
+                      GridCommand::RestoreRows, GridCommand::SetNull, GridCommand::ApplyEdits,
+                      GridCommand::DiscardEdits})
+                    menu.addAction(gridAction(command));
             }
             menu.addSeparator();
             menu.addAction(widgets_.cancel);
+            const QPointer<QueryWorkspace> self(this);
             design::execContextMenu(menu, widgets_.grid->viewport()->mapToGlobal(point));
+            if (!self)
+                return;
+            menuTarget_.reset();
+            updateGridActions();
         });
     updateActions();
 }
@@ -439,8 +348,36 @@ bool QueryWorkspace::connectionAvailable(quint64 connection) const {
     return connectionCanDisconnect(connection);
 }
 bool QueryWorkspace::connectionCanDisconnect(quint64 connection) const {
-    return !disconnecting_.contains(connection) &&
-           widgets_.connections->findData(QVariant::fromValue<qulonglong>(connection)) >= 0;
+    return !disconnecting_.contains(connection) && liveConnectionLabel(connection).has_value();
+}
+std::optional<QString> QueryWorkspace::liveConnectionLabel(quint64 connection) const {
+    for (const auto& live : liveConnections_)
+        if (live.id == connection)
+            return live.label;
+    return std::nullopt;
+}
+std::optional<QueryWorkspace::LiveConnection>
+QueryWorkspace::liveConnectionForProfile(const QString& profileId) const {
+    if (profileId.isEmpty())
+        return std::nullopt;
+    for (const auto& live : liveConnections_)
+        if (connectionProfiles_.value(live.id) == profileId)
+            return live;
+    return std::nullopt;
+}
+bool QueryWorkspace::changeDocumentConnection(SqlEditor* editor, quint64 connection) {
+    const auto label = liveConnectionLabel(connection);
+    if (!editor || !label)
+        return false;
+    if (workInFlight()) {
+        message(tr("Finish or cancel the active query before changing its connection."));
+        return false;
+    }
+    editor->setConnectionTarget(connection, *label);
+    editor->setProfileId(connectionProfiles_.value(connection));
+    if (editor == widgets_.currentEditor())
+        documentChanged();
+    return true;
 }
 bool QueryWorkspace::queryAvailable() const {
     return queryConnection_ && connectionAvailable(*queryConnection_);
@@ -482,8 +419,7 @@ void QueryWorkspace::disconnectConnection(quint64 connection) {
     if (editPlanRunning_ || !connectionCanDisconnect(connection) ||
         confirmingDisconnects_.contains(connection))
         return;
-    const auto index = widgets_.connections->findData(QVariant::fromValue<qulonglong>(connection));
-    const auto label = widgets_.connections->itemText(index);
+    const auto label = liveConnectionLabel(connection).value_or(QString{});
     const bool transaction = pendingTransactions_.contains(connection);
     const bool active = queryConnection_ == connection &&
                         (busy_ || fetching_ || viewBusy_ || exporting_ || !executionFinished_);
@@ -602,10 +538,8 @@ bool QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
     invalidatePending_ = false;
     cancellationPending_ = false;
     queryConnection_ = connection;
-    if (widgets_.connections->findData(QVariant::fromValue<qulonglong>(connection)) < 0) {
-        const QSignalBlocker blocker(widgets_.connections);
-        widgets_.connections->addItem(label, QVariant::fromValue<qulonglong>(connection));
-    }
+    if (!liveConnectionLabel(connection))
+        liveConnections_.append({connection, label});
     resultOrigin_ = label;
     objectId_ = object;
     objectTime_ = time;
@@ -652,6 +586,8 @@ void QueryWorkspace::invalidateResult(bool connectionLost) {
             adapter_->cancelResultView(*query_);
         else if (adapter_ && query_ && (busy_ || fetching_))
             cancellationPending_ = adapter_->cancelQuery(*query_);
+        if (cancellationPending_)
+            dropPageBuild();
         if (!connectionLost || widgets_.summary->property("state") != "failed")
             setExecutionState(QStringLiteral("cancelling"), tr("Cancelling…"));
         updateActions();
@@ -671,9 +607,11 @@ void QueryWorkspace::invalidateResult(bool connectionLost) {
     resultOrigin_.clear();
     clearViewState();
     if (!connectionLost || widgets_.summary->property("state") != "failed")
-        setExecutionState(QStringLiteral("disconnected"),
-                          connectionLost ? tr("Connection unavailable. Reconnect manually.")
-                                         : tr("Open Data to read an object."));
+        setExecutionState(
+            QStringLiteral("disconnected"),
+            connectionLost ? tr("Connection unavailable. %1")
+                                 .arg(EngineAdapter::recoveryHint(RecoveryHint::ReconnectManually))
+                           : tr("Open Data to read an object."));
     updateActions();
 }
 void QueryWorkspace::connectSqlite(const QString& path) {
@@ -711,34 +649,29 @@ std::optional<quint64> QueryWorkspace::connectSavedProfile(const SavedProfile& p
 }
 void QueryWorkspace::documentChanged() {
     auto* editor = widgets_.currentEditor();
-    const auto target = editor ? editor->connectionTarget() : std::nullopt;
-    const QSignalBlocker blocker(widgets_.connections);
-    const int index =
-        target ? widgets_.connections->findData(QVariant::fromValue<qulonglong>(*target)) : -1;
-    QString label = tr("Disconnected — choose a SQL target");
-    if (editor && !editor->targetLabel().isEmpty())
-        label = tr("Disconnected — %1").arg(editor->targetLabel());
-    else if (editor && !editor->property("profileId").toString().isEmpty())
-        label = tr("Disconnected profile — %1").arg(editor->property("profileId").toString());
-    widgets_.connections->setPlaceholderText(label);
-    widgets_.connections->setCurrentIndex(index);
-    widgets_.connections->setToolTip(
-        index >= 0 ? tr("SQL document target: %1").arg(widgets_.connections->currentText())
-                   : label);
-    const QSignalBlocker modeBlocker(widgets_.mode);
-    widgets_.mode->setCurrentIndex(target && manualModes_.value(*target, false) ? 1 : 0);
     if (!widgets_.objectReadOnly && !workInFlight()) {
         const auto saved = editor ? editor->property("resultStatus").toMap() : QVariantMap{};
+        const auto source = saved.value("source").toString();
         widgets_.messages->setPlainText(saved.value("messages").toString());
         presentExecutionState(
             saved.value("state", "disconnected").toString(),
             saved.value("detail", tr("Connect and run a query to see results.")).toString(),
             {saved.value("duration").toString(), saved.value("page").toString(),
              saved.value("rows").toString(), saved.value("memory").toString()},
-            saved.value("source").toString());
+            source.isEmpty() ? documentTarget(editor) : source);
     }
     updateActions();
     emit documentTargetChanged();
+}
+QString QueryWorkspace::documentTarget(const SqlEditor* editor) const {
+    const auto target = editor ? editor->connectionTarget() : std::nullopt;
+    if (const auto live = target ? liveConnectionLabel(*target) : std::nullopt)
+        return *live;
+    if (editor && !editor->targetLabel().isEmpty())
+        return tr("Disconnected — %1").arg(editor->targetLabel());
+    if (editor && !editor->property("profileId").toString().isEmpty())
+        return tr("Disconnected profile — %1").arg(editor->property("profileId").toString());
+    return tr("Disconnected — choose a SQL target");
 }
 std::optional<quint64> QueryWorkspace::selectedConnection() const {
     if (widgets_.objectReadOnly)
@@ -766,9 +699,8 @@ void QueryWorkspace::updateActions() {
         (resultEditor_ && resultEditor_ == editor &&
          editor->property("resultStatus").toMap().value("source").toString() == resultOrigin_);
     widgets_.grid->setVisible(displayedResult);
-    widgets_.connections->setEnabled(widgets_.connections->count() > 0 && !inFlight && !stopping_);
-    widgets_.mode->setEnabled(connected && !inFlight);
     widgets_.run->setEnabled(connected && !inFlight && querySettings_->isReady());
+    widgets_.runAll->setEnabled(widgets_.run->isEnabled());
     widgets_.cancel->setEnabled(!cancellationPending_ && query_.has_value() &&
                                 (busy_ || viewBusy_ || executionModeToken_ != 0) &&
                                 queryAvailable() &&
@@ -778,9 +710,6 @@ void QueryWorkspace::updateActions() {
     if (widgets_.exportResult)
         widgets_.exportResult->setEnabled(displayedResult && query_ && currentPage_ && !inFlight &&
                                           queryAvailable());
-    const bool manual = widgets_.mode->currentIndex() == 1;
-    widgets_.commit->setEnabled(connected && manual && !inFlight);
-    widgets_.rollback->setEnabled(connected && manual && !inFlight);
     widgets_.nextPage->setEnabled(displayedResult && query_.has_value() &&
                                   (hasMore_ || hasMoreResults_) && !inFlight && queryAvailable());
     widgets_.nextPage->setToolTip(!hasMore_ && hasMoreResults_ ? tr("Next result")
@@ -809,13 +738,10 @@ void QueryWorkspace::updateActions() {
                                          model_->hasDeletedRows());
     setNullAvailable_ = !inFlight && !editabilityPlanning_ && displayedResult;
     updateSetNullAction();
-    if (widgets_.applyEdits) {
-        const auto& blocked = editTransactionGuard().applyEdits;
+    if (widgets_.applyEdits)
         widgets_.applyEdits->setEnabled(model_->hasPendingEdits() && !inFlight &&
-                                        !editabilityPlanning_ && blocked.isEmpty());
-        widgets_.applyEdits->setToolTip(blocked.isEmpty() ? widgets_.applyEdits->accessibleName()
-                                                          : blocked);
-    }
+                                        !editabilityPlanning_ &&
+                                        editTransactionGuard().applyEdits.isEmpty());
     if (widgets_.discardEdits)
         widgets_.discardEdits->setEnabled(model_->hasPendingEdits() && !inFlight &&
                                           !editabilityPlanning_);
@@ -826,6 +752,8 @@ void QueryWorkspace::updateActions() {
             if (button)
                 button->setEnabled(false);
     }
+    updateGridActions();
+    updateApplyToolTip();
 }
 void QueryWorkspace::updateSetNullAction() {
     if (!widgets_.setNull)
@@ -834,7 +762,7 @@ void QueryWorkspace::updateSetNullAction() {
     widgets_.setNull->setEnabled(setNullAvailable_ && selection &&
                                  model_->hasEditableCell(selection->selection()));
 }
-void QueryWorkspace::execute() {
+void QueryWorkspace::execute(RunScope scope) {
     if (widgets_.objectReadOnly)
         return;
     auto connection = selectedConnection();
@@ -844,11 +772,13 @@ void QueryWorkspace::execute() {
         return;
     if (!resolvePendingEdits())
         return;
+    // The mode from the connect or the last completed run stays valid until a run fails.
     if (EngineAdapter::driverWorkflow(driverForConnection(*connection)).sqlModeBeforeExecution &&
-        !executionModeReady_) {
+        !executionModeReady_ && !connectionSqlModes_.contains(*connection)) {
         if (executionModeToken_ != 0)
             return;
         executionModeToken_ = nextEditRequestToken();
+        executionModeScope_ = scope;
         executionModeEditor_ = editor;
         executionModeSql_ = editor->text();
         executionModeCursor_ =
@@ -869,10 +799,11 @@ void QueryWorkspace::execute() {
     const auto range = EngineAdapter::executionRange(
         sql, static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS)),
         static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONSTART)),
-        static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONEND)),
+        static_cast<quint64>(editor->SendScintilla(QsciScintilla::SCI_GETSELECTIONEND)), scope,
         driverForConnection(*connection), connectionSqlModes_.value(*connection));
     if (!range.valid) {
-        message(tr("No executable statement at the cursor."));
+        message(scope == RunScope::All ? tr("No executable statement in the document.")
+                                       : tr("No executable statement at the cursor."));
         return;
     }
     if (range.confirmation) {
@@ -897,9 +828,8 @@ void QueryWorkspace::execute() {
     executedSql_ = QString::fromUtf8(bytes.mid(static_cast<qsizetype>(range.start),
                                                static_cast<qsizetype>(range.end - range.start)));
     commandError_.clear();
-    query_ =
-        adapter_->execute(*connection, executedSql_, widgets_.mode->currentIndex() != 1,
-                          connectionProfiles_.value(*connection), querySettings_->preferences());
+    query_ = adapter_->execute(*connection, executedSql_, connectionProfiles_.value(*connection),
+                               querySettings_->preferences());
     if (query_)
         editor->setProfileId(connectionProfiles_.value(*connection));
     queryConnection_ = connection;

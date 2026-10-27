@@ -34,6 +34,7 @@
 #include <QTabBar>
 #include <QTableView>
 #include <QTextBlock>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <algorithm>
 namespace choscordb {
@@ -477,8 +478,10 @@ void ObjectExplorer::restoreObject(std::optional<quint64> connection, const QStr
     updateActions();
     updateFooter();
     setStatus(connection_ ? "restored" : "disconnected",
-              connection_ ? tr("%1 · Select this tab to load fresh metadata.").arg(label_)
-                          : tr("%1 · Connection unavailable. Reconnect manually.").arg(label_));
+              connection_
+                  ? tr("%1 · Select this tab to load fresh metadata.").arg(label_)
+                  : tr("%1 · Connection unavailable. %2")
+                        .arg(label_, EngineAdapter::recoveryHint(RecoveryHint::ReconnectManually)));
     refresh_->setEnabled(false);
     emit objectChanged();
 }
@@ -510,7 +513,8 @@ void ObjectExplorer::setDisconnected() {
     updateFooter();
     if (status_->property("state") != "failed")
         setStatus("disconnected",
-                  tr("%1 · Connection unavailable. Reconnect manually.").arg(label_));
+                  tr("%1 · Connection unavailable. %2")
+                      .arg(label_, EngineAdapter::recoveryHint(RecoveryHint::ReconnectManually)));
     emit objectChanged();
 }
 void ObjectExplorer::requestPane() {
@@ -592,6 +596,10 @@ void ObjectExplorer::requestPane() {
     adapter_->loadObjectInspection(*connection_, object_,
                                    static_cast<ObjectInspectionPane>(tabs_->currentIndex()),
                                    requestToken_);
+}
+void ObjectExplorer::showNotice(const QString& message, bool busy) {
+    footer_->setBusy(busy || operationBusy_);
+    footer_->showNotice(message, busy ? 0 : EngineAdapter::panelNoticeMs());
 }
 void ObjectExplorer::setStatus(const QString& state, const QString& text) {
     auto* line = footer_;

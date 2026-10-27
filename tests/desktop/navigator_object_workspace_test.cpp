@@ -18,6 +18,7 @@
 #include "widgets/object_erd_widget.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include <QAbstractButton>
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
@@ -355,7 +356,9 @@ void NavigatorSqlWorkspaceTest::visibleConnectionsPreserveMetadataAndOrder() {
     navigator.setPendingConnection(33, "Connecting");
     navigator.setVisibleConnections({22, 33, 11});
     QCOMPARE(tree.model()->rowCount(), 3);
-    QCOMPARE(tree.model()->index(1, 0).data().toString(), QString("Connecting — Loading…"));
+    QCOMPARE(tree.model()->index(1, 0).data().toString(), QString("Connecting"));
+    QCOMPARE(tree.model()->index(1, 0).data(choscordb::NavigatorModel::StatusRole).toInt(),
+             int(choscordb::RowStatusKind::Loading));
     navigator.removePendingConnection(33);
     QCOMPARE(tree.model()->rowCount(), 2);
     navigator.setVisibleConnections({});
@@ -407,11 +410,13 @@ void NavigatorSqlWorkspaceTest::searchLoadsCollapsedGroupsOnlyForSelectedConnect
     QCOMPARE(tree.model()->index(0, 0).data().toString(), QString("First"));
     navigator.setVisibleConnections({22, 11});
     QCOMPARE(tree.model()->rowCount(), 2);
-    QSignalSpy status(&navigator, &choscordb::NavigatorController::searchStatusChanged);
+    QSignalSpy status(&navigator, &choscordb::NavigatorController::searchNoticeChanged);
     navigator.setPendingConnection(33, "Third");
     navigator.setVisibleConnections({22, 33, 11});
     QCOMPARE(tree.model()->rowCount(), 3);
-    QCOMPARE(tree.model()->index(1, 0).data().toString(), QString("Third — Loading…"));
+    QCOMPARE(tree.model()->index(1, 0).data().toString(), QString("Third"));
+    QCOMPARE(tree.model()->index(1, 0).data(choscordb::NavigatorModel::StatusRole).toInt(),
+             int(choscordb::RowStatusKind::Loading));
     QVERIFY(status.last().first().toString().contains("incomplete", Qt::CaseInsensitive));
     navigator.removePendingConnection(33);
     navigator.setVisibleConnections({22, 11});
@@ -429,10 +434,11 @@ void NavigatorSqlWorkspaceTest::searchFailureKeepsRefineMessage() {
     navigator.addConnection(11, "First");
     navigator.addConnection(22, "Second");
     navigator.setVisibleConnections({11, 22});
-    QSignalSpy status(&navigator, &choscordb::NavigatorController::searchStatusChanged);
+    QSignalSpy status(&navigator, &choscordb::NavigatorController::searchNoticeChanged);
+    QSignalSpy busy(&navigator, &choscordb::NavigatorController::searchBusyChanged);
     int searchedOtherRoot = 0;
     connect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &tree,
-            [&adapter, &status, &navigator,
+            [&adapter, &busy, &navigator,
              &searchedOtherRoot](quint64 connection, const QString& parent, quint64 token) {
                 if (connection == 11) {
                     ++searchedOtherRoot;
@@ -442,7 +448,7 @@ void NavigatorSqlWorkspaceTest::searchFailureKeepsRefineMessage() {
                     return;
                 }
                 emit adapter.metadataSubmissionFailed(connection, parent, token + 1, "Stale error");
-                QCOMPARE(status.last().first().toString(), QString("Searching objects…"));
+                QCOMPARE(busy.last().first().toBool(), true);
                 emit adapter.metadataSubmissionFailed(connection, parent, token,
                                                       "Metadata limit exceeded");
             });
@@ -643,8 +649,10 @@ void NavigatorSqlWorkspaceTest::documentsKeepTargetsAndImmutableResultOrigin() {
     window.show();
     window.findChild<QAction*>("newQuery")->trigger();
     auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
-    auto* selector = window.findChild<QComboBox*>("connectionSelector");
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+    const auto currentTarget = [tabs] {
+        return qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget())->connectionTarget();
+    };
     auto* run = window.findChild<QAction*>("runStatement");
     auto* grid = window.findChild<QTableView*>("queryResults");
     auto* summary = window.findChild<QLabel*>("executionSummary");
@@ -661,7 +669,7 @@ void NavigatorSqlWorkspaceTest::documentsKeepTargetsAndImmutableResultOrigin() {
     QSignalSpy connected(workspace, &choscordb::QueryWorkspace::connectionReady);
     workspace->connectSqlite(directory.filePath("first.sqlite"));
     QTRY_COMPARE(connected.count(), 1);
-    const auto firstConnection = selector->currentData();
+    const auto firstConnection = currentTarget();
     auto* first = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
     first->setText("SELECT file FROM pragma_database_list WHERE name = 'main';");
     QTRY_VERIFY(run->isEnabled());
@@ -678,7 +686,7 @@ void NavigatorSqlWorkspaceTest::documentsKeepTargetsAndImmutableResultOrigin() {
     QVERIFY(origin.contains("first.sqlite"));
     workspace->connectSqlite(directory.filePath("second.sqlite"));
     QTRY_COMPARE(connected.count(), 2);
-    QCOMPARE(selector->currentData(), firstConnection);
+    QCOMPARE(currentTarget(), firstConnection);
     first->setText(QString("-- retained line\n").repeated(100));
     first->SendScintilla(QsciScintilla::SCI_APPENDTEXT, static_cast<std::uintptr_t>(8),
                          "-- edit\n");
@@ -691,11 +699,11 @@ void NavigatorSqlWorkspaceTest::documentsKeepTargetsAndImmutableResultOrigin() {
     window.findChild<QAction*>("newQuery")->trigger();
     auto* second = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
     QVERIFY(second != first);
-    selector->setCurrentIndex(selector->count() - 1);
-    const auto secondConnection = selector->currentData();
+    QVERIFY(workspace->changeDocumentConnection(second, connected.last().at(0).toULongLong()));
+    const auto secondConnection = currentTarget();
     second->setText("SELECT file FROM pragma_database_list WHERE name = 'main';");
     tabs->setCurrentWidget(first);
-    QCOMPARE(selector->currentData(), firstConnection);
+    QCOMPARE(currentTarget(), firstConnection);
     QCOMPARE(first->text(), firstText);
     QCOMPARE(first->selectedText(), selection);
     QCOMPARE(first->firstVisibleLine(), scroll);
@@ -704,9 +712,9 @@ void NavigatorSqlWorkspaceTest::documentsKeepTargetsAndImmutableResultOrigin() {
     QCOMPARE(first->text(), QString("-- retained line\n").repeated(100));
     QCOMPARE(summary->text(), origin);
     tabs->setCurrentWidget(second);
-    QCOMPARE(selector->currentData(), secondConnection);
+    QCOMPARE(currentTarget(), secondConnection);
     QVERIFY(!grid->isVisible());
-    QVERIFY(summary->text().isEmpty());
+    QVERIFY(summary->toolTip().contains("second.sqlite"));
     run->trigger();
     QTRY_COMPARE(grid->model()->rowCount(), 1);
     QTRY_COMPARE(
@@ -746,8 +754,8 @@ void NavigatorSqlWorkspaceTest::activeExecutionKeepsDocumentAndCancelReachable()
     QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier,
                       tabs->tabBar()->tabRect(1).center());
     QCOMPARE(tabs->currentWidget(), first);
-    QVERIFY(window.findChild<choscordb::design::StatusLine*>("workspaceStatusLine")
-                ->accessibleDescription()
+    QVERIFY(window.findChild<choscordb::ToastRegion*>("toastRegion")
+                ->text()
                 .contains("cancel", Qt::CaseInsensitive));
     first->setFocus();
     QTest::keyClick(first, Qt::Key_Tab, Qt::ControlModifier);
@@ -824,15 +832,14 @@ void NavigatorSqlWorkspaceTest::disconnectMenuKeepsOtherSessionsAndDrafts() {
     });
     action->trigger();
     QTRY_COMPARE(navigator->model()->rowCount(), 1);
-    auto* selector = window.findChild<QComboBox*>("connectionSelector");
-    QVERIFY(!selector->currentData().isValid());
-    QVERIFY(selector->placeholderText().contains("Disconnected"));
+    QVERIFY(!workspace->liveConnectionLabel(editor->connectionTarget().value_or(0)));
+    QVERIFY(window.findChild<QLabel*>("executionSummary")->toolTip().contains("Disconnected"));
     auto* run = window.findChild<QAction*>("runStatement");
     QVERIFY(!run->isEnabled());
     QCOMPARE(editor->text(), QString("-- keep this draft"));
-    selector->setCurrentIndex(selector->findData(QVariant::fromValue<qulonglong>(second)));
+    QVERIFY(workspace->changeDocumentConnection(editor, second));
     QTRY_VERIFY(run->isEnabled());
-    QCOMPARE(selector->currentData().toULongLong(), second);
+    QCOMPARE(editor->connectionTarget(), std::optional<quint64>(second));
 }
 
 void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWithoutExecuting() {
@@ -858,7 +865,7 @@ void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWit
     QTRY_VERIFY(save->isEnabled());
     auto* savedNotice = window.findChild<choscordb::ToastRegion*>("toastRegion");
     QVERIFY(savedNotice && savedNotice->text().contains("Profile saved."));
-    savedNotice->findChild<QToolButton*>("toastDismiss")->click();
+    savedNotice->findChild<QAbstractButton*>("toastDismiss")->click();
     QTRY_VERIFY(savedNotice->isHidden());
     profiles->selectProfile(profile.id);
     profiles->findChild<QPushButton*>("profileConnect")->click();
@@ -927,7 +934,7 @@ void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWit
     auto* connectionNotice = window.findChild<choscordb::ToastRegion*>("toastRegion");
     QVERIFY(connectionNotice);
     QVERIFY(connectionNotice->text().contains("Connected."));
-    connectionNotice->findChild<QToolButton*>("toastDismiss")->click();
+    connectionNotice->findChild<QAbstractButton*>("toastDismiss")->click();
     QTRY_VERIFY(connectionNotice->isHidden());
     auto* select = menu.findChild<QAction*>("generate_select");
     QVERIFY(select);
@@ -941,7 +948,7 @@ void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWit
     QCOMPARE(generated->text(), QString("SELECT * FROM \"main\".\"a.b\";"));
     QVERIFY(generated->isModified());
     QCOMPARE(generated->property("profileId").toString(), profile.id);
-    QCOMPARE(window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong(), id);
+    QCOMPARE(generated->connectionTarget(), std::optional<quint64>(id));
     QCOMPARE(original->text(), QString("-- preserved draft"));
     menu.findChild<QAction*>("generate_insert")->trigger();
     QCOMPARE(tabs->count(), tabCount + 2);

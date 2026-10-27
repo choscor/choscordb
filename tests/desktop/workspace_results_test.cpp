@@ -44,9 +44,7 @@
 
 void WorkspaceTest::connectsExecutesPagesAndCopies() {
     WorkspaceFixture f;
-    QTRY_COMPARE(f.connections.count(), 1);
-    QVERIFY(f.connections.isEnabled());
-    QVERIFY(f.mode.isEnabled());
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 1);
     QTRY_VERIFY(f.run.isEnabled());
     f.execute("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<1001) "
               "SELECT x FROM n");
@@ -135,25 +133,6 @@ void WorkspaceTest::byteLimitedPagesUseStoredRowOffsets() {
     QVERIFY(!f.previous.isEnabled());
 }
 
-void WorkspaceTest::transactionKeepsAlreadyStoredNextPageAccessible() {
-    WorkspaceFixture f;
-    QTRY_VERIFY(f.run.isEnabled());
-    f.mode.setCurrentIndex(1);
-    f.execute("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<1001) "
-              "SELECT x FROM n");
-    QTRY_COMPARE(f.grid.model()->rowCount(), 1000);
-    f.next.click();
-    QTRY_COMPARE(f.grid.model()->rowCount(), 1);
-    f.previous.click();
-    QTRY_COMPARE(f.grid.model()->rowCount(), 1000);
-    f.commit.trigger();
-    QTRY_VERIFY(f.messages.toPlainText().contains("committed"));
-    QTRY_VERIFY(f.next.isEnabled());
-    f.next.click();
-    QTRY_COMPARE(f.grid.model()->rowCount(), 1);
-    QCOMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("1001"));
-}
-
 void WorkspaceTest::disconnectClearsPageNavigation() {
     WorkspaceFixture f;
     QTRY_VERIFY(f.run.isEnabled());
@@ -163,8 +142,8 @@ void WorkspaceTest::disconnectClearsPageNavigation() {
     f.next.click();
     QTRY_COMPARE(f.grid.model()->rowCount(), 1);
     QVERIFY(f.previous.isEnabled());
-    f.workspace.adapter()->disconnectConnection(f.connections.currentData().toULongLong());
-    QTRY_COMPARE(f.connections.count(), 0);
+    f.workspace.adapter()->disconnectConnection(f.editor.connectionTarget().value_or(0));
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 0);
     QVERIFY(!f.previous.isEnabled());
     QVERIFY(!f.next.isEnabled());
     QVERIFY(!f.cancel.isEnabled());
@@ -276,14 +255,11 @@ void WorkspaceTest::deferredCellOpensBoundedDetailAndClosesOnNewQuery() {
     QTRY_COMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("7"));
 }
 
-void WorkspaceTest::deferredTextRemainsInspectableAfterCommitAndDisconnectClosesDetail() {
+void WorkspaceTest::deferredTextRemainsInspectableAndDisconnectClosesDetail() {
     WorkspaceFixture f;
     QTRY_VERIFY(f.run.isEnabled());
-    f.mode.setCurrentIndex(1);
     f.execute("SELECT replace(hex(zeroblob(40000)), '00', 'first' || char(10) || 'second é')");
     QTRY_COMPARE(f.grid.model()->rowCount(), 1);
-    f.commit.trigger();
-    QTRY_VERIFY(f.messages.toPlainText().contains("committed"));
     f.grid.activated(f.grid.model()->index(0, 0));
     auto* dialog = f.parent.findChild<QDialog*>("valueDetail");
     QVERIFY(dialog);
@@ -302,8 +278,8 @@ void WorkspaceTest::deferredTextRemainsInspectableAfterCommitAndDisconnectCloses
     previous->click();
     QTRY_VERIFY(preview->model()->rowCount() > 0);
     QTRY_COMPARE(preview->model()->data(preview->model()->index(0, 0)).toULongLong(), quint64(0));
-    f.workspace.adapter()->disconnectConnection(f.connections.currentData().toULongLong());
-    QTRY_COMPARE(f.connections.count(), 0);
+    f.workspace.adapter()->disconnectConnection(f.editor.connectionTarget().value_or(0));
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 0);
     QVERIFY(!dialog->isVisible());
     QCOMPARE(preview->model()->rowCount(), 0);
 }
@@ -389,10 +365,10 @@ void WorkspaceTest::exportsOriginalResultAfterBrowsing() {
     QCOMPARE(toast->parentWidget(), &f.parent);
     QVERIFY(toast->x() >= f.parent.width() / 2);
     QVERIFY(toast->y() >= f.parent.height() / 2);
-    auto* status = dialog->findChild<QLabel*>("exportStatus");
-    QVERIFY(status && status->isVisible());
-    QVERIFY(status->text().contains("Export complete"));
-    QVERIFY(status->text().contains(destination));
+    // The toast owns the success outcome. The dialog status line does not repeat it.
+    QVERIFY(toast->accessibleDescription().contains(destination));
+    auto* statusLine = dialog->findChild<QWidget*>("exportStatusLine");
+    QVERIFY(statusLine && !statusLine->isVisible());
     QFile output(destination);
     QVERIFY(output.open(QIODevice::ReadOnly));
     const auto bytes = output.readAll();

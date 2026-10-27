@@ -21,6 +21,9 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void sqlRowJsonDoesNotChangeDatabaseContents();
     void sqlOpensWithEqualEditorAndResults();
     void sqlToolbarInsetsControls();
+    void runModesRunCurrentStatementOrWholeDocument();
+    void statusLineShowsTheTargetOfEachDocument();
+    void changeConnectionMenuRebindsOnlyIdleSqlTabs();
     void tabContextMenuFollowsCursor();
     void tabContextMenuClosesRequestedDocuments_data();
     void tabContextMenuClosesRequestedDocuments();
@@ -42,6 +45,7 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void historyNavigationStaysInSidebar();
     void startNavigationPreservesDocumentsAndIndependentFeedback();
     void recoveryActionsRemainInMenuWithoutToolButtons();
+    void userActionErrorsShareOneModalWithACount();
     void recoveryFailuresUsePersistentWindowToast();
     void recoveryToastDismissalKeepsActionsAndLaterFailure();
     void startNewWhileRestorePendingKeepsRecoveryBlocked();

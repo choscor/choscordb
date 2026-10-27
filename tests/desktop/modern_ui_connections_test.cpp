@@ -3,6 +3,7 @@
 #include "bridge/engine_adapter.h"
 #include "design_system/menu/menu.h"
 #include "design_system/theme_manager.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "modern_ui_test.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -100,8 +101,12 @@ void ModernUiTest::savedProfileSelectionKeepsEditorTargetAndShowsMultipleTrees()
     auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
     auto* profiles = window.findChild<QListWidget*>("savedConnections");
     auto* tree = window.findChild<QTreeView*>("databaseNavigator");
-    auto* selector = window.findChild<QComboBox*>("connectionSelector");
-    QVERIFY(workspace && profiles && tree && selector);
+    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+    QVERIFY(workspace && profiles && tree && tabs);
+    const auto currentTarget = [tabs]() -> std::optional<quint64> {
+        const auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+        return editor ? editor->connectionTarget() : std::nullopt;
+    };
     QSignalSpy opened(workspace, &choscordb::QueryWorkspace::connectionReady);
     choscordb::SavedProfile profile;
     profile.id = "browse-alpha";
@@ -125,7 +130,7 @@ void ModernUiTest::savedProfileSelectionKeepsEditorTargetAndShowsMultipleTrees()
     const auto first = *window.browsingConnection();
     QTRY_COMPARE(tree->model()->rowCount(), 1);
     QVERIFY(tree->model()->index(0, 0).data().toString().contains("Browse Alpha"));
-    const auto editorTarget = selector->currentData();
+    const auto editorTarget = currentTarget();
     click("Browse Beta");
     QTRY_COMPARE(tree->model()->rowCount(), 2);
     QTRY_COMPARE(opened.count(), 2);
@@ -133,17 +138,17 @@ void ModernUiTest::savedProfileSelectionKeepsEditorTargetAndShowsMultipleTrees()
     QVERIFY(tree->model()->index(1, 0).data().toString().contains("Browse Beta"));
     QVERIFY(profiles->item(0)->isSelected());
     QVERIFY(profiles->item(1)->isSelected());
-    QCOMPARE(selector->currentData(), editorTarget);
+    QCOMPARE(currentTarget(), editorTarget);
     click("Browse Alpha");
     QTRY_COMPARE(tree->model()->rowCount(), 1);
     QVERIFY(tree->model()->index(0, 0).data().toString().contains("Browse Beta"));
     QVERIFY(!profiles->item(0)->isSelected());
     QVERIFY(profiles->item(1)->isSelected());
-    QVERIFY(selector->findData(QVariant::fromValue<qulonglong>(first)) >= 0);
+    QVERIFY(workspace->liveConnectionLabel(first).has_value());
     click("Browse Alpha");
     QTRY_COMPARE(tree->model()->rowCount(), 2);
     QCOMPARE(opened.count(), 2);
-    QVERIFY(selector->findData(QVariant::fromValue<qulonglong>(first)) >= 0);
+    QVERIFY(workspace->liveConnectionLabel(first).has_value());
     profiles->setCurrentItem(profiles->item(1), QItemSelectionModel::NoUpdate);
     profiles->setFocus();
     QTest::keyClick(profiles, Qt::Key_Return);
@@ -246,8 +251,8 @@ void ModernUiTest::failedSidebarOpenShowsReasonAndClearsBrowseSelection() {
     QTRY_COMPARE(profiles->count(), 1);
     QTest::mouseClick(profiles->viewport(), Qt::LeftButton, Qt::NoModifier,
                       profiles->visualItemRect(profiles->item(0)).center());
-    QTRY_VERIFY(window.findChild<QMessageBox*>("sidebarConnectionFailure"));
-    auto* dialog = window.findChild<QMessageBox*>("sidebarConnectionFailure");
+    QTRY_VERIFY(window.findChild<QMessageBox*>("errorFeedbackDialog"));
+    auto* dialog = window.findChild<QMessageBox*>("errorFeedbackDialog");
     QVERIFY(dialog->text().contains("Broken Sidebar"));
     QVERIFY(dialog->text().contains("unable to open", Qt::CaseInsensitive));
     QVERIFY(!window.browsingConnection().has_value());
@@ -287,7 +292,7 @@ void ModernUiTest::failedSidebarOpenRestoresLastSuccessfulProfile() {
     QTRY_VERIFY(window.browsingConnection().has_value());
     const auto validId = *window.browsingConnection();
     click("Invalid Browse");
-    QTRY_VERIFY(window.findChild<QMessageBox*>("sidebarConnectionFailure"));
+    QTRY_VERIFY(window.findChild<QMessageBox*>("errorFeedbackDialog"));
     QCOMPARE(window.browsingConnection(), std::optional<quint64>(validId));
     auto* validItem = profiles->item(0)->text().startsWith("Valid Browse") ? profiles->item(0)
                                                                            : profiles->item(1);
@@ -296,7 +301,7 @@ void ModernUiTest::failedSidebarOpenRestoresLastSuccessfulProfile() {
     QVERIFY(!invalidItem->isSelected());
     QTRY_COMPARE(tree->model()->rowCount(), 1);
     QVERIFY(tree->model()->index(0, 0).data().toString().contains("Valid Browse"));
-    window.findChild<QMessageBox*>("sidebarConnectionFailure")->accept();
+    window.findChild<QMessageBox*>("errorFeedbackDialog")->accept();
 }
 
 void ModernUiTest::rejectedSidebarOpenKeepsOtherRootsAndShowsOneReason() {
@@ -332,18 +337,18 @@ void ModernUiTest::rejectedSidebarOpenKeepsOtherRootsAndShowsOneReason() {
     const auto first = *window.browsingConnection();
     workspace->setExternalWork(true);
     click(beta.name);
-    QTRY_VERIFY(window.findChild<QMessageBox*>("sidebarConnectionFailure"));
-    const auto dialogs = window.findChildren<QMessageBox*>("sidebarConnectionFailure");
-    QCOMPARE(dialogs.size(), 1);
-    QVERIFY(dialogs.first()->text().contains(beta.name));
-    QVERIFY(dialogs.first()->text().contains("Finish or cancel active database work"));
+    // A blocked open is a warning in the notice toast, not an error modal.
+    auto* toast = window.findChild<choscordb::ToastRegion*>("toastRegion");
+    QVERIFY(toast);
+    QTRY_VERIFY(toast->text().contains(beta.name));
+    QVERIFY(toast->text().contains("Finish or cancel active database work"));
+    QVERIFY(!window.findChild<QMessageBox*>("errorFeedbackDialog"));
     QCOMPARE(window.browsingConnection(), std::optional<quint64>(first));
     QCOMPARE(tree->model()->rowCount(), 1);
     QCOMPARE(opened.count(), 1);
     QVERIFY(profiles->item(0)->isSelected());
     QVERIFY(!profiles->item(1)->isSelected());
     workspace->setExternalWork(false);
-    dialogs.first()->accept();
 }
 
 void ModernUiTest::removedPendingSidebarOpenCannotRestoreItsRoot() {
@@ -353,10 +358,12 @@ void ModernUiTest::removedPendingSidebarOpenCannotRestoreItsRoot() {
     auto* profiles = window.findChild<QListWidget*>("savedConnections");
     auto* tree = window.findChild<QTreeView*>("databaseNavigator");
     auto* filter = window.findChild<QLineEdit*>("navigatorFilter");
-    auto* status = window.findChild<QLabel*>("navigatorStatus");
-    QVERIFY(workspace && profiles && tree && filter && status);
-    QVERIFY(status->isHidden());
-    QVERIFY(status->text().isEmpty());
+    auto* section = window.findChild<QWidget*>("sidebarObjectsSection");
+    QVERIFY(section);
+    auto* busy = section->findChild<QLabel*>("sidebarSectionBusy");
+    auto* toast = window.findChild<choscordb::ToastRegion*>("toastRegion");
+    QVERIFY(workspace && profiles && tree && filter && busy && toast);
+    QVERIFY(busy->isHidden());
     choscordb::SavedProfile alpha;
     alpha.id = "visible-session";
     alpha.name = "Alpha Visible Session";
@@ -374,28 +381,26 @@ void ModernUiTest::removedPendingSidebarOpenCannotRestoreItsRoot() {
     };
     click(0);
     QTRY_COMPARE(opened.count(), 1);
-    QVERIFY(status->isHidden());
-    QVERIFY(status->text().isEmpty());
+    QVERIFY(busy->isHidden());
     click(1);
     QCOMPARE(tree->model()->rowCount(), 2);
-    QCOMPARE(tree->model()->index(1, 0).data(choscordb::NavigatorModel::KindRole).toString(),
-             QString("loading"));
+    QCOMPARE(tree->model()->index(1, 0).data(choscordb::NavigatorModel::StatusRole).toInt(),
+             int(choscordb::RowStatusKind::Loading));
     filter->setText("needle");
-    QVERIFY(status->text().contains("Search", Qt::CaseInsensitive));
-    QVERIFY(!status->isHidden());
-    QVERIFY(status->accessibleName().contains(status->text()));
+    // Search progress is only a Loader icon on the section header, never sidebar text.
+    QVERIFY(!busy->isHidden());
+    QCOMPARE(busy->accessibleName(), QString("Searching objects…"));
+    QVERIFY(busy->text().isEmpty());
     filter->clear();
-    QVERIFY(status->isHidden());
-    QVERIFY(status->text().isEmpty());
-    QVERIFY(status->accessibleName().isEmpty());
+    QVERIFY(busy->isHidden());
+    QVERIFY(!toast->text().contains("Search", Qt::CaseInsensitive));
     click(1);
     QCOMPARE(tree->model()->rowCount(), 1);
     QVERIFY(!profiles->item(1)->isSelected());
     QTRY_COMPARE(opened.count(), 2);
     QCOMPARE(tree->model()->rowCount(), 1);
     QVERIFY(!profiles->item(1)->isSelected());
-    QVERIFY(status->isHidden());
-    QVERIFY(status->text().isEmpty());
+    QVERIFY(busy->isHidden());
     click(1);
     QTRY_COMPARE(tree->model()->rowCount(), 2);
     QCOMPARE(opened.count(), 2);

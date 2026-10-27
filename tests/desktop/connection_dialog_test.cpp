@@ -6,6 +6,7 @@
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "workspace_test.h"
 #include "workspace_test_fixture.h"
+#include <QAbstractButton>
 #include <QAbstractItemView>
 #include <QAction>
 #include <QCheckBox>
@@ -72,9 +73,8 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
     QCOMPARE(progress->findChild<QLabel*>("profileProgressMessage")->text(),
              QString("Testing connection…"));
     QTRY_VERIFY(!progress->isVisible());
-    QCOMPARE(dialog->findChild<QLabel*>("profileStatus")->text(),
-             QString("Connection test succeeded."));
-    QVERIFY(dialog->findChild<QLabel*>("profileStatus")->isVisible());
+    // The toast owns the success outcome. The dialog status line does not repeat it.
+    QVERIFY(!dialog->findChild<QWidget*>("profileStatusLine")->isVisible());
     auto* feedback =
         f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
     QVERIFY(feedback && feedback->isVisible());
@@ -83,7 +83,7 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
     QCOMPARE(feedback->geometry().right(), f.parent.width() - 17);
     QCOMPARE(feedback->geometry().bottom(), f.parent.height() - 17);
     QVERIFY(feedback->text().contains("Connection test succeeded."));
-    feedback->findChild<QToolButton*>("toastDismiss")->click();
+    feedback->findChild<QAbstractButton*>("toastDismiss")->click();
     QTRY_VERIFY(feedback->isHidden());
     auto* save = dialog->findChild<QPushButton*>("profileSave");
     save->click();
@@ -93,8 +93,19 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
     QTRY_VERIFY(save->isEnabled());
     QTRY_VERIFY(!progress->isVisible());
     QVERIFY(feedback->text().contains("Profile saved."));
-    QTest::mouseClick(feedback->findChild<QToolButton*>("toastDismiss"), Qt::LeftButton);
+    QVERIFY(!dialog->findChild<QWidget*>("profileStatusLine")->isVisible());
+    QTest::mouseClick(feedback->findChild<QAbstractButton*>("toastDismiss"), Qt::LeftButton);
     QTRY_VERIFY(!feedback->isVisible());
+
+    // A failed test keeps its error inline and shows no success toast.
+    path->setText(QDir::temp().filePath("choscordb-missing-dir/missing/db.sqlite"));
+    dialog->findChild<QPushButton*>("profileTest")->click();
+    QTRY_VERIFY(!progress->isVisible());
+    QTRY_VERIFY(dialog->findChild<QWidget*>("profileStatusLine")->isVisible());
+    QVERIFY(!dialog->findChild<QLabel*>("profileStatus")->text().isEmpty());
+    QVERIFY(dialog->findChild<QLabel*>("profileStatus")->text() !=
+            QString("Connection test succeeded."));
+    QVERIFY(!feedback->isVisible());
 }
 
 void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
@@ -361,7 +372,7 @@ void WorkspaceTest::connectionSshFormKeepsBasicFields() {
 
 void WorkspaceTest::connectionTransportValidationRejectsIncompatibleSettings() {
     WorkspaceFixture f;
-    QTRY_COMPARE(f.connections.count(), 1);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 1);
     f.newConnection.trigger();
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
     auto* save = dialog->findChild<QPushButton*>("profileSave");
@@ -395,7 +406,7 @@ void WorkspaceTest::connectionTransportValidationRejectsIncompatibleSettings() {
 
 void WorkspaceTest::connectionFormRejectsMalformedHostsBeforeSubmission() {
     WorkspaceFixture f;
-    QTRY_COMPARE(f.connections.count(), 1);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 1);
     f.newConnection.trigger();
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
     QVERIFY(dialog);
@@ -460,7 +471,7 @@ void WorkspaceTest::connectionFormRejectsMalformedHostsBeforeSubmission() {
 
 void WorkspaceTest::mysqlConnectionFormExplainsOptionalDatabaseAndPreservesLiterals() {
     WorkspaceFixture f;
-    QTRY_COMPARE(f.connections.count(), 1);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 1);
     f.newConnection.trigger();
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
     QVERIFY(dialog);
@@ -570,7 +581,7 @@ void WorkspaceTest::connectionManualPasswordIsOptionalAndUsesOneCredentialChoice
 }
 void WorkspaceTest::connectionEditedEmptyPasswordSuppressesSavedReference() {
     WorkspaceFixture f;
-    QTRY_COMPARE(f.connections.count(), 1);
+    QTRY_COMPARE(f.workspace.liveConnections().size(), 1);
     f.newConnection.trigger();
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
     QVERIFY(dialog);

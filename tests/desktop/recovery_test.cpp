@@ -4,6 +4,7 @@
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
 #include "design_system/icons.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/theme.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
@@ -88,12 +89,10 @@ class RecoveryTest : public QObject {
         QCOMPARE(documents.at(0).cursorOffset, quint64(10));
         QCOMPARE(documents.at(0).selectionAnchor, quint64(8));
         QVERIFY(documents.at(0).modified);
-        auto* connections = window.findChild<QComboBox*>("connectionSelector");
-        QVERIFY(connections);
-        QCOMPARE(connections->count(), 1);
-        QVERIFY(!connections->currentData().isValid());
+        QVERIFY(window.findChild<QueryWorkspace*>()->liveConnections().isEmpty());
         auto* editor = qobject_cast<SqlEditor*>(tabs->currentWidget());
         QVERIFY(editor);
+        QVERIFY(!editor->connectionTarget());
         const auto updatedSql = QString::fromUtf8("SELECT 'é';\nSELECT 'saved at close';");
         editor->setText(updatedSql);
         editor->setModified(true);
@@ -172,8 +171,14 @@ class RecoveryTest : public QObject {
         QTRY_COMPARE(savedConnections->count(), 1);
         auto* reconnect = explorer->findChild<QAction*>("objectReconnect");
         QVERIFY(reconnect);
+        auto* footer = explorer->findChild<design::StatusLine*>("objectFooter");
+        QVERIFY(footer);
         reconnect->trigger();
+        // Reconnect progress is a busy notice on the object tab's own bottom line.
+        QVERIFY(footer->accessibleDescription().contains("Reconnecting the saved connection…"));
+        QVERIFY(footer->property("busy").toBool());
         QTRY_VERIFY(!explorer->needsConnection());
+        QTRY_VERIFY(!footer->accessibleDescription().contains("Reconnecting"));
         auto* editor = qobject_cast<SqlEditor*>(tabs->widget(1));
         QVERIFY(editor);
         QCOMPARE(editor->text(), sql.document.sql);

@@ -9,11 +9,11 @@
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
 
 #include <QAction>
-#include <QComboBox>
 #include <QLabel>
 #include <QSignalBlocker>
 #include <QTableView>
 #include <QVariantMap>
+#include <QtConcurrent/QtConcurrentRun>
 #include <string_view>
 #include <utility>
 namespace choscordb {
@@ -21,34 +21,155 @@ using query_workspace_detail::nextEditRequestToken;
 using query_workspace_detail::text;
 namespace {
 Cell cell(const CellDto& value) {
-    const std::string_view kind(value.kind.data(), value.kind.size());
-    if (kind == "null")
+    switch (value.kind) {
+    case CellKindDto::Null:
         return std::monostate{};
-    if (kind == "boolean")
+    case CellKindDto::Boolean:
         return value.boolean;
-    if (kind == "integer")
+    case CellKindDto::Integer:
         return static_cast<qint64>(value.integer);
-    if (kind == "real")
+    case CellKindDto::Real:
         return value.real;
-    if (kind == "decimal")
+    case CellKindDto::Decimal:
         return DecimalValue{text(value.text)};
-    if (kind == "binary")
+    case CellKindDto::Binary:
         return QByteArray(reinterpret_cast<const char*>(value.bytes.data()),
                           static_cast<qsizetype>(value.bytes.size()));
-    if (kind == "deferred")
+    case CellKindDto::Deferred:
         return DeferredValue{value.handle, value.byte_length, text(value.database_type)};
-    if (kind == "fallback_text")
+    case CellKindDto::FallbackText:
         return FallbackText{text(value.text), text(value.database_type)};
-    if (kind == "deferred_fallback")
+    case CellKindDto::DeferredFallback:
         return DeferredValue{value.handle, value.byte_length, text(value.database_type), true};
-    if (kind == "unavailable")
+    case CellKindDto::Unavailable:
         return UnavailableValue{text(value.database_type), text(value.text)};
-    if (kind == "text" || kind == "date" || kind == "time" || kind == "timestamp" ||
-        kind == "uuid" || kind == "json")
+    case CellKindDto::Text:
+    case CellKindDto::Date:
+    case CellKindDto::Time:
+    case CellKindDto::Timestamp:
+    case CellKindDto::Uuid:
+    case CellKindDto::Json:
         return text(value.text);
-    return UnavailableValue{text(value.database_type), QObject::tr("Unknown value representation")};
+    default:
+        return UnavailableValue{text(value.database_type),
+                                QObject::tr("Unknown value representation")};
+    }
+}
+// Runs on a worker thread; the event stays read-only.
+ResultTableModel::PreparedPage preparePage(const BridgeEvent& page,
+                                           std::vector<ResultColumn> columns) {
+    std::vector<ResultTableModel::Row> rows;
+    std::vector<bool> filterable;
+    rows.reserve(page.row_count);
+    filterable.reserve(page.cells.size());
+    size_t i = 0;
+    for (quint32 r = 0; r < page.row_count; ++r) {
+        ResultTableModel::Row row;
+        row.reserve(page.column_count);
+        for (quint32 c = 0; c < page.column_count; ++c, ++i) {
+            row.push_back(cell(page.cells[i]));
+            filterable.push_back(page.cells[i].foreign_key_filterable);
+        }
+        rows.push_back(std::move(row));
+    }
+    return ResultTableModel::preparePage(std::move(columns), std::move(rows), std::move(filterable),
+                                         page.first_row);
 }
 } // namespace
+void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPage page) {
+    fetching_ = false;
+    if (!model_->setPage(std::move(page), cellMetadata_.size() == columns_.size()
+                                              ? cellMetadata_
+                                              : std::vector<ResultCellMetadata>{})) {
+        if (e.has_lease)
+            adapter_->releasePageLease(e.lease_id);
+        message(tr("Result page exceeds the grid memory budget."));
+        setExecutionState(QStringLiteral("failed"),
+                          tr("Result page exceeds the grid memory budget."));
+        hasMore_ = false;
+        hasMoreResults_ = false;
+    } else {
+        configureEditability();
+        if (filterBar_)
+            filterBar_->setColumns(columns_);
+        // setPage destroyed the old Qt buffers before we release their reservation.
+        if (visibleLease_) {
+            const auto lease = *visibleLease_;
+            visibleLease_.reset();
+            adapter_->releasePageLease(lease);
+        }
+        if (!e.has_lease || !adapter_->shrinkPageLease(e.lease_id, model_->residentBytes())) {
+            model_->setPage({}, {}, 0);
+            if (e.has_lease)
+                adapter_->releasePageLease(e.lease_id);
+            currentPage_.reset();
+            hasMore_ = false;
+            hasMoreResults_ = false;
+            busy_ = false;
+            message(tr("Result page exceeds its transfer reservation."));
+            setExecutionState(QStringLiteral("failed"),
+                              tr("Result page exceeds its transfer reservation."));
+            updateActions();
+            return;
+        }
+        visibleLease_ = e.lease_id;
+        currentPage_ = e.page_index;
+        jsonResultInvalidated_ = false;
+        hasMore_ = e.has_more;
+        const bool hasResultPage = !columns_.empty();
+        setExecutionState(
+            QStringLiteral("completed"),
+            e.row_count == 0 && !viewFilters_.isEmpty()
+                ? tr("No rows match the active filters · Clear filters to restore all rows")
+                : tr("Completed"),
+            {completedDurationMs_ ? tr("Executed in %1 ms").arg(*completedDurationMs_) : QString{},
+             hasResultPage ? tr("Page %1").arg(e.page_index + 1) : QString{},
+             hasResultPage ? (completedAffectedRows_.isEmpty()
+                                  ? QString{}
+                                  : completedAffectedRows_ + QStringLiteral(" · ")) +
+                                 tr("%1 rows").arg(e.row_count)
+                           : completedAffectedRows_,
+             hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024) : QString{}});
+        if (filterBar_)
+            filterBar_->setBusy(false);
+        if (initialFilterPending_) {
+            initialFilterPending_ = false;
+            model_->setPage(columns_, {}, 0);
+            if (visibleLease_) {
+                adapter_->releasePageLease(*visibleLease_);
+                visibleLease_.reset();
+            }
+            submitResultView({{0, "sql", "text", initialFilter_}}, -1, {});
+            if (!viewBusy_) {
+                referenceFilterPending_ = false;
+                referenceFilterFailed_ = true;
+                currentPage_.reset();
+                hasMore_ = false;
+                hasMoreResults_ = false;
+                filterBar_->showValidationError(tr("Referenced row filter could not start."));
+                setExecutionState(QStringLiteral("failed"),
+                                  tr("Referenced row filter failed: %1").arg(commandError_));
+            }
+        } else if (deferredViewRequest_ && !model_->hasPendingEdits()) {
+            deferredViewRequest_ = false;
+            preserveViewOnRefresh_ = false;
+            submitResultView(deferredViewFilters_, deferredViewSortColumn_,
+                             deferredViewSortDirection_);
+        } else if (preserveViewOnRefresh_) {
+            preserveViewOnRefresh_ = false;
+            viewRefreshQuery_.reset();
+            if (!viewFilters_.isEmpty() || viewSortColumn_ >= 0)
+                submitResultView(viewFilters_, viewSortColumn_, viewSortDirection_);
+        }
+    }
+    busy_ = false;
+    updateActions();
+}
+void QueryWorkspace::dropPageBuild() {
+    pageBuild_ = nextRequestToken();
+    if (const auto lease = std::exchange(buildingLease_, std::nullopt); lease && adapter_)
+        adapter_->releasePageLease(*lease);
+}
 void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     const auto eventKind = text(e.kind);
     if (eventKind == "session_sql_mode") {
@@ -66,7 +187,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                 static_cast<quint64>(executionModeEditor_->SendScintilla(
                     QsciScintilla::SCI_GETSELECTIONEND)) == executionModeEnd_) {
                 executionModeReady_ = true;
-                execute();
+                execute(executionModeScope_);
                 executionModeReady_ = false;
             }
             executionModeEditor_.clear();
@@ -152,7 +273,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                     adapter_->releaseQuery(*query_);
                 clearResult();
                 currentPage_.reset();
-                query_ = adapter_->execute(*queryConnection_, executedSql_, true,
+                query_ = adapter_->execute(*queryConnection_, executedSql_,
                                            connectionProfiles_.value(*queryConnection_),
                                            querySettings_->preferences());
                 if (query_)
@@ -188,7 +309,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         if (e.has_transaction_state) {
             if (e.transaction_active) {
                 pendingTransactions_.insert(e.id);
-                manualModes_.insert(e.id, true);
             } else {
                 pendingTransactions_.remove(e.id);
             }
@@ -196,9 +316,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         }
         const auto name = pendingConnections_.take(e.id);
         {
-            const QSignalBlocker blocker(widgets_.connections);
             const auto label = name.isEmpty() ? tr("Database session %1").arg(e.id) : name;
-            widgets_.connections->addItem(label, QVariant::fromValue<qulonglong>(e.id));
+            liveConnections_.append({e.id, label});
             if (auto* editor = widgets_.currentEditor(); editor && !editor->hasAssignedTarget()) {
                 editor->setConnectionTarget(e.id, label);
                 editor->setProfileId(connectionProfiles_.value(e.id));
@@ -265,15 +384,10 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         }
         disconnecting_.remove(e.id);
         pendingTransactions_.remove(e.id);
-        manualModes_.remove(e.id);
         connectionProfiles_.remove(e.id);
         connectionDrivers_.remove(e.id);
         connectionSqlModes_.remove(e.id);
-        const auto index = widgets_.connections->findData(QVariant::fromValue<qulonglong>(e.id));
-        if (index >= 0) {
-            const QSignalBlocker blocker(widgets_.connections);
-            widgets_.connections->removeItem(index);
-        }
+        liveConnections_.removeIf([&e](const LiveConnection& live) { return live.id == e.id; });
         documentChanged();
         if (queryConnection_ == e.id) {
             clearRowJson();
@@ -299,22 +413,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                 setExecutionState(QStringLiteral("disconnected"), tr("Disconnected"));
         }
         updateActions();
-        return;
-    }
-    if (eventKind == "transaction_finished") {
-        pendingTransactions_.remove(e.id);
-        emit transactionStateChanged(e.id, false);
-        message(e.committed ? tr("Transaction committed.") : tr("Transaction rolled back."));
-        if (queryConnection_ == e.id) {
-            hasMore_ = false;
-            hasMoreResults_ = false;
-            busy_ = false;
-            if (query_ && currentPage_ && queryAvailable()) {
-                fetching_ = true;
-                adapter_->fetchPageAt(*query_, *currentPage_);
-            }
-            updateActions();
-        }
         return;
     }
     if (!query_ || e.id != *query_)
@@ -438,8 +536,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     } else if (eventKind == "stored_page") {
         if (cancellationPending_)
             return;
-        fetching_ = false;
         if (e.column_count != columns_.size() && e.row_count != 0) {
+            fetching_ = false;
             message(tr("Result page has an invalid column count."));
             setExecutionState(QStringLiteral("failed"),
                               tr("Result page has an invalid column count."));
@@ -450,6 +548,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             return;
         }
         if (static_cast<quint64>(e.row_count) * e.column_count != e.cells.size()) {
+            fetching_ = false;
             message(tr("Result page has an invalid cell count."));
             setExecutionState(QStringLiteral("failed"),
                               tr("Result page has an invalid cell count."));
@@ -459,104 +558,34 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             updateActions();
             return;
         }
-        std::vector<ResultTableModel::Row> rows;
-        rows.reserve(e.row_count);
-        size_t i = 0;
-        for (quint32 r = 0; r < e.row_count; ++r) {
-            ResultTableModel::Row row;
-            row.reserve(e.column_count);
-            for (quint32 c = 0; c < e.column_count; ++c)
-                row.push_back(cell(e.cells[i++]));
-            rows.push_back(std::move(row));
-        }
-        if (!model_->setPage(columns_, std::move(rows), e.first_row)) {
-            message(tr("Result page exceeds the grid memory budget."));
-            setExecutionState(QStringLiteral("failed"),
-                              tr("Result page exceeds the grid memory budget."));
+        auto page = adapter_->retainEvent(e);
+        if (!page) {
+            fetching_ = false;
+            busy_ = false;
             hasMore_ = false;
             hasMoreResults_ = false;
-        } else {
-            configureEditability();
-            if (cellMetadata_.size() == columns_.size())
-                model_->setCellMetadata(cellMetadata_);
-            if (filterBar_)
-                filterBar_->setColumns(columns_);
-            // setPage destroyed the old Qt buffers before we release their reservation.
-            if (visibleLease_) {
-                const auto lease = *visibleLease_;
-                visibleLease_.reset();
-                adapter_->releasePageLease(lease);
-            }
-            if (!e.has_lease || !adapter_->retainTransfer(e.lease_id, model_->residentBytes())) {
-                model_->setPage({}, {}, 0);
-                currentPage_.reset();
-                hasMore_ = false;
-                hasMoreResults_ = false;
-                busy_ = false;
-                message(tr("Result page exceeds its transfer reservation."));
-                setExecutionState(QStringLiteral("failed"),
-                                  tr("Result page exceeds its transfer reservation."));
-                updateActions();
-                return;
-            }
-            visibleLease_ = e.lease_id;
-            currentPage_ = e.page_index;
-            jsonResultInvalidated_ = false;
-            hasMore_ = e.has_more;
-            const bool hasResultPage = !columns_.empty();
-            setExecutionState(
-                QStringLiteral("completed"),
-                e.row_count == 0 && !viewFilters_.isEmpty()
-                    ? tr("No rows match the active filters · Clear filters to restore all rows")
-                    : tr("Completed"),
-                {completedDurationMs_ ? tr("Executed in %1 ms").arg(*completedDurationMs_)
-                                      : QString{},
-                 hasResultPage ? tr("Page %1").arg(e.page_index + 1) : QString{},
-                 hasResultPage ? (completedAffectedRows_.isEmpty()
-                                      ? QString{}
-                                      : completedAffectedRows_ + QStringLiteral(" · ")) +
-                                     tr("%1 rows").arg(e.row_count)
-                               : completedAffectedRows_,
-                 hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024)
-                               : QString{}});
-            if (filterBar_)
-                filterBar_->setBusy(false);
-            if (initialFilterPending_) {
-                initialFilterPending_ = false;
-                model_->setPage(columns_, {}, 0);
-                if (visibleLease_) {
-                    adapter_->releasePageLease(*visibleLease_);
-                    visibleLease_.reset();
-                }
-                submitResultView({{0, "sql", "text", initialFilter_}}, -1, {});
-                if (!viewBusy_) {
-                    referenceFilterPending_ = false;
-                    referenceFilterFailed_ = true;
-                    currentPage_.reset();
-                    hasMore_ = false;
-                    hasMoreResults_ = false;
-                    filterBar_->showValidationError(tr("Referenced row filter could not start."));
-                    setExecutionState(QStringLiteral("failed"),
-                                      tr("Referenced row filter failed: %1").arg(commandError_));
-                }
-            } else if (deferredViewRequest_ && !model_->hasPendingEdits()) {
-                deferredViewRequest_ = false;
-                preserveViewOnRefresh_ = false;
-                submitResultView(deferredViewFilters_, deferredViewSortColumn_,
-                                 deferredViewSortDirection_);
-            } else if (preserveViewOnRefresh_) {
-                preserveViewOnRefresh_ = false;
-                viewRefreshQuery_.reset();
-                if (!viewFilters_.isEmpty() || viewSortColumn_ >= 0)
-                    submitResultView(viewFilters_, viewSortColumn_, viewSortDirection_);
-            }
+            message(tr("Result page is no longer available."));
+            setExecutionState(QStringLiteral("failed"), tr("Result page is no longer available."));
+            updateActions();
+            return;
         }
-        busy_ = false;
-        updateActions();
+        dropPageBuild();
+        if (page->has_lease)
+            buildingLease_ = page->lease_id;
+        QtConcurrent::run([page, columns = columns_] {
+            return preparePage(*page, columns);
+        }).then(this, [this, page, build = pageBuild_](ResultTableModel::PreparedPage prepared) {
+            if (build != pageBuild_)
+                return;
+            buildingLease_.reset();
+            showPage(*page, std::move(prepared));
+        });
     } else if (eventKind == "query_finished") {
         hasMoreResults_ = e.has_more_results;
         if (queryConnection_ && e.has_sql_mode)
             connectionSqlModes_.insert(*queryConnection_, text(e.sql_mode));
+        else if (queryConnection_)
+            connectionSqlModes_.remove(*queryConnection_);
         const bool inspectNow =
             queryConnection_ && !hasMoreResults_ &&
             EngineAdapter::driverWorkflow(driverForConnection(*queryConnection_))
@@ -604,6 +633,9 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
              hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024) : QString{}});
         updateActions();
     } else if (eventKind == "query_failed") {
+        // A failed statement can leave the session mode unknown.
+        if (queryConnection_)
+            connectionSqlModes_.remove(*queryConnection_);
         if (preserveViewOnRefresh_ && viewRefreshQuery_ == query_) {
             preserveViewOnRefresh_ = false;
             viewRefreshQuery_.reset();

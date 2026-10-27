@@ -605,8 +605,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
             } else
                 setBusy(false, tr("Connected."), true);
         } else if (kind == "disconnected") {
-            setBusy(false,
-                    tr("Connection closed before it was established. Retry the connection."));
+            setBusy(false, tr("Connection closed before it was established. %1")
+                               .arg(EngineAdapter::recoveryHint(RecoveryHint::RetryConnection)));
         } else {
             auto message = bridge_detail::fromRust(event.error);
             if (!event.vendor_code.empty()) {
@@ -673,18 +673,25 @@ void ProfileDialog::setBusy(bool busy, const QString& message, bool success, boo
     for (auto* action : actions_)
         action->setEnabled(!busy && adapter_);
     updateTrustControls();
+    // A toast owns a success or warning outcome. The status line keeps busy and error states,
+    // and keeps the outcome only when no toast can show it.
+    if (!busy && success && !message.isEmpty() && isVisible()) {
+        feedbackToast_ = windowToast(this);
+        if (feedbackToast_) {
+            feedbackToast_->showToast(warning ? tr("Warning") : tr("Success"), message,
+                                      warning ? ToastVariant::Warning : ToastVariant::Success);
+            statusLine_->setMessage({});
+            statusLine_->setBusy(false);
+            statusLine_->hide();
+            return;
+        }
+    }
     statusLine_->setMessage(message);
     statusLine_->setBusy(busy);
     statusLine_->setAvailable(busy || success);
     if (warning)
         statusLine_->setNeutral();
     statusLine_->setVisible(!message.isEmpty());
-    if (!busy && success && !message.isEmpty() && isVisible()) {
-        feedbackToast_ = windowToast(this);
-        if (feedbackToast_)
-            feedbackToast_->showToast(warning ? tr("Warning") : tr("Success"), message,
-                                      warning ? ToastVariant::Warning : ToastVariant::Success);
-    }
 }
 void ProfileDialog::refresh() {
     if (!adapter_)

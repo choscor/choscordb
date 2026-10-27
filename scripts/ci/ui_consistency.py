@@ -58,6 +58,7 @@ SHARED_DIALOGS = {"ConfirmationDialog", "DialogShell"}
 DESIGN_NON_VISUAL = {
     "PlatformAccessibilityMonitor",
     "PreviewWindow",
+    "RowMark",
     "ThemeManager",
 }
 STRUCTURAL_CONTROLS = {

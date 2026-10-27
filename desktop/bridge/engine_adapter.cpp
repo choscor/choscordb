@@ -6,6 +6,8 @@
 #include <QSet>
 #include <QTimer>
 #include <algorithm>
+#include <memory>
+#include <utility>
 #include <vector>
 namespace choscordb {
 using engine_adapter_detail::fromRust;
@@ -328,14 +330,18 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
     connect(timer, &QTimer::timeout, this, [this] {
         std::vector<quint64> transfers;
         {
-            const auto events = drain_events(*d_->engine);
-            for (const auto& event : events) {
+            auto events = drain_events(*d_->engine);
+            for (auto& event : events) {
                 if (event.has_lease) {
                     transfers.push_back(event.lease_id);
                     d_->transfers.insert(event.lease_id,
                                          {event.reserved_bytes, std::nullopt, false});
                 }
-                emit eventReady(event);
+                // A nested event loop in a handler dispatches other events meanwhile.
+                const auto owned = std::make_shared<const BridgeEvent>(std::move(event));
+                const auto outer = std::exchange(d_->dispatching, owned);
+                emit eventReady(*owned);
+                d_->dispatching = outer;
             }
         } // Destroy all CXX strings/vectors before reducing the transfer reservations.
         for (const auto id : transfers) {
@@ -377,7 +383,7 @@ std::optional<quint64> EngineAdapter::connectSqlite(const QString& path, bool re
     return reply.id;
 }
 std::optional<quint64> EngineAdapter::execute(quint64 connection, const QString& sql,
-                                              bool autoCommit, const QString& profileId,
+                                              const QString& profileId,
                                               const QueryPreferences& preferences) {
     if (d_->closing || d_->stopping) {
         emit commandFailed(tr("Workspace is closing."));
@@ -386,7 +392,7 @@ std::optional<quint64> EngineAdapter::execute(quint64 connection, const QString&
     const auto bytes = sql.toUtf8(), profileBytes = profileId.toUtf8();
     auto reply = choscordb::execute_with_profile(
         *d_->engine, connection, utf8View(bytes), preferences.pageSize,
-        quint64(preferences.timeoutSeconds) * 1000, autoCommit, utf8View(profileBytes));
+        quint64(preferences.timeoutSeconds) * 1000, utf8View(profileBytes));
     if (!reply.accepted) {
         emit commandFailed(fromRust(reply.error));
         return std::nullopt;
@@ -666,16 +672,21 @@ void EngineAdapter::nextResultSet(quint64 query) {
     if (!reply.accepted)
         emit commandFailed(fromRust(reply.error));
 }
-void EngineAdapter::loadMetadataPage(quint64 connection, const QString& parent,
-                                     quint64 requestToken, quint64 offset) {
+void EngineAdapter::requestMetadataPage(quint64 connection, const QString& parent,
+                                        quint64 requestToken, quint64 offset, bool fresh) {
     const auto bytes = parent.toUtf8();
-    auto reply =
-        metadata_page_request(*d_->engine, connection, utf8View(bytes), requestToken, offset);
+    auto reply = metadata_page_request(*d_->engine, connection, utf8View(bytes), requestToken,
+                                       offset, fresh);
     if (!reply.accepted)
         emit metadataSubmissionFailed(connection, parent, requestToken, fromRust(reply.error));
 }
-void EngineAdapter::loadMetadata(quint64 connection, const QString& parent, quint64 requestToken) {
-    loadMetadataPage(connection, parent, requestToken, 0);
+void EngineAdapter::loadMetadataPage(quint64 connection, const QString& parent,
+                                     quint64 requestToken, quint64 offset) {
+    requestMetadataPage(connection, parent, requestToken, offset, false);
+}
+void EngineAdapter::loadMetadata(quint64 connection, const QString& parent, quint64 requestToken,
+                                 bool fresh) {
+    requestMetadataPage(connection, parent, requestToken, 0, fresh);
 }
 namespace {
 ObjectDataTimeMode rustTimeMode(ObjectDataTime::Mode mode) {
@@ -770,16 +781,6 @@ void EngineAdapter::objectDdl(quint64 connection, const QString& object) {
     if (!reply.accepted)
         emit commandFailed(fromRust(reply.error));
 }
-void EngineAdapter::commitTransaction(quint64 connection) {
-    auto reply = commit(*d_->engine, connection);
-    if (!reply.accepted)
-        emit commandFailed(fromRust(reply.error));
-}
-void EngineAdapter::rollbackTransaction(quint64 connection) {
-    auto reply = rollback(*d_->engine, connection);
-    if (!reply.accepted)
-        emit commandFailed(fromRust(reply.error));
-}
 bool EngineAdapter::disconnectConnection(quint64 connection) {
     auto reply = choscordb::disconnect(*d_->engine, connection);
     if (!reply.accepted)
@@ -820,6 +821,28 @@ bool EngineAdapter::retainTransfer(quint64 lease, quint64 payloadBytes) {
     transfer->retained = payloadBytes;
     return true;
 }
+std::shared_ptr<const BridgeEvent> EngineAdapter::retainEvent(const BridgeEvent& event) {
+    if (d_->dispatching.get() != &event)
+        return nullptr;
+    if (event.has_lease) {
+        auto transfer = d_->transfers.find(event.lease_id);
+        if (transfer == d_->transfers.end() || transfer->released || transfer->retained)
+            return nullptr;
+        transfer->retained = transfer->reserved;
+    }
+    return d_->dispatching;
+}
+bool EngineAdapter::shrinkPageLease(quint64 lease, quint64 payloadBytes) {
+    auto transfer = d_->transfers.find(lease);
+    if (transfer != d_->transfers.end()) {
+        // The drain that delivered the lease has not finished; it applies the size.
+        if (transfer->released || !page_lease_fits(transfer->reserved, payloadBytes))
+            return false;
+        transfer->retained = payloadBytes;
+        return true;
+    }
+    return shrink_page_lease(*d_->engine, lease, payloadBytes).accepted;
+}
 void EngineAdapter::releasePageLease(quint64 lease) {
     auto transfer = d_->transfers.find(lease);
     if (transfer != d_->transfers.end()) {
@@ -840,13 +863,15 @@ PageCacheUsage EngineAdapter::cacheUsage() const {
     return {usage.hits, usage.misses, usage.resident_bytes};
 }
 SqlSelection EngineAdapter::executionRange(const QString& sql, quint64 cursor, quint64 start,
-                                           quint64 end, const QString& driver,
+                                           quint64 end, RunScope scope, const QString& driver,
                                            const QString& sqlMode) {
     const auto bytes = sql.toUtf8();
     const auto driverBytes = driver.toUtf8();
     const auto modeBytes = sqlMode.toUtf8();
-    const auto range = sql_execution_range(utf8View(bytes), cursor, start, end,
-                                           utf8View(driverBytes), utf8View(modeBytes));
+    const auto range =
+        sql_execution_range(utf8View(bytes), cursor, start, end,
+                            scope == RunScope::All ? ExecutionScope::All : ExecutionScope::Current,
+                            utf8View(driverBytes), utf8View(modeBytes));
     return {range.valid, range.start, range.end, range.confirmation_required};
 }
 } // namespace choscordb

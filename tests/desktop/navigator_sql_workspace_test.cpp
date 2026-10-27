@@ -73,11 +73,16 @@ void NavigatorSqlWorkspaceTest::sqlRowActionsLiveInResultContextMenu() {
             auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
             menu->close();
-            for (const auto& actionName : names) {
-                auto* action = menu->findChild<QAction*>(actionName);
-                QVERIFY2(action, qPrintable(actionName));
-            }
-            auto* action = menu->findChild<QAction*>(name);
+            // The menu shows the grid's shared actions, so the actions are not its children.
+            const auto find = [menu](const QString& objectName) -> QAction* {
+                for (auto* action : menu->actions())
+                    if (action->objectName() == objectName)
+                        return action;
+                return nullptr;
+            };
+            for (const auto& actionName : names)
+                QVERIFY2(find(actionName), qPrintable(actionName));
+            auto* action = find(name);
             QCOMPARE(action->isEnabled(), enabled);
             if (enabled)
                 action->trigger();
@@ -350,7 +355,7 @@ void NavigatorSqlWorkspaceTest::sqlToolbarInsetsControls() {
     window.findChild<QAction*>("newQuery")->trigger();
     QCoreApplication::processEvents();
     auto* toolbar = window.findChild<QWidget*>("queryToolbarContainer");
-    auto* selector = window.findChild<QComboBox*>("connectionSelector");
+    auto* selector = window.findChild<QPushButton*>("runStatementButton");
     const auto topLeft = selector->mapTo(toolbar, QPoint());
     QVERIFY(topLeft.x() >= 4);
     QVERIFY(topLeft.y() >= 4);
@@ -431,7 +436,8 @@ void NavigatorSqlWorkspaceTest::tabContextMenuClosesRequestedDocuments() {
     QStringList labels;
     for (auto* item : menu->actions())
         labels.append(item->text());
-    QCOMPARE(labels, (QStringList{"Close", "Close Others", "Close All", "Close to the Right"}));
+    QCOMPARE(labels, (QStringList{"Close", "Close Others", "Close All", "Close to the Right", "",
+                                  "Change connection"}));
     menu->actions().at(action)->trigger();
     QStringList actual;
     for (int index = 0; index < tabs->count(); ++index)
@@ -458,11 +464,12 @@ void NavigatorSqlWorkspaceTest::tabContextMenuDisablesEmptyGroupsAndIgnoresEmpty
     QApplication::sendEvent(bar, &event);
     auto* menu = window.findChild<QMenu*>("editorTabContextMenu");
     QVERIFY(menu);
-    QCOMPARE(menu->actions().size(), 4);
+    QCOMPARE(menu->actions().size(), 6);
     QVERIFY(menu->actions().at(0)->isEnabled());
     QVERIFY(!menu->actions().at(1)->isEnabled());
     QVERIFY(menu->actions().at(2)->isEnabled());
     QVERIFY(!menu->actions().at(3)->isEnabled());
+    QVERIFY(!menu->actions().at(5)->isEnabled());
 }
 
 void NavigatorSqlWorkspaceTest::tabContextMenuStopsBulkCloseWhenDiscardIsCancelled() {
@@ -555,6 +562,8 @@ void NavigatorSqlWorkspaceTest::resultsAutomaticallyShowGridOrFailureMessage() {
 void NavigatorSqlWorkspaceTest::capturesSqlAndObjectTabsAtBothWorkspaceWidths() {
     choscordb::MainWindow window;
     window.show();
+    // The stored layout restores the window geometry; resize only after it is applied.
+    QTRY_VERIFY(window.findChild<choscordb::AppearanceController*>()->isReady());
     window.findChild<QAction*>("newQuery")->trigger();
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
     QVERIFY(qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget()));
@@ -698,10 +707,16 @@ void NavigatorSqlWorkspaceTest::historySearchAppliesToRefreshedFullSql() {
         QTRY_VERIFY(recovery->isReady());
     auto* adapter = window.findChild<choscordb::QueryWorkspace*>()->adapter();
     QSignalSpy listed(adapter, &choscordb::EngineAdapter::historyListed);
+    auto* loading = window.findChild<QWidget*>("sidebarHistorySection")
+                        ->findChild<QLabel*>("sidebarSectionBusy");
+    QVERIFY(loading && loading->isHidden());
     window.findChild<QPushButton*>("sidebarHistory")->click();
+    // History progress is only the Loader icon on the section header.
+    QVERIFY(!loading->isHidden());
+    QCOMPARE(loading->accessibleName(), QString::fromUtf8("Loading recent history…"));
+    QVERIFY(window.findChild<QLabel*>("sidebarHistoryStatus")->isHidden());
     QTRY_VERIFY(!listed.isEmpty());
-    QTRY_VERIFY(window.findChild<QLabel*>("sidebarHistoryStatus")->text() !=
-                QString::fromUtf8("Loading recent history…"));
+    QTRY_VERIFY(loading->isHidden());
     const auto token = listed.last().at(0).toULongLong();
     auto* search = window.findChild<QLineEdit*>("sidebarHistorySearch");
     auto* list = window.findChild<QListWidget*>("sidebarHistoryItems");

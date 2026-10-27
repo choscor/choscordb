@@ -9,6 +9,7 @@
 #include "models/navigator_model.h"
 #include <QApplication>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QEvent>
 #include <QIcon>
 #include <QItemSelectionModel>
@@ -42,15 +43,24 @@ inline design::Text* createEmptyStateText(const QString& text, QWidget* parent) 
     return label;
 }
 
+// The design system reads the status role as a RowMark.
+static_assert(int(design::RowMark::None) == int(RowStatusKind::None) &&
+              int(design::RowMark::Loading) == int(RowStatusKind::Loading) &&
+              int(design::RowMark::Failed) == int(RowStatusKind::Failed) &&
+              int(design::RowMark::Unavailable) == int(RowStatusKind::Unavailable));
+
 class NavigatorIconDelegate final : public design::ColumnRowDelegate {
   public:
     explicit NavigatorIconDelegate(QObject* parent = nullptr)
-        : design::ColumnRowDelegate(NavigatorModel::DatabaseTypeRole, parent) {}
+        : design::ColumnRowDelegate(NavigatorModel::DatabaseTypeRole, parent,
+                                    NavigatorModel::StatusRole) {}
     std::function<design::Icon(quint64)> connectionIcon;
     void paint(QPainter* painter, const QStyleOptionViewItem& option,
                const QModelIndex& index) const override {
-        if (navigatorRowStyle(index.data(NavigatorModel::KindRole).toString()) ==
-            NavigatorRowStyle::Column) {
+        // The column row paints both the column layout and the status mark of any row.
+        if (RowStatusKind(index.data(NavigatorModel::StatusRole).toInt()) != RowStatusKind::None ||
+            navigatorRowStyle(index.data(NavigatorModel::KindRole).toString()) ==
+                NavigatorRowStyle::Column) {
             design::ColumnRowDelegate::paint(painter, option, index);
             return;
         }
@@ -236,8 +246,9 @@ class HoveredTabCloseVisibility final : public QObject {
     explicit HoveredTabCloseVisibility(QTabBar* tabs) : QObject(tabs), tabs_(tabs) {
         tabs_->setMouseTracking(true);
         tabs_->installEventFilter(this);
-        connect(tabs_, &QTabBar::currentChanged, this, [this] { updateButtons(-1); });
-        QTimer::singleShot(0, this, [this] { updateButtons(-1); });
+        connect(tabs_, &QTabBar::currentChanged, this, [this] { updateButtons(); });
+        connect(tabs_, &QTabBar::tabMoved, this, [this] { recomputeHovered(); });
+        QTimer::singleShot(0, this, [this] { updateButtons(); });
     }
 
   protected:
@@ -247,27 +258,48 @@ class HoveredTabCloseVisibility final : public QObject {
         }
         if (event->type() == QEvent::MouseMove) {
             const auto* mouse = static_cast<QMouseEvent*>(event);
-            updateButtons(tabs_->tabAt(mouse->position().toPoint()));
+            hovered_ = tabs_->tabAt(mouse->position().toPoint());
+            hoveredCount_ = tabs_->count();
+            updateButtons();
         } else if (event->type() == QEvent::Leave) {
-            updateButtons(-1);
+            hovered_ = -1;
+            updateButtons();
         } else if (event->type() == QEvent::ChildAdded || event->type() == QEvent::LayoutRequest) {
-            QTimer::singleShot(0, this, [this] { updateButtons(-1); });
+            // Showing a close button posts a LayoutRequest, so keep the hovered tab.
+            QTimer::singleShot(0, this, [this] {
+                if (tabs_->count() != hoveredCount_) {
+                    recomputeHovered();
+                } else {
+                    updateButtons();
+                }
+            });
         }
         return QObject::eventFilter(watched, event);
     }
 
   private:
-    void updateButtons(int hovered) {
+    // An insert, close or move can give the stored index to a different tab.
+    void recomputeHovered() {
+        const QPoint pointer = tabs_->mapFromGlobal(QCursor::pos());
+        hovered_ = tabs_->underMouse() ? tabs_->tabAt(pointer) : -1;
+        hoveredCount_ = tabs_->count();
+        updateButtons();
+    }
+
+    void updateButtons() {
         const auto side = static_cast<QTabBar::ButtonPosition>(
             tabs_->style()->styleHint(QStyle::SH_TabBar_CloseButtonPosition, nullptr, tabs_));
         for (int index = 0; index < tabs_->count(); ++index) {
             if (auto* button = tabs_->tabButton(index, side)) {
-                button->setVisible(index == tabs_->currentIndex() || index == hovered);
+                button->setVisible(index == tabs_->currentIndex() || index == hovered_);
             }
         }
     }
 
     QTabBar* tabs_;
+    int hovered_ = -1;
+    // The tab count when hovered_ was found; a different count means an insert or close.
+    int hoveredCount_ = 0;
 };
 
 class WorkspaceTabBar final : public design::DocumentTabBar {

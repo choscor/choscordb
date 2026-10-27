@@ -1,3 +1,4 @@
+#include "app/error_feedback.h"
 #include "app/main_window.h"
 
 #include "app/editor_preferences.h"
@@ -8,6 +9,7 @@
 #include "app/query_workspace.h"
 #include "app/result_column_header.h"
 #include "design_system/button/button.h"
+#include "design_system/button_group/button_group.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/history_row/history_row.h"
 #include "design_system/icons.h"
@@ -26,7 +28,6 @@
 #include <QAbstractItemModel>
 #include <QAction>
 #include <QApplication>
-#include <QComboBox>
 #include <QDesktopServices>
 #include <QDockWidget>
 #include <QHBoxLayout>
@@ -45,7 +46,6 @@
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
-#include <QStyle>
 #include <QTabWidget>
 #include <QTableView>
 #include <QToolBar>
@@ -88,12 +88,6 @@ MainWindow::Ui MainWindow::buildUi() {
     fileMenu->addSeparator();
     auto* quit =
         fileMenu->addAction(tr("Quit"), QKeySequence::Quit, qApp, &QApplication::closeAllWindows);
-#ifdef Q_OS_MACOS
-    // Native menu sections reserve an icon column only when an item has an icon.
-    // Give Quit the same label inset as Preferences, updates, and Services.
-    quit->setIcon(style()->standardIcon(QStyle::SP_DialogCloseButton));
-    quit->setIconVisibleInMenu(true);
-#endif
     preferences_->addAction("quit", quit, false);
     preferences_->addAction("new_query", newQuery);
     preferences_->addAction("open_sql_file", open);
@@ -164,10 +158,6 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* about = helpMenu->addAction(tr("About ChoscorDB"));
     about->setObjectName("aboutChoscorDB");
     about->setMenuRole(QAction::AboutRole);
-#ifdef Q_OS_MACOS
-    about->setIcon(style()->standardIcon(QStyle::SP_MessageBoxInformation));
-    about->setIconVisibleInMenu(true);
-#endif
     connect(about, &QAction::triggered, this, [this] {
         auto* dialog = findChild<ConfirmationDialog*>("aboutChoscorDBDialog");
         if (!dialog) {
@@ -322,11 +312,8 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* pinnedSection = pinned.section;
     auto* pinnedList = pinned.list;
     auto* pinnedEmpty = pinned.empty;
-    auto* pinsStatusLine = new design::StatusLine(pinnedSection);
-    pinsStatusLine->setObjectName("pinsStatusLine");
-    pinsStatusLine->hide();
-    pinnedSection->contentLayout()->addWidget(pinsStatusLine);
     auto* objectSection = new SidebarSection(tr("Schema & objects"), navBody);
+    objectSection->setObjectName("sidebarObjectsSection");
     connectionsLayout->addWidget(objectSection);
     connectionsLayout->addStretch(1);
     auto* filter = new QLineEdit;
@@ -354,14 +341,6 @@ MainWindow::Ui MainWindow::buildUi() {
     objectsEmpty->setObjectName("sidebarObjectsEmpty");
     objectSection->contentLayout()->addWidget(objectsEmpty);
     objectSection->contentLayout()->addWidget(tree);
-    auto* navigatorStatusLine = new design::StatusLine(objectSection);
-    navigatorStatusLine->setObjectName("navigatorStatusLine");
-    navigatorStatusLine->hide();
-    objectSection->contentLayout()->addWidget(navigatorStatusLine);
-    auto* navigatorStatus = new design::Text({}, navBody);
-    navigatorStatus->setObjectName("navigatorStatus");
-    navigatorStatus->hide();
-    objectSection->contentLayout()->addWidget(navigatorStatus);
     objectSection->contentLayout()->addStretch(1);
     connectionsScroll->setWidget(connectionsPanel);
     sidebarPanels->addWidget(connectionsScroll);
@@ -370,6 +349,7 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* savedLayout = new QVBoxLayout(savedPanel);
     savedLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     auto* savedSection = new SidebarSection(tr("Saved queries"), savedPanel);
+    savedSection->setObjectName("sidebarSavedSection");
     savedLayout->addWidget(savedSection);
     auto* savedSearch = new QLineEdit(savedSection);
     savedSearch->setObjectName("sidebarSavedSearch");
@@ -386,16 +366,13 @@ MainWindow::Ui MainWindow::buildUi() {
     savedFiles->setItemDelegate(new NavigatorIconDelegate(savedFiles));
     savedFiles->setProperty("designSurface", "sidebar");
     savedSection->contentLayout()->addWidget(savedFiles, 1);
-    auto* savedStatusLine = new design::StatusLine(savedSection);
-    savedStatusLine->setObjectName("savedStatusLine");
-    savedStatusLine->hide();
-    savedSection->contentLayout()->addWidget(savedStatusLine);
     sidebarPanels->addWidget(savedPanel);
     auto* historyPanel = new QWidget(sidebarPanels);
     historyPanel->setObjectName("historyPanel");
     auto* historyLayout = new QVBoxLayout(historyPanel);
     historyLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     auto* historySection = new SidebarSection(tr("Recent history"), historyPanel);
+    historySection->setObjectName("sidebarHistorySection");
     historyLayout->addWidget(historySection);
     const auto alignSidebarHeadings = [connectionSection, savedSection, historySection,
                                        addConnection] {
@@ -440,14 +417,6 @@ MainWindow::Ui MainWindow::buildUi() {
     toolbar->setObjectName("queryToolbar");
     toolbar->setProperty("designToolbarVariant", "workspace");
     toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    auto* connections = new QComboBox;
-    connections->setObjectName("connectionSelector");
-    connections->setMinimumContentsLength(design::layoutMetrics().connectionLabelCharacters);
-    connections->setAccessibleName(tr("SQL document connection target"));
-    connections->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    connections->addItem(tr("No active connection"));
-    connections->setEnabled(false);
-    toolbar->addWidget(connections);
     auto* saveButton = new design::Button({}, toolbar);
     saveButton->setDesignIcon(design::Icon::File);
     saveButton->setToolTip(tr("Save"));
@@ -460,23 +429,46 @@ MainWindow::Ui MainWindow::buildUi() {
     connect(saveButton, &QPushButton::clicked, save, &QAction::trigger);
     connect(save, &QAction::changed, saveButton,
             [save, saveButton] { saveButton->setEnabled(save->isEnabled()); });
-    auto* run = queryMenu->addAction(tr("Run statement"));
+    // A selection runs only the selection. Without one, Run current runs the statement at the
+    // cursor and Run all runs the whole document.
+    auto* runAll = queryMenu->addAction(tr("Run all"));
+    runAll->setObjectName("runAll");
+    runAll->setShortcut(QKeySequence("Ctrl+Shift+Return"));
+    runAll->setEnabled(false);
+    auto* run = queryMenu->addAction(tr("Run current"));
     run->setObjectName("runStatement");
     run->setShortcut(QKeySequence("Ctrl+Return"));
     run->setEnabled(false);
-    auto* runButton = new design::Button({}, toolbar);
+    auto* runGroup = new design::ButtonGroup(Qt::Horizontal, toolbar);
+    auto* runButton = new design::Button(tr("Run"), runGroup);
     runButton->setDesignIcon(design::Icon::Run);
     runButton->setVariant(design::ButtonVariant::Default);
-    runButton->setToolTip(tr("Run"));
     runButton->setObjectName("runStatementButton");
     runButton->setAccessibleName(tr("Run selection or current statement"));
-    runButton->setButtonSize(design::ButtonSize::IconSmall);
+    runButton->setButtonSize(design::ButtonSize::Small);
     runButton->setButtonContext(design::ButtonContext::EditorAction);
     runButton->setEnabled(false);
-    toolbar->addWidget(runButton);
+    auto* runMode = new design::Button({}, runGroup);
+    runMode->setDesignIcon(design::Icon::ChevronDown);
+    runMode->setVariant(design::ButtonVariant::Default);
+    runMode->setObjectName("runModeButton");
+    runMode->setAccessibleName(tr("Run options"));
+    runMode->setToolTip(tr("Run options"));
+    runMode->setButtonSize(design::ButtonSize::IconSmall);
+    runMode->setButtonContext(design::ButtonContext::EditorAction);
+    runMode->setEnabled(false);
+    auto* runMenu = new QMenu(runMode);
+    runMenu->setObjectName("runModeMenu");
+    runMenu->addAction(runAll);
+    runMenu->addAction(run);
+    runMode->setMenu(runMenu);
+    runGroup->addButton(runButton);
+    runGroup->addButton(runMode);
+    toolbar->addWidget(runGroup);
     connect(runButton, &QPushButton::clicked, run, &QAction::trigger);
-    connect(run, &QAction::changed, runButton, [run, runButton] {
+    connect(run, &QAction::changed, runButton, [run, runButton, runMode] {
         runButton->setEnabled(run->isEnabled());
+        runMode->setEnabled(run->isEnabled());
         runButton->setToolTip(run->text() + " · " +
                               run->shortcut().toString(QKeySequence::NativeText));
     });
@@ -498,18 +490,6 @@ MainWindow::Ui MainWindow::buildUi() {
         cancelButton->setAccessibleName(cancel->text());
         cancelButton->setToolTip(cancel->text());
     });
-    auto* mode = new QComboBox;
-    mode->setObjectName("transactionMode");
-    mode->setMinimumContentsLength(design::layoutMetrics().transactionLabelCharacters);
-    mode->setAccessibleName(tr("Transaction mode"));
-    mode->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    mode->addItems({tr("Auto-commit"), tr("Manual transaction")});
-    mode->setEnabled(false);
-    auto* commitAction = queryMenu->addAction(tr("Commit"));
-    commitAction->setEnabled(false);
-    auto* rollbackAction = queryMenu->addAction(tr("Rollback"));
-    rollbackAction->setEnabled(false);
-    toolbar->addWidget(mode);
     const auto addToolbarAction = [toolbar](QAction* action, const char* name, design::Icon icon) {
         auto* button = new design::Button({}, toolbar);
         button->setObjectName(name);
@@ -525,25 +505,18 @@ MainWindow::Ui MainWindow::buildUi() {
         connect(action, &QAction::changed, button,
                 [button, action] { button->setEnabled(action->isEnabled()); });
     };
-    addToolbarAction(commitAction, "toolbarCommit", design::Icon::Commit);
-    addToolbarAction(rollbackAction, "toolbarRollback", design::Icon::Rollback);
     auto* querySettings = queryMenu->addAction(tr("Query settings…"));
     querySettings->setObjectName("querySettings");
     addToolbarAction(querySettings, "toolbarQuerySettings", design::Icon::Settings);
     preferences_->addAction("run_statement", run);
+    preferences_->addAction("run_all", runAll);
     preferences_->addAction("cancel_query", cancel);
-    preferences_->addAction("commit", commitAction);
-    preferences_->addAction("rollback", rollbackAction);
-    const auto refreshIcons = [this, run, cancel, addConnection, refreshNavigator, toolbar] {
+    const auto refreshIcons = [this, addConnection, refreshNavigator, toolbar] {
         const auto resolved = theme_->resolvedTheme();
         toolbar->setIconSize(QSize(design::dimension(design::Dimension::Icon),
                                    design::dimension(design::Dimension::Icon)));
         setWindowIcon(design::themedIcon(design::Icon::AppMark, resolved.colors.primary,
                                          design::dimension(design::Dimension::Icon)));
-        run->setIcon(design::themedIcon(design::Icon::Run, resolved.colors.fg,
-                                        design::dimension(design::Dimension::Icon)));
-        cancel->setIcon(design::themedIcon(design::Icon::Cancel, resolved.colors.fg,
-                                           design::dimension(design::Dimension::Icon)));
         refreshNavigator->setDesignIcon(design::Icon::Refresh);
         addConnection->setDesignIcon(design::Icon::Add);
     };
@@ -641,6 +614,24 @@ MainWindow::Ui MainWindow::buildUi() {
                 addCloseAction(tr("Close Others"), others);
                 addCloseAction(tr("Close All"), all);
                 addCloseAction(tr("Close to the Right"), right);
+                if (auto* editor = qobject_cast<SqlEditor*>(editors_->widget(clicked));
+                    editor && workspace_) {
+                    menu->addSeparator();
+                    auto* change = menu->addMenu(tr("Change connection"));
+                    change->setObjectName("changeConnectionMenu");
+                    const auto& live = workspace_->liveConnections();
+                    change->menuAction()->setEnabled(!live.isEmpty());
+                    const QPointer<SqlEditor> target(editor);
+                    for (const auto& connection : live) {
+                        auto* action = change->addAction(connection.label);
+                        action->setCheckable(true);
+                        action->setChecked(editor->connectionTarget() == connection.id);
+                        connect(action, &QAction::triggered, this, [this, target, connection] {
+                            if (target)
+                                workspace_->changeDocumentConnection(target, connection.id);
+                        });
+                    }
+                }
                 design::popupContextMenu(*menu, bar->mapToGlobal(position));
             });
     auto* listTabs = viewMenu->addAction(tr("Editor tabs…"));
@@ -883,7 +874,7 @@ MainWindow::Ui MainWindow::buildUi() {
     toast_ = new ToastRegion;
     auto* toast = toast_;
     centralHostLayout->addWidget(screens_, 1);
-    addFeedbackStatusLines(centralHost);
+    errorFeedback_ = new ErrorFeedback(this, toast_);
     setCentralWidget(centralHost);
     toast_->attachTo(this);
     return {
@@ -908,22 +899,21 @@ MainWindow::Ui MainWindow::buildUi() {
         .filter = filter,
         .tree = tree,
         .objectsEmpty = objectsEmpty,
-        .navigatorStatus = navigatorStatus,
+        .objectSection = objectSection,
         .savedSearch = savedSearch,
+        .savedSection = savedSection,
         .savedStatus = savedStatus,
         .savedFiles = savedFiles,
         .historySearch = historySearch,
+        .historySection = historySection,
         .historyStatus = historyStatus,
         .historyItems = historyItems,
         .resetLayout = resetLayout,
         .toolbar = toolbar,
-        .connections = connections,
         .run = run,
+        .runAll = runAll,
         .cancel = cancel,
         .cancelButton = cancelButton,
-        .mode = mode,
-        .commitAction = commitAction,
-        .rollbackAction = rollbackAction,
         .querySettings = querySettings,
         .splitter = splitter,
         .workspaceTabs = workspaceTabs,
@@ -931,6 +921,7 @@ MainWindow::Ui MainWindow::buildUi() {
         .results = results,
         .empty = empty,
         .grid = grid,
+        .resultFooter = resultFooter,
         .compactState = compactState,
         .durationMetric = durationMetric,
         .pageMetric = pageMetric,

@@ -53,6 +53,34 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(line.palette().color(QPalette::Window), colors.surfaceRaised);
         QCOMPARE(line.palette().color(QPalette::WindowText), colors.fgMuted);
     }
+    void statusLineNoticeExpiresOnlyWhileItStillShows() {
+        using namespace choscordb::design;
+        StatusLine line;
+        QLabel source, outcome, duration, memory, page, rows;
+        QPushButton previous, next;
+        line.configure({&source, &outcome, &duration, &memory, &page, &rows, &previous, &next});
+        line.resize(1200, 80);
+        line.show();
+        line.setContent({"orders", "Executed", {}, {}, {}, {}}, StatusLine::State::Success);
+        line.showNotice("Copied 3 rows", 30);
+        QCOMPARE(outcome.text(), QString("Copied 3 rows"));
+        QTRY_COMPARE(outcome.text(), QString("Executed"));
+        // A later timer with a longer interval fires after a notice expiry.
+        bool passed = false;
+        // A busy notice stays until it is replaced, also when an earlier notice had an expiry.
+        line.showNotice("Copied 3 rows", 30);
+        line.showNotice("Reconnecting…", 0);
+        QTimer::singleShot(60, &line, [&passed] { passed = true; });
+        QTRY_VERIFY(passed);
+        QCOMPARE(outcome.text(), QString("Reconnecting…"));
+        // The expiry of a notice does not clear a newer message.
+        line.showNotice("Copied 3 rows", 30);
+        line.setMessage("Newer message");
+        passed = false;
+        QTimer::singleShot(60, &line, [&passed] { passed = true; });
+        QTRY_VERIFY(passed);
+        QCOMPARE(outcome.text(), QString("Newer message"));
+    }
     void structuredStatusContentIsPlainAndComplete() {
         using namespace choscordb::design;
         StatusLine line;

@@ -12,9 +12,10 @@ struct PinnedTreeModel::Entry {
     const void* sourceKey = nullptr; // Registration key; survives source invalidation.
     PinRecord pin;
     QString key;
-    QString status;
-    bool statusInLabel = false;
+    RowStatus status;
     QPersistentModelIndex source;
+    // Set from Rust when a root takes its pin, so data() never asks.
+    bool sidebarChild = true;
     std::vector<std::unique_ptr<Entry>> children;
 };
 namespace {
@@ -126,14 +127,17 @@ QVariant PinnedTreeModel::data(const QModelIndex& index, int role) const {
     if (value->parent)
         return value->source.data(role);
     const auto& pin = value->pin;
-    const auto status = pin.unavailable ? tr("Unavailable") : value->status;
-    if (role == Qt::DisplayRole) {
-        if (!pin.unavailable && (!value->statusInLabel || status.isEmpty()))
-            return pin.name;
-        return tr("%1 — %2").arg(pin.name, status);
-    }
+    const auto& status = value->status.message;
+    if (role == Qt::DisplayRole)
+        return pin.name;
+    if (role == NavigatorModel::StatusRole)
+        return int(value->status.kind);
+    if (role == NavigatorModel::RetryRole)
+        return int(value->status.retry);
     if (role == NavigatorModel::KindRole)
         return pin.kind;
+    if (role == NavigatorModel::SidebarChildRole)
+        return value->sidebarChild;
     if (role == NavigatorModel::ObjectIdRole)
         return pin.objectId;
     if (role == NavigatorModel::QualifiedNameRole)
@@ -175,6 +179,13 @@ void PinnedTreeModel::fetchMore(const QModelIndex& parent) {
     if (canFetchMore(parent))
         source_->fetchMore(entry(parent)->source);
 }
+void PinnedTreeModel::markAvailability(Entry& root) {
+    const bool marked = root.status.kind == RowStatusKind::Unavailable;
+    if (root.pin.unavailable && !marked)
+        root.status = EngineAdapter::rowStatus(RowStatusCause::ObjectUnavailable);
+    else if (!root.pin.unavailable && marked)
+        root.status = {};
+}
 void PinnedTreeModel::setPins(const QList<PinRecord>& pins) {
     QStringList keys;
     keys.reserve(pins.size());
@@ -189,6 +200,8 @@ void PinnedTreeModel::setPins(const QList<PinRecord>& pins) {
                 roots_[row]->pin.ancestryIds != pins[row].ancestryIds || pins[row].unavailable)
                 clearResolution(roots_[row].get());
             roots_[row]->pin = pins[row];
+            roots_[row]->sidebarChild = EngineAdapter::sidebarChildVisible({}, pins[row].kind);
+            markAvailability(*roots_[row]);
         }
         if (!pins.isEmpty())
             emit dataChanged(index(0, 0), index(static_cast<int>(pins.size()) - 1, 0));
@@ -202,8 +215,10 @@ void PinnedTreeModel::setPins(const QList<PinRecord>& pins) {
     for (qsizetype row = 0; row < pins.size(); ++row) {
         auto root = std::make_unique<Entry>();
         root->pin = pins[row];
+        root->sidebarChild = EngineAdapter::sidebarChildVisible({}, pins[row].kind);
         root->key = keys[row];
         root->row = static_cast<int>(row);
+        markAvailability(*root);
         if (!rootsByKey_.contains(root->key))
             rootsByKey_.insert(root->key, root.get());
         roots_.push_back(std::move(root));
@@ -266,17 +281,17 @@ bool PinnedTreeModel::setResolved(const QString& key, const QModelIndex& verifie
     emit dataChanged(modelIndex, modelIndex);
     return true;
 }
-void PinnedTreeModel::setStatus(const QString& key, const QString& status,
-                                StatusPlacement placement) {
+void PinnedTreeModel::setStatus(const QString& key, const RowStatus& status) {
     auto* root = findRoot(key);
-    const bool inLabel = placement == StatusPlacement::Label;
-    if (!root || (root->status == status && root->statusInLabel == inLabel))
+    if (!root || (root->pin.unavailable && status.kind != RowStatusKind::Unavailable) ||
+        (root->status.kind == status.kind && root->status.retry == status.retry &&
+         root->status.message == status.message))
         return;
     root->status = status;
-    root->statusInLabel = inLabel;
     const auto modelIndex = indexFor(root);
     emit dataChanged(modelIndex, modelIndex,
-                     {Qt::DisplayRole, Qt::ToolTipRole, Qt::AccessibleDescriptionRole});
+                     {NavigatorModel::StatusRole, NavigatorModel::RetryRole, Qt::ToolTipRole,
+                      Qt::AccessibleDescriptionRole});
 }
 QModelIndex PinnedTreeModel::sourceIndex(const QModelIndex& index) const {
     const auto* value = entry(index);

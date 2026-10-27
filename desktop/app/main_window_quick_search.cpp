@@ -93,13 +93,16 @@ void MainWindow::showQuickSearch() {
                         return;
                     }
                     quickHistoryToken_ = 0;
-                    quickHistoryError_ = tr("History search could not continue. Retry.");
+                    quickHistoryError_ = tr("History search could not continue. %1")
+                                             .arg(EngineAdapter::recoveryHint(RecoveryHint::Retry));
                 }
                 quickHistoryPending_ = false;
                 quickHistoryReady_ = true;
                 quickHistoryIncomplete_ = incomplete && quickHistoryRows_.size() >= historyRows;
                 if (incomplete && !progressed)
-                    quickHistoryError_ = tr("History search stopped. Retry the query.");
+                    quickHistoryError_ =
+                        tr("History search stopped. %1")
+                            .arg(EngineAdapter::recoveryHint(RecoveryHint::RetryQuery));
                 renderQuickSearch();
             });
         connect(
@@ -116,7 +119,9 @@ void MainWindow::showQuickSearch() {
                     quickHistoryClearToken_ = 0;
                     quickHistoryClearing_ = workspace_->adapter()->historyClearInProgress();
                     refreshQuickSearchIfOpen();
-                    quickHistoryError_ = tr("History clear failed: %1. Retry.").arg(error);
+                    quickHistoryError_ =
+                        tr("History clear failed: %1. %2")
+                            .arg(error, EngineAdapter::recoveryHint(RecoveryHint::Retry));
                     renderQuickSearch();
                     return;
                 }
@@ -124,7 +129,9 @@ void MainWindow::showQuickSearch() {
                     return;
                 quickHistoryToken_ = 0;
                 quickHistoryPending_ = false;
-                quickHistoryError_ = tr("History search failed: %1. Refine or retry.").arg(error);
+                quickHistoryError_ =
+                    tr("History search failed: %1. %2")
+                        .arg(error, EngineAdapter::recoveryHint(RecoveryHint::RefineOrRetry));
                 renderQuickSearch();
             });
         connect(workspace_->adapter(), &EngineAdapter::historyClearStarted, this,
@@ -312,7 +319,9 @@ void MainWindow::updateQuickSearch(const QString& query) {
                     needle, QuickSearchNeedle::limits().historyRows, quickHistoryToken_)) {
                 quickHistoryToken_ = 0;
                 quickHistoryPending_ = false;
-                quickHistoryError_ = tr("History search is unavailable. Retry the query.");
+                quickHistoryError_ =
+                    tr("History search is unavailable. %1")
+                        .arg(EngineAdapter::recoveryHint(RecoveryHint::RetryQuery));
                 renderQuickSearch();
             }
         });
@@ -714,7 +723,8 @@ void MainWindow::activateQuickSearch(const QString& id) {
             quickSearch_->reject();
         else
             quickSearch_->setStatus(
-                tr("The object could not be opened. Retry from the navigator."));
+                tr("The object could not be opened. %1")
+                    .arg(EngineAdapter::recoveryHint(RecoveryHint::RetryFromNavigator)));
         return;
     }
     if (const auto found = quickHistoryMatches_.constFind(id);
@@ -738,7 +748,9 @@ void MainWindow::activateQuickSearch(const QString& id) {
         if (current && current->property("historyRecordId").toString() == entry.id)
             quickSearch_->reject();
         else
-            quickSearch_->setStatus(tr("History could not be opened. Retry from Query history."));
+            quickSearch_->setStatus(
+                tr("History could not be opened. %1")
+                    .arg(EngineAdapter::recoveryHint(RecoveryHint::RetryFromHistory)));
         return;
     }
     if (const auto found = quickEditorMatches_.constFind(id); found != quickEditorMatches_.cend()) {

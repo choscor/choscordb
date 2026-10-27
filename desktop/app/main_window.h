@@ -1,5 +1,6 @@
 #pragma once
 #include "app/pin_store.h"
+#include "bridge/engine_adapter.h"
 #include "design_system/quick_search/quick_search_dialog.h"
 #include "design_system/toast_region/toast_region.h"
 #include <QHash>
@@ -27,6 +28,8 @@ class SqlEditor;
 class TextFinder;
 class QueryWorkspace;
 class ObjectExplorer;
+class ErrorFeedback;
+class SidebarSection;
 class NavigatorController;
 class PinnedTreeModel;
 class WorkspaceRecoveryController;
@@ -45,12 +48,12 @@ class MainWindow final : public QMainWindow {
     void requestUpdateRestart(std::function<void()> install);
     void openConnectionQuery(quint64 connection);
     void showToast(const QString& message, ToastVariant variant);
-    void showStatus(const QString& message, ToastVariant variant = ToastVariant::Warning,
-                    const QString& scope = QStringLiteral("workspace"), const QString& owner = {});
-    void showStatusProgress(const QString& message,
-                            const QString& scope = QStringLiteral("workspace"));
-    void clearStatus(const QString& scope = QStringLiteral("workspace"),
-                     const QString& expectedMessage = {}, const QString& owner = {});
+    // An error from an action that the user started; it joins the one error modal.
+    void reportError(const QString& message);
+    // A background error or a blocked-action warning; it replaces the one notice toast.
+    void reportNotice(const QString& message, ToastVariant variant = ToastVariant::Warning);
+    // Removes the notice when its condition is resolved.
+    void clearNotice(const QString& message);
     void disableDiagnostics();
     std::optional<quint64> browsingConnection() const { return browsingConnection_; }
   signals:
@@ -73,7 +76,6 @@ class MainWindow final : public QMainWindow {
     struct Ui;
     struct PendingObjectAction;
     Ui buildUi();
-    void addFeedbackStatusLines(QWidget* host);
     void connectWorkspace(const Ui& ui, const QString& storagePath);
     void connectLifecycle(const Ui& ui, const QString& storagePath);
     void connectNavigator(const Ui& ui);
@@ -87,12 +89,17 @@ class MainWindow final : public QMainWindow {
     void activateNavigatorObject(const QModelIndex& index);
     void tryRevealPendingPin();
     void updatePinsForObjectAction(const PendingObjectAction& action);
-    void savePinsAsync(QList<PinRecord> updated, const QString& failureMessage);
+    // A background save failure is a notice; a failure of a user action is an error.
+    void savePinsAsync(QList<PinRecord> updated, const QString& failureMessage,
+                       bool background = false);
+    void failPinExpansion(const QString& key, const RowStatus& status, bool rebinding);
     void requestObjectAction(const QString& action, quint64 connection, const QString& objectId,
                              const QString& shortName, const QString& kind,
                              const QString& parentObjectId, const QString& qualifiedName,
                              const QString& relationSubtype);
     void handleObjectActionEvent(const BridgeEvent& event);
+    // The objects section is busy while an object action, its refresh or a search runs.
+    void syncObjectSectionBusy();
     bool objectActionReady(quint64 connection, const QString& objectId, const QString& kind,
                            const QString& parentObjectId, const QString& qualifiedName,
                            const QString& relationSubtype);
@@ -114,6 +121,9 @@ class MainWindow final : public QMainWindow {
     quint64 nextPendingPlaceholder_ = std::numeric_limits<quint64>::max();
     QString submittingBrowseProfileId_, submissionError_;
     QString reconnectingProfile_;
+    QPointer<ObjectExplorer> reconnectingExplorer_;
+    // Ends a Reconnect that an object tab started. A failed one only clears its progress.
+    void finishReconnect(bool connected);
     bool submittingBrowseProfile_ = false;
     NavigatorController* navigatorController_ = nullptr;
     struct PendingObjectAction {
@@ -125,8 +135,12 @@ class MainWindow final : public QMainWindow {
     struct PendingObjectRefresh {
         quint64 connection = 0, token = 0;
         QString parentObjectId;
+        // Shows when the navigator shows the change.
+        QString success;
     };
     std::optional<PendingObjectRefresh> pendingObjectRefresh_;
+    SidebarSection* objectSection_ = nullptr;
+    bool objectSearchBusy_ = false;
     PinStore pinStore_;
     QList<PinRecord> pins_;
     QHash<QString, qsizetype> pinRows_; // First pins_ row per identity key.
@@ -134,6 +148,8 @@ class MainWindow final : public QMainWindow {
     QThreadPool pinIoPool_;
     quint64 pinSaveGeneration_ = 0;
     quint64 pinPersistedGeneration_ = 0;
+    // The notice of a failed background save; a later successful save clears it.
+    QString pinSaveNotice_;
     bool pinsLoaded_ = false;
     QPointer<QTreeView> pinnedList_;
     PinnedTreeModel* pinnedModel_ = nullptr;
@@ -142,7 +158,7 @@ class MainWindow final : public QMainWindow {
     QSet<QString> pinExpansionRebinding_;
     QHash<QString, int> pinExpansionAttempts_;
     QHash<QString, quint64> pinExpansionGenerations_;
-    QHash<QString, QString> pinExpansionErrors_;
+    QHash<QString, RowStatus> pinExpansionErrors_;
     QHash<QString, quint64> pinExpansionConnectionIds_;
     QString pendingPinKey_;
     quint64 pinActivationGeneration_ = 0;
@@ -150,6 +166,7 @@ class MainWindow final : public QMainWindow {
     int pinStartAttempts_ = 0;
     QStackedWidget* screens_ = nullptr;
     ToastRegion* toast_ = nullptr;
+    ErrorFeedback* errorFeedback_ = nullptr;
     bool constructing_ = true;
     std::function<void()> updateInstall_;
     void finishClose(QCloseEvent* event);
@@ -225,6 +242,7 @@ class MainWindow final : public QMainWindow {
     QWidget* sqlResultArea_ = nullptr;
     ObjectExplorer* initialObjectExplorer_ = nullptr;
     std::function<void(quint64, const QString&)> openGeneratedSql_;
+    // Opens a saved profile; false means that it already reported the failure.
     std::function<bool(const QString&)> reconnectProfile_;
     QPointer<QListWidget> savedConnectionsList_;
     std::function<void()> activateFocusedSavedProfile_;

@@ -32,8 +32,7 @@ class ObjectDataHistoryTest : public QObject {
                         ->toPlainText()
                         .contains("Completed"));
         QTRY_VERIFY(run->isEnabled());
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         choscordb::ObjectDataWorkspace data(sql);
         data.resize(900, 400);
         data.show();

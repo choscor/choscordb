@@ -22,6 +22,7 @@
 #include "preview_test_helpers.h"
 #include "tools/preview/preview_window.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include <QAbstractButton>
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QClipboard>
@@ -193,6 +194,23 @@ void PreviewTest::recentHistoryRowsUseSharedDelegateInBothThemes() {
     }
 }
 
+void PreviewTest::sectionLabelSpecimenIsUppercaseInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("typography"));
+    window.show();
+    QCoreApplication::processEvents();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        auto* label = host->findChild<choscordb::design::Text*>("previewSectionLabel");
+        QVERIFY(label);
+        QVERIFY(label->isVisible());
+        QCOMPARE(label->text(), QString("Schema & objects"));
+        QCOMPARE(label->font().capitalization(), QFont::AllUppercase);
+        QVERIFY(label->font().letterSpacing() > 0);
+    }
+}
+
 void PreviewTest::richTextParagraphsHaveCompactSpacing() {
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen("textareas"));
@@ -271,7 +289,7 @@ void PreviewTest::toastPortalIsPresentInBothThemes() {
         QCOMPARE(toast->parentWidget(), scroll->viewport());
         QCOMPARE(toast->geometry().right(), scroll->viewport()->width() - 17);
         QCOMPARE(toast->geometry().bottom(), scroll->viewport()->height() - 17);
-        auto* dismiss = toast->findChild<QToolButton*>("toastDismiss");
+        auto* dismiss = toast->findChild<QAbstractButton*>("toastDismiss");
         QVERIFY(dismiss);
         QCOMPARE(dismiss->accessibleName(), QString("Dismiss notification"));
         QVERIFY(dismiss->isVisible());
@@ -367,7 +385,7 @@ void PreviewTest::windowToastClearsDestroyedModalOwner() {
     second->open();
     QCOMPARE(choscordb::windowToast(second), toast);
     QCOMPARE(toast->property("embeddedPopupOwner").value<QObject*>(), second);
-    QTest::mouseClick(toast->findChild<QToolButton*>("toastDismiss"), Qt::LeftButton);
+    QTest::mouseClick(toast->findChild<QAbstractButton*>("toastDismiss"), Qt::LeftButton);
     QTRY_VERIFY(toast->isHidden());
 }
 
@@ -873,6 +891,9 @@ void PreviewTest::statusLineSpecimenUsesSharedSurfaceInBothThemes() {
         auto* loading = loadingLine->findChild<QLabel*>("statusLoadingIcon");
         QVERIFY(loading);
         QVERIFY(loading->isVisible());
+        auto* notice = host->findChild<StatusLine*>("previewStatusNotice");
+        QVERIFY(notice && notice->isVisible());
+        QCOMPARE(notice->accessibleDescription(), QString("Copied 3 rows."));
         auto* longError = host->findChild<StatusLine*>("previewStatusLongError");
         QVERIFY(longError);
         auto* details = longError->findChild<QToolButton*>("statusDetails");

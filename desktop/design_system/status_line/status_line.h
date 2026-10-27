@@ -13,6 +13,7 @@ class QHBoxLayout;
 class QToolButton;
 class QDialog;
 class QPlainTextEdit;
+class QTimer;
 
 namespace choscordb::design {
 
@@ -42,6 +43,9 @@ class StatusLine final : public QWidget {
     void setAvailable(bool available);
     void setNeutral(bool neutral = true);
     void setMessage(const QString& message);
+    // Shows `message`. A positive `expiryMs` clears it after that time if it still shows;
+    // zero keeps it until other content replaces it.
+    void showNotice(const QString& message, int expiryMs);
     void setBusy(bool busy);
 
   protected:
@@ -69,6 +73,8 @@ class StatusLine final : public QWidget {
     QPointer<QPlainTextEdit> detailsText_;
     QString fullMessage_;
     QString feedbackMessage_;
+    QTimer* noticeExpiry_ = nullptr;
+    QString notice_;
     State state_ = State::Neutral;
     bool refreshing_ = false;
 };

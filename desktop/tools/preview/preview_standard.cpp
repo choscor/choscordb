@@ -36,6 +36,7 @@
 #include <QTextEdit>
 #include <QToolBar>
 #include <QToolButton>
+#include <memory>
 
 #include <QComboBox>
 #include <QEvent>
@@ -399,6 +400,12 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         loading->setMessage("orders · Loading rows…");
         loading->setBusy(true);
         layout->addWidget(loading);
+        // A notice replaces the message until it expires; this one stays.
+        auto* notice = new StatusLine(host);
+        notice->setObjectName("previewStatusNotice");
+        notice->setNeutral();
+        notice->showNotice("Copied 3 rows.", 0);
+        layout->addWidget(notice);
         auto* detail = new StatusLine(host);
         detail->setObjectName("previewStatusLongError");
         detail->setState(StatusLine::State::Error);
@@ -495,6 +502,16 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         QObject::connect(resolvePinned, &QPushButton::clicked, toast,
                          [toast] { toast->clearPinnedToast(); });
         pinnedActions->addWidget(resolvePinned);
+        // Background failures replace one notice and count; they never queue.
+        auto* replacing = new Button("Show background failure", host);
+        replacing->setObjectName("previewToast_replacing");
+        QObject::connect(
+            replacing, &QPushButton::clicked, toast, [toast, failures = std::make_shared<int>(0)] {
+                toast->showReplacingToast(
+                    "Error", QString("Pin rebind failed: connection refused (%1)").arg(++*failures),
+                    choscordb::ToastVariant::Danger);
+            });
+        pinnedActions->addWidget(replacing);
         pinnedActions->addStretch();
         layout->addLayout(pinnedActions);
     } else if (id == "tooltip-popover") {

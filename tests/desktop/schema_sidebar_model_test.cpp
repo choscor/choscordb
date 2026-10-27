@@ -228,8 +228,8 @@ class SchemaSidebarModelTest final : public QObject {
         const auto shownTable = visible->mapFromSource(table);
         model->fetchMore(table);
         QTRY_COMPARE(requested.count(), 2);
-        QCOMPARE(visible->index(0, 0, shownTable).data(NavigatorModel::KindRole).toString(),
-                 QString("loading"));
+        QCOMPARE(visible->rowCount(shownTable), 0);
+        QCOMPARE(shownTable.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Loading));
         QVERIFY(model->applyChildrenPage(7, "table", requested.last().at(2).toULongLong(),
                                          {{"index", "orders_idx", "orders_idx", "index", false}}, 0,
                                          true, 1));
@@ -264,9 +264,8 @@ class SchemaSidebarModelTest final : public QObject {
         QTRY_COMPARE(requested.count(), 4);
         QVERIFY(model->failChildren(7, "table", requested.last().at(2).toULongLong(),
                                     "temporary metadata error"));
-        QCOMPARE(visible->rowCount(shownTable), 1);
-        QCOMPARE(visible->index(0, 0, shownTable).data(NavigatorModel::KindRole).toString(),
-                 QString("error"));
+        QCOMPARE(visible->rowCount(shownTable), 0);
+        QCOMPARE(shownTable.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Failed));
     }
 };
 QTEST_MAIN(SchemaSidebarModelTest)

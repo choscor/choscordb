@@ -19,19 +19,15 @@
 namespace {
 struct Fixture {
     QWidget window;
-    QComboBox connections, mode;
-    QAction run, cancel, commit, rollback, newConnection;
+    QAction run, runAll, cancel, newConnection;
     QPushButton next, previous, exportResult;
     QLabel summary;
     QPlainTextEdit messages;
     QTableView grid;
     choscordb::SqlEditor editor;
-    choscordb::QueryWorkspace workspace{{&connections,
-                                         &mode,
-                                         &run,
+    choscordb::QueryWorkspace workspace{{&run,
+                                         &runAll,
                                          &cancel,
-                                         &commit,
-                                         &rollback,
                                          &newConnection,
                                          &next,
                                          &summary,
@@ -46,7 +42,6 @@ struct Fixture {
     Fixture() {
         window.resize(960, 640);
         window.show();
-        mode.addItems({"Auto", "Manual"});
     }
 };
 void answer(QObject* context, bool accept, bool* rollbackNotice = nullptr) {
@@ -86,7 +81,7 @@ class DisconnectWorkspaceTest : public QObject {
         QTRY_VERIFY(f.run.isEnabled());
         answer(&f.window, false);
         QVERIFY(!f.workspace.confirmShutdown());
-        QCOMPARE(f.connections.count(), 1);
+        QCOMPARE(f.workspace.liveConnections().size(), 1);
         QCOMPARE(f.grid.model()->rowCount(), 1000);
         f.next.click();
         QTRY_COMPARE(f.grid.model()->rowCount(), 1);
@@ -116,20 +111,23 @@ class DisconnectWorkspaceTest : public QObject {
         f.workspace.adapter()->fetchPage(*setup);
         QTRY_COMPARE(finished, 1);
         f.workspace.adapter()->releaseQuery(*setup);
-        f.mode.setCurrentIndex(1);
-        f.editor.setText("INSERT INTO work VALUES (7)");
+        f.editor.setText("BEGIN");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         QTRY_VERIFY(f.run.isEnabled());
         f.run.trigger();
         QTRY_COMPARE(finished, 2);
-        QTRY_VERIFY(f.commit.isEnabled());
-        answer(&f.window, false);
-        f.workspace.disconnectConnection(id);
-        QCOMPARE(f.connections.count(), 1);
-        f.editor.setText("SELECT count(*) FROM work");
+        QTRY_VERIFY(f.workspace.activeTransaction(id));
+        f.editor.setText("INSERT INTO work VALUES (7)");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         f.run.trigger();
         QTRY_COMPARE(finished, 3);
+        answer(&f.window, false);
+        f.workspace.disconnectConnection(id);
+        QCOMPARE(f.workspace.liveConnections().size(), 1);
+        f.editor.setText("SELECT count(*) FROM work");
+        f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+        f.run.trigger();
+        QTRY_COMPARE(finished, 4);
         QCOMPARE(f.grid.model()->index(0, 0).data().toString(), QString("1"));
         QTimer::singleShot(0, &f.window, [&] {
             auto* box =
@@ -148,18 +146,19 @@ class DisconnectWorkspaceTest : public QObject {
         const auto buffer = f.editor.text();
         f.workspace.disconnectConnection(id);
         f.workspace.disconnectConnection(id); // Accepted duplicate is ignored too.
-        QTRY_COMPARE(f.connections.count(), 0);
+        QTRY_COMPARE(f.workspace.liveConnections().size(), 0);
         QCOMPARE(f.editor.text(), buffer);
         f.workspace.connectSqlite(path);
         QTRY_COMPARE(connected.count(), 2);
-        QVERIFY(!f.connections.currentData().isValid());
+        QVERIFY(!f.workspace.liveConnectionLabel(f.editor.connectionTarget().value_or(0)));
         QVERIFY(!f.run.isEnabled());
-        f.connections.setCurrentIndex(f.connections.findData(connected.last().at(0)));
+        QVERIFY(
+            f.workspace.changeDocumentConnection(&f.editor, connected.last().at(0).toULongLong()));
         QTRY_VERIFY(f.run.isEnabled());
         f.editor.setText("SELECT count(*) FROM work");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         f.run.trigger();
-        QTRY_COMPARE(finished, 4);
+        QTRY_COMPARE(finished, 5);
         QCOMPARE(f.grid.model()->index(0, 0).data().toString(), QString("0"));
     }
     void activeWorkShowsCancellationAndDisconnects() {
@@ -171,7 +170,7 @@ class DisconnectWorkspaceTest : public QObject {
         f.workspace.connectSqlite(":memory:");
         QTRY_COMPARE(connected.count(), 2);
         const auto other = connected.last().at(0).toULongLong();
-        f.connections.setCurrentIndex(f.connections.findData(QVariant::fromValue<qulonglong>(id)));
+        QVERIFY(f.workspace.changeDocumentConnection(&f.editor, id));
         int schemas = 0;
         connect(f.workspace.adapter(), &choscordb::EngineAdapter::eventReady, &f.window,
                 [&](const choscordb::BridgeEvent& event) {
@@ -198,14 +197,13 @@ class DisconnectWorkspaceTest : public QObject {
                 }
         });
         f.workspace.disconnectConnection(id);
-        QVERIFY(f.connections.isEnabled());
-        f.connections.setCurrentIndex(
-            f.connections.findData(QVariant::fromValue<qulonglong>(other)));
+        QVERIFY(f.workspace.navigationAllowed());
+        QVERIFY(f.workspace.changeDocumentConnection(&f.editor, other));
         QVERIFY(f.run.isEnabled());
         f.editor.setText("SELECT 7");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         f.run.trigger();
-        QTRY_COMPARE(f.connections.count(), 1);
+        QTRY_COMPARE(f.workspace.liveConnections().size(), 1);
         QTRY_COMPARE(f.grid.model()->rowCount(), 1);
         QCOMPARE(f.grid.model()->index(0, 0).data().toString(), QString("7"));
     }
@@ -262,7 +260,7 @@ class DisconnectWorkspaceTest : public QObject {
             QFAIL("missing disconnect action");
         });
         f.workspace.disconnectConnection(id);
-        QTRY_COMPARE(f.connections.count(), 0);
+        QTRY_COMPARE(f.workspace.liveConnections().size(), 0);
         QTRY_COMPARE(failedExports, 1);
         QCOMPARE(completedExports, 0);
         QTRY_VERIFY(!dialog->isRunning());
@@ -284,7 +282,7 @@ class DisconnectWorkspaceTest : public QObject {
                 qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(box);
             QVERIFY(f.workspace.adapter()->disconnectConnection(id));
-            QTRY_COMPARE(f.connections.count(), 0);
+            QTRY_COMPARE(f.workspace.liveConnections().size(), 0);
             for (auto* button : box->buttons())
                 if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
                     button->click();
@@ -293,7 +291,7 @@ class DisconnectWorkspaceTest : public QObject {
             QFAIL("missing disconnect action");
         });
         f.workspace.disconnectConnection(id);
-        QCOMPARE(f.connections.count(), 0);
+        QCOMPARE(f.workspace.liveConnections().size(), 0);
         QCOMPARE(failures.count(), 0); // A second submission would report a stale handle.
     }
     void cancelThenDisconnectUnselectedSessionPreservesEditor() {
@@ -304,22 +302,23 @@ class DisconnectWorkspaceTest : public QObject {
         const auto first = connected.at(0).at(0).toULongLong();
         f.workspace.connectSqlite(":memory:");
         QTRY_COMPARE(connected.count(), 2);
-        f.connections.setCurrentIndex(f.connections.findData(connected.last().at(0)));
+        QVERIFY(
+            f.workspace.changeDocumentConnection(&f.editor, connected.last().at(0).toULongLong()));
         const auto second = connected.at(1).at(0).toULongLong();
         f.editor.setText("-- untouched draft");
         bool warning = false;
         answer(&f.window, false, &warning);
         f.workspace.disconnectConnection(first);
         QVERIFY(warning);
-        QCOMPARE(f.connections.count(), 2);
-        QCOMPARE(f.connections.currentData().toULongLong(), second);
+        QCOMPARE(f.workspace.liveConnections().size(), 2);
+        QCOMPARE(f.editor.connectionTarget().value_or(0), second);
         answer(&f.window, true);
         f.workspace.disconnectConnection(first);
-        QTRY_COMPARE(f.connections.count(), 1);
-        QCOMPARE(f.connections.currentData().toULongLong(), second);
+        QTRY_COMPARE(f.workspace.liveConnections().size(), 1);
+        QCOMPARE(f.editor.connectionTarget().value_or(0), second);
         QCOMPARE(f.editor.text(), QString("-- untouched draft"));
         f.workspace.disconnectConnection(first);
-        QCOMPARE(f.connections.count(), 1);
+        QCOMPARE(f.workspace.liveConnections().size(), 1);
     }
 };
 QTEST_MAIN(DisconnectWorkspaceTest)
