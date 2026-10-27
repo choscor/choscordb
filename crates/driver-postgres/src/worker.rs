@@ -854,8 +854,18 @@ async fn fetch(
     })
 }
 fn dispose(active: Option<Active>) {
-    if let Some(active) = active {
-        tokio::task::spawn_blocking(move || drop(active));
+    if let Some(Active {
+        portal,
+        spool,
+        lookahead,
+        text_overrides,
+        ..
+    }) = active
+    {
+        // The portal sends its Close messages when it drops. Drop it here, so they
+        // go before the next request instead of after its response.
+        drop(portal);
+        tokio::task::spawn_blocking(move || drop((spool, lookahead, text_overrides)));
     }
 }
 // The transaction borrows Client only inside this loop; no self-referential state.
