@@ -10,6 +10,17 @@ import threading
 import time
 
 
+# The 10,000-row x 30-column page, its sort and its filter, with the longest UI dispatch.
+WIDE_PAGE_KEYS = (
+    "wide_page_ready_ms",
+    "wide_page_notify_max_ms",
+    "wide_sort_ms",
+    "wide_sort_notify_max_ms",
+    "wide_filter_ms",
+    "wide_filter_notify_max_ms",
+)
+
+
 def run(binary, destination, timeout):
     with tempfile.TemporaryDirectory(prefix="choscordb-performance-") as directory:
         report = Path(directory) / "probe.json"
@@ -61,9 +72,13 @@ def run(binary, destination, timeout):
         if report.exists():
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(report.read_bytes())
+        data = json.loads(report.read_text()) if report.exists() else {}
         if code:
-            raise RuntimeError(f"Desktop probe failed ({code}): {''.join(diagnostics)}")
-        data = json.loads(report.read_text())
+            reason = data.get("error") or "".join(diagnostics)
+            raise RuntimeError(f"Desktop probe failed ({code}): {reason}")
+        missing = [key for key in WIDE_PAGE_KEYS if key not in data]
+        if missing:
+            raise RuntimeError(f"Desktop probe omitted wide-page metrics: {missing}")
         if not all(marker in markers for marker in ("ready", "shutdown_started")):
             raise RuntimeError("Desktop probe omitted required timing markers")
         data["external_observation"] = {

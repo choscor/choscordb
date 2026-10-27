@@ -115,6 +115,14 @@ fn paged() -> QueryOptions {
         ..QueryOptions::default()
     }
 }
+fn transaction_control(engine: &mut Engine, c: ConnectionId, sql: &str) {
+    let query = engine.execute(c, sql.into(), paged()).unwrap();
+    engine.fetch_page_at(query, 0).unwrap();
+    if let Event::QueryFailed { error, .. } = result_event(engine) {
+        panic!("{sql} failed: {error}");
+    }
+    engine.release_query(query).unwrap();
+}
 fn result_event(engine: &mut Engine) -> Event {
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
@@ -178,6 +186,7 @@ fn stored_result_survives_new_writes_and_transaction_without_replaying_sql() {
             },
         )
         .unwrap();
+    transaction_control(&mut engine, c, "BEGIN");
     let q = engine
         .execute(c, "UPDATE t SET x=x+10 RETURNING x".into(), paged())
         .unwrap();
@@ -193,7 +202,7 @@ fn stored_result_survives_new_writes_and_transaction_without_replaying_sql() {
         result_event(&mut engine),
         Event::StoredPage { .. }
     ));
-    engine.commit(c).unwrap();
+    transaction_control(&mut engine, c, "COMMIT");
     engine.fetch_page_at(q, 0).unwrap();
     assert!(
         matches!(result_event(&mut engine), Event::StoredPage { page, .. } if page.rows[0][0] == Value::Integer(11))
@@ -247,10 +256,11 @@ fn archived_partial_result_exposes_only_stored_next_pages() {
             },
         )
         .unwrap();
+    transaction_control(&mut engine, c, "BEGIN");
     let q = engine.execute(c, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<700) SELECT x FROM c".into(), paged()).unwrap();
     engine.fetch_page_at(q, 0).unwrap();
     assert!(matches!(result_event(&mut engine), Event::StoredPage { page, .. } if page.has_more));
-    engine.commit(c).unwrap();
+    transaction_control(&mut engine, c, "COMMIT");
     engine.fetch_page_at(q, 0).unwrap();
     assert!(matches!(result_event(&mut engine), Event::StoredPage { page, .. } if !page.has_more));
 }
@@ -511,10 +521,12 @@ fn deferred_chunks_survive_new_sql_and_commit_and_remain_budgeted() {
     let Value::Deferred { handle, .. } = page.rows[0][0] else {
         panic!("large value must defer")
     };
-    engine.commit(c).unwrap();
-    wait(&mut engine, |e| {
-        matches!(e, Event::TransactionFinished { .. })
-    });
+    let commit = engine.execute(c, "COMMIT".into(), paged()).unwrap();
+    engine.fetch_page(commit).unwrap();
+    wait(
+        &mut engine,
+        |e| matches!(e, Event::Page { query, .. } if *query == commit),
+    );
     let newer = engine.execute(c, "SELECT 2".into(), paged()).unwrap();
     wait(
         &mut engine,
@@ -756,7 +768,7 @@ fn failed_statement_reports_the_transaction_it_leaves_open() {
         .unwrap();
     assert_eq!(transaction_state_before_failure(&mut engine), Some(true));
 
-    engine.rollback(c).unwrap();
+    transaction_control(&mut engine, c, "ROLLBACK");
     engine
         .execute(
             c,

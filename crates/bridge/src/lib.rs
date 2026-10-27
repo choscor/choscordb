@@ -7,10 +7,12 @@ pub use appearance::{
 mod completion;
 mod convert;
 mod deferred_assembler;
+mod event_forwarder;
 pub use deferred_assembler::{
     RustDeferredAssembler, deferred_assembler_initial_error, deferred_assembler_new,
     deferred_assembler_push,
 };
+pub use event_forwarder::EVENT_DRAIN_BUDGET;
 mod diagnostics;
 mod document_io;
 mod edit_value;
@@ -77,7 +79,7 @@ pub use preferences::*;
 pub use recovery::*;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 pub use update::{
@@ -180,9 +182,31 @@ pub mod ffi {
         timezone: String,
         nullability: i8,
     }
+    /// The representation of a cell value. `InvalidUnicode` marks C++ text that is not
+    /// valid UTF-16; Rust rejects it.
+    #[derive(Debug)]
+    enum CellKindDto {
+        Null,
+        Boolean,
+        Integer,
+        Real,
+        Decimal,
+        Text,
+        Date,
+        Time,
+        Timestamp,
+        Uuid,
+        Json,
+        Binary,
+        FallbackText,
+        DeferredFallback,
+        Unavailable,
+        Deferred,
+        InvalidUnicode,
+    }
     #[derive(Default)]
     struct CellDto {
-        kind: String,
+        kind: CellKindDto,
         text: String,
         integer: i64,
         real: f64,
@@ -191,6 +215,8 @@ pub mod ffi {
         handle: u64,
         byte_length: u64,
         database_type: String,
+        /// Whether a foreign-key link can filter by this value.
+        foreign_key_filterable: bool,
     }
     struct ResultFilterDto {
         column: u32,
@@ -248,6 +274,12 @@ pub mod ffi {
         /// The statements and bound values shown for review before apply.
         review: String,
         error: String,
+    }
+    /// What an execution without a selection runs: the statement at the cursor or all statements.
+    #[derive(Debug)]
+    enum ExecutionScope {
+        Current,
+        All,
     }
     #[derive(Debug)]
     enum SqlHighlightKind {
@@ -581,10 +613,71 @@ pub mod ffi {
         user_optional: bool,
         database_selects_server: bool,
     }
-    /// Why a manual transaction blocks an action; empty when it does not.
+    /// Why a sidebar row has a status.
+    #[derive(Debug)]
+    enum RowStatusCauseDto {
+        Connecting,
+        ChildrenLoading,
+        ChildrenFailed,
+        ConnectionFailed,
+        ConnectionUnavailable,
+        ConnectionNotReady,
+        ConnectionDeselected,
+        RevealFailed,
+        ObjectUnavailable,
+        Connected,
+        Hidden,
+        Disconnected,
+        ChildrenCached,
+        ChildrenCachedFailed,
+    }
+    /// The icon that a sidebar row shows after its name.
+    #[derive(Debug)]
+    enum RowStatusKindDto {
+        None,
+        Loading,
+        Failed,
+        Unavailable,
+    }
+    /// The gesture that tries a failed row operation again.
+    #[derive(Debug)]
+    enum RowRetryDto {
+        None,
+        Refresh,
+    }
+    /// The sentence that tells the user how to recover from a failure.
+    #[derive(Debug)]
+    enum RecoveryHintDto {
+        Retry,
+        RetryQuery,
+        RefineOrRetry,
+        Refresh,
+        ActivatePin,
+        RetryFromNavigator,
+        RetryFromHistory,
+        OpenPreferences,
+        RetryOrResetAppearance,
+        RetryAppearanceBeforeSave,
+        RestoreConnection,
+        RefreshNavigator,
+        CheckConnection,
+        ReconnectAndRefresh,
+        RetryRecovery,
+        RetryConnection,
+        InspectSshServer,
+        UseApprovedKey,
+        RetryApproval,
+        ReconnectManually,
+        ReconnectAndRefreshNavigator,
+    }
+    struct RowStatusDto {
+        kind: RowStatusKindDto,
+        retry: RowRetryDto,
+        message: String,
+    }
+    /// Why an open transaction blocks an action; empty when it does not.
     struct TransactionGuardDto {
         apply_edits: String,
-        enable_auto_commit: String,
     }
     struct NavigatorSearchBudgetDto {
         quick_visits: u32,
@@ -781,6 +874,8 @@ pub mod ffi {
         has_sql_mode: bool,
         has_more_results: bool,
         has_more_metadata: bool,
+        /// Saved children that show until the live children arrive.
+        metadata_cached: bool,
         metadata_offset: u64,
         next_metadata_offset: u64,
         has_lease: bool,
@@ -836,7 +931,6 @@ pub mod ffi {
         warnings: Vec<String>,
         parent: String,
         objects: Vec<MetadataDto>,
-        committed: bool,
         edit_affected_rows: Vec<u64>,
         /// For `edit_query`, one column per result column in result order.
         edit_target: EditTargetDto,
@@ -1232,6 +1326,11 @@ pub mod ffi {
         fn navigator_search_budget() -> NavigatorSearchBudgetDto;
         fn driver_workflow_policy(driver: &str) -> DriverWorkflowDto;
         fn transaction_guard_policy(transaction_active: bool) -> TransactionGuardDto;
+        /// The status of a sidebar row. The detail is the error or the reason, if any.
+        fn row_status_policy(cause: RowStatusCauseDto, detail: &str) -> RowStatusDto;
+        /// How long an info notice stays on the main panel bottom line.
+        fn panel_notice_milliseconds() -> u32;
+        fn recovery_hint_text(hint: RecoveryHintDto) -> String;
         /// Why drop or rename is unavailable for this object; empty when it applies.
         fn object_action_unavailable_reason(
             rename: bool,
@@ -1488,7 +1587,6 @@ pub mod ffi {
             sql: &str,
             page_size: u32,
             timeout_ms: u64,
-            auto_commit: bool,
             profile_id: &str,
         ) -> Submit;
         /// `as_of` is the "As of" mode's time, validated by Rust.
@@ -1536,7 +1634,6 @@ pub mod ffi {
             sql: &str,
             page_size: u32,
             timeout_ms: u64,
-            auto_commit: bool,
         ) -> Submit;
         fn metadata_request(
             engine: &mut BridgeEngine,
@@ -1557,12 +1654,14 @@ pub mod ffi {
         ) -> Submit;
         fn next_result_set(engine: &mut BridgeEngine, query: u64) -> Submit;
         /// Requests the next navigator page; Rust chooses the page size.
+        /// A fresh request is a manual refresh, which skips the saved children.
         fn metadata_page_request(
             engine: &mut BridgeEngine,
             connection: u64,
             parent: &str,
             request_token: u64,
             offset: u64,
+            fresh: bool,
         ) -> Submit;
         fn metadata(engine: &mut BridgeEngine, connection: u64, parent: &str) -> Submit;
         fn load_value_chunk(
@@ -1604,8 +1703,6 @@ pub mod ffi {
         ) -> Submit;
         fn cancel_export(engine: &mut BridgeEngine, job: u64) -> Submit;
         fn cancel(engine: &mut BridgeEngine, query: u64) -> Submit;
-        fn commit(engine: &mut BridgeEngine, connection: u64) -> Submit;
-        fn rollback(engine: &mut BridgeEngine, connection: u64) -> Submit;
         fn disconnect(engine: &mut BridgeEngine, connection: u64) -> Submit;
         fn release_query(engine: &mut BridgeEngine, query: u64) -> Submit;
         fn shutdown(engine: &mut BridgeEngine) -> Submit;
@@ -1614,13 +1711,14 @@ pub mod ffi {
         fn shrink_page_lease(engine: &mut BridgeEngine, lease: u64, payload_bytes: u64) -> Submit;
         fn memory_usage(engine: &BridgeEngine) -> MemoryUsageDto;
         fn cache_usage(engine: &BridgeEngine) -> CacheUsageDto;
-        /// The statement to run at `cursor` or in the selection, in `driver`'s dialect;
-        /// `sql_mode` adjusts MySQL lexing.
+        /// The range to run: the selection, or else the statement at `cursor` or all statements
+        /// for `scope`, in `driver`'s dialect; `sql_mode` adjusts MySQL lexing.
         fn sql_execution_range(
             sql: &str,
             cursor: u64,
             selection_start: u64,
             selection_end: u64,
+            scope: ExecutionScope,
             driver: &str,
             sql_mode: &str,
         ) -> SqlRange;
@@ -1631,9 +1729,11 @@ pub fn ssh_askpass_exit_code() -> i32 {
     choscordb_driver_api::run_ssh_askpass_if_requested().unwrap_or(-1)
 }
 pub struct BridgeEngine {
+    // Declared first, so the conversion task stops before the engine and its runtime drop.
+    events: Option<event_forwarder::EventForwarder>,
     engine: Option<Engine>,
     error: String,
-    leases: Arena<choscordb_core::PageLease>,
+    leases: Arc<Mutex<Arena<choscordb_core::PageLease>>>,
 }
 fn pack(id: Handle) -> u64 {
     (u64::from(id.generation) << 32) | u64::from(id.slot)
@@ -1673,14 +1773,22 @@ fn make_engine(config: EngineConfig) -> Box<BridgeEngine> {
         )
     });
     match result {
-        Ok(Ok(engine)) => Box::new(BridgeEngine {
-            engine: Some(engine),
-            leases: Arena::default(),
-            error: String::new(),
-        }),
+        Ok(Ok(engine)) => {
+            let leases = Arc::new(Mutex::new(Arena::default()));
+            let events = engine
+                .runtime_handle()
+                .map(|runtime| event_forwarder::EventForwarder::new(&runtime, leases.clone()));
+            Box::new(BridgeEngine {
+                events,
+                engine: Some(engine),
+                leases,
+                error: String::new(),
+            })
+        }
         _ => Box::new(BridgeEngine {
+            events: None,
             engine: None,
-            leases: Arena::default(),
+            leases: Arc::default(),
             error: "Application engine initialization failed".into(),
         }),
     }
@@ -1785,17 +1893,8 @@ pub fn execute(
     sql: &str,
     page_size: u32,
     timeout_ms: u64,
-    auto_commit: bool,
 ) -> ffi::Submit {
-    execute_with_profile(
-        engine,
-        connection,
-        sql,
-        page_size,
-        timeout_ms,
-        auto_commit,
-        "",
-    )
+    execute_with_profile(engine, connection, sql, page_size, timeout_ms, "")
 }
 pub fn execute_with_profile(
     engine: &mut BridgeEngine,
@@ -1803,7 +1902,6 @@ pub fn execute_with_profile(
     sql: &str,
     page_size: u32,
     timeout_ms: u64,
-    auto_commit: bool,
     profile_id: &str,
 ) -> ffi::Submit {
     submit(engine, |e| {
@@ -1813,7 +1911,8 @@ pub fn execute_with_profile(
         e.execute_with_profile(
             unpack(connection),
             sql.into(),
-            query_options(page_size, timeout_ms, auto_commit)?,
+            // The SQL editor always runs with auto-commit; SQL `BEGIN` opens a transaction.
+            query_options(page_size, timeout_ms, true)?,
             (!profile_id.is_empty()).then(|| profile_id.to_owned()),
         )
         .map(pack)
@@ -1961,8 +2060,6 @@ macro_rules! command {
     };
 }
 command!(cancel);
-command!(commit);
-command!(rollback);
 command!(disconnect);
 command!(release_query);
 pub fn shutdown(engine: &mut BridgeEngine) -> ffi::Submit {
@@ -1973,36 +2070,42 @@ pub fn shutdown(engine: &mut BridgeEngine) -> ffi::Submit {
 }
 pub fn drain_events(engine: &mut BridgeEngine) -> Vec<ffi::BridgeEvent> {
     catch_unwind(AssertUnwindSafe(|| {
-        let Some(core) = engine.engine.as_mut() else {
+        let (Some(core), Some(forwarder)) = (engine.engine.as_mut(), engine.events.as_mut()) else {
             return vec![];
         };
-        let mut events = Vec::new();
-        for _ in 0..1 {
+        // Core bookkeeping runs here; the forwarding task converts the events.
+        while forwarder.has_capacity() {
             let Some(event) = core.try_event() else {
                 break;
             };
-            events.push(convert::event(event, &mut engine.leases));
+            if forwarder.send(event).is_err() {
+                return vec![event_forwarder::failed()];
+            }
         }
-        events
+        forwarder
+            .take()
+            .unwrap_or_else(|()| vec![event_forwarder::failed()])
     }))
-    .unwrap_or_else(|_| {
-        vec![ffi::BridgeEvent {
-            kind: "bridge_failed".into(),
-            error: "Internal event conversion failure".into(),
-            ..Default::default()
-        }]
-    })
+    .unwrap_or_else(|_| vec![event_forwarder::failed()])
 }
 pub fn sql_execution_range(
     sql: &str,
     cursor: u64,
     selection_start: u64,
     selection_end: u64,
+    scope: ffi::ExecutionScope,
     driver: &str,
     sql_mode: &str,
 ) -> ffi::SqlRange {
     use choscordb_sql_language as language;
     catch_unwind(|| {
+        let scope = match scope {
+            ffi::ExecutionScope::All => language::ExecutionScope::All,
+            ffi::ExecutionScope::Current => language::ExecutionScope::Current,
+            // CXX shared enums carry any integer. EngineAdapter sends only the two
+            // scopes above, so an unknown value is a caller bug with no range.
+            _ => return ffi::SqlRange::default(),
+        };
         let mariadb = driver.eq_ignore_ascii_case("mariadb");
         let mysql =
             (mariadb || driver.eq_ignore_ascii_case("mysql")).then(|| language::MysqlSqlMode {
@@ -2024,8 +2127,10 @@ pub fn sql_execution_range(
             Some(start..end)
         };
         let range = match mysql {
-            Some(mode) => language::execution_range_mysql_with_mode(sql, cursor, selection, mode),
-            None => language::execution_range(sql, cursor, selection),
+            Some(mode) => {
+                language::execution_range_mysql_with_mode(sql, cursor, selection, scope, mode)
+            }
+            None => language::execution_range(sql, cursor, selection, scope),
         };
         let Some(range) = range else {
             return ffi::SqlRange::default();
@@ -2096,6 +2201,8 @@ pub fn release_page_lease(engine: &mut BridgeEngine, lease: u64) -> ffi::Submit 
     lease_command(|| {
         engine
             .leases
+            .lock()
+            .map_err(|_| "Page lease table failed".to_string())?
             .remove(unpack(lease))
             .ok_or_else(|| "Page lease is stale".to_string())?;
         Ok(lease)
@@ -2107,6 +2214,8 @@ pub fn shrink_page_lease(engine: &mut BridgeEngine, lease: u64, payload_bytes: u
             .map_err(|_| "Page allocation size exceeds platform limits".to_string())?;
         engine
             .leases
+            .lock()
+            .map_err(|_| "Page lease table failed".to_string())?
             .get_mut(unpack(lease))
             .ok_or_else(|| "Page lease is stale".to_string())?
             .shrink_to(bytes)
@@ -2875,19 +2984,21 @@ pub fn apply_edit_batch(
                 let params = statement
                     .params
                     .into_iter()
-                    .map(|cell| match cell.kind.as_str() {
-                        "null" => Ok(Value::Null),
-                        "boolean" => Ok(Value::Bool(cell.boolean)),
-                        "integer" => Ok(Value::Integer(cell.integer)),
-                        "real" => Ok(Value::Real(cell.real)),
-                        "decimal" => Ok(Value::Decimal(cell.text)),
-                        "text" => Ok(Value::Text(cell.text)),
-                        "date" => Ok(Value::Date(cell.text)),
-                        "time" => Ok(Value::Time(cell.text)),
-                        "timestamp" => Ok(Value::Timestamp(cell.text)),
-                        "uuid" => Ok(Value::Uuid(cell.text)),
-                        "json" => Ok(Value::Json(cell.text)),
-                        "binary" => Ok(Value::Binary(cell.bytes)),
+                    .map(|cell| match convert::value(cell) {
+                        Ok(
+                            value @ (Value::Null
+                            | Value::Bool(_)
+                            | Value::Integer(_)
+                            | Value::Real(_)
+                            | Value::Decimal(_)
+                            | Value::Text(_)
+                            | Value::Date(_)
+                            | Value::Time(_)
+                            | Value::Timestamp(_)
+                            | Value::Uuid(_)
+                            | Value::Json(_)
+                            | Value::Binary(_)),
+                        ) => Ok(value),
                         _ => Err("Invalid edit value".to_string()),
                     })
                     .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -2976,9 +3087,16 @@ pub fn metadata_page_request(
     parent: &str,
     request_token: u64,
     offset: u64,
+    fresh: bool,
 ) -> ffi::Submit {
+    let load = if fresh {
+        Engine::refresh_metadata_page
+    } else {
+        Engine::load_metadata_page
+    };
     submit(engine, |e| {
-        e.load_metadata_page(
+        load(
+            e,
             unpack(connection),
             (!parent.is_empty()).then(|| ObjectId(parent.into())),
             request_token,

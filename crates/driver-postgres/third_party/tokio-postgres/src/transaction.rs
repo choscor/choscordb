@@ -263,6 +263,32 @@ impl<'a> Transaction<'a> {
         .await
     }
 
+    /// Like `bind_with_result_formats`, and also executes the first `max_rows` rows
+    /// of the portal in the same round trip.
+    pub async fn bind_and_query_portal_with_result_formats<T>(
+        &self,
+        statement: &T,
+        params: &[&(dyn ToSql + Sync)],
+        result_formats: &[i16],
+        max_rows: i32,
+    ) -> Result<(Portal, RowStream), Error>
+    where
+        T: ?Sized + ToStatement,
+    {
+        let statement = statement
+            .__convert()
+            .into_statement(self.client.inner())
+            .await?;
+        query::bind_and_query_portal_with_result_formats(
+            self.client.inner(),
+            statement,
+            slice_iter(params),
+            result_formats,
+            max_rows,
+        )
+        .await
+    }
+
     /// Continues execution of a portal, returning a stream of the resulting rows.
     ///
     /// Unlike `query`, portals can be incrementally evaluated by limiting the number of rows returned in each call to

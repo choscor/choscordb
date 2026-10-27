@@ -10,12 +10,69 @@ struct Active {
     index: u64,
     summary: QuerySummary,
     completed: bool,
-    lookahead: Option<Row>,
+    // Decoded rows that the next page starts with.
+    lookahead: std::collections::VecDeque<Row>,
+    // Decoded rows and their estimated bytes, to size each Execute to the byte budget.
+    decoded_rows: usize,
+    decoded_bytes: usize,
     text_overrides: Arc<Vec<Option<String>>>,
+}
+// Rows that one blocking decode task receives.
+const DECODE_CHUNK_ROWS: usize = 256;
+// Distinct result shapes that one connection remembers.
+const OVERRIDE_CACHE_ENTRIES: usize = 256;
+/// The `text_overrides` of each result shape on one connection. A reconnect starts
+/// a new cache. A statement without result columns (all DDL) clears it, and the
+/// cache stays empty until that transaction ends, so a rollback leaves no stale entry.
+// The source table, source column and type OIDs of each result column.
+type ResultShape = Vec<(u32, i16, u32)>;
+#[derive(Default)]
+pub(super) struct OverrideCache {
+    entries: std::collections::HashMap<ResultShape, Arc<Vec<Option<String>>>>,
+    frozen: bool,
+}
+impl OverrideCache {
+    pub(super) fn invalidate(&mut self) {
+        self.entries.clear();
+        self.frozen = true;
+    }
+    /// The transaction that froze the cache has ended.
+    pub(super) fn begin_transaction(&mut self) {
+        self.frozen = false;
+    }
 }
 /// PostgreSQL describes a selected domain column with its base type OID.
 /// Recover the declared domain from the source-column identity before Bind.
 pub(super) async fn text_overrides<C: tokio_postgres::GenericClient + Sync>(
+    client: &C,
+    statement: &tokio_postgres::Statement,
+    max: usize,
+    cache: &mut OverrideCache,
+) -> Result<Arc<Vec<Option<String>>>> {
+    let shape: ResultShape = statement
+        .columns()
+        .iter()
+        .map(|column| {
+            (
+                column.table_oid().unwrap_or(0),
+                column.column_id().unwrap_or(0),
+                column.type_().oid(),
+            )
+        })
+        .collect();
+    if let Some(cached) = cache.entries.get(&shape) {
+        return Ok(cached.clone());
+    }
+    let overrides = Arc::new(lookup_overrides(client, statement, max).await?);
+    if !cache.frozen {
+        if cache.entries.len() >= OVERRIDE_CACHE_ENTRIES {
+            cache.entries.clear();
+        }
+        cache.entries.insert(shape, overrides.clone());
+    }
+    Ok(overrides)
+}
+async fn lookup_overrides<C: tokio_postgres::GenericClient + Sync>(
     client: &C,
     statement: &tokio_postgres::Statement,
     max: usize,
@@ -50,10 +107,14 @@ pub(super) async fn text_overrides<C: tokio_postgres::GenericClient + Sync>(
     {
         return Err(resource());
     }
+    // A typed query sends Parse, Bind and Execute together: one round trip.
     let stream = client
-        .query_raw(
+        .query_typed_raw(
             &sql,
-            std::iter::empty::<&(dyn tokio_postgres::types::ToSql + Sync)>(),
+            std::iter::empty::<(
+                &(dyn tokio_postgres::types::ToSql + Sync),
+                tokio_postgres::types::Type,
+            )>(),
         )
         .await
         .map_err(normalize)?;
@@ -194,31 +255,80 @@ fn collect_notices(summary: &mut QuerySummary, notices: &Mutex<Vec<String>>) {
 async fn was_cancelled(cancel: &Cancellation, id: u32) -> bool {
     cancel.state.lock().await.cancelled == Some(u64::from(id))
 }
+/// The setup statement of each transaction statement.
+pub(super) fn statement_timeout(options: &QueryOptions) -> String {
+    let timeout = options
+        .timeout
+        .map_or(0, |n| n.as_millis().clamp(1, i32::MAX as u128));
+    format!("SET LOCAL statement_timeout = {timeout}")
+}
+/// A first statement that began before its transaction, so that a cancel reaches
+/// its Parse. `start_and_prepare` parsed it with BEGIN and its `statement_timeout`.
+pub(super) struct Begun {
+    id: u32,
+    deadline: Option<std::time::Instant>,
+    prepared: std::result::Result<tokio_postgres::Statement, tokio_postgres::Error>,
+}
+fn deadline(options: &QueryOptions) -> Option<std::time::Instant> {
+    options
+        .timeout
+        .and_then(|duration| std::time::Instant::now().checked_add(duration))
+}
+/// Starts the cancellable generation of a statement.
+async fn begin_statement(cancel: &Cancellation, notices: &Mutex<Vec<String>>) -> Result<u32> {
+    clear_notices(notices);
+    let id = begin_generation(cancel).await?;
+    running(cancel, true).await?;
+    Ok(id)
+}
+/// Without `begun`, the statement starts here.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The worker owns each borrowed connection state."
+)]
 async fn start(
     tx: &Transaction<'_>,
     sql: String,
+    begun: Option<Begun>,
     options: &QueryOptions,
     max: usize,
     cancel: &Cancellation,
     notices: &Mutex<Vec<String>>,
+    overrides: &mut OverrideCache,
 ) -> Result<(Active, Started)> {
-    clear_notices(notices);
-    let id = begin_generation(cancel).await?;
-    let deadline = options
-        .timeout
-        .and_then(|duration| std::time::Instant::now().checked_add(duration));
-    running(cancel, true).await?;
+    let (id, deadline, prepared) = match begun {
+        Some(Begun {
+            id,
+            deadline,
+            prepared,
+        }) => (id, deadline, Some(prepared)),
+        None => (
+            begin_statement(cancel, notices).await?,
+            deadline(options),
+            None,
+        ),
+    };
     let result = async {
-        let timeout = options
-            .timeout
-            .map_or(0, |n| n.as_millis().clamp(1, i32::MAX as u128));
         // SET does not acquire a transaction snapshot. A SELECT here would
         // make a following SET TRANSACTION ISOLATION LEVEL incorrectly fail.
-        tx.batch_execute(&format!("SET LOCAL statement_timeout = {timeout}"))
-            .await
-            .map_err(normalize)?;
         // PostgreSQL Parse rejects multiple statements before Bind/Execute can write.
-        let statement = tx.prepare(&sql).await.map_err(normalize)?;
+        let statement = match prepared {
+            Some(prepared) => prepared,
+            None => {
+                // The SET and the Parse share one round trip.
+                let (set, prepared) = futures_util::future::join(
+                    tx.batch_execute(&statement_timeout(options)),
+                    tx.prepare(&sql),
+                )
+                .await;
+                set.map_err(normalize)?;
+                prepared
+            }
+        }
+        .map_err(normalize)?;
+        if statement.columns().is_empty() {
+            overrides.invalidate();
+        }
         if !statement.params().is_empty() {
             return Err(DriverError::new(
                 ErrorKind::InvalidInput,
@@ -268,8 +378,8 @@ async fn start(
                 }
             })
             .collect();
-        let text_overrides = text_overrides(tx, &statement, max).await?;
-        for (column, override_type) in columns.iter_mut().zip(&text_overrides) {
+        let text_overrides = text_overrides(tx, &statement, max, overrides).await?;
+        for (column, override_type) in columns.iter_mut().zip(text_overrides.iter()) {
             if let Some(declared_type) = override_type {
                 column.database_type = declared_type.clone();
             }
@@ -289,7 +399,7 @@ async fn start(
         let result_formats: Vec<i16> = statement
             .columns()
             .iter()
-            .zip(&text_overrides)
+            .zip(text_overrides.iter())
             .map(|(column, override_type)| {
                 if override_type.is_none()
                     && choscordb_postgres_values::supports_binary_oid(column.type_().oid())
@@ -300,14 +410,17 @@ async fn start(
                 }
             })
             .collect();
-        let portal = tx
-            .bind_with_result_formats(&statement, &[], &result_formats)
-            .await
-            .map_err(normalize)?;
         let spool = tokio::task::spawn_blocking(move || spool::Spool::new(id))
             .await
             .map_err(|_| DriverError::new(ErrorKind::Internal, "Spool worker failed"))??;
         let reader = spool.reader();
+        // Execute a bounded first row (or the complete zero-column command) before
+        // returning. Merely binding would silently lose writes committed without fetch.
+        // Bind and this Execute share one round trip.
+        let (portal, first) = tx
+            .bind_and_query_portal_with_result_formats(&statement, &[], &result_formats, 1)
+            .await
+            .map_err(normalize)?;
         let mut active = Active {
             deadline,
             id,
@@ -316,14 +429,16 @@ async fn start(
             index: 0,
             summary: QuerySummary::default(),
             completed: false,
-            lookahead: None,
-            text_overrides: Arc::new(text_overrides),
+            lookahead: Default::default(),
+            decoded_rows: 0,
+            decoded_bytes: 0,
+            text_overrides,
         };
-        // Execute a bounded first row (or the complete zero-column command) before
-        // returning. Merely binding would silently lose writes committed without fetch.
-        active.lookahead = next(
+        execute(
             tx,
             &mut active,
+            Some(first),
+            1,
             max.saturating_sub(std::mem::size_of::<ResultPage>()),
             cancel,
         )
@@ -571,14 +686,21 @@ pub(super) fn decode(
     }
     Ok(values)
 }
-async fn next(
+fn row_bytes(row: &Row) -> usize {
+    std::mem::size_of::<Row>() + choscordb_driver_api::row_estimated_bytes(row)
+}
+/// Runs one Execute for up to `max_rows` rows and appends the decoded rows to the lookahead.
+/// `sent` is an Execute that was already sent for the portal.
+async fn execute(
     tx: &Transaction<'_>,
     active: &mut Active,
+    sent: Option<tokio_postgres::RowStream>,
+    max_rows: usize,
     max: usize,
     cancel: &Cancellation,
-) -> Result<Option<Row>> {
+) -> Result<()> {
     if active.completed {
-        return Ok(None);
+        return Ok(());
     }
     if active
         .deadline
@@ -586,35 +708,44 @@ async fn next(
     {
         return Err(DriverError::new(ErrorKind::Timeout, "Query timed out"));
     }
+    let limit = i32::try_from(max_rows).map_err(|_| resource())?;
     running(cancel, true).await?;
     let result = async {
-        let stream = tx
-            .query_portal_raw(&active.portal, 1)
-            .await
-            .map_err(normalize)?;
+        let stream = match sent {
+            Some(stream) => stream,
+            None => tx
+                .query_portal_raw(&active.portal, limit)
+                .await
+                .map_err(normalize)?,
+        };
         futures_util::pin_mut!(stream);
-        let row = stream.try_next().await.map_err(normalize)?;
-        if row.is_some() && stream.try_next().await.map_err(normalize)?.is_some() {
-            return Err(DriverError::new(
-                ErrorKind::Internal,
-                "Portal exceeded row limit",
-            ));
+        let mut received = 0usize;
+        let mut chunk = Vec::with_capacity(DECODE_CHUNK_ROWS.min(max_rows));
+        loop {
+            let row = stream.try_next().await.map_err(normalize)?;
+            let end = row.is_none();
+            if let Some(row) = row {
+                received += 1;
+                if received > max_rows {
+                    return Err(DriverError::new(
+                        ErrorKind::Internal,
+                        "Portal exceeded row limit",
+                    ));
+                }
+                chunk.push(row);
+            }
+            if !chunk.is_empty() && (end || chunk.len() == DECODE_CHUNK_ROWS) {
+                decode_chunk(active, std::mem::take(&mut chunk), max).await?;
+            }
+            if end {
+                break;
+            }
         }
         if let Some(affected) = stream.rows_affected() {
             active.completed = true;
             active.summary.affected_rows = Some(affected);
         }
-        let Some(row) = row else { return Ok(None) };
-        let mut spool = active.spool.take().ok_or_else(stale)?;
-        let text_overrides = active.text_overrides.clone();
-        let (returned, value) = tokio::task::spawn_blocking(move || {
-            let result = decode(row, &mut spool, max, &text_overrides);
-            (spool, result)
-        })
-        .await
-        .map_err(|_| DriverError::new(ErrorKind::Internal, "PostgreSQL value worker failed"))?;
-        active.spool = Some(returned);
-        value.map(Some)
+        Ok(())
     }
     .await;
     let _ = running(cancel, false).await;
@@ -635,6 +766,30 @@ async fn next(
         other => other,
     }
 }
+async fn decode_chunk(
+    active: &mut Active,
+    chunk: Vec<tokio_postgres::Row>,
+    max: usize,
+) -> Result<()> {
+    let mut spool = active.spool.take().ok_or_else(stale)?;
+    let text_overrides = active.text_overrides.clone();
+    let (returned, decoded) = tokio::task::spawn_blocking(move || {
+        let decoded = chunk
+            .into_iter()
+            .map(|row| decode(row, &mut spool, max, &text_overrides))
+            .collect::<Result<Vec<_>>>();
+        (spool, decoded)
+    })
+    .await
+    .map_err(|_| DriverError::new(ErrorKind::Internal, "PostgreSQL value worker failed"))?;
+    active.spool = Some(returned);
+    for row in decoded? {
+        active.decoded_rows += 1;
+        active.decoded_bytes = active.decoded_bytes.saturating_add(row_bytes(&row));
+        active.lookahead.push_back(row);
+    }
+    Ok(())
+}
 async fn fetch(
     tx: &Transaction<'_>,
     active: &mut Active,
@@ -648,40 +803,46 @@ async fn fetch(
         return Err(resource());
     }
     let row_max = max - overhead;
-    let mut rows = Vec::new();
+    let size = size.get() as usize;
+    let mut rows = Vec::with_capacity(size);
     let mut used = overhead;
-    while rows.len() < (size.get() as usize) {
-        let row = if let Some(row) = active.lookahead.take() {
-            Some(row)
-        } else {
-            next(tx, active, row_max, cancel).await?
-        };
-        let Some(row) = row else { break };
-        let bytes = std::mem::size_of::<Row>()
-            + row.capacity() * std::mem::size_of::<Value>()
-            + row
-                .iter()
-                .map(|v| v.estimated_bytes() - std::mem::size_of::<Value>())
-                .sum::<usize>();
-        if bytes > row_max {
-            return Err(resource());
+    loop {
+        // Move buffered rows into the page until the page or the byte budget is full.
+        let mut budget_full = false;
+        while rows.len() < size {
+            let Some(row) = active.lookahead.pop_front() else {
+                break;
+            };
+            let bytes = row_bytes(&row);
+            if bytes > row_max {
+                return Err(resource());
+            }
+            if used.saturating_add(bytes) > max {
+                active.lookahead.push_front(row);
+                budget_full = true;
+                break;
+            }
+            rows.push(row);
+            used += bytes;
         }
-        if used.saturating_add(bytes) > max {
-            active.lookahead = Some(row);
+        // One more row than the page tells if more rows exist.
+        if budget_full || active.completed || !active.lookahead.is_empty() {
             break;
         }
-        rows.reserve_exact(1);
-        rows.push(row);
-        used += bytes;
-    }
-    if rows.len() == size.get() as usize && !active.completed && active.lookahead.is_none() {
-        active.lookahead = next(tx, active, row_max, cancel).await?;
+        let wanted = size + 1 - rows.len();
+        // Ask only for the rows that the remaining budget can hold, so that the
+        // lookahead stays near one page. A narrow page takes one Execute.
+        let average = (active.decoded_bytes / active.decoded_rows.max(1)).max(1);
+        let fit = (max - used) / average + 1;
+        execute(tx, active, None, wanted.min(fit), row_max, cancel).await?;
     }
     collect_notices(&mut active.summary, notices);
+    // The page accounting counts spare capacity, so keep only the rows.
+    rows.shrink_to_fit();
     let page = ResultPage {
         index: active.index,
         rows,
-        has_more: active.lookahead.is_some() || !active.completed,
+        has_more: !active.lookahead.is_empty() || !active.completed,
     };
     active.index += 1;
     if page.estimated_bytes() > max {
@@ -771,6 +932,7 @@ pub(super) async fn run(
 ) {
     let mut pending = None;
     let mut completed: Option<(u32, u64, QuerySummary)> = None;
+    let mut overrides = OverrideCache::default();
     'connection: loop {
         let command = if let Some(command) = pending.take() {
             command
@@ -812,7 +974,10 @@ pub(super) async fn run(
                     Command::ObjectRead(request, reply) => {
                         let result = cancel
                             .closing
-                            .auxiliary(&pump, object_data::read(&client, request, false))
+                            .auxiliary(
+                                &pump,
+                                object_data::read(&client, request, false, &mut overrides),
+                            )
                             .await;
                         let _ = reply.send(result);
                     }
@@ -928,6 +1093,9 @@ pub(super) async fn run(
         };
         completed = None;
         if options.auto_commit && requires_implicit_transaction(&sql) {
+            // Commands outside a transaction can change the catalog at once.
+            overrides.invalidate();
+            overrides.begin_transaction();
             let reply = reply.take().expect("query reply");
             match cancel
                 .closing
@@ -947,7 +1115,23 @@ pub(super) async fn run(
             }
             continue;
         }
-        let transaction = match cancel
+        overrides.begin_transaction();
+        let first_statement = begin_reply.is_none().then(|| statement_timeout(&options));
+        // The first statement begins before BEGIN, so that a cancel reaches its Parse.
+        let generation = if first_statement.is_some() {
+            match begin_statement(&cancel, &notices).await {
+                Ok(id) => Some((id, deadline(&options))),
+                Err(error) => {
+                    if let Some(reply) = reply.take() {
+                        let _ = reply.send(Err(error));
+                    }
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
+        let begun = match cancel
             .closing
             .auxiliary(&pump, async {
                 let mut builder = client.build_transaction();
@@ -973,12 +1157,23 @@ pub(super) async fn run(
                 if let Some(deferrable) = characteristics.deferrable {
                     builder = builder.deferrable(deferrable);
                 }
-                builder.start().await.map_err(normalize)
+                // The first statement is parsed in the same round trip as BEGIN.
+                match &first_statement {
+                    Some(setup) => builder
+                        .start_and_prepare(setup, &sql)
+                        .await
+                        .map(|(tx, prepared)| (tx, Some(prepared))),
+                    None => builder.start().await.map(|tx| (tx, None)),
+                }
+                .map_err(normalize)
             })
             .await
         {
-            Ok(tx) => tx,
+            Ok(begun) => begun,
             Err(error) => {
+                if generation.is_some() {
+                    let _ = running(&cancel, false).await;
+                }
                 if let Some(reply) = begin_reply.take() {
                     let _ = reply.send(Err(error));
                 } else if let Some(reply) = reply.take() {
@@ -987,6 +1182,14 @@ pub(super) async fn run(
                 continue;
             }
         };
+        let (transaction, prepared) = begun;
+        let mut begun = generation
+            .zip(prepared)
+            .map(|((id, deadline), prepared)| Begun {
+                id,
+                deadline,
+                prepared,
+            });
         let mut auto = options.auto_commit;
         let mut idle = IdleTransactionState {
             active: true,
@@ -1004,13 +1207,22 @@ pub(super) async fn run(
                 .closing
                 .auxiliary(
                     &pump,
-                    start(&transaction, sql, &options, max, &cancel, &notices),
+                    start(
+                        &transaction,
+                        sql,
+                        begun.take(),
+                        &options,
+                        max,
+                        &cancel,
+                        &notices,
+                        &mut overrides,
+                    ),
                 )
                 .await
             {
                 Ok((active, started)) => {
                     idle.write_pending |= initial_write;
-                    if auto && active.completed && active.lookahead.is_none() {
+                    if auto && active.completed && active.lookahead.is_empty() {
                         let finished = (active.id, 0, active.summary.clone());
                         dispose(Some(active));
                         match cancel
@@ -1092,7 +1304,16 @@ pub(super) async fn run(
                         .closing
                         .auxiliary(
                             &pump,
-                            start(&transaction, sql, &options, max, &cancel, &notices),
+                            start(
+                                &transaction,
+                                sql,
+                                None,
+                                &options,
+                                max,
+                                &cancel,
+                                &notices,
+                                &mut overrides,
+                            ),
                         )
                         .await
                     {
@@ -1190,7 +1411,10 @@ pub(super) async fn run(
                 Command::ObjectRead(request, reply) => {
                     let result = cancel
                         .closing
-                        .auxiliary(&pump, object_data::read(&transaction, request, true))
+                        .auxiliary(
+                            &pump,
+                            object_data::read(&transaction, request, true, &mut overrides),
+                        )
                         .await;
                     let _ = reply.send(result);
                 }

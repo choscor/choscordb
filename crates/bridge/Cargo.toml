@@ -22,7 +22,7 @@ choscordb-sql-language = { path = "../sql-language" }
 choscordb-update = { path = "../update" }
 cxx = "1"
 serde_json = "1"
-tokio = { version = "1", features = ["rt", "time"] }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
 tokio-util = "0.7"
 zeroize = "1"
 [build-dependencies]

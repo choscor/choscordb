@@ -104,6 +104,62 @@ async fn ssh_queries_cancellation_and_independent_object_reads() {
     conn.close().await.unwrap();
 }
 
+/// The SSH logins so far. A login is a master (`-M`) or a call without a control
+/// socket (`-S`). A channel of a shared login uses `-S` only, and a `-G` preflight
+/// only prints the configuration.
+fn ssh_logins() -> usize {
+    let calls = std::env::var("CHOSCORDB_SSH_CALLS").expect("run mysql_ssh_fixture.py");
+    std::fs::read_to_string(calls)
+        .unwrap_or_default()
+        .lines()
+        .filter(|call| {
+            let has = |flag| call.split_whitespace().any(|argument| argument == flag);
+            !has("-G") && (has("-M") || !has("-S"))
+        })
+        .count()
+}
+
+#[tokio::test]
+#[ignore = "requires scripts/integration/mysql_ssh_fixture.py"]
+async fn one_connect_uses_one_ssh_login() {
+    let before = ssh_logins();
+    let mut conn = MysqlDriver.connect(options(true)).await.unwrap();
+    // A cancel opens its own control session through the tunnel.
+    let token = conn.cancellation_handle();
+    let stop = async {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        token.cancel().await.unwrap();
+    };
+    let (result, ()) = tokio::join!(
+        async {
+            let mut cursor = conn
+                .execute("SELECT SLEEP(30)", QueryOptions::default())
+                .await?;
+            cursor.fetch_page(PageSize::default()).await
+        },
+        stop
+    );
+    assert_eq!(result.err().unwrap().kind, ErrorKind::Cancelled);
+    // An object read and a catalog session open their own database sessions.
+    let object = ObjectId(r#"["mysql","user"]"#.into());
+    conn.open_object(&object, &ObjectDataTime::Current, 1024 * 1024)
+        .await
+        .unwrap()
+        .close()
+        .await
+        .unwrap();
+    let mut catalog = conn
+        .sibling_sessions()
+        .expect("a catalog session opener")
+        .open()
+        .await
+        .unwrap();
+    catalog.load_metadata(None).await.unwrap();
+    catalog.close().await.unwrap();
+    conn.close().await.unwrap();
+    assert_eq!(ssh_logins() - before, 1);
+}
+
 #[tokio::test]
 #[ignore = "requires scripts/integration/mysql_ssh_fixture.py"]
 async fn unknown_ssh_host_key_is_rejected() {

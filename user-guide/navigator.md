@@ -28,6 +28,46 @@ If a node has more objects, right-click the node and choose `Load more objects`.
 To filter the tree, type text in `Filter objects…`.
 To load the objects of a node again, right-click the node and choose `Refresh`.
 
+### Row status
+
+A node shows its status as an icon after its name:
+
+- A loader icon shows that ChoscorDB loads the node or its child objects.
+- An error icon and a red row show that the load failed.
+- A warning icon shows that the object is not available.
+
+Hold the pointer on the node to read the message.
+If a load that you start fails, ChoscorDB also shows the error in the error dialog.
+You start a load when you expand a node, choose `Refresh` or choose `Load more objects`.
+A failed node stays red until a retry succeeds.
+To retry, right-click the node and choose `Refresh`.
+You can also collapse the node and expand it again.
+Pinned objects use the same icons and the same `Refresh` action.
+
+For a saved connection profile, ChoscorDB keeps the names and kinds of the child objects on your computer.
+When you expand a node again, ChoscorDB shows the saved child objects immediately.
+The loader icon stays on the node until ChoscorDB loads the current child objects.
+The current child objects then replace the saved child objects.
+If the load fails, the saved child objects stay, and the node shows the error icon.
+`Refresh` always loads the current child objects from the database.
+ChoscorDB does not use saved child objects that are older than 7 days.
+ChoscorDB deletes the saved child objects when you delete the connection profile.
+It also deletes them when you change the server or the database of the connection profile.
+
+When ChoscorDB searches objects or loads the saved queries or the recent history, a loader icon shows next to the section title.
+
+### Errors and notices
+
+If an action that you start fails, ChoscorDB shows one error dialog.
+If more errors occur while the dialog is open, the dialog shows the number of errors and the list.
+Errors from background work and warnings show in one notice at the bottom of the window.
+A new notice replaces the old text and adds to the count in its title.
+Close the notice when you have read it.
+If another dialog is open, the error dialog shows after you close that dialog.
+
+When you rename or drop an object, the `Schema & objects` header shows a busy icon.
+The success message shows after the navigator shows the change.
+
 ## Object tabs
 
 Click a table or a view in the navigator to open it in an object tab.

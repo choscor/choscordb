@@ -88,7 +88,7 @@ It rejects these items:
 - Literal sizes in any argument position, for example margins, column widths, section sizes and paint geometry.
 - RGB colors and `Qt::` colors.
 - Raw menu popups and stock dialog button boxes.
-- Qt standard icons outside native macOS menus.
+- Qt standard icons.
 - `designRole`, `variant`, `state` or `designSurface` values that the design system does not style.
 - Literal icon sizes. Icons use `Dimension::IconSmall` or `Dimension::Icon` only.
 - Icon files that are not recorded upstream Lucide files or recorded brand logos.
@@ -128,6 +128,7 @@ If the component uses a new construction pattern, extend the checker and add a r
 - Hover repaints of the full viewport.
 - One zero-delay timer for each model signal.
 - Bridge calls, SVG parsers, image loads, regex compilation and linear searches in paint, size-hint, `data()` or `parent()` paths.
+- Helper functions that a hot path calls and that call `EngineAdapter`. The gate follows the helper calls.
 
 ### source-inventory
 

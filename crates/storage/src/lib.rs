@@ -2,6 +2,7 @@
 //! Recovery returns inert editor data: this crate has no driver or execution dependency.
 
 mod appearance;
+mod metadata_cache;
 mod preferences;
 mod query_preferences;
 pub use appearance::{
@@ -11,6 +12,7 @@ pub use appearance::{
 };
 use choscordb_driver_api::{ConnectionOptions, Secret};
 pub use choscordb_driver_api::{SshTunnel, TlsMode};
+pub use metadata_cache::{CachedChild, METADATA_CACHE_SECONDS};
 pub use preferences::{
     DEFAULT_EDITOR_FONT_SIZE, EDITOR_PREFERENCES_VERSION, EditorPreferences, MAX_EDITOR_FONT_SIZE,
     MAX_FONT_FAMILY_BYTES, MAX_SHORTCUT_SEQUENCE_BYTES, MIN_EDITOR_FONT_SIZE, ShortcutCommand,
@@ -306,13 +308,24 @@ impl Storage {
             .db
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let previous = credential_references(&tx, &profile.id)?;
-        let exists: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM connection_profiles WHERE id=?1)",
-            [&profile.id],
-            |r| r.get(0),
-        )?;
-        if !exists {
-            check_profile_capacity(&tx)?;
+        let saved = tx
+            .query_row(
+                "SELECT id, data FROM connection_profiles WHERE id=?1",
+                [&profile.id],
+                |row| Ok(decode_profile(row)),
+            )
+            .optional()?
+            .transpose()?;
+        match &saved {
+            None => check_profile_capacity(&tx)?,
+            // Saved children of another server or database are not the children of this one.
+            Some(saved) if saved.configuration != profile.configuration => {
+                tx.execute(
+                    "DELETE FROM metadata_cache WHERE profile_id=?1",
+                    [&profile.id],
+                )?;
+            }
+            Some(_) => {}
         }
         tx.execute("INSERT INTO connection_profiles(id, data) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET data=excluded.data", params![profile.id, data])?;
         // Builds that predate MariaDB profiles cannot decode them, so the first
@@ -403,6 +416,7 @@ impl Storage {
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let previous = credential_references(&tx, id)?;
         let removed = tx.execute("DELETE FROM connection_profiles WHERE id=?1", [id])? != 0;
+        tx.execute("DELETE FROM metadata_cache WHERE profile_id=?1", [id])?;
         for reference in previous.into_iter().flatten() {
             enqueue_cleanup(&tx, &reference)?;
         }

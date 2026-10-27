@@ -608,10 +608,4 @@ fn memory_limit() -> DriverError {
         "Result page exceeds memory budget",
     )
 }
-pub(super) fn row_bytes(row: &Row) -> usize {
-    row.capacity() * std::mem::size_of::<Value>()
-        + row
-            .iter()
-            .map(|value| value.estimated_bytes() - std::mem::size_of::<Value>())
-            .sum::<usize>()
-}
+pub(super) use choscordb_driver_api::row_estimated_bytes as row_bytes;

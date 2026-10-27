@@ -117,6 +117,30 @@ class PerfPolicyTest(unittest.TestCase):
             ],
         )
 
+    def test_follows_helpers_that_reach_the_bridge_from_hot_functions(self):
+        source = (
+            "bool Model::filterable(int row) const {\n"
+            "  return EngineAdapter::foreignKeyValueFilterable(rows[row]);\n"
+            "}\n"
+            "bool Model::linkable(int row) const { return filterable(row); }\n"
+            "bool Model::stored(int row) const { return links[row]; }\n"
+            "bool Model::reviewed(int row) const {\n"
+            "  return EngineAdapter::gridCellPolicy(kind); // perf-ok: cached table\n"
+            "}\n"
+            "QVariant Model::data(const QModelIndex& index, int role) const {\n"
+            "  if (role == 1)\n"
+            "    return stored(index.row()) && reviewed(index.row());\n"
+            "  return linkable(index.row());\n"
+            "}\n"
+            "void Model::refresh() { filterable(0); }\n"
+        )
+        found = self.findings(source, "desktop/models/sample.cpp")
+        self.assertEqual(
+            [(item["rule"], item["line"]) for item in found],
+            [("helper reaches the bridge on a paint/data path", 12)],
+        )
+        self.assertIn("linkable -> filterable", found[0]["advice"])
+
     def test_cached_themed_icons_are_allowed_in_paint(self):
         source = (
             "void Delegate::paint(QPainter* p) const {\n"

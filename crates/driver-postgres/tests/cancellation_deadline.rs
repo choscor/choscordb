@@ -28,18 +28,13 @@ async fn direct_cancel_bounds_stalled_tls_negotiation_and_closes_socket() {
         let length = connection.read_u32().await.unwrap();
         let mut begin = vec![0; length as usize - 4];
         connection.read_exact(&mut begin).await.unwrap();
-        assert_eq!(begin, b"START TRANSACTION\0");
-        connection
-            .write_all(&[
-                b'C', 0, 0, 0, 10, b'B', b'E', b'G', b'I', b'N', 0, b'Z', 0, 0, 0, 5, b'T',
-            ])
-            .await
-            .unwrap();
-        assert_eq!(connection.read_u8().await.unwrap(), b'Q');
-        let length = connection.read_u32().await.unwrap();
-        let mut setup = vec![0; length as usize - 4];
-        connection.read_exact(&mut setup).await.unwrap();
-        assert_eq!(setup, b"SET LOCAL statement_timeout = 0\0");
+        // BEGIN, the statement timeout and the Parse arrive together. The server
+        // stalls, and the statement is already cancellable.
+        assert_eq!(
+            begin,
+            b"START TRANSACTION; SET LOCAL statement_timeout = 0\0"
+        );
+        assert_eq!(connection.read_u8().await.unwrap(), b'P');
         query_started.send(()).unwrap();
         let (mut cancel, _) = listener.accept().await.unwrap();
         cancel.read_exact(&mut ssl).await.unwrap();

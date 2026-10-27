@@ -93,12 +93,14 @@ ResultTableModel::jsonViewSnapshot(JsonViewScope scope, int row, int column,
     snapshot.column = column;
     if (scope == JsonViewScope::Page) {
         snapshot.rows = rows_;
-        snapshot.touched = touched_;
+        snapshot.touched.reserve(rows_.size());
+        for (std::size_t index = 0; index < rows_.size(); ++index)
+            snapshot.touched.push_back(touchedRow(index));
         snapshot.inserted = inserted_;
         snapshot.resolved = resolved;
     } else {
         snapshot.rows.push_back(rows_[row]);
-        snapshot.touched.push_back(touched_[row]);
+        snapshot.touched.push_back(touchedRow(row));
         snapshot.inserted.push_back(inserted_[row]);
         for (const auto& [position, value] : resolved)
             if (position.first == row &&

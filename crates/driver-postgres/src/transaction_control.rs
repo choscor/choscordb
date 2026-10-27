@@ -16,7 +16,9 @@ pub(super) async fn execute(
             "Result schema exceeds memory budget",
         ));
     }
-    let timeout = options.timeout.unwrap_or(connection.cancel.connect_timeout);
+    let timeout = options
+        .timeout
+        .unwrap_or(connection.cancel.endpoint.connect_timeout);
     let result = tokio::time::timeout(timeout, async {
         worker::begin_generation(&connection.cancel).await?;
         worker::running(&connection.cancel, true).await?;

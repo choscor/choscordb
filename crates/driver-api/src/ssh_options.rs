@@ -119,7 +119,7 @@ pub struct SshOptions {
     pub local_host: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_port: Option<u16>,
-    #[serde(skip_serializing_if = "is_false")]
+    #[serde(skip_serializing_if = "is_default_sharing")]
     pub share_tunnels: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_host: Option<String>,
@@ -137,11 +137,12 @@ impl Default for SshOptions {
         Self {
             local_host: None,
             local_port: None,
-            share_tunnels: false,
+            // One control master serves all streams of a Connect where OpenSSH supports it.
+            share_tunnels: cfg!(unix),
             remote_host: None,
             remote_port: None,
             connect_timeout_seconds: 15,
-            server_alive_interval_seconds: 0,
+            server_alive_interval_seconds: 30,
             server_alive_count_max: 3,
             agent_socket: None,
             known_hosts_file: None,
@@ -186,8 +187,8 @@ pub struct SshJumpHost {
     pub user: String,
 }
 
-fn is_false(value: &bool) -> bool {
-    !value
+fn is_default_sharing(value: &bool) -> bool {
+    *value == SshOptions::default().share_tunnels
 }
 impl SshOptions {
     /// Apply the current query preference to this connection attempt.

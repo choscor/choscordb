@@ -120,12 +120,12 @@ class ResultModelTest : public QObject {
         QCOMPARE(std::get<QString>(*model.cellValue(cell)), QString("NULL"));
         QCOMPARE(std::get<QString>(model.rows()[0][1]), QString("staged elsewhere"));
         QVERIFY(model.addRow());
-        QVERIFY(!model.touched()[1][0]);
+        QVERIFY(!model.touched(1, 0));
         const auto inserted = model.index(1, 0);
         const auto empty = model.stageCellEdit(
             inserted, ResultTableModel::evaluateCellEdit(model.cellEditSnapshot(inserted, "")));
         QCOMPARE(empty.state, ResultTableModel::CellEditState::Ready);
-        QVERIFY(model.touched()[1][0]);
+        QVERIFY(model.touched(1, 0));
         QCOMPARE(std::get<QString>(*model.cellValue(inserted)), QString(""));
     }
     void explicitDraftRefusalLeavesTargetAndOtherEditsIntact() {
@@ -142,9 +142,9 @@ class ResultModelTest : public QObject {
         QCOMPARE(model.stageCellEdit(target, invalid).state,
                  ResultTableModel::CellEditState::TypeRejected);
         QCOMPARE(std::get<qint64>(*model.cellValue(target)), qint64(7));
-        QVERIFY(!model.touched()[0][0]);
+        QVERIFY(!model.touched(0, 0));
         // The budget allows the current state, but cannot hold a new target draft.
-        QVERIFY(model.setByteBudget(model.residentBytes() + 256));
+        QVERIFY(model.setByteBudget(model.residentBytes() + 512));
         const auto oversized = ResultTableModel::evaluateCellEdit(
             model.cellEditSnapshot(target, QString(1024, QChar('8'))));
         QCOMPARE(oversized.state, ResultTableModel::CellEditState::ResourceRefused);
@@ -177,7 +177,7 @@ class ResultModelTest : public QObject {
         const auto ineligible = model.stageCellEdit(target, evaluation);
         QCOMPARE(ineligible.state, ResultTableModel::CellEditState::Ineligible);
         QVERIFY(!ineligible.error.isEmpty());
-        QVERIFY(!model.touched()[0][0]);
+        QVERIFY(!model.touched(0, 0));
         QCOMPARE(std::get<QString>(*model.cellValue(target)), QString("original"));
         ResultTableModel other;
         QVERIFY(other.setPage({column("payload", "text")}, {{QString("foreign")}}, 0));
@@ -256,9 +256,11 @@ class ResultModelTest : public QObject {
     }
     void verifiedLinksFollowCurrentTypedValueAndHideUnavailableCells() {
         ResultTableModel model;
-        QVERIFY(model.setPage({column("parent_id", "integer")},
-                              {{qint64(4)}, {std::monostate{}}, {DeferredValue{1, 100, "integer"}}},
-                              0));
+        // Rust gives the filterable bits; NULL and deferred values cannot filter.
+        QVERIFY(model.setPage(ResultTableModel::preparePage(
+            {column("parent_id", "integer")},
+            {{qint64(4)}, {std::monostate{}}, {DeferredValue{1, 100, "integer"}}},
+            {true, false, false}, 0)));
         ResultCellMetadata metadata;
         metadata.sourceColumn = "parent_id";
         metadata.sourceObject = R"(["main","child"])";
@@ -273,6 +275,7 @@ class ResultModelTest : public QObject {
         model.setEditableColumns({true}, false, false);
         QVERIFY(model.setData(model.index(0, 0), QString("9")));
         QCOMPARE(std::get<qint64>(*model.cellValue(model.index(0, 0))), qint64(9));
+        QVERIFY(model.index(0, 0).data(design::ForeignKeyLinkRole).toBool());
         QVERIFY(model.setNull(model.index(0, 0)));
         QVERIFY(!model.index(0, 0).data(design::ForeignKeyLinkLabelRole).isValid());
     }
@@ -567,12 +570,12 @@ class ResultModelTest : public QObject {
         QVERIFY(model.setData(model.index(0, 0), "changed"));
         QVERIFY(model.hasPendingEdits());
         QVERIFY(model.setData(model.index(0, 0), "changed"));
-        QVERIFY(model.touched()[0][0]);
+        QVERIFY(model.touched(0, 0));
         QVERIFY(model.addRow());
         QVERIFY(model.setData(model.index(1, 0), ""));
-        QVERIFY(!model.touched()[1][0]);
+        QVERIFY(!model.touched(1, 0));
         QVERIFY(model.setNull(model.index(1, 0)));
-        QVERIFY(model.touched()[1][0]);
+        QVERIFY(model.touched(1, 0));
     }
     void deletingInsertedRowsRemovesThemAndRestoresBudget() {
         ResultTableModel model;
@@ -634,9 +637,9 @@ class ResultModelTest : public QObject {
         QCOMPARE(inserted.count(), 1);
         QCOMPARE(model.rowCount(), 2);
         QVERIFY(model.inserted()[1]);
-        QVERIFY(!model.touched()[1][0]);
+        QVERIFY(!model.touched(1, 0));
         for (int column = 1; column < model.columnCount(); ++column)
-            QVERIFY(model.touched()[1][column]);
+            QVERIFY(model.touched(1, column));
         QVERIFY(std::holds_alternative<std::monostate>(model.rows()[1][0]));
         QCOMPARE(std::get<QString>(model.rows()[1][1]), QString("after"));
         QVERIFY(std::holds_alternative<std::monostate>(model.rows()[1][2]));

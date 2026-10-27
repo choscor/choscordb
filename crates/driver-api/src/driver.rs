@@ -240,6 +240,12 @@ pub struct IdleTransactionState {
     pub write_pending: bool,
     pub started_at: Option<std::time::Instant>,
 }
+/// Opens another session of one Connect. It uses the settings, the credentials and
+/// the transport of the first session, so a tunnel serves both.
+#[async_trait]
+pub trait SessionOpener: Send + Sync {
+    async fn open(&self) -> Result<Box<dyn Connection>>;
+}
 /// Connections must supply schema-budget enforcement before query execution.
 /// An implementation with only unbounded execution is incomplete:
 ///
@@ -264,6 +270,12 @@ pub struct IdleTransactionState {
 /// ```
 #[async_trait]
 pub trait Connection: Send {
+    /// An opener for a catalog session beside this one. `None` keeps all catalog
+    /// reads on this session, for example where a second session cannot see the
+    /// same database.
+    fn sibling_sessions(&self) -> Option<Arc<dyn SessionOpener>> {
+        None
+    }
     /// Does not issue SQL or change transaction state.
     async fn idle_transaction_state(&mut self) -> Result<Option<IdleTransactionState>> {
         Ok(None)

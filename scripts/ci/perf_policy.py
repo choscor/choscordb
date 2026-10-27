@@ -31,6 +31,10 @@ FUNCTION = re.compile(
     r"(?:->\s*[\w:<>,\s*&]+)?\{"
 )
 CONTROL = {"if", "for", "while", "switch", "catch", "return", "sizeof", "connect"}
+OWNER = re.compile(r"(\w+)::$")
+# An unqualified call: a member of the same class or a free function, not obj.f() or ns::f().
+CALL = re.compile(r"(?<![\w.>:~])([A-Za-z_]\w*)\s*\(")
+BRIDGE = re.compile(r"\bEngineAdapter::\w+\s*\(")
 
 LINE_RULES = (
     (
@@ -157,13 +161,66 @@ def balanced(text, start, open_char="(", close_char=")"):
 
 
 def functions(code):
-    """Yield (name, body_start, body_end) for function definitions."""
+    """Yield (owner, name, body_start, body_end) for function definitions."""
     for match in FUNCTION.finditer(code):
         name = match.group("name").split("::")[-1]
         if name in CONTROL:
             continue
+        owner = OWNER.search(
+            code[max(0, match.start("name") - 128) : match.start("name")]
+        )
         brace = match.end() - 1
-        yield name, brace, balanced(code, brace, "{", "}")
+        yield (
+            owner.group(1) if owner else None,
+            name,
+            brace,
+            balanced(code, brace, "{", "}"),
+        )
+
+
+class Definitions:
+    """Function bodies of all scanned files, by (class or None, name)."""
+
+    def __init__(self):
+        self.bodies = {}
+        self.chains = {}
+
+    def add(self, owner, name, lines, code, start, end):
+        self.bodies.setdefault((owner, name), []).append((lines, code, start, end))
+
+    def bridge_chain(self, owner, name, visiting=()):
+        """The helper names from (owner, name) to a bridge call, or None."""
+        key = (owner, name)
+        if key in self.chains:
+            return self.chains[key]
+        if key in visiting or key not in self.bodies:
+            return None
+        chain = None
+        for lines, code, start, end in self.bodies[key]:
+            body = code[start:end]
+            if any(
+                not exempt(lines, code.count("\n", 0, start + hit.start()) + 1)
+                for hit in BRIDGE.finditer(body)
+            ):
+                chain = [name]
+                break
+            for call in CALL.finditer(body):
+                found = self.callee_chain(owner, call.group(1), (*visiting, key))
+                if found:
+                    chain = [name, *found]
+                    break
+            if chain:
+                break
+        self.chains[key] = chain
+        return chain
+
+    def callee_chain(self, owner, name, visiting=()):
+        if name in CONTROL:
+            return None
+        for key in ((owner, name), (None, name)):
+            if key in self.bodies:
+                return self.bridge_chain(*key, visiting)
+        return None
 
 
 def exempt(lines, line_number):
@@ -181,11 +238,16 @@ def in_scope(relative, scopes):
     )
 
 
-def file_findings(root, path):
-    relative = path.relative_to(root).as_posix()
+def parse(root, path):
     text = path.read_text(encoding="utf-8")
-    lines = text.splitlines()
-    code = strip_comments_and_strings(text)
+    return (
+        path.relative_to(root).as_posix(),
+        text.splitlines(),
+        strip_comments_and_strings(text),
+    )
+
+
+def file_findings(relative, lines, code, definitions):
     code_lines = code.splitlines()
     found = []
 
@@ -212,7 +274,7 @@ def file_findings(root, path):
                 "zero-delay timer per signal",
             )
 
-    for name, start, end in functions(code):
+    for owner, name, start, end in functions(code):
         if not HOT_FUNCTIONS.match(name):
             continue
         body = code[start:end]
@@ -226,18 +288,35 @@ def file_findings(root, path):
                     f"{name}() runs per paint, size hint, or index lookup; "
                     "precompute or cache outside it",
                 )
+        for call in CALL.finditer(body):
+            chain = definitions.callee_chain(owner, call.group(1), ((owner, name),))
+            if chain:
+                report(
+                    start + call.start(),
+                    "helper reaches the bridge on a paint/data path",
+                    f"{name}() runs per paint, size hint, or index lookup and calls "
+                    f"{' -> '.join(chain)}, which reaches EngineAdapter; store the "
+                    "value on the page or node instead",
+                )
     return found
 
 
 def violations(root=ROOT):
-    found = []
+    files = []
     for scope in SCANNED:
         base = root / scope
         if not base.is_dir():
             continue
         for path in sorted(base.rglob("*")):
             if path.suffix in CPP_SUFFIXES and path.is_file():
-                found.extend(file_findings(root, path))
+                files.append(parse(root, path))
+    definitions = Definitions()
+    for _, lines, code in files:
+        for owner, name, start, end in functions(code):
+            definitions.add(owner, name, lines, code, start, end)
+    found = []
+    for relative, lines, code in files:
+        found.extend(file_findings(relative, lines, code, definitions))
     return found
 
 

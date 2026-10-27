@@ -106,8 +106,10 @@ def main():
             )
             # This wrapper delegates every byte to real OpenSSH. It isolates
             # host-key trust/config files, without bypassing verification.
+            # It also records each call, so a test can count the SSH logins.
             (directory / "ssh").write_text(
-                '#!/bin/sh\nexec "$CHOSCORDB_REAL_SSH" -F /dev/null -o GlobalKnownHostsFile=/dev/null '
+                '#!/bin/sh\nprintf "%s\\n" "$*" >> "$CHOSCORDB_SSH_CALLS"\n'
+                'exec "$CHOSCORDB_REAL_SSH" -F /dev/null -o GlobalKnownHostsFile=/dev/null '
                 '-o "UserKnownHostsFile=$CHOSCORDB_SSH_KNOWN_HOSTS" "$@"\n'
             )
             (directory / "ssh").chmod(0o700)
@@ -120,6 +122,7 @@ def main():
                 CHOSCORDB_SSH_KEY_PASSPHRASE="choscordb-key-passphrase",
                 CHOSCORDB_SSH_PASSWORD="choscordb-ssh-password",
                 CHOSCORDB_SSH_KNOWN_HOSTS=str(directory / "known_hosts"),
+                CHOSCORDB_SSH_CALLS=str(directory / "ssh-calls"),
             )
             env["PATH"] = str(directory) + os.pathsep + env["PATH"]
             deadline = time.monotonic() + 90

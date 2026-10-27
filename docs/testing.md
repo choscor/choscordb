@@ -221,6 +221,32 @@ docker run --detach --rm --name choscordb-mysql-implementation \
 Wait until `docker exec choscordb-mysql-implementation mysqladmin ping --silent` succeeds.
 Then run the fixture.
 
+## Network round-trip budgets
+
+The `round_trips` tests count the network round trips of the PostgreSQL and MySQL drivers.
+`crates/driver-api/tests/support/round_trip_proxy.rs` is a TCP proxy between the driver and the fixture.
+The proxy counts the accepted connections and the turnarounds.
+A turnaround is a client message that gets a server reply.
+
+Each test compares the count with a budget constant in the test file.
+For example, the PostgreSQL tests have `PAGE_BUDGET` and `SELECT_BUDGET`.
+The MySQL tests have `BASELINE_CONNECT` and `BASELINE_SECOND_OPEN`.
+If a change adds round trips, the test fails.
+Do not increase a budget to make a test pass. Find the cause.
+
+Run the tests with the applicable fixture:
+
+```sh
+cargo test -p choscordb-driver-postgres --test round_trips --locked -- --include-ignored --test-threads=1
+cargo test -p choscordb-driver-mysql --test round_trips --locked -- --include-ignored --test-threads=1
+```
+
+The proxy itself has unit tests in `crates/driver-api/tests/round_trip_proxy.rs`.
+
+`scripts/integration/mysql_ssh_fixture.py` records each OpenSSH call in the `ssh-calls` file of the fixture.
+The `one_connect_uses_one_ssh_login` test counts the master calls (`-M`) and the calls without a control socket (`-S`).
+It does not count the `-G` calls, because they only print the configuration.
+
 ## Query settings fixture
 
 `scripts/integration/query_settings_fixture.py` tests the recovery from corrupt query settings.
@@ -272,10 +298,16 @@ The probe does these steps in sequence:
 5. Runs a recursive query of one million rows and moves through 1,000 pages of 1,000 rows.
 6. Checks the first and last values of each page and the number of query submissions.
 7. Goes back to an archived page to check navigation after eviction.
-8. Closes the window and records the shutdown time.
+8. Runs a query of 10,000 rows and 30 columns with mixed types, with a page size of 10,000.
+9. Sorts that result by the first column and then filters it.
+10. Closes the window and records the shutdown time.
 
 The probe records peak RSS, the macOS physical footprint, core reservations and hot-cache peaks.
 It also records the longest event dispatch in each phase.
+For the wide result, the report has `wide_page_ready_ms`, `wide_sort_ms` and `wide_filter_ms`.
+Each of these has a `_notify_max_ms` key with the longest dispatch of the step.
+`wide_page_rows` gives the rows on the first page.
+The engine page byte budget can stop a wide page before 10,000 rows.
 The report includes the platform, the CPU, the Qt version, the build mode and the rendering backend.
 
 `scripts/performance/desktop.py` adds times that it observes from outside the process.
@@ -288,6 +320,7 @@ These are the time to ready, the time from the shutdown marker to exit and the t
 - The `offscreen` platform cannot measure displayed input latency.
 - Memory samples can miss short peaks.
 - The probe measures only a SQLite connection.
+- The sort and the filter of the wide result use the engine result view directly.
 
 The report lists its limitations.
 A metric that is not available is unverified.

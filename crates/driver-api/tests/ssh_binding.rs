@@ -11,7 +11,7 @@ fn local_binding_and_sharing_are_explicit_and_bounded() {
         "[::1]:54321".parse().unwrap()
     );
     let defaults = SshOptions::default();
-    assert!(!defaults.share_tunnels);
+    assert_eq!(defaults.share_tunnels, cfg!(unix));
     assert_eq!(
         defaults.local_address().unwrap(),
         "127.0.0.1:0".parse().unwrap()

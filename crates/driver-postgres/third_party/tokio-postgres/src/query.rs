@@ -199,6 +199,43 @@ where
     }
 }
 
+/// Binds a portal and executes its first `max_rows` rows in one message, so the
+/// rows arrive in the same round trip as `BindComplete`.
+pub async fn bind_and_query_portal_with_result_formats<P, I>(
+    client: &Arc<InnerClient>,
+    statement: Statement,
+    params: I,
+    result_formats: &[i16],
+    max_rows: i32,
+) -> Result<(Portal, RowStream), Error>
+where
+    P: BorrowToSql,
+    I: IntoIterator<Item = P>,
+    I::IntoIter: ExactSizeIterator,
+{
+    let name = crate::bind::next_portal_name();
+    let buf = client.with_buf(|buf| {
+        encode_bind_with_result_formats(&statement, params, &name, result_formats, buf)?;
+        frontend::execute(&name, max_rows, buf).map_err(Error::encode)?;
+        frontend::sync(buf);
+        Ok(buf.split().freeze())
+    })?;
+    let mut responses = client.send(RequestMessages::Single(FrontendMessage::Raw(buf)))?;
+    match responses.next().await? {
+        Message::BindComplete => {}
+        _ => return Err(Error::unexpected_message()),
+    }
+    let portal = Portal::new(client, name, statement.clone());
+    Ok((
+        portal,
+        RowStream {
+            statement,
+            responses,
+            rows_affected: None,
+        },
+    ))
+}
+
 pub async fn query_portal(
     client: &InnerClient,
     portal: &Portal,

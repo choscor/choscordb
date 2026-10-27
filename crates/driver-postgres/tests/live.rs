@@ -442,6 +442,50 @@ async fn result_cell_catalog_reports_native_choices_and_read_only_fk_provenance(
 }
 #[tokio::test]
 #[ignore = "requires disposable live PostgreSQL fixture"]
+async fn enum_choices_of_all_columns_share_one_byte_budget() {
+    let mut c = PostgresDriver.connect(settings()).await.unwrap();
+    run(&mut *c, "DROP TABLE IF EXISTS choscordb_cell_wide", true).await;
+    run(
+        &mut *c,
+        "DROP TYPE IF EXISTS choscordb_cell_wide_enum",
+        true,
+    )
+    .await;
+    // 9,000 labels of 63 bytes are about 567 KB. Two columns are more than 1 MiB.
+    let labels = (0..9_000)
+        .map(|i| format!("'{i:0>63}'"))
+        .collect::<Vec<_>>()
+        .join(",");
+    run(
+        &mut *c,
+        &format!("CREATE TYPE choscordb_cell_wide_enum AS ENUM ({labels})"),
+        true,
+    )
+    .await;
+    run(
+        &mut *c,
+        "CREATE TABLE choscordb_cell_wide(a choscordb_cell_wide_enum, b choscordb_cell_wide_enum)",
+        true,
+    )
+    .await;
+    let one = c
+        .inspect_result_cells(None, "SELECT a FROM choscordb_cell_wide", vec!["a".into()])
+        .await
+        .unwrap();
+    assert_eq!(one[0].enum_choices.len(), 9_000);
+    let both = c
+        .inspect_result_cells(
+            None,
+            "SELECT a, b FROM choscordb_cell_wide",
+            vec!["a".into(), "b".into()],
+        )
+        .await;
+    assert_eq!(both.unwrap_err().kind, ErrorKind::ResourceLimit);
+    run(&mut *c, "DROP TABLE choscordb_cell_wide", true).await;
+    run(&mut *c, "DROP TYPE choscordb_cell_wide_enum", true).await;
+}
+#[tokio::test]
+#[ignore = "requires disposable live PostgreSQL fixture"]
 async fn graph_loads_through_public_driver_connection() {
     let url = std::env::var("CHOSCORDB_TEST_POSTGRES").unwrap();
     let (admin, session) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
@@ -795,6 +839,34 @@ async fn pages_types_transactions_and_snapshot_values() {
         .await
         .unwrap();
     assert_eq!(chunk.bytes, "ééééé".as_bytes());
+}
+#[tokio::test]
+#[ignore = "requires disposable live PostgreSQL fixture"]
+async fn a_cancel_stops_a_large_page_execute() {
+    let mut connection = PostgresDriver.connect(settings()).await.unwrap();
+    // Each row takes about 1 ms, so a 10,000-row page needs about 10 seconds.
+    let slow =
+        "SELECT n FROM generate_series(1,20000) n CROSS JOIN LATERAL pg_sleep(n * 0 + 0.001)";
+    let token = connection.cancellation_handle();
+    let cancellation = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        token.cancel().await.unwrap();
+    });
+    let started = std::time::Instant::now();
+    let page = async {
+        let mut cursor = connection.execute(slow, QueryOptions::default()).await?;
+        cursor.fetch_page(PageSize::new(10_000)?).await
+    }
+    .await;
+    let elapsed = started.elapsed();
+    cancellation.await.unwrap();
+    assert_eq!(page.expect_err("cancelled page").kind, ErrorKind::Cancelled);
+    assert!(elapsed < std::time::Duration::from_secs(3), "{elapsed:?}");
+    assert_eq!(
+        run(&mut *connection, "SELECT 42::bigint", true).await,
+        vec![vec![Value::Integer(42)]]
+    );
+    connection.close().await.unwrap();
 }
 #[tokio::test]
 #[ignore = "requires disposable live PostgreSQL fixture"]
@@ -1614,4 +1686,28 @@ async fn transaction_control_empty_pages_enforce_budget_and_allow_retry() {
     cursor.close().await.unwrap();
     connection.rollback().await.unwrap();
     connection.close().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL fixture"]
+async fn auto_commit_sql_begin_keeps_writes_until_sql_rollback_or_commit() {
+    let mut c = PostgresDriver.connect(settings()).await.unwrap();
+    run(&mut *c, "CREATE TEMP TABLE sql_begin_rows(x integer)", true).await;
+    run(&mut *c, "BEGIN", true).await;
+    run(&mut *c, "INSERT INTO sql_begin_rows VALUES (1)", true).await;
+    assert_eq!(c.transaction_state().await.unwrap(), Some(true));
+    run(&mut *c, "ROLLBACK", true).await;
+    assert_eq!(
+        run(&mut *c, "SELECT count(*)::bigint FROM sql_begin_rows", true).await,
+        vec![vec![Value::Integer(0)]]
+    );
+    run(&mut *c, "BEGIN", true).await;
+    run(&mut *c, "INSERT INTO sql_begin_rows VALUES (2)", true).await;
+    run(&mut *c, "COMMIT", true).await;
+    assert_eq!(c.transaction_state().await.unwrap(), Some(false));
+    assert_eq!(
+        run(&mut *c, "SELECT x FROM sql_begin_rows", true).await,
+        vec![vec![Value::Integer(2)]]
+    );
+    c.close().await.unwrap();
 }

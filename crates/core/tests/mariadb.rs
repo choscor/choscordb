@@ -166,7 +166,7 @@ fn object_rows(engine: &mut Engine, query: QueryId) -> (Vec<String>, Vec<Vec<Val
     };
     (
         columns.into_iter().map(|column| column.name).collect(),
-        page.rows,
+        page.rows.clone(),
     )
 }
 

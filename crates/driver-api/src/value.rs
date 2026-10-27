@@ -65,6 +65,11 @@ impl Value {
     }
 }
 pub type Row = Vec<Value>;
+/// The estimated bytes of one row, without its slot in the row vector of a page.
+pub fn row_estimated_bytes(row: &Row) -> usize {
+    (row.capacity() - row.len()) * std::mem::size_of::<Value>()
+        + row.iter().map(Value::estimated_bytes).sum::<usize>()
+}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Column {
     pub name: String,
@@ -84,14 +89,7 @@ impl ResultPage {
     pub fn estimated_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
             + self.rows.capacity() * std::mem::size_of::<Row>()
-            + self
-                .rows
-                .iter()
-                .map(|r| {
-                    (r.capacity() - r.len()) * std::mem::size_of::<Value>()
-                        + r.iter().map(Value::estimated_bytes).sum::<usize>()
-                })
-                .sum::<usize>()
+            + self.rows.iter().map(row_estimated_bytes).sum::<usize>()
     }
 }
 

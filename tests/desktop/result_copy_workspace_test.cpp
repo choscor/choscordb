@@ -92,7 +92,7 @@ class ResultCopyWorkspaceTest : public QObject {
         choscordb::ResultTableModel model;
         QVERIFY(model.setPage({column("value")}, {{QString("original")}}, 0));
         model.setEditableColumns({true}, false, false);
-        QVERIFY(model.setByteBudget(model.residentBytes() + 200));
+        QVERIFY(model.setByteBudget(model.residentBytes() + 300));
         const auto cell = model.index(0, 0);
         QVERIFY(model.setData(cell, QString(30, 'a')));
         QVERIFY(model.setData(cell, QString(30, 'b')));
@@ -114,7 +114,8 @@ class ResultCopyWorkspaceTest : public QObject {
         QVERIFY(model.setPage({column("a")}, {{choscordb::DeferredValue{1, 90000, "text"}}}, 0));
         QVERIFY(copyPage(model, &error).isEmpty());
         QVERIFY(error.contains("Export"));
-        QVERIFY(model.setPage({column("a")}, {{QString(1024, QChar('"'))}}, 0));
+        // Escaped quotes double the text, so the copy needs more than the page holds.
+        QVERIFY(model.setPage({column("a")}, {{QString(512, QChar('"'))}}, 0));
         QVERIFY(model.setByteBudget(model.residentBytes()));
         QVERIFY(copyRows(model, {model.index(0, 0)}, &error).isEmpty());
         QVERIFY(!error.isEmpty());
@@ -123,19 +124,15 @@ class ResultCopyWorkspaceTest : public QObject {
     }
     void contextActionsUseCurrentSelectionAndNeverSubmitDatabaseWork() {
         QWidget window;
-        QComboBox connections, mode;
-        QAction run, cancel, commit, rollback, newConnection;
+        QAction run, runAll, cancel, newConnection;
         QPushButton next, previous, exportResult;
         QLabel summary;
         QPlainTextEdit messages;
         QTableView grid;
         choscordb::SqlEditor editor;
-        choscordb::QueryWorkspace workspace({&connections,
-                                             &mode,
-                                             &run,
+        choscordb::QueryWorkspace workspace({&run,
+                                             &runAll,
                                              &cancel,
-                                             &commit,
-                                             &rollback,
                                              &newConnection,
                                              &next,
                                              &summary,
@@ -383,19 +380,15 @@ class ResultCopyWorkspaceTest : public QObject {
     void inlineFallbackOpensCompleteReadOnlyDetail() {
         QWidget window;
         window.show();
-        QComboBox connections, mode;
-        QAction run, cancel, commit, rollback, newConnection;
+        QAction run, runAll, cancel, newConnection;
         QPushButton next;
         QLabel summary;
         QPlainTextEdit messages;
         QTableView grid;
         choscordb::SqlEditor editor;
-        choscordb::QueryWorkspace workspace({&connections,
-                                             &mode,
-                                             &run,
+        choscordb::QueryWorkspace workspace({&run,
+                                             &runAll,
                                              &cancel,
-                                             &commit,
-                                             &rollback,
                                              &newConnection,
                                              &next,
                                              &summary,

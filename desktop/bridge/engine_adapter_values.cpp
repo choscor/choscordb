@@ -47,25 +47,27 @@ GridEditRequestDto gridRequestDto(const GridEditRequest& request, bool eligibili
     return dto;
 }
 Cell gridCell(const CellDto& value) {
-    const auto kind = fromRust(value.kind);
-    if (kind == "null")
+    switch (value.kind) {
+    case CellKindDto::Null:
         return std::monostate{};
-    if (kind == "boolean")
+    case CellKindDto::Boolean:
         return value.boolean;
-    if (kind == "integer")
+    case CellKindDto::Integer:
         return value.integer;
-    if (kind == "real")
+    case CellKindDto::Real:
         return value.real;
-    if (kind == "decimal")
+    case CellKindDto::Decimal:
         return DecimalValue{fromRust(value.text)};
-    if (kind == "binary") {
+    case CellKindDto::Binary: {
         QByteArray bytes;
         bytes.reserve(static_cast<qsizetype>(value.bytes.size()));
         for (auto byte : value.bytes)
             bytes.append(static_cast<char>(byte));
         return bytes;
     }
-    return fromRust(value.text);
+    default:
+        return fromRust(value.text);
+    }
 }
 } // namespace
 bool EngineAdapter::applyEditBatch(quint64 connection,
@@ -85,13 +87,13 @@ bool EngineAdapter::applyEditBatch(quint64 connection,
             auto cell = bridge_detail::cellDto(statement.params[i]);
             // Conversion guard: the planned kind below replaces the cell's own kind, so
             // a partial value must never reach that relabeling.
-            if (cell.kind == "invalid_unicode" || cell.kind == "deferred" ||
-                cell.kind == "deferred_fallback" || cell.kind == "fallback_text" ||
-                cell.kind == "unavailable") {
+            if (cell.kind == CellKindDto::InvalidUnicode || cell.kind == CellKindDto::Deferred ||
+                cell.kind == CellKindDto::DeferredFallback ||
+                cell.kind == CellKindDto::FallbackText || cell.kind == CellKindDto::Unavailable) {
                 emit commandFailed(tr("Deferred values cannot be bound to grid edits."));
                 return false;
             }
-            cell.kind = toRust(statement.paramKinds[i]);
+            cell.kind = static_cast<CellKindDto>(statement.paramKinds[i]);
             dto.params.push_back(std::move(cell));
         }
         batch.push_back(std::move(dto));
@@ -127,7 +129,7 @@ GridEditPlan EngineAdapter::planGridEdits(const GridEditRequest& request) {
             statement.expectedRows = planned.statement.expected_rows;
         for (const auto& param : planned.statement.params) {
             statement.params.push_back(gridCell(param));
-            statement.paramKinds.push_back(fromRust(param.kind));
+            statement.paramKinds.push_back(static_cast<CellKind>(param.kind));
         }
         result.statements.push_back(std::move(statement));
     }
@@ -139,7 +141,7 @@ QList<CellFilterOption> EngineAdapter::quickFilterOptions(const QString& column,
     QList<CellFilterOption> result;
     auto dto = bridge_detail::cellDto(value);
     if (!column.isValidUtf16())
-        dto.kind = "invalid_unicode";
+        dto.kind = CellKindDto::InvalidUnicode;
     for (const auto& item : quick_filter_options_policy(utf8View(bytes), std::move(dto)))
         result.append({static_cast<CellFilterOperator>(item.operation), fromRust(item.label),
                        item.enabled, fromRust(item.reason)});
@@ -156,7 +158,7 @@ CellFilterComposition EngineAdapter::composeQuickFilter(const QStringList& colum
     const auto columnBytes = column.toUtf8();
     auto dto = bridge_detail::cellDto(value);
     if (!column.isValidUtf16() || !draft.isValidUtf16())
-        dto.kind = "invalid_unicode";
+        dto.kind = CellKindDto::InvalidUnicode;
     const auto result =
         quick_filter_compose_policy(std::move(names), utf8View(draftBytes), utf8View(columnBytes),
                                     std::move(dto), static_cast<QuickFilterOperator>(operation));
@@ -177,7 +179,7 @@ std::optional<QString> EngineAdapter::foreignKeyPredicate(const QString& targetC
 }
 const GridCellPolicy& EngineAdapter::gridCellPolicy(GridCell kind) {
     static const auto policies = [] {
-        std::array<GridCellPolicy, 5> result{};
+        std::array<GridCellPolicy, GridCellKinds> result{};
         for (const auto& dto : grid_cell_kind_policies()) {
             const auto index = static_cast<std::size_t>(dto.kind);
             if (index < result.size())
@@ -235,10 +237,98 @@ DriverWorkflow EngineAdapter::driverWorkflow(const QString& driver) {
 const TransactionGuard& EngineAdapter::transactionGuard(bool transactionActive) {
     static const auto guard = [](bool active) {
         const auto dto = transaction_guard_policy(active);
-        return TransactionGuard{fromRust(dto.apply_edits), fromRust(dto.enable_auto_commit)};
+        return TransactionGuard{fromRust(dto.apply_edits)};
     };
     static const TransactionGuard idle = guard(false), open = guard(true);
     return transactionActive ? open : idle;
+}
+// The casts below need the C++ enumerators to keep the values of the Rust DTO enums.
+#define CHOSCORDB_SAME_ENUMERATOR(cpp, dto, name) static_assert(int(cpp::name) == int(dto::name))
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Null);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Boolean);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Integer);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Real);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Decimal);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Text);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Date);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Time);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Timestamp);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Uuid);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Json);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Binary);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, FallbackText);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, DeferredFallback);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Unavailable);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Deferred);
+CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, InvalidUnicode);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusKind, RowStatusKindDto, None);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusKind, RowStatusKindDto, Loading);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusKind, RowStatusKindDto, Failed);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusKind, RowStatusKindDto, Unavailable);
+CHOSCORDB_SAME_ENUMERATOR(RowRetry, RowRetryDto, None);
+CHOSCORDB_SAME_ENUMERATOR(RowRetry, RowRetryDto, Refresh);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusCause, RowStatusCauseDto, Connecting);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusCause, RowStatusCauseDto, ChildrenLoading);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusCause, RowStatusCauseDto, ChildrenFailed);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusCause, RowStatusCauseDto, ConnectionFailed);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusCause, RowStatusCauseDto, ConnectionUnavailable);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusCause, RowStatusCauseDto, ConnectionNotReady);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusCause, RowStatusCauseDto, ConnectionDeselected);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusCause, RowStatusCauseDto, RevealFailed);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusCause, RowStatusCauseDto, ObjectUnavailable);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusCause, RowStatusCauseDto, Connected);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusCause, RowStatusCauseDto, Hidden);
+CHOSCORDB_SAME_ENUMERATOR(RowStatusCause, RowStatusCauseDto, Disconnected);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, Retry);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, RetryQuery);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, RefineOrRetry);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, Refresh);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, ActivatePin);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, RetryFromNavigator);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, RetryFromHistory);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, OpenPreferences);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, RetryOrResetAppearance);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, RetryAppearanceBeforeSave);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, RestoreConnection);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, RefreshNavigator);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, CheckConnection);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, ReconnectAndRefresh);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, RetryRecovery);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, RetryConnection);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, InspectSshServer);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, UseApprovedKey);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, RetryApproval);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, ReconnectManually);
+CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, ReconnectAndRefreshNavigator);
+#undef CHOSCORDB_SAME_ENUMERATOR
+RowStatus EngineAdapter::rowStatus(RowStatusCause cause, const QString& detail) {
+    const auto load = [cause, &detail] {
+        const auto bytes = detail.toUtf8();
+        const auto dto = row_status_policy(static_cast<RowStatusCauseDto>(cause), utf8View(bytes));
+        return RowStatus{static_cast<RowStatusKind>(dto.kind), static_cast<RowRetry>(dto.retry),
+                         fromRust(dto.message)};
+    };
+    if (!detail.isEmpty())
+        return load();
+    static QMutex mutex;
+    static QHash<RowStatusCause, RowStatus> cache;
+    const QMutexLocker lock(&mutex);
+    if (const auto found = cache.constFind(cause); found != cache.cend())
+        return *found;
+    return *cache.insert(cause, load());
+}
+const QString& EngineAdapter::recoveryHint(RecoveryHint hint) {
+    static const auto texts = [] {
+        std::array<QString, std::size_t(RecoveryHint::ReconnectAndRefreshNavigator) + 1> loaded;
+        for (std::size_t i = 0; i < loaded.size(); ++i)
+            loaded[i] = fromRust(recovery_hint_text(static_cast<RecoveryHintDto>(i)));
+        return loaded;
+    }();
+    return texts.at(std::size_t(hint));
+}
+int EngineAdapter::panelNoticeMs() {
+    static const int milliseconds = int(panel_notice_milliseconds());
+    return milliseconds;
 }
 const NavigatorSearchBudget& EngineAdapter::navigatorSearchBudget() {
     static const NavigatorSearchBudget budget = [] {

@@ -9,6 +9,7 @@ mod grid_edit;
 mod ids;
 mod metadata_policy;
 mod options;
+mod row_status;
 mod socks;
 mod sqlite_uri;
 mod ssh_askpass;
@@ -20,11 +21,14 @@ mod ssh_local;
 mod ssh_options;
 mod ssh_process;
 mod transaction;
+mod value_codec;
 mod workflow;
-pub use transaction::{
-    AUTO_COMMIT_NEEDS_NO_TRANSACTION, EDITS_NEED_NO_TRANSACTION, TransactionGuard,
-    transaction_guard,
+pub use row_status::{
+    PANEL_NOTICE_MILLISECONDS, RecoveryHint, RetryAction, RowStatus, RowStatusCause, RowStatusKind,
+    recovery_hint, row_status,
 };
+pub use transaction::{EDITS_NEED_NO_TRANSACTION, TransactionGuard, transaction_guard};
+pub use value_codec::{ValueReader, ValueWriter, read_value, write_value};
 pub use workflow::{DriverWorkflow, driver_workflow};
 mod ssh_proxy;
 mod ssh_shared;

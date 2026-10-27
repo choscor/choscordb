@@ -192,7 +192,6 @@ impl Drop for PageLease {
 mod tests {
     use super::*;
     use choscordb_driver_api::{ResultPage, Value};
-    use choscordb_result_store::StoredPage;
 
     #[tokio::test]
     async fn source_quota_wait_preserves_hot_pages_until_source_is_released() {
@@ -215,14 +214,12 @@ mod tests {
         cache.insert(
             &memory,
             first,
-            &StoredPage {
-                first_row: 0,
-                page: ResultPage {
-                    index: 0,
-                    rows: vec![vec![Value::Integer(73)]],
-                    has_more: true,
-                },
-            },
+            0,
+            &Arc::new(ResultPage {
+                index: 0,
+                rows: vec![vec![Value::Integer(73)]],
+                has_more: true,
+            }),
         );
         let cached = cache.usage().resident_bytes;
         assert!(cached > 0);

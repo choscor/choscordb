@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -26,6 +27,8 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <optional>
+#include <utility>
 
 class MeasuredApplication : public QApplication {
   public:
@@ -53,6 +56,8 @@ class MeasuredApplication : public QApplication {
             if (ms > 16)
                 ++dispatchOver16;
             if (readyAtDispatch) {
+                phaseMaximumDispatchMs[measurementPhase] =
+                    std::max(phaseMaximumDispatchMs.value(measurementPhase), ms);
                 if (ms > steadyMaximumDispatchMs) {
                     steadyMaximumDispatchMs = ms;
                     steadyMaximumDispatchType = int(type);
@@ -94,6 +99,7 @@ class MeasuredApplication : public QApplication {
     int interactiveMaximumDispatchType = 0;
     QString interactiveMaximumDispatchClass, interactiveMaximumDispatchPhase;
     quint64 interactiveDispatchCount = 0, interactiveDispatchOver16 = 0;
+    QHash<QString, double> phaseMaximumDispatchMs;
 
   private:
     int depth_ = 0;
@@ -153,11 +159,14 @@ class Probe : public QObject {
                     if (closing_ && errorKind == "Disconnected")
                         return;
                     finish("Query failed during measurement");
-                } else if (kind == "stored_page" && browsing_) {
+                } else if (kind == "query_state" && wideStep_ == "page" &&
+                           QString::fromUtf8(event.state.data(), qsizetype(event.state.size())) ==
+                               "queued") {
                     query_ = event.id;
-                    const auto index = event.page_index;
-                    const auto rows = event.row_count;
-                    QTimer::singleShot(0, this, [this, index, rows] { page(index, rows); });
+                } else if (kind == "stored_page" && browsing_) {
+                    // A worker builds the grid page; the model reset shows it.
+                    query_ = event.id;
+                    browsePage_ = {event.page_index, event.row_count};
                 }
             },
             Qt::DirectConnection);
@@ -167,6 +176,14 @@ class Probe : public QObject {
                 [this](bool) { checkReady(); });
         connect(settings, &choscordb::QuerySettingsController::readyChanged, this,
                 [this](bool) { checkReady(); });
+        connect(grid_->model(), &QAbstractItemModel::modelReset, this, [this] {
+            if (!wideStep_.isEmpty())
+                QTimer::singleShot(0, this, [this] { widePageShown(); });
+            if (browsePage_ && grid_->model()->rowCount() > 0) {
+                const auto [index, rows] = *std::exchange(browsePage_, std::nullopt);
+                QTimer::singleShot(0, this, [this, index, rows] { page(index, rows); });
+            }
+        });
         connect(run_, &QAction::changed, this, [this] {
             if (waitingConnection_)
                 waitForConnection();
@@ -335,12 +352,7 @@ class Probe : public QObject {
                 return;
             }
             browsing_ = false;
-            closing_ = true;
-            app_.measurementPhase = "shutdown";
-            closeStart_ = now();
-            std::puts("{\"event\":\"shutdown_started\"}");
-            std::fflush(stdout);
-            window_.close();
+            QTimer::singleShot(0, this, [this] { startWidePage(); });
         } else if (++pages_ == 1000) {
             revisiting_ = true;
             missesBefore_ = workspace_->adapter()->cacheUsage().misses;
@@ -351,6 +363,98 @@ class Probe : public QObject {
                 return;
             }
             next_->click();
+        }
+    }
+    // A 10,000-row x 30-column result with mixed types, then a sort and a filter of it.
+    // The engine page byte budget can end each page early; the report records the rows shown.
+    void startWidePage() {
+        auto* settings = window_.findChild<choscordb::QuerySettingsController*>();
+        auto preferences = settings->preferences();
+        preferences.pageSize = WideRows;
+        settings->applyConfirmed(preferences);
+        QStringList columns{"x AS c0"};
+        for (int column = 1; column < WideColumns; ++column) {
+            switch (column % 5) {
+            case 0:
+                columns << QStringLiteral("x * %1 AS c%1").arg(column);
+                break;
+            case 1:
+                columns << QStringLiteral("printf('text %1 %%08d', x) AS c%1").arg(column);
+                break;
+            case 2:
+                columns << QStringLiteral("x * %1.25 AS c%1").arg(column);
+                break;
+            case 3:
+                columns << QStringLiteral("randomblob(16) AS c%1").arg(column);
+                break;
+            default:
+                columns << QStringLiteral("NULL AS c%1").arg(column);
+            }
+        }
+        editor_->setText(QStringLiteral("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 "
+                                        "FROM n WHERE x<%1) SELECT %2 FROM n")
+                             .arg(WideRows)
+                             .arg(columns.join(", ")));
+        editor_->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+        wideStep_ = "page";
+        app_.measurementPhase = "wide-page";
+        wideStart_ = now();
+        run_->trigger();
+    }
+    // Each step ends when the grid model holds the expected page.
+    void widePageShown() {
+        if (finished_ || wideStep_.isEmpty())
+            return;
+        auto* model = grid_->model();
+        const auto first = [model] { return model->data(model->index(0, 0)).toLongLong(); };
+        if (wideStep_ == "page") {
+            if (model->rowCount() == 0 || model->columnCount() != WideColumns)
+                return;
+            widePageRows_ = model->rowCount();
+            if (first() != 1) {
+                finish("The wide page did not start at the first row");
+                return;
+            }
+            report_["wide_page_ready_ms"] = now() - wideStart_;
+            report_["wide_page_notify_max_ms"] = app_.phaseMaximumDispatchMs.value("wide-page");
+            wideStep_ = "sort";
+            app_.measurementPhase = "wide-sort";
+            wideStart_ = now();
+            if (!workspace_->adapter()->applyResultView(query_, {}, 0, "descending"))
+                finish("The wide sort was not accepted");
+        } else if (wideStep_ == "sort") {
+            if (model->rowCount() == 0 || first() != WideRows)
+                return;
+            report_["wide_sort_ms"] = now() - wideStart_;
+            report_["wide_sort_notify_max_ms"] = app_.phaseMaximumDispatchMs.value("wide-sort");
+            wideStep_ = "filter";
+            app_.measurementPhase = "wide-filter";
+            wideStart_ = now();
+            choscordb::ResultFilterCondition half;
+            half.column = 0;
+            half.operation = "less_than_or_equal";
+            half.valueKind = "integer";
+            half.value = QString::number(WideRows / 2);
+            if (!workspace_->adapter()->applyResultView(query_, {half}))
+                finish("The wide filter was not accepted");
+        } else if (wideStep_ == "filter") {
+            if (model->rowCount() == 0 || first() != 1)
+                return;
+            if (model->data(model->index(model->rowCount() - 1, 0)).toLongLong() > WideRows / 2) {
+                finish("The wide filter kept rows above its bound");
+                return;
+            }
+            report_["wide_filter_ms"] = now() - wideStart_;
+            report_["wide_filter_notify_max_ms"] = app_.phaseMaximumDispatchMs.value("wide-filter");
+            report_["wide_page_rows"] = widePageRows_;
+            report_["wide_page_columns"] = WideColumns;
+            wideStep_.clear();
+            closing_ = true;
+            app_.measurementPhase = "shutdown";
+            closeStart_ = now();
+            std::puts("{\"event\":\"shutdown_started\"}");
+            std::fflush(stdout);
+            window_.close();
         }
     }
     void finish(const QString& error) {
@@ -417,6 +521,10 @@ class Probe : public QObject {
             "offscreen/minimal rendering cannot verify displayed latency.",
             "Current RSS samples can miss transient peaks. SQLite session only; PostgreSQL is "
             "unmeasured.",
+            "The wide sort and filter call the engine result view for the SQL result directly; "
+            "the SQL screen has no sort or filter control.",
+            "The engine page byte budget ends each wide page early; wide_page_rows records the "
+            "rows that the page holds.",
             "Notify durations include harness timer work and synchronous nested work in outer "
             "dispatch; nested dispatches "
             "are not separate samples. Measurement callbacks are excluded.",
@@ -443,11 +551,15 @@ class Probe : public QObject {
     QPushButton* next_ = nullptr;
     QJsonObject report_;
     QList<double> latencies_;
-    double firstPaint_ = -1, keyStart_ = 0, browseStart_ = 0, closeStart_ = 0;
+    static constexpr int WideRows = 10000, WideColumns = 30;
+    QString wideStep_;
+    int widePageRows_ = 0;
+    double firstPaint_ = -1, keyStart_ = 0, browseStart_ = 0, closeStart_ = 0, wideStart_ = 0;
     quint64 query_ = 0, pages_ = 0, missesBefore_ = 0, reservationPeak_ = 0, cachePeak_ = 0;
     std::uint64_t rssPeak_ = 0, footprintPeak_ = 0, rssSamples_ = 0;
     int executions_ = 0;
     bool keyPending_ = false, textChanged_ = false, browsing_ = false, revisiting_ = false;
+    std::optional<std::pair<quint64, quint32>> browsePage_;
     bool closing_ = false, finished_ = false, ready_ = false, waitingConnection_ = false;
 };
 

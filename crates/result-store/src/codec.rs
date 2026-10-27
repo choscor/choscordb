@@ -28,19 +28,6 @@ impl<W: Write> Encoder<W> {
         self.bytes = total;
         Ok(())
     }
-    fn byte(&mut self, n: u8) -> Result<()> {
-        self.raw(&[n])
-    }
-    fn u32(&mut self, n: u32) -> Result<()> {
-        self.raw(&n.to_le_bytes())
-    }
-    fn u64(&mut self, n: u64) -> Result<()> {
-        self.raw(&n.to_le_bytes())
-    }
-    fn bytes(&mut self, bytes: &[u8]) -> Result<()> {
-        self.u32(u32::try_from(bytes.len()).map_err(|_| StoreError::LimitExceeded)?)?;
-        self.raw(bytes)
-    }
     fn text(&mut self, text: &str) -> Result<()> {
         self.bytes(text.as_bytes())
     }
@@ -78,97 +65,10 @@ impl<W: Write> Encoder<W> {
         self.u32(columns)?;
         for row in &page.rows {
             for value in row {
-                self.value(value)?;
+                write_value(self, value)?;
             }
         }
         Ok(())
-    }
-    fn value(&mut self, value: &Value) -> Result<()> {
-        match value {
-            Value::Null => self.byte(0),
-            Value::Bool(v) => {
-                self.byte(1)?;
-                self.byte(u8::from(*v))
-            }
-            Value::Integer(v) => {
-                self.byte(2)?;
-                self.u64(*v as u64)
-            }
-            Value::Real(v) => {
-                self.byte(3)?;
-                self.u64(v.to_bits())
-            }
-            Value::Decimal(v) => {
-                self.byte(4)?;
-                self.text(v)
-            }
-            Value::Text(v) => {
-                self.byte(5)?;
-                self.text(v)
-            }
-            Value::Date(v) => {
-                self.byte(6)?;
-                self.text(v)
-            }
-            Value::Time(v) => {
-                self.byte(7)?;
-                self.text(v)
-            }
-            Value::Timestamp(v) => {
-                self.byte(8)?;
-                self.text(v)
-            }
-            Value::Uuid(v) => {
-                self.byte(9)?;
-                self.text(v)
-            }
-            Value::Json(v) => {
-                self.byte(10)?;
-                self.text(v)
-            }
-            Value::Binary(v) => {
-                self.byte(11)?;
-                self.bytes(v)
-            }
-            Value::Deferred {
-                handle,
-                byte_length,
-                database_type,
-            } => {
-                self.byte(12)?;
-                self.u32(handle.slot)?;
-                self.u32(handle.generation)?;
-                self.u64(*byte_length)?;
-                self.text(database_type)
-            }
-            Value::FallbackText {
-                text,
-                database_type,
-            } => {
-                self.byte(13)?;
-                self.text(database_type)?;
-                self.text(text)
-            }
-            Value::DeferredFallback {
-                handle,
-                byte_length,
-                database_type,
-            } => {
-                self.byte(14)?;
-                self.u32(handle.slot)?;
-                self.u32(handle.generation)?;
-                self.u64(*byte_length)?;
-                self.text(database_type)
-            }
-            Value::Unavailable {
-                database_type,
-                reason,
-            } => {
-                self.byte(15)?;
-                self.text(database_type)?;
-                self.text(reason)
-            }
-        }
     }
     pub fn finish(mut self) -> Result<(u64, u32)> {
         self.out.flush()?;
@@ -206,11 +106,6 @@ impl<R: Read> Decoder<R> {
         self.hash.update(bytes);
         Ok(())
     }
-    fn byte(&mut self) -> Result<u8> {
-        let mut b = [0];
-        self.raw(&mut b)?;
-        Ok(b[0])
-    }
     fn bool(&mut self) -> Result<bool> {
         match self.byte()? {
             0 => Ok(false),
@@ -218,32 +113,12 @@ impl<R: Read> Decoder<R> {
             _ => Err(StoreError::Corrupt),
         }
     }
-    fn u32(&mut self) -> Result<u32> {
-        let mut b = [0; 4];
-        self.raw(&mut b)?;
-        Ok(u32::from_le_bytes(b))
-    }
-    fn u64(&mut self) -> Result<u64> {
-        let mut b = [0; 8];
-        self.raw(&mut b)?;
-        Ok(u64::from_le_bytes(b))
-    }
     fn allocate(&mut self, bytes: usize) -> Result<()> {
         self.budget = self
             .budget
             .checked_sub(bytes)
             .ok_or(StoreError::LimitExceeded)?;
         Ok(())
-    }
-    fn bytes(&mut self) -> Result<Vec<u8>> {
-        let len = self.u32()? as usize;
-        if len as u64 > self.remaining {
-            return Err(StoreError::Corrupt);
-        }
-        self.allocate(len)?;
-        let mut bytes = vec![0; len];
-        self.raw(&mut bytes)?;
-        Ok(bytes)
     }
     fn text(&mut self) -> Result<String> {
         String::from_utf8(self.bytes()?).map_err(|_| StoreError::Corrupt)
@@ -307,7 +182,7 @@ impl<R: Read> Decoder<R> {
         for _ in 0..rows {
             let mut row = Vec::with_capacity(width as usize);
             for _ in 0..width {
-                row.push(self.value()?);
+                row.push(read_value(self)?);
             }
             output.push(row);
         }
@@ -317,53 +192,60 @@ impl<R: Read> Decoder<R> {
             has_more,
         })
     }
-    fn value(&mut self) -> Result<Value> {
-        Ok(match self.byte()? {
-            0 => Value::Null,
-            1 => Value::Bool(self.bool()?),
-            2 => Value::Integer(self.u64()? as i64),
-            3 => Value::Real(f64::from_bits(self.u64()?)),
-            4 => Value::Decimal(self.text()?),
-            5 => Value::Text(self.text()?),
-            6 => Value::Date(self.text()?),
-            7 => Value::Time(self.text()?),
-            8 => Value::Timestamp(self.text()?),
-            9 => Value::Uuid(self.text()?),
-            10 => Value::Json(self.text()?),
-            11 => Value::Binary(self.bytes()?),
-            12 => Value::Deferred {
-                handle: Handle {
-                    slot: self.u32()?,
-                    generation: self.u32()?,
-                },
-                byte_length: self.u64()?,
-                database_type: self.text()?,
-            },
-            13 => Value::FallbackText {
-                database_type: self.text()?,
-                text: self.text()?,
-            },
-            14 => Value::DeferredFallback {
-                handle: Handle {
-                    slot: self.u32()?,
-                    generation: self.u32()?,
-                },
-                byte_length: self.u64()?,
-                database_type: self.text()?,
-            },
-            15 => Value::Unavailable {
-                database_type: self.text()?,
-                reason: self.text()?,
-            },
-            _ => return Err(StoreError::Corrupt),
-        })
-    }
     pub fn finish(self, checksum: u32) -> Result<()> {
         if self.remaining != 0 || self.hash.finalize() != checksum {
             Err(StoreError::Corrupt)
         } else {
             Ok(())
         }
+    }
+}
+
+impl<W: Write> ValueWriter for Encoder<W> {
+    type Error = StoreError;
+    fn byte(&mut self, n: u8) -> Result<()> {
+        self.raw(&[n])
+    }
+    fn u32(&mut self, n: u32) -> Result<()> {
+        self.raw(&n.to_le_bytes())
+    }
+    fn u64(&mut self, n: u64) -> Result<()> {
+        self.raw(&n.to_le_bytes())
+    }
+    fn bytes(&mut self, bytes: &[u8]) -> Result<()> {
+        self.u32(u32::try_from(bytes.len()).map_err(|_| StoreError::LimitExceeded)?)?;
+        self.raw(bytes)
+    }
+}
+impl<R: Read> ValueReader for Decoder<R> {
+    type Error = StoreError;
+    fn byte(&mut self) -> Result<u8> {
+        let mut b = [0];
+        self.raw(&mut b)?;
+        Ok(b[0])
+    }
+    fn u32(&mut self) -> Result<u32> {
+        let mut b = [0; 4];
+        self.raw(&mut b)?;
+        Ok(u32::from_le_bytes(b))
+    }
+    fn u64(&mut self) -> Result<u64> {
+        let mut b = [0; 8];
+        self.raw(&mut b)?;
+        Ok(u64::from_le_bytes(b))
+    }
+    fn bytes(&mut self) -> Result<Vec<u8>> {
+        let len = self.u32()? as usize;
+        if len as u64 > self.remaining {
+            return Err(StoreError::Corrupt);
+        }
+        self.allocate(len)?;
+        let mut bytes = vec![0; len];
+        self.raw(&mut bytes)?;
+        Ok(bytes)
+    }
+    fn corrupt(&self) -> StoreError {
+        StoreError::Corrupt
     }
 }
 

@@ -26,6 +26,7 @@
 #include <QtConcurrentRun>
 #include <atomic>
 #include <memory>
+#include <utility>
 
 namespace choscordb {
 using query_workspace_detail::text;
@@ -152,6 +153,7 @@ void QueryWorkspace::clearResult() {
         export_->clearQuery();
     if (detail_)
         detail_->clearValue();
+    dropPageBuild();
     model_->setPage({}, {}, 0);
     cellMetadata_.clear();
     cellMetadataToken_ = 0;

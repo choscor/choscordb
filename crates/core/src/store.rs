@@ -312,29 +312,25 @@ impl SortedRows {
             let decoded_limit = config.max_page_decoded_bytes;
             let mut statement = connection.prepare("SELECT row_json FROM sorted_rows ORDER BY sort_key COLLATE typed_result_value ASC, sequence ASC").map_err(|_| if *cancellation.borrow() { DriverError::new(ErrorKind::Cancelled, "Result view cancelled") } else { sort_error() })?;
             let mut ordered = statement.query([]).map_err(|_| if *cancellation.borrow() { DriverError::new(ErrorKind::Cancelled, "Result view cancelled") } else { sort_error() })?;
-            let mut page_rows = Vec::with_capacity(page_size);
+            let mut page_rows = crate::result_view::PageRows::with_capacity(page_size);
             let mut index = 0_u64;
             loop {
                 let next = ordered.next().map_err(|_| if *cancellation.borrow() { DriverError::new(ErrorKind::Cancelled, "Result view cancelled") } else { sort_error() })?;
                 let Some(row) = next else { break };
                 let bytes: Vec<u8> = row.get(0).map_err(|_| sort_error())?;
                 if page_rows.len() == page_size {
-                    let full = std::mem::replace(&mut page_rows, Vec::with_capacity(page_size));
-                    result.append(&ResultPage { index, rows: full, has_more: true }).map_err(error)?;
+                    result.append(&ResultPage { index, rows: page_rows.take(), has_more: true }).map_err(error)?;
                     index += 1;
                 }
                 page_rows.push(serde_json::from_slice::<Row>(&bytes).map_err(|_| sort_error())?);
-                if page_rows.len() > 1
-                    && crate::result_view::page_estimated_bytes(&page_rows) > decoded_limit
-                {
+                if page_rows.len() > 1 && page_rows.estimated_bytes() > decoded_limit {
                     let overflow = page_rows.pop().expect("page is nonempty");
-                    let full = std::mem::replace(&mut page_rows, Vec::with_capacity(page_size));
-                    result.append(&ResultPage { index, rows: full, has_more: true }).map_err(error)?;
+                    result.append(&ResultPage { index, rows: page_rows.take(), has_more: true }).map_err(error)?;
                     index += 1;
                     page_rows.push(overflow);
                 }
             }
-            result.append(&ResultPage { index, rows: page_rows, has_more: false }).map_err(error)?;
+            result.append(&ResultPage { index, rows: page_rows.into_rows(), has_more: false }).map_err(error)?;
             Ok(Store(Some(result)))
         }).await.map_err(|_| unavailable())?
     }

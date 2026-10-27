@@ -41,6 +41,65 @@ ChoscorDB does not load third-party binary plugins.
 It builds as a static library that CMake links into the desktop frontend.
 Read [Build and run](build.md) for the build integration.
 
+### Event delivery
+
+One engine task converts core events to bridge events, in the order that they arrive.
+The UI thread takes only converted events, so a large result page does not stop it.
+`EVENT_DRAIN_BUDGET` sets the maximum number of events in conversion or in the queue at one time.
+A drain waits a short time for small events, and a large page goes to a later tick.
+The bridge sends each cell with a typed `CellKind`. C++ does not parse cell text to find the type.
+
+### Connection sessions
+
+Each connection has one actor for the query session.
+The query session runs SQL, edits, object data and DDL.
+
+A PostgreSQL or MySQL connection also opens a catalog session at the first navigator read.
+Navigator reads use the catalog session, so a long query does not stop the navigator.
+The query session answers navigator reads in these conditions:
+
+- The query session has an open transaction.
+  Only the query session can show the changes that the transaction did not commit.
+- The engine cannot read the transaction state. The engine shows the error.
+- The catalog session cannot open.
+  The engine shows the error one time, and the query session answers the reads.
+  After `CATALOG_RETRY` (30 seconds), the next read tries to open the catalog session again.
+
+The engine reads the transaction state after each statement, when its result is complete.
+While a result streams, the engine uses the last state.
+
+The engine closes the catalog session when the connection disconnects.
+If the catalog session closes because of a connection error, the next read opens it again.
+
+### Metadata cache
+
+The `storage` crate keeps the navigator children of saved connection profiles in the `metadata_cache` table.
+The key is the profile ID and the parent object ID.
+The value has the ID, the name, the qualified name, the kind and the child flag of each child.
+The cache does not keep object properties, column details or DDL.
+
+- The engine writes a parent when a complete live first page loads.
+- The engine does not write children that the query session reads in a transaction or in an unknown state.
+- A cache entry expires after 7 days. The engine ignores an expired entry and deletes it at the next write.
+- When you delete a profile, the engine deletes its cache entries.
+- When a saved profile gets a different connection target, the engine deletes its cache entries.
+
+When the navigator expands a node, the engine first sends the saved children with the `cached` flag.
+Then it loads the live children and sends them without the flag.
+The live children replace the saved children.
+The navigator keeps the saved rows that the live children still contain, so their expansion stays.
+A manual refresh and an object inspection read only the live children.
+A failed cache read or write shows as an error.
+
+The local metadata database contains schema and object names of saved profiles.
+It does not contain credentials or row values.
+
+### PostgreSQL protocol delta
+
+The PostgreSQL driver uses a copy of `tokio-postgres` with a small local delta.
+The delta sends some protocol messages together, to save network round trips.
+`crates/driver-postgres/third_party/tokio-postgres/CHOSCORDB_PATCH.md` gives the full delta.
+
 ## Rust and C++ ownership
 
 ### The desktop frontend owns presentation
@@ -67,6 +126,9 @@ The Rust engine owns all application behavior that is not presentation:
 - Persisted encodings, for example IDs, context strings, file names and storage locations.
 
 The bridge gives these values to C++ as typed DTOs.
+For example, Rust selects the SQL text that `Run current` or `Run all` sends to the database.
+C++ sends the run scope as the typed `ExecutionScope` enum and does not find statements itself.
+The bridge always runs SQL editor text with auto-commit.
 Do not repeat a Rust rule in C++ or in the bridge.
 C++ shows the errors from Rust.
 C++ does not check a rule again before or after it calls Rust.
@@ -167,8 +229,9 @@ The digests normalize CRLF to LF, so LF and CRLF checkouts give the same report.
 | `text-matching` | Case-insensitive searches, lowercase searches and `QSortFilterProxyModel` text filters. |
 | `object-kind-literal` | Branches on object-kind words such as `"table"`. |
 | `driver-literal` | Branches on driver names such as `"mysql"`, in any letter case. |
+| `retry-policy-text` | Recovery sentences such as `Refresh to retry.` or `Refine the text or retry.` in string literals. `EngineAdapter::rowStatus` and `EngineAdapter::recoveryHint` supply them. A button label such as `Retry` has no full stop and is not a recovery sentence. |
 
-The last three rules apply to presentation, display-model and bridge code.
+The last four rules apply to presentation, display-model and bridge code.
 They find equality, list membership, `compare` and prefix or suffix searches.
 They also find wrapped literals, for example `QStringLiteral("table")` or `u"table"_s`.
 Design-system and developer-tool code can map kinds and drivers to appearance.

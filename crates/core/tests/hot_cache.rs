@@ -222,3 +222,34 @@ fn global_cache_reclaims_across_connections_and_cancelled_pages_remain_hot() {
     }
     assert_eq!(engine.cache_usage().resident_bytes, 0);
 }
+
+#[test]
+fn two_reads_of_a_cached_page_share_one_copy() {
+    let mut engine = Engine::new(EngineConfig::default(), vec![Arc::new(SqliteDriver)]).unwrap();
+    let c = engine
+        .connect(
+            "sqlite",
+            ConnectionOptions::Sqlite {
+                path: ":memory:".into(),
+                read_only: false,
+            },
+        )
+        .unwrap();
+    let q = engine
+        .execute(c, "SELECT 1 UNION ALL SELECT 2".into(), paged())
+        .unwrap();
+    engine.fetch_page_at(q, 0).unwrap();
+    let Event::StoredPage { page: first, .. } = result(&mut engine) else {
+        panic!("the first read failed")
+    };
+    engine.fetch_page_at(q, 0).unwrap();
+    let Event::StoredPage { page: second, .. } = result(&mut engine) else {
+        panic!("the second read failed")
+    };
+    assert_eq!(
+        second.rows,
+        vec![vec![Value::Integer(1)], vec![Value::Integer(2)]]
+    );
+    assert!(Arc::ptr_eq(&first, &second));
+    assert_eq!(engine.cache_usage().hits, 1);
+}

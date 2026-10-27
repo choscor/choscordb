@@ -22,22 +22,17 @@ pub(crate) enum Command {
         batch: EditBatch,
         request_token: u64,
     },
-    EditTarget {
-        object: ObjectId,
-        time: ObjectDataTime,
-        request_token: u64,
-    },
     EditQuery {
         sql: String,
         result_columns: Vec<String>,
         request_token: u64,
     },
     ResultCells {
-        object: Option<ObjectId>,
         sql: String,
         result_columns: Vec<String>,
         request_token: u64,
     },
+    Catalog(CatalogRead),
     Export {
         export: crate::ExportId,
         query: QueryId,
@@ -92,14 +87,29 @@ pub(crate) enum Command {
     ClearResultView {
         query: QueryId,
     },
+    Release(QueryId),
+}
+/// A catalog read that names its objects by ID, so any session of the Connect
+/// gives the same answer outside a transaction.
+pub(crate) enum CatalogRead {
     Metadata {
         parent: Option<ObjectId>,
         request_token: u64,
         offset: u64,
         limit: u32,
+        /// Where a complete first page is saved for the next connection.
+        cache: Option<crate::metadata_cache::CacheTarget>,
     },
-    Transaction(bool),
-    Release(QueryId),
+    EditTarget {
+        object: ObjectId,
+        time: ObjectDataTime,
+        request_token: u64,
+    },
+    ObjectCells {
+        object: ObjectId,
+        result_columns: Vec<String>,
+        request_token: u64,
+    },
 }
 struct Active {
     page_size: PageSize,
@@ -249,6 +259,148 @@ async fn metadata_operation<T>(
         )),
         result = operation => result,
     }
+}
+/// Reports the cell metadata of a result. Returns the error of a failed read.
+async fn result_cells(
+    id: ConnectionId,
+    cells: impl std::future::Future<Output = Result<Vec<ResultCellMetadata>>>,
+    request_token: u64,
+    shutdown: &mut watch::Receiver<bool>,
+    events: &EventSink,
+) -> Option<DriverError> {
+    let cells = metadata_operation(cells, shutdown)
+        .await
+        .and_then(|columns| {
+            choscordb_driver_api::check_result_cell_metadata(&columns).map(|()| columns)
+        });
+    let (event, error) = match cells {
+        Ok(columns) => (
+            Event::ResultCells {
+                connection: id,
+                request_token,
+                columns,
+            },
+            None,
+        ),
+        Err(error) => (
+            Event::ResultCellsFailed {
+                connection: id,
+                request_token,
+                error: error.clone(),
+            },
+            Some(error),
+        ),
+    };
+    send(events, event).await;
+    error
+}
+/// Runs one catalog read and reports its result. Returns the error of a failed read.
+pub(crate) async fn catalog_read(
+    connection: &mut dyn Connection,
+    id: ConnectionId,
+    read: CatalogRead,
+    shutdown: &mut watch::Receiver<bool>,
+    events: &EventSink,
+) -> Option<DriverError> {
+    let (event, error) = match read {
+        CatalogRead::ObjectCells {
+            object,
+            result_columns,
+            request_token,
+        } => {
+            let cells = connection.inspect_result_cells(Some(&object), "", result_columns);
+            return result_cells(id, cells, request_token, shutdown, events).await;
+        }
+        CatalogRead::EditTarget {
+            object,
+            time,
+            request_token,
+        } => {
+            let target = async {
+                if time == ObjectDataTime::Current {
+                    connection.inspect_edit_target(&object).await
+                } else {
+                    Ok(EditTarget {
+                        reason: "History rows are read-only".into(),
+                        ..Default::default()
+                    })
+                }
+            };
+            match metadata_operation(target, shutdown).await {
+                Ok(target) => (
+                    Event::EditTarget {
+                        connection: id,
+                        request_token,
+                        target,
+                    },
+                    None,
+                ),
+                Err(error) => (
+                    Event::EditTargetFailed {
+                        connection: id,
+                        request_token,
+                        error: error.clone(),
+                    },
+                    Some(error),
+                ),
+            }
+        }
+        CatalogRead::Metadata {
+            parent,
+            request_token,
+            offset,
+            limit,
+            cache,
+        } => {
+            let page = connection.load_metadata_page(parent.clone(), offset, limit);
+            match metadata_operation(page, shutdown).await {
+                Ok(page) => {
+                    // Only a complete child list replaces the saved children. The
+                    // navigator gets the children first, so the write does not delay them.
+                    let save = cache
+                        .filter(|_| page.next_offset.is_none())
+                        .map(|cache| (cache, crate::metadata_cache::saved_children(&page.objects)));
+                    send(
+                        events,
+                        Event::Metadata {
+                            connection: id,
+                            parent: parent.clone(),
+                            request_token,
+                            objects: page.objects,
+                            offset,
+                            next_offset: page.next_offset,
+                            cached: false,
+                        },
+                    )
+                    .await;
+                    if let Some((cache, objects)) = save
+                        && let Err(error) = cache.write(parent, objects).await
+                    {
+                        send(
+                            events,
+                            Event::OperationFailed {
+                                connection: id,
+                                error,
+                            },
+                        )
+                        .await;
+                    }
+                    return None;
+                }
+                Err(error) => (
+                    Event::MetadataFailed {
+                        connection: id,
+                        parent,
+                        request_token,
+                        error: error.clone(),
+                    },
+                    Some(error),
+                ),
+            }
+        }
+    };
+    send(events, event).await;
+    error
 }
 async fn failure(events: &EventSink, query: QueryId, error: DriverError) {
     let state = if error.kind == ErrorKind::Disconnected {
@@ -410,7 +562,9 @@ pub(crate) async fn run(
     store_directory: Option<std::path::PathBuf>,
     memory: Arc<crate::memory::Memory>,
     cache: Arc<crate::hot_cache::HotCache>,
+    catalog: (Arc<crate::catalog::CatalogRoute>, mpsc::WeakSender<Request>),
 ) {
+    let (route, fallback) = catalog;
     let events = EventSink::with_diagnostics(events, shutdown.clone(), diagnostics, driver.id());
     let probe_timeout = session_probe_timeout(&options);
     let attempt_timeout = attempt_timeout.unwrap_or(probe_timeout);
@@ -496,6 +650,18 @@ pub(crate) async fn run(
         },
     )
     .await;
+    route.follow(Ok(transaction_active));
+    route.start(
+        &*connection,
+        crate::catalog::CatalogSession {
+            id,
+            fallback,
+            events: events.clone(),
+            shutdown: shutdown.clone(),
+            grace,
+        },
+        commands.max_capacity(),
+    );
     if let Some(mode) = mode {
         send(
             &events,
@@ -636,6 +802,14 @@ pub(crate) async fn run(
         } else {
             &mut sql_active
         };
+        // A statement can open or end a transaction.
+        let statement = matches!(
+            command,
+            Command::Execute { object: None, .. }
+                | Command::NextResult { .. }
+                | Command::Fetch { .. }
+                | Command::Release(_)
+        );
         match command {
             Command::SqlMode { request_token } => {
                 // Inspect the session without retiring its current results. A
@@ -730,82 +904,20 @@ pub(crate) async fn run(
                 }
             }
             Command::ResultCells {
-                object,
                 sql,
                 result_columns,
                 request_token,
             } => {
-                match metadata_operation(
-                    connection.inspect_result_cells(object.as_ref(), &sql, result_columns),
-                    &mut shutdown,
-                )
-                .await
-                .and_then(|columns| {
-                    choscordb_driver_api::check_result_cell_metadata(&columns).map(|()| columns)
-                }) {
-                    Ok(columns) => {
-                        send(
-                            &events,
-                            Event::ResultCells {
-                                connection: id,
-                                request_token,
-                                columns,
-                            },
-                        )
-                        .await
-                    }
-                    Err(error) => {
-                        send(
-                            &events,
-                            Event::ResultCellsFailed {
-                                connection: id,
-                                request_token,
-                                error,
-                            },
-                        )
-                        .await
-                    }
-                }
+                let cells = connection.inspect_result_cells(None, &sql, result_columns);
+                result_cells(id, cells, request_token, &mut shutdown, &events).await;
             }
-            Command::EditTarget {
-                object,
-                time,
-                request_token,
-            } => {
-                let target = async {
-                    if time == ObjectDataTime::Current {
-                        connection.inspect_edit_target(&object).await
-                    } else {
-                        Ok(EditTarget {
-                            reason: "History rows are read-only".into(),
-                            ..Default::default()
-                        })
-                    }
-                };
-                match metadata_operation(target, &mut shutdown).await {
-                    Ok(target) => {
-                        send(
-                            &events,
-                            Event::EditTarget {
-                                connection: id,
-                                request_token,
-                                target,
-                            },
-                        )
-                        .await
-                    }
-                    Err(error) => {
-                        send(
-                            &events,
-                            Event::EditTargetFailed {
-                                connection: id,
-                                request_token,
-                                error,
-                            },
-                        )
-                        .await
-                    }
+            Command::Catalog(mut read) => {
+                if route.in_transaction()
+                    && let CatalogRead::Metadata { cache, .. } = &mut read
+                {
+                    *cache = None;
                 }
+                catalog_read(&mut *connection, id, read, &mut shutdown, &events).await;
             }
             Command::Edit {
                 batch,
@@ -1010,7 +1122,7 @@ pub(crate) async fn run(
                         if let Some(history) = &mut history {
                             history.fail(error.kind).await;
                         }
-                        // A failed statement can leave a manual transaction open;
+                        // A failed statement can leave an open transaction;
                         // report the session state before the failure.
                         if !outcome.poisoned
                             && error.kind != ErrorKind::Disconnected
@@ -1198,30 +1310,38 @@ pub(crate) async fn run(
                                 .unwrap()
                                 .read_reserved(index, lease)
                                 .await
-                        } else if let Some(stored) = cache.read(query, index) {
-                            Ok((stored, lease))
+                                .map(|(stored, lease)| {
+                                    (stored.first_row, Arc::new(stored.page), lease)
+                                })
+                        } else if let Some((first_row, page)) = cache.read(query, index) {
+                            Ok((first_row, page, lease))
                         } else {
-                            let read = store.read_reserved(index, lease).await;
-                            if let Ok((stored, _)) = &read
-                                && !view_active
-                            {
-                                cache.insert(&memory, query, stored);
-                            }
-                            read
+                            store
+                                .read_reserved(index, lease)
+                                .await
+                                .map(|(stored, lease)| {
+                                    let page = Arc::new(stored.page);
+                                    cache.insert(&memory, query, stored.first_row, &page);
+                                    (stored.first_row, page, lease)
+                                })
                         };
                         match read {
-                            Ok((mut stored, lease)) => {
-                                stored.page.has_more = index + 1 < count
-                                    || (stored.page.has_more
+                            Ok((first_row, mut page, lease)) => {
+                                let has_more = index + 1 < count
+                                    || (page.has_more
                                         && active
                                             .as_ref()
                                             .is_some_and(|a| a.id == query && !a.completed));
+                                // Copies a shared page only when the flag changes.
+                                if page.has_more != has_more {
+                                    Arc::make_mut(&mut page).has_more = has_more;
+                                }
                                 send(
                                     &events,
                                     Event::StoredPage {
                                         query,
-                                        first_row: stored.first_row,
-                                        page: stored.page,
+                                        first_row,
+                                        page,
                                         lease,
                                     },
                                 )
@@ -1285,28 +1405,22 @@ pub(crate) async fn run(
                 match outcome.result {
                     Ok((stored, lease)) => {
                         let finished = !stored.page.has_more;
-                        cache.insert(&memory, query, &stored);
+                        let first_row = stored.first_row;
+                        let page = Arc::new(stored.page);
+                        cache.insert(&memory, query, first_row, &page);
                         if index.is_some() {
                             send(
                                 &events,
                                 Event::StoredPage {
                                     query,
-                                    first_row: stored.first_row,
-                                    page: stored.page,
+                                    first_row,
+                                    page,
                                     lease,
                                 },
                             )
                             .await;
                         } else {
-                            send(
-                                &events,
-                                Event::Page {
-                                    query,
-                                    page: stored.page,
-                                    lease,
-                                },
-                            )
-                            .await;
+                            send(&events, Event::Page { query, page, lease }).await;
                         }
                         if finished {
                             complete_result(current, &events).await;
@@ -1459,7 +1573,8 @@ pub(crate) async fn run(
                     } else {
                         None
                     };
-                    let mut pending = Vec::with_capacity(page_size.get() as usize);
+                    let mut pending =
+                        crate::result_view::PageRows::with_capacity(page_size.get() as usize);
                     let mut direct_page_index = 0_u64;
                     let mut row_count = 0_u64;
                     let mut sort_sample = None;
@@ -1507,29 +1622,21 @@ pub(crate) async fn run(
                                 } else {
                                     if pending.len() == page_size.get() as usize {
                                         direct_view
-                                                .as_mut()
-                                                .expect("direct view exists without a sort")
-                                                .append_reserved(
-                                                    ResultPage {
-                                                        index: direct_page_index,
-                                                        rows: std::mem::replace(
-                                                            &mut pending,
-                                                            Vec::with_capacity(
-                                                                page_size.get() as usize
-                                                            ),
-                                                        ),
-                                                        has_more: true,
-                                                    },
-                                                    (),
-                                                )
-                                                .await?;
+                                            .as_mut()
+                                            .expect("direct view exists without a sort")
+                                            .append_reserved(
+                                                ResultPage {
+                                                    index: direct_page_index,
+                                                    rows: pending.take(),
+                                                    has_more: true,
+                                                },
+                                                (),
+                                            )
+                                            .await?;
                                         direct_page_index += 1;
                                     }
                                     pending.push(row);
-                                    if pending.len() > 1
-                                        && crate::result_view::page_estimated_bytes(&pending)
-                                            > raw_limit
-                                    {
+                                    if pending.len() > 1 && pending.estimated_bytes() > raw_limit {
                                         let overflow = pending.pop().expect("pending is nonempty");
                                         direct_view
                                             .as_mut()
@@ -1537,12 +1644,7 @@ pub(crate) async fn run(
                                             .append_reserved(
                                                 ResultPage {
                                                     index: direct_page_index,
-                                                    rows: std::mem::replace(
-                                                        &mut pending,
-                                                        Vec::with_capacity(
-                                                            page_size.get() as usize,
-                                                        ),
-                                                    ),
+                                                    rows: pending.take(),
                                                     has_more: true,
                                                 },
                                                 (),
@@ -1587,7 +1689,7 @@ pub(crate) async fn run(
                         view.append_reserved(
                             ResultPage {
                                 index: direct_page_index,
-                                rows: pending,
+                                rows: pending.into_rows(),
                                 has_more: false,
                             },
                             (),
@@ -1821,74 +1923,6 @@ pub(crate) async fn run(
                     }
                 }
             }
-            Command::Metadata {
-                parent,
-                request_token,
-                offset,
-                limit,
-            } => match metadata_operation(
-                connection.load_metadata_page(parent.clone(), offset, limit),
-                &mut shutdown,
-            )
-            .await
-            {
-                Ok(objects) => {
-                    send(
-                        &events,
-                        Event::Metadata {
-                            connection: id,
-                            parent,
-                            request_token,
-                            objects: objects.objects,
-                            offset,
-                            next_offset: objects.next_offset,
-                        },
-                    )
-                    .await
-                }
-                Err(error) => {
-                    send(
-                        &events,
-                        Event::MetadataFailed {
-                            connection: id,
-                            parent,
-                            request_token,
-                            error,
-                        },
-                    )
-                    .await
-                }
-            },
-            Command::Transaction(committed) => {
-                close_active(active, &events).await;
-                let result = if committed {
-                    connection.commit().await
-                } else {
-                    connection.rollback().await
-                };
-                match result {
-                    Ok(()) => {
-                        send(
-                            &events,
-                            Event::TransactionFinished {
-                                connection: id,
-                                committed,
-                            },
-                        )
-                        .await
-                    }
-                    Err(error) => {
-                        send(
-                            &events,
-                            Event::OperationFailed {
-                                connection: id,
-                                error,
-                            },
-                        )
-                        .await
-                    }
-                }
-            }
             Command::Release(query) => {
                 stores.remove(&query);
                 views.remove(&query);
@@ -1898,6 +1932,28 @@ pub(crate) async fn run(
                     close_active(active, &events).await;
                 }
             }
+        }
+        // The state is local, but a session that still streams a result answers
+        // only after the result ends. Ask again when the result is complete.
+        //
+        // A script that opens a transaction and ends in a result that still streams
+        // keeps the earlier state until that result completes.
+        if statement && sql_active.as_ref().is_none_or(|a| a.completed) {
+            let state = metadata_operation(connection.transaction_state(), &mut shutdown).await;
+            // The disconnect reports itself. Another failure sends reads to the query session.
+            if let Err(error) = &state
+                && error.kind != ErrorKind::Disconnected
+            {
+                send(
+                    &events,
+                    Event::OperationFailed {
+                        connection: id,
+                        error: error.clone(),
+                    },
+                )
+                .await;
+            }
+            route.follow(state);
         }
     }
     commands.close();

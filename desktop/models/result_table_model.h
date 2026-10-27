@@ -4,9 +4,12 @@
 #include <QItemSelection>
 #include <QString>
 #include <QStringList>
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <optional>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 namespace choscordb {
@@ -37,6 +40,13 @@ struct ResultColumn {
     QString timezone;
     std::optional<bool> nullable;
 };
+// How a staged grid cell is represented; Rust owns what each kind permits.
+enum class GridCell : uint8_t { Value, Binary, Deferred, FallbackText, Unavailable };
+inline constexpr std::size_t GridCellKinds = std::size_t(GridCell::Unavailable) + 1;
+struct GridCellPolicy {
+    bool inlineEditable = false, blocksRowDelete = false, blocksRowDuplicate = false,
+         duplicateRequiresLoad = false;
+};
 struct ResultCellMetadata {
     QString sourceColumn;
     QString sourceObject;
@@ -47,6 +57,7 @@ struct ResultCellMetadata {
     QString targetObject;
     QString targetQualifiedName;
     QString targetColumn;
+    bool operator==(const ResultCellMetadata&) const = default;
 };
 class ResultTableModel final : public QAbstractTableModel {
     Q_OBJECT
@@ -112,8 +123,7 @@ class ResultTableModel final : public QAbstractTableModel {
     static std::size_t defaultBytes();
     // Budget includes owned page allocations, excluding this fixed QObject and
     // caller-owned in-flight transfers. Shared Qt buffers are charged in full.
-    explicit ResultTableModel(QObject* parent = nullptr, std::size_t byteBudget = defaultBytes())
-        : QAbstractTableModel(parent), byteBudget_(byteBudget) {}
+    explicit ResultTableModel(QObject* parent = nullptr, std::size_t byteBudget = defaultBytes());
     std::size_t residentBytes() const { return residentBytes_; }
     std::size_t byteBudget() const { return byteBudget_; }
     bool setByteBudget(std::size_t bytes) {
@@ -122,13 +132,33 @@ class ResultTableModel final : public QAbstractTableModel {
         byteBudget_ = bytes;
         return true;
     }
+    // A page with its display strings, link filters and header types, built on a worker.
+    struct PreparedPage {
+        std::vector<ResultColumn> columns;
+        std::vector<Row> rows;
+        // One entry per page cell, row-major.
+        std::vector<QString> display;
+        std::vector<bool> filterable;
+        std::vector<QString> headerTypes;
+        quint64 firstRow = 0;
+        // The owned allocations; empty when the page shape is not valid.
+        std::optional<std::size_t> bytes;
+    };
+    // Safe on a worker thread. Rust gives `filterable`, whether a foreign-key link can filter
+    // by each cell; empty means no cell can.
+    static PreparedPage preparePage(std::vector<ResultColumn> columns, std::vector<Row> rows,
+                                    std::vector<bool> filterable, quint64 firstRow);
     std::optional<DeferredValue> deferredValue(const QModelIndex& index) const;
     int rowCount(const QModelIndex& parent = {}) const override;
     int columnCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+    void multiData(const QModelIndex& index, QModelRoleDataSpan roleDataSpan) const override;
     QVariant headerData(int section, Qt::Orientation orientation,
                         int role = Qt::DisplayRole) const override;
-    bool setPage(std::vector<ResultColumn> columns, std::vector<Row> rows, quint64 firstRow);
+    // `metadata`, when it is not empty, is the cell metadata that arrives with the page.
+    bool setPage(PreparedPage page, std::vector<ResultCellMetadata> metadata = {});
+    bool setPage(std::vector<ResultColumn> columns, std::vector<Row> rows, quint64 firstRow,
+                 std::vector<ResultCellMetadata> metadata = {});
     bool setCellMetadata(std::vector<ResultCellMetadata> metadata);
     std::optional<ResultCellMetadata> linkedColumn(const QModelIndex& index) const;
     std::optional<Cell> cellValue(const QModelIndex& index) const;
@@ -165,7 +195,9 @@ class ResultTableModel final : public QAbstractTableModel {
     std::size_t originalRowCount() const { return originalRowCount_; }
     const Row& originalRow(std::size_t row) const;
     const std::vector<Row>& rows() const { return rows_; }
-    const std::vector<std::vector<bool>>& touched() const { return touched_; }
+    // Whether the cell has a staged value.
+    bool touched(std::size_t row, std::size_t column) const;
+    std::vector<bool> touchedRow(std::size_t row) const;
     const std::vector<bool>& inserted() const { return inserted_; }
     const std::vector<bool>& deleted() const { return deleted_; }
     // Scope 0 copies a rectangle covering the selected cells, leaving unselected cells blank.
@@ -199,12 +231,31 @@ class ResultTableModel final : public QAbstractTableModel {
         }
     };
     std::optional<CopyShape> copyShape(const QItemSelection& selection, int scope) const;
+    // A staged value, filled only on edit.
+    struct CellEdit {
+        std::size_t bytes = 0;
+        QString display;
+        bool filterable = false;
+    };
+    static quint64 cellKey(std::size_t row, std::size_t column) {
+        return (quint64(row) << 32) | quint64(column);
+    }
+    const CellEdit* edit(std::size_t row, std::size_t column) const;
+    std::size_t editBytes(int row, int column) const;
+    // The charge of a staged `value` beyond its parsed bytes: the entry and its display text.
+    static std::size_t editCharge(const Cell& value, const QString& display);
+    bool validIndex(const QModelIndex& index) const;
+    QVariant cellData(int row, int column, int role) const;
+    const GridCellPolicy& cellPolicy(const Cell& cell) const;
     bool cellEditable(int row, int column) const;
-    void stageNull(int row, int column);
-    void markTouched(int row, int column);
+    bool cellFilterable(int row, int column) const;
+    // Stages `value`; `bytes` is the whole charge, from editCharge and the parsed value.
+    void stageValue(int row, int column, Cell value, QString display, std::size_t bytes);
+    bool stageNull(int row, int column);
+    void eraseInsertedRow(int row);
     void preserveOriginal(int row);
     bool linkable(int row, int column) const;
-    void resetLinkCache();
+    void applyCellMetadata(std::vector<ResultCellMetadata> metadata);
     void resetPendingCounts();
     std::vector<ResultColumn> columns_;
     std::vector<ResultCellMetadata> cellMetadata_;
@@ -213,14 +264,16 @@ class ResultTableModel final : public QAbstractTableModel {
     // every other original row is still identical to rows_.
     std::map<std::size_t, Row> editedOriginals_;
     std::size_t originalRowCount_ = 0;
-    std::size_t touchedCount_ = 0, insertedCount_ = 0, deletedCount_ = 0;
-    // Foreign-key linkability is computed once per cell and reused by painting.
-    // Slots exist only for columns with complete reference metadata.
-    std::vector<int> linkSlots_;
-    int linkColumnCount_ = 0;
-    mutable std::vector<quint8> linkCache_;
-    std::vector<std::vector<bool>> touched_;
-    std::vector<std::vector<std::size_t>> editBytes_;
+    std::size_t insertedCount_ = 0, deletedCount_ = 0;
+    // Per original page cell, row-major; staged cells use edits_ instead.
+    std::vector<QString> display_;
+    std::vector<bool> filterable_;
+    std::vector<QString> headerTypes_;
+    std::unordered_map<quint64, CellEdit> edits_;
+    // Columns with complete reference metadata.
+    std::vector<bool> linkColumns_;
+    // Rust's grid cell policies, copied once so that flags() never asks.
+    std::array<GridCellPolicy, GridCellKinds> cellPolicies_;
     std::vector<bool> inserted_, deleted_, editable_;
     std::vector<bool> insertEditable_;
     std::vector<bool> keyColumns_;

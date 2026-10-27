@@ -1,47 +1,49 @@
 use super::{ffi, pack};
 use choscordb_core::Event;
 use choscordb_driver_api::*;
+impl Default for ffi::CellKindDto {
+    fn default() -> Self {
+        Self::Null
+    }
+}
 pub(crate) fn value(cell: ffi::CellDto) -> std::result::Result<Value, ()> {
-    Ok(match cell.kind.as_str() {
-        "null" => Value::Null,
-        "boolean" => Value::Bool(cell.boolean),
-        "integer" => Value::Integer(cell.integer),
-        "real" => Value::Real(cell.real),
-        "decimal" => Value::Decimal(cell.text),
-        "text" => Value::Text(cell.text),
-        "date" => Value::Date(cell.text),
-        "time" => Value::Time(cell.text),
-        "timestamp" => Value::Timestamp(cell.text),
-        "uuid" => Value::Uuid(cell.text),
-        "json" => Value::Json(cell.text),
-        "binary" => Value::Binary(cell.bytes),
-        "fallback_text" => Value::FallbackText {
+    use ffi::CellKindDto as Kind;
+    let handle = || Handle {
+        slot: cell.handle as u32,
+        generation: (cell.handle >> 32) as u32,
+    };
+    Ok(match cell.kind {
+        Kind::Null => Value::Null,
+        Kind::Boolean => Value::Bool(cell.boolean),
+        Kind::Integer => Value::Integer(cell.integer),
+        Kind::Real => Value::Real(cell.real),
+        Kind::Decimal => Value::Decimal(cell.text),
+        Kind::Text => Value::Text(cell.text),
+        Kind::Date => Value::Date(cell.text),
+        Kind::Time => Value::Time(cell.text),
+        Kind::Timestamp => Value::Timestamp(cell.text),
+        Kind::Uuid => Value::Uuid(cell.text),
+        Kind::Json => Value::Json(cell.text),
+        Kind::Binary => Value::Binary(cell.bytes),
+        Kind::FallbackText => Value::FallbackText {
             text: cell.text,
             database_type: cell.database_type,
         },
-        "unavailable" => Value::Unavailable {
+        Kind::Unavailable => Value::Unavailable {
             database_type: cell.database_type,
             reason: cell.text,
         },
-        "deferred" | "deferred_fallback" => {
-            let handle = Handle {
-                slot: cell.handle as u32,
-                generation: (cell.handle >> 32) as u32,
-            };
-            if cell.kind == "deferred" {
-                Value::Deferred {
-                    handle,
-                    byte_length: cell.byte_length,
-                    database_type: cell.database_type,
-                }
-            } else {
-                Value::DeferredFallback {
-                    handle,
-                    byte_length: cell.byte_length,
-                    database_type: cell.database_type,
-                }
-            }
-        }
+        Kind::Deferred => Value::Deferred {
+            handle: handle(),
+            byte_length: cell.byte_length,
+            database_type: cell.database_type,
+        },
+        Kind::DeferredFallback => Value::DeferredFallback {
+            handle: handle(),
+            byte_length: cell.byte_length,
+            database_type: cell.database_type,
+        },
+        // Invalid C++ text, or a value outside the shared enum.
         _ => return Err(()),
     })
 }
@@ -58,52 +60,55 @@ fn column(c: Column) -> ffi::ColumnDto {
     }
 }
 pub(crate) fn cell(value: Value) -> ffi::CellDto {
-    let mut c = ffi::CellDto::default();
+    let mut c = ffi::CellDto {
+        foreign_key_filterable: foreign_key_value_filterable(&value),
+        ..Default::default()
+    };
     c.kind = match value {
-        Value::Null => "null",
+        Value::Null => ffi::CellKindDto::Null,
         Value::Bool(b) => {
             c.boolean = b;
-            "boolean"
+            ffi::CellKindDto::Boolean
         }
         Value::Integer(n) => {
             c.integer = n;
-            "integer"
+            ffi::CellKindDto::Integer
         }
         Value::Real(n) => {
             c.real = n;
-            "real"
+            ffi::CellKindDto::Real
         }
         Value::Decimal(s) => {
             c.text = s;
-            "decimal"
+            ffi::CellKindDto::Decimal
         }
         Value::Text(s) => {
             c.text = s;
-            "text"
+            ffi::CellKindDto::Text
         }
         Value::Date(s) => {
             c.text = s;
-            "date"
+            ffi::CellKindDto::Date
         }
         Value::Time(s) => {
             c.text = s;
-            "time"
+            ffi::CellKindDto::Time
         }
         Value::Timestamp(s) => {
             c.text = s;
-            "timestamp"
+            ffi::CellKindDto::Timestamp
         }
         Value::Uuid(s) => {
             c.text = s;
-            "uuid"
+            ffi::CellKindDto::Uuid
         }
         Value::Json(s) => {
             c.text = s;
-            "json"
+            ffi::CellKindDto::Json
         }
         Value::Binary(bytes) => {
             c.bytes = bytes;
-            "binary"
+            ffi::CellKindDto::Binary
         }
         Value::FallbackText {
             text,
@@ -111,7 +116,7 @@ pub(crate) fn cell(value: Value) -> ffi::CellDto {
         } => {
             c.text = text;
             c.database_type = database_type;
-            "fallback_text"
+            ffi::CellKindDto::FallbackText
         }
         Value::DeferredFallback {
             handle,
@@ -121,7 +126,7 @@ pub(crate) fn cell(value: Value) -> ffi::CellDto {
             c.handle = pack(handle);
             c.byte_length = byte_length;
             c.database_type = database_type;
-            "deferred_fallback"
+            ffi::CellKindDto::DeferredFallback
         }
         Value::Unavailable {
             database_type,
@@ -129,7 +134,7 @@ pub(crate) fn cell(value: Value) -> ffi::CellDto {
         } => {
             c.text = reason;
             c.database_type = database_type;
-            "unavailable"
+            ffi::CellKindDto::Unavailable
         }
         Value::Deferred {
             handle,
@@ -139,10 +144,9 @@ pub(crate) fn cell(value: Value) -> ffi::CellDto {
             c.handle = pack(handle);
             c.byte_length = byte_length;
             c.database_type = database_type;
-            "deferred"
+            ffi::CellKindDto::Deferred
         }
-    }
-    .into();
+    };
     c
 }
 fn edit_target(target: EditTarget) -> ffi::EditTargetDto {
@@ -187,7 +191,11 @@ fn capabilities(c: DriverCapabilities) -> u64 {
     .enumerate()
     .fold(0, |n, (bit, on)| n | ((on as u64) << bit))
 }
-pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi::BridgeEvent {
+/// Locks `leases` only to insert the transfer lease, after the conversion.
+pub fn event(
+    event: Event,
+    leases: &std::sync::Mutex<Arena<choscordb_core::PageLease>>,
+) -> ffi::BridgeEvent {
     let mut transfer = None;
     let mut e = ffi::BridgeEvent::default();
     e.kind = match event {
@@ -688,6 +696,8 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
         }
         Event::Page { query, page, lease } => {
             transfer = Some(lease);
+            // The hot cache usually shares the page; the cells are then copied once.
+            let page = std::sync::Arc::unwrap_or_clone(page);
             e.id = pack(query);
             e.page_index = page.index;
             e.row_count = page.rows.len() as u32;
@@ -735,7 +745,9 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             objects,
             offset,
             next_offset,
+            cached,
         } => {
+            e.metadata_cached = cached;
             e.metadata_offset = offset;
             e.has_more_metadata = next_offset.is_some();
             e.next_metadata_offset = next_offset.unwrap_or_default();
@@ -830,14 +842,6 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
             error(&mut e, err);
             "object_graph_failed"
         }
-        Event::TransactionFinished {
-            connection,
-            committed,
-        } => {
-            e.id = pack(connection);
-            e.committed = committed;
-            "transaction_finished"
-        }
         Event::MetadataFailed {
             connection,
             parent,
@@ -862,7 +866,12 @@ pub fn event(event: Event, leases: &mut Arena<choscordb_core::PageLease>) -> ffi
     .into();
     if let Some(lease) = transfer {
         e.reserved_bytes = lease.reserved_bytes() as u64;
-        e.lease_id = pack(leases.insert(lease));
+        e.lease_id = pack(
+            leases
+                .lock()
+                .expect("the lease arena lock is not poisoned")
+                .insert(lease),
+        );
         e.has_lease = true;
     }
     e

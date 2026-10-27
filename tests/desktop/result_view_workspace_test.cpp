@@ -166,6 +166,9 @@ class ResultViewWorkspaceTest : public QObject {
         QVERIFY(model->setPage(
             {id, name}, {{qint64(1), QString("clicked")}, {qint64(2), QString("selected")}}, 0));
         model->setEditableColumns({false, true}, true, true, {false, true});
+        // Staging and discarding one value runs the production enablement refresh.
+        model->setData(model->index(0, 1), QString("x"));
+        model->discardEdits();
         grid->setCurrentIndex(model->index(1, 1));
         QCoreApplication::processEvents();
         triggerTableAction(grid, "Duplicate row");
@@ -325,8 +328,7 @@ class ResultViewWorkspaceTest : public QObject {
         execute("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<1005) "
                 "INSERT INTO paged_rows SELECT x, CASE WHEN x % 2 = 0 THEN 'ALPHA' ELSE 'beta' END "
                 "FROM n");
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         choscordb::ObjectDataWorkspace data(sql);
         data.resize(900, 600);
         data.show();
@@ -396,8 +398,7 @@ class ResultViewWorkspaceTest : public QObject {
         };
         execute("CREATE TABLE typed_rows(id INTEGER PRIMARY KEY, amount NUMERIC)");
         execute("INSERT INTO typed_rows VALUES (1, 1.5), (2, 2)");
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         choscordb::ObjectDataWorkspace data(workspace);
         data.resize(900, 600);
         data.show();
@@ -507,8 +508,7 @@ class ResultViewWorkspaceTest : public QObject {
             "CREATE TABLE child(id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent(id))");
         execute("INSERT INTO parent VALUES (1)");
         execute("INSERT INTO child VALUES (7, 1)");
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         window.objectContextSelected(connection, R"(["main","child"])", "child", "table");
         auto* child = qobject_cast<choscordb::ObjectExplorer*>(tabs->currentWidget());
         QVERIFY(child);
@@ -682,7 +682,14 @@ class ResultViewWorkspaceTest : public QObject {
         metadata.targetObject = R"(["main","parent"])";
         metadata.targetQualifiedName = "parent";
         metadata.targetColumn = "id";
-        QVERIFY(model->setPage({column}, {{choscordb::DecimalValue{"2.50"}}}, 0));
+        // The filterable bit comes from Rust, as the bridge gives it for each page cell.
+        const auto showDecimal = [&](const QString& text) {
+            const choscordb::Cell value = choscordb::DecimalValue{text};
+            return model->setPage(choscordb::ResultTableModel::preparePage(
+                {column}, {{value}}, {choscordb::EngineAdapter::foreignKeyValueFilterable(value)},
+                0));
+        };
+        QVERIFY(showDecimal("2.50"));
         QVERIFY(model->setCellMetadata({metadata}));
         const auto linked = model->index(0, 0);
         QVERIFY(!linked.data(choscordb::design::ForeignKeyLinkLabelRole).toString().isEmpty());
@@ -698,10 +705,10 @@ class ResultViewWorkspaceTest : public QObject {
         QTRY_COMPARE(filter->text(), QString("\"id\" = 2.50"));
         QTRY_COMPARE(grid->model()->rowCount(), 1);
         QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("2.5"));
-        QVERIFY(model->setPage({column}, {{choscordb::DecimalValue{"0.1"}}}, 0));
+        QVERIFY(showDecimal("0.1"));
         QVERIFY(model->setCellMetadata({metadata}));
         QVERIFY(model->index(0, 0).data(choscordb::design::ForeignKeyLinkLabelRole).isValid());
-        QVERIFY(model->setPage({column}, {{choscordb::DecimalValue{"0.10000000000000001"}}}, 0));
+        QVERIFY(showDecimal("0.10000000000000001"));
         QVERIFY(model->setCellMetadata({metadata}));
         QVERIFY(!model->index(0, 0).data(choscordb::design::ForeignKeyLinkLabelRole).isValid());
     }

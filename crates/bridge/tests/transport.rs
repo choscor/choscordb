@@ -24,7 +24,6 @@ fn typed_transport_connects_and_streams_sqlite_without_json() {
         "SELECT NULL, '', 42, x'00ff'",
         1000,
         0,
-        true,
     );
     assert!(query.accepted, "{}", query.error);
     let schema = await_event(&mut engine, "schema");
@@ -33,10 +32,17 @@ fn typed_transport_connects_and_streams_sqlite_without_json() {
     let page = await_event(&mut engine, "page");
     assert_eq!(page.row_count, 1);
     assert_eq!(page.column_count, 4);
-    assert_eq!(page.cells[0].kind, "null");
-    assert_eq!(page.cells[1].kind, "text");
+    assert!(page.cells[0].kind == ffi::CellKindDto::Null);
+    assert!(page.cells[1].kind == ffi::CellKindDto::Text);
     assert_eq!(page.cells[2].integer, 42);
     assert_eq!(page.cells[3].bytes, vec![0, 255]);
+    // Rust decides each cell's link filter, so the grid never asks while it paints.
+    let filterable: Vec<_> = page
+        .cells
+        .iter()
+        .map(|cell| cell.foreign_key_filterable)
+        .collect();
+    assert_eq!(filterable, [false, true, true, false]);
     assert!(shutdown(&mut engine).accepted);
 }
 
@@ -52,7 +58,6 @@ fn result_view_commands_transport_typed_filters_sort_pages_and_clear() {
         "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<206) SELECT CASE WHEN x=206 THEN NULL ELSE printf('row%03d',206-x) END, x FROM c",
         100,
         0,
-        true,
     );
     assert!(query.accepted, "{}", query.error);
     await_event(&mut engine, "schema");
@@ -77,7 +82,7 @@ fn result_view_commands_transport_typed_filters_sort_pages_and_clear() {
     let page = await_event(&mut engine, "stored_page");
     assert_eq!(page.first_row, 100);
     assert_eq!(page.cells[0].text, "row101");
-    assert_eq!(page.cells[10].kind, "null");
+    assert!(page.cells[10].kind == ffi::CellKindDto::Null);
     assert!(clear_result_view(&mut engine, query.id).accepted);
     assert_eq!(
         await_event(&mut engine, "result_view_applied").result_view_rows,
@@ -101,11 +106,48 @@ fn result_view_commands_transport_typed_filters_sort_pages_and_clear() {
 #[test]
 fn invalid_inputs_return_outcomes_and_utf8_ranges_remain_bytes() {
     let mut engine = new_engine();
-    assert!(!execute(&mut engine, u64::MAX, "SELECT 1", 1, 0, true).accepted);
-    let result = sql_execution_range("SELECT 'é'; SELECT 2", 15, 0, 0, "sqlite", "");
+    assert!(!execute(&mut engine, u64::MAX, "SELECT 1", 1, 0).accepted);
+    let result = sql_execution_range(
+        "SELECT 'é'; SELECT 2",
+        15,
+        0,
+        0,
+        ffi::ExecutionScope::Current,
+        "sqlite",
+        "",
+    );
     assert!(result.valid);
     assert_eq!(result.start, 13);
-    assert!(sql_execution_range("DELETE FROM users", 0, 0, 0, "sqlite", "").confirmation_required);
+    assert!(
+        sql_execution_range(
+            "DELETE FROM users",
+            0,
+            0,
+            0,
+            ffi::ExecutionScope::Current,
+            "sqlite",
+            ""
+        )
+        .confirmation_required
+    );
+}
+
+#[test]
+fn run_all_covers_every_statement_and_confirms_destructive_ones() {
+    let sql = "SELECT 1; DROP TABLE t;";
+    let current = sql_execution_range(sql, 0, 0, 0, ffi::ExecutionScope::Current, "sqlite", "");
+    assert!(current.valid);
+    assert_eq!((current.start, current.end), (0, 9));
+    assert!(!current.confirmation_required);
+    let all = sql_execution_range(sql, 0, 0, 0, ffi::ExecutionScope::All, "sqlite", "");
+    assert!(all.valid);
+    assert_eq!((all.start, all.end), (0, sql.len() as u64));
+    assert!(all.confirmation_required);
+    let selected = sql_execution_range(sql, 0, 0, 9, ffi::ExecutionScope::All, "sqlite", "");
+    assert_eq!((selected.start, selected.end), (0, 9));
+    assert!(!sql_execution_range("  ", 0, 0, 0, ffi::ExecutionScope::All, "sqlite", "").valid);
+    let mysql = sql_execution_range(sql, 0, 0, 0, ffi::ExecutionScope::All, "mysql", "");
+    assert_eq!((mysql.start, mysql.end), (0, sql.len() as u64));
 }
 
 #[test]
@@ -114,13 +156,40 @@ fn event_drain_is_bounded_during_burst() {
     let c = connect_sqlite(&mut engine, ":memory:", false);
     assert!(c.accepted);
     await_event(&mut engine, "connected");
-    for _ in 0..20 {
-        assert!(execute(&mut engine, c.id, "SELECT 1", 1000, 0, true).accepted);
+    for _ in 0..40 {
+        assert!(execute(&mut engine, c.id, "SELECT 1", 1000, 0).accepted);
     }
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    // Let the burst queue up. Each drain then returns at most the budget, in batches.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let mut sizes = Vec::new();
+    for _ in 0..100 {
+        sizes.push(drain_events(&mut engine).len());
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(sizes.iter().all(|&n| n <= EVENT_DRAIN_BUDGET), "{sizes:?}");
+    assert!(sizes.iter().any(|&n| n > 1), "{sizes:?}");
+}
+
+#[test]
+fn one_drain_returns_a_small_event_that_core_has_queued() {
+    let mut engine = new_engine();
+    let c = connect_sqlite(&mut engine, ":memory:", false);
+    assert!(c.accepted);
+    await_event(&mut engine, "connected");
+    assert!(metadata_request(&mut engine, c.id, "", 7).accepted);
+    // Core has the reply long before this; conversion must not cost the UI another tick.
+    std::thread::sleep(std::time::Duration::from_millis(500));
     let events = drain_events(&mut engine);
-    assert!(!events.is_empty());
-    assert_eq!(events.len(), 1);
+    assert!(
+        events
+            .iter()
+            .any(|event| event.kind == "metadata" && event.request_token == 7),
+        "{:?}",
+        events
+            .iter()
+            .map(|event| event.kind.clone())
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -185,7 +254,7 @@ fn transfer_leases_remain_accounted_until_explicit_release() {
     let c = connect_sqlite(&mut engine, ":memory:", false);
     assert!(c.accepted);
     await_event(&mut engine, "connected");
-    let q = execute(&mut engine, c.id, "SELECT 42", 1000, 0, true);
+    let q = execute(&mut engine, c.id, "SELECT 42", 1000, 0);
     assert!(q.accepted);
     let schema = await_event(&mut engine, "schema");
     assert!(
@@ -222,7 +291,7 @@ fn deferred_chunks_transport_bytes_offsets_errors_and_leases() {
     let c = connect_sqlite(&mut engine, ":memory:", false);
     assert!(c.accepted);
     await_event(&mut engine, "connected");
-    let q = execute(&mut engine, c.id, "SELECT zeroblob(200000)", 1000, 0, true);
+    let q = execute(&mut engine, c.id, "SELECT zeroblob(200000)", 1000, 0);
     assert!(q.accepted);
     let schema = await_event(&mut engine, "schema");
     assert!(release_page_lease(&mut engine, schema.lease_id).accepted);
@@ -268,7 +337,6 @@ fn export_transport_publishes_original_rows_and_retires_handle() {
         "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<1001) SELECT x FROM n",
         1000,
         0,
-        true,
     );
     assert!(q.accepted);
     let schema = await_event(&mut engine, "schema");
@@ -824,7 +892,7 @@ fn mysql_bridge_rejects_invalid_ssh_and_invalid_tls() {
 #[test]
 fn mysql_sql_ranges_keep_escaped_quote_and_hash_comment_in_statement() {
     let sql = "SELECT 'it\\'s; intact'; # comment;\nDELETE FROM items";
-    let selected = sql_execution_range(sql, 0, 0, 0, "MySQL", "");
+    let selected = sql_execution_range(sql, 0, 0, 0, ffi::ExecutionScope::Current, "MySQL", "");
     assert!(selected.valid);
     assert_eq!(
         &sql[selected.start as usize..selected.end as usize],
@@ -832,8 +900,27 @@ fn mysql_sql_ranges_keep_escaped_quote_and_hash_comment_in_statement() {
     );
     // The shared grammar conservatively confirms dialect-specific escaped strings.
     assert!(selected.confirmation_required);
-    assert!(!sql_execution_range("SELECT 1", 0, 0, 0, "mysql", "").confirmation_required);
-    let selected = sql_execution_range(sql, sql.len() as u64, 0, 0, "mysql", "");
+    assert!(
+        !sql_execution_range(
+            "SELECT 1",
+            0,
+            0,
+            0,
+            ffi::ExecutionScope::Current,
+            "mysql",
+            ""
+        )
+        .confirmation_required
+    );
+    let selected = sql_execution_range(
+        sql,
+        sql.len() as u64,
+        0,
+        0,
+        ffi::ExecutionScope::Current,
+        "mysql",
+        "",
+    );
     assert!(selected.valid);
     assert!(selected.confirmation_required);
 }
@@ -841,26 +928,34 @@ fn mysql_sql_ranges_keep_escaped_quote_and_hash_comment_in_statement() {
 #[test]
 fn mariadb_executable_comments_need_confirmation_only_on_mariadb_connections() {
     let sql = "/*M!100000 DROP TABLE t */";
-    let mariadb = sql_execution_range(sql, 0, 0, 0, "mariadb", "");
+    let mariadb = sql_execution_range(sql, 0, 0, 0, ffi::ExecutionScope::Current, "mariadb", "");
     assert!(mariadb.valid);
     assert_eq!(mariadb.end as usize, sql.len());
     assert!(mariadb.confirmation_required);
-    assert!(!sql_execution_range(sql, 0, 0, 0, "mysql", "").valid);
+    assert!(!sql_execution_range(sql, 0, 0, 0, ffi::ExecutionScope::Current, "mysql", "").valid);
     let quoted = "SELECT \"a\" # note;\nFROM dual;";
-    let ansi = sql_execution_range(quoted, 0, 0, 0, "mariadb", "ANSI_QUOTES");
+    let ansi = sql_execution_range(
+        quoted,
+        0,
+        0,
+        0,
+        ffi::ExecutionScope::Current,
+        "mariadb",
+        "ANSI_QUOTES",
+    );
     assert_eq!(ansi.end as usize, quoted.len());
 }
 
 #[test]
 fn execution_ranges_follow_the_connection_dialect() {
     let sql = "SELECT 1 # note;\nFROM dual; SELECT 2;";
-    let mysql = sql_execution_range(sql, 0, 0, 0, "mysql", "");
+    let mysql = sql_execution_range(sql, 0, 0, 0, ffi::ExecutionScope::Current, "mysql", "");
     assert!(mysql.valid);
     assert_eq!(
         &sql[mysql.start as usize..mysql.end as usize],
         "SELECT 1 # note;\nFROM dual;"
     );
-    let sqlite = sql_execution_range(sql, 0, 0, 0, "sqlite", "");
+    let sqlite = sql_execution_range(sql, 0, 0, 0, ffi::ExecutionScope::Current, "sqlite", "");
     assert!(sqlite.valid);
     assert_eq!(
         &sql[sqlite.start as usize..sqlite.end as usize],
@@ -886,8 +981,16 @@ fn export_dialect_rejects_unknown_names() {
 #[test]
 fn mysql_sql_mode_crosses_editor_bridge() {
     let sql = "SELECT 'a\\'; SELECT 2;";
-    let default = sql_execution_range(sql, 16, 0, 0, "mysql", "");
-    let mode = sql_execution_range(sql, 16, 0, 0, "mysql", "NO_BACKSLASH_ESCAPES");
+    let default = sql_execution_range(sql, 16, 0, 0, ffi::ExecutionScope::Current, "mysql", "");
+    let mode = sql_execution_range(
+        sql,
+        16,
+        0,
+        0,
+        ffi::ExecutionScope::Current,
+        "mysql",
+        "NO_BACKSLASH_ESCAPES",
+    );
     assert!(mode.valid);
     assert_eq!(&sql[mode.start as usize..mode.end as usize], "SELECT 2;");
     assert!(!default.valid || default.start != mode.start || default.end != mode.end);
@@ -939,7 +1042,6 @@ fn result_filters_accept_sql_patterns_and_literal_lists() {
         "SELECT 1 AS id, 'Alice' AS name UNION ALL SELECT 2, 'Bob' UNION ALL SELECT 3, 'Al_bert' UNION ALL SELECT 4, NULL",
         100,
         0,
-        true,
     );
     await_event(&mut engine, "schema");
     for (operation, column, kind, value, expected) in [
@@ -1022,20 +1124,11 @@ fn execution_rejects_a_timeout_above_the_query_preference_limit() {
         "SELECT 1",
         100,
         limit_ms + 1,
-        true,
         "",
     );
     assert!(!rejected.accepted);
     assert!(rejected.error.contains("timeout"), "{}", rejected.error);
-    let accepted = execute_with_profile(
-        &mut engine,
-        connection.id,
-        "SELECT 1",
-        100,
-        limit_ms,
-        true,
-        "",
-    );
+    let accepted = execute_with_profile(&mut engine, connection.id, "SELECT 1", 100, limit_ms, "");
     assert!(accepted.accepted, "{}", accepted.error);
 }
 
@@ -1117,15 +1210,39 @@ fn desktop_cadences_come_from_their_owning_crates() {
 }
 
 #[test]
-fn manual_transactions_explain_which_actions_wait_for_commit() {
+fn row_status_policy_carries_kind_retry_and_message() {
+    let failed = row_status_policy(ffi::RowStatusCauseDto::ChildrenFailed, "timeout");
+    assert!(failed.kind == ffi::RowStatusKindDto::Failed);
+    assert!(failed.retry == ffi::RowRetryDto::Refresh);
+    assert_eq!(
+        failed.message,
+        "Could not load children: timeout. Refresh to retry."
+    );
+    let pending = row_status_policy(ffi::RowStatusCauseDto::Connecting, "");
+    assert!(pending.kind == ffi::RowStatusKindDto::Loading);
+    assert!(pending.retry == ffi::RowRetryDto::None);
+    let missing = row_status_policy(ffi::RowStatusCauseDto::ObjectUnavailable, "");
+    assert!(missing.kind == ffi::RowStatusKindDto::Unavailable);
+    let saved = row_status_policy(ffi::RowStatusCauseDto::ChildrenCachedFailed, "timeout");
+    assert!(saved.kind == ffi::RowStatusKindDto::Failed);
+    assert!(saved.message.starts_with("Showing saved children."));
+    assert_eq!(panel_notice_milliseconds(), 6_000);
+    assert_eq!(
+        recovery_hint_text(ffi::RecoveryHintDto::RefineOrRetry),
+        "Refine the text or retry."
+    );
+    assert_eq!(
+        recovery_hint_text(ffi::RecoveryHintDto::RetryRecovery),
+        "Retry recovery or close without saving."
+    );
+}
+
+#[test]
+fn open_transactions_explain_which_actions_wait_for_commit() {
     let open = transaction_guard_policy(true);
     assert!(open.apply_edits.contains("before applying grid changes"));
-    assert!(
-        open.enable_auto_commit
-            .contains("before enabling auto-commit")
-    );
     let idle = transaction_guard_policy(false);
-    assert!(idle.apply_edits.is_empty() && idle.enable_auto_commit.is_empty());
+    assert!(idle.apply_edits.is_empty());
 }
 
 #[test]
@@ -1190,4 +1307,119 @@ fn history_reads_validate_their_time_in_rust() {
     }
     assert!(relation_subtype_history_policy("system_versioned"));
     assert!(!relation_subtype_history_policy("materialized_view"));
+}
+
+#[test]
+fn sql_editor_execution_auto_commits_and_sql_begin_opens_a_transaction() {
+    let mut engine = new_engine();
+    let c = connect_sqlite(&mut engine, ":memory:", false);
+    assert!(c.accepted);
+    await_event(&mut engine, "connected");
+    let finished = |engine: &mut BridgeEngine, sql: &str| {
+        let query = execute(engine, c.id, sql, 100, 0);
+        assert!(query.accepted);
+        await_event(engine, "schema");
+        assert!(fetch_page(engine, query.id).accepted);
+        await_event(engine, "query_finished")
+    };
+    finished(&mut engine, "CREATE TABLE t(x)");
+    let write = finished(&mut engine, "INSERT INTO t VALUES (1)");
+    assert!(write.has_transaction_state);
+    assert!(!write.transaction_active);
+    let begin = finished(&mut engine, "BEGIN");
+    assert!(begin.has_transaction_state);
+    assert!(begin.transaction_active);
+}
+
+#[test]
+fn run_all_shortcut_id_round_trips_and_retired_ids_are_rejected() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("preferences.sqlite");
+    let mut engine = new_engine_with_storage(path.to_str().unwrap());
+    let preferences = |command: &str| ffi::EditorPreferencesDto {
+        version: 2,
+        font_family: String::new(),
+        font_size: 13,
+        shortcuts: vec![ffi::ShortcutOverrideDto {
+            command: command.into(),
+            sequence: "Ctrl+Alt+R".into(),
+        }],
+    };
+    assert!(editor_preferences_set(&mut engine, preferences("run_all"), 1).accepted);
+    await_event(&mut engine, "editor_preferences");
+    assert!(editor_preferences_get(&mut engine, 2).accepted);
+    let loaded = await_event(&mut engine, "editor_preferences").editor_preferences;
+    assert_eq!(loaded.shortcuts.len(), 1);
+    assert_eq!(loaded.shortcuts[0].command, "run_all");
+    assert_eq!(loaded.shortcuts[0].sequence, "Ctrl+Alt+R");
+    for retired in ["commit", "rollback"] {
+        let rejected = editor_preferences_set(&mut engine, preferences(retired), 3);
+        assert!(!rejected.accepted);
+        assert!(rejected.error.contains("Unknown shortcut command"));
+    }
+}
+#[test]
+fn grid_shortcut_ids_round_trip_with_their_snake_case_names() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("preferences.sqlite");
+    let mut engine = new_engine_with_storage(path.to_str().unwrap());
+    let ids = [
+        "grid_add_row",
+        "grid_duplicate_row",
+        "grid_delete_rows",
+        "grid_restore_rows",
+        "grid_set_null",
+        "grid_edit_cell",
+        "grid_apply_edits",
+        "grid_discard_edits",
+    ];
+    let preferences = ffi::EditorPreferencesDto {
+        version: 2,
+        font_family: String::new(),
+        font_size: 13,
+        shortcuts: ids
+            .iter()
+            .enumerate()
+            .map(|(index, id)| ffi::ShortcutOverrideDto {
+                command: (*id).into(),
+                sequence: format!("Ctrl+Alt+F{}", index + 1),
+            })
+            .collect(),
+    };
+    assert!(editor_preferences_set(&mut engine, preferences, 1).accepted);
+    await_event(&mut engine, "editor_preferences");
+    assert!(editor_preferences_get(&mut engine, 2).accepted);
+    let loaded = await_event(&mut engine, "editor_preferences").editor_preferences;
+    let loaded: Vec<_> = loaded
+        .shortcuts
+        .iter()
+        .map(|s| (s.command.as_str(), s.sequence.as_str()))
+        .collect();
+    let expected: Vec<_> = ids
+        .iter()
+        .enumerate()
+        .map(|(index, id)| (*id, format!("Ctrl+Alt+F{}", index + 1)))
+        .collect();
+    assert_eq!(
+        loaded,
+        expected
+            .iter()
+            .map(|(id, sequence)| (*id, sequence.as_str()))
+            .collect::<Vec<_>>()
+    );
+    let rejected = editor_preferences_set(
+        &mut engine,
+        ffi::EditorPreferencesDto {
+            version: 2,
+            font_family: String::new(),
+            font_size: 13,
+            shortcuts: vec![ffi::ShortcutOverrideDto {
+                command: "grid_paste_rows".into(),
+                sequence: String::new(),
+            }],
+        },
+        3,
+    );
+    assert!(!rejected.accepted);
+    assert!(rejected.error.contains("Unknown shortcut command"));
 }

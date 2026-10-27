@@ -47,7 +47,7 @@ impl Write {
             .map_err(|_| DriverError::new(ErrorKind::Io, "Could not save query history"))
     }
 }
-fn now() -> i64 {
+pub(crate) fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

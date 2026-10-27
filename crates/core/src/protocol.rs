@@ -284,15 +284,16 @@ pub enum Event {
         columns: Vec<Column>,
         lease: crate::PageLease,
     },
+    /// The hot cache shares `page`; the event does not copy it.
     StoredPage {
         query: QueryId,
         first_row: u64,
-        page: ResultPage,
+        page: std::sync::Arc<ResultPage>,
         lease: crate::PageLease,
     },
     Page {
         query: QueryId,
-        page: ResultPage,
+        page: std::sync::Arc<ResultPage>,
         lease: crate::PageLease,
     },
     QueryFinished {
@@ -305,7 +306,7 @@ pub enum Event {
         error: DriverError,
     },
     /// The session transaction state after a statement failed; precedes its
-    /// `QueryFailed`. A failed statement can leave a manual transaction open.
+    /// `QueryFailed`. A failed statement can leave an open transaction.
     TransactionState {
         connection: ConnectionId,
         active: bool,
@@ -317,16 +318,14 @@ pub enum Event {
         objects: Vec<SchemaObject>,
         offset: u64,
         next_offset: Option<u64>,
+        /// Saved children that show until the live children of the same request arrive.
+        cached: bool,
     },
     MetadataFailed {
         connection: ConnectionId,
         parent: Option<ObjectId>,
         request_token: u64,
         error: DriverError,
-    },
-    TransactionFinished {
-        connection: ConnectionId,
-        committed: bool,
     },
     OperationFailed {
         connection: ConnectionId,

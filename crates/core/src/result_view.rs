@@ -577,14 +577,80 @@ pub(crate) fn validate_sort_value(row: &[Value], sort: ResultSort) -> Result<(),
     }
 }
 
-pub(crate) fn page_estimated_bytes(rows: &Vec<Vec<Value>>) -> usize {
-    std::mem::size_of::<choscordb_driver_api::ResultPage>()
-        + rows.capacity() * std::mem::size_of::<Vec<Value>>()
-        + rows
-            .iter()
-            .map(|row| {
-                (row.capacity() - row.len()) * std::mem::size_of::<Value>()
-                    + row.iter().map(Value::estimated_bytes).sum::<usize>()
-            })
-            .sum::<usize>()
+/// The rows of one view page with a running byte estimate. The estimate is equal to
+/// `ResultPage::estimated_bytes` of the finished page, without a walk of the page per row.
+pub(crate) struct PageRows {
+    rows: Vec<Vec<Value>>,
+    row_bytes: usize,
+}
+
+impl PageRows {
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
+        Self {
+            rows: Vec::with_capacity(capacity),
+            row_bytes: 0,
+        }
+    }
+    pub(crate) fn len(&self) -> usize {
+        self.rows.len()
+    }
+    pub(crate) fn push(&mut self, row: Vec<Value>) {
+        self.row_bytes += choscordb_driver_api::row_estimated_bytes(&row);
+        self.rows.push(row);
+    }
+    pub(crate) fn pop(&mut self) -> Option<Vec<Value>> {
+        let row = self.rows.pop()?;
+        self.row_bytes -= choscordb_driver_api::row_estimated_bytes(&row);
+        Some(row)
+    }
+    pub(crate) fn estimated_bytes(&self) -> usize {
+        std::mem::size_of::<choscordb_driver_api::ResultPage>()
+            + self.rows.capacity() * std::mem::size_of::<Vec<Value>>()
+            + self.row_bytes
+    }
+    /// Returns the rows and starts an empty page with the same capacity.
+    pub(crate) fn take(&mut self) -> Vec<Vec<Value>> {
+        self.row_bytes = 0;
+        let capacity = self.rows.capacity();
+        std::mem::replace(&mut self.rows, Vec::with_capacity(capacity))
+    }
+    pub(crate) fn into_rows(self) -> Vec<Vec<Value>> {
+        self.rows
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PageRows;
+    use choscordb_driver_api::{ResultPage, Value};
+
+    #[test]
+    fn page_rows_estimate_equals_the_estimate_of_the_finished_page() {
+        let mut page = PageRows::with_capacity(4);
+        page.push(vec![Value::Text("first row".into()), Value::Integer(1)]);
+        page.push(vec![Value::Binary(vec![7; 300]), Value::Null]);
+        let mut wide = Vec::with_capacity(5);
+        wide.push(Value::Text("x".repeat(1000)));
+        page.push(wide);
+        assert_eq!(page.pop().map(|row| row.len()), Some(1));
+        page.push(vec![Value::Real(1.5)]);
+        let estimated = page.estimated_bytes();
+        let rows = page.take();
+        let finished = ResultPage {
+            index: 0,
+            rows,
+            has_more: false,
+        };
+        assert_eq!(estimated, finished.estimated_bytes());
+        assert_eq!(page.len(), 0);
+        assert_eq!(
+            page.estimated_bytes(),
+            ResultPage {
+                index: 0,
+                rows: Vec::with_capacity(4),
+                has_more: false
+            }
+            .estimated_bytes()
+        );
+    }
 }

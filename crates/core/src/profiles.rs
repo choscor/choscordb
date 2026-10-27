@@ -52,6 +52,7 @@ use tokio::{
 };
 pub(crate) enum Command {
     HistoryWrite(crate::query_history::Write),
+    MetadataCache(crate::metadata_cache::Command),
     Recovery(crate::recovery::Command),
     List(u64),
     Save(Box<ConnectionProfile>, CredentialUpdates, u64),
@@ -66,7 +67,7 @@ impl Command {
             | Self::Save(_, _, t)
             | Self::Duplicate(_, _, _, t)
             | Self::Delete(_, t) => *t,
-            Self::Resolve(..) | Self::HistoryWrite(_) => 0,
+            Self::Resolve(..) | Self::HistoryWrite(_) | Self::MetadataCache(_) => 0,
             Self::Recovery(command) => command.token(),
         }
     }
@@ -124,6 +125,10 @@ pub(crate) fn start(
                             }
                         });
                     }
+                    continue;
+                }
+                if let Command::MetadataCache(job) = command {
+                    job.execute(storage.as_mut().ok().map(|(storage, _)| storage));
                     continue;
                 }
                 let request_token = command.token();
@@ -434,7 +439,10 @@ fn execute(
                 warning,
             })
         }
-        Command::Resolve(..) | Command::Recovery(_) | Command::HistoryWrite(_) => unreachable!(),
+        Command::Resolve(..)
+        | Command::Recovery(_)
+        | Command::HistoryWrite(_)
+        | Command::MetadataCache(_) => unreachable!(),
     }
 }
 
@@ -640,7 +648,8 @@ impl Engine {
             Command::List(_)
             | Command::Resolve(..)
             | Command::Recovery(_)
-            | Command::HistoryWrite(_) => {}
+            | Command::HistoryWrite(_)
+            | Command::MetadataCache(_) => {}
         }
         self.profiles.try_send(command).map_err(crate::map_send)
     }
@@ -1235,13 +1244,15 @@ impl Engine {
             commands: self.profiles.clone(),
             references: CredentialReferences::from_profile(&profile),
         });
-        self.connect_driver_with_timeout(
+        let connection = self.connect_driver_with_timeout(
             driver,
             profile_options(&profile, secrets),
             Some(connection_budget(
                 &profile.configuration.connection_options(None, None),
             )),
-        )
+        )?;
+        self.connection_profiles.insert(connection, profile.id);
+        Ok(connection)
     }
 }
 

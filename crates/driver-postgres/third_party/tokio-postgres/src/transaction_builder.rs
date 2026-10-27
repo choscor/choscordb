@@ -1,4 +1,4 @@
-use crate::{Client, Error, Transaction};
+use crate::{Client, Error, Statement, Transaction};
 
 /// The isolation level of a database transaction.
 #[derive(Debug, Copy, Clone)]
@@ -63,6 +63,55 @@ impl<'a> TransactionBuilder<'a> {
     ///
     /// The transaction will roll back by default - use the `commit` method to commit it.
     pub async fn start(self) -> Result<Transaction<'a>, Error> {
+        let query = self.begin_query();
+        // This is done as `Future` created by this method can be dropped after
+        // `RequestMessages` is synchronously send to the `Connection` by
+        // `batch_execute()`, but before `Responses` is asynchronously polled to
+        // completion. In that case `Transaction` won't be created and thus
+        // won't be rolled back.
+        {
+            let mut cleaner = RollbackIfNotDone {
+                client: self.client,
+                done: false,
+            };
+            self.client.batch_execute(&query).await?;
+            cleaner.done = true;
+        }
+
+        Ok(Transaction::new(self.client))
+    }
+
+    /// Begins the transaction, runs the `setup` statements and prepares `sql` in one
+    /// round trip. The statement result is separate, because the transaction is open
+    /// even when `sql` does not parse.
+    pub async fn start_and_prepare(
+        self,
+        setup: &str,
+        sql: &str,
+    ) -> Result<(Transaction<'a>, Result<Statement, Error>), Error> {
+        let mut query = self.begin_query();
+        if !setup.is_empty() {
+            query.push_str("; ");
+            query.push_str(setup);
+        }
+        let prepared = {
+            let mut cleaner = RollbackIfNotDone {
+                client: self.client,
+                done: false,
+            };
+            let (begun, prepared) = futures_util::future::join(
+                self.client.batch_execute(&query),
+                self.client.prepare(sql),
+            )
+            .await;
+            begun?;
+            cleaner.done = true;
+            prepared
+        };
+        Ok((Transaction::new(self.client), prepared))
+    }
+
+    fn begin_query(&self) -> String {
         let mut query = "START TRANSACTION".to_string();
         let mut first = true;
 
@@ -105,36 +154,21 @@ impl<'a> TransactionBuilder<'a> {
             };
             query.push_str(s);
         }
+        query
+    }
+}
 
-        struct RollbackIfNotDone<'me> {
-            client: &'me Client,
-            done: bool,
+struct RollbackIfNotDone<'me> {
+    client: &'me Client,
+    done: bool,
+}
+
+impl Drop for RollbackIfNotDone<'_> {
+    fn drop(&mut self) {
+        if self.done {
+            return;
         }
 
-        impl Drop for RollbackIfNotDone<'_> {
-            fn drop(&mut self) {
-                if self.done {
-                    return;
-                }
-
-                self.client.__private_api_rollback(None);
-            }
-        }
-
-        // This is done as `Future` created by this method can be dropped after
-        // `RequestMessages` is synchronously send to the `Connection` by
-        // `batch_execute()`, but before `Responses` is asynchronously polled to
-        // completion. In that case `Transaction` won't be created and thus
-        // won't be rolled back.
-        {
-            let mut cleaner = RollbackIfNotDone {
-                client: self.client,
-                done: false,
-            };
-            self.client.batch_execute(&query).await?;
-            cleaner.done = true;
-        }
-
-        Ok(Transaction::new(self.client))
+        self.client.__private_api_rollback(None);
     }
 }

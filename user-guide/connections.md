@@ -17,6 +17,7 @@ This page tells you how to make, use and change connection profiles.
    Or click `Save & connect` to save it and open a connection.
 
 The status line of the dialog shows work in progress and errors.
+A notification in the corner of the window shows a successful test or save.
 If a connection fails, the dialog keeps your settings so that you can correct them.
 If you change to another connection profile with unsaved changes, ChoscorDB asks before it discards them.
 
@@ -87,14 +88,14 @@ To show the catalog and temporary schemas, use the `Show system schemas` prefere
 For more information, see [Preferences](sql-editor.md#preferences).
 
 Some PostgreSQL commands cannot run inside a transaction block.
-In `Auto-commit` mode, ChoscorDB runs these commands outside a transaction block:
+ChoscorDB runs these commands outside a transaction block:
 
 - `VACUUM`, `CHECKPOINT`, `REINDEX` and `CLUSTER`
 - `CREATE DATABASE`, `DROP DATABASE`, `CREATE TABLESPACE` and `DROP TABLESPACE`
 - `CREATE INDEX` and `DROP INDEX`, also with `CONCURRENTLY`
 - `ALTER SYSTEM`, `DISCARD ALL` and `REFRESH MATERIALIZED VIEW`
 
-In `Manual transaction` mode, PostgreSQL rejects these commands and shows its error.
+If you open a transaction with `BEGIN`, PostgreSQL rejects these commands and shows its error.
 
 ## MySQL
 
@@ -114,14 +115,16 @@ If the TLS handshake fails, ChoscorDB does not change to an unencrypted connecti
 A connection profile that has TLS verification settings from an earlier version keeps those settings.
 
 The SQL editor knows MySQL backtick quotes, backslash escapes in strings and `#` comments.
-Before a statement runs, ChoscorDB reads the `NO_BACKSLASH_ESCAPES` and `ANSI_QUOTES` modes of the connection.
+ChoscorDB uses the `NO_BACKSLASH_ESCAPES` and `ANSI_QUOTES` modes of the connection to find the statements.
+ChoscorDB reads these modes when it connects.
+After that, ChoscorDB reads them again only when a statement makes them unknown, for example a failed statement.
 
-To run a script, select more than one statement and run the selection.
+To run a script, choose `Run all`, or select more than one statement and run the selection.
 ChoscorDB runs the statements one after the other.
 Execution stops at the first error.
 The results of the statements before the error stay available.
 To see the result of the next statement, go to the last page of the current result and click `Next result`.
-Statements that completed before an error stay committed, unless you use a manual transaction.
+Statements that completed before an error stay committed, unless you run them after `BEGIN`.
 
 ## SSH tunnel
 
@@ -148,6 +151,13 @@ To approve a host key:
 3. In `Known-hosts file`, choose the file to update.
 4. Click `Approve selected key`.
 5. Click `Retry connection`.
+
+On macOS and Linux, the SSH tunnels of one connection share one SSH login.
+A navigator session or a second query then does not log in to the SSH server again.
+On Windows, each SSH tunnel logs in to the SSH server.
+
+ChoscorDB sends an SSH keepalive message every 30 seconds.
+If the SSH server does not reply to 3 messages, ChoscorDB closes the tunnel and shows the error.
 
 The `Connection timeout (seconds)` preference sets the time limit for new SSH tunnels.
 For more information, see [Preferences](sql-editor.md#preferences).

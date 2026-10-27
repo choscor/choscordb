@@ -194,11 +194,11 @@ impl Closing {
         }
     }
 }
-struct Cancellation {
-    closing: Closing,
-    state: tokio::sync::Mutex<Generation>,
-    next: std::sync::atomic::AtomicU64,
-    token: tokio_postgres::CancelToken,
+/// The settings and the transport of one Connect. Each session of the Connect and
+/// each cancel request opens its stream with them.
+struct Endpoint {
+    config: tokio_postgres::Config,
+    tls_mode: TlsMode,
     tls: MakeTlsConnector,
     proxy: Option<SocksProxy>,
     proxy_secret: Option<Secret>,
@@ -213,50 +213,59 @@ struct Cancellation {
     prefer_tls: bool,
     tcp_keepalive: Option<TcpKeepalive>,
 }
+struct Cancellation {
+    closing: Closing,
+    state: tokio::sync::Mutex<Generation>,
+    next: std::sync::atomic::AtomicU64,
+    token: tokio_postgres::CancelToken,
+    endpoint: Arc<Endpoint>,
+}
 impl Cancellation {
     async fn send_cancel(&self) -> Result<()> {
-        if let Some(settings) = &self.ssh {
-            tokio::time::timeout(self.connect_timeout, async {
+        if let Some(settings) = &self.endpoint.ssh {
+            tokio::time::timeout(self.endpoint.connect_timeout, async {
                 let mut stream = ssh::Stream::open_channel_with_keys(
                     settings,
-                    self.ssh_secret.as_ref(),
-                    &self.ssh_jump_secrets,
-                    self.ssh_private_key.as_ref(),
-                    &self.ssh_jump_private_keys,
-                    &self.host,
-                    self.port,
+                    self.endpoint.ssh_secret.as_ref(),
+                    &self.endpoint.ssh_jump_secrets,
+                    self.endpoint.ssh_private_key.as_ref(),
+                    &self.endpoint.ssh_jump_private_keys,
+                    &self.endpoint.host,
+                    self.endpoint.port,
                 )
                 .await?;
                 let tls = <MakeTlsConnector as MakeTlsConnect<TlsResponseGuard<ssh::Stream>>>::make_tls_connect(
-                    &mut self.tls.clone(),
-                    &self.host,
+                    &mut self.endpoint.tls.clone(),
+                    &self.endpoint.host,
                 )
                 .map_err(|_| DriverError::new(ErrorKind::Tls, "Cannot initialize TLS"))?;
                 let mut process = stream.take_process();
                 self.token
-                    .cancel_query_raw(TlsResponseGuard::new(stream, self.prefer_tls), tls)
+                    .cancel_query_raw(TlsResponseGuard::new(stream, self.endpoint.prefer_tls), tls)
                     .await
                     .map_err(normalize)?;
                 process.finish().await
             })
             .await
             .map_err(|_| ssh::timeout_error())?
-        } else if let Some(proxy) = &self.proxy {
-            tokio::time::timeout(self.connect_timeout, async {
+        } else if let Some(proxy) = &self.endpoint.proxy {
+            tokio::time::timeout(self.endpoint.connect_timeout, async {
                 let stream = connect_socks(
                     proxy,
-                    self.proxy_secret.as_ref(),
-                    &self.host,
-                    self.port,
-                    self.connect_timeout,
+                    self.endpoint.proxy_secret.as_ref(),
+                    &self.endpoint.host,
+                    self.endpoint.port,
+                    self.endpoint.connect_timeout,
                 )
                 .await?;
                 let tls = <MakeTlsConnector as MakeTlsConnect<
                     TlsResponseGuard<tokio::net::TcpStream>,
-                >>::make_tls_connect(&mut self.tls.clone(), &self.host)
+                >>::make_tls_connect(
+                    &mut self.endpoint.tls.clone(), &self.endpoint.host
+                )
                 .map_err(|_| DriverError::new(ErrorKind::Tls, "Cannot initialize TLS"))?;
                 self.token
-                    .cancel_query_raw(TlsResponseGuard::new(stream, self.prefer_tls), tls)
+                    .cancel_query_raw(TlsResponseGuard::new(stream, self.endpoint.prefer_tls), tls)
                     .await
                     .map_err(normalize)
             })
@@ -267,20 +276,25 @@ impl Cancellation {
                     "PostgreSQL proxy cancellation timed out",
                 )
             })?
-        } else if self.prefer_tls {
-            tokio::time::timeout(self.connect_timeout, async {
-                let stream = tokio::net::TcpStream::connect((self.host.as_str(), self.port))
-                    .await
-                    .map_err(|_| {
-                        DriverError::new(
-                            ErrorKind::Connection,
-                            "PostgreSQL cancellation TCP connection failed",
-                        )
-                    })?;
-                configure_tcp(&stream, self.tcp_keepalive.as_ref())?;
+        } else if self.endpoint.prefer_tls {
+            tokio::time::timeout(self.endpoint.connect_timeout, async {
+                let stream = tokio::net::TcpStream::connect((
+                    self.endpoint.host.as_str(),
+                    self.endpoint.port,
+                ))
+                .await
+                .map_err(|_| {
+                    DriverError::new(
+                        ErrorKind::Connection,
+                        "PostgreSQL cancellation TCP connection failed",
+                    )
+                })?;
+                configure_tcp(&stream, self.endpoint.tcp_keepalive.as_ref())?;
                 let tls = <MakeTlsConnector as MakeTlsConnect<
                     TlsResponseGuard<tokio::net::TcpStream>,
-                >>::make_tls_connect(&mut self.tls.clone(), &self.host)
+                >>::make_tls_connect(
+                    &mut self.endpoint.tls.clone(), &self.endpoint.host
+                )
                 .map_err(|_| DriverError::new(ErrorKind::Tls, "Cannot initialize TLS"))?;
                 self.token
                     .cancel_query_raw(TlsResponseGuard::new(stream, true), tls)
@@ -293,8 +307,8 @@ impl Cancellation {
             })?
         } else {
             tokio::time::timeout(
-                self.connect_timeout,
-                self.token.cancel_query(self.tls.clone()),
+                self.endpoint.connect_timeout,
+                self.token.cancel_query(self.endpoint.tls.clone()),
             )
             .await
             .map_err(|_| DriverError::new(ErrorKind::Timeout, "PostgreSQL cancellation timed out"))?
@@ -438,131 +452,215 @@ impl PostgresDriver {
         });
         // The budget includes queued TLS preparation, DNS, tunnel establishment, and authentication.
         tokio::time::timeout(connect_timeout, async move {
-        let tls_mode_is_prefer = tls == TlsMode::Prefer;
-        let connector = tls::connector(tls.clone(), root_certificate, tls_identity).await?;
-        let mut config = tokio_postgres::Config::new();
-        config
-            .host(&host)
-            .port(port)
-            .dbname(if database.is_empty() {
-                &user
-            } else {
-                &database
-            })
-            .user(&user)
-            .application_name("ChoscorDB")
-            .connect_timeout(connect_timeout)
-            .ssl_mode(match tls {
-                TlsMode::Disable => tokio_postgres::config::SslMode::Disable,
-                TlsMode::Prefer => tokio_postgres::config::SslMode::Prefer,
-                _ => tokio_postgres::config::SslMode::Require,
-            });
-        if let Some(password) = password {
-            config.password(password.expose());
-        }
-        let keepalive = tcp_keepalive(&config);
-        let connection_error = |error: tokio_postgres::Error| {
-            if error.as_db_error().is_some() {
-                normalize(error)
-            } else {
-                DriverError::new(
-                    if tls != TlsMode::Disable
-                        && !std::error::Error::source(&error)
-                            .is_some_and(|source| source.is::<std::io::Error>())
-                    {
-                        ErrorKind::Tls
-                    } else {
-                        ErrorKind::Connection
-                    },
-                    if ssh.is_some() {
-                        "PostgreSQL connection through SSH failed; check SSH host trust, key or agent authentication, forwarding, and database TLS settings"
-                    } else {
-                        "PostgreSQL connection failed; check server, network, and TLS settings"
-                    },
-                )
+            let tls_mode_is_prefer = tls == TlsMode::Prefer;
+            let connector = tls::connector(tls.clone(), root_certificate, tls_identity).await?;
+            let mut config = tokio_postgres::Config::new();
+            config
+                .host(&host)
+                .port(port)
+                .dbname(if database.is_empty() {
+                    &user
+                } else {
+                    &database
+                })
+                .user(&user)
+                .application_name("ChoscorDB")
+                .connect_timeout(connect_timeout)
+                .ssl_mode(match tls {
+                    TlsMode::Disable => tokio_postgres::config::SslMode::Disable,
+                    TlsMode::Prefer => tokio_postgres::config::SslMode::Prefer,
+                    _ => tokio_postgres::config::SslMode::Require,
+                });
+            if let Some(password) = password {
+                config.password(password.expose());
             }
-        };
-        let (client, mut messages) = if let Some(settings) = &ssh {
-            if fresh { SshForward::invalidate_shared_context(settings,ssh_secret.as_ref(),&ssh_jump_secrets,ssh_private_key.as_ref(),&ssh_jump_private_keys,&host,port).await?; }
-            let stream = ssh::Stream::open_with_keys(settings, ssh_secret.as_ref(), &ssh_jump_secrets, ssh_private_key.as_ref(), &ssh_jump_private_keys, &host, port).await?;
-            let tls = <MakeTlsConnector as MakeTlsConnect<TlsResponseGuard<ssh::Stream>>>::make_tls_connect(
-                &mut connector.clone(),
-                &host,
+            let endpoint = Arc::new(Endpoint {
+                tcp_keepalive: tcp_keepalive(&config),
+                config,
+                tls_mode: tls,
+                tls: connector,
+                proxy,
+                proxy_secret,
+                ssh,
+                ssh_secret,
+                ssh_jump_secrets,
+                ssh_private_key,
+                ssh_jump_private_keys,
+                host,
+                port,
+                connect_timeout,
+                prefer_tls: tls_mode_is_prefer,
+            });
+            if fresh && let Some(settings) = &endpoint.ssh {
+                SshForward::invalidate_shared_context(
+                    settings,
+                    endpoint.ssh_secret.as_ref(),
+                    &endpoint.ssh_jump_secrets,
+                    endpoint.ssh_private_key.as_ref(),
+                    &endpoint.ssh_jump_private_keys,
+                    &endpoint.host,
+                    endpoint.port,
+                )
+                .await?;
+            }
+            Ok(Box::new(open_session(endpoint).await?) as Box<dyn Connection>)
+        })
+        .await
+        .map_err(|_| DriverError::new(ErrorKind::Timeout, "PostgreSQL connection timed out"))?
+    }
+}
+/// Opens one session of a Connect.
+async fn open_session(endpoint: Arc<Endpoint>) -> Result<PostgresConnection> {
+    let e = &*endpoint;
+    let connection_error = |error: tokio_postgres::Error| {
+        if error.as_db_error().is_some() {
+            normalize(error)
+        } else {
+            DriverError::new(
+                if e.tls_mode != TlsMode::Disable
+                    && !std::error::Error::source(&error)
+                        .is_some_and(|source| source.is::<std::io::Error>())
+                {
+                    ErrorKind::Tls
+                } else {
+                    ErrorKind::Connection
+                },
+                if e.ssh.is_some() {
+                    "PostgreSQL connection through SSH failed; check SSH host trust, key or agent authentication, forwarding, and database TLS settings"
+                } else {
+                    "PostgreSQL connection failed; check server, network, and TLS settings"
+                },
+            )
+        }
+    };
+    let (client, mut messages) = if let Some(settings) = &e.ssh {
+        let stream = ssh::Stream::open_with_keys(
+            settings,
+            e.ssh_secret.as_ref(),
+            &e.ssh_jump_secrets,
+            e.ssh_private_key.as_ref(),
+            &e.ssh_jump_private_keys,
+            &e.host,
+            e.port,
+        )
+        .await?;
+        let tls =
+            <MakeTlsConnector as MakeTlsConnect<TlsResponseGuard<ssh::Stream>>>::make_tls_connect(
+                &mut e.tls.clone(),
+                &e.host,
             )
             .map_err(|_| DriverError::new(ErrorKind::Tls, "Cannot initialize TLS"))?;
-            let (client, mut connection) =
-                tokio::time::timeout(std::time::Duration::from_secs(u64::from(settings.options.connect_timeout_seconds)), config.connect_raw(TlsResponseGuard::new(stream, tls_mode_is_prefer), tls))
-                    .await
-                    .map_err(|_| ssh::timeout_error())?
-                    .map_err(connection_error)?;
-            (
-                client,
-                futures_util::stream::poll_fn(move |cx| connection.poll_message(cx)).boxed(),
-            )
-        } else if let Some(proxy)=&proxy {
-            let stream=connect_socks(proxy,proxy_secret.as_ref(),&host,port,connect_timeout).await?;
-            let tls=<MakeTlsConnector as MakeTlsConnect<TlsResponseGuard<tokio::net::TcpStream>>>::make_tls_connect(&mut connector.clone(),&host).map_err(|_|DriverError::new(ErrorKind::Tls,"Cannot initialize TLS"))?;
-            let (client,mut connection)=config.connect_raw(TlsResponseGuard::new(stream, tls_mode_is_prefer),tls).await.map_err(connection_error)?;
-            (client,futures_util::stream::poll_fn(move |cx|connection.poll_message(cx)).boxed())
-        } else if tls_mode_is_prefer {
-            // Connect one TCP endpoint, then enforce an exact S/N SSL reply.
-            // A failed handshake or authentication cannot retry on another IP.
-            let stream = tokio::net::TcpStream::connect((host.as_str(), port)).await.map_err(|_| DriverError::new(ErrorKind::Connection, "PostgreSQL TCP connection failed"))?;
-            configure_tcp(&stream, keepalive.as_ref())?;
-            let tls=<MakeTlsConnector as MakeTlsConnect<TlsResponseGuard<tokio::net::TcpStream>>>::make_tls_connect(&mut connector.clone(),&host).map_err(|_|DriverError::new(ErrorKind::Tls,"Cannot initialize TLS"))?;
-            let (client,mut connection)=config.connect_raw(TlsResponseGuard::new(stream, true),tls).await.map_err(connection_error)?;
-            (client,futures_util::stream::poll_fn(move |cx|connection.poll_message(cx)).boxed())
-        } else {
-            let (client, mut connection) = config.connect(connector.clone()).await.map_err(connection_error)?;
-            (
-                client,
-                futures_util::stream::poll_fn(move |cx| connection.poll_message(cx)).boxed(),
-            )
-        };
-        let notices = Arc::new(Mutex::new(Vec::new()));
-        let incoming = notices.clone();
-        let pump = tokio::spawn(async move {
-            while let Some(message) = messages.next().await {
-                match message {
-                    Ok(tokio_postgres::AsyncMessage::Notice(notice)) => {
-                        if let Ok(mut list) = incoming.lock()
-                            && list.len() < 16
-                        {
-                            list.push(display_notice(notice.code().code(), notice.message()));
-                        }
+        let (client, mut connection) = tokio::time::timeout(
+            std::time::Duration::from_secs(u64::from(settings.options.connect_timeout_seconds)),
+            e.config
+                .connect_raw(TlsResponseGuard::new(stream, e.prefer_tls), tls),
+        )
+        .await
+        .map_err(|_| ssh::timeout_error())?
+        .map_err(connection_error)?;
+        (
+            client,
+            futures_util::stream::poll_fn(move |cx| connection.poll_message(cx)).boxed(),
+        )
+    } else if let Some(proxy) = &e.proxy {
+        let stream = connect_socks(
+            proxy,
+            e.proxy_secret.as_ref(),
+            &e.host,
+            e.port,
+            e.connect_timeout,
+        )
+        .await?;
+        let tls=<MakeTlsConnector as MakeTlsConnect<TlsResponseGuard<tokio::net::TcpStream>>>::make_tls_connect(&mut e.tls.clone(),&e.host).map_err(|_|DriverError::new(ErrorKind::Tls,"Cannot initialize TLS"))?;
+        let (client, mut connection) = e
+            .config
+            .connect_raw(TlsResponseGuard::new(stream, e.prefer_tls), tls)
+            .await
+            .map_err(connection_error)?;
+        (
+            client,
+            futures_util::stream::poll_fn(move |cx| connection.poll_message(cx)).boxed(),
+        )
+    } else if e.prefer_tls {
+        // Connect one TCP endpoint, then enforce an exact S/N SSL reply.
+        // A failed handshake or authentication cannot retry on another IP.
+        let stream = tokio::net::TcpStream::connect((e.host.as_str(), e.port))
+            .await
+            .map_err(|_| {
+                DriverError::new(ErrorKind::Connection, "PostgreSQL TCP connection failed")
+            })?;
+        configure_tcp(&stream, e.tcp_keepalive.as_ref())?;
+        let tls=<MakeTlsConnector as MakeTlsConnect<TlsResponseGuard<tokio::net::TcpStream>>>::make_tls_connect(&mut e.tls.clone(),&e.host).map_err(|_|DriverError::new(ErrorKind::Tls,"Cannot initialize TLS"))?;
+        let (client, mut connection) = e
+            .config
+            .connect_raw(TlsResponseGuard::new(stream, true), tls)
+            .await
+            .map_err(connection_error)?;
+        (
+            client,
+            futures_util::stream::poll_fn(move |cx| connection.poll_message(cx)).boxed(),
+        )
+    } else {
+        let (client, mut connection) = e
+            .config
+            .connect(e.tls.clone())
+            .await
+            .map_err(connection_error)?;
+        (
+            client,
+            futures_util::stream::poll_fn(move |cx| connection.poll_message(cx)).boxed(),
+        )
+    };
+    let notices = Arc::new(Mutex::new(Vec::new()));
+    let incoming = notices.clone();
+    let pump = tokio::spawn(async move {
+        while let Some(message) = messages.next().await {
+            match message {
+                Ok(tokio_postgres::AsyncMessage::Notice(notice)) => {
+                    if let Ok(mut list) = incoming.lock()
+                        && list.len() < 16
+                    {
+                        list.push(display_notice(notice.code().code(), notice.message()));
                     }
-                    Err(_) => break,
-                    _ => {}
                 }
+                Err(_) => break,
+                _ => {}
             }
-        });
-        let cancel = Arc::new(Cancellation {
-            closing: Closing::default(),
-            state: tokio::sync::Mutex::new(Generation::default()),
-            next: std::sync::atomic::AtomicU64::new(1),
-            token: client.cancel_token(),
-            tls: connector,
-            proxy, proxy_secret,
-            ssh,
-            ssh_secret,
-            ssh_jump_secrets,
-            ssh_private_key,
-            ssh_jump_private_keys,
-            host,
-            port,
-            connect_timeout,
-            prefer_tls: tls_mode_is_prefer,
-            tcp_keepalive: keepalive,
-        });
-        let (tx, rx) = mpsc::channel(32);
-        tokio::spawn(worker::run(client, rx, cancel.clone(), notices, pump));
-        let connection=PostgresConnection {client:Client(tx),cancel};
-        Ok(Box::new(connection) as Box<dyn Connection>)
-        }).await.map_err(|_| DriverError::new(ErrorKind::Timeout, "PostgreSQL connection timed out"))?
+        }
+    });
+    let cancel = Arc::new(Cancellation {
+        closing: Closing::default(),
+        state: tokio::sync::Mutex::new(Generation::default()),
+        next: std::sync::atomic::AtomicU64::new(1),
+        token: client.cancel_token(),
+        endpoint: endpoint.clone(),
+    });
+    let (tx, rx) = mpsc::channel(32);
+    tokio::spawn(worker::run(client, rx, cancel.clone(), notices, pump));
+    let connection = PostgresConnection {
+        client: Client(tx),
+        cancel,
+    };
+    Ok(connection)
+}
+/// Opens more sessions of one Connect.
+struct Sessions(Arc<Endpoint>);
+#[async_trait]
+impl SessionOpener for Sessions {
+    async fn open(&self) -> Result<Box<dyn Connection>> {
+        let session = tokio::time::timeout(self.0.connect_timeout, open_session(self.0.clone()))
+            .await
+            .map_err(|_| {
+                DriverError::new(ErrorKind::Timeout, "PostgreSQL connection timed out")
+            })??;
+        Ok(Box::new(session))
     }
 }
 #[async_trait]
 impl Connection for PostgresConnection {
+    fn sibling_sessions(&self) -> Option<Arc<dyn SessionOpener>> {
+        Some(Arc::new(Sessions(self.cancel.endpoint.clone())))
+    }
     async fn inspect_result_cells(
         &mut self,
         object: Option<&ObjectId>,

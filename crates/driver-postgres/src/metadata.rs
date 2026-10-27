@@ -18,13 +18,20 @@ impl<'a> FromSql<'a> for RawMetadata<'a> {
         true
     }
 }
+/// Runs one catalog read. A typed query sends Parse, Bind and Execute together, so
+/// each read is one round trip, and concurrent reads share it.
 async fn bounded_query<C: GenericClient + Sync>(
     client: &C,
     sql: &str,
-    parameters: &[&(dyn ToSql + Sync)],
+    parameters: &[(&(dyn ToSql + Sync), Type)],
 ) -> Result<Vec<Row>> {
     let stream = client
-        .query_raw(sql, parameters.iter().copied())
+        .query_typed_raw(
+            sql,
+            parameters
+                .iter()
+                .map(|(value, kind)| (*value, kind.clone())),
+        )
         .await
         .map_err(crate::normalize)?;
     tokio::pin!(stream);
@@ -97,6 +104,33 @@ fn group(id: &ObjectId) -> Option<(u32, &str)> {
 fn quote(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
+/// One relation, by OID or by a name that may not resolve.
+#[derive(Clone, Copy)]
+enum Relation<'a> {
+    Oid(u32),
+    Name(&'a str),
+}
+impl Relation<'_> {
+    /// The SQL expression of the relation OID. It reads parameter $1.
+    fn sql(self) -> &'static str {
+        match self {
+            Relation::Oid(_) => "$1",
+            Relation::Name(_) => "pg_catalog.to_regclass($1)",
+        }
+    }
+    fn parameter(&self) -> [(&(dyn ToSql + Sync), Type); 1] {
+        match self {
+            Relation::Oid(oid) => [(oid, Type::OID)],
+            Relation::Name(name) => [(name, Type::TEXT)],
+        }
+    }
+}
+fn relation_sql(relation: Relation<'_>) -> String {
+    format!(
+        "SELECT c.oid, n.nspname::text, c.relname::text, c.relkind::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE c.oid={}",
+        relation.sql()
+    )
+}
 pub(crate) async fn edit_target<C: GenericClient + Sync>(
     client: &C,
     object: &ObjectId,
@@ -105,10 +139,42 @@ pub(crate) async fn edit_target<C: GenericClient + Sync>(
     if kind != "relation" {
         return Err(invalid());
     }
-    let relation = client.query_one("SELECT n.nspname::text, c.relname::text, c.relkind::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE c.oid=$1", &[&oid]).await.map_err(crate::normalize)?;
-    let schema: String = relation.get(0);
-    let table: String = relation.get(1);
-    let relation_kind: String = relation.get(2);
+    relation_edit_target(client, Relation::Oid(oid))
+        .await?
+        .ok_or_else(|| {
+            DriverError::new(
+                ErrorKind::StaleHandle,
+                "PostgreSQL relation no longer exists",
+            )
+        })
+}
+/// The edit target of `relation`, or `None` when no relation matches. Its catalog
+/// reads run concurrently in one round trip.
+async fn relation_edit_target<C: GenericClient + Sync>(
+    client: &C,
+    relation: Relation<'_>,
+) -> Result<Option<EditTarget>> {
+    let parameter = relation.parameter();
+    let rel = relation.sql();
+    let relation_read = relation_sql(relation);
+    let columns_read = format!(
+        "SELECT attname::text, pg_catalog.format_type(atttypid,atttypmod), attnotnull, attgenerated::text FROM pg_catalog.pg_attribute WHERE attrelid={rel} AND attnum>0 AND NOT attisdropped ORDER BY attnum LIMIT 10001"
+    );
+    // The key columns of each usable unique index, in key order.
+    let keys_read = format!(
+        "SELECT i.indisprimary, array_agg(a.attname::text ORDER BY k.ordinality), bool_and(a.attnotnull) FROM pg_catalog.pg_index i JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum,ordinality) ON k.ordinality<=i.indnkeyatts JOIN pg_catalog.pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum WHERE i.indrelid={rel} AND i.indisunique AND i.indisvalid AND i.indisready AND i.indpred IS NULL AND i.indexprs IS NULL GROUP BY i.indexrelid, i.indisprimary ORDER BY i.indisprimary DESC, i.indexrelid LIMIT 10001"
+    );
+    let (relations, rows, indexes) = futures_util::try_join!(
+        bounded_query(client, &relation_read, &parameter),
+        bounded_query(client, &columns_read, &parameter),
+        bounded_query(client, &keys_read, &parameter),
+    )?;
+    let Some(relation) = relations.first() else {
+        return Ok(None);
+    };
+    let schema: String = relation.get(1);
+    let table: String = relation.get(2);
+    let relation_kind: String = relation.get(3);
     let mut target = EditTarget {
         qualified_name: format!("{}.{}", quote(&schema), quote(&table)),
         parameter_style: "$".into(),
@@ -116,10 +182,10 @@ pub(crate) async fn edit_target<C: GenericClient + Sync>(
     };
     if !matches!(relation_kind.as_str(), "r" | "p") {
         target.reason = "Only base tables can be edited".into();
-        return Ok(target);
+        return Ok(Some(target));
     }
-    let rows = bounded_query(client, "SELECT attname::text, pg_catalog.format_type(atttypid,atttypmod), attnotnull, attgenerated::text FROM pg_catalog.pg_attribute WHERE attrelid=$1 AND attnum>0 AND NOT attisdropped ORDER BY attnum LIMIT 10001", &[&oid]).await?;
     check(&rows)?;
+    check(&indexes)?;
     for row in rows {
         target.columns.push(EditColumn {
             name: row.get(0),
@@ -129,23 +195,11 @@ pub(crate) async fn edit_target<C: GenericClient + Sync>(
             key: false,
         });
     }
-    let indexes = bounded_query(client, "SELECT i.indexrelid, i.indisprimary FROM pg_catalog.pg_index i WHERE i.indrelid=$1 AND i.indisunique AND i.indisvalid AND i.indisready AND i.indpred IS NULL AND i.indexprs IS NULL ORDER BY i.indisprimary DESC, i.indexrelid LIMIT 10001", &[&oid]).await?;
-    check(&indexes)?;
     for index in indexes {
-        let index_oid: u32 = index.get(0);
-        let primary: bool = index.get(1);
-        let rows = bounded_query(client, "SELECT a.attname::text, a.attnotnull FROM pg_catalog.pg_index i JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum,ordinality) ON k.ordinality<=i.indnkeyatts JOIN pg_catalog.pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum WHERE i.indexrelid=$1 ORDER BY k.ordinality", &[&index_oid]).await?;
-        let mut columns = Vec::new();
-        let mut valid = true;
-        for row in rows {
-            let name: String = row.get(0);
-            if !primary && !row.get::<_, bool>(1) {
-                valid = false;
-                break;
-            }
-            columns.push(name);
-        }
-        if valid && !columns.is_empty() {
+        let primary: bool = index.get(0);
+        let columns: Vec<String> = index.get(1);
+        let not_null: bool = index.get(2);
+        if (primary || not_null) && !columns.is_empty() {
             target.key_columns = columns;
             break;
         }
@@ -156,7 +210,7 @@ pub(crate) async fn edit_target<C: GenericClient + Sync>(
     if target.key_columns.is_empty() {
         target.reason = "No stable primary or nonnullable unique key; inserts only".into();
     }
-    Ok(target)
+    Ok(Some(target))
 }
 pub(crate) async fn edit_query<C: GenericClient + Sync>(
     client: &C,
@@ -174,15 +228,9 @@ pub(crate) async fn edit_query<C: GenericClient + Sync>(
         Some(schema) => format!("{}.{}", quote(schema), quote(&shape.table)),
         None => quote(&shape.table),
     };
-    let oid: Option<u32> = client
-        .query_one("SELECT pg_catalog.to_regclass($1)::oid", &[&relation_name])
-        .await
-        .map_err(crate::normalize)?
-        .get(0);
-    let Some(oid) = oid else {
+    let Some(target) = relation_edit_target(client, Relation::Name(&relation_name)).await? else {
         return Ok(output);
     };
-    let target = edit_target(client, &ObjectId(format!("pg:relation:{oid}"))).await?;
     if target.columns.is_empty() {
         return Ok(output);
     }
@@ -219,42 +267,58 @@ pub(crate) async fn result_cells<C: GenericClient + Sync>(
     result_columns: Vec<String>,
 ) -> Result<Vec<ResultCellMetadata>> {
     let mut output = vec![ResultCellMetadata::default(); result_columns.len()];
-    let (oid, sources) = if let Some(object) = object {
+    let name;
+    let (relation, sources) = if let Some(object) = object {
         let (kind, oid) = parse(object)?;
         if kind != "relation" {
             return Ok(output);
         }
-        (oid, result_columns.clone())
+        (Relation::Oid(oid), result_columns.clone())
     } else {
         let Some(shape) = simple_select(sql, &result_columns) else {
             return Ok(output);
         };
-        let name = match shape.schema {
+        name = match shape.schema {
             Some(schema) => format!("{}.{}", quote(&schema), quote(&shape.table)),
             None => quote(&shape.table),
         };
-        let oid: Option<u32> = client
-            .query_one("SELECT pg_catalog.to_regclass($1)::oid", &[&name])
-            .await
-            .map_err(crate::normalize)?
-            .get(0);
-        let Some(oid) = oid else { return Ok(output) };
-        (oid, shape.source_columns)
+        (Relation::Name(&name), shape.source_columns)
     };
-    let relation = bounded_query(client, "SELECT n.nspname::text, c.relname::text, c.relkind::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE c.oid=$1", &[&oid]).await?;
-    let Some(relation) = relation.first() else {
+    let parameter = relation.parameter();
+    let rel = relation.sql();
+    // The catalog reads run concurrently in one round trip. One read gives the
+    // labels of every enum type that the relation uses.
+    let relation_read = relation_sql(relation);
+    let columns_read = format!(
+        "SELECT a.attname::text, a.attnotnull, a.atttypid::oid, t.typtype::text FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_type t ON t.oid=a.atttypid WHERE a.attrelid={rel} AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum LIMIT 10001"
+    );
+    let references_read = format!(
+        "SELECT a.attname::text, c.confrelid::oid, rn.nspname::text, rc.relname::text, ra.attname::text, array_length(c.conkey,1) FROM pg_catalog.pg_constraint c JOIN LATERAL unnest(c.conkey) AS fk_col(attnum) ON true JOIN pg_catalog.pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=fk_col.attnum JOIN pg_catalog.pg_class rc ON rc.oid=c.confrelid AND rc.relkind IN ('r','p') JOIN pg_catalog.pg_namespace rn ON rn.oid=rc.relnamespace JOIN pg_catalog.pg_attribute ra ON ra.attrelid=c.confrelid AND ra.attnum=c.confkey[1] AND NOT ra.attisdropped WHERE c.conrelid={rel} AND c.contype='f' LIMIT 10001"
+    );
+    let labels_read = format!(
+        "SELECT e.enumtypid, e.enumlabel::text FROM pg_catalog.pg_enum e WHERE e.enumtypid IN (SELECT a.atttypid FROM pg_catalog.pg_attribute a WHERE a.attrelid={rel} AND a.attnum>0 AND NOT a.attisdropped) ORDER BY e.enumtypid, e.enumsortorder LIMIT 10001"
+    );
+    let (relations, rows, fk_rows, labels) = futures_util::try_join!(
+        bounded_query(client, &relation_read, &parameter),
+        bounded_query(client, &columns_read, &parameter),
+        bounded_query(client, &references_read, &parameter),
+        bounded_query(client, &labels_read, &parameter),
+    )?;
+    let Some(relation) = relations.first() else {
         return Ok(output);
     };
-    let schema: String = relation.get(0);
-    let table: String = relation.get(1);
-    let kind: String = relation.get(2);
+    let oid: u32 = relation.get(0);
+    let schema: String = relation.get(1);
+    let table: String = relation.get(2);
+    let kind: String = relation.get(3);
     if !matches!(kind.as_str(), "r" | "p") {
         return Ok(output);
     }
     let source_object = format!("pg:relation:{oid}");
     let qualified = format!("{}.{}", quote(&schema), quote(&table));
-    let rows = bounded_query(client, "SELECT a.attname::text, a.attnotnull, a.atttypid::oid, t.typtype::text FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_type t ON t.oid=a.atttypid WHERE a.attrelid=$1 AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum LIMIT 10001", &[&oid]).await?;
     check(&rows)?;
+    check(&fk_rows)?;
+    check(&labels)?;
     let mut columns = std::collections::HashMap::new();
     for row in rows {
         let name: String = row.get(0);
@@ -263,8 +327,6 @@ pub(crate) async fn result_cells<C: GenericClient + Sync>(
         let type_kind: String = row.get(3);
         columns.insert(name, (notnull, type_oid, type_kind));
     }
-    let fk_rows = bounded_query(client, "SELECT a.attname::text, c.confrelid::oid, rn.nspname::text, rc.relname::text, ra.attname::text, array_length(c.conkey,1) FROM pg_catalog.pg_constraint c JOIN LATERAL unnest(c.conkey) AS fk_col(attnum) ON true JOIN pg_catalog.pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=fk_col.attnum JOIN pg_catalog.pg_class rc ON rc.oid=c.confrelid AND rc.relkind IN ('r','p') JOIN pg_catalog.pg_namespace rn ON rn.oid=rc.relnamespace JOIN pg_catalog.pg_attribute ra ON ra.attrelid=c.confrelid AND ra.attnum=c.confkey[1] AND NOT ra.attisdropped WHERE c.conrelid=$1 AND c.contype='f' LIMIT 10001", &[&oid]).await?;
-    check(&fk_rows)?;
     let mut fks = std::collections::HashMap::<String, Vec<(u32, String, String, String)>>::new();
     for row in fk_rows {
         let size: i32 = row.get(5);
@@ -273,6 +335,10 @@ pub(crate) async fn result_cells<C: GenericClient + Sync>(
         } else {
             (0, String::new(), String::new(), String::new())
         });
+    }
+    let mut choices = std::collections::HashMap::<u32, Vec<String>>::new();
+    for row in labels {
+        choices.entry(row.get(0)).or_default().push(row.get(1));
     }
     let mut enum_bytes = 0usize;
     for (meta, source) in output.iter_mut().zip(&sources) {
@@ -288,14 +354,13 @@ pub(crate) async fn result_cells<C: GenericClient + Sync>(
         meta.nullable = Some(!notnull);
         meta.boolean = *type_oid == 16;
         if type_kind == "e" {
-            let labels = bounded_query(client, "SELECT enumlabel::text FROM pg_catalog.pg_enum WHERE enumtypid=$1 ORDER BY enumsortorder LIMIT 10001", &[type_oid]).await?;
-            check(&labels)?;
-            meta.enum_choices = labels.into_iter().map(|r| r.get(0)).collect();
-            enum_bytes =
-                enum_bytes.saturating_add(meta.enum_choices.iter().map(String::len).sum::<usize>());
+            let labels = choices.get(type_oid).map_or(&[][..], Vec::as_slice);
+            // The labels of all enum columns share one budget, checked before the copy.
+            enum_bytes = enum_bytes.saturating_add(labels.iter().map(String::len).sum::<usize>());
             if enum_bytes > MAX_TEXT {
                 return Err(limit());
             }
+            meta.enum_choices = labels.to_vec();
         }
         if let Some(entries) = fks.get(source)
             && entries.len() == 1
@@ -406,7 +471,7 @@ pub(crate) async fn load_metadata<C: GenericClient + Sync>(
         "relation" => return relation_children(client, parent_id, oid).await,
         _ => return Ok(Vec::new()),
     };
-    let rows = bounded_query(client, sql, &[&oid]).await?;
+    let rows = bounded_query(client, sql, &[(&oid, Type::OID)]).await?;
     check(&rows)?;
     rows.iter()
         .map(|row| {
@@ -465,7 +530,7 @@ async fn group_children<C: GenericClient + Sync>(
         }
         _ => return Err(invalid()),
     };
-    let rows = bounded_query(client, sql, &[&schema_oid]).await?;
+    let rows = bounded_query(client, sql, &[(&schema_oid, Type::OID)]).await?;
     let mut objects = Vec::with_capacity(rows.len());
     for row in rows {
         let oid: u32 = row.get("oid");
@@ -573,7 +638,7 @@ async fn relation_children<C: GenericClient + Sync>(
             "PostgreSQL relation no longer exists",
         ));
     }
-    let rows = bounded_query(client, "SELECT a.attnum, a.attname::text AS name, pg_catalog.format_type(a.atttypid,a.atttypmod) AS datatype, a.atttypid, a.atttypmod, a.attnotnull, COALESCE(pg_catalog.pg_get_expr(d.adbin,d.adrelid),'No default') AS default_expression, a.attidentity::text AS identity, a.attgenerated::text AS generated, n.nspname::text AS schema, c.relname::text AS relation FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_class c ON c.oid=a.attrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=$1 AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum LIMIT 10001", &[&oid]).await?;
+    let rows = bounded_query(client, "SELECT a.attnum, a.attname::text AS name, pg_catalog.format_type(a.atttypid,a.atttypmod) AS datatype, a.atttypid, a.atttypmod, a.attnotnull, COALESCE(pg_catalog.pg_get_expr(d.adbin,d.adrelid),'No default') AS default_expression, a.attidentity::text AS identity, a.attgenerated::text AS generated, n.nspname::text AS schema, c.relname::text AS relation FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_class c ON c.oid=a.attrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=$1 AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum LIMIT 10001", &[(&oid, Type::OID)]).await?;
     check(&rows)?;
     let mut result = Vec::with_capacity(rows.len());
     for row in rows {
@@ -624,7 +689,7 @@ async fn relation_children<C: GenericClient + Sync>(
         ));
         result.push(child);
     }
-    let rows=bounded_query(client, "SELECT oid, conname::text AS name, contype::text AS kind, pg_catalog.pg_get_constraintdef(oid,false) AS definition FROM pg_catalog.pg_constraint WHERE conrelid=$1 AND contype IN ('p','f','u') ORDER BY conname LIMIT 10001", &[&oid]).await?;
+    let rows=bounded_query(client, "SELECT oid, conname::text AS name, contype::text AS kind, pg_catalog.pg_get_constraintdef(oid,false) AS definition FROM pg_catalog.pg_constraint WHERE conrelid=$1 AND contype IN ('p','f','u') ORDER BY conname LIMIT 10001", &[(&oid, Type::OID)]).await?;
     check(&rows)?;
     for row in rows {
         let id: u32 = row.get("oid");
@@ -648,7 +713,7 @@ async fn relation_children<C: GenericClient + Sync>(
         ));
         result.push(child);
     }
-    let rows=bounded_query(client, "SELECT c.oid,c.relname::text AS name,n.nspname::text AS schema,i.indisunique,i.indisvalid,i.indpred IS NOT NULL AS partial,pg_catalog.pg_get_indexdef(c.oid) AS definition FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid=i.indexrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE i.indrelid=$1 ORDER BY c.relname LIMIT 10001", &[&oid]).await?;
+    let rows=bounded_query(client, "SELECT c.oid,c.relname::text AS name,n.nspname::text AS schema,i.indisunique,i.indisvalid,i.indpred IS NOT NULL AS partial,pg_catalog.pg_get_indexdef(c.oid) AS definition FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid=i.indexrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE i.indrelid=$1 ORDER BY c.relname LIMIT 10001", &[(&oid, Type::OID)]).await?;
     check(&rows)?;
     for row in rows {
         let id: u32 = row.get("oid");
@@ -791,7 +856,7 @@ async fn relation_ddl<C: GenericClient + Sync>(client: &C, oid: u32) -> Result<S
             "DDL reconstruction for partitioned, inherited, foreign, or policy/storage-customized tables is unavailable",
         ));
     }
-    let rows=bounded_query(client, "SELECT a.attname::text AS name,pg_catalog.format_type(a.atttypid,a.atttypmod) AS datatype,a.attnotnull,a.attidentity::text AS identity,a.attgenerated::text AS generated,COALESCE(pg_catalog.pg_get_expr(d.adbin,d.adrelid),'') AS expression,a.attcollation<>t.typcollation AS custom_collation FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_type t ON t.oid=a.atttypid LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=$1 AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum LIMIT 10001",&[&oid]).await?;
+    let rows=bounded_query(client, "SELECT a.attname::text AS name,pg_catalog.format_type(a.atttypid,a.atttypmod) AS datatype,a.attnotnull,a.attidentity::text AS identity,a.attgenerated::text AS generated,COALESCE(pg_catalog.pg_get_expr(d.adbin,d.adrelid),'') AS expression,a.attcollation<>t.typcollation AS custom_collation FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_type t ON t.oid=a.atttypid LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=$1 AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum LIMIT 10001",&[(&oid, Type::OID)]).await?;
     check(&rows)?;
     let mut definitions = Vec::new();
     let mut total = 0usize;
@@ -833,7 +898,7 @@ async fn relation_ddl<C: GenericClient + Sync>(client: &C, oid: u32) -> Result<S
         }
         definitions.push(def);
     }
-    let rows=bounded_query(client, "SELECT conname::text AS name,pg_catalog.pg_get_constraintdef(oid,false) AS ddl FROM pg_catalog.pg_constraint WHERE conrelid=$1 ORDER BY conname LIMIT 10001",&[&oid]).await?;
+    let rows=bounded_query(client, "SELECT conname::text AS name,pg_catalog.pg_get_constraintdef(oid,false) AS ddl FROM pg_catalog.pg_constraint WHERE conrelid=$1 ORDER BY conname LIMIT 10001",&[(&oid, Type::OID)]).await?;
     check(&rows)?;
     for row in rows {
         let def = format!(

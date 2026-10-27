@@ -127,7 +127,7 @@ fn wait_for(engine: &mut Engine, predicate: impl Fn(&Event) -> bool) -> Event {
     }
 }
 #[test]
-fn query_pages_and_manual_transactions_are_sequential() {
+fn query_pages_are_sequential() {
     let (mut engine, log) = engine(EngineConfig::default());
     let c = engine.connect("fake", options()).unwrap();
     wait_for(&mut engine, |e| matches!(e, Event::Connected { .. }));
@@ -135,18 +135,8 @@ fn query_pages_and_manual_transactions_are_sequential() {
         .execute(c, "first".into(), QueryOptions::default())
         .unwrap();
     engine.fetch_page(q).unwrap();
-    engine.commit(c).unwrap();
-    engine.rollback(c).unwrap();
-    wait_for(&mut engine, |e| {
-        matches!(
-            e,
-            Event::TransactionFinished {
-                committed: false,
-                ..
-            }
-        )
-    });
-    assert_eq!(*log.lock().unwrap(), vec!["first", "commit", "rollback"]);
+    wait_for(&mut engine, |e| matches!(e, Event::Page { .. }));
+    assert_eq!(*log.lock().unwrap(), vec!["first"]);
     engine.release_query(q).unwrap();
     assert_eq!(engine.cancel(q), Err(SubmitError::StaleHandle));
 }
@@ -245,7 +235,10 @@ fn event_backpressure_bounds_commands_without_blocking_caller() {
     assert!(full);
     assert!(started.elapsed() < Duration::from_millis(100));
     engine.initiate_shutdown();
-    assert_eq!(engine.commit(c), Err(SubmitError::ShuttingDown));
+    assert_eq!(
+        engine.execute(c, "first".into(), QueryOptions::default()),
+        Err(SubmitError::ShuttingDown)
+    );
     let started = Instant::now();
     drop(engine);
     assert!(started.elapsed() < Duration::from_millis(100));

@@ -5,6 +5,11 @@
 - Added MariaDB 10.11+ connections with their own profile choice and icon, including sequences, system-versioned tables with Current, As of and All history views, JSON values, and ed25519 accounts. A MySQL connection to a MariaDB server (or the reverse) still connects and shows a notice suggesting the matching connection type.
 - Scripts in MariaDB connections now ask for confirmation before running `/*M! ... */` executable comments.
 - Saving the first MariaDB connection upgrades the profile store, after which earlier ChoscorDB versions cannot open it.
+- Made remote PostgreSQL and MySQL connections faster with fewer network round trips for result pages, object data and metadata.
+- Large result pages now prepare off the UI thread, so the window stays responsive while they load.
+- The navigator now loads objects on a separate database session, so expanding a node does not wait for a running query.
+- The navigator now shows the saved objects of a connection profile at once, and then replaces them with current objects.
+- SSH tunnels of one connection now share one SSH login on macOS and Linux, and send a keepalive every 30 seconds.
 
 ## [0.1.10]
 

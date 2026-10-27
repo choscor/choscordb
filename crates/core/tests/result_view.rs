@@ -1235,3 +1235,81 @@ fn sql_predicate_rejects_oversized_intermediate_values() {
         .unwrap();
     assert!(failed_view(&mut engine).message.contains("too big"));
 }
+
+/// The time to build a filtered or sorted view of 8,000 rows x 20 columns in pages of `page_size`.
+fn view_build_time(page_size: u32, sort: bool) -> Duration {
+    const ROWS: u64 = 8_000;
+    let mut engine =
+        choscordb_core::Engine::new(Default::default(), vec![Arc::new(SqliteDriver)]).unwrap();
+    let connection = engine
+        .connect(
+            "sqlite",
+            ConnectionOptions::Sqlite {
+                path: ":memory:".into(),
+                read_only: false,
+            },
+        )
+        .unwrap();
+    event(&mut engine, |e| matches!(e, Event::Connected { .. }));
+    let columns = (0..20)
+        .map(|c| format!("x + {c} AS c{c}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let query = engine
+        .execute(
+            connection,
+            format!(
+                "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<{ROWS}) \
+                 SELECT {columns} FROM n"
+            ),
+            QueryOptions {
+                page_size: PageSize::new(page_size).unwrap(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    event(&mut engine, |e| matches!(e, Event::Schema { .. }));
+    let started = std::time::Instant::now();
+    engine
+        .apply_result_view(
+            query,
+            vec![FilterCondition {
+                column: 0,
+                operator: FilterOperator::GreaterThan,
+                value: Some(Value::Integer(0)),
+            }],
+            sort.then_some(ResultSort {
+                column: 0,
+                direction: SortDirection::Descending,
+            }),
+        )
+        .unwrap();
+    let deadline = started + Duration::from_secs(600);
+    loop {
+        match engine.try_event() {
+            Some(Event::ResultViewApplied { query: q, rows }) if q == query => {
+                assert_eq!(rows, ROWS);
+                return started.elapsed();
+            }
+            Some(Event::ResultViewFailed { error, .. }) => panic!("view failed: {error}"),
+            _ => {}
+        }
+        assert!(std::time::Instant::now() < deadline, "view did not finish");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn view_page_building_cost_does_not_grow_with_the_page_size() {
+    for sort in [false, true] {
+        // Warm up the runtime and SQLite before the measured runs.
+        view_build_time(100, sort);
+        let small = view_build_time(100, sort);
+        let large = view_build_time(10_000, sort);
+        // A walk of the whole page after each row makes large pages many times slower.
+        assert!(
+            large < small * 3,
+            "sort={sort}: 100-row pages took {small:?}, 10,000-row pages took {large:?}"
+        );
+    }
+}

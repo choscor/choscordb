@@ -10,6 +10,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
+pub(crate) fn next_portal_name() -> String {
+    format!("p{}", NEXT_ID.fetch_add(1, Ordering::SeqCst))
+}
+
 pub async fn bind<P, I>(
     client: &Arc<InnerClient>,
     statement: Statement,

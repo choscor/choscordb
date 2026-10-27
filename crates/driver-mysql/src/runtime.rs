@@ -83,12 +83,21 @@ pub(super) struct Start {
     pub tunnel: Option<Arc<ssh::Tunnel>>,
     pub proxy: Option<Arc<crate::proxy::Tunnel>>,
 }
+/// A connection that a worker hands back after its statement.
+pub(super) struct Finished {
+    pub conn: Conn,
+    /// The session mode after the statement; `None` when it is not known.
+    pub sql_mode: Option<String>,
+}
 pub(super) async fn start(
     conn: Conn,
     opts: Opts,
     prefer_tls: bool,
     request: Start,
-) -> Result<(Result<StreamCursor>, tokio::task::JoinHandle<Option<Conn>>)> {
+) -> Result<(
+    Result<StreamCursor>,
+    tokio::task::JoinHandle<Option<Finished>>,
+)> {
     let Start {
         flavor,
         idle,
@@ -241,6 +250,8 @@ pub(super) async fn start(
             .as_ref()
             .err()
             .is_none_or(|e| e.vendor_code.is_some());
+        let clean = result.is_ok();
+        let mut sql_mode = None;
         if let Ok(mut state) = worker_shared.lock() {
             state.done = true;
             let interrupted = result
@@ -265,13 +276,36 @@ pub(super) async fn start(
                     set.summary.sql_mode = None;
                 }
             }
+            // A failed statement may stop before the mode probe that follows it.
+            if state.failure.is_none() {
+                sql_mode = state
+                    .sets
+                    .last()
+                    .and_then(|set| set.summary.sql_mode.clone());
+            }
         }
         worker_shared.changed.notify_waiters();
-        if independent || !reusable {
+        // An independent object read hands back only a connection that finished cleanly.
+        // It ends the read transaction at once, so the parked connection keeps no
+        // metadata lock while the view stays open.
+        let ended = !independent
+            || clean
+                && matches!(
+                    tokio::time::timeout(
+                        Duration::from_secs(5),
+                        conn.connection().query_drop("ROLLBACK")
+                    )
+                    .await,
+                    Ok(Ok(()))
+                );
+        if !reusable || !ended {
             drop(conn);
             None
         } else {
-            Some(conn.ready())
+            Some(Finished {
+                conn: conn.ready(),
+                sql_mode,
+            })
         }
     });
     let mut waiting = Waiting(Some(cancel.clone()));
@@ -544,6 +578,72 @@ async fn json_columns(conn: &mut Conn, columns: &[mysql_async::Column]) -> Resul
         })
         .collect())
 }
+const SPOOL_BATCH_ROWS: usize = 256;
+/// The raw row bytes that one spool batch holds before its write.
+const SPOOL_BATCH_BYTES: usize = 4 * 1024 * 1024;
+fn wire_bytes(row: &mysql_async::Row) -> usize {
+    (0..row.len())
+        .map(|i| match row.as_ref(i) {
+            Some(mysql_async::Value::Bytes(bytes)) => bytes.len(),
+            _ => 0,
+        } + std::mem::size_of::<mysql_async::Value>())
+        .sum()
+}
+/// Converts one row, moves its large values to the spool and appends it to the result file.
+fn spool_row(
+    row: mysql_async::Row,
+    wire_columns: &[mysql_async::Column],
+    json: &[bool],
+    spool: &mut spool::Spool,
+    file: &Mutex<std::fs::File>,
+) -> Result<()> {
+    let mut row: Row = row
+        .unwrap()
+        .into_iter()
+        .zip(wire_columns.iter())
+        .enumerate()
+        .map(|(i, (v, c))| value(v, c, json.get(i).copied().unwrap_or(false)))
+        .collect::<Result<_>>()?;
+    let mut inline_bytes = 0usize;
+    for value in &mut row {
+        let deferred = match value {
+            Value::Text(text) | Value::Json(text)
+                if text.len() > 16384 || inline_bytes.saturating_add(text.len()) > 65536 =>
+            {
+                Some(spool.store(text.as_bytes(), true)?)
+            }
+            Value::Binary(bytes)
+                if bytes.len() > 16384 || inline_bytes.saturating_add(bytes.len()) > 65536 =>
+            {
+                Some(spool.store(bytes, false)?)
+            }
+            _ => None,
+        };
+        if let Some(deferred) = deferred {
+            *value = deferred;
+        }
+        inline_bytes = inline_bytes.saturating_add(value.estimated_bytes());
+    }
+    let bytes = row_codec::encode(&row)?;
+    if bytes.len() > 4 * 1024 * 1024 {
+        return Err(limit());
+    }
+    let bound = bytes
+        .len()
+        .saturating_mul(2)
+        .saturating_add(row.len() * std::mem::size_of::<Value>())
+        .saturating_add(std::mem::size_of::<Row>());
+    let mut file = file
+        .lock()
+        .map_err(|_| error(ErrorKind::Internal, "MySQL result lock failed"))?;
+    file.seek(SeekFrom::End(0)).map_err(io_error)?;
+    file.write_all(&(bound as u64).to_le_bytes())
+        .map_err(io_error)?;
+    file.write_all(&(bytes.len() as u64).to_le_bytes())
+        .map_err(io_error)?;
+    file.write_all(&bytes).map_err(io_error)?;
+    Ok(())
+}
 async fn collect<P: mysql_async::prelude::Protocol>(
     mut result: mysql_async::QueryResult<'_, '_, P>,
     max: usize,
@@ -568,7 +668,25 @@ async fn collect<P: mysql_async::prelude::Protocol>(
             index
         };
         shared.changed.notify_waiters();
-        while let Some(row) = result.next().await.map_err(normalize)? {
+        // Rows go to the spool in batches with one blocking task each. A batch starts at
+        // one row and doubles, so the first rows show at once.
+        let mut batch_rows = 1;
+        let mut ended = false;
+        while !ended {
+            let mut batch = Vec::with_capacity(batch_rows);
+            let mut batch_bytes = 0usize;
+            while batch.len() < batch_rows && batch_bytes < SPOOL_BATCH_BYTES {
+                let Some(row) = result.next().await.map_err(normalize)? else {
+                    ended = true;
+                    break;
+                };
+                batch_bytes = batch_bytes.saturating_add(wire_bytes(&row));
+                batch.push(row);
+            }
+            if batch.is_empty() {
+                break;
+            }
+            let written = batch.len();
             let wire_columns = wire_columns.clone();
             let json = json.clone();
             let file = file.clone();
@@ -582,75 +700,16 @@ async fn collect<P: mysql_async::prelude::Protocol>(
                 .clone();
             tokio::task::spawn_blocking(move || -> Result<()> {
                 let _native = native;
-                let mut row: Row = row
-                    .unwrap()
-                    .into_iter()
-                    .zip(wire_columns.iter())
-                    .enumerate()
-                    .map(|(i, (v, c))| value(v, c, json.get(i).copied().unwrap_or(false)))
-                    .collect::<Result<_>>()?;
-                let mut inline_bytes = 0usize;
-                for value in &mut row {
-                    let deferred = match value {
-                        Value::Text(text) | Value::Json(text)
-                            if text.len() > 16384
-                                || inline_bytes.saturating_add(text.len()) > 65536 =>
-                        {
-                            Some(spool.store(text.as_bytes(), true)?)
-                        }
-                        Value::Binary(bytes)
-                            if bytes.len() > 16384
-                                || inline_bytes.saturating_add(bytes.len()) > 65536 =>
-                        {
-                            Some(spool.store(bytes, false)?)
-                        }
-                        _ => None,
-                    };
-                    if let Some(deferred) = deferred {
-                        *value = deferred;
-                    }
-                    inline_bytes = inline_bytes.saturating_add(value.estimated_bytes());
+                for row in batch {
+                    spool_row(row, &wire_columns, &json, &mut spool, &file)?;
                 }
-                // Reject pathological scalar/column widths before JSON allocates.
-                // Six bytes per input byte covers worst-case JSON escaping.
-                let serialization_bound = row
-                    .iter()
-                    .try_fold(0usize, |total, value| {
-                        total.checked_add(
-                            value
-                                .estimated_bytes()
-                                .saturating_mul(6)
-                                .saturating_add(128),
-                        )
-                    })
-                    .ok_or_else(limit)?;
-                if serialization_bound > 4 * 1024 * 1024 {
-                    return Err(limit());
-                }
-                let bytes = serde_json::to_vec(&row)
-                    .map_err(|_| error(ErrorKind::Query, "Cannot encode MySQL result"))?;
-                let bound = bytes
-                    .len()
-                    .saturating_mul(4)
-                    .saturating_add(
-                        row.len().max(4).next_power_of_two() * std::mem::size_of::<Value>() * 2,
-                    )
-                    .saturating_add(std::mem::size_of::<Row>());
-                let mut file = file
-                    .lock()
-                    .map_err(|_| error(ErrorKind::Internal, "MySQL result lock failed"))?;
-                file.seek(SeekFrom::End(0)).map_err(io_error)?;
-                file.write_all(&(bound as u64).to_le_bytes())
-                    .map_err(io_error)?;
-                file.write_all(&(bytes.len() as u64).to_le_bytes())
-                    .map_err(io_error)?;
-                file.write_all(&bytes).map_err(io_error)?;
                 Ok(())
             })
             .await
             .map_err(|_| error(ErrorKind::Internal, "MySQL result worker failed"))??;
-            shared.lock()?.sets[index].count += 1;
+            shared.lock()?.sets[index].count += written as u64;
             shared.changed.notify_waiters();
+            batch_rows = (batch_rows * 2).min(SPOOL_BATCH_ROWS);
         }
         let more = result.columns().is_some();
         {
@@ -707,12 +766,12 @@ impl ResultCursor for StreamCursor {
                 if set.count > self.position.saturating_add(u64::from(size.get()))
                     || set.done && (set.finalized || state.done || self.set + 1 < state.sets.len())
                 {
-                    Some((set.file.clone(), set.count, set.done))
+                    Some((set.file.clone(), set.count, set.done, set.columns.len()))
                 } else {
                     None
                 }
             };
-            if let Some((file, count, done)) = available {
+            if let Some((file, count, done, columns)) = available {
                 let position = self.position;
                 let offset = self.offset;
                 let index = self.page;
@@ -721,7 +780,7 @@ impl ResultCursor for StreamCursor {
                         .lock()
                         .map_err(|_| error(ErrorKind::Internal, "MySQL result lock failed"))?;
                     file.seek(SeekFrom::Start(offset)).map_err(io_error)?;
-                    read_page(&mut file, position, count, index, size, max)
+                    read_page(&mut file, position, count, index, columns, size, max)
                 })
                 .await
                 .map_err(|_| error(ErrorKind::Internal, "MySQL result worker failed"))??;

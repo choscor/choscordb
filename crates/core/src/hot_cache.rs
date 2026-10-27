@@ -3,17 +3,16 @@
 use crate::{PageLease, PageMemoryConfig, memory::Memory};
 use choscordb_driver_api::{QueryId, ResultPage};
 use choscordb_result_cache::{PageCache, ResidentSize};
-use choscordb_result_store::StoredPage;
 use std::sync::{Arc, Mutex};
 
 struct CachedPage {
-    stored: StoredPage,
+    first_row: u64,
+    page: Arc<ResultPage>,
     _lease: Option<PageLease>,
 }
 impl ResidentSize for CachedPage {
     fn resident_bytes(&self) -> usize {
-        std::mem::size_of::<Self>() + self.stored.page.estimated_bytes()
-            - std::mem::size_of::<ResultPage>()
+        std::mem::size_of::<Self>() + self.page.estimated_bytes()
     }
 }
 #[derive(Clone, Copy, Debug, Default)]
@@ -51,13 +50,13 @@ impl HotCache {
     pub fn remove(&self, query: QueryId) {
         self.0.lock().unwrap().pages.remove_result(query);
     }
-    /// The actor must acquire the transfer reservation before making this copy.
-    pub fn read(&self, query: QueryId, index: u64) -> Option<StoredPage> {
+    /// The first row and the shared page. The actor acquires the transfer reservation first.
+    pub fn read(&self, query: QueryId, index: u64) -> Option<(u64, Arc<ResultPage>)> {
         let mut state = self.0.lock().unwrap();
-        let page = state.pages.get(query, index).map(|entry| StoredPage {
-            first_row: entry.stored.first_row,
-            page: entry.stored.page.clone(),
-        });
+        let page = state
+            .pages
+            .get(query, index)
+            .map(|entry| (entry.first_row, entry.page.clone()));
         if page.is_some() {
             state.hits = state.hits.saturating_add(1);
         } else {
@@ -65,24 +64,23 @@ impl HotCache {
         }
         page
     }
-    pub fn insert(&self, memory: &Arc<Memory>, query: QueryId, stored: &StoredPage) {
-        // Compute a conservative clone charge before allocating. Cloning Vec and
-        // String retains contents, not unused capacity, so the original is an upper bound.
-        let empty = CachedPage {
-            stored: StoredPage {
-                first_row: 0,
-                page: ResultPage {
-                    index: 0,
-                    rows: vec![],
-                    has_more: false,
-                },
-            },
+    /// Shares `page` with the cache. The charge is the whole page, because the cache keeps
+    /// the page alive after the other holders drop it.
+    pub fn insert(
+        &self,
+        memory: &Arc<Memory>,
+        query: QueryId,
+        first_row: u64,
+        page: &Arc<ResultPage>,
+    ) {
+        let mut entry = CachedPage {
+            first_row,
+            page: page.clone(),
             _lease: None,
         };
-        let bytes = PageCache::<QueryId, CachedPage>::entry_bytes(&empty)
-            .saturating_add(stored.page.estimated_bytes() - std::mem::size_of::<ResultPage>());
+        let bytes = PageCache::<QueryId, CachedPage>::entry_bytes(&entry);
         let mut state = self.0.lock().unwrap();
-        state.pages.remove_page(query, stored.page.index);
+        state.pages.remove_page(query, page.index);
         let lease = loop {
             if let Some(lease) = memory.try_acquire(query, bytes, false) {
                 break lease;
@@ -91,14 +89,8 @@ impl HotCache {
                 return;
             }
         };
-        let entry = CachedPage {
-            stored: StoredPage {
-                first_row: stored.first_row,
-                page: stored.page.clone(),
-            },
-            _lease: Some(lease),
-        };
-        let _ = state.pages.insert(query, stored.page.index, entry, false);
+        entry._lease = Some(lease);
+        let _ = state.pages.insert(query, page.index, entry, false);
         drop(state);
         // A waiter may have found no evictable page just before this insertion.
         // Wake it even though total reserved memory increased: reclaimable

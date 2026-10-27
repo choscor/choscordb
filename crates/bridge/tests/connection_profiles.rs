@@ -40,6 +40,34 @@ fn connection_dialog_rejects_removed_transport_settings() {
 }
 
 #[test]
+fn only_the_engine_ssh_transport_policy_is_accepted() {
+    let ssh = |options: String| {
+        let mut profile = draft();
+        profile.ssh_enabled = true;
+        profile.ssh_host = "ssh.example".into();
+        profile.ssh_port = 22;
+        profile.ssh_user = "alice".into();
+        profile.ssh_authentication = "agent".into();
+        profile.ssh_options = options;
+        validate_connection_profile(profile)
+    };
+    let policy = format!(
+        r#"{{"share_tunnels":{},"server_alive_interval_seconds":30}}"#,
+        cfg!(unix)
+    );
+    assert_eq!(ssh(policy), "");
+    for other in [
+        r#"{"server_alive_interval_seconds":0}"#.to_owned(),
+        format!(r#"{{"share_tunnels":{}}}"#, !cfg!(unix)),
+    ] {
+        assert!(
+            ssh(other.clone()).contains("no longer supported"),
+            "{other}"
+        );
+    }
+}
+
+#[test]
 fn connection_dialog_accepts_connection_timeout() {
     for seconds in [20, 27] {
         let mut profile = draft();
@@ -350,4 +378,60 @@ fn mariadb_profiles_save_reload_as_mariadb_with_server_defaults() {
     assert_eq!(saved.tls, "require");
     assert!(saved.user.is_empty() && saved.database.is_empty());
     assert!(validate_connection_profile(saved).is_empty());
+}
+
+/// The bridge events in order. One drain can hold the saved page and the live page.
+struct Events(std::collections::VecDeque<ffi::BridgeEvent>);
+impl Events {
+    fn next(&mut self, engine: &mut BridgeEngine) -> ffi::BridgeEvent {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while self.0.is_empty() {
+            assert!(std::time::Instant::now() < deadline, "missing event");
+            self.0.extend(drain_events(engine));
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        self.0.pop_front().unwrap()
+    }
+    fn connect_saved(&mut self, engine: &mut BridgeEngine) -> u64 {
+        let profile = ffi::ProfileDto {
+            id: "saved".into(),
+            name: "Saved".into(),
+            driver: "sqlite".into(),
+            path: ":memory:".into(),
+            ..Default::default()
+        };
+        let submitted = profile_connect(engine, profile);
+        assert!(submitted.accepted, "{}", submitted.error);
+        while self.next(engine).kind != "connected" {}
+        submitted.id
+    }
+    /// The saved flags of the pages that one root request shows.
+    fn expand(&mut self, engine: &mut BridgeEngine, connection: u64, fresh: bool) -> Vec<bool> {
+        let submitted = metadata_page_request(engine, connection, "", 5, 0, fresh);
+        assert!(submitted.accepted, "{}", submitted.error);
+        let mut shown = Vec::new();
+        loop {
+            let event = self.next(engine);
+            assert_ne!(event.kind, "metadata_failed", "{}", event.error);
+            if event.kind == "metadata" {
+                shown.push(event.metadata_cached);
+                if !event.metadata_cached {
+                    return shown;
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_fresh_navigator_page_skips_the_saved_children() {
+    let mut engine = new_engine();
+    let mut events = Events(Default::default());
+    let connection = events.connect_saved(&mut engine);
+    assert_eq!(events.expand(&mut engine, connection, false), [false]);
+    assert!(disconnect(&mut engine, connection).accepted);
+    while events.next(&mut engine).kind != "disconnected" {}
+    let connection = events.connect_saved(&mut engine);
+    assert_eq!(events.expand(&mut engine, connection, true), [false]);
+    assert_eq!(events.expand(&mut engine, connection, false), [true, false]);
 }
