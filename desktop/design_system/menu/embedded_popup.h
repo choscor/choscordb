@@ -2,6 +2,7 @@
 
 #include "design_system/menu/menu.h"
 #include "design_system/theme.h"
+#include <QAbstractButton>
 #include <QApplication>
 #include <QDynamicPropertyChangeEvent>
 #include <QEvent>
@@ -11,7 +12,6 @@
 #include <QMouseEvent>
 #include <QPointer>
 #include <QScopedValueRollback>
-#include <QToolButton>
 #include <QWidget>
 
 namespace choscordb::design::detail {
@@ -95,7 +95,8 @@ class EmbeddedPopup final : public QObject {
             if (cursor.isValid())
                 requested = owner_->mapFromGlobal(cursor.toPoint()) -
                             QPoint(menuShadowMargin(), menuShadowMargin());
-            else if (auto* button = qobject_cast<QToolButton*>(origin_.data()))
+            else if (auto* button =
+                         owningButton(origin_.data(), qobject_cast<QMenu*>(surface_.data())))
                 requested = button->mapTo(
                     owner_, QPoint(-menuShadowMargin(), button->height() + 2 - menuShadowMargin()));
             if (auto* parent = qobject_cast<QMenu*>(origin_.data());

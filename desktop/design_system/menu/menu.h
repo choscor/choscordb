@@ -5,6 +5,7 @@ class QEvent;
 class QPoint;
 class QMenu;
 class QAction;
+class QAbstractButton;
 
 namespace choscordb::design {
 // Open at the invoking event's global position, constrained to the owner window.
@@ -16,6 +17,8 @@ QAction* execContextMenu(QMenu& menu, const QPoint& cursor);
 namespace choscordb::design::detail {
 int menuShadowMargin();
 QPoint contextMenuPosition(const QPoint& cursor);
+// The tool or push button whose drop-down menu is `menu`, or null.
+QAbstractButton* owningButton(QWidget* origin, const QMenu* menu);
 void polishMenu(QWidget* widget);
 void prepareStandardContextMenu(QWidget* widget, QEvent* event);
 void positionSubmenu(QWidget* widget, QEvent* event);

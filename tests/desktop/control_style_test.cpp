@@ -192,6 +192,48 @@ void ControlStyleTest::comboPopupDelegatePaintsNormalWeight() {
     combo.hidePopup();
 }
 
+void ControlStyleTest::buttonMenuPanelOpensBelowItsButton_data() {
+    QTest::addColumn<bool>("push");
+    QTest::newRow("tool button") << false;
+    QTest::newRow("push button") << true;
+}
+
+void ControlStyleTest::buttonMenuPanelOpensBelowItsButton() {
+    using namespace choscordb::design;
+    QFETCH(bool, push);
+    const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
+                              false};
+    QWidget root;
+    root.setStyleSheet(applicationStyleSheet(theme));
+    root.resize(600, 500);
+    root.move(100, 100);
+    QMenu* menu = nullptr;
+    QAbstractButton* button = nullptr;
+    if (push) {
+        auto* pushButton = new QPushButton("Run", &root);
+        menu = new QMenu(pushButton);
+        pushButton->setMenu(menu);
+        button = pushButton;
+    } else {
+        auto* toolButton = new QToolButton(&root);
+        toolButton->setText("More");
+        menu = new QMenu(toolButton);
+        toolButton->setMenu(menu);
+        button = toolButton;
+    }
+    menu->addAction("Commit");
+    button->move(140, 140);
+    root.show();
+    // The position that Qt gives to a top-level popup below the button.
+    menu->popup(button->mapToGlobal(QPoint(0, button->height())));
+    QCoreApplication::processEvents();
+    const int margin = detail::menuShadowMargin();
+    QCOMPARE(menu->mapToGlobal(QPoint()).x() + margin, button->mapToGlobal(QPoint()).x());
+    QCOMPARE(menu->mapToGlobal(QPoint()).y() + margin,
+             button->mapToGlobal(QPoint(0, button->height() + 2)).y());
+    menu->close();
+}
+
 void ControlStyleTest::appMenusSuppressDuplicateNativeShadows_data() {
     QTest::addColumn<bool>("rtl");
     QTest::newRow("left-to-right") << false;

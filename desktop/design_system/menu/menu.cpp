@@ -8,6 +8,7 @@
 #include <QImage>
 #include <QMenu>
 #include <QPainter>
+#include <QPushButton>
 #include <QScreen>
 #include <QTimer>
 #include <QToolButton>
@@ -64,6 +65,13 @@ QPoint contextMenuPosition(const QPoint& cursor) {
         position.setY(qMax(position.y(), available.top()));
     }
     return position;
+}
+QAbstractButton* owningButton(QWidget* origin, const QMenu* menu) {
+    if (auto* tool = qobject_cast<QToolButton*>(origin); tool && tool->menu() == menu)
+        return tool;
+    if (auto* push = qobject_cast<QPushButton*>(origin); push && push->menu() == menu)
+        return push;
+    return nullptr;
 }
 class MenuShadowEffect final : public QGraphicsEffect {
   public:
@@ -149,8 +157,7 @@ void positionSubmenu(QWidget* field, QEvent* event) {
     if (auto* menu = qobject_cast<QMenu*>(field); menu && event->type() == QEvent::Show) {
         if (menu->property("embeddedPopupOwner").isValid())
             return;
-        if (auto* button = qobject_cast<QToolButton*>(menu->parentWidget());
-            button && button->menu() == menu) {
+        if (auto* button = owningButton(menu->parentWidget(), menu)) {
             const int margin = menuShadowMargin();
             const auto available = menu->screen()->availableGeometry();
             const int panelWidth = menu->width() - 2 * margin;

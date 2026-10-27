@@ -61,7 +61,8 @@ class ControlStyleTest final : public QObject {
     void directionalPrimitiveUsesHollowLucideChevron();
     void initTestCase();
     void tabsToolsAndTableHeadersUseCompactPaneGeometry();
-    void toolButtonMenuPanelOpensBesideItsButton();
+    void buttonMenuPanelOpensBelowItsButton_data();
+    void buttonMenuPanelOpensBelowItsButton();
     void menusTabsAndScrollbarsUseSharedSurfacesAndRemainInteractive();
     void fieldsExposeInvalidBorderAndPreserveReadOnlyAndPopupInput();
     void checkedAndMixedIndicatorsRenderSemanticFill();
