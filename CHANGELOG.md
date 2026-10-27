@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.1.11]
+
 - Added MariaDB 10.11+ connections with their own profile choice and icon, including sequences, system-versioned tables with Current, As of and All history views, JSON values, and ed25519 accounts. A MySQL connection to a MariaDB server (or the reverse) still connects and shows a notice suggesting the matching connection type.
 - Scripts in MariaDB connections now ask for confirmation before running `/*M! ... */` executable comments.
 - Saving the first MariaDB connection upgrades the profile store, after which earlier ChoscorDB versions cannot open it.
@@ -10,6 +12,15 @@
 - The navigator now loads objects on a separate database session, so expanding a node does not wait for a running query.
 - The navigator now shows the saved objects of a connection profile at once, and then replaces them with current objects.
 - SSH tunnels of one connection now share one SSH login on macOS and Linux, and send a keepalive every 30 seconds.
+- Each SQL editor tab now keeps its own connection. To change it, right-click the tab and choose Change connection.
+- The editor toolbar now has one Run button for the statement at the cursor, with a menu for Run all. Query > Run all (Ctrl+Shift+Return, or Command+Shift+Return on macOS) runs every statement in the editor.
+- Removed the manual transaction mode and its Commit and Rollback commands. Run `BEGIN`, `COMMIT` and `ROLLBACK` in the SQL editor instead. Grid changes cannot be applied while a transaction is open.
+- Added keyboard shortcuts for result grid edits, such as add, duplicate, delete and restore rows, set NULL, edit a cell, and apply or discard edits. Change them in the Result grid group of Preferences > Keyboard shortcuts.
+- Navigator rows, notifications and the status line now show load and failure status as inline text.
+- Interface icons now use the upstream Lucide icon set, and the MySQL logo uses the devicon artwork.
+- Document tabs show their close button on hover, sidebar section headers share one style, and menu bar menus no longer show icons.
+- Fixed uneven spacing around section separators in dialogs, and fields in Preferences that did not grow with the dialog.
+- Updated tokio and ctutils to address the RUSTSEC-2026-0385 and RUSTSEC-2026-0386 advisories.
 
 ## [0.1.10]
 
