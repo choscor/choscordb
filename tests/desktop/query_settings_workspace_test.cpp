@@ -8,6 +8,7 @@
 #include <QAction>
 #include <QComboBox>
 #include <QDialog>
+#include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSpinBox>
@@ -205,12 +206,14 @@ class QuerySettingsWorkspaceTest : public QObject {
         workspace->connectSqlite(":memory:");
         QTRY_COMPARE(connected.count(), 1);
         auto* run = restored.findChild<QAction*>("runStatement");
-        auto* target = restored.findChild<QComboBox*>("connectionSelector");
-        QVERIFY(!target->currentData().isValid());
-        QVERIFY(target->placeholderText().contains("Disconnected"));
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+        QVERIFY(!editor->connectionTarget());
+        QVERIFY(
+            restored.findChild<QLabel*>("executionSummary")->toolTip().contains("Disconnected"));
         QVERIFY(!run->isEnabled());
         QCOMPARE(executions, 0);
-        target->setCurrentIndex(target->findData(connected.first().first()));
+        QVERIFY(
+            workspace->changeDocumentConnection(editor, connected.first().first().toULongLong()));
         QTRY_VERIFY(run->isEnabled());
         QCOMPARE(executions, 0);
         run->trigger();

@@ -15,9 +15,16 @@ fn command_id(command: ShortcutCommand) -> &'static str {
         ShortcutCommand::FindNext => "find_next",
         ShortcutCommand::FindPrevious => "find_previous",
         ShortcutCommand::RunStatement => "run_statement",
+        ShortcutCommand::RunAll => "run_all",
         ShortcutCommand::CancelQuery => "cancel_query",
-        ShortcutCommand::Commit => "commit",
-        ShortcutCommand::Rollback => "rollback",
+        ShortcutCommand::GridAddRow => "grid_add_row",
+        ShortcutCommand::GridDuplicateRow => "grid_duplicate_row",
+        ShortcutCommand::GridDeleteRows => "grid_delete_rows",
+        ShortcutCommand::GridRestoreRows => "grid_restore_rows",
+        ShortcutCommand::GridSetNull => "grid_set_null",
+        ShortcutCommand::GridEditCell => "grid_edit_cell",
+        ShortcutCommand::GridApplyEdits => "grid_apply_edits",
+        ShortcutCommand::GridDiscardEdits => "grid_discard_edits",
     }
 }
 pub(crate) fn dto(value: EditorPreferences) -> ffi::EditorPreferencesDto {

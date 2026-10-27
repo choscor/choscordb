@@ -100,8 +100,7 @@ class CellEditSqlWorkspaceTest : public QObject {
         };
         execute("CREATE TABLE disconnect_rows(id INTEGER PRIMARY KEY, note TEXT)");
         execute("INSERT INTO disconnect_rows VALUES (1, 'original')");
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         ObjectDataWorkspace data(sql);
         data.resize(850, 500);
         data.show();
@@ -162,8 +161,7 @@ class CellEditSqlWorkspaceTest : public QObject {
         execute("INSERT INTO deferred_rows VALUES (1, 'scalar', replace(hex(zeroblob(35000)), '0', "
                 "'x'))");
         execute("CREATE VIEW policy_view AS SELECT id, note FROM policy_rows");
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         ObjectDataWorkspace data(sql);
         data.resize(900, 600);
         data.show();
@@ -246,8 +244,7 @@ class CellEditSqlWorkspaceTest : public QObject {
         execute("CREATE TABLE typed_sheet_rows(id INTEGER PRIMARY KEY, note TEXT DEFAULT "
                 "'db-default')");
         execute("INSERT INTO typed_sheet_rows VALUES (1, NULL), (2, NULL), (3, NULL)");
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         ObjectDataWorkspace data(sql);
         data.resize(900, 650);
         data.show();
@@ -301,7 +298,7 @@ class CellEditSqlWorkspaceTest : public QObject {
             }
             save->click();
             QTRY_VERIFY(!sheet->isVisible());
-            QCOMPARE(model->touched()[row][1], row != 3);
+            QCOMPARE(model->touched(row, 1), row != 3);
         }
 
         QTRY_VERIFY(apply->isEnabled());
@@ -373,8 +370,7 @@ class CellEditSqlWorkspaceTest : public QObject {
         QCOMPARE(model->index(0, 1).data().toString(), QString("first staged"));
         QTRY_VERIFY(apply->isEnabled());
 
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         ObjectDataWorkspace observer(sql);
         observer.resize(850, 500);
         observer.show();
@@ -427,8 +423,7 @@ class CellEditSqlWorkspaceTest : public QObject {
         };
         execute("CREATE TABLE sheet_rows(id INTEGER PRIMARY KEY, note TEXT)");
         execute("INSERT INTO sheet_rows VALUES (1, 'first'), (2, 'second')");
-        const auto connection =
-            window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong();
+        const auto connection = editor->connectionTarget().value_or(0);
         ObjectDataWorkspace data(sql);
         data.resize(900, 600);
         data.show();

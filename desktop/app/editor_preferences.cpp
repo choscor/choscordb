@@ -1,6 +1,7 @@
 #include "editor_preferences.h"
 #include "app/appearance_controller.h"
 #include "app/main_window.h"
+#include "app/query_workspace.h"
 #include "design_system/theme.h"
 #include "widgets/preferences_dialog/preferences_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -46,6 +47,27 @@ void EditorPreferencesController::addEditor(SqlEditor* editor) {
     editor->installEventFilter(this);
     applyFont(editor);
 }
+void EditorPreferencesController::addGrid(QueryWorkspace* grid) {
+    grids_.removeIf([](const auto& item) { return item.isNull(); });
+    grids_.append(grid);
+    applyGridShortcuts(grid);
+}
+QList<ShortcutDescriptor> EditorPreferencesController::catalog() const {
+    return catalog_ + QueryWorkspace::gridShortcuts();
+}
+QKeySequence
+EditorPreferencesController::effectiveSequence(const ShortcutDescriptor& descriptor) const {
+    QString sequence = descriptor.defaultSequence;
+    for (const auto& custom : preferences_.shortcuts)
+        if (custom.command == descriptor.id)
+            sequence = custom.sequence;
+    return QKeySequence::fromString(sequence, QKeySequence::PortableText);
+}
+void EditorPreferencesController::applyGridShortcuts(QueryWorkspace* grid) {
+    for (const auto& descriptor : QueryWorkspace::gridShortcuts())
+        if (descriptor.configurable)
+            grid->setGridShortcut(descriptor.id, effectiveSequence(descriptor));
+}
 bool EditorPreferencesController::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() == QEvent::ShortcutOverride) {
         const auto* key = static_cast<QKeyEvent*>(event);
@@ -73,40 +95,40 @@ void EditorPreferencesController::initialize(EngineAdapter* adapter) {
     adapter_ = adapter;
     connect(adapter, &EngineAdapter::editorPreferencesReady, this,
             [this](quint64 token, const EditorPreferences& value) {
-                if ((token == loadToken && std::exchange(loading_, false)) ||
-                    pendingSaves_.remove(token))
+                const bool loaded = token == loadToken && std::exchange(loading_, false);
+                if (!loaded && !pendingSaves_.remove(token))
+                    return;
+                const auto validation = validateShortcuts(value.shortcuts, catalog());
+                if (validation.ok())
                     apply(value);
+                // The startup load is background work. An open dialog reports a failed save.
+                else if (loaded) {
+                    loadNotice_ = validation.message;
+                    window_->reportNotice(loadNotice_, ToastVariant::Danger);
+                } else if (!dialog_)
+                    window_->reportError(validation.message);
             });
     connect(adapter, &EngineAdapter::recoveryFailed, this,
             [this](quint64 token, const QString& error) {
                 pendingSaves_.remove(token);
                 if (token == loadToken) {
                     loading_ = false;
-                    window_->showStatus(
-                        tr("Preferences could not be loaded: %1. Open Preferences to retry.")
-                            .arg(error),
-                        ToastVariant::Danger, QStringLiteral("preferences"));
+                    loadNotice_ =
+                        tr("Preferences could not be loaded: %1. %2")
+                            .arg(error, EngineAdapter::recoveryHint(RecoveryHint::OpenPreferences));
+                    window_->reportNotice(loadNotice_, ToastVariant::Danger);
                 }
             });
     adapter_->getEditorPreferences(loadToken);
 }
 void EditorPreferencesController::apply(const EditorPreferences& value) {
-    const auto validation = validateShortcuts(value.shortcuts, catalog_);
-    if (!validation.ok()) {
-        window_->showStatus(validation.message, ToastVariant::Danger,
-                            QStringLiteral("preferences"));
-        return;
-    }
-    window_->clearStatus(QStringLiteral("preferences"));
+    window_->clearNotice(std::exchange(loadNotice_, {}));
     preferences_ = value;
-    for (const auto& descriptor : catalog_) {
-        QString sequence = descriptor.defaultSequence;
-        for (const auto& custom : value.shortcuts)
-            if (custom.command == descriptor.id)
-                sequence = custom.sequence;
-        actions_.value(descriptor.id)
-            ->setShortcut(QKeySequence::fromString(sequence, QKeySequence::PortableText));
-    }
+    for (const auto& descriptor : catalog_)
+        actions_.value(descriptor.id)->setShortcut(effectiveSequence(descriptor));
+    grids_.removeIf([](const auto& item) { return item.isNull(); });
+    for (const auto& grid : grids_)
+        applyGridShortcuts(grid);
     for (const auto& editor : editors_)
         if (editor)
             applyFont(editor);
@@ -115,12 +137,10 @@ void EditorPreferencesController::open() {
     if (!adapter_)
         return;
     if (!dialog_) {
-        dialog_ = new PreferencesDialog(adapter_, catalog_, window_, appearance_);
+        dialog_ = new PreferencesDialog(adapter_, catalog(), window_, appearance_);
         dialog_->setAttribute(Qt::WA_DeleteOnClose);
         connect(dialog_, &PreferencesDialog::preferencesSaveSubmitted, this,
                 [this](quint64 token) { pendingSaves_.insert(token); });
-        connect(dialog_, &PreferencesDialog::preferencesConfirmed, this,
-                &EditorPreferencesController::apply);
         connect(dialog_, &PreferencesDialog::queryPreferencesSaveSubmitted, this,
                 &EditorPreferencesController::queryPreferencesSaveSubmitted);
         connect(dialog_, &PreferencesDialog::queryPreferencesConfirmed, this,

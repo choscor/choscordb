@@ -2,7 +2,9 @@
 //! syntax and conflicts of effective platform-specific key sequences.
 use crate::{Result, Storage, StorageError};
 use serde::{Deserialize, Serialize};
-pub const EDITOR_PREFERENCES_VERSION: u32 = 1;
+pub const EDITOR_PREFERENCES_VERSION: u32 = 2;
+/// Version 1 commands that version 2 retired with the manual transaction mode.
+const RETIRED_V1_COMMANDS: [&str; 2] = ["commit", "rollback"];
 pub const DEFAULT_EDITOR_FONT_SIZE: u16 = 13;
 pub const MIN_EDITOR_FONT_SIZE: u16 = 8;
 pub const MAX_EDITOR_FONT_SIZE: u16 = 48;
@@ -24,12 +26,19 @@ pub enum ShortcutCommand {
     FindNext,
     FindPrevious,
     RunStatement,
+    RunAll,
     CancelQuery,
-    Commit,
-    Rollback,
+    GridAddRow,
+    GridDuplicateRow,
+    GridDeleteRows,
+    GridRestoreRows,
+    GridSetNull,
+    GridEditCell,
+    GridApplyEdits,
+    GridDiscardEdits,
 }
 impl ShortcutCommand {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 23] = [
         Self::NewQuery,
         Self::ChoscorDBFile,
         Self::SaveSqlFile,
@@ -43,9 +52,16 @@ impl ShortcutCommand {
         Self::FindNext,
         Self::FindPrevious,
         Self::RunStatement,
+        Self::RunAll,
         Self::CancelQuery,
-        Self::Commit,
-        Self::Rollback,
+        Self::GridAddRow,
+        Self::GridDuplicateRow,
+        Self::GridDeleteRows,
+        Self::GridRestoreRows,
+        Self::GridSetNull,
+        Self::GridEditCell,
+        Self::GridApplyEdits,
+        Self::GridDiscardEdits,
     ];
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,15 +120,43 @@ impl EditorPreferences {
 }
 impl Storage {
     pub fn editor_preferences(&self) -> Result<EditorPreferences> {
-        let preferences: EditorPreferences =
-            self.setting("editor_preferences")?.unwrap_or_default();
+        let Some(mut stored) = self.setting::<serde_json::Value>("editor_preferences")? else {
+            return Ok(EditorPreferences::default());
+        };
+        let migrate = stored.get("version") == Some(&serde_json::Value::from(1));
+        if migrate {
+            migrate_version_one(&mut stored)?;
+        }
+        let preferences: EditorPreferences = serde_json::from_value(stored)?;
         preferences.validate()?;
+        if migrate {
+            self.write_editor_preferences(&preferences)?;
+        }
         Ok(preferences)
     }
     pub fn set_editor_preferences(&mut self, preferences: &EditorPreferences) -> Result<()> {
         preferences.validate()?;
+        self.write_editor_preferences(preferences)
+    }
+    fn write_editor_preferences(&self, preferences: &EditorPreferences) -> Result<()> {
         let encoded = serde_json::to_string(preferences)?;
         self.db.execute("INSERT INTO settings(key,value) VALUES ('editor_preferences',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[encoded])?;
         Ok(())
     }
+}
+
+/// Drops the retired version 1 commands. Any other unknown command still fails to parse.
+fn migrate_version_one(stored: &mut serde_json::Value) -> Result<()> {
+    let shortcuts = stored
+        .get_mut("shortcuts")
+        .and_then(serde_json::Value::as_array_mut)
+        .ok_or(StorageError::InvalidPreferences)?;
+    shortcuts.retain(|item| {
+        !item
+            .get("command")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|command| RETIRED_V1_COMMANDS.contains(&command))
+    });
+    stored["version"] = EDITOR_PREFERENCES_VERSION.into();
+    Ok(())
 }

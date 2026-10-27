@@ -5,6 +5,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/theme_manager.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "widgets/editor_completion/editor_completion.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -17,9 +18,12 @@
 #include <QEventLoop>
 #include <QKeySequenceEdit>
 #include <QLabel>
+#include <QPointer>
 #include <QPushButton>
+#include <QSignalSpy>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QTableView>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QTreeView>
@@ -38,8 +42,9 @@ class PreferencesWorkspaceTest : public QObject {
         window.show();
         // This test controls navigator visibility directly. The initial saved
         // profile reply must finish before installing its synthetic roots,
-        // otherwise the normal sidebar synchronization clears that fixture.
-        QTRY_COMPARE(profilesReady.count(), 1);
+        // otherwise the normal sidebar synchronization clears that fixture. The history
+        // dock also lists profiles, and one drain can deliver both replies.
+        QTRY_VERIFY(profilesReady.count() >= 1);
         auto* controller = window.findChild<NavigatorController*>();
         auto* tree = window.findChild<QTreeView*>("databaseNavigator");
         QVERIFY(workspace && controller && tree);
@@ -112,8 +117,7 @@ class PreferencesWorkspaceTest : public QObject {
         QVERIFY(editor);
         editor->setConnectionTarget(first, "First");
         workspace->documentChanged();
-        QCOMPARE(window.findChild<QComboBox*>("connectionSelector")->currentData().toULongLong(),
-                 first);
+        QCOMPARE(editor->connectionTarget().value_or(0), first);
         controller->setVisibleConnections({second});
         editor->setText("pg_cat");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 6);
@@ -548,6 +552,79 @@ class PreferencesWorkspaceTest : public QObject {
         restarted.close();
         QTRY_VERIFY(!restarted.isVisible());
     }
+    void gridShortcutOverrideReachesEveryGridAndSurvivesRestart() {
+        QTemporaryDir directory;
+        const auto path = directory.filePath("preferences.sqlite");
+        // The grid commands are actions of each result grid.
+        const auto gridActions = [](choscordb::MainWindow& window, const QString& label) {
+            QList<QAction*> found;
+            for (auto* grid : window.findChildren<QTableView*>())
+                for (auto* action : grid->actions())
+                    if (action->text() == label)
+                        found.append(action);
+            return found;
+        };
+        const auto addRowKeys = [&gridActions](choscordb::MainWindow& window) {
+            QList<QKeySequence> keys;
+            for (auto* action : gridActions(window, "Add row"))
+                keys.append(action->shortcut());
+            return keys;
+        };
+        const QKeySequence custom("Ctrl+J");
+        {
+            choscordb::MainWindow window(nullptr, path);
+            window.show();
+            QTRY_VERIFY(window.findChild<QTabWidget*>("editorTabs")->isEnabled());
+            window.findChild<QAction*>("preferences")->trigger();
+            const QPointer<QDialog> dialog = window.findChild<QDialog*>("preferencesDialog");
+            auto* apply = dialog->findChild<QPushButton*>("preferencesApply");
+            QTRY_VERIFY(apply->isEnabled());
+            auto* heading = dialog->findChild<QLabel*>("shortcutGroupResultGrid");
+            QVERIFY(heading);
+            QCOMPARE(heading->text(), QString("Result grid"));
+            for (const char* id :
+                 {"grid_add_row", "grid_duplicate_row", "grid_delete_rows", "grid_restore_rows",
+                  "grid_set_null", "grid_edit_cell", "grid_apply_edits", "grid_discard_edits"})
+                QVERIFY2(
+                    dialog->findChild<QKeySequenceEdit*>(QString("shortcut_") + id)->isEnabled(),
+                    id);
+            QVERIFY(!dialog->findChild<QKeySequenceEdit*>("shortcut_grid_copy")->isEnabled());
+            dialog->findChild<QKeySequenceEdit*>("shortcut_grid_add_row")->setKeySequence(custom);
+            dialog->findChild<QKeySequenceEdit*>("shortcut_grid_set_null")
+                ->setKeySequence(QKeySequence("Ctrl+K"));
+            apply->click();
+            QTRY_VERIFY(!dialog || !dialog->isVisible());
+            // Grids created after the save get the saved key too. The first object tab uses
+            // the explorer that the window made at startup.
+            auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+            QSignalSpy connected(sql, &choscordb::QueryWorkspace::connectionReady);
+            sql->connectSqlite(":memory:");
+            QTRY_COMPARE(connected.count(), 1);
+            const auto connection = connected.at(0).at(0).toULongLong();
+            emit window.objectContextSelected(connection, R"(["main","first"])", "first", "table");
+            QTRY_VERIFY(sql->navigationAllowed());
+            emit window.objectContextSelected(connection, R"(["main","second"])", "second",
+                                              "table");
+            const auto keys = addRowKeys(window);
+            QCOMPARE(keys.size(), 3);
+            QCOMPARE(keys, QList<QKeySequence>({custom, custom, custom}));
+            window.close();
+            QTRY_VERIFY(!window.isVisible());
+        }
+        choscordb::MainWindow restarted(nullptr, path);
+        restarted.show();
+        QTRY_VERIFY(restarted.findChild<QTabWidget*>("editorTabs")->isEnabled());
+        // Recovery restores the object tabs, so each restored grid has the saved key.
+        QTRY_COMPARE(addRowKeys(restarted), QList<QKeySequence>(3, custom));
+        // Set NULL keeps its fixed alternate after an override of its primary key.
+        const auto setNulls = gridActions(restarted, "Set NULL");
+        QCOMPARE(setNulls.size(), 3);
+        for (auto* setNull : setNulls)
+            QCOMPARE(setNull->shortcuts(), QList<QKeySequence>({QKeySequence("Ctrl+K"),
+                                                                QKeySequence(Qt::Key_Backspace)}));
+        restarted.close();
+        QTRY_VERIFY(!restarted.isVisible());
+    }
     void shutdownRejectsLateProfileMutations() {
         choscordb::EngineAdapter adapter;
         QSignalSpy failed(&adapter, &choscordb::EngineAdapter::profileFailed);
@@ -562,6 +639,29 @@ class PreferencesWorkspaceTest : public QObject {
         QCOMPARE(failed.count(), 3);
         for (const auto& event : failed)
             QVERIFY(event.at(1).toString().contains("closing"));
+    }
+    void conflictingStoredShortcutsAtStartupShowANoticeNotAModal() {
+        using namespace choscordb;
+        QTemporaryDir directory;
+        const auto path = directory.filePath("integration.sqlite");
+        {
+            MainWindow window(nullptr, path);
+            auto* adapter = window.findChild<QueryWorkspace*>()->adapter();
+            QSignalSpy saved(adapter, &EngineAdapter::editorPreferencesReady);
+            EditorPreferences preferences;
+            preferences.shortcuts = {{"run_statement", "Ctrl+Shift+F9"},
+                                     {"run_all", "Ctrl+Shift+F9"}};
+            QVERIFY(adapter->setEditorPreferences(preferences, 77));
+            QTRY_VERIFY(std::any_of(saved.cbegin(), saved.cend(), [](const QList<QVariant>& args) {
+                return args.at(0).toULongLong() == 77;
+            }));
+        }
+        MainWindow window(nullptr, path);
+        window.show();
+        auto* toast = window.findChild<ToastRegion*>("toastRegion");
+        QVERIFY(toast);
+        QTRY_VERIFY(toast->text().contains("conflict"));
+        QVERIFY(!window.findChild<QDialog*>("errorFeedbackDialog"));
     }
     void shutdownRejectsSettingsAfterItsFlushBarrier() {
         choscordb::EngineAdapter adapter;

@@ -84,27 +84,58 @@ You can edit the rows of a table when ChoscorDB can identify each row.
 If ChoscorDB cannot identify each row, the result grid is read-only.
 A table without a primary key accepts only new rows.
 
-Use the actions above the result grid:
+Right-click the result grid to see the edit commands and their shortcuts:
 
+- `Edit cell…` opens the cell in the side sheet.
+- `Duplicate row` adds a copy of the row as a new row.
 - `Add row` adds a new row.
 - `Delete rows` marks the selected rows for deletion.
 - `Restore rows` removes the deletion mark from the selected rows.
 - `Set NULL` sets the selected cells to `NULL`.
-- `Discard` removes all changes that you did not apply.
-- `Apply` applies the changes.
+- `Apply…` reviews and applies the changes.
+- `Discard` removes all changes that you did not apply. ChoscorDB asks you to confirm.
 
-To change one value, right-click the cell and choose `Edit cell…`.
-To copy a row, right-click the row and choose `Duplicate row`.
+The Object Data view also has an `Apply…` button above the grid.
+
+### Keyboard shortcuts for edits
+
+These shortcuts work when the result grid has the keyboard focus.
+On macOS, `Ctrl` is `Cmd`.
+
+| Command | Shortcut |
+| --- | --- |
+| `Add row` | `Ctrl+N` |
+| `Duplicate row` | `Ctrl+D` |
+| `Delete rows` | `Ctrl+Alt+-` |
+| `Restore rows` | `Ctrl+Alt+=` |
+| `Set NULL` | `Delete` or `Backspace` |
+| `Edit cell…` | `Shift+Enter` |
+| `Apply…` | `Ctrl+S` |
+| `Discard` | `Ctrl+Shift+Backspace` |
+
+`Duplicate row` and `Edit cell…` use the current cell.
+From the menu, they use the cell that you right-click.
+The other row commands use the selected rows or cells.
+
+When the grid has the focus, the grid uses these keys.
+For example, `Ctrl+S` applies the grid changes and does not save the SQL file.
+To edit a value in the grid, press `F2`. On macOS, press `Enter`.
+While you edit a value, the keys edit the text.
+Only `Ctrl+S` is different: it keeps the value and then opens the review.
+If a command is not available, the grid shows the reason in the messages.
+
+On some keyboard layouts, `Ctrl+Alt` is the same as `AltGr`.
+If `Ctrl+Alt+-` or `Ctrl+Alt+=` types a character, set different shortcuts in Preferences.
 
 ChoscorDB does not change the database until you apply the changes.
 
-1. Click `Apply`.
+1. Choose `Apply…` or press `Ctrl+S`.
 2. In `Review grid changes`, read the statements and the bound parameter values.
 3. Click `Apply` to run the statements.
 
 ChoscorDB applies the changes in their own transaction.
 If ChoscorDB cannot apply all changes, it applies none of them.
-If a manual transaction is open, commit or roll it back before you apply grid changes.
+If a transaction is open, run `COMMIT` or `ROLLBACK` before you apply grid changes.
 If you try to leave the result with changes that you did not apply, ChoscorDB asks you to apply or discard them.
 
 ## Export rows
@@ -129,6 +160,7 @@ An export that fails or that you cancel does not change the existing file.
 
 The dialog shows the number of rows and bytes during the export.
 Click `Cancel export` to stop the export.
+When the export is complete, a notification in the corner of the window shows the file name.
 If the export fails, the dialog shows the error and a `Retry` button.
 
 In the `Data` pane of a table, the export uses the active filters and sort order.

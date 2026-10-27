@@ -1,6 +1,7 @@
 #pragma once
 #include "models/shortcut_catalog.h"
 #include <QHash>
+#include <QKeySequence>
 #include <QObject>
 #include <QPointer>
 #include <QSet>
@@ -10,12 +11,15 @@ class MainWindow;
 class PreferencesDialog;
 class AppearanceController;
 class SqlEditor;
+class QueryWorkspace;
 class EditorPreferencesController final : public QObject {
     Q_OBJECT
   public:
     explicit EditorPreferencesController(MainWindow* window);
     void addAction(const QString& id, QAction* action, bool configurable = true);
     void addEditor(SqlEditor* editor);
+    // Applies the result-grid shortcuts to the grid now and after each change.
+    void addGrid(QueryWorkspace* grid);
     void initialize(EngineAdapter* adapter);
     void setAppearanceController(AppearanceController* appearance);
     void open();
@@ -30,17 +34,23 @@ class EditorPreferencesController final : public QObject {
     bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
+    // Applies valid preferences and clears the load notice.
     void apply(const EditorPreferences& value);
     void applyFont(SqlEditor* editor);
+    QList<ShortcutDescriptor> catalog() const;
+    void applyGridShortcuts(QueryWorkspace* grid);
+    QKeySequence effectiveSequence(const ShortcutDescriptor& descriptor) const;
     MainWindow* window_;
     QPointer<EngineAdapter> adapter_;
     QPointer<PreferencesDialog> dialog_;
     QPointer<AppearanceController> appearance_;
     QList<ShortcutDescriptor> catalog_;
+    QSet<quint64> pendingSaves_;
     QHash<QString, QAction*> actions_;
     QList<QPointer<SqlEditor>> editors_;
+    QList<QPointer<QueryWorkspace>> grids_;
     EditorPreferences preferences_;
-    QSet<quint64> pendingSaves_;
     bool loading_ = true;
+    QString loadNotice_;
 };
 } // namespace choscordb

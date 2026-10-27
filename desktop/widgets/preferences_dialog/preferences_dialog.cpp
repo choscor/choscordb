@@ -28,6 +28,7 @@
 #include <QTabWidget>
 #include <QVBoxLayout>
 #include <limits>
+#include <utility>
 namespace choscordb {
 PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescriptor> catalog,
                                      QWidget* parent, AppearanceController* appearance)
@@ -195,7 +196,14 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     addPage(history, tr("History && recovery"));
     auto* keyboard = new QWidget(pages);
     auto* keys = new QFormLayout(keyboard);
+    bool gridGroup = false;
     for (const auto& descriptor : catalog_) {
+        if (descriptor.scope == ShortcutScope::ResultGrid && !std::exchange(gridGroup, true)) {
+            auto* group = new design::Text(tr("Result grid"), keyboard);
+            group->setObjectName("shortcutGroupResultGrid");
+            group->setTextStyle(design::TextStyle::Headline);
+            keys->addRow(group);
+        }
         auto* key = new QKeySequenceEdit(keyboard);
         key->setObjectName("shortcut_" + descriptor.id);
         key->setEnabled(descriptor.configurable);
@@ -319,20 +327,14 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
             [this](quint64 token, const EditorPreferences& value) {
                 if (!token_ || token != token_)
                     return;
-                const QPointer<PreferencesDialog> guard(this);
                 token_ = 0;
                 const auto validation = validateShortcuts(value.shortcuts, catalog_);
                 if (!validation.ok())
                     errors_.append(
                         tr("SQL editor / Keyboard shortcuts: %1").arg(validation.message));
-                else {
-                    emit preferencesConfirmed(value);
-                    if (!guard)
-                        return;
-                    if (!saving_)
-                        fill(value);
-                }
-                if (guard && advanceLoad())
+                else if (!saving_)
+                    fill(value);
+                if (advanceLoad())
                     finishRequests();
             });
     connect(adapter, &EngineAdapter::queryPreferencesReady, this,

@@ -51,18 +51,16 @@ GridEditRequest editRequest(const QString& driver, const QString& qualifiedName,
     }
     const auto& rows = model.rows();
     const auto originalCount = model.originalRowCount();
-    const auto& touched = model.touched();
     const auto& inserted = model.inserted();
     const auto& deleted = model.deleted();
-    if (rows.size() != touched.size() || rows.size() != inserted.size() ||
-        rows.size() != deleted.size())
+    if (rows.size() != inserted.size() || rows.size() != deleted.size())
         return request;
     for (size_t index = 0; index < rows.size(); ++index) {
         if (!inserted[index] && index >= originalCount)
             return request;
         request.rows.push_back(
             {rows[index], inserted[index] ? ResultTableModel::Row{} : model.originalRow(index),
-             touched[index], inserted[index], deleted[index]});
+             model.touchedRow(index), inserted[index], deleted[index]});
     }
     return request;
 }

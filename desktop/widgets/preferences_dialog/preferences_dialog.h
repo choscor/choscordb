@@ -27,7 +27,6 @@ class PreferencesDialog final : public DialogShell {
 
   signals:
     void preferencesSaveSubmitted(quint64 token);
-    void preferencesConfirmed(const choscordb::EditorPreferences& preferences);
     void queryPreferencesSaveSubmitted(quint64 token);
     void queryPreferencesConfirmed(const choscordb::QueryPreferences& preferences);
     void historyPolicyConfirmed(const choscordb::HistoryPolicy& policy);

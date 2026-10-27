@@ -36,12 +36,12 @@ class QueryOptionsTest : public QObject {
         const auto query = adapter.execute(*connection,
                                            "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 "
                                            "FROM n WHERE x<100000000) SELECT sum(x) FROM n",
-                                           true, {}, preferences);
+                                           {}, preferences);
         QVERIFY(query);
         adapter.fetchPageAt(*query, 0);
         QTRY_COMPARE_WITH_TIMEOUT(failure, QString("Timeout"), 5000);
         preferences.timeoutSeconds = 0;
-        const auto recovered = adapter.execute(*connection, "SELECT 7", true, {}, preferences);
+        const auto recovered = adapter.execute(*connection, "SELECT 7", {}, preferences);
         QVERIFY(recovered);
         adapter.fetchPageAt(*recovered, 0);
         QTRY_COMPARE(values.size(), 1);
@@ -74,7 +74,7 @@ class QueryOptionsTest : public QObject {
         auto query = adapter.execute(*connection,
                                      "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n "
                                      "WHERE x<10001) SELECT x FROM n",
-                                     true, {}, preferences);
+                                     {}, preferences);
         QVERIFY(query);
         adapter.fetchPageAt(*query, 0);
         QTRY_COMPARE(counts.size(), 1);
@@ -115,7 +115,7 @@ class QueryOptionsTest : public QObject {
                             "x<750) SELECT x FROM n";
         choscordb::QueryPreferences preferences;
         preferences.pageSize = 100;
-        const auto first = adapter.execute(*connection, sql, true, {}, preferences);
+        const auto first = adapter.execute(*connection, sql, {}, preferences);
         QVERIFY(first);
         adapter.fetchPageAt(*first, 0);
         QTRY_COMPARE(pages.size(), 1);
@@ -128,7 +128,7 @@ class QueryOptionsTest : public QObject {
         adapter.fetchPageAt(*first, 0);
         QTRY_COMPARE(pages.size(), 3);
         QCOMPARE(pages.last().first, qint64(1));
-        const auto second = adapter.execute(*connection, sql, true, {}, preferences);
+        const auto second = adapter.execute(*connection, sql, {}, preferences);
         QVERIFY(second);
         adapter.fetchPageAt(*second, 0);
         QTRY_COMPARE(pages.size(), 4);

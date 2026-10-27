@@ -57,13 +57,18 @@ ShortcutValidation validateShortcuts(const QList<ShortcutOverride>& shortcuts,
         QKeySequence sequence;
         if (!parseSequence(custom.sequence, sequence))
             return {QObject::tr("Invalid shortcut for %1.").arg(catalog[index].label), index};
+        // The grid reads each key press by itself, so a grid key has one combination.
+        if (catalog[index].scope == ShortcutScope::ResultGrid && sequence.count() > 1)
+            return {QObject::tr("The shortcut for %1 must be one key combination.")
+                        .arg(catalog[index].label),
+                    index};
         effective[index] = sequence;
     }
     for (qsizetype i = 0; i < effective.size(); ++i) {
         if (effective[i].isEmpty())
             continue;
         for (qsizetype j = i + 1; j < effective.size(); ++j) {
-            if (effective[j].isEmpty())
+            if (effective[j].isEmpty() || catalog[i].scope != catalog[j].scope)
                 continue;
             if (effective[i].matches(effective[j]) != QKeySequence::NoMatch ||
                 effective[j].matches(effective[i]) != QKeySequence::NoMatch)

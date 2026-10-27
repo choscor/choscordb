@@ -638,6 +638,26 @@ class PreferencesTest : public QObject {
         preferences.shortcuts = {{"find", ""}};
         QVERIFY(choscordb::validateShortcuts(preferences.shortcuts, catalog).ok());
     }
+    void conflictsAreCheckedOnlyWithinOneScope() {
+        using choscordb::ShortcutScope;
+        QList<choscordb::ShortcutDescriptor> catalog = {
+            {"save_sql_file", "Save SQL file", "Ctrl+S"},
+            {"grid_apply_edits", "Apply…", "Ctrl+S", true, ShortcutScope::ResultGrid},
+            {"grid_add_row", "Add row", "Ctrl+N", true, ShortcutScope::ResultGrid},
+            {"grid_copy", "Copy", "Ctrl+C", false, ShortcutScope::ResultGrid}};
+        QVERIFY(choscordb::validateShortcuts({}, catalog).ok());
+        auto result = choscordb::validateShortcuts({{"grid_add_row", "Ctrl+S"}}, catalog);
+        QVERIFY(!result.ok());
+        QCOMPARE(result.command, qsizetype(2));
+        QVERIFY(!choscordb::validateShortcuts({{"grid_add_row", "Ctrl+C"}}, catalog).ok());
+        QVERIFY(choscordb::validateShortcuts({{"save_sql_file", "Ctrl+N"}}, catalog).ok());
+        // A window command can use two chords; a grid command cannot.
+        QVERIFY(choscordb::validateShortcuts({{"save_sql_file", "Ctrl+K, Ctrl+S"}}, catalog).ok());
+        result = choscordb::validateShortcuts({{"grid_add_row", "Ctrl+K, Ctrl+N"}}, catalog);
+        QVERIFY(!result.ok());
+        QCOMPARE(result.command, qsizetype(2));
+        QVERIFY(result.message.contains("one key combination"));
+    }
     void draftIsSavedOnlyOnApplyAndFailureRetainsIt() {
         choscordb::EngineAdapter adapter;
         QSignalSpy confirmed(&adapter, &choscordb::EngineAdapter::editorPreferencesReady);

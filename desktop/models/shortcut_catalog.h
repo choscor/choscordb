@@ -3,9 +3,12 @@
 #include <QList>
 #include <QString>
 namespace choscordb {
+// Two scopes can use one key: Qt routes a grid key to the focused grid only.
+enum class ShortcutScope { Window, ResultGrid };
 struct ShortcutDescriptor {
     QString id, label, defaultSequence;
     bool configurable = true;
+    ShortcutScope scope = ShortcutScope::Window;
 };
 // Key sequences are Qt key-binding integration: Rust validates the stored
 // preference document, and this check covers parsing and conflicts between

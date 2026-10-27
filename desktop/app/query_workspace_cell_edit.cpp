@@ -185,32 +185,6 @@ bool QueryWorkspace::cellEditEligible(const QPersistentModelIndex& index) const 
            jsonResultCurrent() && !stopping_ && !workInFlight() && !editabilityPlanning_ &&
            (model_->flags(index) & Qt::ItemIsEditable);
 }
-void QueryWorkspace::appendCellEditAction(QMenu& menu, const QPersistentModelIndex& clicked,
-                                          bool current) {
-    auto* edit = menu.addAction(tr("Edit cell…"));
-    edit->setObjectName("editCell");
-    const auto generation = cellResultGeneration_;
-    const auto target = editTargetToken_;
-    const auto query = query_, connection = queryConnection_;
-    QPointer<QueryWorkspace> owner(this);
-    const auto refresh = [owner, edit, current, clicked, generation, target, query, connection] {
-        edit->setEnabled(owner && current && generation == owner->cellResultGeneration_ &&
-                         target == owner->editTargetToken_ && query == owner->query_ &&
-                         connection == owner->queryConnection_ && owner->cellEditEligible(clicked));
-    };
-    refresh();
-    connect(model_, &QAbstractItemModel::modelReset, edit, refresh);
-    connect(model_, &QAbstractItemModel::rowsRemoved, edit, refresh);
-    connect(model_, &QAbstractItemModel::dataChanged, edit, refresh);
-    connect(this, &QueryWorkspace::activityChanged, edit, refresh);
-    connect(this, &QueryWorkspace::documentTargetChanged, edit, refresh);
-    connect(edit, &QAction::triggered, this,
-            [this, clicked, generation, target, query, connection] {
-                if (generation == cellResultGeneration_ && target == editTargetToken_ &&
-                    query == query_ && connection == queryConnection_ && cellEditEligible(clicked))
-                    openCellEditor(clicked);
-            });
-}
 void QueryWorkspace::clearCellEditor() {
     ++cellDraftGeneration_;
     cellEditIndex_ = QPersistentModelIndex{};
@@ -272,7 +246,7 @@ void QueryWorkspace::openCellEditor(const QPersistentModelIndex& index) {
     cellOpenConnection_ = queryConnection_;
     const auto value = model_->cellValue(index);
     const bool omitted =
-        model_->inserted()[index.row()] && !model_->touched()[index.row()][index.column()];
+        model_->inserted()[index.row()] && !model_->touched(index.row(), index.column());
     const bool null = value && std::holds_alternative<std::monostate>(*value);
     static_cast<CellDraftTextEdit*>(cellEditText_.data())
         ->setDraftText(null || omitted ? QString{} : index.data(Qt::EditRole).toString());

@@ -39,7 +39,7 @@ fn preferences_are_correlated_gated_and_survive_restart() {
         matches!(event(&mut engine),Event::EditorPreferences{request_token:3,preferences} if preferences==expected)
     );
     let mut invalid = expected.clone();
-    invalid.version = 2;
+    invalid.version = 3;
     assert_eq!(
         engine.editor_preferences_set(invalid, 4),
         Err(SubmitError::InvalidInput)

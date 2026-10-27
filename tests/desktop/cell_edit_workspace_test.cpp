@@ -116,7 +116,8 @@ class CellEditWorkspaceTest : public QObject {
         QTimer::singleShot(0, grid, [&] {
             auto* menu = qobject_cast<QMenu*>(design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
-            auto* action = menu->findChild<QAction*>("editCell");
+            auto* action = menu->actions().value(0);
+            QCOMPARE(action->objectName(), QString("editCell"));
             const bool wasEnabled = action && action->isEnabled();
             const bool reset = model->setPage({column}, {{QString("new")}}, 0);
             model->setEditableColumns({true}, true, true);
