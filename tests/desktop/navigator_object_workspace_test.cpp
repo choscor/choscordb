@@ -499,7 +499,7 @@ void NavigatorSqlWorkspaceTest::selectingObjectLoadsMetadataAndSeparateDataThenR
     run->trigger();
     QTRY_COMPARE(finished, 3);
     auto* sql = window.findChild<QTableView*>("queryResults");
-    QCOMPARE(sql->model()->index(0, 0).data().toString(), QString("99"));
+    QTRY_COMPARE(sql->model()->index(0, 0).data().toString(), QString("99"));
     auto* navigator = window.findChild<choscordb::NavigatorController*>();
     navigator->setSelectedConnection(connection);
     auto* model = navigator->model();

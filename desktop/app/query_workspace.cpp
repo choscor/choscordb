@@ -385,7 +385,7 @@ bool QueryWorkspace::queryAvailable() const {
 bool QueryWorkspace::workInFlight() const {
     return quickFilterPreparing_ || externalWorkActive() || executionModeToken_ != 0 || viewBusy_ ||
            editPlanRunning_ || editApplying_ ||
-           ((cancellationPending_ || busy_ || fetching_ || pageBuilding_ || exporting_) &&
+           ((cancellationPending_ || busy_ || fetching_ || exporting_) &&
             !(queryConnection_ && disconnecting_.contains(*queryConnection_)));
 }
 void QueryWorkspace::setExternalWork(bool busy) {

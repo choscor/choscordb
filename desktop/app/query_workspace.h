@@ -343,8 +343,6 @@ class QueryWorkspace final : public QObject {
     std::optional<quint64> schemaLease_;
     // The request token of the page in its build; dropPageBuild replaces it.
     quint64 pageBuild_ = 0;
-    // A page builds off the UI thread; the query is not idle until it shows.
-    bool pageBuilding_ = false;
     std::optional<quint64> buildingLease_;
     bool executionFinished_ = true;
     bool busy_ = false;

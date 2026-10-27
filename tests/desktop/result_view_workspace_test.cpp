@@ -645,7 +645,7 @@ class ResultViewWorkspaceTest : public QObject {
         QVERIFY(!next->isEnabled());
         QVERIFY(filter->text().startsWith("\"id\" = '"));
         QVERIFY(filter->text().contains(QChar(0)));
-        QVERIFY(error->isVisible());
+        QTRY_VERIFY(error->isVisible());
     }
     void decimalReferenceUsesNumericEqualityOnlyWhenExact() {
         choscordb::MainWindow window;

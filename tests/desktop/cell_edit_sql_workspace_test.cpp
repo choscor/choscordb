@@ -97,8 +97,6 @@ class CellEditSqlWorkspaceTest : public QObject {
             editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
             run->trigger();
             QTRY_VERIFY(messages->toPlainText().contains("Completed"));
-            // The result page builds off the UI thread after Completed.
-            QTRY_VERIFY(sql->navigationAllowed());
         };
         execute("CREATE TABLE disconnect_rows(id INTEGER PRIMARY KEY, note TEXT)");
         execute("INSERT INTO disconnect_rows VALUES (1, 'original')");
@@ -153,8 +151,6 @@ class CellEditSqlWorkspaceTest : public QObject {
             editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
             run->trigger();
             QTRY_VERIFY(messages->toPlainText().contains("Completed"));
-            // The result page builds off the UI thread after Completed.
-            QTRY_VERIFY(sql->navigationAllowed());
         };
         execute("CREATE TABLE policy_rows(id INTEGER PRIMARY KEY, note TEXT, "
                 "calculated TEXT GENERATED ALWAYS AS (note || '-calculated') STORED)");
@@ -244,8 +240,6 @@ class CellEditSqlWorkspaceTest : public QObject {
             editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
             run->trigger();
             QTRY_VERIFY(messages->toPlainText().contains("Completed"));
-            // The result page builds off the UI thread after Completed.
-            QTRY_VERIFY(sql->navigationAllowed());
         };
         execute("CREATE TABLE typed_sheet_rows(id INTEGER PRIMARY KEY, note TEXT DEFAULT "
                 "'db-default')");
@@ -349,8 +343,6 @@ class CellEditSqlWorkspaceTest : public QObject {
             editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
             run->trigger();
             QTRY_VERIFY(messages->toPlainText().contains("Completed"));
-            // The result page builds off the UI thread after Completed.
-            QTRY_VERIFY(sql->navigationAllowed());
         };
         execute("CREATE TABLE sql_sheet_rows(id INTEGER PRIMARY KEY, note TEXT)");
         execute("INSERT INTO sql_sheet_rows VALUES (1, 'first'), (2, 'second')");
@@ -396,7 +388,7 @@ class CellEditSqlWorkspaceTest : public QObject {
         QVERIFY(model->hasPendingEdits());
         QCOMPARE(model->index(1, 1).data().toString(), QString("saved via alias"));
         observer.openObject(connection, R"(["main","sql_sheet_rows"])", "sql_sheet_rows");
-        // The page builds off the UI thread, so wait for its rows, not only the state.
+        // The page builds off the UI thread after Completed, so wait for its rows.
         QTRY_COMPARE(database->model()->index(1, 1).data().toString(), QString("second"));
         QTRY_COMPARE(observer.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
                      QString("completed"));
@@ -429,8 +421,6 @@ class CellEditSqlWorkspaceTest : public QObject {
             editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
             run->trigger();
             QTRY_VERIFY(messages->toPlainText().contains("Completed"));
-            // The result page builds off the UI thread after Completed.
-            QTRY_VERIFY(sql->navigationAllowed());
         };
         execute("CREATE TABLE sheet_rows(id INTEGER PRIMARY KEY, note TEXT)");
         execute("INSERT INTO sheet_rows VALUES (1, 'first'), (2, 'second')");
@@ -476,13 +466,14 @@ class CellEditSqlWorkspaceTest : public QObject {
         QCOMPARE(model->index(1, 1).data(Qt::EditRole).toString(), saved);
         QVERIFY(model->hasPendingEdits());
         execute("SELECT note FROM sheet_rows ORDER BY id");
-        QCOMPARE(sqlGrid->model()->index(1, 0).data().toString(), QString("second"));
+        // The page builds off the UI thread after Completed, so wait for its rows.
+        QTRY_COMPARE(sqlGrid->model()->index(1, 0).data().toString(), QString("second"));
 
         QVERIFY(reviewEdits(apply, &data, true));
         QTRY_VERIFY(!model->hasPendingEdits());
         QTRY_VERIFY(!apply->isEnabled());
         execute("SELECT note FROM sheet_rows ORDER BY id");
-        QCOMPARE(sqlGrid->model()->index(0, 0).data().toString(), QString("other staged"));
+        QTRY_COMPARE(sqlGrid->model()->index(0, 0).data().toString(), QString("other staged"));
         QCOMPARE(sqlGrid->model()->index(1, 0).data(Qt::EditRole).toString(), saved);
     }
 };
