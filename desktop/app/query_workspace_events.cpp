@@ -167,6 +167,7 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
 }
 void QueryWorkspace::dropPageBuild() {
     pageBuild_ = nextRequestToken();
+    pageBuilding_ = false;
     if (const auto lease = std::exchange(buildingLease_, std::nullopt); lease && adapter_)
         adapter_->releasePageLease(*lease);
 }
@@ -570,6 +571,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             return;
         }
         dropPageBuild();
+        pageBuilding_ = true;
         if (page->has_lease)
             buildingLease_ = page->lease_id;
         QtConcurrent::run([page, columns = columns_] {
@@ -577,6 +579,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         }).then(this, [this, page, build = pageBuild_](ResultTableModel::PreparedPage prepared) {
             if (build != pageBuild_)
                 return;
+            pageBuilding_ = false;
             buildingLease_.reset();
             showPage(*page, std::move(prepared));
         });
