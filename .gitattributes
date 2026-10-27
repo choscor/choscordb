@@ -1,0 +1,3 @@
+# Icon files are byte-identical upstream files with recorded sha256 values.
+# Do not convert their line endings on checkout.
+desktop/resources/icons/*.svg -text
