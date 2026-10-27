@@ -8,7 +8,6 @@
 #include <QMenuBar>
 #include <QPointer>
 #include <QStandardPaths>
-#include <QStyle>
 #include <QTimer>
 #import <Sparkle/Sparkle.h>
 
@@ -73,8 +72,6 @@ class NativeUpdater final : public QObject {
         auto* check = menu->addAction(tr("Check for Updates…"));
         check->setObjectName("checkForUpdates");
         check->setMenuRole(QAction::ApplicationSpecificRole);
-        check->setIcon(window.style()->standardIcon(QStyle::SP_BrowserReload));
-        check->setIconVisibleInMenu(true);
         check->setEnabled(false);
         delegate_ = [[ChoscorUpdaterDelegate alloc] init];
         delegate_->window = &window;

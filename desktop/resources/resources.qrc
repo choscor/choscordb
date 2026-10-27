@@ -21,8 +21,6 @@
     <file alias="sqlite.svg">icons/sqlite.svg</file>
     <file alias="database.svg">icons/database.svg</file>
     <file alias="check.svg">icons/check.svg</file>
-    <file alias="save.svg">icons/save.svg</file>
-    <file alias="undo-2.svg">icons/undo-2.svg</file>
     <file alias="sliders-horizontal.svg">icons/sliders-horizontal.svg</file>
     <file alias="triangle-alert.svg">icons/triangle-alert.svg</file>
     <file alias="circle-alert.svg">icons/circle-alert.svg</file>

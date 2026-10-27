@@ -21,8 +21,6 @@ enum class Icon {
     MySQL,
     MariaDB,
     Check,
-    Commit,
-    Rollback,
     Settings,
     Warning,
     Error,

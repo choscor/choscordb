@@ -245,7 +245,7 @@ class UiPolicyTest(unittest.TestCase):
             sum("literal presentation metric" in item for item in found), 3, found
         )
 
-    def test_rejects_rgb_colors_menus_standard_icons_and_stock_buttons(self):
+    def test_rejects_rgb_colors_menus_standard_icons_everywhere_and_stock_buttons(self):
         temporary, root = self.fixture(
             "QBrush brush(QColor(255, 0, 0));\n"
             "painter.setPen(Qt::gray);\n"
@@ -257,9 +257,15 @@ class UiPolicyTest(unittest.TestCase):
             "new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);\n"
             "design::popupContextMenu(*menu, point);\n"
         )
+        (root / "desktop/widgets/native.mm").write_text(
+            "check->setIcon(window.style()->standardIcon(QStyle::SP_BrowserReload));\n",
+            encoding="utf-8",
+        )
         with temporary:
             found = ui_policy.violations(root)
-        self.assertEqual(len(found), 5, found)
+        # The macOS block and the Objective-C++ file get no standard-icon exemption.
+        self.assertEqual(len(found), 7, found)
+        self.assertEqual(sum("Qt standard icon" in item for item in found), 3, found)
 
     def test_rejects_paint_geometry_literals(self):
         temporary, root = self.fixture(

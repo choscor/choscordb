@@ -114,14 +114,9 @@ def audit_rules(path, root, text, known):
     """Rules from the consistency audit; each honours a ui-ok marker."""
     problems = []
     lines = text.splitlines()
-    native_menu_block = 0
     for index, line in enumerate(lines):
         stripped = line.split("//", 1)[0]
         location = f"{path.relative_to(root)}:{index + 1}"
-        if re.match(r"\s*#\s*if.*Q_OS_MAC", line):
-            native_menu_block += 1
-        elif native_menu_block and re.match(r"\s*#\s*endif", line):
-            native_menu_block -= 1
         if reviewed(lines, index):
             continue
         for match in CALL.finditer(stripped):
@@ -140,11 +135,7 @@ def audit_rules(path, root, text, known):
             problems.append(
                 f"{location}: raw menu popup (use design::popupContextMenu/execContextMenu)"
             )
-        if (
-            STANDARD_ICON.search(stripped)
-            and not native_menu_block
-            and path.suffix != ".mm"
-        ):
+        if STANDARD_ICON.search(stripped):
             problems.append(f"{location}: Qt standard icon (use design::Icon)")
         if STOCK_BUTTONS.search(stripped):
             problems.append(f"{location}: stock dialog buttons (use design::Button)")

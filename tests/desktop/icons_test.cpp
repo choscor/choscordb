@@ -94,10 +94,6 @@ class IconsTest final : public QObject {
              "<circle cx=\"15.5\" cy=\"7.5\" r=\"5.5\"/>"},
             {Icon::Grid2x2, "<path d=\"M12 3v18\"/><path d=\"M3 12h18\"/>"
                             "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/>"},
-            {Icon::Commit, "<path d=\"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1"
-                           "-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z\"/>"
-                           "<path d=\"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7\"/>"
-                           "<path d=\"M7 3v4a1 1 0 0 0 1 1h7\"/>"},
             {Icon::Cancel, "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/>"}};
         for (const auto& [role, elements] : specimens) {
             QVERIFY(choscordb::test::iconResourceDecodes(role));
@@ -110,8 +106,6 @@ class IconsTest final : public QObject {
     }
     void rolesUseTheirLucideFiles() {
         using namespace choscordb::design;
-        QCOMPARE(iconResourcePath(Icon::Commit), QString(":/icons/save.svg"));
-        QCOMPARE(iconResourcePath(Icon::Rollback), QString(":/icons/undo-2.svg"));
         QCOMPARE(iconResourcePath(Icon::Settings), QString(":/icons/sliders-horizontal.svg"));
         QCOMPARE(iconResourcePath(Icon::Cancel), QString(":/icons/square.svg"));
         QCOMPARE(iconResourcePath(Icon::Square), QString(":/icons/square.svg"));
@@ -290,7 +284,6 @@ class IconsTest final : public QObject {
         QVERIFY(names.contains("database"));
         QVERIFY(names.contains("mysql"));
         QVERIFY(names.contains("copy"));
-        QVERIFY(names.contains("save"));
         QVERIFY(names.contains("square"));
         // Cancel and Square share the Lucide square file and so its name.
         QCOMPARE(names.removeDuplicates(), 1);

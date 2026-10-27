@@ -39,6 +39,13 @@ class UpdaterMenuTest : public QObject {
         QCOMPARE(check->text(), QString("Check for Updates…"));
         QCOMPARE(check->menuRole(), QAction::ApplicationSpecificRole);
         QVERIFY(check->isEnabled());
+        QVERIFY(check->icon().isNull());
+        auto palette = window.palette();
+        palette.setColor(QPalette::Window, palette.color(QPalette::WindowText));
+        window.setPalette(palette);
+        QCoreApplication::processEvents();
+        for (auto* action : qobject_cast<QMenu*>(check->parent())->actions())
+            QVERIFY2(action->icon().isNull(), qPrintable(action->objectName()));
         QVERIFY(automatic->isCheckable());
         QTRY_VERIFY(automatic->isEnabled());
         QTRY_VERIFY(automatic->isChecked());

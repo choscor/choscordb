@@ -10,6 +10,7 @@ class ModernUiTest final : public QObject {
     void queryToolbarShowsOnlyRequestedControls();
     void sidebarHeaderButtonHoverLiftsToSurface();
     void applicationMenusExposeHelpAndAbout();
+    void menuBarMenusShowNoIcons();
     void helpOpensDiagnosticsExportSummary();
     void diagnosticsClearRequiresConfirmation();
     void diagnosticsExportLetsUserChooseZipDestination();
@@ -75,8 +76,9 @@ class ModernUiTest final : public QObject {
     void developmentMenuOpensIndependentPreview();
     void workspaceProvidesDiscoverableModernControls();
     void navigatorContextActionsSupportKeyboardFocusAndMenus();
-    void transactionControlsStayInToolbarAtBothWidths();
+    void runControlsStayInToolbarAtBothWidths();
     void inactiveEditorCloseButtonAppearsOnHover();
+    void sidebarSectionTitlesUseUppercaseSectionLabel();
     void addSqlTabButtonCreatesAndSelectsEditor();
     void paletteUpdatePreservesCompleteEditorState();
     void appearancePreviewsPersistAndRestoreAcrossRestart();
@@ -85,7 +87,11 @@ class ModernUiTest final : public QObject {
     void resultFooterTracksOperationOutcome();
     void connectionAttemptFailureIsAnOperationError();
     void operationFailureRemainsRedAfterDisconnectCleanup();
-    void connectionNoticesAppearInTheConnectionStatusLine();
+    void connectionNoticesAppearInTheNoticeToast();
+    void sidebarAndMainPanelHaveNoFeedbackStatusLines();
+    void backgroundNoticesReplaceOneToastWithACount();
+    void objectFooterNoticeIsBusyUntilReplacedAndInfoExpires();
+    void partialCompletionCatalogNoticeUsesTheResultFooter();
     void embeddedDataFailureRemainsVisibleAfterDisconnectCleanup_data();
     void embeddedDataFailureRemainsVisibleAfterDisconnectCleanup();
     void sqlDocumentSwitchKeepsFooterAndResultOwnershipTogether();

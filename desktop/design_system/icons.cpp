@@ -141,9 +141,6 @@ QList<IconDefinition> iconCatalog() {
         {Icon::Database, QStringLiteral("database"),
          QStringLiteral("desktop/resources/icons/database.svg")},
         {Icon::Check, QStringLiteral("check"), QStringLiteral("desktop/resources/icons/check.svg")},
-        {Icon::Commit, QStringLiteral("save"), QStringLiteral("desktop/resources/icons/save.svg")},
-        {Icon::Rollback, QStringLiteral("undo-2"),
-         QStringLiteral("desktop/resources/icons/undo-2.svg")},
         {Icon::Settings, QStringLiteral("sliders-horizontal"),
          QStringLiteral("desktop/resources/icons/sliders-horizontal.svg")},
         {Icon::Warning, QStringLiteral("triangle-alert"),
@@ -212,10 +209,6 @@ QString iconResourcePath(Icon icon) {
         return QStringLiteral(":/icons/database.svg");
     case Icon::Check:
         return QStringLiteral(":/icons/check.svg");
-    case Icon::Commit:
-        return QStringLiteral(":/icons/save.svg");
-    case Icon::Rollback:
-        return QStringLiteral(":/icons/undo-2.svg");
     case Icon::Settings:
         return QStringLiteral(":/icons/sliders-horizontal.svg");
     case Icon::Warning:

@@ -134,7 +134,7 @@ For the vocabulary and the component map, read `docs/design-system.md` and `desk
   - For SQL previews, use `TextStyle::Body`, `FontDesign::Monospaced` and `designRole="codePreview"`.
   - For menus, use `design::popupContextMenu` or `execContextMenu`.
 - For icons, obey these rules:
-  - Use `design::Icon` roles. Use Qt standard icons only in macOS native menus.
+  - Use `design::Icon` roles. Do not use Qt standard icons. Do not show icons in menu bar menus.
   - Use unchanged Lucide files from the release that `SOURCE-LUCIDE.json` pins.
   - Record the sha256 of each icon file.
   - Do not edit or draw an icon. Do not add raster icons.

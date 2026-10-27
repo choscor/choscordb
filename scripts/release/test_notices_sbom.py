@@ -361,10 +361,9 @@ class NoticesTest(unittest.TestCase):
             if r["relationshipType"] == "CONTAINS"
             and "/icons/" in files[r["relatedSpdxElement"]]
         }
-        self.assertEqual(len(icons), 33)
+        self.assertEqual(len(icons), 31)
         self.assertEqual(icons["grid-2x2.svg"], "Lucide Icons")
         self.assertEqual(icons["refresh-cw.svg"], "Lucide Icons")
-        self.assertEqual(icons["save.svg"], "Lucide Icons")
         self.assertEqual(icons["eye-off.svg"], "Lucide Icons")
         self.assertEqual(icons["code.svg"], "Lucide Icons")
         self.assertEqual(icons["app-mark.svg"], "ChoscorDB")

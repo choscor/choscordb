@@ -17,6 +17,7 @@
 #include "tools/preview/preview_window.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include <QAbstractButton>
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
@@ -79,8 +80,7 @@ void ModernUiTest::applicationMenusExposeHelpAndAbout() {
     dialog->close();
     QVERIFY(help->findChild<QAction*>("openDocumentation"));
 #ifdef Q_OS_MACOS
-    QVERIFY(!about->icon().isNull());
-    QVERIFY(about->isIconVisibleInMenu());
+    QVERIFY(about->icon().isNull());
     auto* view = window.findChild<QMenu*>("viewMenu");
     QVERIFY(view);
     QVERIFY(view->actions().isEmpty());
@@ -88,6 +88,33 @@ void ModernUiTest::applicationMenusExposeHelpAndAbout() {
     QVERIFY(tabs);
     QVERIFY(window.actions().contains(tabs));
 #endif
+}
+
+void ModernUiTest::menuBarMenusShowNoIcons() {
+    choscordb::MainWindow window;
+    window.show();
+    const auto walk = [&window] {
+        QList<QAction*> pending = window.menuBar()->actions();
+        QVERIFY(!pending.isEmpty());
+        int checked = 0;
+        while (!pending.isEmpty()) {
+            auto* action = pending.takeLast();
+            const auto name =
+                action->objectName().isEmpty() ? action->text() : action->objectName();
+            QVERIFY2(action->icon().isNull(), qPrintable(name));
+            ++checked;
+            if (auto* menu = action->menu())
+                pending.append(menu->actions());
+        }
+        QVERIFY(checked > window.menuBar()->actions().size());
+    };
+    walk();
+    // A theme change used to put menu icons back.
+    auto palette = window.palette();
+    palette.setColor(QPalette::Window, palette.color(QPalette::WindowText));
+    window.setPalette(palette);
+    QCoreApplication::processEvents();
+    walk();
 }
 
 void ModernUiTest::applicationMenusProvideWindowControlsWithoutConnectionMenu() {
@@ -169,7 +196,7 @@ void ModernUiTest::recoveryKeepsUnavailableToolbarActionsDisabled() {
     auto* toast =
         window.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
     QVERIFY(toast && toast->isVisible());
-    auto* dismiss = toast->findChild<QToolButton*>("toastDismiss");
+    auto* dismiss = toast->findChild<QAbstractButton*>("toastDismiss");
     QVERIFY(dismiss);
     dismiss->click();
     QVERIFY(!save->isEnabled());
@@ -334,11 +361,12 @@ void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections(
           QPoint(navBody->width() - 3, navBody->height() - 3)})
         QVERIFY2(flatSidebar.pixelColor(point * flatScale) == sidebarGray,
                  qPrintable(QString("sidebar pixel at %1,%2").arg(point.x()).arg(point.y())));
-    // Section labels read as quiet sentence-case group labels, like "Platform" in the reference.
+    // Section labels are small, muted uppercase labels. The source text keeps its case.
     QCOMPARE(title->text(), QString("Connections"));
     QCOMPARE(title->font().pixelSize(),
-             choscordb::design::typographySpec(choscordb::design::TextStyle::Callout).pixelSize);
-    QCOMPARE(title->font().weight(), QFont::Medium);
+             choscordb::design::typographySpec(choscordb::design::TextStyle::Caption).pixelSize);
+    QCOMPARE(title->font().weight(), QFont::DemiBold);
+    QCOMPARE(title->font().capitalization(), QFont::AllUppercase);
     QCOMPARE(
         title->palette().color(title->foregroundRole()),
         choscordb::design::resolveColors(choscordb::design::ResolvedAppearance::Light).fgMuted);
