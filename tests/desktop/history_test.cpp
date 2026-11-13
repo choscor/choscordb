@@ -104,7 +104,7 @@ class HistoryTest : public QObject {
         QTRY_VERIFY(refresh->isEnabled());
         auto* placeholder = history.findChild<QLabel*>("historyPlaceholder");
         QVERIFY(placeholder);
-        QVERIFY(!placeholder->isVisible());
+        QVERIFY(placeholder->property("state").toString() != QString("error"));
         adapter.beginShutdown();
         refresh->trigger();
         QTRY_VERIFY(placeholder->isVisible());

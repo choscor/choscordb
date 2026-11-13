@@ -2,6 +2,7 @@
 #include "app/main_window.h"
 #include "app/update_metadata.h"
 #include "app/updater.h"
+#include "bridge/engine_adapter.h"
 #include "bridge/rust_text.h"
 #include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
@@ -197,10 +198,26 @@ class NativeUpdater final : public QObject {
     void markDownloadedReadyForTest() {
         readyToInstall_ = true;
         installAction_->setEnabled(true);
+        step(UpdaterEvent::Check);
+        step(UpdaterEvent::Staged);
     }
 #endif
 
   private:
+    bool step(UpdaterEvent event) {
+        const auto next = EngineAdapter::updaterTransition(state_, event);
+        if (next.allowed)
+            state_ = next.state;
+        return next.allowed;
+    }
+    void settleStaged() {
+        if (readyToInstall_)
+            step(UpdaterEvent::Staged);
+    }
+    QString failure(const QString& detail) const {
+        return EngineAdapter::updaterPresentation(UpdaterState::Failed, detail).message;
+    }
+
     void loadConsent() {
         const auto directory = consentDirectory_;
         auto* watcher = new QFutureWatcher<UpdateConsentDto>(this);
@@ -299,10 +316,9 @@ class NativeUpdater final : public QObject {
     }
 
     void checkForUpdates(bool manual) {
-        if (checking_ || downloading_ || installing_)
+        if (!step(UpdaterEvent::Check))
             return;
         manual_ = manual;
-        checking_ = true;
 #ifdef CHOSCORDB_TEST_UPDATER_MENU
         const auto testUrl = qEnvironmentVariable("CHOSCORDB_TEST_UPDATE_FEED_URL");
         if (!testUrl.isEmpty()) {
@@ -317,29 +333,33 @@ class NativeUpdater final : public QObject {
             readyToInstall_ && record_ ? record_->version : QCoreApplication::applicationVersion();
         auto* watcher = new QFutureWatcher<UpdateCheckDto>(this);
         connect(watcher, &QFutureWatcher<UpdateCheckDto>::finished, this, [this, watcher] {
-            checking_ = false;
             const auto result = watcher->result();
             watcher->deleteLater();
-            if (!window_)
-                return;
             if (!result.error.empty()) {
-                if (manual_)
-                    report(window_, tr("Update check failed"), fromRust(result.error));
+                step(UpdaterEvent::Fail);
+                settleStaged();
+                if (manual_ && window_)
+                    report(window_, tr("Update check failed"), failure(fromRust(result.error)));
                 return;
             }
             if (!result.found) {
-                if (manual_) {
-                    if (readyToInstall_ && record_)
-                        report(window_, tr("Downloaded update is ready"),
-                               tr("ChoscorDB %1 is downloaded. Choose Install Downloaded "
-                                  "Update from the Updates menu when you are ready.")
-                                   .arg(record_->version));
-                    else
-                        report(window_, tr("ChoscorDB is up to date"),
-                               tr("You already have the latest stable version."));
-                }
+                step(UpdaterEvent::NoUpdate);
+                settleStaged();
+                if (manual_ && window_)
+                    report(window_, tr("Updates"),
+                           EngineAdapter::updaterPresentation(
+                               state_, readyToInstall_ && record_
+                                           ? tr("ChoscorDB %1 is downloaded. Choose Install "
+                                                "Downloaded Update from the Updates menu when you "
+                                                "are ready.")
+                                                 .arg(record_->version)
+                                           : QString())
+                               .message);
                 return;
             }
+            step(UpdaterEvent::Found);
+            if (!window_)
+                return;
             const auto offered = recordFromDto(result.record);
             ConfirmationDialog offer(
                 QMessageBox::Information, tr("ChoscorDB %1 is available").arg(offered.version),
@@ -353,6 +373,8 @@ class NativeUpdater final : public QObject {
                 }
                 record_ = offered;
                 download();
+            } else {
+                settleStaged();
             }
         });
         watcher->setFuture(QtConcurrent::run([session, baseline] {
@@ -362,17 +384,15 @@ class NativeUpdater final : public QObject {
     }
 
     void download() {
-        if (!record_ || !window_)
+        if (!record_ || !window_ || !step(UpdaterEvent::Download))
             return;
-        downloading_ = true;
-        cancelled_ = false;
         showingVerification_ = false;
         auto* progress = new UpdateProgressDialog(window_);
         progress_ = progress;
         progress->open();
         connect(progress, &QDialog::rejected, this, [this, session = session_] {
-            cancelled_ = true;
-            update_session_cancel(**session);
+            if (step(UpdaterEvent::Cancel))
+                update_session_cancel(**session);
         });
         progressTimer_.start();
         const auto session = session_;
@@ -383,31 +403,37 @@ class NativeUpdater final : public QObject {
             progressTimer_.stop();
             const auto result = watcher->result();
             watcher->deleteLater();
-            if (!window_)
-                return;
-            if (cancelled_ && result.success) {
+            const bool cancelled = state_ == UpdaterState::Cancelling;
+            if (cancelled && result.success) {
                 const auto session = session_;
                 auto* cleanup = new QFutureWatcher<void>(this);
                 connect(cleanup, &QFutureWatcher<void>::finished, this, [this, cleanup] {
                     cleanup->deleteLater();
-                    downloading_ = false;
+                    step(UpdaterEvent::CancelSettled);
                     finishDownload(false, {});
                 });
                 cleanup->setFuture(
                     QtConcurrent::run([session] { update_session_discard_staged(**session); }));
                 return;
             }
-            downloading_ = false;
             if (!result.success) {
-                finishDownload(false, cancelled_ || result.cancelled || result.staging_unavailable
-                                          ? QString()
-                                          : fromRust(result.error));
-                if (result.staging_unavailable && !cancelled_)
+                if (cancelled || result.cancelled) {
+                    step(UpdaterEvent::Cancel);
+                    step(UpdaterEvent::CancelSettled);
+                    finishDownload(false, {});
+                    return;
+                }
+                step(UpdaterEvent::Fail);
+                finishDownload(false,
+                               result.staging_unavailable ? QString() : fromRust(result.error));
+                if (result.staging_unavailable && window_)
                     manualDownload();
                 return;
             }
+            step(UpdaterEvent::Downloaded);
             finishDownload(true, {});
-            promptToInstall();
+            if (window_)
+                promptToInstall();
         });
         watcher->setFuture(QtConcurrent::run([session, appimage, invoked] {
             const auto target = appimage.toUtf8(), invocation = invoked.toUtf8();
@@ -423,8 +449,8 @@ class NativeUpdater final : public QObject {
             progress_ = nullptr;
         }
         if (!success) {
-            if (!error.isEmpty())
-                report(window_, tr("Update could not be downloaded"), error);
+            if (!error.isEmpty() && window_)
+                report(window_, tr("Update could not be downloaded"), failure(error));
         } else {
             readyToInstall_ = true;
             installAction_->setEnabled(true);
@@ -449,13 +475,24 @@ class NativeUpdater final : public QObject {
     }
 
     void requestInstall() {
-        if (!readyToInstall_ || !record_ || !window_ || installing_)
+        if (!readyToInstall_ || !record_ || !window_)
             return;
+        const auto allowed = EngineAdapter::updaterTransition(state_, UpdaterEvent::Install);
+        if (!allowed.allowed) {
+            report(window_, tr("Update could not be installed"), failure(allowed.error));
+            return;
+        }
         QPointer<MainWindow> window = window_;
         window_->requestUpdateRestart([this, window] {
             if (!window)
                 return;
-            installing_ = true;
+            const auto next = EngineAdapter::updaterTransition(state_, UpdaterEvent::Install);
+            if (!next.allowed) {
+                window->setEnabled(true);
+                report(window, tr("Update could not be installed"), failure(next.error));
+                return;
+            }
+            state_ = next.state;
             const auto session = session_;
             const auto appimage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
             const auto invoked = QString::fromLocal8Bit(qgetenv("ARGV0"));
@@ -463,21 +500,23 @@ class NativeUpdater final : public QObject {
             auto* watcher = new QFutureWatcher<UpdateInstallDto>(this);
             connect(watcher, &QFutureWatcher<UpdateInstallDto>::finished, this,
                     [this, watcher, window] {
-                        installing_ = false;
                         const auto result = watcher->result();
                         watcher->deleteLater();
-                        if (!window)
-                            return;
                         if (result.success) {
                             qApp->quit();
                             return;
                         }
+                        step(UpdaterEvent::Fail);
                         if (result.invalid_package) {
                             readyToInstall_ = false;
                             installAction_->setEnabled(false);
                         }
+                        settleStaged();
+                        if (!window)
+                            return;
                         window->setEnabled(true);
-                        report(window, tr("Update could not be installed"), fromRust(result.error));
+                        report(window, tr("Update could not be installed"),
+                               failure(fromRust(result.error)));
                     });
             watcher->setFuture(QtConcurrent::run([session, appimage, invoked, parentPid] {
                 const auto target = appimage.toUtf8(), invocation = invoked.toUtf8();
@@ -498,11 +537,8 @@ class NativeUpdater final : public QObject {
     QTimer progressTimer_;
     std::optional<UpdateRecord> record_;
     bool manual_ = false;
+    UpdaterState state_ = UpdaterState::Idle;
     bool readyToInstall_ = false;
-    bool checking_ = false;
-    bool downloading_ = false;
-    bool cancelled_ = false;
-    bool installing_ = false;
     bool showingVerification_ = false;
     bool persistedConsent_ = false;
     quint64 consentGeneration_ = 0;

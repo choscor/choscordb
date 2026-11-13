@@ -119,13 +119,15 @@ class UpdaterMenuTest : public QObject {
         });
         int networkErrors = 0;
         int unexpectedInstallPrompts = 0;
+        QString failureText;
         QTimer dismiss;
         dismiss.setInterval(10);
         connect(&dismiss, &QTimer::timeout, &window, [&] {
             if (auto* dialog = window.findChild<choscordb::ConfirmationDialog*>()) {
-                if (dialog->windowTitle() == QStringLiteral("Update check failed"))
+                if (dialog->windowTitle() == QStringLiteral("Update check failed")) {
                     ++networkErrors;
-                else if (dialog->windowTitle() == QStringLiteral("Install update"))
+                    failureText = dialog->text();
+                } else if (dialog->windowTitle() == QStringLiteral("Install update"))
                     ++unexpectedInstallPrompts;
                 dialog->done(QMessageBox::No);
             }
@@ -135,6 +137,8 @@ class UpdaterMenuTest : public QObject {
         QTRY_COMPARE(requestLine, QStringLiteral("GET /updates/feed.json HTTP/1.1"));
         QTRY_COMPARE(networkErrors, 1);
         QCOMPARE(unexpectedInstallPrompts, 0);
+        QVERIFY2(failureText.startsWith("Update failed: ") && failureText.endsWith(". Retry."),
+                 qPrintable(failureText));
         dismiss.stop();
         declineInstall();
         QCOMPARE(prompts, 2);

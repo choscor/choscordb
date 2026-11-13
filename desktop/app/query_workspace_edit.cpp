@@ -146,16 +146,18 @@ bool QueryWorkspace::applyStagedEdits() {
     if (!self)
         return false;
     const auto plan = planner.isFinished() ? planner.result() : nullptr;
-    stepGridEdit(!plan                   ? GridEditEvent::PlanFailed
-                 : plan->error.isEmpty() ? GridEditEvent::Planned
-                                         : GridEditEvent::PlanFailed,
-                 plan ? plan->error : tr("The change check did not finish."));
+    const bool current = generation == editPolicyGeneration_ && queryConnection_ == connectionId &&
+                         query_ == queryId && editTargetToken_ == targetToken &&
+                         editQualifiedName_ == qualifiedName && !stopping_ &&
+                         connectionAvailable(connectionId);
+    const auto detail = !current ? QString()
+                        : plan   ? plan->error
+                                 : tr("The change check did not finish.");
+    stepGridEdit(plan && plan->error.isEmpty() ? GridEditEvent::Planned : GridEditEvent::PlanFailed,
+                 detail);
     emit gridEditPlanningChanged(false);
     updateActions();
-    if (!plan || generation != editPolicyGeneration_ || queryConnection_ != connectionId ||
-        query_ != queryId || editTargetToken_ != targetToken ||
-        editQualifiedName_ != qualifiedName || stopping_ || !connectionAvailable(connectionId) ||
-        workInFlight())
+    if (!plan || !current || workInFlight())
         return false;
     if (!plan->error.isEmpty())
         return false;

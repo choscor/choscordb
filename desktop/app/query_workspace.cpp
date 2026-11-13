@@ -808,8 +808,13 @@ void QueryWorkspace::execute(RunScope scope) {
     if (!connectionAvailable(*connection) || workInFlight() || widgets_.currentEditor() != editor)
         return;
     if (resultEditor_ && resultEditor_ != editor &&
-        EngineAdapter::queryPresentation(documentState(resultEditor_)).tone == Tone::Success)
-        resultEditor_->setProperty("resultStatus", QVariant{});
+        EngineAdapter::queryPresentation(documentState(resultEditor_)).tone == Tone::Success) {
+        const auto reset =
+            EngineAdapter::queryTransition(documentState(resultEditor_), QueryEvent::Reset);
+        resultEditor_->setProperty(
+            "resultStatus",
+            reset.allowed ? QVariant(QVariantMap{{"state", int(reset.state)}}) : QVariant{});
+    }
     if (query_ && queryAvailable())
         adapter_->releaseQuery(*query_);
     clearViewState();

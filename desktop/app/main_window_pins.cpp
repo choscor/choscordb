@@ -699,6 +699,7 @@ void MainWindow::failPinExpansion(const QString& key, const RowStatus& status, b
 void MainWindow::savePinsAsync(QList<PinRecord> updated, const QString& failureMessage,
                                bool background) {
     const auto generation = ++pinSaveGeneration_;
+    pinsLoadFailure_.reset();
     pins_ = updated;
     pinRows_ = pinRowsFor(pins_);
     renderPins();

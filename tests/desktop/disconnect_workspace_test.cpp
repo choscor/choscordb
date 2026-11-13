@@ -44,6 +44,44 @@ struct Fixture {
         window.show();
     }
 };
+struct TwoEditorFixture {
+    QWidget window;
+    QAction run, runAll, cancel, newConnection;
+    QPushButton next, previous, exportResult;
+    QLabel summary;
+    QPlainTextEdit messages;
+    QTableView grid;
+    choscordb::SqlEditor first, second;
+    choscordb::SqlEditor* current = &first;
+    choscordb::QueryWorkspace workspace{{&run,
+                                         &runAll,
+                                         &cancel,
+                                         &newConnection,
+                                         &next,
+                                         &summary,
+                                         &messages,
+                                         &grid,
+                                         [this] { return current; },
+                                         &window,
+                                         &previous,
+                                         &exportResult,
+                                         {}},
+                                        &window};
+    TwoEditorFixture() {
+        window.resize(960, 640);
+        window.show();
+    }
+    void show(choscordb::SqlEditor* editor) {
+        current = editor;
+        workspace.documentChanged();
+    }
+    void runSql(const QString& sql) {
+        current->setText(sql);
+        current->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
+        run.trigger();
+        QTRY_VERIFY(run.isEnabled());
+    }
+};
 void answer(QObject* context, bool accept, bool* rollbackNotice = nullptr) {
     QTimer::singleShot(0, context, [accept, rollbackNotice] {
         auto* box =
@@ -66,6 +104,22 @@ void answer(QObject* context, bool accept, bool* rollbackNotice = nullptr) {
 class DisconnectWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void anEarlierResultTabIsIdleAfterARunInAnotherTab() {
+        TwoEditorFixture f;
+        QSignalSpy connected(&f.workspace, &choscordb::QueryWorkspace::connectionReady);
+        f.workspace.connectSqlite(":memory:");
+        QTRY_COMPARE(connected.count(), 1);
+        QTRY_VERIFY(f.run.isEnabled());
+        f.second.setConnectionTarget(f.first.connectionTarget(), QStringLiteral(":memory:"));
+        f.runSql("SELECT 1");
+        QTRY_COMPARE(f.grid.model()->rowCount(), 1);
+        f.show(&f.second);
+        f.runSql("SELECT 2");
+        QTRY_COMPARE(f.grid.model()->rowCount(), 1);
+        f.show(&f.first);
+        const auto& idle = choscordb::EngineAdapter::queryPresentation(choscordb::QueryState::Idle);
+        QVERIFY2(f.summary.toolTip().contains(idle.message), qPrintable(f.summary.toolTip()));
+    }
     void suspendedResultRequiresCloseConfirmation() {
         Fixture f;
         QSignalSpy connected(&f.workspace, &choscordb::QueryWorkspace::connectionReady);

@@ -373,27 +373,17 @@ void MainWindow::renderQuickSearch() {
     quickSearch_->setSearchState(shown.message, shown.tone == Tone::Error);
     if (std::exchange(quickSearchToast_, quickHistoryError_) != quickHistoryError_)
         showPresentationToast(this, shown);
-    QStringList status;
-    if (quickEditorIncomplete_)
-        status << tr("Some SQL text was skipped. Refine the query to search again.");
-    if (quickHistoryIncomplete_)
-        status << tr("History results are incomplete. Refine the query.");
-    if (quickHistoryClearing_)
-        status << tr("History is being cleared.");
-    else if (quickHistoryReady_ && quickHistoryRows_.isEmpty())
-        status << (needle.isEmpty() ? tr("No saved history yet.")
-                                    : tr("No saved history matches this search."));
-    if (quickHistoryPolicyKnown_ && !quickHistoryRecordingEnabled_)
-        status << tr("History recording is off. Saved history remains searchable.");
-    if (!quickHistoryPolicyError_.isEmpty())
-        status << quickHistoryPolicyError_;
-    if (!quickObjectStatus_.isEmpty())
-        status << quickObjectStatus_;
-    if (!quickRecentStatus_.isEmpty())
-        status << quickRecentStatus_;
-    if (plan.more)
-        status << tr("More results exist. Refine the query.");
-    quickSearch_->setStatus(status.join(QStringLiteral("  ")));
+    quickSearch_->setStatus(quickSearchStatus(
+        {.editorIncomplete = quickEditorIncomplete_,
+         .historyIncomplete = quickHistoryIncomplete_,
+         .historyClearing = quickHistoryClearing_,
+         .historyEmpty = quickHistoryReady_ && quickHistoryRows_.isEmpty(),
+         .filtered = !needle.isEmpty(),
+         .recordingOff = quickHistoryPolicyKnown_ && !quickHistoryRecordingEnabled_,
+         .policyError = quickHistoryPolicyError_,
+         .objectStatus = quickObjectStatus_,
+         .recentStatus = quickRecentStatus_,
+         .more = plan.more}));
 }
 
 void MainWindow::updateQuickObjectRows() {

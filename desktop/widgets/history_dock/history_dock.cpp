@@ -514,10 +514,6 @@ void HistoryDock::updateControls() {
                                                        statusText_)
                            .presentation;
     footer_->setContent({{}, shown.message, {}, {}, {}, range}, statusLineState(shown.tone));
-    design::showPanelState(placeholder_,
-                           shown.body == PanelBody::FailedPlaceholder
-                               ? design::PanelStateKind::Failed
-                               : design::PanelStateKind::Hidden,
-                           shown.message);
+    showPanelState(placeholder_, shown);
 }
 }
