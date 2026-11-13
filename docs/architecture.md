@@ -171,7 +171,7 @@ Each machine is in `crates/core/src` and has one `step` function and one `presen
 | Grid edit | `grid_edit_machine.rs` | `specs/grid_edit/GridEdit.tla` | The plan and the apply steps of grid changes |
 | Export | `export_machine.rs` | `specs/export/Export.tla` | Export dialog |
 | Updater | `updater_machine.rs` | `specs/updater/Updater.tla` | The `Updates` menu on Windows and Linux |
-| Profile test | `profile_test_machine.rs` | `specs/profile_test/ProfileTest.tla` | Connection test and SSH host key trust in the profile dialog |
+| Profile test | `profile_test_machine.rs` | `specs/profile_test/ProfileTest.tla` | Connection test, SSH host key trust and the load, save, delete and connect status in the profile dialog |
 
 The bridge sends each state and each presentation as a typed DTO.
 `EngineAdapter` gives the `*Transition` and `*Presentation` accessors.

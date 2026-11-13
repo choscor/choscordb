@@ -10,6 +10,7 @@
 - An export that finishes while you cancel it now completes and closes normally.
 - On Windows and Linux, update failures now show a notification and a status line in the `Updates` menu, with a recovery hint, instead of a dialog. A downloaded update stays ready to install after a later update check.
 - Quick search and the object explorer now show a placeholder when nothing matches or when content cannot load.
+- The connection dialog now shows profile load, save, delete and connect status from the engine. A save or delete whose list refresh fails says that the change is stored.
 - Updated rusqlite to 0.41 and rustix to 1.1.6 to address the RUSTSEC-2026-0459 and RUSTSEC-2026-0486 advisories.
 
 ## [0.1.11]
