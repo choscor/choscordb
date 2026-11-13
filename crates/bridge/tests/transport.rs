@@ -1258,6 +1258,33 @@ fn panel_presentation_carries_the_toast_and_the_placeholder() {
 }
 
 #[test]
+fn grid_edit_state_crosses_the_bridge() {
+    let pending = ffi::GridEditStateDto {
+        edits: ffi::EditPhaseDto::Pending,
+        transaction: ffi::TransactionPhaseDto::Inactive,
+    };
+    let planning = grid_edit_transition(pending, ffi::GridEditEventDto::Plan);
+    assert!(planning.allowed);
+    assert!(planning.state.edits == ffi::EditPhaseDto::Planning);
+    assert!(grid_edit_presentation(planning.state, "").busy);
+    let illegal = grid_edit_transition(pending, ffi::GridEditEventDto::Applied);
+    assert!(!illegal.allowed);
+    assert!(illegal.state.edits == ffi::EditPhaseDto::Pending);
+    let failed = grid_edit_presentation(
+        ffi::GridEditStateDto {
+            edits: ffi::EditPhaseDto::Failed,
+            transaction: ffi::TransactionPhaseDto::Inactive,
+        },
+        "constraint failed",
+    );
+    assert!(failed.tone == ffi::ToneDto::Error);
+    assert_eq!(
+        failed.message,
+        "Could not apply the grid changes: constraint failed. Retry."
+    );
+}
+
+#[test]
 fn row_status_policy_carries_kind_retry_and_message() {
     let failed = row_status_policy(ffi::RowStatusCauseDto::ChildrenFailed, "timeout");
     assert!(failed.kind == ffi::RowStatusKindDto::Failed);

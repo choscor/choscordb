@@ -23,8 +23,9 @@ pub use quick_filter::{quick_filter_compose_policy, quick_filter_options_policy}
 mod result_copy;
 mod screen_state;
 pub use screen_state::{
-    export_presentation, export_transition, panel_presentation, panel_transition,
-    profile_test_presentation, query_presentation, query_transition,
+    export_presentation, export_transition, grid_edit_presentation, grid_edit_transition,
+    panel_observation, panel_presentation, panel_transition, profile_test_presentation,
+    profile_test_transition, query_presentation, query_result_state, query_transition,
 };
 mod result_json;
 pub use completion::*;
@@ -765,6 +766,26 @@ pub mod ffi {
         error: String,
     }
     #[derive(Debug)]
+    enum PanelWorkDto {
+        None,
+        Loading,
+        Clearing,
+        Saving,
+    }
+    struct PanelFactsDto {
+        failed: bool,
+        work: PanelWorkDto,
+        loaded: bool,
+        has_rows: bool,
+        filtered: bool,
+        paged: bool,
+        disconnected: bool,
+    }
+    struct PanelObservationDto {
+        state: PanelStateDto,
+        presentation: PresentationDto,
+    }
+    #[derive(Debug)]
     enum ExportStateDto {
         Idle,
         Submitting,
@@ -790,6 +811,47 @@ pub mod ffi {
         error: String,
     }
     #[derive(Debug)]
+    enum EditPhaseDto {
+        Clean,
+        Pending,
+        Planning,
+        Applying,
+        Failed,
+    }
+    #[derive(Debug)]
+    enum TransactionPhaseDto {
+        Inactive,
+        Active,
+        Ending,
+    }
+    #[derive(Clone, Copy)]
+    struct GridEditStateDto {
+        edits: EditPhaseDto,
+        transaction: TransactionPhaseDto,
+    }
+    #[derive(Debug)]
+    enum GridEditEventDto {
+        Edit,
+        Plan,
+        Planned,
+        PlanFailed,
+        Apply,
+        Applied,
+        ApplyFailed,
+        Discard,
+        Begin,
+        Commit,
+        Rollback,
+        Ended,
+        EndFailed,
+        Disconnect,
+    }
+    struct GridEditTransitionDto {
+        allowed: bool,
+        state: GridEditStateDto,
+        error: String,
+    }
+    #[derive(Debug)]
     enum ProfileTestStateDto {
         Idle,
         Testing,
@@ -798,6 +860,23 @@ pub mod ffi {
         AwaitingTrust,
         Trusting,
         Trusted,
+    }
+    #[derive(Debug)]
+    enum ProfileTestEventDto {
+        Test,
+        Passed,
+        TestFailed,
+        HostKeyUnknown,
+        Approve,
+        Approved,
+        ApprovalFailed,
+        Reject,
+        Edit,
+    }
+    struct ProfileTestTransitionDto {
+        allowed: bool,
+        state: ProfileTestStateDto,
+        error: String,
     }
     struct TransactionGuardDto {
         apply_edits: String,
@@ -1436,15 +1515,30 @@ pub mod ffi {
         fn panel_notice_milliseconds() -> u32;
         fn query_presentation(state: QueryStateDto, detail: &str) -> PresentationDto;
         fn query_transition(state: QueryStateDto, event: QueryEventDto) -> QueryTransitionDto;
+        fn query_result_state(has_columns: bool, rows: u64) -> QueryStateDto;
         fn panel_presentation(
             kind: PanelKindDto,
             state: PanelStateDto,
             detail: &str,
         ) -> PresentationDto;
         fn panel_transition(state: PanelStateDto, event: PanelEventDto) -> PanelTransitionDto;
+        fn panel_observation(
+            kind: PanelKindDto,
+            facts: &PanelFactsDto,
+            error: &str,
+        ) -> PanelObservationDto;
         fn export_presentation(state: ExportStateDto, detail: &str) -> PresentationDto;
         fn export_transition(state: ExportStateDto, event: ExportEventDto) -> ExportTransitionDto;
+        fn grid_edit_presentation(state: GridEditStateDto, detail: &str) -> PresentationDto;
+        fn grid_edit_transition(
+            state: GridEditStateDto,
+            event: GridEditEventDto,
+        ) -> GridEditTransitionDto;
         fn profile_test_presentation(state: ProfileTestStateDto, detail: &str) -> PresentationDto;
+        fn profile_test_transition(
+            state: ProfileTestStateDto,
+            event: ProfileTestEventDto,
+        ) -> ProfileTestTransitionDto;
         fn recovery_hint_text(hint: RecoveryHintDto) -> String;
         fn object_action_unavailable_reason(
             rename: bool,

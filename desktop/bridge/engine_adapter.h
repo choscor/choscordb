@@ -326,6 +326,20 @@ enum class PanelState : uint8_t {
     Incomplete,
     Unsupported
 };
+enum class PanelWork : uint8_t { None, Loading, Clearing, Saving };
+struct PanelFacts {
+    bool failed = false;
+    PanelWork work = PanelWork::None;
+    bool loaded = false;
+    bool hasRows = false;
+    bool filtered = false;
+    bool paged = false;
+    bool disconnected = false;
+};
+struct PanelObservation {
+    PanelState state = PanelState::Idle;
+    Presentation presentation;
+};
 enum class PanelEvent : uint8_t {
     Load,
     LoadedRows,
@@ -347,6 +361,29 @@ enum class ExportState : uint8_t {
     Failed
 };
 enum class ExportEvent : uint8_t { Submit, Start, Cancel, Finish, Fail, CancelSettled, Reset };
+enum class EditPhase : uint8_t { Clean, Pending, Planning, Applying, Failed };
+enum class TransactionPhase : uint8_t { Inactive, Active, Ending };
+struct GridEditState {
+    EditPhase edits = EditPhase::Clean;
+    TransactionPhase transaction = TransactionPhase::Inactive;
+    bool operator==(const GridEditState&) const = default;
+};
+enum class GridEditEvent : uint8_t {
+    Edit,
+    Plan,
+    Planned,
+    PlanFailed,
+    Apply,
+    Applied,
+    ApplyFailed,
+    Discard,
+    Begin,
+    Commit,
+    Rollback,
+    Ended,
+    EndFailed,
+    Disconnect
+};
 enum class ProfileTestState : uint8_t {
     Idle,
     Testing,
@@ -355,6 +392,17 @@ enum class ProfileTestState : uint8_t {
     AwaitingTrust,
     Trusting,
     Trusted
+};
+enum class ProfileTestEvent : uint8_t {
+    Test,
+    Passed,
+    TestFailed,
+    HostKeyUnknown,
+    Approve,
+    Approved,
+    ApprovalFailed,
+    Reject,
+    Edit
 };
 struct NavigatorSearchBudget {
     int quickVisits = 0, quickRequests = 0, quickResults = 0, filterVisits = 0, filterRequests = 0;
@@ -537,12 +585,19 @@ class EngineAdapter final : public QObject {
     static const Presentation& queryPresentation(QueryState state);
     static Presentation queryPresentation(QueryState state, const QString& detail);
     static Transition<QueryState> queryTransition(QueryState state, QueryEvent event);
+    static QueryState queryResultState(bool hasColumns, quint64 rows);
     static const Presentation& panelPresentation(PanelKind kind, PanelState state);
     static Presentation panelPresentation(PanelKind kind, PanelState state, const QString& detail);
     static Transition<PanelState> panelTransition(PanelState state, PanelEvent event);
+    static PanelObservation panelObservation(PanelKind kind, const PanelFacts& facts,
+                                             const QString& error = {});
     static Presentation exportPresentation(ExportState state, const QString& detail = {});
     static Transition<ExportState> exportTransition(ExportState state, ExportEvent event);
+    static Presentation gridEditPresentation(GridEditState state, const QString& detail = {});
+    static Transition<GridEditState> gridEditTransition(GridEditState state, GridEditEvent event);
     static Presentation profileTestPresentation(ProfileTestState state, const QString& detail = {});
+    static Transition<ProfileTestState> profileTestTransition(ProfileTestState state,
+                                                              ProfileTestEvent event);
     static const QString& recoveryHint(RecoveryHint hint);
     static int panelNoticeMs();
     static bool sidebarChildVisible(const QString& parentKind, const QString& kind);

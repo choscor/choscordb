@@ -339,6 +339,10 @@ CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, Objects);
 CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, ObjectDetails);
 CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, Diagram);
 CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, QuickSearch);
+CHOSCORDB_SAME_ENUMERATOR(PanelWork, PanelWorkDto, None);
+CHOSCORDB_SAME_ENUMERATOR(PanelWork, PanelWorkDto, Loading);
+CHOSCORDB_SAME_ENUMERATOR(PanelWork, PanelWorkDto, Clearing);
+CHOSCORDB_SAME_ENUMERATOR(PanelWork, PanelWorkDto, Saving);
 CHOSCORDB_SAME_ENUMERATOR(PanelState, PanelStateDto, Idle);
 CHOSCORDB_SAME_ENUMERATOR(PanelState, PanelStateDto, Loading);
 CHOSCORDB_SAME_ENUMERATOR(PanelState, PanelStateDto, Ready);
@@ -371,6 +375,37 @@ CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, Finish);
 CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, Fail);
 CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, CancelSettled);
 CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, Reset);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestEvent, ProfileTestEventDto, Test);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestEvent, ProfileTestEventDto, Passed);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestEvent, ProfileTestEventDto, TestFailed);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestEvent, ProfileTestEventDto, HostKeyUnknown);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestEvent, ProfileTestEventDto, Approve);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestEvent, ProfileTestEventDto, Approved);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestEvent, ProfileTestEventDto, ApprovalFailed);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestEvent, ProfileTestEventDto, Reject);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestEvent, ProfileTestEventDto, Edit);
+CHOSCORDB_SAME_ENUMERATOR(EditPhase, EditPhaseDto, Clean);
+CHOSCORDB_SAME_ENUMERATOR(EditPhase, EditPhaseDto, Pending);
+CHOSCORDB_SAME_ENUMERATOR(EditPhase, EditPhaseDto, Planning);
+CHOSCORDB_SAME_ENUMERATOR(EditPhase, EditPhaseDto, Applying);
+CHOSCORDB_SAME_ENUMERATOR(EditPhase, EditPhaseDto, Failed);
+CHOSCORDB_SAME_ENUMERATOR(TransactionPhase, TransactionPhaseDto, Inactive);
+CHOSCORDB_SAME_ENUMERATOR(TransactionPhase, TransactionPhaseDto, Active);
+CHOSCORDB_SAME_ENUMERATOR(TransactionPhase, TransactionPhaseDto, Ending);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, Edit);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, Plan);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, Planned);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, PlanFailed);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, Apply);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, Applied);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, ApplyFailed);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, Discard);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, Begin);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, Commit);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, Rollback);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, Ended);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, EndFailed);
+CHOSCORDB_SAME_ENUMERATOR(GridEditEvent, GridEditEventDto, Disconnect);
 CHOSCORDB_SAME_ENUMERATOR(ProfileTestState, ProfileTestStateDto, Idle);
 CHOSCORDB_SAME_ENUMERATOR(ProfileTestState, ProfileTestStateDto, Testing);
 CHOSCORDB_SAME_ENUMERATOR(ProfileTestState, ProfileTestStateDto, Succeeded);
@@ -414,6 +449,9 @@ const Presentation& EngineAdapter::queryPresentation(QueryState state) {
     return cachedPresentation<QueryState, std::size_t(QueryState::Disconnected) + 1>(
         state, [](QueryState each) { return queryPresentation(each, {}); });
 }
+QueryState EngineAdapter::queryResultState(bool hasColumns, quint64 rows) {
+    return static_cast<QueryState>(query_result_state(hasColumns, rows));
+}
 Transition<QueryState> EngineAdapter::queryTransition(QueryState state, QueryEvent event) {
     return fromDto<QueryState>(
         query_transition(static_cast<QueryStateDto>(state), static_cast<QueryEventDto>(event)));
@@ -423,6 +461,16 @@ Presentation EngineAdapter::panelPresentation(PanelKind kind, PanelState state,
     const auto bytes = detail.toUtf8();
     return fromDto(panel_presentation(static_cast<PanelKindDto>(kind),
                                       static_cast<PanelStateDto>(state), utf8View(bytes)));
+}
+PanelObservation EngineAdapter::panelObservation(PanelKind kind, const PanelFacts& facts,
+                                                 const QString& error) {
+    const auto bytes = error.toUtf8();
+    const PanelFactsDto dto{facts.failed,      static_cast<PanelWorkDto>(facts.work),
+                            facts.loaded,      facts.hasRows,
+                            facts.filtered,    facts.paged,
+                            facts.disconnected};
+    const auto observed = panel_observation(static_cast<PanelKindDto>(kind), dto, utf8View(bytes));
+    return {static_cast<PanelState>(observed.state), fromDto(observed.presentation)};
 }
 const Presentation& EngineAdapter::panelPresentation(PanelKind kind, PanelState state) {
     constexpr auto states = std::size_t(PanelState::Unsupported) + 1;
@@ -447,6 +495,29 @@ Presentation EngineAdapter::exportPresentation(ExportState state, const QString&
 Transition<ExportState> EngineAdapter::exportTransition(ExportState state, ExportEvent event) {
     return fromDto<ExportState>(
         export_transition(static_cast<ExportStateDto>(state), static_cast<ExportEventDto>(event)));
+}
+namespace {
+GridEditStateDto toDto(GridEditState state) {
+    return {static_cast<EditPhaseDto>(state.edits),
+            static_cast<TransactionPhaseDto>(state.transaction)};
+}
+}
+Presentation EngineAdapter::gridEditPresentation(GridEditState state, const QString& detail) {
+    const auto bytes = detail.toUtf8();
+    return fromDto(grid_edit_presentation(toDto(state), utf8View(bytes)));
+}
+Transition<GridEditState> EngineAdapter::gridEditTransition(GridEditState state,
+                                                            GridEditEvent event) {
+    const auto next = grid_edit_transition(toDto(state), static_cast<GridEditEventDto>(event));
+    return {next.allowed,
+            {static_cast<EditPhase>(next.state.edits),
+             static_cast<TransactionPhase>(next.state.transaction)},
+            fromRust(next.error)};
+}
+Transition<ProfileTestState> EngineAdapter::profileTestTransition(ProfileTestState state,
+                                                                  ProfileTestEvent event) {
+    return fromDto<ProfileTestState>(profile_test_transition(
+        static_cast<ProfileTestStateDto>(state), static_cast<ProfileTestEventDto>(event)));
 }
 Presentation EngineAdapter::profileTestPresentation(ProfileTestState state, const QString& detail) {
     const auto bytes = detail.toUtf8();

@@ -1,8 +1,9 @@
 use crate::ffi;
 use choscordb_core::{
     export_machine::{self, ExportEvent, ExportState},
-    panel_machine::{self, PanelEvent, PanelKind, PanelState},
-    profile_test_machine::{self, ProfileTestState},
+    grid_edit_machine::{self, EditPhase, GridEditEvent, GridEditState, TransactionPhase},
+    panel_machine::{self, PanelEvent, PanelFacts, PanelKind, PanelState, PanelWork},
+    profile_test_machine::{self, ProfileTestEvent, ProfileTestState},
     query_machine::{self, QueryEvent, QueryState},
 };
 use choscordb_driver_api::{Body, Pane, Presentation, RetryAction, Tone, TransitionError};
@@ -131,6 +132,10 @@ pub fn query_presentation(state: ffi::QueryStateDto, detail: &str) -> ffi::Prese
     }
 }
 
+pub fn query_result_state(has_columns: bool, rows: u64) -> ffi::QueryStateDto {
+    query_state_dto(query_machine::result_state(has_columns, rows))
+}
+
 pub fn query_transition(
     state: ffi::QueryStateDto,
     event: ffi::QueryEventDto,
@@ -233,6 +238,46 @@ pub fn panel_transition(
     }
 }
 
+fn panel_work(dto: ffi::PanelWorkDto) -> Result<Option<PanelWork>, String> {
+    use ffi::PanelWorkDto as D;
+    Ok(match dto {
+        D::None => None,
+        D::Loading => Some(PanelWork::Loading),
+        D::Clearing => Some(PanelWork::Clearing),
+        D::Saving => Some(PanelWork::Saving),
+        _ => return Err(unknown("panel work", dto.repr)),
+    })
+}
+
+pub fn panel_observation(
+    kind: ffi::PanelKindDto,
+    facts: &ffi::PanelFactsDto,
+    error: &str,
+) -> ffi::PanelObservationDto {
+    match (panel_kind(kind), panel_work(facts.work)) {
+        (Ok(kind), Ok(work)) => {
+            let facts = PanelFacts {
+                failed: facts.failed,
+                work,
+                loaded: facts.loaded,
+                has_rows: facts.has_rows,
+                filtered: facts.filtered,
+                paged: facts.paged,
+                disconnected: facts.disconnected,
+            };
+            let (state, shown) = panel_machine::observe(kind, &facts, error);
+            ffi::PanelObservationDto {
+                state: panel_state_dto(state),
+                presentation: presentation(shown),
+            }
+        }
+        (Err(error), _) | (_, Err(error)) => ffi::PanelObservationDto {
+            state: panel_state_dto(PanelState::Failed),
+            presentation: invalid(error),
+        },
+    }
+}
+
 fn export_state(dto: ffi::ExportStateDto) -> Result<ExportState, String> {
     use ffi::ExportStateDto as D;
     Ok(match dto {
@@ -310,6 +355,52 @@ fn profile_test_state(dto: ffi::ProfileTestStateDto) -> Result<ProfileTestState,
     })
 }
 
+fn profile_test_state_dto(state: ProfileTestState) -> ffi::ProfileTestStateDto {
+    use ffi::ProfileTestStateDto as D;
+    match state {
+        ProfileTestState::Idle => D::Idle,
+        ProfileTestState::Testing => D::Testing,
+        ProfileTestState::Succeeded => D::Succeeded,
+        ProfileTestState::Failed => D::Failed,
+        ProfileTestState::AwaitingTrust => D::AwaitingTrust,
+        ProfileTestState::Trusting => D::Trusting,
+        ProfileTestState::Trusted => D::Trusted,
+    }
+}
+
+fn profile_test_event(dto: ffi::ProfileTestEventDto) -> Result<ProfileTestEvent, String> {
+    use ffi::ProfileTestEventDto as D;
+    Ok(match dto {
+        D::Test => ProfileTestEvent::Test,
+        D::Passed => ProfileTestEvent::Passed,
+        D::TestFailed => ProfileTestEvent::TestFailed,
+        D::HostKeyUnknown => ProfileTestEvent::HostKeyUnknown,
+        D::Approve => ProfileTestEvent::Approve,
+        D::Approved => ProfileTestEvent::Approved,
+        D::ApprovalFailed => ProfileTestEvent::ApprovalFailed,
+        D::Reject => ProfileTestEvent::Reject,
+        D::Edit => ProfileTestEvent::Edit,
+        _ => return Err(unknown("profile test event", dto.repr)),
+    })
+}
+
+pub fn profile_test_transition(
+    state: ffi::ProfileTestStateDto,
+    event: ffi::ProfileTestEventDto,
+) -> ffi::ProfileTestTransitionDto {
+    let (allowed, next, error) = match (profile_test_state(state), profile_test_event(event)) {
+        (Ok(current), Ok(event)) => {
+            transition(current, profile_test_machine::step(&current, &event))
+        }
+        (Err(error), _) | (_, Err(error)) => (false, ProfileTestState::Failed, error),
+    };
+    ffi::ProfileTestTransitionDto {
+        allowed,
+        state: profile_test_state_dto(next),
+        error,
+    }
+}
+
 pub fn profile_test_presentation(
     state: ffi::ProfileTestStateDto,
     detail: &str,
@@ -317,5 +408,92 @@ pub fn profile_test_presentation(
     match profile_test_state(state) {
         Ok(state) => presentation(profile_test_machine::present(&state, detail)),
         Err(error) => invalid(error),
+    }
+}
+
+fn grid_edit_state(dto: ffi::GridEditStateDto) -> Result<GridEditState, String> {
+    use ffi::{EditPhaseDto as E, TransactionPhaseDto as T};
+    let edits = match dto.edits {
+        E::Clean => EditPhase::Clean,
+        E::Pending => EditPhase::Pending,
+        E::Planning => EditPhase::Planning,
+        E::Applying => EditPhase::Applying,
+        E::Failed => EditPhase::Failed,
+        _ => return Err(unknown("edit phase", dto.edits.repr)),
+    };
+    let transaction = match dto.transaction {
+        T::Inactive => TransactionPhase::Inactive,
+        T::Active => TransactionPhase::Active,
+        T::Ending => TransactionPhase::Ending,
+        _ => return Err(unknown("transaction phase", dto.transaction.repr)),
+    };
+    Ok(GridEditState { edits, transaction })
+}
+
+fn grid_edit_state_dto(state: GridEditState) -> ffi::GridEditStateDto {
+    use ffi::{EditPhaseDto as E, TransactionPhaseDto as T};
+    ffi::GridEditStateDto {
+        edits: match state.edits {
+            EditPhase::Clean => E::Clean,
+            EditPhase::Pending => E::Pending,
+            EditPhase::Planning => E::Planning,
+            EditPhase::Applying => E::Applying,
+            EditPhase::Failed => E::Failed,
+        },
+        transaction: match state.transaction {
+            TransactionPhase::Inactive => T::Inactive,
+            TransactionPhase::Active => T::Active,
+            TransactionPhase::Ending => T::Ending,
+        },
+    }
+}
+
+fn grid_edit_event(dto: ffi::GridEditEventDto) -> Result<GridEditEvent, String> {
+    use ffi::GridEditEventDto as D;
+    Ok(match dto {
+        D::Edit => GridEditEvent::Edit,
+        D::Plan => GridEditEvent::Plan,
+        D::Planned => GridEditEvent::Planned,
+        D::PlanFailed => GridEditEvent::PlanFailed,
+        D::Apply => GridEditEvent::Apply,
+        D::Applied => GridEditEvent::Applied,
+        D::ApplyFailed => GridEditEvent::ApplyFailed,
+        D::Discard => GridEditEvent::Discard,
+        D::Begin => GridEditEvent::Begin,
+        D::Commit => GridEditEvent::Commit,
+        D::Rollback => GridEditEvent::Rollback,
+        D::Ended => GridEditEvent::Ended,
+        D::EndFailed => GridEditEvent::EndFailed,
+        D::Disconnect => GridEditEvent::Disconnect,
+        _ => return Err(unknown("grid edit event", dto.repr)),
+    })
+}
+
+pub fn grid_edit_presentation(state: ffi::GridEditStateDto, detail: &str) -> ffi::PresentationDto {
+    match grid_edit_state(state) {
+        Ok(state) => presentation(grid_edit_machine::present(&state, detail)),
+        Err(error) => invalid(error),
+    }
+}
+
+pub fn grid_edit_transition(
+    state: ffi::GridEditStateDto,
+    event: ffi::GridEditEventDto,
+) -> ffi::GridEditTransitionDto {
+    match (grid_edit_state(state), grid_edit_event(event)) {
+        (Ok(current), Ok(event)) => {
+            let (allowed, next, error) =
+                transition(current, grid_edit_machine::step(&current, &event));
+            ffi::GridEditTransitionDto {
+                allowed,
+                state: grid_edit_state_dto(next),
+                error,
+            }
+        }
+        (Err(error), _) | (_, Err(error)) => ffi::GridEditTransitionDto {
+            allowed: false,
+            state,
+            error,
+        },
     }
 }
