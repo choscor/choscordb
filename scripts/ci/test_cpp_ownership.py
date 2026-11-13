@@ -86,6 +86,35 @@ class OwnershipTests(unittest.TestCase):
             },
         )
 
+    def test_screen_states_come_from_the_rust_state_machines(self):
+        for source in [
+            'if (summary->property("state") != "failed") return;',
+            'bool busy = status_->property("state") == QStringLiteral("loading");',
+            'label->setProperty("state", "cancelling");',
+            'setExecutionState(QStringLiteral("queued"), tr("Queued"));',
+            'setDocumentStatus(editor, QStringLiteral("failed"), failure, {});',
+            'setStatus("loaded", tr("Details loaded"));',
+        ]:
+            with self.subTest(source=source):
+                self.assertIn("screen-state-literal", self.rules(source))
+        for source in [
+            "setExecutionState(QueryState::Failed, detail);",
+            'label->setProperty("state", failed ? "error" : "");',
+            'setStatus(tr("Ready"));',
+        ]:
+            with self.subTest(source=source):
+                self.assertNotIn("screen-state-literal", self.rules(source))
+        self.assertNotIn(
+            "screen-state-literal",
+            {
+                f["rule"]
+                for f in policy.scan(
+                    "desktop/design_system/example.cpp",
+                    'label->setProperty("state", "loading");',
+                )
+            },
+        )
+
     def test_text_matching_uses_the_rust_filter(self):
         for source in [
             "bool m = name.contains(needle, Qt::CaseInsensitive);",

@@ -152,6 +152,16 @@ RETRY_HINT = re.compile(
     re.I,
 )
 DRIVER_LITERAL = literal_comparison(DRIVERS, re.IGNORECASE)
+SCREEN_STATES = (
+    "idle|connecting|queued|running|cancelling|completed|failed|cancelled|disconnected"
+    "|loading|loaded|ready|empty|incomplete|unsupported|unavailable|busy|restored"
+)
+SCREEN_STATE_LITERAL = re.compile(
+    rf'\bproperty\(\s*"state"\s*\)\s*[=!]=\s*(?:{STRING_WRAPPER}\s*\(\s*)?"'
+    rf'|\bsetProperty\(\s*"state"\s*,\s*(?:{STRING_WRAPPER}\s*\(\s*)?"(?:{SCREEN_STATES})"'
+    rf"|\bset(?:Execution|Document)?(?:State|Status)\w*\s*\([^;]*?"
+    rf'(?:{STRING_WRAPPER}\s*\(\s*)?"(?:{SCREEN_STATES})"'
+)
 UI_BUDGET_MARKER = re.compile(r"//\s*ui-budget:\s*\S")
 NUMBER = re.compile(r"(?<![\w.'])\d[\d']*(?:\s*\*\s*\d[\d']*)*(?![\w.'])")
 
@@ -258,6 +268,7 @@ def scan(path, source, limits=None):
             ("text-matching", TEXT_MATCHING),
             ("object-kind-literal", OBJECT_KIND_LITERAL),
             ("driver-literal", DRIVER_LITERAL),
+            ("screen-state-literal", SCREEN_STATE_LITERAL),
         ):
             for match in pattern.finditer(uncommented):
                 around = uncommented[max(0, match.start() - 64) : match.end()]

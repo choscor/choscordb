@@ -135,6 +135,14 @@ def comment_policy():
     run_command([PYTHON, "scripts/ci/comment_policy.py"])
 
 
+def tla_check():
+    run_command([PYTHON, "scripts/ci/tla.py", "check"])
+
+
+def tla_traces():
+    run_command([PYTHON, "scripts/ci/tla.py", "traces"])
+
+
 def source_inventory():
     run_command([PYTHON, "scripts/ci/source_inventory.py"])
 
@@ -317,6 +325,8 @@ STAGES = {
     "rust-check": rust_check,
     "rust-clippy": rust_clippy,
     "rust-tests": rust_tests,
+    "tla-check": tla_check,
+    "tla-traces": tla_traces,
     "cargo-deny": cargo_deny,
     "native-dependencies": lambda: desktop("dependencies"),
     "native-build": native_build,
@@ -342,6 +352,8 @@ FAST_STAGES = (
     "rust-check",
     "rust-clippy",
     "rust-tests",
+    "tla-check",
+    "tla-traces",
     "cargo-deny",
 )
 FULL_STAGES = (*FAST_STAGES, "native-build", "native-tests")

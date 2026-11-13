@@ -89,6 +89,8 @@ class QualityCommandTest(unittest.TestCase):
                     "warnings",
                 ],
                 ["cargo", "test", "--workspace", "--all-features", "--locked"],
+                [quality.PYTHON, "scripts/ci/tla.py", "check"],
+                [quality.PYTHON, "scripts/ci/tla.py", "traces"],
                 ["cargo", "deny", "--locked", "check"],
             ],
         )
@@ -110,6 +112,19 @@ class QualityCommandTest(unittest.TestCase):
             [[quality.PYTHON, "scripts/ci/docs_policy.py"]],
         )
 
+    def test_tla_stages_are_fast_and_traces_follow_the_rust_tests(self):
+        stages = quality.FAST_STAGES
+        self.assertLess(stages.index("rust-tests"), stages.index("tla-traces"))
+        self.assertIn("tla-check", stages)
+        self.assertEqual(
+            self.run_stage("tla-check"),
+            [[quality.PYTHON, "scripts/ci/tla.py", "check"]],
+        )
+        self.assertEqual(
+            self.run_stage("tla-traces"),
+            [[quality.PYTHON, "scripts/ci/tla.py", "traces"]],
+        )
+
     def test_each_gate_is_a_focused_stage(self):
         expected = {
             "python-tests": 2,
@@ -124,6 +139,8 @@ class QualityCommandTest(unittest.TestCase):
             "cpp-ownership": 1,
             "actionlint": 1,
             "cargo-deny": 1,
+            "tla-check": 1,
+            "tla-traces": 1,
             "native-dependencies": 1,
             "native-build": 1,
             "native-tests": 1,
