@@ -1,6 +1,57 @@
 use super::*;
 use rusqlite::{Connection as Db, OpenFlags, types::ValueRef};
 use std::time::Instant;
+type Check = Box<dyn FnMut() -> bool + Send>;
+pub(super) struct Hooks {
+    check: std::sync::Mutex<Option<Check>>,
+    writes: AtomicBool,
+}
+impl Hooks {
+    fn install(db: &mut Db) -> Result<Arc<Self>> {
+        let hooks = Arc::new(Self {
+            check: std::sync::Mutex::new(None),
+            writes: AtomicBool::new(false),
+        });
+        let progress = hooks.clone();
+        db.progress_handler(1000, Some(move || progress.interrupted()))
+            .map_err(normalize)?;
+        let authorizer = hooks.clone();
+        db.authorizer(Some(move |context: rusqlite::hooks::AuthContext<'_>| {
+            use rusqlite::hooks::{AuthAction, Authorization};
+            if matches!(
+                context.action,
+                AuthAction::Insert { .. } | AuthAction::Update { .. } | AuthAction::Delete { .. }
+            ) {
+                authorizer.writes.store(true, Ordering::Relaxed);
+            }
+            Authorization::Allow
+        }))
+        .map_err(normalize)?;
+        Ok(hooks)
+    }
+    fn interrupted(&self) -> bool {
+        let mut check = self
+            .check
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        check.as_mut().is_some_and(|check| check())
+    }
+    pub(super) fn interrupt_when(&self, check: Option<Check>) -> Option<Check> {
+        std::mem::replace(
+            &mut *self
+                .check
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            check,
+        )
+    }
+    fn paused<T>(&self, work: impl FnOnce() -> T) -> T {
+        let previous = self.interrupt_when(None);
+        let result = work();
+        self.interrupt_when(previous);
+        result
+    }
+}
 fn sync_idle(db: &Db, state: &mut IdleTransactionState, write: bool) {
     if db.is_autocommit() {
         *state = IdleTransactionState::default();
@@ -39,7 +90,7 @@ pub(super) fn run(
     if uri.is_some() {
         flags |= OpenFlags::SQLITE_OPEN_URI;
     }
-    let db = match Db::open_with_flags(path, flags) {
+    let mut db = match Db::open_with_flags(path, flags) {
         Ok(db) => db,
         Err(e) => {
             let _ = ready.send(Err(normalize(e)));
@@ -52,6 +103,14 @@ pub(super) fn run(
         let _ = ready.send(Err(error));
         return;
     }
+    let hooks = match Hooks::install(&mut db) {
+        Ok(hooks) => hooks,
+        Err(error) => {
+            drop(db);
+            let _ = ready.send(Err(error));
+            return;
+        }
+    };
     let requested = Arc::new(AtomicBool::new(false));
     let cancel = Arc::new(Cancellation {
         generation: std::sync::Mutex::new(CancellationState::default()),
@@ -94,15 +153,12 @@ pub(super) fn run(
                 }
                 let deadline = options.timeout.and_then(|t| Instant::now().checked_add(t));
                 let stop = requested.clone();
-                let _ = db.progress_handler(
-                    1000,
-                    Some(move || {
-                        stop.load(Ordering::Acquire)
-                            || deadline.is_some_and(|d| Instant::now() >= d)
-                    }),
-                );
+                hooks.interrupt_when(Some(Box::new(move || {
+                    stop.load(Ordering::Acquire) || deadline.is_some_and(|d| Instant::now() >= d)
+                })));
                 pending = execute(
                     &db,
+                    &hooks,
                     &sql,
                     options,
                     generation,
@@ -113,9 +169,9 @@ pub(super) fn run(
                     max_schema_bytes,
                     &mut idle,
                 );
-                let _ = db.progress_handler(0, None::<fn() -> bool>);
+                hooks.interrupt_when(None);
             }
-            Command::Object(operation) => operation(&db),
+            Command::Object(operation) => operation(&db, &hooks),
             Command::Metadata(parent, r) => {
                 let _ = r.send(metadata::load(&db, parent));
             }
@@ -235,6 +291,7 @@ fn stale() -> DriverError {
 #[allow(clippy::too_many_arguments)]
 fn execute(
     db: &Db,
+    hooks: &Hooks,
     sql: &str,
     options: QueryOptions,
     id: u32,
@@ -256,26 +313,9 @@ fn execute(
             db.execute_batch("BEGIN").map_err(normalize)?;
         }
         sync_idle(db, idle, false);
-        let writes = Arc::new(AtomicBool::new(false));
-        let observed = writes.clone();
-        db.authorizer(Some(move |context: rusqlite::hooks::AuthContext<'_>| {
-            use rusqlite::hooks::{AuthAction, Authorization};
-            if matches!(
-                context.action,
-                AuthAction::Insert { .. } | AuthAction::Update { .. } | AuthAction::Delete { .. }
-            ) {
-                observed.store(true, Ordering::Relaxed);
-            }
-            Authorization::Allow
-        }))
-        .map_err(normalize)?;
-        let prepared = db.prepare(sql);
-        db.authorizer(
-            None::<fn(rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization>,
-        )
-        .map_err(normalize)?;
-        let mut statement = prepared.map_err(normalize)?;
-        let write = writes.load(Ordering::Relaxed) && statement.is_explain() == 0;
+        hooks.writes.store(false, Ordering::Relaxed);
+        let mut statement = db.prepare(sql).map_err(normalize)?;
+        let write = hooks.writes.load(Ordering::Relaxed) && statement.is_explain() == 0;
         let schema_limit = || {
             DriverError::new(
                 ErrorKind::ResourceLimit,
@@ -288,16 +328,15 @@ fn execute(
             .and_then(|bytes| bytes.checked_add(std::mem::size_of::<Vec<Column>>()))
             .filter(|bytes| *bytes <= max_schema_bytes)
             .ok_or_else(schema_limit)?;
-        let borrowed = statement.columns();
-        borrowed.iter().try_fold(fixed, |bytes, column| {
+        statement.columns().try_fold(fixed, |bytes, column| {
             bytes
                 .checked_add(column.name().len())
                 .and_then(|bytes| bytes.checked_add(column.decl_type().unwrap_or("").len()))
                 .filter(|bytes| *bytes <= max_schema_bytes)
                 .ok_or_else(schema_limit)
         })?;
-        let columns = borrowed
-            .iter()
+        let columns = statement
+            .columns()
             .map(|c| Column {
                 name: c.name().into(),
                 database_type: c.decl_type().unwrap_or("").into(),
@@ -307,7 +346,6 @@ fn execute(
                 nullable: None,
             })
             .collect::<Vec<_>>();
-        drop(borrowed);
         let spool = spool::Spool::new(id)?;
         let affected = if columns.is_empty() {
             Some(statement.execute([]).map_err(normalize)? as u64)
@@ -430,95 +468,44 @@ fn execute(
                 let _ = r.send(page);
             }
             Command::Object(operation) => {
-                let _ = db.progress_handler(0, None::<fn() -> bool>);
-                operation(db);
-                let stop = cancel.clone();
-                let _ = db.progress_handler(
-                    1000,
-                    Some(move || {
-                        stop.load(Ordering::Acquire)
-                            || deadline.is_some_and(|d| Instant::now() >= d)
-                    }),
-                );
+                hooks.paused(|| operation(db, hooks));
             }
             Command::Metadata(parent, reply) => {
-                let _ = db.progress_handler(0, None::<fn() -> bool>);
-                let _ = reply.send(metadata::load(db, parent));
-                let stop = cancel.clone();
-                let _ = db.progress_handler(
-                    1000,
-                    Some(move || {
-                        stop.load(Ordering::Acquire)
-                            || deadline.is_some_and(|d| Instant::now() >= d)
-                    }),
-                );
+                hooks.paused(|| {
+                    let _ = reply.send(metadata::load(db, parent));
+                });
             }
             Command::ObjectGraph(object, reply) => {
-                let _ = db.progress_handler(0, None::<fn() -> bool>);
-                let _ = reply.send(metadata::object_graph(db, &object));
-                let stop = cancel.clone();
-                let _ = db.progress_handler(
-                    1000,
-                    Some(move || {
-                        stop.load(Ordering::Acquire)
-                            || deadline.is_some_and(|d| Instant::now() >= d)
-                    }),
-                );
+                hooks.paused(|| {
+                    let _ = reply.send(metadata::object_graph(db, &object));
+                });
             }
             Command::Ddl(object, reply) => {
-                let _ = db.progress_handler(0, None::<fn() -> bool>);
-                let _ = reply.send(metadata::ddl(db, object));
-                let stop = cancel.clone();
-                let _ = db.progress_handler(
-                    1000,
-                    Some(move || {
-                        stop.load(Ordering::Acquire)
-                            || deadline.is_some_and(|d| Instant::now() >= d)
-                    }),
-                );
+                hooks.paused(|| {
+                    let _ = reply.send(metadata::ddl(db, object));
+                });
             }
             Command::EditTarget(object, reply) => {
-                let _ = db.progress_handler(0, None::<fn() -> bool>);
-                let _ = reply.send(metadata::edit_target(db, &object));
-                let stop = cancel.clone();
-                let _ = db.progress_handler(
-                    1000,
-                    Some(move || {
-                        stop.load(Ordering::Acquire)
-                            || deadline.is_some_and(|d| Instant::now() >= d)
-                    }),
-                );
+                hooks.paused(|| {
+                    let _ = reply.send(metadata::edit_target(db, &object));
+                });
             }
             Command::EditQuery(sql, columns, reply) => {
-                let _ = db.progress_handler(0, None::<fn() -> bool>);
-                let _ = reply.send(metadata::edit_query(db, &sql, columns));
-                let stop = cancel.clone();
-                let _ = db.progress_handler(
-                    1000,
-                    Some(move || {
-                        stop.load(Ordering::Acquire)
-                            || deadline.is_some_and(|d| Instant::now() >= d)
-                    }),
-                );
+                hooks.paused(|| {
+                    let _ = reply.send(metadata::edit_query(db, &sql, columns));
+                });
             }
             Command::ResultCells(object, sql, columns, reply) => {
-                let _ = db.progress_handler(0, None::<fn() -> bool>);
-                let _ = reply.send(metadata::result_cells(db, object.as_ref(), &sql, columns));
-                let stop = cancel.clone();
-                let _ = db.progress_handler(
-                    1000,
-                    Some(move || {
-                        stop.load(Ordering::Acquire)
-                            || deadline.is_some_and(|d| Instant::now() >= d)
-                    }),
-                );
+                hooks.paused(|| {
+                    let _ = reply.send(metadata::result_cells(db, object.as_ref(), &sql, columns));
+                });
             }
             Command::Load(cursor, handle, r) if cursor == id => {
                 let _ = r.send(spool.load(handle));
             }
             Command::Close(reply) => {
                 if stepped && !exhausted {
-                    abort_suspended_rows(db, &mut rows);
+                    abort_suspended_rows(db, hooks, &mut rows);
                 }
                 return Some(Command::Close(reply));
             }
@@ -528,7 +515,7 @@ fn execute(
                     && (cancel.load(Ordering::Acquire)
                         || deadline.is_some_and(|d| Instant::now() >= d))
                 {
-                    abort_suspended_rows(db, &mut rows);
+                    abort_suspended_rows(db, hooks, &mut rows);
                 }
                 let _ = r.send(Ok(()));
                 return None;
@@ -547,8 +534,8 @@ fn execute(
     }
     None
 }
-fn abort_suspended_rows(db: &Db, rows: &mut rusqlite::Rows<'_>) {
-    let _ = db.progress_handler(1, Some(|| true));
+fn abort_suspended_rows(db: &Db, hooks: &Hooks, rows: &mut rusqlite::Rows<'_>) {
+    hooks.interrupt_when(Some(Box::new(|| true)));
     db.get_interrupt_handle().interrupt();
     let _ = rows.next();
 }

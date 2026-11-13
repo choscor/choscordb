@@ -20,7 +20,7 @@ choscordb-result-store = { path = "../result-store" }
 choscordb-driver-api = { path = "../driver-api" }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "process"] }
 thiserror = "2"
-rusqlite = { version = "0.40", features = ["bundled", "collation", "hooks", "limits"] }
+rusqlite = { version = "0.41", features = ["bundled", "collation", "hooks", "limits"] }
 serde_json = "1"
 tempfile = "3"
 cap-std = { version = "4.0.3", default-features = false }

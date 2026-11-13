@@ -53,7 +53,7 @@ pub(super) async fn open(
     let prepare = sql.clone();
     let (columns, spool, summary) = client
         .request(|reply| {
-            Command::Object(Box::new(move |db| {
+            Command::Object(Box::new(move |db, _| {
                 let result = (|| {
                     let statement = db
                         .prepare(&format!("{prepare} LIMIT 0"))
@@ -66,8 +66,7 @@ pub(super) async fn open(
                     {
                         return Err(limit());
                     }
-                    let borrowed = statement.columns();
-                    for column in &borrowed {
+                    for column in statement.columns() {
                         bytes = bytes
                             .saturating_add(std::mem::size_of::<Column>())
                             .saturating_add(column.name().len())
@@ -76,8 +75,8 @@ pub(super) async fn open(
                             return Err(limit());
                         }
                     }
-                    let columns = borrowed
-                        .iter()
+                    let columns = statement
+                        .columns()
                         .map(|column| Column {
                             name: column.name().into(),
                             database_type: column.decl_type().unwrap_or("").into(),
@@ -146,12 +145,11 @@ impl ResultCursor for ObjectCursor {
         let (page, transaction_active) = self
             .client
             .request(|reply| {
-                Command::Object(Box::new(move |db| {
+                Command::Object(Box::new(move |db, hooks| {
                     let requested = stop.clone();
-                    let _ =
-                        db.progress_handler(1000, Some(move || requested.load(Ordering::Acquire)));
+                    hooks.interrupt_when(Some(Box::new(move || requested.load(Ordering::Acquire))));
                     let result = read(db, &sql, width, size, max, index, &mut spool, &stop);
-                    let _ = db.progress_handler(0, None::<fn() -> bool>);
+                    hooks.interrupt_when(None);
                     let _ = reply.send(result.map(|page| (page, !db.is_autocommit())));
                 }))
             })

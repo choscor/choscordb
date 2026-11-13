@@ -275,7 +275,7 @@ impl SortedRows {
         let state = self.0.take().ok_or_else(unavailable)?;
         tokio::task::spawn_blocking(move || {
             let SortState {
-                connection,
+                mut connection,
                 _file,
                 max_disk_bytes,
                 ..

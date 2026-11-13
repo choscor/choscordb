@@ -17,9 +17,10 @@ struct Started {
     columns: Vec<Column>,
     summary: QuerySummary,
 }
+type ObjectOperation = Box<dyn FnOnce(&rusqlite::Connection, &worker::Hooks) + Send>;
 enum Command {
     IdleState(Reply<Option<IdleTransactionState>>),
-    Object(Box<dyn FnOnce(&rusqlite::Connection) + Send>),
+    Object(ObjectOperation),
     Execute(String, QueryOptions, usize, Reply<Started>),
     Fetch(u32, PageSize, usize, Reply<ResultPage>),
     Load(u32, Handle, Reply<Value>),
@@ -173,7 +174,7 @@ impl Connection for SqliteConnection {
     async fn transaction_state(&mut self) -> Result<Option<bool>> {
         self.client
             .request(|reply| {
-                Command::Object(Box::new(move |db| {
+                Command::Object(Box::new(move |db, _| {
                     let _ = reply.send(Ok(Some(!db.is_autocommit())));
                 }))
             })

@@ -20,7 +20,7 @@ impl Predicates {
         filters: &[FilterCondition],
         max_value_bytes: usize,
     ) -> Result<Self, DriverError> {
-        let database = Connection::open_in_memory().map_err(invalid)?;
+        let mut database = Connection::open_in_memory().map_err(invalid)?;
         use rusqlite::limits::Limit;
         for (limit, value) in [
             (
