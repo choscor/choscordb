@@ -7,6 +7,7 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include <QDir>
 #include <QLabel>
@@ -182,6 +183,9 @@ class PinningSidebarTest final : public QObject {
         QTRY_VERIFY(empty->isVisible());
         QCOMPARE(empty->text(), expected);
         QCOMPARE(empty->property("state").toString(), QStringLiteral("error"));
+        auto* toast = choscordb::windowToast(&window);
+        QVERIFY(toast && !toast->isHidden());
+        QVERIFY2(toast->text().contains(expected), qPrintable(toast->text()));
     }
 
     void pinnedSectionIsHiddenWithoutPins() {

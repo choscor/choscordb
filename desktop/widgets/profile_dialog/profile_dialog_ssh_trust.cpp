@@ -52,10 +52,13 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                                 review->invalidate();
                                 return;
                             }
-                            if (!stepTrust(ProfileTestEvent::Approve)) {
+                            if (!EngineAdapter::profileTestTransition(trustState_,
+                                                                      ProfileTestEvent::Approve)
+                                     .allowed) {
                                 review->invalidate();
                                 return;
                             }
+                            stepTrust(ProfileTestEvent::Approve);
                             trustPath_ = path;
                             trustToken_ = ++token_;
                             updateTrustControls();

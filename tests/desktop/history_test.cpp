@@ -1,5 +1,6 @@
 #include "bridge/engine_adapter.h"
 #include "design_system/theme.h"
+#include "design_system/toast_region/toast_region.h"
 #include "models/history_model.h"
 #include "widgets/history_dock/history_dock.h"
 #include <QAction>
@@ -111,6 +112,10 @@ class HistoryTest : public QObject {
         QVERIFY(placeholder->text().startsWith("Could not load query history: "));
         QVERIFY(placeholder->text().contains("Workspace is closed."));
         QCOMPARE(placeholder->property("state").toString(), QString("error"));
+        auto* toast = choscordb::windowToast(&history);
+        QVERIFY(toast && !toast->isHidden());
+        QVERIFY2(toast->text().contains("Could not load query history: "),
+                 qPrintable(toast->text()));
     }
     void queryRowsUseFullWidthAndFullTextPreviewIsExplicit() {
         choscordb::EngineAdapter adapter;
