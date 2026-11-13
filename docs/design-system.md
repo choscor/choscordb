@@ -231,6 +231,8 @@ Use `design::Icon` roles. Do not use Qt standard icons. Do not show icons in men
   The failed kind uses the `fieldError` role and the `error` state. The other kinds use the description role.
   Rust gives the text and the kind through the panel `Presentation`.
   The gallery specimen `panel-state` shows each kind in the Light and Dark themes.
+  `QuickSearchDialog::setSearchState` shows the kind below the results, and the object explorer shows it above its pages.
+  The `ui-policy` gate rejects a screen label that sets an empty, no-match or failed text or state itself.
 - **Driver badge:** The Badge `driver` variant has a `surface-raised` fill, a `border` outline and `fg` text.
   It shows next to the unmodified driver logo.
   Connection profile rows show the logo on the same neutral tile.

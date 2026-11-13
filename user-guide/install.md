@@ -97,7 +97,8 @@ In that case, ChoscorDB offers to open the release download page.
 Download the new AppImage and replace the old file yourself.
 
 If the update server is not available, ChoscorDB continues to operate.
-A manual check shows an error.
+When a check, a download or an installation fails, ChoscorDB shows a notification.
+The `Updates` menu then shows the failure and a recovery hint until the next check.
 A background check shows no message.
 
 ## Your data

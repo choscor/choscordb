@@ -32,7 +32,7 @@ To run one stage, give its name, for example `python3 scripts/ci/quality.py ui-p
 | `cpp-size` | Each of these files has 1,000 lines or fewer. |
 | `cpp-ownership` | The Rust and C++ ownership boundary. |
 | `qss-lint` | Qt stylesheet rules (`scripts/ci/qss_policy.py`). |
-| `ui-policy` | Visual constants, stylesheets and icons in screen code (`scripts/ci/ui_policy.py`). |
+| `ui-policy` | Visual constants, stylesheets, icons and ad-hoc empty or failed labels in screen code (`scripts/ci/ui_policy.py`). |
 | `ui-consistency` | The census of UI control construction sites (`scripts/ci/ui_consistency.py`). |
 | `perf-policy` | Code patterns that become slow with large data (`scripts/ci/perf_policy.py`). |
 | `source-inventory` | Dead or copied native code (`scripts/ci/source_inventory.py`). |

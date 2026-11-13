@@ -158,6 +158,7 @@ Quick search finds screens, tabs, database objects and SQL from the history.
 3. Select a result and press `Return`.
 
 Quick search shows a maximum of 80 results.
+If no result matches, or the history cannot load, a message shows below the results.
 
 ## Disconnect
 
