@@ -648,7 +648,7 @@ pub fn event(
         }
         Event::QueryState { query, state } => {
             e.id = pack(query);
-            e.state = format!("{state:?}").to_lowercase();
+            e.query_state = crate::screen_state::query_state_dto(state);
             "query_state"
         }
         Event::ResultViewProgress {

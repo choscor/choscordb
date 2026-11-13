@@ -261,6 +261,101 @@ struct RowStatus {
     RowRetry retry = RowRetry::None;
     QString message;
 };
+enum class Tone : uint8_t { Neutral, Success, Error };
+enum class PanelBody : uint8_t { Content, Empty, NoMatch, FailedPlaceholder, None };
+enum class ResultPane : uint8_t { Grid, Messages, Unchanged };
+struct Presentation {
+    Tone tone = Tone::Neutral;
+    bool busy = false;
+    PanelBody body = PanelBody::None;
+    ResultPane pane = ResultPane::Unchanged;
+    RowRetry retry = RowRetry::None;
+    QString message;
+    std::optional<QString> toast;
+};
+template <typename State> struct Transition {
+    bool allowed = false;
+    State state{};
+    QString error;
+};
+enum class QueryState : uint8_t {
+    Idle,
+    Connecting,
+    Queued,
+    Running,
+    Cancelling,
+    CompletedRows,
+    CompletedEmpty,
+    Failed,
+    Cancelled,
+    Disconnected
+};
+enum class QueryEvent : uint8_t {
+    Connect,
+    SessionReady,
+    ConnectFailed,
+    Submit,
+    Start,
+    Fetch,
+    Cancel,
+    TimedOut,
+    FinishRows,
+    FinishEmpty,
+    Fail,
+    CancelSettled,
+    Disconnect,
+    Reset
+};
+enum class PanelKind : uint8_t {
+    SavedSql,
+    History,
+    Pins,
+    Objects,
+    ObjectDetails,
+    Diagram,
+    QuickSearch
+};
+enum class PanelState : uint8_t {
+    Idle,
+    Loading,
+    Ready,
+    Empty,
+    NoMatch,
+    Failed,
+    Disconnected,
+    Incomplete,
+    Unsupported
+};
+enum class PanelEvent : uint8_t {
+    Load,
+    LoadedRows,
+    LoadedNone,
+    LoadedPartial,
+    LoadUnsupported,
+    LoadFailed,
+    FilterMatched,
+    FilterMissed,
+    Disconnect
+};
+enum class ExportState : uint8_t {
+    Idle,
+    Submitting,
+    Running,
+    Cancelling,
+    Succeeded,
+    Cancelled,
+    Failed
+};
+enum class ExportEvent : uint8_t { Submit, Start, Cancel, Finish, Fail, CancelSettled, Reset };
+enum class ProfileTestState : uint8_t {
+    Idle,
+    Testing,
+    Succeeded,
+    Failed,
+    AwaitingTrust,
+    Trusting,
+    Trusted
+};
 struct NavigatorSearchBudget {
     int quickVisits = 0, quickRequests = 0, quickResults = 0, filterVisits = 0, filterRequests = 0;
 };
@@ -439,6 +534,15 @@ class EngineAdapter final : public QObject {
     static DriverWorkflow driverWorkflow(const QString& driver);
     static const TransactionGuard& transactionGuard(bool transactionActive);
     static RowStatus rowStatus(RowStatusCause cause, const QString& detail = {});
+    static const Presentation& queryPresentation(QueryState state);
+    static Presentation queryPresentation(QueryState state, const QString& detail);
+    static Transition<QueryState> queryTransition(QueryState state, QueryEvent event);
+    static const Presentation& panelPresentation(PanelKind kind, PanelState state);
+    static Presentation panelPresentation(PanelKind kind, PanelState state, const QString& detail);
+    static Transition<PanelState> panelTransition(PanelState state, PanelEvent event);
+    static Presentation exportPresentation(ExportState state, const QString& detail = {});
+    static Transition<ExportState> exportTransition(ExportState state, ExportEvent event);
+    static Presentation profileTestPresentation(ProfileTestState state, const QString& detail = {});
     static const QString& recoveryHint(RecoveryHint hint);
     static int panelNoticeMs();
     static bool sidebarChildVisible(const QString& parentKind, const QString& kind);

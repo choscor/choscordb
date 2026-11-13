@@ -1206,6 +1206,58 @@ fn desktop_cadences_come_from_their_owning_crates() {
 }
 
 #[test]
+fn query_presentation_and_transition_are_typed() {
+    let failed = query_presentation(ffi::QueryStateDto::Failed, "syntax error");
+    assert!(failed.tone == ffi::ToneDto::Error);
+    assert!(failed.pane == ffi::PaneDto::Messages);
+    assert!(!failed.has_toast);
+    assert_eq!(failed.message, "Failed: syntax error. Retry the query.");
+    let running = query_presentation(ffi::QueryStateDto::Running, "");
+    assert!(running.busy && running.tone == ffi::ToneDto::Neutral);
+    let kept = query_transition(ffi::QueryStateDto::Failed, ffi::QueryEventDto::Disconnect);
+    assert!(kept.allowed && kept.state == ffi::QueryStateDto::Failed);
+    let ready = query_transition(
+        ffi::QueryStateDto::Connecting,
+        ffi::QueryEventDto::SessionReady,
+    );
+    assert!(ready.allowed && ready.state == ffi::QueryStateDto::Idle);
+    let illegal = query_transition(ffi::QueryStateDto::Idle, ffi::QueryEventDto::CancelSettled);
+    assert!(!illegal.allowed);
+    assert_eq!(
+        illegal.error,
+        "CancelSettled is not a valid event in the Idle state"
+    );
+    let unknown = query_transition(
+        ffi::QueryStateDto { repr: 200 },
+        ffi::QueryEventDto::Connect,
+    );
+    assert!(!unknown.allowed);
+    assert_eq!(unknown.error, "Unknown query state 200.");
+}
+
+#[test]
+fn panel_presentation_carries_the_toast_and_the_placeholder() {
+    let failed = panel_presentation(
+        ffi::PanelKindDto::SavedSql,
+        ffi::PanelStateDto::Failed,
+        "permission denied",
+    );
+    assert!(failed.body == ffi::BodyDto::FailedPlaceholder);
+    assert!(failed.has_toast);
+    assert_eq!(
+        failed.toast,
+        "Could not load saved queries: permission denied. Refresh to retry."
+    );
+    let missed = panel_transition(ffi::PanelStateDto::Ready, ffi::PanelEventDto::FilterMissed);
+    assert!(missed.allowed && missed.state == ffi::PanelStateDto::NoMatch);
+    let testing = profile_test_presentation(ffi::ProfileTestStateDto::Testing, "");
+    assert!(testing.busy && testing.tone == ffi::ToneDto::Neutral);
+    let cancelled = export_transition(ffi::ExportStateDto::Running, ffi::ExportEventDto::Cancel);
+    assert!(cancelled.allowed && cancelled.state == ffi::ExportStateDto::Cancelling);
+    assert!(export_presentation(ffi::ExportStateDto::Succeeded, "").tone == ffi::ToneDto::Success);
+}
+
+#[test]
 fn row_status_policy_carries_kind_retry_and_message() {
     let failed = row_status_policy(ffi::RowStatusCauseDto::ChildrenFailed, "timeout");
     assert!(failed.kind == ffi::RowStatusKindDto::Failed);

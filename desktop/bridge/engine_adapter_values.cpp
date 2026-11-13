@@ -297,7 +297,162 @@ CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, UseApprovedKey);
 CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, RetryApproval);
 CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, ReconnectManually);
 CHOSCORDB_SAME_ENUMERATOR(RecoveryHint, RecoveryHintDto, ReconnectAndRefreshNavigator);
+CHOSCORDB_SAME_ENUMERATOR(Tone, ToneDto, Neutral);
+CHOSCORDB_SAME_ENUMERATOR(Tone, ToneDto, Success);
+CHOSCORDB_SAME_ENUMERATOR(Tone, ToneDto, Error);
+CHOSCORDB_SAME_ENUMERATOR(PanelBody, BodyDto, Content);
+CHOSCORDB_SAME_ENUMERATOR(PanelBody, BodyDto, Empty);
+CHOSCORDB_SAME_ENUMERATOR(PanelBody, BodyDto, NoMatch);
+CHOSCORDB_SAME_ENUMERATOR(PanelBody, BodyDto, FailedPlaceholder);
+CHOSCORDB_SAME_ENUMERATOR(PanelBody, BodyDto, None);
+CHOSCORDB_SAME_ENUMERATOR(ResultPane, PaneDto, Grid);
+CHOSCORDB_SAME_ENUMERATOR(ResultPane, PaneDto, Messages);
+CHOSCORDB_SAME_ENUMERATOR(ResultPane, PaneDto, Unchanged);
+CHOSCORDB_SAME_ENUMERATOR(QueryState, QueryStateDto, Idle);
+CHOSCORDB_SAME_ENUMERATOR(QueryState, QueryStateDto, Connecting);
+CHOSCORDB_SAME_ENUMERATOR(QueryState, QueryStateDto, Queued);
+CHOSCORDB_SAME_ENUMERATOR(QueryState, QueryStateDto, Running);
+CHOSCORDB_SAME_ENUMERATOR(QueryState, QueryStateDto, Cancelling);
+CHOSCORDB_SAME_ENUMERATOR(QueryState, QueryStateDto, CompletedRows);
+CHOSCORDB_SAME_ENUMERATOR(QueryState, QueryStateDto, CompletedEmpty);
+CHOSCORDB_SAME_ENUMERATOR(QueryState, QueryStateDto, Failed);
+CHOSCORDB_SAME_ENUMERATOR(QueryState, QueryStateDto, Cancelled);
+CHOSCORDB_SAME_ENUMERATOR(QueryState, QueryStateDto, Disconnected);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, Connect);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, SessionReady);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, ConnectFailed);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, Submit);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, Start);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, Fetch);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, Cancel);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, TimedOut);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, FinishRows);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, FinishEmpty);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, Fail);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, CancelSettled);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, Disconnect);
+CHOSCORDB_SAME_ENUMERATOR(QueryEvent, QueryEventDto, Reset);
+CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, SavedSql);
+CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, History);
+CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, Pins);
+CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, Objects);
+CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, ObjectDetails);
+CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, Diagram);
+CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, QuickSearch);
+CHOSCORDB_SAME_ENUMERATOR(PanelState, PanelStateDto, Idle);
+CHOSCORDB_SAME_ENUMERATOR(PanelState, PanelStateDto, Loading);
+CHOSCORDB_SAME_ENUMERATOR(PanelState, PanelStateDto, Ready);
+CHOSCORDB_SAME_ENUMERATOR(PanelState, PanelStateDto, Empty);
+CHOSCORDB_SAME_ENUMERATOR(PanelState, PanelStateDto, NoMatch);
+CHOSCORDB_SAME_ENUMERATOR(PanelState, PanelStateDto, Failed);
+CHOSCORDB_SAME_ENUMERATOR(PanelState, PanelStateDto, Disconnected);
+CHOSCORDB_SAME_ENUMERATOR(PanelState, PanelStateDto, Incomplete);
+CHOSCORDB_SAME_ENUMERATOR(PanelState, PanelStateDto, Unsupported);
+CHOSCORDB_SAME_ENUMERATOR(PanelEvent, PanelEventDto, Load);
+CHOSCORDB_SAME_ENUMERATOR(PanelEvent, PanelEventDto, LoadedRows);
+CHOSCORDB_SAME_ENUMERATOR(PanelEvent, PanelEventDto, LoadedNone);
+CHOSCORDB_SAME_ENUMERATOR(PanelEvent, PanelEventDto, LoadedPartial);
+CHOSCORDB_SAME_ENUMERATOR(PanelEvent, PanelEventDto, LoadUnsupported);
+CHOSCORDB_SAME_ENUMERATOR(PanelEvent, PanelEventDto, LoadFailed);
+CHOSCORDB_SAME_ENUMERATOR(PanelEvent, PanelEventDto, FilterMatched);
+CHOSCORDB_SAME_ENUMERATOR(PanelEvent, PanelEventDto, FilterMissed);
+CHOSCORDB_SAME_ENUMERATOR(PanelEvent, PanelEventDto, Disconnect);
+CHOSCORDB_SAME_ENUMERATOR(ExportState, ExportStateDto, Idle);
+CHOSCORDB_SAME_ENUMERATOR(ExportState, ExportStateDto, Submitting);
+CHOSCORDB_SAME_ENUMERATOR(ExportState, ExportStateDto, Running);
+CHOSCORDB_SAME_ENUMERATOR(ExportState, ExportStateDto, Cancelling);
+CHOSCORDB_SAME_ENUMERATOR(ExportState, ExportStateDto, Succeeded);
+CHOSCORDB_SAME_ENUMERATOR(ExportState, ExportStateDto, Cancelled);
+CHOSCORDB_SAME_ENUMERATOR(ExportState, ExportStateDto, Failed);
+CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, Submit);
+CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, Start);
+CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, Cancel);
+CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, Finish);
+CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, Fail);
+CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, CancelSettled);
+CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, Reset);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestState, ProfileTestStateDto, Idle);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestState, ProfileTestStateDto, Testing);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestState, ProfileTestStateDto, Succeeded);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestState, ProfileTestStateDto, Failed);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestState, ProfileTestStateDto, AwaitingTrust);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestState, ProfileTestStateDto, Trusting);
+CHOSCORDB_SAME_ENUMERATOR(ProfileTestState, ProfileTestStateDto, Trusted);
 #undef CHOSCORDB_SAME_ENUMERATOR
+namespace {
+Presentation fromDto(const PresentationDto& dto) {
+    Presentation shown{static_cast<Tone>(dto.tone),
+                       dto.busy,
+                       static_cast<PanelBody>(dto.body),
+                       static_cast<ResultPane>(dto.pane),
+                       static_cast<RowRetry>(dto.retry),
+                       fromRust(dto.message),
+                       std::nullopt};
+    if (dto.has_toast)
+        shown.toast = fromRust(dto.toast);
+    return shown;
+}
+template <typename State, typename Dto> Transition<State> fromDto(const Dto& dto) {
+    return {dto.allowed, static_cast<State>(dto.state), fromRust(dto.error)};
+}
+template <typename State, std::size_t Count, typename Load>
+const Presentation& cachedPresentation(State state, Load load) {
+    static const auto cache = [load] {
+        std::array<Presentation, Count> loaded;
+        for (std::size_t i = 0; i < Count; ++i)
+            loaded[i] = load(static_cast<State>(i));
+        return loaded;
+    }();
+    return cache.at(std::size_t(state));
+}
+}
+Presentation EngineAdapter::queryPresentation(QueryState state, const QString& detail) {
+    const auto bytes = detail.toUtf8();
+    return fromDto(query_presentation(static_cast<QueryStateDto>(state), utf8View(bytes)));
+}
+const Presentation& EngineAdapter::queryPresentation(QueryState state) {
+    return cachedPresentation<QueryState, std::size_t(QueryState::Disconnected) + 1>(
+        state, [](QueryState each) { return queryPresentation(each, {}); });
+}
+Transition<QueryState> EngineAdapter::queryTransition(QueryState state, QueryEvent event) {
+    return fromDto<QueryState>(
+        query_transition(static_cast<QueryStateDto>(state), static_cast<QueryEventDto>(event)));
+}
+Presentation EngineAdapter::panelPresentation(PanelKind kind, PanelState state,
+                                              const QString& detail) {
+    const auto bytes = detail.toUtf8();
+    return fromDto(panel_presentation(static_cast<PanelKindDto>(kind),
+                                      static_cast<PanelStateDto>(state), utf8View(bytes)));
+}
+const Presentation& EngineAdapter::panelPresentation(PanelKind kind, PanelState state) {
+    constexpr auto states = std::size_t(PanelState::Unsupported) + 1;
+    constexpr auto kinds = std::size_t(PanelKind::QuickSearch) + 1;
+    static const auto cache = [] {
+        std::array<Presentation, states * kinds> loaded;
+        for (std::size_t i = 0; i < loaded.size(); ++i)
+            loaded[i] = panelPresentation(static_cast<PanelKind>(i / states),
+                                          static_cast<PanelState>(i % states), {});
+        return loaded;
+    }();
+    return cache.at(std::size_t(kind) * states + std::size_t(state));
+}
+Transition<PanelState> EngineAdapter::panelTransition(PanelState state, PanelEvent event) {
+    return fromDto<PanelState>(
+        panel_transition(static_cast<PanelStateDto>(state), static_cast<PanelEventDto>(event)));
+}
+Presentation EngineAdapter::exportPresentation(ExportState state, const QString& detail) {
+    const auto bytes = detail.toUtf8();
+    return fromDto(export_presentation(static_cast<ExportStateDto>(state), utf8View(bytes)));
+}
+Transition<ExportState> EngineAdapter::exportTransition(ExportState state, ExportEvent event) {
+    return fromDto<ExportState>(
+        export_transition(static_cast<ExportStateDto>(state), static_cast<ExportEventDto>(event)));
+}
+Presentation EngineAdapter::profileTestPresentation(ProfileTestState state, const QString& detail) {
+    const auto bytes = detail.toUtf8();
+    return fromDto(
+        profile_test_presentation(static_cast<ProfileTestStateDto>(state), utf8View(bytes)));
+}
 RowStatus EngineAdapter::rowStatus(RowStatusCause cause, const QString& detail) {
     const auto load = [cause, &detail] {
         const auto bytes = detail.toUtf8();

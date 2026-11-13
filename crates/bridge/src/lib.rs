@@ -21,6 +21,11 @@ mod metadata_policy;
 mod quick_filter;
 pub use quick_filter::{quick_filter_compose_policy, quick_filter_options_policy};
 mod result_copy;
+mod screen_state;
+pub use screen_state::{
+    export_presentation, export_transition, panel_presentation, panel_transition,
+    profile_test_presentation, query_presentation, query_transition,
+};
 mod result_json;
 pub use completion::*;
 pub use diagnostics::*;
@@ -655,6 +660,145 @@ pub mod ffi {
         retry: RowRetryDto,
         message: String,
     }
+    #[derive(Debug)]
+    enum ToneDto {
+        Neutral,
+        Success,
+        Error,
+    }
+    #[derive(Debug)]
+    enum BodyDto {
+        Content,
+        Empty,
+        NoMatch,
+        FailedPlaceholder,
+        None,
+    }
+    #[derive(Debug)]
+    enum PaneDto {
+        Grid,
+        Messages,
+        Unchanged,
+    }
+    struct PresentationDto {
+        tone: ToneDto,
+        busy: bool,
+        body: BodyDto,
+        pane: PaneDto,
+        retry: RowRetryDto,
+        message: String,
+        has_toast: bool,
+        toast: String,
+    }
+    #[derive(Debug)]
+    enum QueryStateDto {
+        Idle,
+        Connecting,
+        Queued,
+        Running,
+        Cancelling,
+        CompletedRows,
+        CompletedEmpty,
+        Failed,
+        Cancelled,
+        Disconnected,
+    }
+    #[derive(Debug)]
+    enum QueryEventDto {
+        Connect,
+        SessionReady,
+        ConnectFailed,
+        Submit,
+        Start,
+        Fetch,
+        Cancel,
+        TimedOut,
+        FinishRows,
+        FinishEmpty,
+        Fail,
+        CancelSettled,
+        Disconnect,
+        Reset,
+    }
+    struct QueryTransitionDto {
+        allowed: bool,
+        state: QueryStateDto,
+        error: String,
+    }
+    #[derive(Debug)]
+    enum PanelKindDto {
+        SavedSql,
+        History,
+        Pins,
+        Objects,
+        ObjectDetails,
+        Diagram,
+        QuickSearch,
+    }
+    #[derive(Debug)]
+    enum PanelStateDto {
+        Idle,
+        Loading,
+        Ready,
+        Empty,
+        NoMatch,
+        Failed,
+        Disconnected,
+        Incomplete,
+        Unsupported,
+    }
+    #[derive(Debug)]
+    enum PanelEventDto {
+        Load,
+        LoadedRows,
+        LoadedNone,
+        LoadedPartial,
+        LoadUnsupported,
+        LoadFailed,
+        FilterMatched,
+        FilterMissed,
+        Disconnect,
+    }
+    struct PanelTransitionDto {
+        allowed: bool,
+        state: PanelStateDto,
+        error: String,
+    }
+    #[derive(Debug)]
+    enum ExportStateDto {
+        Idle,
+        Submitting,
+        Running,
+        Cancelling,
+        Succeeded,
+        Cancelled,
+        Failed,
+    }
+    #[derive(Debug)]
+    enum ExportEventDto {
+        Submit,
+        Start,
+        Cancel,
+        Finish,
+        Fail,
+        CancelSettled,
+        Reset,
+    }
+    struct ExportTransitionDto {
+        allowed: bool,
+        state: ExportStateDto,
+        error: String,
+    }
+    #[derive(Debug)]
+    enum ProfileTestStateDto {
+        Idle,
+        Testing,
+        Succeeded,
+        Failed,
+        AwaitingTrust,
+        Trusting,
+        Trusted,
+    }
     struct TransactionGuardDto {
         apply_edits: String,
     }
@@ -887,7 +1031,7 @@ pub mod ffi {
         chunk_bytes: Vec<u8>,
         kind: String,
         id: u64,
-        state: String,
+        query_state: QueryStateDto,
         error: String,
         error_kind: String,
         vendor_code: String,
@@ -1290,6 +1434,17 @@ pub mod ffi {
         fn transaction_guard_policy(transaction_active: bool) -> TransactionGuardDto;
         fn row_status_policy(cause: RowStatusCauseDto, detail: &str) -> RowStatusDto;
         fn panel_notice_milliseconds() -> u32;
+        fn query_presentation(state: QueryStateDto, detail: &str) -> PresentationDto;
+        fn query_transition(state: QueryStateDto, event: QueryEventDto) -> QueryTransitionDto;
+        fn panel_presentation(
+            kind: PanelKindDto,
+            state: PanelStateDto,
+            detail: &str,
+        ) -> PresentationDto;
+        fn panel_transition(state: PanelStateDto, event: PanelEventDto) -> PanelTransitionDto;
+        fn export_presentation(state: ExportStateDto, detail: &str) -> PresentationDto;
+        fn export_transition(state: ExportStateDto, event: ExportEventDto) -> ExportTransitionDto;
+        fn profile_test_presentation(state: ProfileTestStateDto, detail: &str) -> PresentationDto;
         fn recovery_hint_text(hint: RecoveryHintDto) -> String;
         fn object_action_unavailable_reason(
             rename: bool,
