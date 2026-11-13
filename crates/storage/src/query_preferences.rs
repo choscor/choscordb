@@ -1,4 +1,3 @@
-//! Versioned defaults for future queries and tunneled connections.
 use crate::{Result, Storage, StorageError};
 use choscordb_driver_api::PageSize;
 use serde::{Deserialize, Serialize};
@@ -11,12 +10,9 @@ pub const MAX_CONNECTION_TIMEOUT_SECONDS: u32 = 300;
 pub struct QueryPreferences {
     pub version: u32,
     pub page_size: PageSize,
-    /// Zero maps to the driver's absent timeout.
     pub timeout_seconds: u32,
-    /// Global limit for new SSH tunnels and database logins through them.
     #[serde(default = "default_connection_timeout_seconds")]
     pub connection_timeout_seconds: u32,
-    /// Whether PostgreSQL-owned schemas appear in browsing and completion.
     #[serde(default)]
     pub show_system_schemas: bool,
 }

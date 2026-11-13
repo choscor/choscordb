@@ -12,7 +12,6 @@
 #include <limits>
 using namespace choscordb;
 namespace {
-// Production copy path: capture a snapshot on the model thread, then evaluate it.
 QString copyScope(const ResultTableModel& model, const QModelIndexList& indexes, int scope,
                   QString* error, const ResultTableModel::ResolvedCells& resolved) {
     if (error)
@@ -40,7 +39,6 @@ QString copyPage(const ResultTableModel& model, QString* error = nullptr,
                  const ResultTableModel::ResolvedCells& resolved = {}) {
     return copyScope(model, {}, 2, error, resolved);
 }
-// Production JSON view path: capture a snapshot on the model thread, then evaluate it.
 ResultTableModel::JsonViewEvaluation
 evaluateJson(const ResultTableModel& model, ResultTableModel::JsonViewScope scope, int row,
              int column, const ResultTableModel::ResolvedCells& resolved, QString* json = nullptr,
@@ -100,7 +98,7 @@ ResultColumn column(const QString& name, const QString& databaseType) {
     value.databaseType = databaseType;
     return value;
 }
-} // namespace
+}
 class ResultModelTest : public QObject {
     Q_OBJECT
   private slots:
@@ -143,7 +141,6 @@ class ResultModelTest : public QObject {
                  ResultTableModel::CellEditState::TypeRejected);
         QCOMPARE(std::get<qint64>(*model.cellValue(target)), qint64(7));
         QVERIFY(!model.touched(0, 0));
-        // The budget allows the current state, but cannot hold a new target draft.
         QVERIFY(model.setByteBudget(model.residentBytes() + 512));
         const auto oversized = ResultTableModel::evaluateCellEdit(
             model.cellEditSnapshot(target, QString(1024, QChar('8'))));
@@ -256,7 +253,6 @@ class ResultModelTest : public QObject {
     }
     void verifiedLinksFollowCurrentTypedValueAndHideUnavailableCells() {
         ResultTableModel model;
-        // Rust gives the filterable bits; NULL and deferred values cannot filter.
         QVERIFY(model.setPage(ResultTableModel::preparePage(
             {column("parent_id", "integer")},
             {{qint64(4)}, {std::monostate{}}, {DeferredValue{1, 100, "integer"}}},

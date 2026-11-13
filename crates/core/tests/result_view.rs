@@ -56,7 +56,6 @@ impl Connection for SlowConnection {
         _: QueryOptions,
         max: usize,
     ) -> choscordb_driver_api::Result<Box<dyn ResultCursor>> {
-        // Conservative bound for the fixture's one-column schema, including names.
         if max < std::mem::size_of::<Vec<Column>>() + std::mem::size_of::<Column>() + 64 {
             return Err(choscordb_driver_api::DriverError::new(
                 choscordb_driver_api::ErrorKind::ResourceLimit,
@@ -124,7 +123,6 @@ impl ResultCursor for SlowCursor {
         } else {
             (301 - self.next).min(i64::from(size.get())).max(0) as usize
         };
-        // Each fixture row has one value; fallback strings have at most 32 bytes.
         let bytes = std::mem::size_of::<ResultPage>()
             + count * (std::mem::size_of::<Vec<Value>>() + std::mem::size_of::<Value>() + 32);
         if bytes > max {
@@ -299,7 +297,7 @@ fn whole_result_view_filters_sorts_pages_and_clears_without_reexecution() {
     };
     assert_eq!(first_row, 100);
     assert_eq!(page.rows[0][0], Value::Text("row101".into()));
-    assert_eq!(page.rows[5][0], Value::Null); // NULL is last even ascending.
+    assert_eq!(page.rows[5][0], Value::Null);
     assert!(!page.has_more);
     drop(lease);
 
@@ -417,7 +415,6 @@ fn descending_text_sort_is_case_insensitive_stable_and_keeps_null_last() {
 
 #[test]
 fn text_predicates_are_case_insensitive_and_deferred_values_fail_atomically() {
-    // The comparator contract is exercised independently of driver truncation policy.
     assert!(
         choscordb_core::value_matches(
             &Value::Text("StraSSe".into()),
@@ -1236,7 +1233,6 @@ fn sql_predicate_rejects_oversized_intermediate_values() {
     assert!(failed_view(&mut engine).message.contains("too big"));
 }
 
-/// The time to build a filtered or sorted view of 8,000 rows x 20 columns in pages of `page_size`.
 fn view_build_time(page_size: u32, sort: bool) -> Duration {
     const ROWS: u64 = 8_000;
     let mut engine =
@@ -1302,11 +1298,9 @@ fn view_build_time(page_size: u32, sort: bool) -> Duration {
 #[test]
 fn view_page_building_cost_does_not_grow_with_the_page_size() {
     for sort in [false, true] {
-        // Warm up the runtime and SQLite before the measured runs.
         view_build_time(100, sort);
         let small = view_build_time(100, sort);
         let large = view_build_time(10_000, sort);
-        // A walk of the whole page after each row makes large pages many times slower.
         assert!(
             large < small * 3,
             "sort={sort}: 100-row pages took {small:?}, 10,000-row pages took {large:?}"

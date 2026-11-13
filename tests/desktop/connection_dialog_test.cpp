@@ -73,7 +73,6 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
     QCOMPARE(progress->findChild<QLabel*>("profileProgressMessage")->text(),
              QString("Testing connection…"));
     QTRY_VERIFY(!progress->isVisible());
-    // The toast owns the success outcome. The dialog status line does not repeat it.
     QVERIFY(!dialog->findChild<QWidget*>("profileStatusLine")->isVisible());
     auto* feedback =
         f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
@@ -97,7 +96,6 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
     QTest::mouseClick(feedback->findChild<QAbstractButton*>("toastDismiss"), Qt::LeftButton);
     QTRY_VERIFY(!feedback->isVisible());
 
-    // A failed test keeps its error inline and shows no success toast.
     path->setText(QDir::temp().filePath("choscordb-missing-dir/missing/db.sqlite"));
     dialog->findChild<QPushButton*>("profileTest")->click();
     QTRY_VERIFY(!progress->isVisible());
@@ -446,7 +444,6 @@ void WorkspaceTest::connectionFormRejectsMalformedHostsBeforeSubmission() {
     user->setText("operator");
     auto* database = dialog->findChild<QLineEdit*>("profileDatabase");
     database->clear();
-    // An omitted PostgreSQL database now defaults to the explicit username.
     database->setText("postgres");
     auto* sshEnabled = dialog->findChild<QCheckBox*>("profileSshEnabled");
     sshEnabled->setChecked(true);
@@ -460,7 +457,6 @@ void WorkspaceTest::connectionFormRejectsMalformedHostsBeforeSubmission() {
     QCOMPARE(saved.count(), 0);
     QCOMPARE(failed.count(), 0);
     sshEnabled->setChecked(false);
-    // A rejected Save & connect must not turn a later Save into a connection.
     host->setText("::1");
     dialog->findChild<QSpinBox*>("profilePort")->setValue(1);
     save->click();
@@ -565,8 +561,6 @@ void WorkspaceTest::connectionManualPasswordIsOptionalAndUsesOneCredentialChoice
             }
         return matches == 1;
     }());
-    // The dialog also refreshes profiles after saving. Assert our request's
-    // response rather than counting unrelated asynchronous refresh replies.
     const auto profiles = qvariant_cast<QList<choscordb::SavedProfile>>(requestedReply.at(1));
     QCOMPARE(profiles.size(), 1);
     QVERIFY(profiles.front().credentialRef.isEmpty());
@@ -602,8 +596,6 @@ void WorkspaceTest::connectionEditedEmptyPasswordSuppressesSavedReference() {
     credentials->setChecked(true);
     password->setText("replacement-secret");
     password->setModified(true);
-    // The test workspace has no credential store, so the attempted replacement
-    // fails while leaving this editable profile and its old reference in the draft.
     dialog->saveDraft(profile);
     QTRY_VERIFY(save->isEnabled());
     QVERIFY(dialog->findChild<QLabel*>("profileStatus")

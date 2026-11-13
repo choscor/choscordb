@@ -1,4 +1,3 @@
-//! Bounded reads borrow the worker's current client/transaction without replacing SQL.
 use super::*;
 use futures_util::TryStreamExt;
 use std::hash::BuildHasher;
@@ -16,8 +15,6 @@ struct ReadActivity {
 }
 impl ReadActivity {
     async fn cancel(&mut self, send: impl std::future::Future<Output = Result<()>>) -> Result<()> {
-        // A second packet can arrive after the SELECT ends and cancel savepoint
-        // cleanup or an unrelated SQL portal. Keep failed sends retryable.
         if self.active && !self.cancellation_sent {
             send.await?;
             self.cancellation_sent = true;
@@ -42,7 +39,6 @@ pub(super) struct Opened {
     spool: spool::Spool,
     summary: QuerySummary,
 }
-/// The statement and result formats that every page of one object view reuses.
 #[derive(Clone)]
 struct PreparedRead {
     statement: tokio_postgres::Statement,
@@ -136,8 +132,6 @@ pub(super) async fn prepare<C: GenericClient + Sync>(
         return Err(limit());
     }
     let sql = format!("SELECT * FROM {name} LIMIT $1 OFFSET $2");
-    // Catalog columns avoid acquiring a relation lock during schema preparation.
-    // The first SELECT runs in the cancellable bounded-read path below.
     let objects = metadata::load_metadata(client, Some(object.clone())).await?;
     let columns: Vec<Column> = objects.into_iter().filter_map(|o| o.column).collect();
     let bytes = columns
@@ -171,9 +165,6 @@ pub(super) async fn read<C: GenericClient + Sync>(
     transaction: bool,
     overrides: &mut worker::OverrideCache,
 ) -> Result<Fetched> {
-    // A failed SELECT or native cancellation must not abort the user's existing
-    // transaction or invalidate its older SQL portal. This savepoint encloses
-    // only our read and is removed before returning control to the user.
     static SAVEPOINT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
     let suffix = std::collections::hash_map::RandomState::new()
         .hash_one(SAVEPOINT_SEQUENCE.fetch_add(1, Ordering::Relaxed));
@@ -281,7 +272,6 @@ async fn read_inner<C: GenericClient + Sync>(
         )
         .await
         .map_err(|error| {
-            // PostgreSQL refuses a prepared SELECT * after its columns change.
             if error.code() == Some(&tokio_postgres::error::SqlState::FEATURE_NOT_SUPPORTED) {
                 changed_columns()
             } else {
@@ -322,7 +312,6 @@ async fn read_inner<C: GenericClient + Sync>(
         rows.push(values);
         used += bytes;
     }
-    // The page estimate counts capacity; the budget above counted only the rows.
     rows.shrink_to_fit();
     Ok(ResultPage {
         index: request.index,

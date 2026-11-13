@@ -47,7 +47,6 @@ class SelectedConnectionProxy final : public QSortFilterProxyModel {
             return false;
         if (!ordered_.contains(index.data(NavigatorModel::ConnectionRole).toULongLong()))
             return false;
-        // A root that is still connecting stays visible under any filter.
         if (!parent.isValid() &&
             index.data(NavigatorModel::StatusRole).toInt() == int(RowStatusKind::Loading))
             return true;
@@ -76,7 +75,7 @@ class SelectedConnectionProxy final : public QSortFilterProxyModel {
     QList<quint64> ordered_;
     TextFilter filter_;
 };
-} // namespace
+}
 NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree, QLineEdit* filter)
     : QObject(tree), model_(new NavigatorModel(this)), tree_(tree),
       proxy_(new SelectedConnectionProxy(this)), filter_(filter) {
@@ -84,7 +83,6 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
     proxy->setSourceModel(model_);
     proxy->setRecursiveFilteringEnabled(true);
     tree->setModel(proxy);
-    // Filter and search once typing pauses; clearing applies at once so reveals can map rows.
     filterTimer_ = new QTimer(this);
     filterTimer_->setSingleShot(true);
     connect(filterTimer_, &QTimer::timeout, this, [this] {
@@ -115,14 +113,11 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
             }
             if (searchPending_)
                 return;
-            // Other metadata changes restart the search, at most once per burst of pages.
             restartLater();
         });
     const auto rescanQuickObjects = [this] {
         if (quickObjectQuery_.isEmpty() || !quickObjectConnectionValid_)
             return;
-        // A refresh may have removed a previously published object. Invalidate
-        // rows before the next event-loop turn, when the fresh scan runs.
         quickObjectResults_.clear();
         quickObjectIncomplete_ = true;
         quickObjectStatus_ = tr("Searching objects…");
@@ -136,7 +131,6 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
              rescanLater = coalescedCall(this, 200, rescanQuickObjects)](quint64 connection) {
                 if (connection != quickObjectConnection_)
                     return;
-                // The scan's own request continues at once; other changes rescan per burst.
                 if (std::exchange(quickObjectAwaiting_, false))
                     rescanQuickObjects();
                 else
@@ -150,7 +144,6 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
         if (source.data(NavigatorModel::KindRole).toString() == "load_more")
             userLoad(source, &NavigatorModel::requestNextPage);
     });
-    // A failed row loads again when the user expands it.
     connect(tree, &QTreeView::expanded, this, [this](const QModelIndex& index) {
         const auto source = proxy_->mapToSource(index);
         userLoad(source,
@@ -184,12 +177,10 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
                     NavigatorObject entry{
                         text(object.id), text(object.name),   text(object.qualified_name),
                         objectKind,      object.has_children, std::move(properties)};
-                    // Rust attaches column metadata only to column rows.
                     if (object.has_column)
                         entry.databaseType = text(object.column.database_type);
                     objects.push_back(std::move(entry));
                 }
-                // Saved children show while the live children load.
                 if (e.metadata_cached) {
                     model_->applyCachedChildren(e.id, text(e.parent), e.request_token,
                                                 std::move(objects));
@@ -223,7 +214,6 @@ void NavigatorController::refreshCurrent() {
 }
 void NavigatorController::userLoad(const QModelIndex& source,
                                    void (NavigatorModel::*load)(const QModelIndex&)) {
-    // A load on a "Load more" row replaces that row, so its parent holds the request.
     const QPersistentModelIndex node(source), parent(source.parent());
     if (load)
         (model_->*load)(source);
@@ -387,7 +377,6 @@ bool NavigatorController::lookupObject(
     state->finished = std::move(finished);
     state->stillCurrent = std::move(stillCurrent);
     state->task = new QObject(this);
-    // Restarting an active zero-delay timer keeps at most one queued step per lookup.
     auto* stepTimer = new QTimer(state->task);
     stepTimer->setSingleShot(true);
     connect(stepTimer, &QTimer::timeout, state->task, [state] { state->step(); });
@@ -483,7 +472,7 @@ bool NavigatorController::lookupObject(
             state->requestedParents.insert(parent.data(NavigatorModel::ObjectIdRole).toString());
             model_->requestNextPage(parent);
         } else
-            --state->requests; // The current page is already loading.
+            --state->requests;
     };
     connect(model_, &NavigatorModel::completionChanged, state->task,
             [state, stepTimer](quint64 changedConnection) {
@@ -664,7 +653,6 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
                 emit generationFailed(tr("Select a table or view to generate SQL."));
                 return;
             }
-            // Rust rejects templates whose columns are not loaded or exceed its limits.
             const auto result = SqlTemplateService::generate(
                 kind, index.data(NavigatorModel::QualifiedNameRole).toString(),
                 columnNames(index, false), index.data(NavigatorModel::ChildrenLoadedRole).toBool());
@@ -741,4 +729,4 @@ const QList<quint64>& NavigatorController::visibleConnections() const {
 bool NavigatorController::isVisibleConnection(quint64 connection) const {
     return visibleConnections().contains(connection);
 }
-} // namespace choscordb
+}

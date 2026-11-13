@@ -1,4 +1,3 @@
-//! Typed transport for Rust-owned pin identity and durable storage.
 use crate::ffi::{PinChangeDto, PinLoadDto, PinRecordDto, PinSaveDto};
 use choscordb_pins::{PinRecord, PinStore};
 use std::path::Path;

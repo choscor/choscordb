@@ -34,7 +34,7 @@ QString matchSnippet(const QString& text, qsizetype match, qsizetype length) {
     return (start ? QStringLiteral("…") : QString{}) + text.mid(start, end - start).simplified() +
            (end < text.size() ? QStringLiteral("…") : QString{});
 }
-} // namespace
+}
 
 void MainWindow::showQuickSearch() {
     if (!quickSearch_) {
@@ -176,7 +176,6 @@ void MainWindow::showQuickSearch() {
                 &MainWindow::refreshQuickSearchIfOpen);
         connect(navigatorController_, &NavigatorController::browsingVisibilityChanged, this,
                 &MainWindow::refreshQuickSearchIfOpen);
-        // Recent objects are re-verified against loaded metadata; fold page bursts.
         const auto refreshRecentObjects = coalescedCall(quickSearch_, 250, [this] {
             if (quickSearch_ && quickSearch_->isVisible() &&
                 quickSearch_->query().trimmed().isEmpty() && quickPendingRecentObject_.isEmpty())
@@ -239,7 +238,6 @@ void MainWindow::updateQuickSearch(const QString& query) {
     const QString needle = query.trimmed();
     const bool empty = needle.isEmpty();
     quickTextFinder_ = std::make_shared<const TextFinder>(needle);
-    // Rust ranks these rows and drops the ones that do not match in renderQuickSearch.
     quickNameRows_.clear();
     quickTabTargets_.clear();
     for (const auto& name : {"showStart", "showSql", "showObjects", "showHistory"})
@@ -263,13 +261,11 @@ void MainWindow::updateQuickSearch(const QString& query) {
         quickNameRows_.append({tr("Tab"), title, context, id, icon});
     }
     const auto connection = quickSearchConnection();
-    // Milliseconds of typing quiet before the navigator object search starts.
     constexpr int quickObjectDebounceMs = 80;
     if (navigatorController_) {
         if (empty)
             navigatorController_->cancelQuickObjectSearch();
         else
-            // Debounced like history: each keystroke supersedes the pending scan.
             navigatorController_->startQuickObjectSearch(needle, connection, quickObjectDebounceMs);
     }
     if (empty && connection) {
@@ -446,7 +442,6 @@ void MainWindow::updateQuickObjectRows() {
     quickObjectStatus_ = navigatorController_->quickObjectSearchStatus();
     quickObjectIncomplete_ = navigatorController_->quickObjectSearchIncomplete();
     for (const auto& object : navigatorController_->quickObjectResults()) {
-        // A stable row key keeps the palette selection while results stream in.
         QStringList identity;
         for (const auto& part :
              {QString::number(object.connection), object.objectId, object.kind,
@@ -559,8 +554,6 @@ void MainWindow::refreshQuickSearchIfOpen() {
             quickPendingRecentObject_.value(QStringLiteral("connection")).toULongLong();
         const auto qualifiedName =
             quickPendingRecentObject_.value(QStringLiteral("qualifiedName")).toString();
-        // Keep the activated lookup across unrelated UI refreshes. Connection
-        // and visibility changes still invalidate it through the normal refresh.
         if (quickSearchConnection() == connection &&
             navigatorController_->model()->canShowUnverifiedObject(connection, qualifiedName)) {
             renderQuickSearch();
@@ -802,4 +795,4 @@ void MainWindow::activateQuickSearch(const QString& id) {
         quickSearch_->setStatus(tr("That destination is unavailable or navigation is blocked."));
 }
 
-} // namespace choscordb
+}

@@ -43,7 +43,6 @@ class ComponentsTest final : public QObject {
             const auto colors = resolvedThemeForWidget(button).colors;
             QCOMPARE(selected.pixelColor(20, 14), colors.surface);
             button.setChecked(false);
-            // An unchecked, unhovered tab is unfilled, so the sidebar shows through.
             const auto idle = root.grab().toImage();
             QCOMPARE(idle.pixelColor(QPoint(20, 14) * idle.devicePixelRatio()),
                      colors.surfaceRaised);
@@ -76,7 +75,6 @@ class ComponentsTest final : public QObject {
             return image.pixelColor(qRound(x * scale), qRound(y * scale));
         };
         const auto colors = resolvedThemeForWidget(tabs).colors;
-        // The selected segment is a surface fill inset in the track, with rounded corners.
         QCOMPARE(at(rect.left() + 8, rect.center().y()), colors.surface);
         QCOMPARE(at(rect.center().x(), rect.top()), colors.surfaceRaised);
         QCOMPARE(at(rect.left(), rect.top() + spacing(Spacing::Half)), colors.surfaceRaised);
@@ -86,7 +84,6 @@ class ComponentsTest final : public QObject {
         capture = tabs.grab();
         image = capture.toImage();
         const auto documentRect = tabs.tabRect(1);
-        // The current document tab has no dark top rule, and its top corners are rounded.
         QCOMPARE(at(documentRect.center().x(), documentRect.top()), colors.surface);
         QCOMPARE(at(documentRect.left() + 8, documentRect.top()), colors.surface);
         QCOMPARE(at(documentRect.left(), documentRect.top()), colors.surfaceRaised);
@@ -249,7 +246,6 @@ class ComponentsTest final : public QObject {
             inkRight <= highlightRight - spacing(Spacing::Half),
             qPrintable(
                 QString("detail ends at %1, highlight at %2").arg(inkRight).arg(highlightRight)));
-        // Muted text is below 4.5:1 on the selection, so the selected detail turns fg.
         bool fgDetail = false;
         bool mutedDetail = false;
         for (int x = inkRight - 40; x <= inkRight; ++x)
@@ -383,10 +379,8 @@ class ComponentsTest final : public QObject {
         const auto second = list.visualItemRect(list.item(1));
         const auto image = list.viewport()->grab().toImage();
         const int scale = qRound(image.devicePixelRatio());
-        // Between the driver tile and the name, where neither paints.
         const int x = first.left() + spacing(Spacing::One) + spacing(Spacing::Two) * 3 / 2 +
                       dimension(Dimension::ControlExtraSmall);
-        // The viewport is transparent wherever no highlight covers it.
         int seam = 0;
         for (int y = first.center().y() * scale; y <= second.center().y() * scale; ++y)
             seam += image.pixelColor(x * scale, y).alpha() < 255;
@@ -610,7 +604,6 @@ class ComponentsTest final : public QObject {
         const auto colors = resolvedThemeForWidget(button).colors;
         QCOMPARE(button.grab().toImage().pixelColor(4, button.height() / 2), colors.primary);
         QTest::mouseMove(&button, button.rect().center());
-        // Pressing darkens the fill; the label and icon stay in place.
         const auto inkBounds = [](const QImage& image) {
             QRect bounds;
             for (int y = 0; y < image.height(); ++y)
@@ -884,7 +877,6 @@ class ComponentsTest final : public QObject {
         QCOMPARE(button.sizeHint().height(), 24);
         button.setButtonSize(ButtonSize::Small);
         QCOMPARE(button.sizeHint().height(), 28);
-        // A leading icon does not change the control height.
         button.setDesignIcon(Icon::Add);
         QCOMPARE(button.sizeHint().height(), 28);
         button.setButtonSize(ButtonSize::IconExtraSmall);

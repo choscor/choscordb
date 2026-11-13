@@ -139,7 +139,6 @@ void PreviewTest::displayedIconsRasterizeAtTargetScale() {
     expected.setDevicePixelRatio(scale);
     expected.fill(Qt::transparent);
     QPainter vectorPainter(&expected);
-    // Real gallery display versus the independent literal Lucide 1.61.0 database shape.
     QSvgRenderer reference(
         QByteArrayLiteral("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" "
                           "fill=\"none\" stroke=\"#222b32\" stroke-width=\"2\" "
@@ -518,7 +517,6 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
         const auto firstSelectedRow = list->visualItemRect(list->item(0));
         const auto selectedRow = list->visualItemRect(list->item(1));
         const auto regularRow = list->visualItemRect(list->item(2));
-        // Sample resting rows, wherever an earlier test left the pointer.
         QEvent leave(QEvent::Leave);
         QCoreApplication::sendEvent(list->viewport(), &leave);
         const auto image = list->viewport()->grab().toImage();

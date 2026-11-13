@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Run native query-settings recovery against owned, corrupt SQLite fixtures."""
 
 import argparse
 import json
@@ -12,7 +11,9 @@ from pathlib import Path
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Run native query-settings recovery against owned, corrupt SQLite fixtures."
+    )
     parser.add_argument(
         "binary", type=Path, help="Native query_settings_corruption_test binary"
     )

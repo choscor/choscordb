@@ -18,7 +18,6 @@ class EditorPreferencesController final : public QObject {
     explicit EditorPreferencesController(MainWindow* window);
     void addAction(const QString& id, QAction* action, bool configurable = true);
     void addEditor(SqlEditor* editor);
-    // Applies the result-grid shortcuts to the grid now and after each change.
     void addGrid(QueryWorkspace* grid);
     void initialize(EngineAdapter* adapter);
     void setAppearanceController(AppearanceController* appearance);
@@ -34,7 +33,6 @@ class EditorPreferencesController final : public QObject {
     bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
-    // Applies valid preferences and clears the load notice.
     void apply(const EditorPreferences& value);
     void applyFont(SqlEditor* editor);
     QList<ShortcutDescriptor> catalog() const;
@@ -53,4 +51,4 @@ class EditorPreferencesController final : public QObject {
     bool loading_ = true;
     QString loadNotice_;
 };
-} // namespace choscordb
+}

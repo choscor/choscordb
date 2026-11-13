@@ -12,8 +12,6 @@
 #include <QStyleOption>
 
 namespace choscordb::design::detail {
-// QStyleSheetStyle paints styled arrow rules itself, bypassing proxy primitives.
-// This shared child paints only those glyphs; Qt keeps all hit testing and input.
 class ControlGlyphOverlay final : public QWidget {
   public:
     explicit ControlGlyphOverlay(QWidget* owner) : QWidget(owner) {
@@ -77,8 +75,6 @@ class ControlGlyphOverlay final : public QWidget {
             option.frame = combo->hasFrame();
             auto arrow = combo->style()->subControlRect(QStyle::CC_ComboBox, &option,
                                                         QStyle::SC_ComboBoxArrow, combo);
-            // Match the reference select's trailing glyph alignment. Qt's
-            // native subcontrol retains the original, larger hit region.
             arrow.translate(combo->layoutDirection() == Qt::RightToLeft ? -2 : 2, 0);
             drawArrow(arrow, combo->view()->isVisible(), combo->isEnabled(), 16);
         } else if (auto* spin = qobject_cast<QAbstractSpinBox*>(owner)) {
@@ -131,4 +127,4 @@ void updateControlGlyphs(QWidget* field, QEvent* event) {
     }
 }
 
-} // namespace choscordb::design::detail
+}

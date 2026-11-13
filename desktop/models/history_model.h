@@ -6,7 +6,6 @@ namespace choscordb {
 class HistoryModel final : public QAbstractTableModel {
     Q_OBJECT
   public:
-    // The untranslated protocol status ("completed", "failed", ...).
     static constexpr int StatusRole = Qt::UserRole + 1;
     explicit HistoryModel(QObject* parent = nullptr);
     int rowCount(const QModelIndex& parent = {}) const override;
@@ -21,4 +20,4 @@ class HistoryModel final : public QAbstractTableModel {
     QList<SavedHistoryEntry> entries_;
     QHash<QString, QString> profileNames_;
 };
-} // namespace choscordb
+}

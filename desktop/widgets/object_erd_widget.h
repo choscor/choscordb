@@ -11,7 +11,6 @@ class QGraphicsScene;
 
 namespace choscordb {
 
-// Read-only one-hop graph presentation. Object identity and loading stay with ObjectExplorer.
 class ObjectErdWidget final : public QWidget {
     Q_OBJECT
   public:
@@ -50,4 +49,4 @@ class ObjectErdWidget final : public QWidget {
     QPoint scrollStart_;
 };
 
-} // namespace choscordb
+}

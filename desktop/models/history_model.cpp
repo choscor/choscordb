@@ -38,8 +38,6 @@ QVariant HistoryModel::data(const QModelIndex& index, int role) const {
         return {};
     if (role == Qt::AccessibleTextRole && index.column() == 2) {
         QStringList parts;
-        // Compact history hides the other visual columns; retain their real
-        // metadata in the spoken row without exposing the unbounded SQL body.
         for (const int column : {2, 4, 0, 1, 3})
             parts.append(data(index.siblingAtColumn(column), Qt::DisplayRole).toString().left(256));
         parts.append(tr("%1 rows").arg(data(index.siblingAtColumn(5), Qt::DisplayRole).toString()));
@@ -58,7 +56,6 @@ QVariant HistoryModel::data(const QModelIndex& index, int role) const {
         return value->profileId.isEmpty() ? tr("Unsaved connection")
                                           : profileNames_.value(value->profileId, value->profileId);
     case 2: {
-        // Bound the copy before whitespace normalization, even for a large SQL buffer.
         QString excerpt = value->sql.left(240);
         if (!excerpt.isEmpty() && excerpt.back().isHighSurrogate())
             excerpt.chop(1);
@@ -85,4 +82,4 @@ QVariant HistoryModel::data(const QModelIndex& index, int role) const {
         return {};
     }
 }
-} // namespace choscordb
+}

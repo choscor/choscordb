@@ -32,4 +32,4 @@ bool drawFocusIndicator(QStyle::PrimitiveElement element, const QStyleOption* op
     return false;
 }
 
-} // namespace choscordb::design::detail
+}

@@ -38,7 +38,7 @@ bool savePins(const QString& path, const QList<choscordb::PinRecord>& pins) {
     QString error;
     return choscordb::PinStore(path).save(pins, &error);
 }
-} // namespace
+}
 
 class PinningSidebarTest final : public QObject {
     Q_OBJECT

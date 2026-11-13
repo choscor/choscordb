@@ -1,4 +1,3 @@
-//! Requires the isolated PostgreSQL fixture and its localhost server certificate.
 use choscordb_driver_api::*;
 use choscordb_driver_postgres::PostgresDriver;
 

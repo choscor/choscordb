@@ -33,4 +33,4 @@ class SshHostKeyDialog final : public DialogShell {
     QPushButton *approve_, *retry_;
     bool pending_ = false, valid_ = true, approved_ = false;
 };
-} // namespace choscordb
+}

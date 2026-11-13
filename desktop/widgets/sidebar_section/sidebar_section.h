@@ -38,8 +38,6 @@ class SidebarSection final : public QWidget {
     design::Text* titleLabel() const { return title_; }
     void addAction(QWidget* action) { actions_->addWidget(action); }
     QVBoxLayout* contentLayout() const { return content_; }
-    // Sidebar progress shows only as a Loader icon after the title; the description is for
-    // the tooltip and accessibility.
     void setBusy(bool busy, const QString& description = {}) {
         if (busy == !busy_->isHidden() && description == busy_->toolTip())
             return;
@@ -70,4 +68,4 @@ class SidebarSection final : public QWidget {
     QHBoxLayout* actions_;
     QVBoxLayout* content_;
 };
-} // namespace choscordb
+}

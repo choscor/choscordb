@@ -27,7 +27,6 @@ DialogSections* ModalDialog::createSections() {
     return sections;
 }
 void ModalDialog::open() {
-    // Keep the asynchronous QDialog contract without requesting a native sheet.
     setResult(0);
     show();
 }
@@ -55,4 +54,4 @@ void ModalDialog::hideEvent(QHideEvent* event) {
     QDialog::hideEvent(event);
     presentation_.hidden();
 }
-} // namespace choscordb::design
+}

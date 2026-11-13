@@ -1,10 +1,3 @@
-//! Connection-profile draft policy for the native profile form.
-//!
-//! The form collects raw widget values; these functions decide defaults, which
-//! saved credential references a draft keeps, which secrets apply, how each
-//! secret is stored or sent, and which field an invalid draft reports.
-
-/// The profile values the form edits, plus the saved references it carries.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ProfileDraft {
     pub id: String,
@@ -33,7 +26,6 @@ pub struct ProfileDraft {
     pub has_ssh_hop_credentials: bool,
 }
 
-/// A secret as typed in the form: its text and whether the user edited it.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SecretDraft<'a> {
     pub text: &'a str,
@@ -48,7 +40,6 @@ pub struct DraftSecrets<'a> {
     pub ssh_private_key: SecretDraft<'a>,
 }
 
-/// Which secrets the draft's transport uses.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SecretUse {
     pub database: bool,
@@ -57,7 +48,6 @@ pub struct SecretUse {
     pub ssh_private_key: bool,
 }
 
-/// How a saved credential changes when the draft is saved.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DraftAction {
     Keep,
@@ -65,7 +55,6 @@ pub enum DraftAction {
     Clear,
 }
 
-/// The form field an invalid draft reports, with its user-facing message.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DraftField {
     Name,
@@ -107,9 +96,7 @@ pub struct DraftFieldError {
     pub message: String,
 }
 
-/// Bytes accepted for a password-like secret typed into the form.
 pub const MAX_FORM_SECRET_BYTES: usize = 16 * 1024;
-/// Why pasted private key text cannot be used; `None` when it can.
 pub fn private_key_text_error(text: &str) -> Option<&'static str> {
     (text.len() > choscordb_credentials::MAX_SECRET_BYTES || text.contains('\0'))
         .then_some("Private keys must be at most 64 KiB and contain no NUL characters.")
@@ -121,15 +108,10 @@ fn server(driver: &str) -> bool {
     matches!(driver, "postgres" | "mysql" | "mariadb")
 }
 
-/// Which connection fields a driver uses and what their blank values mean.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DriverForm {
-    /// Host, port, user, TLS and SSH apply; otherwise the profile is a file path.
     pub server: bool,
-    /// A blank user name authenticates anonymously instead of being rejected.
     pub user_optional: bool,
-    /// A blank database connects to the server without selecting a database;
-    /// otherwise the driver defaults it to the user name.
     pub database_selects_server: bool,
 }
 
@@ -142,7 +124,6 @@ pub fn driver_form(driver: &str) -> DriverForm {
     }
 }
 
-/// The standard port for a server driver; 0 for drivers without a port.
 pub fn default_port(driver: &str) -> u16 {
     match driver {
         "postgres" => 5432,
@@ -151,8 +132,6 @@ pub fn default_port(driver: &str) -> u16 {
     }
 }
 
-/// The port after the user picks another driver: a port still at another
-/// server's standard value follows the new driver, a custom port is kept.
 pub fn port_for_driver(port: u16, driver: &str) -> u16 {
     let standard = default_port(driver);
     if standard != 0 && (port == 5432 || port == 3306) {
@@ -162,7 +141,6 @@ pub fn port_for_driver(port: u16, driver: &str) -> u16 {
     }
 }
 
-/// Fill the values a new or legacy draft leaves empty, including a new id.
 pub fn with_defaults(mut draft: ProfileDraft) -> ProfileDraft {
     if draft.id.is_empty() {
         draft.id = uuid::Uuid::new_v4().to_string();
@@ -186,7 +164,6 @@ pub fn with_defaults(mut draft: ProfileDraft) -> ProfileDraft {
         draft.ssh_port = 22;
     }
     if draft.ssh_authentication.is_empty() {
-        // Legacy profiles stored only a key file; without one they used the agent.
         draft.ssh_authentication = if draft.ssh_identity_file.is_empty() {
             "agent".into()
         } else {
@@ -199,9 +176,6 @@ pub fn with_defaults(mut draft: ProfileDraft) -> ProfileDraft {
     draft
 }
 
-/// Apply the form's edits to the profile it started from. Saved references that
-/// no longer match the edited authentication are dropped so they are neither
-/// used for a connection nor kept on save.
 pub fn normalize(
     original: &ProfileDraft,
     mut edited: ProfileDraft,
@@ -234,7 +208,6 @@ pub fn normalize(
     {
         edited.ssh_private_key_ref.clear();
     }
-    // SOCKS proxies are no longer supported; the form never carries them forward.
     edited.proxy_options.clear();
     edited.proxy_credential_ref.clear();
     edited
@@ -251,7 +224,6 @@ pub fn secret_use(draft: &ProfileDraft) -> SecretUse {
     }
 }
 
-/// How saving the draft changes one saved credential.
 pub fn saved_action(
     applies: bool,
     save_credentials: bool,
@@ -273,18 +245,14 @@ pub fn saved_action(
     }
 }
 
-/// Whether a test or connection sends the typed database password. An emptied
-/// password field means passwordless authentication (see `normalize`).
 pub fn database_secret_present(applies: bool, secret: SecretDraft<'_>) -> bool {
     applies && !secret.text.is_empty()
 }
 
-/// Whether a test or connection sends this typed secret instead of a saved one.
 pub fn secret_present(applies: bool, secret: SecretDraft<'_>) -> bool {
     applies && (secret.modified || !secret.text.is_empty())
 }
 
-/// The id and name for a copy of a profile named `name`.
 pub fn duplicate_identity(name: &str) -> (String, String) {
     (uuid::Uuid::new_v4().to_string(), format!("{name} copy"))
 }
@@ -305,8 +273,6 @@ fn error(field: DraftField, message: &str) -> Option<DraftFieldError> {
     })
 }
 
-/// The first form field an invalid draft must fix, in form order. Settings the
-/// form does not show are validated with the full profile afterwards.
 pub fn field_error(draft: &ProfileDraft, secrets: &DraftSecrets<'_>) -> Option<DraftFieldError> {
     if draft.name.trim().is_empty() {
         return error(DraftField::Name, "Enter a profile name.");

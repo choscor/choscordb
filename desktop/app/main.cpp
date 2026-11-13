@@ -45,16 +45,12 @@ int main(int argc, char** argv) {
         args.isSet("smoke-test") ? qEnvironmentVariable("CHOSCORDB_TEST_DATA_DIR") : QString{};
     const auto dataDirectory =
         testDataDirectory.isEmpty() ? choscordb::applicationDataDirectory() : testDataDirectory;
-    // The application has a release version but no distinct build identifier.
     choscordb::DiagnosticsService diagnostics(dataDirectory, app.applicationVersion());
-    // Filesystem initialization may wait on another process's diagnostics lock.
-    // Keep that work off the Qt event loop while early typed records queue in Rust.
     std::future<bool> diagnosticsStartup;
     try {
         diagnosticsStartup =
             std::async(std::launch::async, [&diagnostics] { return diagnostics.start(); });
     } catch (...) {
-        // Report the startup failure after the window is constructed.
     }
     choscordb::DiagnosticsWatchdog watchdog(&app, &diagnostics);
     const auto storagePath = QDir(dataDirectory).filePath("choscordb.sqlite");

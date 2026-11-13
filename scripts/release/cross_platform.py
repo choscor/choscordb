@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Build verified Windows per-user installer and Linux AppImage candidates.
-
-This tool prepares local artifacts. It never signs, tags, or uploads a release.
-"""
 
 import argparse
 import hashlib
@@ -202,7 +198,6 @@ def write_inventory(root, path):
 
 
 def smoke_windows_installer(asset, install_root, smoke_env):
-    """Exercise the shipped installer only in an initially empty user install slot."""
     install_root = Path(install_root)
     shortcut = None
     registration = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\ChoscorDB"
@@ -249,11 +244,9 @@ def smoke_windows_installer(asset, install_root, smoke_env):
                         break
                     time.sleep(0.5)
             if install_root.exists():
-                # This slot was absent before the smoke; only its new files are ours.
                 shutil.rmtree(install_root)
                 raise ValueError("Windows test installation required forced cleanup")
         if os.name == "nt" and (shortcut.exists() or registered()):
-            # The account was clean at entry; clean our residue, then fail the gate.
             shortcut.unlink(missing_ok=True)
             import winreg
 
@@ -474,7 +467,9 @@ def write_asset_digest(asset):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Build verified Windows per-user installer and Linux AppImage candidates."
+    )
     parser.add_argument("platform", choices=("windows", "linux"))
     parser.add_argument("--build", required=True, type=Path)
     parser.add_argument("--qt", required=True, type=Path)

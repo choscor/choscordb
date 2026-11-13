@@ -350,7 +350,6 @@ class ObjectErdNavigationTest final : public QObject {
         for (int i = 0; i < selfPaths.size(); ++i)
             for (int j = i + 1; j < selfPaths.size(); ++j)
                 QVERIFY(selfPaths.at(i) != selfPaths.at(j));
-        // Twenty-four detailed neighbors need multiple lanes, not a single tall stack.
         QVERIFY(view->scene()->sceneRect().height() < 1800);
         QVERIFY(erd.zoomFactor() >= 0.85);
         const auto focus = view->mapFromScene(first.value(centerId).center());

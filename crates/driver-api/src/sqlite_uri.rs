@@ -27,8 +27,6 @@ fn decode(input: &str) -> Result<String> {
     Ok(value.into_owned())
 }
 
-/// Validate SQLite's explicit `file:` URI without rewriting its escaped path.
-/// The result includes URI-imposed read-only settings. Ordinary paths are not URIs.
 pub fn validate_sqlite_uri(uri: &str, read_only: bool) -> Result<bool> {
     if !uri.starts_with("file:")
         || uri.len() > 16 * 1024

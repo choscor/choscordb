@@ -1,4 +1,3 @@
-//! Typed grid edit policy and statement planning.
 use crate::{EditStatement, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -511,12 +510,10 @@ fn review_value(value: &Value) -> String {
             let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
             format!("binary 0x{hex} ({} bytes)", bytes.len())
         }
-        // Planning rejects these as parameters; show them without their contents.
         _ => "unavailable".into(),
     }
 }
 
-/// The statements and bound values a user reviews before applying grid edits.
 pub fn review_text(plan: &GridEditPlan) -> String {
     let mut review = String::new();
     for planned in &plan.statements {
@@ -534,7 +531,6 @@ pub fn review_text(plan: &GridEditPlan) -> String {
     review
 }
 
-/// How a staged result cell is represented in the grid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GridCellKind {
     Value,
@@ -551,8 +547,6 @@ pub struct GridCellKindPolicy {
     pub duplicate_requires_load: bool,
 }
 impl GridCellKind {
-    /// Only complete scalar values edit inline. Rows holding values the grid could
-    /// not represent exactly cannot be matched for delete or copied.
     pub fn policy(self) -> GridCellKindPolicy {
         let partial = matches!(self, Self::FallbackText | Self::Unavailable);
         GridCellKindPolicy {
@@ -563,7 +557,6 @@ impl GridCellKind {
         }
     }
 }
-/// Why another staged row cannot be added to a page holding `rows` rows.
 pub fn grid_row_insert_error(rows: usize) -> Option<&'static str> {
     (rows >= crate::MAX_PAGE_SIZE as usize)
         .then_some("The visible page already has the maximum number of rows.")

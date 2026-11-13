@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-"""Reject dead or duplicated native desktop code.
-
-Checks:
-- every desktop/test translation unit is named by CMake;
-- every desktop header is included somewhere;
-- every member function declared in a desktop header is referenced beyond its
-  declaration and definition (Qt overrides, operators and special members are
-  ignored);
-- every declared Qt signal is connected, spied, or forwarded somewhere;
-- anonymous-namespace helpers are not copied verbatim between files;
-- ui_consistency.py component lists name classes and controls that still exist.
-
-Reviewed exceptions live in ``EXCEPTIONS`` with a reason; stale exceptions fail.
-"""
 
 from pathlib import Path
 import argparse
@@ -30,7 +16,6 @@ SOURCE_DIRS = ("desktop", "tests")
 REFERENCE_DIRS = ("desktop", "tests", "crates/bridge")
 SKIP_PARTS = {"build", "target", ".git"}
 
-# "path::symbol" -> reason. Keep entries narrow and re-review when code moves.
 EXCEPTIONS = {}
 
 CLASS_OPEN = re.compile(r"^\s*(?:class|struct)\s+(?:\w+\s+)*?(\w+)\b[^;]*\{")
@@ -110,8 +95,7 @@ def unincluded_headers(root, texts):
 
 
 def class_members(text):
-    """Yield (name, line, is_inline, is_signal) for class-scope declarations."""
-    stack = []  # entries: (kind, class_name, section)
+    stack = []
     for line_number, line in enumerate(text.splitlines(), 1):
         top = stack[-1] if stack else None
         if top and top[0] == "class":
@@ -204,7 +188,6 @@ def duplicate_helpers(root, texts):
 
 
 def stale_checker_lists(root, corpus):
-    """Names in ui_consistency.py lists must still exist in desktop code."""
     import ui_consistency
 
     checker = root / "scripts/ci/ui_consistency.py"
@@ -270,7 +253,9 @@ def findings(root=ROOT, check_lists=True):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Reject dead or duplicated native desktop code."
+    )
     parser.add_argument("--json", action="store_true", help="print findings as JSON")
     args = parser.parse_args(argv)
     found = findings()

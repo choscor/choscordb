@@ -53,7 +53,6 @@ fn connection_deadline_includes_queued_tls_preparation() {
         )
         .await
     });
-    // Also release on a red-state panic, so the runtime never hangs while dropping.
     drop(release);
     runtime.shutdown_timeout(Duration::from_secs(2));
     let error = result

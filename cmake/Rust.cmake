@@ -1,20 +1,15 @@
 include(FetchContent)
 FetchContent_Declare(Corrosion
     GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-    GIT_TAG 1499b14e4906a2890f5cee1547c8848db261753d # v0.6.1
+    GIT_TAG 1499b14e4906a2890f5cee1547c8848db261753d
 )
 FetchContent_MakeAvailable(Corrosion)
 corrosion_import_crate(MANIFEST_PATH "${PROJECT_SOURCE_DIR}/Cargo.toml" CRATES choscordb-bridge LOCKED)
-# Corrosion's global RUSTFLAGS joins arguments with spaces. Cargo's encoded form
-# preserves paths containing spaces and applies to every Rust dependency, unlike
-# target-local flags passed after `cargo rustc --`.
 get_target_property(choscordb_rust_compiler Rust::Rustc IMPORTED_LOCATION)
 choscordb_rust_privacy_environment(choscordb_privacy_environment "${choscordb_rust_compiler}")
 if(choscordb_privacy_environment)
     corrosion_set_env_vars(choscordb_bridge ${choscordb_privacy_environment})
 endif()
-# build.rs generates and compiles the CXX implementation. Corrosion owns Cargo
-# invocation and Rust runtime link dependencies; consumers wait for headers.
 corrosion_set_env_vars(choscordb_bridge "CHOSCORDB_CXX_INCLUDE_DIR=${PROJECT_BINARY_DIR}/generated/cxxbridge-source")
 if(CHOSCORDB_UPDATE_REHEARSAL)
     corrosion_set_env_vars(choscordb_bridge "CHOSCORDB_CREDENTIAL_SERVICE=com.choscor.ChoscorDB.tests.rehearsal")
@@ -32,7 +27,6 @@ choscordb_export_cxx_headers(choscordb-rust cargo-build_choscordb_bridge
     "${PROJECT_BINARY_DIR}/generated/cxxbridge-source"
     "${PROJECT_BINARY_DIR}/generated/cxxbridge")
 
-# Rust's standard-library native link list does not include credential backend libraries.
 if(APPLE)
     find_library(CHOSCORDB_SECURITY_FRAMEWORK Security REQUIRED)
     find_library(CHOSCORDB_COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)

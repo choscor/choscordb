@@ -51,7 +51,7 @@ void saveNativeSurface(QWidget& widget, const QString& filename) {
     const auto directory = qEnvironmentVariable("CHOSCORDB_TEST_CAPTURE_DIR");
     if (directory.isEmpty() || QGuiApplication::platformName() != "cocoa")
         return;
-    QTest::qWait(300); // Let native popup open/close animations reach their final frame.
+    QTest::qWait(300);
     const auto topLeft = widget.mapToGlobal(QPoint());
     const auto image =
         widget.screen()->grabWindow(0, topLeft.x(), topLeft.y(), widget.width(), widget.height());
@@ -59,7 +59,7 @@ void saveNativeSurface(QWidget& widget, const QString& filename) {
     QVERIFY(QDir().mkpath(directory));
     QVERIFY(image.save(QDir(directory).filePath(filename)));
 }
-} // namespace
+}
 
 void ControlStyleTest::menuCheckmarkUsesTheSharedVectorPath() {
     using namespace choscordb::design;
@@ -224,7 +224,6 @@ void ControlStyleTest::buttonMenuPanelOpensBelowItsButton() {
     menu->addAction("Commit");
     button->move(140, 140);
     root.show();
-    // The position that Qt gives to a top-level popup below the button.
     menu->popup(button->mapToGlobal(QPoint(0, button->height())));
     QCoreApplication::processEvents();
     const int margin = detail::menuShadowMargin();
@@ -392,8 +391,6 @@ void ControlStyleTest::paneTabsPaintReferenceInsetsWithoutMovingDocumentTabs() {
     root.resize(340, 80);
     root.show();
     QCoreApplication::processEvents();
-    // Segmented pane tabs: a rounded surface-raised track, with the selected
-    // tab an inset surface segment.
     QCOMPARE(tabs.sizeHint().height(), dimension(Dimension::Tab));
     const auto capture = tabs.grab();
     const auto image = capture.toImage();
@@ -406,7 +403,6 @@ void ControlStyleTest::paneTabsPaintReferenceInsetsWithoutMovingDocumentTabs() {
     QCOMPARE(at(selected.left() + 4, selected.center().y()), QColor("#ffffff"));
     QCOMPARE(at(selected.center().x(), 0), QColor("#eef1f2"));
     QCOMPARE(at(idle.left() + 4, idle.center().y()), QColor("#eef1f2"));
-    // The track's corner is rounded, so its parent shows through.
     const auto parentImage = root.grab(tabs.geometry()).toImage();
     QVERIFY(parentImage.pixelColor(0, 0) != QColor("#eef1f2"));
     QCOMPARE(parentImage.pixelColor(qRound(selected.center().x() * scale), 0), QColor("#eef1f2"));

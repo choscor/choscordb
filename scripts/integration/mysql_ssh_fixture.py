@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Run real SSH MySQL tests without modifying the user's SSH configuration.
-
-Requires Docker, OpenSSH, and the disposable MySQL container documented in
-mysql.md. Set CHOSCORDB_MYSQL_CONTAINER to its name (default:
-choscordb-mysql-implementation). Creates and removes its own SSH container/keys.
-"""
 
 import os
 from pathlib import Path
@@ -104,9 +98,6 @@ def main():
             (directory / "known_hosts").write_text(
                 f"[127.0.0.1]:{port} " + (directory / "host.pub").read_text()
             )
-            # This wrapper delegates every byte to real OpenSSH. It isolates
-            # host-key trust/config files, without bypassing verification.
-            # It also records each call, so a test can count the SSH logins.
             (directory / "ssh").write_text(
                 '#!/bin/sh\nprintf "%s\\n" "$*" >> "$CHOSCORDB_SSH_CALLS"\n'
                 'exec "$CHOSCORDB_REAL_SSH" -F /dev/null -o GlobalKnownHostsFile=/dev/null '

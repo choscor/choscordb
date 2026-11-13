@@ -1,4 +1,3 @@
-//! Saved navigator children show at once on a reconnect, until the live children arrive.
 use async_trait::async_trait;
 use choscordb_core::{ConnectionProfile, Engine, Event, ProfileConfiguration};
 use choscordb_driver_api::*;
@@ -7,13 +6,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// The children that the server gives now, or the error that it gives.
 type Answer = std::result::Result<Vec<&'static str>, &'static str>;
-/// The server state that the test controls.
 #[derive(Clone)]
 struct Server {
     answer: Arc<Mutex<Answer>>,
-    /// The transaction state that the session reports after each statement.
     transaction: Arc<Mutex<Option<bool>>>,
 }
 impl Server {
@@ -77,7 +73,6 @@ impl Connection for Session {
                 kind: ObjectKind::Schema,
                 has_children: true,
                 column: None,
-                // Properties are details that the cache does not keep.
                 properties: vec![MetadataProperty::available("Owner", "admin")],
             })
             .collect())
@@ -123,7 +118,6 @@ fn next(engine: &mut Engine) -> Event {
     }
 }
 
-/// What one root expand shows: each children event as (cached, names), or the error.
 #[derive(Debug, PartialEq)]
 enum Shown {
     Children(bool, Vec<String>),
@@ -182,7 +176,6 @@ fn a_reconnect_shows_saved_children_first_and_then_the_live_children() {
     let mut engine =
         Engine::new(Default::default(), vec![Arc::new(Driver(server.clone()))]).unwrap();
     let connection = connect(&mut engine);
-    // Nothing is saved yet.
     assert_eq!(
         expand(&mut engine, connection, false),
         [children(false, &["sales", "audit"])]
@@ -196,14 +189,12 @@ fn a_reconnect_shows_saved_children_first_and_then_the_live_children() {
             children(false, &["sales", "audit", "hr"])
         ]
     );
-    // The live children replaced the saved ones.
     server.answer(Ok(vec!["hr"]));
     let connection = reconnect(&mut engine, connection);
     assert_eq!(
         expand(&mut engine, connection, false)[0],
         children(true, &["sales", "audit", "hr"])
     );
-    // A manual refresh skips the saved children.
     assert_eq!(
         expand(&mut engine, connection, true),
         [children(false, &["hr"])]
@@ -271,7 +262,6 @@ fn children_that_a_transaction_shows_are_not_saved() {
     let server = Server::new(vec!["sales"]);
     let mut engine =
         Engine::new(Default::default(), vec![Arc::new(Driver(server.clone()))]).unwrap();
-    // The transaction state is not known, so the children may hold uncommitted changes.
     *server.transaction.lock().unwrap() = None;
     let connection = connect(&mut engine);
     server.answer(Ok(vec!["sales", "uncommitted"]));

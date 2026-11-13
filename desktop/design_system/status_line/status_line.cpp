@@ -220,7 +220,6 @@ void StatusLine::fitContent(bool reserveDetails) {
         }
         return result + (leading && trailing ? gap : 0);
     };
-    // Preserve readable operation and page context before optional execution metrics.
     const auto required = [&] { return occupied() - widths[0] - widths[1] + outcomeMinimum; };
     for (const size_t optional : {size_t(3), size_t(2)})
         if (required() > available)
@@ -231,7 +230,6 @@ void StatusLine::fitContent(bool reserveDetails) {
             qMin(qMax(0, widths[flexible] - floor), qMax(0, occupied() - available));
         widths[flexible] -= reduction;
     }
-    // Tiny viewports compress page/row labels too, while reserving an outcome indication.
     for (const size_t trailing : {size_t(5), size_t(4)}) {
         const int floor =
             qMin(widths[trailing], fontMetrics().horizontalAdvance(QStringLiteral("…")));
@@ -304,8 +302,6 @@ void StatusLine::setMessage(const QString& message) {
     if (fullMessage_ == message)
         return;
     fullMessage_ = message;
-    // Diagnostics remain complete in Details and accessibility. Keep the local
-    // summary compact even when backend text contains many lines or long paths.
     constexpr qsizetype SummaryCharacters = 240;
     const auto summary = message.simplified();
     const bool shortened =
@@ -327,8 +323,6 @@ void StatusLine::refreshDetailsVisibility() {
         return;
     }
     const bool shortened = fullMessage_.size() > 240 || fullMessage_.contains(QLatin1Char('\n'));
-    // At narrow widths even a short diagnostic can exceed the compact footer.
-    // Details must remain available whenever the wrapping label cannot show it all.
     const bool clipped =
         message_->heightForWidth(qMax(1, message_->width())) > message_->maximumHeight();
     details_->setVisible(shortened || clipped);
@@ -449,4 +443,4 @@ void StatusLine::refreshAppearance() {
     update();
 }
 
-} // namespace choscordb::design
+}

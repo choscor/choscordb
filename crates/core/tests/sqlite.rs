@@ -108,7 +108,6 @@ fn metadata_and_ddl_do_not_destroy_a_paged_sqlite_result() {
     }
 }
 
-/// Queries that page 100 rows at a time.
 fn paged() -> QueryOptions {
     QueryOptions {
         page_size: PageSize::new(100).unwrap(),
@@ -799,7 +798,6 @@ fn queries_remember_the_page_size_they_started_with() {
     let rows = "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<250) SELECT x FROM n";
     for (size, expected) in [(MIN_PAGE_SIZE, 100), (MAX_PAGE_SIZE, 250)] {
         let query = engine.execute(c, rows.into(), options(size)).unwrap();
-        // The fetch takes no size: the engine reuses the one the query started with.
         engine.fetch_page_at(query, 0).unwrap();
         match result_event(&mut engine) {
             Event::StoredPage { page, .. } => assert_eq!(page.rows.len(), expected),

@@ -40,13 +40,9 @@ class Backdrop final : public QWidget {
     }
 
     void captureOwner() {
-        // grab() delivers pending Resize events for hidden owners. Those events
-        // request a recapture; the outer grab already observes their new size.
         if (capturing_)
             return;
         const QScopedValueRollback<bool> captureGuard(capturing_, true);
-        // Rendering must omit this layer and any modal above it. Changing
-        // visibility attributes avoids hide/show lifecycle signals during grab.
         QList<QWidget*> excluded;
         const int layer = activeDialogs.indexOf(&dialog_);
         for (int i = qMax(0, layer); i < activeDialogs.size(); ++i) {
@@ -89,13 +85,9 @@ class Backdrop final : public QWidget {
         if (capturePending_)
             return;
         capturePending_ = true;
-        // Style/palette filters run before child widgets receive their new
-        // palette. Capture after that propagation, coalescing the event burst.
         QTimer::singleShot(0, this, [this] {
             if (!capturePending_)
                 return;
-            // Nested layers must capture the newly rendered lower backdrop,
-            // even when their palette event arrived first.
             const auto siblings =
                 parentWidget()->findChildren<QWidget*>(QString{}, Qt::FindDirectChildrenOnly);
             for (const auto& dialog : activeDialogs) {
@@ -137,9 +129,6 @@ class Backdrop final : public QWidget {
             path.addRoundedRect(panel, radius(Radius::Large), radius(Radius::Large));
             QPainterPath outside;
             outside.addRect(rect());
-            // QGraphicsDropShadowEffect includes its source in the scene render.
-            // Keep only the exterior shadow so the rounded surface exposes
-            // the dimmed owner, never the black source silhouette.
             shadowPainter.setClipPath(outside.subtracted(path));
             for (const auto& layer : elevation(Elevation::Dialog)) {
                 QGraphicsScene scene;
@@ -173,7 +162,7 @@ class Backdrop final : public QWidget {
     QSize shadowSize_;
     qreal shadowScale_ = 0;
 };
-} // namespace
+}
 DialogPresentation::DialogPresentation(QDialog& dialog, Placement placement)
     : QObject(&dialog), dialog_(dialog), placement_(placement) {}
 DialogPresentation::~DialogPresentation() {
@@ -185,12 +174,9 @@ void DialogPresentation::makeModal() {
     if (parent) {
         anchor_ = parent;
         if (parent != parent->window()) {
-            // Embedding changes visual parenting, but not the originating
-            // widget's ownership of the dialog's lifetime.
             connect(parent, &QObject::destroyed, &dialog_, &QObject::deleteLater);
         }
         dialog_.setParent(parent->window(), Qt::Widget | Qt::FramelessWindowHint);
-        // A newly embedded child must not be implicitly shown with its owner.
         dialog_.hide();
         dialog_.setWindowModality(Qt::NonModal);
     } else {
@@ -401,4 +387,4 @@ void paintDialogSurface(QWidget& widget, bool drawBorder) {
         drawBorder ? QRectF(widget.rect()).adjusted(.5, .5, -.5, -.5) : QRectF(widget.rect());
     painter.drawRoundedRect(bounds, cornerRadius, cornerRadius);
 }
-} // namespace choscordb::design
+}

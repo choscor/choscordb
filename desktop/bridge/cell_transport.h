@@ -4,7 +4,6 @@
 #include "models/result_table_model.h"
 
 namespace choscordb::bridge_detail {
-// Conversion only: database rules and value validation live on the Rust side.
 inline CellDto cellDto(const Cell& value, bool eligibilityOnly = false,
                        bool* validUnicode = nullptr) {
     CellDto result;
@@ -63,4 +62,4 @@ inline CellDto cellDto(const Cell& value, bool eligibilityOnly = false,
         result.kind = CellKindDto::InvalidUnicode;
     return result;
 }
-} // namespace choscordb::bridge_detail
+}

@@ -13,15 +13,15 @@ const MAX_GRAPH_TEXT_BYTES: usize = 32 * 1024;
 const MAX_GRAPH_FK_COLUMNS: usize = 256;
 
 type ForeignRow = (
-    String,         // constraint schema
-    String,         // source schema
-    String,         // source table
-    String,         // constraint name
-    String,         // source column
-    String,         // target schema
-    String,         // target table
-    Option<String>, // target column
-    u64,            // ordinal position
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    u64,
 );
 
 fn unavailable(graph: &mut ObjectGraph, reason: &str, warning: String) {
@@ -71,9 +71,6 @@ async fn table_columns(
             "MySQL ER diagram budget reached",
         ));
     }
-    // Check the complete type lengths on the server before fetching any
-    // COLUMN_TYPE strings. A single large ENUM definition can exceed the
-    // entire graph text budget even when its table has only two columns.
     let admission: Option<(u64, u64)> = conn
         .exec_first(
             "SELECT COUNT(*), CAST(COALESCE(SUM(OCTET_LENGTH(COLUMN_NAME) + \
@@ -131,8 +128,6 @@ async fn table_columns(
             "MySQL ER diagram metadata changed or exceeded the budget",
         ));
     }
-    // Mark every declared FK source column on a displayed table. These
-    // constraints may point outside the selected table's one-hop graph.
     let foreign_keys: BTreeSet<String> = conn
         .exec::<String, _, _>(
             "SELECT DISTINCT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE \
@@ -230,9 +225,6 @@ pub(crate) async fn object_graph(
         graph.tables[0].columns.clear();
         return Ok(graph);
     }
-    // KEY_COLUMN_USAGE contains the paired source and referenced columns. The
-    // predicates read only constraints touching the selected table, so graph
-    // discovery cannot expand to a second hop.
     let mut rows: Vec<ForeignRow> = conn
         .exec(
             "SELECT CONSTRAINT_SCHEMA, TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, COLUMN_NAME, \
@@ -261,8 +253,6 @@ pub(crate) async fn object_graph(
             qualified(&limited.1, &limited.2)
         );
         rows.truncate(MAX_GRAPH_FK_COLUMNS);
-        // The last retained row may be one column of a composite constraint.
-        // Keep only complete constraints when the bounded query cuts through one.
         while rows.last().is_some_and(|row| {
             (&row.0, &row.1, &row.2, &row.3) == (&cutoff.0, &cutoff.1, &cutoff.2, &cutoff.3)
         }) {

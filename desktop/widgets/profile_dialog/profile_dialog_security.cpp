@@ -18,4 +18,4 @@ void ProfileDialog::setSecurityDraft(const SavedProfile& value) {
     sshPrivateKey_->setDraft({{}, false}, !value.sshPrivateKeyRef.isEmpty());
     updatePrivateKeyControls();
 }
-} // namespace choscordb
+}

@@ -23,7 +23,7 @@ namespace design {
 class PlatformAccessibilityMonitor;
 class ThemeManager;
 class QuickSearchDialog;
-} // namespace design
+}
 class SqlEditor;
 class TextFinder;
 class QueryWorkspace;
@@ -48,11 +48,8 @@ class MainWindow final : public QMainWindow {
     void requestUpdateRestart(std::function<void()> install);
     void openConnectionQuery(quint64 connection);
     void showToast(const QString& message, ToastVariant variant);
-    // An error from an action that the user started; it joins the one error modal.
     void reportError(const QString& message);
-    // A background error or a blocked-action warning; it replaces the one notice toast.
     void reportNotice(const QString& message, ToastVariant variant = ToastVariant::Warning);
-    // Removes the notice when its condition is resolved.
     void clearNotice(const QString& message);
     void disableDiagnostics();
     std::optional<quint64> browsingConnection() const { return browsingConnection_; }
@@ -89,7 +86,6 @@ class MainWindow final : public QMainWindow {
     void activateNavigatorObject(const QModelIndex& index);
     void tryRevealPendingPin();
     void updatePinsForObjectAction(const PendingObjectAction& action);
-    // A background save failure is a notice; a failure of a user action is an error.
     void savePinsAsync(QList<PinRecord> updated, const QString& failureMessage,
                        bool background = false);
     void failPinExpansion(const QString& key, const RowStatus& status, bool rebinding);
@@ -98,7 +94,6 @@ class MainWindow final : public QMainWindow {
                              const QString& parentObjectId, const QString& qualifiedName,
                              const QString& relationSubtype);
     void handleObjectActionEvent(const BridgeEvent& event);
-    // The objects section is busy while an object action, its refresh or a search runs.
     void syncObjectSectionBusy();
     bool objectActionReady(quint64 connection, const QString& objectId, const QString& kind,
                            const QString& parentObjectId, const QString& qualifiedName,
@@ -122,7 +117,6 @@ class MainWindow final : public QMainWindow {
     QString submittingBrowseProfileId_, submissionError_;
     QString reconnectingProfile_;
     QPointer<ObjectExplorer> reconnectingExplorer_;
-    // Ends a Reconnect that an object tab started. A failed one only clears its progress.
     void finishReconnect(bool connected);
     bool submittingBrowseProfile_ = false;
     NavigatorController* navigatorController_ = nullptr;
@@ -135,7 +129,6 @@ class MainWindow final : public QMainWindow {
     struct PendingObjectRefresh {
         quint64 connection = 0, token = 0;
         QString parentObjectId;
-        // Shows when the navigator shows the change.
         QString success;
     };
     std::optional<PendingObjectRefresh> pendingObjectRefresh_;
@@ -143,12 +136,11 @@ class MainWindow final : public QMainWindow {
     bool objectSearchBusy_ = false;
     PinStore pinStore_;
     QList<PinRecord> pins_;
-    QHash<QString, qsizetype> pinRows_; // First pins_ row per identity key.
+    QHash<QString, qsizetype> pinRows_;
     QList<PinRecord> savedPins_;
     QThreadPool pinIoPool_;
     quint64 pinSaveGeneration_ = 0;
     quint64 pinPersistedGeneration_ = 0;
-    // The notice of a failed background save; a later successful save clears it.
     QString pinSaveNotice_;
     bool pinsLoaded_ = false;
     QPointer<QTreeView> pinnedList_;
@@ -227,7 +219,6 @@ class MainWindow final : public QMainWindow {
     QList<design::QuickSearchResult> quickNameRows_, quickEditorRows_, quickHistoryRows_,
         quickObjectRows_;
     QHash<QString, QuickEditorMatch> quickEditorMatches_;
-    // Compiled once per query for history snippets and editor text scans.
     std::shared_ptr<const TextFinder> quickTextFinder_;
     QHash<QString, QVariant> quickHistoryMatches_;
     QHash<QString, QVariantMap> quickObjectMatches_;
@@ -242,7 +233,6 @@ class MainWindow final : public QMainWindow {
     QWidget* sqlResultArea_ = nullptr;
     ObjectExplorer* initialObjectExplorer_ = nullptr;
     std::function<void(quint64, const QString&)> openGeneratedSql_;
-    // Opens a saved profile; false means that it already reported the failure.
     std::function<bool(const QString&)> reconnectProfile_;
     QPointer<QListWidget> savedConnectionsList_;
     std::function<void()> activateFocusedSavedProfile_;
@@ -251,4 +241,4 @@ class MainWindow final : public QMainWindow {
     QueryWorkspace* workspace_ = nullptr;
     DiagnosticsService* diagnostics_ = nullptr;
 };
-} // namespace choscordb
+}

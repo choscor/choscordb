@@ -25,7 +25,7 @@ class FooterSurface final : public QWidget {
         painter.fillRect(rect(), resolvedThemeForWidget(*this).colors.surfaceRaised);
     }
 };
-} // namespace
+}
 
 RightSheet::RightSheet(QWidget* owner)
     : QDialog(owner), presentation_(*this, DialogPresentation::Placement::RightEdge) {
@@ -124,4 +124,4 @@ void RightSheet::hideEvent(QHideEvent* event) {
     QDialog::hideEvent(event);
     presentation_.hidden();
 }
-} // namespace choscordb::design
+}

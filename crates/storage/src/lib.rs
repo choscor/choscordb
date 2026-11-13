@@ -1,6 +1,3 @@
-//! Synchronous local metadata persistence. Call only from a dedicated blocking worker.
-//! Recovery returns inert editor data: this crate has no driver or execution dependency.
-
 mod appearance;
 mod metadata_cache;
 mod preferences;
@@ -68,9 +65,7 @@ pub struct ConnectionProfile {
     pub name: String,
     pub group_id: Option<String>,
     pub configuration: ProfileConfiguration,
-    /// Opaque identifier for an OS credential item, never the credential itself.
     pub credential_ref: Option<String>,
-    /// Opaque identifier for an OS credential item containing an SSH password or key passphrase.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh_credential_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -79,7 +74,6 @@ pub struct ConnectionProfile {
     pub tls_credential_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_credential_ref: Option<String>,
-    /// Per-hop opaque credential references, keyed by stable SSH hop identifier.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub ssh_jump_credential_refs: std::collections::BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -193,17 +187,14 @@ pub struct HistoryEntry {
     pub id: String,
     pub profile_id: Option<String>,
     pub sql: String,
-    /// Unix timestamp in seconds.
     pub timestamp: i64,
     pub duration_ms: u64,
     pub status: HistoryStatus,
     pub row_count: Option<u64>,
 }
-/// A bounded search over retained history, ordered newest first.
 pub struct HistorySearchResult {
     pub entries: Vec<HistoryEntry>,
     pub incomplete: bool,
-    /// Opaque cursor for the next request. Pass it back unchanged when incomplete.
     pub next_offset: u64,
 }
 pub const MAX_HISTORY_SEARCH_RESULTS: u32 = 100;
@@ -235,7 +226,6 @@ impl Default for HistoryPolicy {
     }
 }
 
-/// The schema version written with the first MariaDB profile.
 const MARIADB_PROFILES_SCHEMA: i64 = 4;
 
 pub struct Storage {
@@ -284,8 +274,6 @@ impl Storage {
         }
         tx.commit()?;
         let mut store = Self { db };
-        // Corrupt history preferences must not disable profiles or inert recovery.
-        // History APIs retain the error until the user replaces the policy.
         match store.history_policy() {
             Ok(policy) => {
                 let tx = store.db.transaction()?;
@@ -318,7 +306,6 @@ impl Storage {
             .transpose()?;
         match &saved {
             None => check_profile_capacity(&tx)?,
-            // Saved children of another server or database are not the children of this one.
             Some(saved) if saved.configuration != profile.configuration => {
                 tx.execute(
                     "DELETE FROM metadata_cache WHERE profile_id=?1",
@@ -328,8 +315,6 @@ impl Storage {
             Some(_) => {}
         }
         tx.execute("INSERT INTO connection_profiles(id, data) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET data=excluded.data", params![profile.id, data])?;
-        // Builds that predate MariaDB profiles cannot decode them, so the first
-        // one marks the schema as newer for those builds.
         if matches!(profile.configuration, ProfileConfiguration::Mariadb { .. }) {
             tx.execute(
                 "INSERT OR IGNORE INTO schema_migrations(version) VALUES (?1)",
@@ -364,7 +349,6 @@ impl Storage {
         let mut rows = stmt.query([id])?;
         rows.next()?.map(decode_profile).transpose()
     }
-    /// Returns all profiles or an error, never a silently truncated list.
     pub fn profiles(&self) -> Result<Vec<ConnectionProfile>> {
         let mut stmt = self
             .db
@@ -379,8 +363,6 @@ impl Storage {
         }
         Ok(profiles)
     }
-    /// Copies configuration only. The copy must obtain its own OS credential item;
-    /// references are never shared because replacement/deletion owns that item.
     pub fn duplicate_profile(
         &mut self,
         source: &str,
@@ -468,7 +450,6 @@ impl Storage {
                     .any(|value| value == reference)
         }))
     }
-    /// Application-owned preferences only. Never pass credentials or connection strings.
     pub fn set_setting<T: Serialize>(&mut self, key: &str, value: &T) -> Result<()> {
         if key == "history_policy"
             || key == "editor_preferences"
@@ -624,7 +605,6 @@ impl Storage {
         tx.commit()?;
         Ok(true)
     }
-    /// Invoke at application startup as well as after inserts to age out idle history.
     pub fn prune_history(&mut self, now: i64) -> Result<()> {
         let policy = self.history_policy()?;
         let tx = self.db.transaction()?;
@@ -632,9 +612,6 @@ impl Storage {
         tx.commit()?;
         Ok(())
     }
-    /// Return at most `limit` records, stopping before the serialized page byte cap.
-    /// A nonempty page can be shorter than `limit` without reaching EOF. Advance
-    /// the next offset by the returned length; no record is skipped or truncated.
     pub fn history(&self, limit: u32, offset: u32) -> Result<Vec<HistoryEntry>> {
         self.history_policy()?;
         validate_history_page(limit, offset)?;
@@ -666,9 +643,6 @@ impl Storage {
         }
         Ok(entries)
     }
-    /// Match the complete saved SQL literally, ignoring case. Per-request row
-    /// and byte caps bound work; returned entries are a subset of those rows.
-    /// `offset` is an opaque row cursor, not a count of skipped records.
     pub fn search_history(
         &self,
         query: &str,
@@ -790,7 +764,6 @@ impl std::fmt::Debug for HistoryEntry {
 }
 
 impl ProfileConfiguration {
-    /// The id of the driver that opens this profile.
     pub fn driver_id(&self) -> &'static str {
         match self {
             Self::Sqlite { .. } => "sqlite",
@@ -799,8 +772,6 @@ impl ProfileConfiguration {
             Self::Postgres { .. } => "postgres",
         }
     }
-    /// Convert all stored options without weakening TLS. Resolve the credential
-    /// separately through the OS adapter; credentials never enter this DTO.
     pub fn connection_options(
         &self,
         password: Option<Secret>,
@@ -905,7 +876,6 @@ impl ProfileConfiguration {
     }
 }
 
-/// Hard bounds apply equally to newly submitted and persisted profiles.
 pub const MAX_PROFILES: usize = 1000;
 pub const MAX_PROFILE_BYTES: usize = 64 * 1024;
 
@@ -1072,7 +1042,6 @@ impl ConnectionProfile {
                 if !user.is_empty() {
                     validate_field(user, 16 * 1024)?;
                 }
-                // MySQL and MariaDB permit anonymous login and no selected default database.
                 if !database.is_empty() {
                     validate_field(database, 16 * 1024)?;
                 }
@@ -1133,7 +1102,6 @@ fn check_profile_capacity(db: &Connection) -> Result<()> {
 }
 fn encode_profile(profile: &ConnectionProfile) -> Result<String> {
     profile.validate()?;
-    // Count escaped JSON before allocating its output buffer.
     struct Counter(usize);
     impl std::io::Write for Counter {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
@@ -1154,7 +1122,6 @@ fn encode_profile(profile: &ConnectionProfile) -> Result<String> {
     String::from_utf8(bytes).map_err(|_| StorageError::InvalidProfile)
 }
 fn decode_profile(row: &rusqlite::Row<'_>) -> Result<ConnectionProfile> {
-    // Borrow SQLite's buffer and check bytes before deserialization allocates strings.
     let data = row
         .get_ref(1)?
         .as_str()
@@ -1209,7 +1176,6 @@ fn credential_references(db: &Connection, id: &str) -> Result<Vec<Option<String>
     })
 }
 
-/// SQL positions use UTF-8 byte offsets, matching Scintilla.
 pub const MAX_SQL_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_WORKSPACE_DOCUMENTS: usize = 128;
 pub const MAX_HISTORY_PAGE: u32 = 1000;
@@ -1257,8 +1223,6 @@ impl HistoryEntry {
         Ok(())
     }
 }
-/// Validate before queueing a snapshot. Rejection never partially replaces saved tabs.
-/// Validates documents and returns their encoded size.
 pub fn validate_workspace(documents: &[EditorDocument]) -> Result<usize> {
     if documents.len() > MAX_WORKSPACE_DOCUMENTS {
         return Err(StorageError::ResourceLimit);
@@ -1306,7 +1270,6 @@ impl WorkspaceTab {
                 document_field(&o.object_type, 128)?;
                 document_field(&o.object_id, 16 * 1024)?;
                 document_field(&o.label, 1024)?;
-                // Saved pane 4 remains Data for pre-ERD workspaces; 5 selects ERD.
                 if o.pane > 5 || (o.pane == 5 && o.object_type != "table") {
                     return Err(StorageError::InvalidDocument);
                 }
@@ -1315,7 +1278,6 @@ impl WorkspaceTab {
         }
     }
 }
-/// Validates a tab snapshot and returns its encoded size.
 pub fn validate_workspace_tabs(snapshot: &WorkspaceSnapshot) -> Result<usize> {
     if snapshot.tabs.len() > MAX_WORKSPACE_DOCUMENTS {
         return Err(StorageError::ResourceLimit);
@@ -1392,7 +1354,6 @@ impl HistoryPolicy {
         Ok(())
     }
 }
-/// Offset is a nonnegative u32; the requested page must remain bounded.
 pub fn validate_history_page(limit: u32, _offset: u32) -> Result<()> {
     if limit > MAX_HISTORY_PAGE {
         return Err(StorageError::ResourceLimit);

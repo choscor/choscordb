@@ -10,8 +10,6 @@ int qInitResources_resources();
 
 namespace choscordb::test {
 
-// Test-only structural check: the compiled icon resource exists, parses, has an
-// SVG root with a view box, and contains at least one drawing element.
 inline bool iconResourceDecodes(design::Icon icon) {
     ::qInitResources_resources();
     const auto path = design::iconResourcePath(icon);
@@ -41,4 +39,4 @@ inline bool iconResourceDecodes(design::Icon icon) {
     return !reader.hasError() && root && drawingElement;
 }
 
-} // namespace choscordb::test
+}

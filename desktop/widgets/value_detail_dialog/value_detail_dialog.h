@@ -11,7 +11,7 @@ namespace choscordb {
 namespace design {
 class Button;
 class StatusLine;
-} // namespace design
+}
 class EngineAdapter;
 class ValuePreviewModel;
 struct BridgeEvent;
@@ -22,7 +22,6 @@ class ValueDetailDialog final : public DialogShell {
     ~ValueDetailDialog() override;
     void openValue(quint64 query, quint64 handle, const QString& type = {},
                    std::optional<quint64> length = std::nullopt);
-    // Returns why the value cannot open; empty on success.
     QString openInlineValue(QByteArray bytes, const QString& type, bool binary);
     void clearValue();
 
@@ -61,4 +60,4 @@ class ValueDetailDialog final : public DialogShell {
     std::optional<quint64> lease_;
     std::optional<quint64> alignmentTarget_;
 };
-} // namespace choscordb
+}

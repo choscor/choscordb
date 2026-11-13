@@ -16,4 +16,4 @@ bool drawMenuIndicator(QStyle::PrimitiveElement element, const QStyleOption* opt
     return false;
 }
 
-} // namespace choscordb::design::detail
+}

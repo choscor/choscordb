@@ -1,4 +1,3 @@
-//! Native SOCKS CONNECT transport; database TLS runs above the returned stream.
 use crate::{DriverError, ErrorKind, Result, Secret, tcp_host};
 use serde::{Deserialize, Serialize};
 use std::{net::IpAddr, time::Duration};
@@ -258,8 +257,6 @@ async fn socks4(stream: &mut TcpStream, proxy: &SocksProxy, host: &str, port: u1
     Ok(())
 }
 
-/// Determine credential requirements from persisted proxy options in the same
-/// way as the transport. Invalid settings remain subject to profile validation.
 pub fn profile_proxy_needs_password(driver: &str, options: &str) -> bool {
     driver != "sqlite"
         && serde_json::from_str::<SocksProxy>(options).is_ok_and(|proxy| proxy.needs_password())

@@ -1,23 +1,18 @@
-//! The binary form of one value. The result store and the driver spools share it.
 use crate::{Handle, Value};
 
-/// A destination for encoded values.
 pub trait ValueWriter {
     type Error;
     fn byte(&mut self, n: u8) -> Result<(), Self::Error>;
     fn u32(&mut self, n: u32) -> Result<(), Self::Error>;
     fn u64(&mut self, n: u64) -> Result<(), Self::Error>;
-    /// Writes the length and then the bytes.
     fn bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error>;
 }
 
-/// A source of encoded values. Each read checks its length before it allocates.
 pub trait ValueReader {
     type Error;
     fn byte(&mut self) -> Result<u8, Self::Error>;
     fn u32(&mut self) -> Result<u32, Self::Error>;
     fn u64(&mut self) -> Result<u64, Self::Error>;
-    /// Reads a length and then the bytes.
     fn bytes(&mut self) -> Result<Vec<u8>, Self::Error>;
     fn corrupt(&self) -> Self::Error;
 }

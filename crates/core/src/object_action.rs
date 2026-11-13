@@ -1,4 +1,3 @@
-//! Validation and SQL generation for navigator relation and sequence actions.
 use serde_json::Value;
 
 const MAX_NAME_UNITS: usize = 1024 * 1024;
@@ -117,7 +116,6 @@ fn identity(driver: &str, object_id: &str, qualified_name: &str) -> Option<(Stri
     Some((schema.to_owned(), name.to_owned()))
 }
 
-/// Whether `action` applies to an object before its identity is known.
 pub fn object_action_availability(
     action: ObjectAction,
     driver: &str,
@@ -213,8 +211,6 @@ pub fn prepare_object_action(
     })
 }
 
-/// Decode driver identity/display labels for presentation without treating the
-/// display label as an executable or authoritative action target.
 pub fn object_display_identity(object_id: &str, qualified_name: &str) -> (Option<String>, String) {
     if let Ok(parts) = serde_json::from_str::<Vec<String>>(object_id)
         && let Some(name) = parts.last().filter(|name| !name.is_empty())

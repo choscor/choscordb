@@ -1,4 +1,3 @@
-//! Allocation-free conservative preflight. No escaping or schema cloning occurs here.
 use crate::{ExportFormat, Limits};
 use choscordb_driver_api::*;
 fn limit() -> DriverError {
@@ -32,8 +31,6 @@ fn table_bytes(format: &ExportFormat) -> Result<usize> {
         _ => Ok(0),
     }
 }
-/// Check source schema before copying it. Four times the encoded bound reserves
-/// room for replacement strings, per-field vectors, joining, and final formatting.
 pub fn schema(format: &ExportFormat, columns: &[Column], limits: Limits) -> Result<()> {
     let copied = columns.iter().try_fold(
         mul(columns.len(), std::mem::size_of::<Column>())?,
@@ -46,8 +43,6 @@ pub fn schema(format: &ExportFormat, columns: &[Column], limits: Limits) -> Resu
         Ok(())
     }
 }
-/// Validate an encoding budget without allocating an encoded string. The bound
-/// intentionally overestimates escaping and temporary copies for every format.
 pub fn row(
     format: &ExportFormat,
     columns: &[Column],
@@ -88,8 +83,6 @@ pub fn row(
     }
 }
 
-/// Reserve the escaped type tag and its temporary copies before formatting a
-/// deferred fallback as JSON. Its text body is encoded chunk by chunk.
 pub fn deferred_fallback_type(database_type: &str, limits: Limits) -> Result<()> {
     let bound = add(128, mul(database_type.len(), 6)?)?;
     if mul(bound, 4)? > limits.encoded_row_bytes {

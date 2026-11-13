@@ -1,4 +1,3 @@
-//! Typed CXX transport for bounded deferred-value assembly.
 use crate::ffi::DeferredAssemblyDto;
 use choscordb_result_store::{
     CompletedDeferredValue, DeferredAssembler, DeferredAssemblerError, DeferredLoadPolicy,

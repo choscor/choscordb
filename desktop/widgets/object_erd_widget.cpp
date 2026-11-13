@@ -30,7 +30,7 @@ QString marker(const ObjectGraphColumn& column) {
         return QStringLiteral("FK");
     return {};
 }
-} // namespace
+}
 
 ObjectErdWidget::ObjectErdWidget(QWidget* parent)
     : QWidget(parent), view_(new QGraphicsView(this)), scene_(new QGraphicsScene(this)) {
@@ -327,8 +327,6 @@ void ObjectErdWidget::render() {
         placed.insert(table.id, placement);
     };
     if (denseLayout_) {
-        // A bounded-height lane keeps a large one-hop neighborhood near its center.
-        // Lane membership depends only on graph data, so resizing cannot shuffle tables.
         const qreal rowGap = design::spacing(design::Spacing::Four) * 2;
         const qreal laneHeight =
             qMax(centerHeight * 2, design::dimension(design::Dimension::Control) * 18.0);
@@ -452,8 +450,6 @@ void ObjectErdWidget::render() {
                 path.cubicTo(QPointF(start.x() + loop, start.y() - rowHeight),
                              QPointF(end.x() + loop, end.y() + rowHeight), end);
             } else if (denseLayout_ && qAbs(end.x() - start.x()) > gap * 1.5) {
-                // The vertical legs sit in the gaps beside their endpoint boxes.
-                // Cross above or below the lanes so distant links do not cut through boxes.
                 const qreal firstX = start.x() + (toRight ? gap / 2 : -gap / 2);
                 const qreal lastX = end.x() + (toRight ? -gap / 2 : gap / 2);
                 const qreal detour = gap / 2 + (routed / 2) * design::spacing(design::Spacing::One);
@@ -527,4 +523,4 @@ void ObjectErdWidget::render() {
     scene_->setSceneRect(scene_->itemsBoundingRect().adjusted(-margin, -margin, margin, margin));
 }
 
-} // namespace choscordb
+}

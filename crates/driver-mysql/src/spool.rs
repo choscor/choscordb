@@ -13,8 +13,6 @@ struct Storage {
 struct Reader {
     storage: Mutex<Storage>,
     generation: u32,
-    // Keyed authentication binds headers to their exact position. Payload bytes
-    // cannot impersonate records, without an unbounded in-memory offset index.
     key: RandomState,
 }
 #[derive(Clone)]

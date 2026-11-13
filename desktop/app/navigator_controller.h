@@ -22,9 +22,7 @@ class QLineEdit;
 class QSortFilterProxyModel;
 namespace choscordb {
 class EngineAdapter;
-// Whether Rust shows this node in the sidebar tree rather than only in its object tab.
 bool showsSidebarChild(const QModelIndex& index);
-// Runs `call` at once, then folds requests made within `intervalMs` into one trailing call.
 inline std::function<void()> coalescedCall(QObject* owner, int intervalMs,
                                            std::function<void()> call) {
     auto* timer = new QTimer(owner);
@@ -82,7 +80,6 @@ class NavigatorController final : public QObject {
     quint64 selectedConnection() const;
     bool isVisibleConnection(quint64 connection) const;
     bool hasSelectedConnection() const;
-    // delayMs debounces the first scan; a newer start or cancel supersedes it.
     void startQuickObjectSearch(const QString& query,
                                 std::optional<quint64> connection = std::nullopt, int delayMs = 0);
     void cancelQuickObjectSearch();
@@ -94,15 +91,12 @@ class NavigatorController final : public QObject {
     void setPinStateResolver(std::function<std::optional<bool>(const QModelIndex&)> resolver);
     void setShowSystemSchemas(bool show);
     void populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex);
-    // The one retry action of a failed navigator or pin row; the caller connects it.
     static QAction* addRetryAction(QMenu* menu);
     bool revealObject(quint64 connection, const QStringList& ancestryIds, const QString& objectId,
                       const QString& kind, const QString& qualifiedName,
                       const QString& relationSubtype,
                       std::function<void(RevealResult, const QString&)> finished,
                       std::function<bool()> stillCurrent = {});
-    // Finds the exact live source row without changing explorer visibility, filter, or selection.
-    // A failed lookup supplies an invalid index; false means the connection is not live in model().
     bool
     resolveObject(quint64 connection, const QStringList& ancestryIds, const QString& objectId,
                   const QString& kind, const QString& qualifiedName, const QString& relationSubtype,
@@ -118,9 +112,7 @@ class NavigatorController final : public QObject {
     void ddlRequested(quint64 connection, const QString& objectId, const QString& label,
                       const QString& kind, const QVariantList& properties);
     void generationFailed(const QString& error);
-    // A metadata load that the user started (expand, Refresh, Load more) failed.
     void loadFailed(const QString& message);
-    // The filter search runs while busy; the notice tells why a finished search is incomplete.
     void searchBusyChanged(bool busy);
     void searchNoticeChanged(const QString& notice);
     void quickObjectSearchChanged();
@@ -144,7 +136,6 @@ class NavigatorController final : public QObject {
     QPersistentModelIndex searchPendingIndex_;
     quint64 searchPendingToken_ = 0;
     QString searchError_;
-    // Traversal state kept across metadata requests so a search resumes instead of restarting.
     struct SearchEntry {
         QPersistentModelIndex index;
         bool expandOnly = false;
@@ -156,7 +147,6 @@ class NavigatorController final : public QObject {
     bool searchIncomplete_ = false;
     bool searchFinished_ = false;
     QTimer* filterTimer_ = nullptr;
-    // Pending user loads by request token, with the row name for the error message.
     struct UserLoad {
         quint64 connection = 0;
         QString name;
@@ -171,11 +161,9 @@ class NavigatorController final : public QObject {
         searchFinished_ = false;
     }
     void searchRequestFinished(bool accepted, bool failed, const QString& error = {});
-    // Runs a load that the user started and keeps its request token, so a failure is reported.
     void userLoad(const QModelIndex& source, void (NavigatorModel::*load)(const QModelIndex&));
     void childrenFailed(quint64 connection, const QString& parent, quint64 token,
                         const QString& error);
-    // Starts a new search generation; without `advance` the caller schedules the traversal.
     void restartSearch(bool advance = true);
     void finishSearch(const QString& notice);
     bool matchesSearchRequest(quint64 connection, const QString& parent, quint64 token) const;
@@ -199,4 +187,4 @@ class NavigatorController final : public QObject {
                  std::function<bool()> stillCurrent, bool requireVisibleConnection,
                  bool refreshFinalParent);
 };
-} // namespace choscordb
+}

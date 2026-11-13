@@ -1,5 +1,3 @@
-//! Privacy-bounded local diagnostics. This crate never accepts SQL, row values, paths,
-//! driver messages, or arbitrary payload fields as diagnostic record data.
 use std::collections::BTreeMap;
 
 mod date;
@@ -8,10 +6,8 @@ mod service;
 mod zip;
 pub use service::Service;
 
-/// How often the desktop samples process memory for diagnostics.
 pub const MEMORY_SAMPLE_INTERVAL_SECONDS: u64 = 60;
 
-/// The archive path an export writes for a user-chosen `path`.
 pub fn export_destination(path: &str) -> String {
     let path = path.trim();
     let zip = path

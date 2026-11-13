@@ -9,7 +9,6 @@ pub enum SshAuthentication {
     PublicKey,
     Password,
 }
-/// Location of a public-key identity. Inline bytes are supplied separately as secrets.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SshIdentitySource {
@@ -32,7 +31,6 @@ impl SshIdentitySource {
         }
     }
 }
-/// SSH authentication uses OpenSSH with an explicit authentication method.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct SshTunnel {
     pub host: String,
@@ -110,8 +108,6 @@ impl<'de> Deserialize<'de> for SshTunnel {
     }
 }
 
-/// Advanced OpenSSH transport settings. Jump hosts authenticate independently;
-/// the target's password or private key is never forwarded to them.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct SshOptions {
@@ -137,7 +133,6 @@ impl Default for SshOptions {
         Self {
             local_host: None,
             local_port: None,
-            // One control master serves all streams of a Connect where OpenSSH supports it.
             share_tunnels: cfg!(unix),
             remote_host: None,
             remote_port: None,
@@ -191,7 +186,6 @@ fn is_default_sharing(value: &bool) -> bool {
     *value == SshOptions::default().share_tunnels
 }
 impl SshOptions {
-    /// Apply the current query preference to this connection attempt.
     pub fn with_session_timeout(mut self, seconds: u32) -> Result<Self> {
         if !(1..=300).contains(&seconds) {
             return Err(DriverError::new(
@@ -217,8 +211,6 @@ impl SshOptions {
             self.local_port.unwrap_or(0),
         ))
     }
-    /// Address resolved by the SSH server. The original database host remains
-    /// the native TLS verification name and is never replaced by this value.
     pub fn forwarding_destination(&self, host: &str, port: u16) -> Result<String> {
         self.validate()?;
         let host = tcp_host(self.remote_host.as_deref().unwrap_or(host))?;
@@ -314,9 +306,6 @@ impl SshOptions {
     }
 }
 
-/// Apply options common to PostgreSQL stdio forwarding and the MySQL relay.
-/// `-J` sessions intentionally obtain authentication and trust policy from the
-/// user's OpenSSH configuration. These target options are not jump-host options.
 pub(crate) fn configure_ssh_transport(
     command: &mut tokio::process::Command,
     settings: &SshTunnel,

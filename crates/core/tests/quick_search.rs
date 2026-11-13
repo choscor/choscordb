@@ -108,8 +108,6 @@ mod palette {
             row(DestinationKind::Command, "Command", "Order by"),
         ];
         let plan = QuickSearchNeedle::new("orders").plan(&rows, 0, 0);
-        // Title and context matches tie and order by title, then a scattered
-        // match. Tabs and commands that do not match are left out.
         assert_eq!(plan.destinations, vec![2, 1, 0]);
     }
 

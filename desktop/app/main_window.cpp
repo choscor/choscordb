@@ -64,8 +64,6 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath, DiagnosticsS
     setWindowTitle(tr("ChoscorDB"));
 #ifdef Q_OS_MACOS
 #if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
-    // Qt 6.9+ reapplies NSWindow.titlebarAppearsTransparent from this hint whenever
-    // it updates the window flags; without it AppKit draws a title bar separator.
     setWindowFlag(Qt::NoTitleBarBackgroundHint);
 #endif
     connect(theme_, &design::ThemeManager::themeChanged, this, [this] { updateNativeTitleBar(); });
@@ -313,7 +311,6 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
         }
         if (!sessionContext && !profileId.isEmpty() && reconnectProfile_) {
             if (reconnectProfile_(profileId)) {
-                // One Reconnect is tracked; an earlier tab stops its progress.
                 if (reconnectingExplorer_ && reconnectingExplorer_ != explorer)
                     finishReconnect(false);
                 reconnectingProfile_ = profileId;
@@ -495,4 +492,4 @@ SqlEditor* MainWindow::addEditor() {
     }
     return editor;
 }
-} // namespace choscordb
+}

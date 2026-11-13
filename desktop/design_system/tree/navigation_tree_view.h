@@ -26,4 +26,4 @@ class NavigationTreeView final : public QTreeView {
     QPersistentModelIndex hoveredIndex_;
 };
 
-} // namespace choscordb::design
+}

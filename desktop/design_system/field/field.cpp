@@ -48,7 +48,7 @@ void FieldValidation::setError(const QString& message) {
     control_->style()->polish(control_);
     control_->update();
 }
-} // namespace choscordb::design
+}
 
 namespace choscordb::design::detail {
 class FieldFocusFrame final : public QFocusFrame {
@@ -110,4 +110,4 @@ void handleFieldFocusEvent(QWidget* field, QEvent* event, QPointer<QFocusFrame>&
     }
 }
 
-} // namespace choscordb::design::detail
+}

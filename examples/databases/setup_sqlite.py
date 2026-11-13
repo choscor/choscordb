@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Create the ChoscorDB SQLite example database."""
 
 import argparse
 from contextlib import closing
@@ -14,7 +13,6 @@ SCHEMA = Path(__file__).with_name("sqlite.sql")
 
 
 def create_database(output: Path, *, force: bool = False) -> None:
-    """Create a validated database, replacing output only when explicitly allowed."""
     output = output.resolve()
     if output.exists() and not force:
         raise FileExistsError(f"{output} already exists; pass --force to replace it")
@@ -37,7 +35,9 @@ def create_database(output: Path, *, force: bool = False) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Create the ChoscorDB SQLite example database."
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument(
         "--force", action="store_true", help="replace an existing output database"

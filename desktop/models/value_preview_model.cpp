@@ -9,9 +9,7 @@ bool ValuePreviewModel::setChunk(QByteArray bytes, quint64 offset, quint64 total
     if (quint64(bytes.size()) > EngineAdapter::valueChunkBytes() || offset > totalBytes ||
         static_cast<quint64>(bytes.size()) > totalBytes - offset)
         return false;
-    // Own only the requested window, even if the caller sliced a larger allocation.
     QByteArray owned(bytes.constData(), bytes.size());
-    // Rust splits rows without breaking UTF-8 characters and holds back a partial tail.
     const auto rows = value_preview_rows(bridge_detail::byteView(owned), binary,
                                          offset + static_cast<quint64>(owned.size()) < totalBytes,
                                          binary ? 16 : 256);
@@ -98,4 +96,4 @@ QVariant ValuePreviewModel::headerData(int section, Qt::Orientation orientation,
         return binary_ ? QStringLiteral("Hexadecimal") : QStringLiteral("Text (escaped UTF-8)");
     return {};
 }
-} // namespace choscordb
+}

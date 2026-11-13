@@ -51,10 +51,8 @@ class NavigatorModel final : public QAbstractItemModel {
         PropertiesRole,
         HasMoreRole,
         DatabaseTypeRole,
-        // The RowStatusKind and RowRetry values from Rust's row status policy.
         StatusRole,
         RetryRole,
-        // Whether Rust shows this node in the sidebar tree rather than only in its object tab.
         SidebarChildRole
     };
     explicit NavigatorModel(QObject* parent = nullptr);
@@ -71,14 +69,11 @@ class NavigatorModel final : public QAbstractItemModel {
     bool renameConnection(quint64 id, const QString& label);
     bool addPendingConnection(quint64 id, const QString& label);
     bool removeConnection(quint64 id);
-    // Token must be echoed from childrenRequested, never derived on response.
-    // Refresh supersedes earlier requests; late replies cannot replace new data.
     bool applyChildren(quint64 connection, const QString& parentObjectId, quint64 token,
                        std::vector<NavigatorObject> children);
     bool applyChildrenPage(quint64 connection, const QString& parentObjectId, quint64 token,
                            std::vector<NavigatorObject> children, quint64 offset, bool hasMore,
                            quint64 nextOffset);
-    // Saved children show under a node that still loads. Its live page replaces them.
     bool applyCachedChildren(quint64 connection, const QString& parentObjectId, quint64 token,
                              std::vector<NavigatorObject> children);
     void requestNextPage(const QModelIndex& index);
@@ -95,20 +90,12 @@ class NavigatorModel final : public QAbstractItemModel {
     bool canShowUnverifiedObject(quint64 connection, const QString& qualifiedName = {}) const;
     bool isBrowsable(const QModelIndex& index) const;
     quint64 pendingRequestToken(const QModelIndex& index) const;
-    // A (connection, object ID) must identify exactly one currently loaded node.
-    // Duplicate IDs under different parents are intentionally not resolved.
     std::optional<NavigatorObjectSnapshot> objectSnapshot(quint64 connection,
                                                           const QString& objectId) const;
-    // Accepted loaded metadata only. partial marks omitted or still-unloaded data;
-    // limits.maxMetadataBytes charges all copied UTF-8 strings, including object IDs.
     CompletionSnapshot completionSnapshot(quint64 connection, const CompletionLimits& limits) const;
-    // The "Relation subtype" metadata property, or empty when absent.
     static QString relationSubtype(const QVariantList& properties);
   signals:
     void completionChanged(quint64 connection);
-    // Dispatched on the next event-loop turn so fetchMore callers cannot be
-    // reentered by a synchronous metadata provider.
-    // A fresh request is a manual refresh, which skips saved children.
     void childrenRequested(quint64 connection, const QString& parentObjectId, quint64 requestToken,
                            bool fresh);
 
@@ -123,23 +110,19 @@ class NavigatorModel final : public QAbstractItemModel {
     bool isBrowsable(const Node* node) const;
     bool hiddenBySystemSchema(const Node* node) const;
     void clearChildren(Node* node);
-    // Starts a load of the first page or the next page. A fresh load skips saved children.
     void request(Node* node, bool fresh);
     bool insertChildren(Node* node, std::vector<NavigatorObject> children, bool hasMore,
                         quint64 nextOffset, bool cached);
     std::unique_ptr<Node> makeChild(Node* parent, NavigatorObject object) const;
-    // Applies a live page to saved children in place. False when the order changed.
     bool reconcileSaved(Node* node, std::vector<NavigatorObject>& children);
     void setStatus(Node* node, RowStatusCause cause, const QString& detail = {});
     void registerNode(Node* node);
     void unregisterSubtree(const Node* node);
     std::vector<std::unique_ptr<Node>> roots_;
-    // Loaded, non-placeholder nodes by connection and object ID. Only leaf
-    // index rows may share an ID, so lookups stay O(1) for every loaded page.
     QHash<quint64, QMultiHash<QString, Node*>> nodesById_;
     mutable QHash<QString, bool> unverifiedVisibleByDriver_;
     std::function<QString(quint64)> driverResolver_;
     bool showSystemSchemas_ = false;
     quint64 nextToken_ = 0;
 };
-} // namespace choscordb
+}

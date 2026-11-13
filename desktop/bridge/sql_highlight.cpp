@@ -30,4 +30,4 @@ std::vector<SqlHighlightSpan> sqlHighlightSpans(const QString& sql) {
     return spans;
 }
 
-} // namespace choscordb
+}

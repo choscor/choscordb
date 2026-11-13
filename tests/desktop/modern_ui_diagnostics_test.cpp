@@ -455,8 +455,6 @@ void ModernUiTest::diagnosticsFailureDuringReplaceConfirmationDoesNotStartExport
     destination->setText(path);
     QTRY_VERIFY(save->isEnabled());
     bool answered = false;
-    // Destination probing runs on a Rust worker; wait for the modal rather
-    // than assuming it is created in the save button's signal handler.
     QTimer answer;
     answer.setInterval(10);
     connect(&answer, &QTimer::timeout, &window, [&] {

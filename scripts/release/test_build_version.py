@@ -1,5 +1,3 @@
-"""Observe the real CMake project version before native dependency discovery."""
-
 from pathlib import Path
 import shutil
 import subprocess

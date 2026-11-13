@@ -96,17 +96,12 @@ class EditorTest : public QObject {
                     }
             return last < first ? 0 : qRound((last - first + 1) / scale);
         };
-        // A 13px monospace capital must be visibly legible, not the 1pt glyph
-        // produced when QScintilla receives a pixel QFont as pointSizeF == -1.
         const auto defaultCaps = capHeight();
         QVERIFY2(defaultCaps >= 8, qPrintable(QString::number(defaultCaps)));
         QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 20L);
         const auto defaultWidth =
             editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH,
                                  static_cast<std::uintptr_t>(QsciLexerSQL::Default), "MMMM");
-        // Platform fixed-font fallback differs under Qt's offscreen plugin.
-        // Its absolute advance is not a reference constant; compare actual
-        // glyph growth after the user's larger point-size preference instead.
         auto custom = resolveTypography(TextStyle::Body, FontDesign::Monospaced);
         custom.setPointSize(22);
         editor.setEditorFont(custom);
@@ -278,7 +273,7 @@ class EditorTest : public QObject {
         editor.setText(QString::fromUtf8("SELECT 'Tiếng Việt', '🦀';\n"));
         QSignalSpy saved(&editor, &choscordb::SqlEditor::fileSaved);
         editor.saveFile(path);
-        QCOMPARE(saved.count(), 0); // Completion must be delivered by the event loop.
+        QCOMPARE(saved.count(), 0);
         QTRY_COMPARE(saved.count(), 1);
         QVERIFY(saved.at(0).at(1).toString().isEmpty());
         choscordb::SqlEditor reopened;
@@ -370,8 +365,8 @@ class EditorTest : public QObject {
         bool heartbeat = false;
         QTimer::singleShot(0, [&] { heartbeat = true; });
         QTRY_VERIFY(heartbeat);
-        QCOMPARE(opened.count(), 0); // Disk worker remains queued behind blocker.
-        editor.reset();              // Must not join the queued I/O worker.
+        QCOMPARE(opened.count(), 0);
+        editor.reset();
     }
     void paletteKeepsTextReadable() {
         choscordb::SqlEditor editor;

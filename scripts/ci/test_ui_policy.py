@@ -1,5 +1,3 @@
-"""Tests for the desktop design-system source and resource boundary."""
-
 import hashlib
 import json
 from pathlib import Path
@@ -263,7 +261,6 @@ class UiPolicyTest(unittest.TestCase):
         )
         with temporary:
             found = ui_policy.violations(root)
-        # The macOS block and the Objective-C++ file get no standard-icon exemption.
         self.assertEqual(len(found), 7, found)
         self.assertEqual(sum("Qt standard icon" in item for item in found), 3, found)
 

@@ -7,9 +7,6 @@ QTabWidget[designTabVariant="pane"]::tab-bar {
   left: @space-2;
 }
 
-/* Pane tabs are a segmented control: a rounded track with the selected tab as
-   an inset surface segment. Place the bar at its size hint so the track hugs
-   its tabs. */
 QTabBar {
   background: @surface-raised;
   border: 0;
@@ -40,8 +37,6 @@ QTabBar::tab:last, QTabBar::tab:only-one {
   margin-right: @space-half;
 }
 
-/* The outline keeps the selected segment distinct where surface and
-   surface-raised are close (Dark) or equal (forced contrast). */
 QTabBar::tab:selected {
   background: @surface;
   border-color: @border;

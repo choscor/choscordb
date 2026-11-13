@@ -1,6 +1,3 @@
-//! Conservative reservations cover raw rows/schema plus store serialization and
-//! native conversion copies. Idle source buffers have a separate quarter-global
-//! ceiling, preserving capacity for transfers. Consumer leases survive dequeue.
 use choscordb_driver_api::{DriverError, ErrorKind, QueryId, Result};
 use std::{
     collections::HashMap,
@@ -65,21 +62,15 @@ impl Memory {
     pub async fn acquire(self: &Arc<Self>, query: QueryId, source: bool) -> PageLease {
         let bytes = self.raw_limit() * if source { 8 } else { 16 } + LEASE_BOOKKEEPING_BYTES;
         loop {
-            // Register before checking bookkeeping: release cannot be lost between
-            // the capacity check and awaiting the notification.
             let notified = self.changed.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
             if let Some(lease) = self.try_acquire(query, bytes, source) {
                 return lease;
             }
-            // Never hold memory bookkeeping while evicting: entry destruction
-            // releases its reservation through this same broker.
             let source_blocked = source
                 && bytes
                     > self.config.global_bytes / 4 - self.state.lock().unwrap().usage.source_bytes;
-            // Hot pages do not consume the source quota. Only a source release
-            // can resolve this wait, even if another budget is also binding.
             if !source_blocked {
                 let cache = self.cache.lock().unwrap().upgrade();
                 if cache.is_some_and(|cache| cache.evict_for(self.eviction_scope(query, bytes))) {
@@ -89,8 +80,6 @@ impl Memory {
             notified.await;
         }
     }
-    /// Prefer the result LRU only when that result's own ceiling is binding.
-    /// Otherwise reclaim the globally oldest page across all connections.
     pub fn eviction_scope(&self, query: QueryId, bytes: usize) -> Option<QueryId> {
         let state = self.state.lock().unwrap();
         let used = state.results.get(&query).copied().unwrap_or(0);
@@ -145,18 +134,14 @@ impl Memory {
         self.changed.notify_waiters();
     }
 }
-/// Bytes every page lease keeps for bookkeeping beyond its payload.
 pub const LEASE_BOOKKEEPING_BYTES: usize = 256;
 
-/// Whether a lease of `reserved_bytes` can hold `payload_bytes` plus its bookkeeping.
 pub fn lease_fits(reserved_bytes: u64, payload_bytes: u64) -> bool {
     payload_bytes
         .checked_add(LEASE_BOOKKEEPING_BYTES as u64)
         .is_some_and(|bytes| bytes <= reserved_bytes)
 }
 
-/// Ownership of reserved result memory. Keep with its payload until it is freed.
-/// This is intentionally neither Copy nor Clone.
 pub struct PageLease {
     memory: Arc<Memory>,
     query: QueryId,
@@ -167,7 +152,6 @@ impl PageLease {
     pub fn reserved_bytes(&self) -> usize {
         self.bytes
     }
-    /// Release unused conversion capacity; retains the lease bookkeeping bytes.
     pub fn shrink_to(&mut self, payload_bytes: usize) -> Result<()> {
         if !lease_fits(self.bytes as u64, payload_bytes as u64) {
             return Err(DriverError::new(
@@ -225,8 +209,6 @@ mod tests {
         assert!(cached > 0);
         let waiting = memory.acquire(second, true);
         tokio::pin!(waiting);
-        // A zero-duration timeout polls the acquisition once before reporting
-        // Pending, without relying on scheduling another worker or a sleep.
         assert!(
             tokio::time::timeout(std::time::Duration::ZERO, waiting.as_mut())
                 .await

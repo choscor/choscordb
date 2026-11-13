@@ -334,7 +334,7 @@ MainWindow::Ui MainWindow::buildUi() {
     tree->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     tree->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     tree->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    tree->setUniformRowHeights(true); // Navigator rows share one height; avoids per-row layout.
+    tree->setUniformRowHeights(true);
     new SidebarWheelForwarder(connectionsScroll, pinnedList->viewport());
     new SidebarWheelForwarder(connectionsScroll, tree->viewport());
     auto* objectsEmpty = createEmptyStateText({}, objectSection);
@@ -429,8 +429,6 @@ MainWindow::Ui MainWindow::buildUi() {
     connect(saveButton, &QPushButton::clicked, save, &QAction::trigger);
     connect(save, &QAction::changed, saveButton,
             [save, saveButton] { saveButton->setEnabled(save->isEnabled()); });
-    // A selection runs only the selection. Without one, Run current runs the statement at the
-    // cursor and Run all runs the whole document.
     auto* runAll = queryMenu->addAction(tr("Run all"));
     runAll->setObjectName("runAll");
     runAll->setShortcut(QKeySequence("Ctrl+Shift+Return"));
@@ -595,7 +593,6 @@ MainWindow::Ui MainWindow::buildUi() {
                             if (index < 0)
                                 continue;
                             emit editors_->tabCloseRequested(index);
-                            // A rejected close cancels the rest of the batch.
                             if (target && editors_->indexOf(target) >= 0)
                                 break;
                         }
@@ -681,7 +678,6 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* resultLayout = new QVBoxLayout(resultBody);
     resultLayout->setContentsMargins(0, 0, 0, 0);
     resultLayout->setSpacing(0);
-    // StatusLine::setContent below supplies the visible text and semantic state.
     auto* empty = new design::Text;
     empty->setObjectName("executionSummary");
     // ui-ok: workflow state read by QueryWorkspace; StatusLine owns presentation.
@@ -695,7 +691,6 @@ MainWindow::Ui MainWindow::buildUi() {
     design::configureResultTable(*grid);
     grid->setWordWrap(false);
     grid->horizontalHeader()->setStretchLastSection(false);
-    // QTableView::sizeHintForColumn samples rows using the vertical header's precision.
     grid->horizontalHeader()->setResizeContentsPrecision(50);
     grid->verticalHeader()->setResizeContentsPrecision(50);
     grid->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::Row));
@@ -752,7 +747,6 @@ MainWindow::Ui MainWindow::buildUi() {
             button->hide();
         return button;
     };
-    // Keep the shared edit controls as command/state bindings for the table menu.
     auto* addResultRow =
         addGridAction(tr("Add row"), "queryResultAddRow", design::Icon::Add, false);
     auto* deleteResultRows =
@@ -941,4 +935,4 @@ MainWindow::Ui MainWindow::buildUi() {
         .toast = toast,
     };
 }
-} // namespace choscordb
+}

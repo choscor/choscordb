@@ -1,5 +1,3 @@
-"""Exercise the production updater configuration with CMake's actual regex engine."""
-
 from pathlib import Path
 import shutil
 import subprocess

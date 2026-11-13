@@ -10,4 +10,4 @@ inline QString applicationDataDirectory() {
     return QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
         .filePath(CHOSCORDB_APP_ID);
 }
-} // namespace choscordb
+}

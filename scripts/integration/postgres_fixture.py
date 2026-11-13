@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Manage only this repository's marked, local PostgreSQL test cluster."""
 
 import argparse
 import json
@@ -14,7 +13,9 @@ def run(args, **kwargs):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Manage only this repository's marked, local PostgreSQL test cluster."
+    )
     parser.add_argument("action", choices=["start", "stop", "status", "env"])
     parser.add_argument(
         "--directory", type=Path, default=Path("build/integration/postgres")

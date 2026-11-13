@@ -65,4 +65,4 @@ class AppearanceController final : public QObject {
     bool sidebarResizePending_ = false;
     QString persistentWarning_;
 };
-} // namespace choscordb
+}

@@ -1,4 +1,3 @@
-//! PostgreSQL adapter with transaction-scoped server portals and bounded pages.
 mod graph;
 mod idle_transaction;
 mod metadata;
@@ -185,8 +184,6 @@ impl Closing {
         tokio::select! {
             biased;
             _ = stopped => {
-                // A CancelRequest can arrive before the server starts the query.
-                // Closing the socket makes termination sticky across that race.
                 pump.abort();
                 Err(DriverError::new(ErrorKind::Disconnected, "Connection closed during database operation"))
             }
@@ -194,8 +191,6 @@ impl Closing {
         }
     }
 }
-/// The settings and the transport of one Connect. Each session of the Connect and
-/// each cancel request opens its stream with them.
 struct Endpoint {
     config: tokio_postgres::Config,
     tls_mode: TlsMode,
@@ -416,8 +411,6 @@ impl PostgresDriver {
                 "Unix sockets require a local connection without required TLS",
             ));
         }
-        // Prefer negotiates TLS only for TCP. A local Unix socket has no TLS
-        // negotiation, so use its plaintext transport without user setup.
         let tls = if unix_socket && tls == TlsMode::Prefer {
             TlsMode::Disable
         } else {
@@ -450,7 +443,6 @@ impl PostgresDriver {
         let connect_timeout = ssh.as_ref().map_or(CONNECT_TIMEOUT, |settings| {
             std::time::Duration::from_secs(u64::from(settings.options.connect_timeout_seconds))
         });
-        // The budget includes queued TLS preparation, DNS, tunnel establishment, and authentication.
         tokio::time::timeout(connect_timeout, async move {
             let tls_mode_is_prefer = tls == TlsMode::Prefer;
             let connector = tls::connector(tls.clone(), root_certificate, tls_identity).await?;
@@ -509,7 +501,6 @@ impl PostgresDriver {
         .map_err(|_| DriverError::new(ErrorKind::Timeout, "PostgreSQL connection timed out"))?
     }
 }
-/// Opens one session of a Connect.
 async fn open_session(endpoint: Arc<Endpoint>) -> Result<PostgresConnection> {
     let e = &*endpoint;
     let connection_error = |error: tokio_postgres::Error| {
@@ -582,8 +573,6 @@ async fn open_session(endpoint: Arc<Endpoint>) -> Result<PostgresConnection> {
             futures_util::stream::poll_fn(move |cx| connection.poll_message(cx)).boxed(),
         )
     } else if e.prefer_tls {
-        // Connect one TCP endpoint, then enforce an exact S/N SSL reply.
-        // A failed handshake or authentication cannot retry on another IP.
         let stream = tokio::net::TcpStream::connect((e.host.as_str(), e.port))
             .await
             .map_err(|_| {
@@ -643,7 +632,6 @@ async fn open_session(endpoint: Arc<Endpoint>) -> Result<PostgresConnection> {
     };
     Ok(connection)
 }
-/// Opens more sessions of one Connect.
 struct Sessions(Arc<Endpoint>);
 #[async_trait]
 impl SessionOpener for Sessions {
@@ -858,8 +846,6 @@ impl ResultCursor for Cursor {
                 .iter()
                 .map(String::capacity)
                 .sum::<usize>();
-        // Includes the cursor, a possible manual-transaction portal's schema,
-        // worker completion/summary copies, and bounded connection/reader state.
         Some(64 * 1024 + std::mem::size_of::<Self>() + 2 * columns + 3 * warnings)
     }
     fn summary(&self) -> QuerySummary {

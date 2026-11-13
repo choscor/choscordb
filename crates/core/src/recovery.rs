@@ -1,4 +1,3 @@
-//! Inert workspace and history operations on the shared bounded metadata worker.
 use crate::{
     EditorDocument, Engine, Event, HistoryEntry, HistoryPolicy, SubmitError, WorkspaceSnapshot,
 };
@@ -49,18 +48,14 @@ impl Command {
         }
     }
 }
-/// Requests that may wait behind the one payload the storage worker holds.
 pub const MAX_WAITING_RECOVERY_REQUESTS: usize = 8;
 const MAX_WAITING_RECOVERY_BYTES: usize = 2 * choscordb_storage::MAX_COLLECTION_BYTES;
 
-/// Recovery requests waiting behind the payload held by the storage worker,
-/// answered in submission order within a count and byte budget.
 #[derive(Default)]
 pub(crate) struct Queue {
     in_flight: bool,
     waiting: std::collections::VecDeque<(Command, usize)>,
     bytes: usize,
-    /// Failures for waiting requests the worker could not accept.
     failed: std::collections::VecDeque<Event>,
 }
 fn invalid(error: StorageError) -> SubmitError {
@@ -105,7 +100,6 @@ fn failure(error: StorageError) -> DriverError {
         | StorageError::InvalidPreferences => ErrorKind::InvalidInput,
         _ => ErrorKind::Io,
     };
-    // Never forward SQLite/JSON diagnostics containing stored SQL or paths.
     DriverError::new(
         kind,
         "Could not complete local workspace or history operation",
@@ -304,7 +298,6 @@ impl Engine {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
-    /// Hands the next waiting request to the worker once a response is consumed.
     pub(crate) fn advance_recovery(&self) {
         let mut queue = self.recovery_queue();
         while let Some((command, cost)) = queue.waiting.pop_front() {
@@ -375,13 +368,10 @@ impl Engine {
     }
 }
 
-/// A new identity for an editor document in workspace recovery.
 pub fn new_document_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
-/// Which connection an object tab belongs to, as recovery stores it: a saved
-/// profile, or an unsaved session connection.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ObjectTabContext {
     Profile(String),

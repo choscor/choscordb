@@ -1,4 +1,3 @@
-//! Typed capture transport; validation, serialization and persistence belong to core.
 use crate::ffi::{PreviewCaptureDto, PreviewCaptureResultDto};
 use choscordb_core::{PreviewCapture, PreviewControl};
 use std::path::Path;

@@ -16,7 +16,6 @@ pub enum ErrorKind {
     Io,
     Internal,
 }
-/// The UI may display `message`. Logging must use Display/Debug, which omit it.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DriverError {
     pub kind: ErrorKind,

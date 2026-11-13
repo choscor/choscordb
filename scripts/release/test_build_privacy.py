@@ -1,5 +1,3 @@
-"""Observe compiler-produced file paths, including paths containing spaces."""
-
 import os
 from pathlib import Path
 import shutil

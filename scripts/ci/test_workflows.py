@@ -1,5 +1,3 @@
-"""Structural regression tests for the repository's GitHub Actions policy."""
-
 from pathlib import Path
 import re
 import unittest
@@ -10,7 +8,6 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 
 
 def yaml_block(text, key, indent=0):
-    """Return one indentation-delimited YAML mapping block."""
     lines = text.splitlines()
     header = f"{' ' * indent}{key}:"
     start = next(index for index, line in enumerate(lines) if line == header)

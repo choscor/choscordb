@@ -64,7 +64,7 @@ bool writeBytes(const QString& path, const QByteArray& contents) {
     QFile file(path);
     return file.open(QIODevice::WriteOnly) && file.write(contents) == contents.size();
 }
-} // namespace
+}
 
 class DiagnosticsServiceTest : public QObject {
     Q_OBJECT
@@ -534,9 +534,6 @@ class DiagnosticsServiceTest : public QObject {
         service.flush();
         QTest::qSleep(5200);
         QByteArray allocation(32 * 1024 * 1024, Qt::Uninitialized);
-        // Touch every byte immediately before sampling. A repeated-byte buffer
-        // left idle during the rate-limit wait can be compressed by macOS and
-        // no longer represents the resident growth this test measures.
         quint32 state = 0x9e3779b9;
         volatile char* bytes = allocation.data();
         for (qsizetype i = 0; i < allocation.size(); ++i) {

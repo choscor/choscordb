@@ -1,4 +1,3 @@
-//! Update startup acknowledgment protocol. Call waiting functions off the UI thread.
 #[cfg(not(windows))]
 use std::fs::File;
 use std::{
@@ -95,7 +94,6 @@ fn marker_is_exact(path: &Path) -> bool {
     #[cfg(windows)]
     let opened = {
         use std::os::windows::fs::OpenOptionsExt;
-        // FILE_FLAG_OPEN_REPARSE_POINT makes the opened handle refer to the link itself.
         OpenOptions::new()
             .read(true)
             .custom_flags(0x0020_0000)
@@ -123,7 +121,6 @@ fn marker_is_exact(path: &Path) -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
-        // FILE_ATTRIBUTE_REPARSE_POINT; reject a link swapped in after symlink_metadata.
         if open_metadata.file_attributes() & 0x0000_0400 != 0 {
             return false;
         }

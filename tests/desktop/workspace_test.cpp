@@ -74,7 +74,6 @@ void WorkspaceTest::unsavedConnectionsRetainTheirDriver() {
     QVERIFY(dialog);
     choscordb::SavedProfile profile;
     profile.driver = "postgres";
-    // Exercise the dialog's public submission boundary without a remote server.
     emit dialog->connectionSubmitted(profile, 123456, false);
     QVERIFY(fixture.workspace.profileIdForConnection(123456).isEmpty());
     QCOMPARE(fixture.workspace.driverForConnection(123456), QString("postgres"));
@@ -243,7 +242,6 @@ void WorkspaceTest::formErrorsAppearBelowTheRelevantFields() {
     QVERIFY(destinationValidation->error().contains("destination"));
     destination->setText("/tmp/example.csv");
     QCOMPARE(destinationValidation->error(), QString());
-    // Rust decides what names a SQL export target: a table with an optional schema.
     auto* tableValidation = dynamic_cast<choscordb::design::FieldValidation*>(
         exportDialog.findChild<QLineEdit*>("exportTable")->parentWidget());
     QVERIFY(tableValidation);
@@ -298,9 +296,6 @@ void WorkspaceTest::cancellationRacingSuccessfulCompletionReleasesNavigation() {
                 if (event.kind != "schema" || observed)
                     return;
                 observed = true;
-                // The real schema starts a page fetch. Simulate the transport
-                // delivering its final page after Cancel, followed by successful
-                // completion that already won the race in the engine.
                 f.cancel.trigger();
                 choscordb::BridgeEvent page;
                 page.kind = "stored_page";
@@ -332,8 +327,6 @@ void WorkspaceTest::aPageThatFinishesAfterANewerPageIsDropped() {
     QStringList shown;
     bool invalidated = false;
     auto* adapter = f.workspace.adapter();
-    // The workspace receives the page first and builds it on a worker. The newer request
-    // comes before that build finishes, so the page must not fill the grid.
     connect(adapter, &choscordb::EngineAdapter::eventReady, &f.parent,
             [&](const choscordb::BridgeEvent& event) {
                 if (event.kind != "stored_page" || invalidated)
@@ -356,7 +349,6 @@ void WorkspaceTest::aPageThatFinishesAfterANewerPageIsDropped() {
                 if (invalidated)
                     states << state;
             });
-    // The first page arrives while the query still streams, so the request is newer.
     f.execute("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE "
               "x < 100000000) SELECT x FROM n;");
     QTRY_VERIFY(invalidated);
@@ -365,10 +357,8 @@ void WorkspaceTest::aPageThatFinishesAfterANewerPageIsDropped() {
     QCOMPARE(shown, QStringList{});
     QVERIFY2(!states.contains("failed"), qPrintable(f.messages.toPlainText()));
     QCOMPARE(f.grid.model()->rowCount(), 0);
-    // With the query released too, no page memory stays: the dropped page returned its lease.
     f.workspace.invalidateResult();
     QTRY_COMPARE(adapter->memoryUsage().used, quint64(0));
-    // Only the stale page is dropped. The page of a newer query fills the grid.
     f.execute("SELECT 'newer' AS v");
     QTRY_COMPARE(f.grid.model()->rowCount(), 1);
     QCOMPARE(f.grid.model()->index(0, 0).data().toString(), QString("newer"));
@@ -765,7 +755,6 @@ void WorkspaceTest::cancelledUpdateDoesNotInstallOnLaterNormalClose() {
     QVERIFY(window.isVisible());
     QVERIFY(window.isEnabled());
     QVERIFY(editor->isEnabled());
-    // A later ordinary close must not reuse the cancelled installation approval.
     chooser.start();
     window.close();
     QTRY_VERIFY(!window.isVisible());

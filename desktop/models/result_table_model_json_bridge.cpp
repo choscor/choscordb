@@ -78,7 +78,7 @@ QString unavailableDescription(const std::vector<ResultTableModel::Row>& rows) {
     return {};
 }
 
-} // namespace
+}
 
 std::optional<ResultTableModel::JsonViewSnapshot>
 ResultTableModel::jsonViewSnapshot(JsonViewScope scope, int row, int column,
@@ -192,10 +192,9 @@ ResultTableModel::JsonViewEvaluation ResultTableModel::evaluateJsonView(JsonView
         evaluation.state = JsonViewState::NeedsDeferred;
     else
         evaluation.state = JsonViewState::Invalid;
-    // Rust explains every error; a cell's own unavailable reason is more specific.
     const auto unavailable =
         fromRust(result.error) == "unavailable" ? unavailableDescription(snapshot.rows) : QString{};
     evaluation.error = unavailable.isEmpty() ? fromRust(result.message) : unavailable;
     return evaluation;
 }
-} // namespace choscordb
+}

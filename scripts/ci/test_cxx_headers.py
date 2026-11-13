@@ -1,5 +1,3 @@
-"""Exercise incremental CXX header publication with a real Ninja consumer."""
-
 from pathlib import Path
 import shutil
 import subprocess
@@ -61,8 +59,6 @@ target_link_libraries(consumer PRIVATE bridge)
             )
             initial_size = int(self.command(str(executable)))
 
-            # Cargo changes a header only after Ninja has computed its dirty graph.
-            # The very same invocation must recompile the consumer, not a second build.
             header.write_text("struct BridgeEvent { long long payload[3]; };\n")
             self.command("cmake", "--build", str(build), "--parallel", "2")
             self.assertEqual(int(self.command(str(executable))), initial_size * 3)

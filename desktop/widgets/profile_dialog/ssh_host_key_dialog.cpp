@@ -120,7 +120,6 @@ SshHostKeyDialog::SshHostKeyDialog(const QList<SshHostKeyCandidate>& candidates,
             emit retryRequested();
     });
     updateActions();
-    // Focusing the list can implicitly select its first row on some platforms.
     path_->setFocus();
 }
 void SshHostKeyDialog::selectCandidate() {
@@ -175,4 +174,4 @@ void SshHostKeyDialog::invalidate() {
     statusLine_->show();
     updateActions();
 }
-} // namespace choscordb
+}

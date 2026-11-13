@@ -1,5 +1,3 @@
-"""The Windows candidate smoke never touches an existing user installation."""
-
 import os
 from pathlib import Path
 import sys

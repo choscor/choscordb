@@ -1,10 +1,6 @@
-//! One-line-per-clause previews of SQL history entries.
-
-/// A history preview of the first `max_chars` characters of `sql`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HistoryPreview {
     pub text: String,
-    /// Whether `sql` continues past the previewed characters.
     pub truncated: bool,
 }
 
@@ -28,8 +24,6 @@ struct Writer {
 }
 
 impl Writer {
-    /// Separates the next token from the previous one by one space when the
-    /// source had whitespace between them, except at the start of a line.
     fn separate(&mut self) {
         if self.pending_space && !self.text.is_empty() && !self.text.ends_with('\n') {
             self.text.push(' ');
@@ -53,7 +47,6 @@ fn find(chars: &[char], needle: &[char], from: usize) -> Option<usize> {
     (from..=chars.len().checked_sub(needle.len())?).find(|&i| chars[i..].starts_with(needle))
 }
 
-/// The end of a dollar-quoted string starting at `start`, when `start` opens one.
 fn dollar_string_end(chars: &[char], start: usize) -> Option<usize> {
     let tag_end = (start + 1..chars.len()).find(|&i| chars[i] == '$')?;
     let tag = &chars[start + 1..tag_end];

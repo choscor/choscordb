@@ -1,4 +1,3 @@
-# Production packaging reuses app-mark.svg without adding generated artwork to Git.
 if(APPLE AND (CHOSCORDB_PRODUCTION_RELEASE OR CHOSCORDB_UPDATE_REHEARSAL))
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   set(icon "${CMAKE_CURRENT_BINARY_DIR}/AppIcon.icns")

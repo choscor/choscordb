@@ -61,7 +61,6 @@ class QtNoticesTest(unittest.TestCase):
             self.assertFalse(output.exists())
 
     def test_upstream_multiline_attribution_keeps_original_bytes_and_license(self):
-        # Qt 6.8.3's attribution format allows literal newlines inside text fields.
         attribution = (
             b'{"Copyright":"First author\nSecond author","LicenseFile":"COPYING"}'
         )

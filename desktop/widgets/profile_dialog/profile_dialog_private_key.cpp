@@ -52,4 +52,4 @@ void ProfileDialog::updatePrivateKeyControls() {
         form->setRowVisible(sshPrivateKey_, inlineKey);
     }
 }
-} // namespace choscordb
+}

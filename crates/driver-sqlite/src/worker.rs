@@ -46,8 +46,6 @@ pub(super) fn run(
             return;
         }
     };
-    // SQLite opens a file before reading its schema. Force that read before
-    // reporting the session as connected.
     if let Err(error) = db.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0)) {
         let error = normalize(error);
         drop(db);
@@ -258,8 +256,6 @@ fn execute(
             db.execute_batch("BEGIN").map_err(normalize)?;
         }
         sync_idle(db, idle, false);
-        // SQLite itself classifies mutation authorization; BEGIN IMMEDIATE merely
-        // acquires a write lock and must not count as a pending modification.
         let writes = Arc::new(AtomicBool::new(false));
         let observed = writes.clone();
         db.authorizer(Some(move |context: rusqlite::hooks::AuthContext<'_>| {
@@ -286,8 +282,6 @@ fn execute(
                 "Result schema exceeds memory budget",
             )
         };
-        // Bound even the temporary borrowed-column vector before asking rusqlite
-        // to allocate it. No result names or type strings have been copied yet.
         let fixed = statement
             .column_count()
             .checked_mul(std::mem::size_of::<Column>())
@@ -314,7 +308,6 @@ fn execute(
             })
             .collect::<Vec<_>>();
         drop(borrowed);
-        // Allocate fallible result resources before any auto-committed write.
         let spool = spool::Spool::new(id)?;
         let affected = if columns.is_empty() {
             Some(statement.execute([]).map_err(normalize)? as u64)
@@ -370,8 +363,6 @@ fn execute(
                     if deadline.is_some_and(|d| Instant::now() >= d) {
                         return Err(DriverError::new(ErrorKind::Timeout, "Query timed out"));
                     }
-                    // Reserve fixed container storage first. Each column may need a
-                    // four-byte deferred type tag, even when its source is huge.
                     let minimum_row = width
                         .checked_mul(std::mem::size_of::<Value>() + 4)
                         .ok_or_else(memory_limit)?;
@@ -451,8 +442,6 @@ fn execute(
                 );
             }
             Command::Metadata(parent, reply) => {
-                // Metadata is a separate operation on the same connection. Its SQL
-                // must not inherit an exhausted result's query deadline.
                 let _ = db.progress_handler(0, None::<fn() -> bool>);
                 let _ = reply.send(metadata::load(db, parent));
                 let stop = cancel.clone();
@@ -559,9 +548,6 @@ fn execute(
     None
 }
 fn abort_suspended_rows(db: &Db, rows: &mut rusqlite::Rows<'_>) {
-    // Finalizing a suspended automatic RETURNING statement commits its write.
-    // Resume the interrupted existing VM so SQLite rolls back before finalization.
-    // Callers exclude unstarted/exhausted results and already-executed DDL.
     let _ = db.progress_handler(1, Some(|| true));
     db.get_interrupt_handle().interrupt();
     let _ = rows.next();
@@ -576,8 +562,6 @@ pub(super) fn next_row(
         return Ok(None);
     };
     let mut values = Vec::with_capacity(width);
-    // Split payload allowance evenly so later columns always fit, without
-    // copying a source TEXT/BLOB before deciding whether it must be deferred.
     let payload_limit = ((max_bytes - values.capacity() * std::mem::size_of::<Value>())
         / width.max(1))
     .min(16 * 1024);

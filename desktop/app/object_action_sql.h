@@ -14,8 +14,6 @@ struct ObjectActionStatement {
 
 class ObjectActionSql {
   public:
-    // qualifiedName must come from navigator metadata. PostgreSQL object IDs are opaque OIDs,
-    // so its quoted schema and name are decoded from that trusted metadata field.
     static ObjectActionStatement drop(const QString& driver, const QString& kind,
                                       const QString& objectId, const QString& qualifiedName,
                                       const QString& relationSubtype = {});
@@ -25,4 +23,4 @@ class ObjectActionSql {
                                         const QString& relationSubtype = {});
 };
 
-} // namespace choscordb
+}

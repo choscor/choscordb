@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Build the pinned QScintilla Qt 6 shared library in an isolated prefix."""
 
 import argparse
 import hashlib
@@ -33,7 +32,6 @@ def verify_archive(path):
 
 
 def extract_archive(archive, destination):
-    # Verify before extraction; reject links/devices and traversal even in pinned inputs.
     verify_archive(archive)
     with tarfile.open(archive) as source:
         for member in source.getmembers():
@@ -46,13 +44,11 @@ def extract_archive(archive, destination):
 
 
 def macos_qmake_overrides(sdk):
-    """Remove Qt's obsolete AGL link flags when the selected SDK no longer ships AGL."""
     agl = Path(sdk) / "System/Library/Frameworks/AGL.framework"
     return [] if agl.exists() else ["QMAKE_LIBS_OPENGL="]
 
 
 def macos_native_architecture():
-    """Use the host CPU even when setup-python runs under Rosetta."""
     try:
         arm_capability = subprocess.check_output(
             ["sysctl", "-n", "hw.optional.arm64"],
@@ -67,7 +63,6 @@ def macos_native_architecture():
 
 
 def remove_missing_agl_from_makefile(makefile):
-    """Remove obsolete AGL inherited from Qt framework PRL metadata."""
     text = makefile.read_text(encoding="utf-8")
     updated = re.sub(r" -framework AGL(?=\s|$)", "", text)
     if updated != text:
@@ -75,7 +70,9 @@ def remove_missing_agl_from_makefile(makefile):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Build the pinned QScintilla Qt 6 shared library in an isolated prefix."
+    )
     parser.add_argument("--qmake", required=True, type=Path)
     parser.add_argument("--prefix", required=True, type=Path)
     parser.add_argument("--work", required=True, type=Path)
@@ -141,12 +138,9 @@ def main():
     if without_agl:
         remove_missing_agl_from_makefile(build / "Makefile")
     if os.name == "nt":
-        # nmake comes from the MSVC developer environment; avoid GNU link.exe.
         run(["nmake", "/NOLOGO"], cwd=build)
     else:
         run(["make", f"-j{args.jobs}"], cwd=build)
-    # Keep qmake's default output directory: upstream's macOS post-link command
-    # addresses the library by basename and breaks when DESTDIR is overridden.
     for artifact in build.rglob("*qscintilla*"):
         if artifact.is_file() and (
             artifact.suffix in {".dylib", ".dll", ".lib"} or ".so" in artifact.name

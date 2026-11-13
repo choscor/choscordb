@@ -1,4 +1,3 @@
-//! Incremental encoding keeps at most a raw chunk, UTF-8 carry, and escaped chunk.
 use crate::{ExportSink, ExportSource, Limits, format::*};
 use choscordb_driver_api::*;
 fn invalid() -> DriverError {

@@ -56,12 +56,12 @@ class ProfileProgressDialog final : public DialogShell {
     QLabel* message() const { return message_; }
 
   public slots:
-    void reject() override {} // The operation has no cancellation API.
+    void reject() override {}
 
   private:
     QLabel* message_ = nullptr;
 };
-} // namespace
+}
 
 ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter) {
@@ -83,8 +83,6 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     auto* dismiss = sections->addDismissButton(tr("Close connection dialog"));
     dismiss->setObjectName("profileDismiss");
     connect(dismiss, &QPushButton::clicked, this, &QDialog::close);
-    // Saved profiles are managed by the sidebar. Retain the internal selection
-    // model for the asynchronous profile-management service contract.
     list_ = new QListWidget(this);
     list_->setObjectName("profileList");
     list_->hide();
@@ -95,13 +93,10 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     formScroll->viewport()->setBackgroundRole(QPalette::Base);
     formScroll->viewport()->setProperty("designSurface", "panel");
     form_ = new QWidget(formScroll);
-    // Scroll-area content auto-fills its background. Use the themed panel
-    // rather than Window/canvas so open dialogs also follow live previews.
     form_->setBackgroundRole(QPalette::Base);
     form_->setProperty("designSurface", "panel");
     form_->setAttribute(Qt::WA_StyledBackground);
     formScroll->setWidget(form_);
-    // The scroll area's own bar takes the body's right inset.
     auto bodyMargins = sections->bodyLayout()->contentsMargins();
     bodyMargins.setRight(0);
     sections->bodyLayout()->setContentsMargins(bodyMargins);
@@ -673,8 +668,6 @@ void ProfileDialog::setBusy(bool busy, const QString& message, bool success, boo
     for (auto* action : actions_)
         action->setEnabled(!busy && adapter_);
     updateTrustControls();
-    // A toast owns a success or warning outcome. The status line keeps busy and error states,
-    // and keeps the outcome only when no toast can show it.
     if (!busy && success && !message.isEmpty() && isVisible()) {
         feedbackToast_ = windowToast(this);
         if (feedbackToast_) {
@@ -766,4 +759,4 @@ bool ProfileDialog::discardChanges() {
     return response == QMessageBox::Discard && !busy_ && adapter_ && token_ == token &&
            revision_ == revision;
 }
-} // namespace choscordb
+}

@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Run Qt trust-controller tests with deterministic keyscan output.
-
-The Qt process receives its environment before startup. Real inspection, hashing,
-bridge delivery and approval-file operations run; only network keyscan output is
-replaced. Native sshd integration is separate transport evidence.
-"""
 
 import argparse
 import os
@@ -15,7 +9,7 @@ import tempfile
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Run Qt trust-controller tests with deterministic keyscan output.")
     parser.add_argument("executable", type=Path)
     args = parser.parse_args()
     executable = args.executable.resolve()

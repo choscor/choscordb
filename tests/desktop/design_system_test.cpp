@@ -40,7 +40,7 @@ QString css(const QColor& color) {
         .arg(color.blue())
         .arg(color.alpha());
 }
-} // namespace
+}
 
 class DesignSystemTest final : public QObject {
     Q_OBJECT
@@ -65,15 +65,12 @@ class DesignSystemTest final : public QObject {
         line.showNotice("Copied 3 rows", 30);
         QCOMPARE(outcome.text(), QString("Copied 3 rows"));
         QTRY_COMPARE(outcome.text(), QString("Executed"));
-        // A later timer with a longer interval fires after a notice expiry.
         bool passed = false;
-        // A busy notice stays until it is replaced, also when an earlier notice had an expiry.
         line.showNotice("Copied 3 rows", 30);
         line.showNotice("Reconnecting…", 0);
         QTimer::singleShot(60, &line, [&passed] { passed = true; });
         QTRY_VERIFY(passed);
         QCOMPARE(outcome.text(), QString("Reconnecting…"));
-        // The expiry of a notice does not clear a newer message.
         line.showNotice("Copied 3 rows", 30);
         line.setMessage("Newer message");
         passed = false;
@@ -116,8 +113,6 @@ class DesignSystemTest final : public QObject {
         line.resize(1200, line.height());
         line.show();
         QVERIFY(memory.isVisible());
-        // Find the overflow boundary using this platform's actual font metrics.
-        // The compact Details control shares the row with execution metrics.
         int compactWidth = line.width();
         while (memory.isVisible() && compactWidth > 230)
             line.resize(--compactWidth, line.height());
@@ -346,7 +341,6 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(dark.surfaceRaised, QColor("#283135"));
         QCOMPARE(dark.border, QColor("#343e43"));
         QCOMPARE(dark.primary, QColor("#ff8a18"));
-        // Sidebar rows step darker than the sidebar, and selection reads apart from hover.
         for (const auto& colors : {light, dark}) {
             QVERIFY(colors.sidebarHover != colors.surfaceRaised);
             QVERIFY(colors.sidebarHover != colors.surface);
@@ -467,7 +461,6 @@ class DesignSystemTest final : public QObject {
                 {"code-comment/surface", c.codeComment, c.surface}};
             for (const auto& [name, foreground, background] : text)
                 QVERIFY2(contrastRatio(foreground, background) >= 4.5, name);
-            // Branch arrows and object icons stay muted on selected sidebar rows.
             QVERIFY(contrastRatio(c.fgMuted, c.sidebarSelection) >= 3.0);
             QVERIFY(contrastRatio(c.ring, c.bg) >= 3.0);
             QVERIFY(contrastRatio(c.ring, c.surface) >= 3.0);

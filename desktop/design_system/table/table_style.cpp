@@ -27,7 +27,6 @@ QRect linkRect(const QRect& cell) {
 bool hasLink(const QModelIndex& index) {
     if (!index.isValid())
         return false;
-    // Producers with a cheap boolean role avoid formatting the label for every paint.
     if (const auto link = index.data(ForeignKeyLinkRole); link.isValid())
         return link.toBool();
     return !index.data(ForeignKeyLinkLabelRole).toString().isEmpty();
@@ -38,7 +37,7 @@ QStringList choices(const QModelIndex& index) {
         return {};
     return index.data(ChoiceLabelsRole).toStringList();
 }
-} // namespace
+}
 
 ResultTableDelegate::ResultTableDelegate(QTableView& table)
     : QStyledItemDelegate(&table), table_(table) {
@@ -99,7 +98,6 @@ QPixmap ResultTableDelegate::linkPixmap(const QColor& color, int size, qreal rat
         if (cached.color == color.rgba() && cached.size == size &&
             qFuzzyCompare(cached.ratio, ratio))
             return cached.pixmap;
-    // Normal and selected link glyphs, at most a few device pixel ratios.
     if (linkPixmaps_.size() >= 4)
         linkPixmaps_.clear();
     auto pixmap = themedIcon(Icon::Link, color, size).pixmap(QSize(size, size), ratio);
@@ -125,9 +123,6 @@ void ResultTableDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
                                 const QModelIndex& index) const {
     QStyleOptionViewItem rowOption(option);
     initStyleOption(&rowOption, index);
-    // Qt 6.8 switches a hovered stylesheet item to a Windows-style painter,
-    // which changes the native macOS text geometry. Preserve row presentation
-    // and paint the hover surface through the background brush instead.
     const bool hovered =
         (rowOption.state & QStyle::State_MouseOver) && !(rowOption.state & QStyle::State_Selected);
     rowOption.state &= ~QStyle::State_MouseOver;
@@ -143,7 +138,6 @@ void ResultTableDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
     }
     const bool link = hasLink(index);
     if (link) {
-        // Only the link strip needs the cell background; the item paints the rest once.
         auto strip = rowOption;
         strip.rect.setLeft(linkRect(option.rect).left());
         style->drawPrimitive(QStyle::PE_PanelItemViewItem, &strip, painter, strip.widget);
@@ -241,10 +235,9 @@ ResultTableDelegate* configureResultTable(QTableView& table, bool showGrid) {
     table.setShowGrid(showGrid);
     table.setGridStyle(Qt::SolidLine);
     table.horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-    // QTableView::sizeHintForColumn samples rows by the vertical header's precision.
     table.verticalHeader()->setResizeContentsPrecision(50);
     auto* delegate = new ResultTableDelegate(table);
     table.setItemDelegate(delegate);
     return delegate;
 }
-} // namespace choscordb::design
+}

@@ -32,7 +32,6 @@ fn saved_children_read_back_until_they_expire() {
         store.cached_children("p1", None, 1_000).unwrap(),
         Some(vec![child("root")])
     );
-    // Another profile and another parent have no saved children.
     assert_eq!(
         store.cached_children("p2", Some(&parent), 1_000).unwrap(),
         None
@@ -92,7 +91,6 @@ fn a_write_deletes_expired_children() {
     store
         .cache_children("p2", None, &[child("new")], later)
         .unwrap();
-    // A read at the first time finds no row, so the later write deleted it.
     assert_eq!(store.cached_children("p1", None, 1_000).unwrap(), None);
     assert_eq!(
         store.cached_children("p2", None, later).unwrap(),
@@ -126,7 +124,6 @@ fn a_new_connection_target_clears_the_saved_children() {
     store
         .cache_children("p1", None, &[child("a")], 1_000)
         .unwrap();
-    // A new name keeps the children of the same database.
     store
         .save_profile(&sqlite_profile("/a.db", "Renamed"))
         .unwrap();

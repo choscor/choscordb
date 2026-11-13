@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Start and stop an isolated MySQL 8.4 or MariaDB server for macOS CI."""
 
 import argparse
 import json
@@ -34,7 +33,6 @@ FLAVORS = {
 
 
 def initialize(flavor, bin_dir, data, log):
-    """Create a data directory whose root account has no password yet."""
     if flavor == "mysql":
         command = [
             bin_dir / "mysqld",
@@ -57,7 +55,9 @@ def initialize(flavor, bin_dir, data, log):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Start and stop an isolated MySQL 8.4 or MariaDB server for macOS CI."
+    )
     parser.add_argument("action", choices=("start", "stop"))
     parser.add_argument("--flavor", choices=tuple(FLAVORS), default="mysql")
     parser.add_argument("--directory", type=Path)
@@ -99,7 +99,6 @@ def main():
         if args.flavor == "mysql":
             subprocess.run([*server, "--daemonize"], check=True)
         else:
-            # mariadbd cannot daemonize itself; detach it from this session.
             subprocess.Popen(
                 server,
                 stdin=subprocess.DEVNULL,

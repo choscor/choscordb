@@ -39,21 +39,17 @@ void NavigatorSqlWorkspaceTest::runModesRunCurrentStatementOrWholeDocument() {
     QTRY_COMPARE(cell(), QString("1"));
     QTRY_VERIFY(runButton->isEnabled());
     QVERIFY(!next->isEnabled());
-    // The cursor in the second statement selects only that statement.
     editor->SendScintilla(QsciScintilla::SCI_GOTOPOS,
                           static_cast<unsigned long>(editor->text().size() - 3));
     window.findChild<QAction*>("runStatement")->trigger();
     QTRY_COMPARE(cell(), QString("2"));
     QTRY_VERIFY(runButton->isEnabled());
     QVERIFY(!next->isEnabled());
-    // Run all sends the whole document. SQLite rejects more than one statement, so the
-    // driver error shows that both statements were sent.
     auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
     editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
     runAll->trigger();
     QTRY_VERIFY(messages->toPlainText().contains("Multiple statements provided"));
     QTRY_VERIFY(runButton->isEnabled());
-    // A selection overrides Run all.
     editor->setSelection(0, 0, 0, 23);
     runAll->trigger();
     QTRY_COMPARE(cell(), QString("1"));
@@ -166,7 +162,6 @@ void NavigatorSqlWorkspaceTest::changeConnectionMenuRebindsOnlyIdleSqlTabs() {
         "Finish or cancel the active query before changing its connection."));
     cancel->click();
     QTRY_VERIFY(run->isEnabled());
-    // Object tabs do not get the submenu.
     emit window.objectContextSelected(alphaId, R"(["main","sqlite_schema"])", "sqlite_schema",
                                       "table");
     QVERIFY(qobject_cast<choscordb::ObjectExplorer*>(tabs->currentWidget()));

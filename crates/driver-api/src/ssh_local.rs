@@ -1,4 +1,3 @@
-//! Bounded local listeners owned by the database connections that requested them.
 use crate::{DriverError, ErrorKind, Result, Secret, SshForward, SshTunnel};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -29,8 +28,6 @@ impl SshLocalForward {
     pub fn port(&self) -> u16 {
         self.address.port()
     }
-    /// Address the owning application can connect to when a wildcard bind was
-    /// explicitly selected. The listener itself retains the requested address.
     pub fn connect_address(&self) -> SocketAddr {
         SocketAddr::new(
             match self.address.ip() {

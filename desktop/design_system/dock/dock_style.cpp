@@ -43,4 +43,4 @@ void styleDockWidget(QDockWidget& dock, const ResolvedTheme& theme) {
     dock.setTitleBarWidget(titleBar);
     dock.setStyleSheet(themedStyleSheet(u"dock/dock_widget_style_sheet.qss", theme));
 }
-} // namespace choscordb::design
+}

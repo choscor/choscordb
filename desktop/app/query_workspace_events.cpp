@@ -55,7 +55,6 @@ Cell cell(const CellDto& value) {
                                 QObject::tr("Unknown value representation")};
     }
 }
-// Runs on a worker thread; the event stays read-only.
 ResultTableModel::PreparedPage preparePage(const BridgeEvent& page,
                                            std::vector<ResultColumn> columns) {
     std::vector<ResultTableModel::Row> rows;
@@ -75,7 +74,7 @@ ResultTableModel::PreparedPage preparePage(const BridgeEvent& page,
     return ResultTableModel::preparePage(std::move(columns), std::move(rows), std::move(filterable),
                                          page.first_row);
 }
-} // namespace
+}
 void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPage page) {
     fetching_ = false;
     if (!model_->setPage(std::move(page), cellMetadata_.size() == columns_.size()
@@ -92,7 +91,6 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
         configureEditability();
         if (filterBar_)
             filterBar_->setColumns(columns_);
-        // setPage destroyed the old Qt buffers before we release their reservation.
         if (visibleLease_) {
             const auto lease = *visibleLease_;
             visibleLease_.reset();
@@ -210,7 +208,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             editQualifiedName_ = text(e.edit_target.qualified_name);
             editReason_ = text(e.edit_target.reason);
             editParameterStyle_ = text(e.edit_target.parameter_style);
-            // Rust aligns an edit query's columns to the result columns.
             for (const auto& column : e.edit_target.columns) {
                 editColumnNames_.push_back(text(column.name));
                 editKey_.push_back(column.key);
@@ -326,7 +323,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         if (connectionAttemptEditors_.contains(e.id)) {
             auto* editor = connectionAttemptEditors_.take(e.id).data();
             const auto previous = connectionAttemptStatus_.take(e.id);
-            // A successful connection does not replace a retained successful query view.
             if (editor && editor == resultEditor_ && previous.value("state") == "completed" &&
                 previous.value("source").toString() == resultOrigin_)
                 editor->setProperty("resultStatus", previous);
@@ -478,8 +474,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     }
     if (eventKind == "query_state") {
         const auto state = text(e.state);
-        // Terminal state notices precede their detailed outcome. Keep the
-        // pending cancellation visible until that acknowledgement arrives.
         if (cancellationPending_ && state != "cancelling")
             return;
         if (state == "completed" || state == "failed" || state == "disconnected")
@@ -633,7 +627,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
              hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024) : QString{}});
         updateActions();
     } else if (eventKind == "query_failed") {
-        // A failed statement can leave the session mode unknown.
         if (queryConnection_)
             connectionSqlModes_.remove(*queryConnection_);
         if (preserveViewOnRefresh_ && viewRefreshQuery_ == query_) {
@@ -663,4 +656,4 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         updateActions();
     }
 }
-} // namespace choscordb
+}

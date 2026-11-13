@@ -148,7 +148,6 @@ fn valid_json_document(source: &str) -> bool {
     {
         return false;
     }
-    // The Qt path parses `[source]`, so one nesting level belongs to the wrapper.
     let mut depth = 0usize;
     let mut in_string = false;
     let mut escaped = false;
@@ -347,7 +346,6 @@ fn append_cell(
         Value::Bool(value) => output.push(if *value { "true" } else { "false" }),
         Value::Integer(value) => output.push(&value.to_string()),
         Value::Real(value) => output.push(&real_literal(*value)?),
-        // Preserve exact database decimals, including scale, without float conversion.
         Value::Decimal(value) => output.quoted(value),
         Value::Unavailable { .. } => Err(JsonViewError::Unavailable),
         Value::FallbackText {
@@ -607,7 +605,6 @@ pub fn render_json_page(
     Ok(output.finish())
 }
 
-/// The message the desktop shows when a JSON view cannot render.
 pub fn json_view_error_message(
     error: JsonViewError,
     display_budget_bytes: usize,

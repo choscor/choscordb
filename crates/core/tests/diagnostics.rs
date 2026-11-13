@@ -8,7 +8,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Queries that page 100 rows at a time, as these tests fetch.
 fn paged() -> QueryOptions {
     QueryOptions {
         page_size: PageSize::new(100).unwrap(),

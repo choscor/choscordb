@@ -16,7 +16,6 @@ using namespace choscordb;
 class NavigatorRowStatusTest : public QObject {
     Q_OBJECT
   private slots:
-    // Rust tests own the texts; this checks that each C++ cause reaches its own Rust policy.
     void rowStatusCausesMapToRustPolicyInOrder() {
         struct Case {
             RowStatusCause cause;
@@ -121,14 +120,12 @@ class NavigatorRowStatusTest : public QObject {
         QCOMPARE(root.data(Qt::AccessibleDescriptionRole).toString(), message);
         QCOMPARE(root.data(NavigatorModel::ErrorRole).toString(),
                  QString("Connection is disconnected"));
-        // A view that probes again does not retry by itself.
         QVERIFY(!model.canFetchMore(root));
         model.fetchMore(root);
         bool nextTurn = false;
         QTimer::singleShot(0, &model, [&nextTurn] { nextTurn = true; });
         QTRY_VERIFY(nextTurn);
         QCOMPARE(requested.count(), 1);
-        // Refresh retries. NavigatorModelTest covers the retry when the user expands the row.
         model.refresh(root);
         QTRY_COMPARE(requested.count(), 2);
         const auto retryToken = requested.last().at(2).toULongLong();
@@ -172,13 +169,11 @@ class NavigatorRowStatusTest : public QObject {
             return image.pixelColor(qRound(row.center().x() * scale),
                                     qRound((row.top() + 2) * scale));
         };
-        // Antialiased strokes rarely hit the exact token, so ink is a near match.
         const auto near = [](const QColor& a, const QColor& b) {
             return qAbs(a.red() - b.red()) + qAbs(a.green() - b.green()) +
                        qAbs(a.blue() - b.blue()) <
                    120;
         };
-        // Counts the pixels of one color in the trailing icon square of a row.
         const auto iconInk = [&](const QRect& row, const QColor& color) {
             const int size = design::dimension(design::Dimension::IconSmall);
             int count = 0;
@@ -214,7 +209,6 @@ class NavigatorRowStatusTest : public QObject {
                  EngineAdapter::rowStatus(RowStatusCause::ChildrenCached).message);
         QVERIFY(!root.data(NavigatorModel::ChildrenLoadedRole).toBool());
         QCOMPARE(model.pendingRequestToken(root), token);
-        // The live children replace the saved children and clear the saved state.
         QVERIFY(model.applyChildren(
             7, {}, token,
             {{"old", "old", "old", "schema", true}, {"new", "new", "new", "schema", true}}));
@@ -223,7 +217,6 @@ class NavigatorRowStatusTest : public QObject {
         QCOMPARE(root.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::None));
         QVERIFY(root.data(NavigatorModel::ChildrenLoadedRole).toBool());
 
-        // A manual refresh asks for live children only.
         model.refresh(root);
         QTRY_COMPARE(requested.count(), 1);
         QCOMPARE(requested.last().at(3).toBool(), true);
@@ -243,7 +236,6 @@ class NavigatorRowStatusTest : public QObject {
         QVERIFY(model.applyCachedChildren(
             7, {}, token,
             {{"gone", "gone", "gone", "schema", true}, {"kept", "kept", "kept", "schema", true}}));
-        // The user expands a saved child before the live page arrives.
         const QPersistentModelIndex kept = model.index(1, 0, root);
         model.fetchMore(kept);
         QTRY_VERIFY(model.pendingRequestToken(kept) != 0);
@@ -276,7 +268,6 @@ class NavigatorRowStatusTest : public QObject {
                                           {{"oid-1", "pg_catalog", "pg_catalog", "schema", true}}));
         const QPersistentModelIndex schema = model.index(0, 0, root);
         QVERIFY(!model.isBrowsable(schema));
-        // PostgreSQL keeps the ID of a renamed schema.
         QVERIFY(model.applyChildren(7, {}, token, {{"oid-1", "app", "app", "schema", true}}));
         QVERIFY(schema.isValid());
         QVERIFY(model.isBrowsable(schema));
@@ -300,7 +291,6 @@ class NavigatorRowStatusTest : public QObject {
         QCOMPARE(root.data(Qt::ToolTipRole).toString(),
                  EngineAdapter::rowStatus(RowStatusCause::ChildrenCachedFailed, "timeout").message);
         QVERIFY(!root.data(NavigatorModel::ChildrenLoadedRole).toBool());
-        // A late saved page cannot replace the shown state.
         QVERIFY(!model.applyCachedChildren(7, {}, token, {{"x", "x", "x", "schema", true}}));
     }
 

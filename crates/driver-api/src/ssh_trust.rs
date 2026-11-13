@@ -1,4 +1,3 @@
-//! Explicit inspection and approval of public SSH host keys. Inspection is not trust.
 use crate::{DriverError, ErrorKind, Result};
 use serde::{Deserialize, Serialize};
 use std::{path::Path, process::Stdio, time::Duration};
@@ -62,7 +61,6 @@ impl SshHostKeyCandidate {
             return Err(invalid());
         }
         if let Some(alias) = &self.host_key_alias {
-            // OpenSSH stores HostKeyAlias verbatim, without non-default port suffix.
             if alias.is_empty()
                 || alias.len() > 16 * 1024
                 || !alias
@@ -176,21 +174,15 @@ pub(crate) async fn fingerprint(kind: &str, key: &str) -> Result<String> {
         .ok_or_else(invalid)?;
     Ok(hash.to_owned())
 }
-/// Result of an explicitly requested trust-file update.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SshHostKeyApproval {
     Approved,
-    /// The OS append/sync began but its outcome could not be established in
-    /// time. Retrying acquires the same file lock and reconciles the exact key.
     OutcomeUnknown,
 }
-/// Check a known-hosts destination the user selected for an approval.
 pub fn validate_known_hosts_path(literal: &str) -> Result<()> {
     let path = Path::new(literal);
     let normalized: std::path::PathBuf = path.components().collect();
-    // Windows rebuilds components with `\`, while backslashes are rejected below,
-    // so compare against the literal with `/` read as the separator there.
     let expected = if cfg!(windows) {
         literal.replace('/', std::path::MAIN_SEPARATOR_STR)
     } else {
@@ -218,10 +210,6 @@ pub fn validate_known_hosts_path(literal: &str) -> Result<()> {
     }
     Ok(())
 }
-/// Append exactly the explicitly approved public key. Existing host records are
-/// never replaced. The caller selects the destination file; no default is written.
-/// Cancellation prevents appends that have not started. Already issued OS I/O
-/// cannot be recalled: a timeout/error then returns OutcomeUnknown, not rejection.
 pub async fn approve_ssh_host_key(
     candidate: &SshHostKeyCandidate,
     expected_sha256: &str,
@@ -249,9 +237,6 @@ pub async fn approve_ssh_host_key(
     }
 }
 
-/// Inspect public keys without authenticating to the inspected destination.
-/// Only credentials for preceding, already trusted hops are used. No trust file
-/// is changed. The caller must independently approve a displayed fingerprint.
 pub async fn inspect_ssh_host_keys(
     settings: &crate::SshTunnel,
     target: SshHostKeyTarget,

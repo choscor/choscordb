@@ -35,7 +35,7 @@ QString familyFor(FontDesign design) {
                                                                       : QFontDatabase::GeneralFont)
         .family();
 }
-} // namespace
+}
 
 TypographySpec typographySpec(TextStyle style, FontDesign design) {
     const auto family = familyFor(design);
@@ -65,8 +65,6 @@ QFont resolveTypography(TextStyle style, FontDesign design) {
     QFont font(spec.family);
     font.setPixelSize(spec.pixelSize);
     font.setWeight(spec.weight);
-    // Snapping only the vertical axis keeps Geist's 12px x-height crisp on
-    // Windows and Linux without distorting its spacing. macOS ignores it.
     font.setHintingPreference(QFont::PreferVerticalHinting);
     return font;
 }
@@ -80,4 +78,4 @@ QFont resolveSectionLabelTypography() {
     return font;
 }
 
-} // namespace choscordb::design
+}

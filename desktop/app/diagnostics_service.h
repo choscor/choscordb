@@ -12,7 +12,6 @@ class QObject;
 namespace choscordb {
 struct RustDiagnostics;
 
-// Schema 1. Keep this contract free of SQL, names, paths, and driver error text.
 enum class DiagnosticEvent {
     Startup,
     Shutdown,
@@ -40,8 +39,8 @@ struct DiagnosticRecord {
     DiagnosticErrorClass errorClass = DiagnosticErrorClass::Unknown;
     DiagnosticDurationBucket durationBucket = DiagnosticDurationBucket::Unknown;
     int openTabs = 0;
-    int durationMs = 0;       // Completed UI hangs only; capped at ten minutes.
-    bool forceMemory = false; // An event boundary may request the five-second cadence.
+    int durationMs = 0;
+    bool forceMemory = false;
 };
 
 struct DiagnosticSummary {
@@ -89,7 +88,6 @@ class DiagnosticsService {
     std::unique_ptr<State> state_;
 };
 
-// The caller must stop this before mainContext or service is destroyed.
 class DiagnosticsWatchdog {
   public:
     DiagnosticsWatchdog(QObject* mainContext, DiagnosticsService* service);
@@ -104,4 +102,4 @@ class DiagnosticsWatchdog {
     std::shared_ptr<State> state_;
 };
 
-} // namespace choscordb
+}

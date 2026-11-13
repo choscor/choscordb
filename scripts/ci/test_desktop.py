@@ -1,5 +1,3 @@
-"""Native build configuration stays coherent under translated CI tools."""
-
 import sys
 import unittest
 from unittest.mock import patch

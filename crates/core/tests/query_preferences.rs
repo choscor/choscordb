@@ -18,7 +18,6 @@ fn async_defaults_gate_validation_and_restart() {
     };
     let mut engine = Engine::new(config.clone(), vec![]).unwrap();
     engine.query_preferences_get(1).unwrap();
-    // A second request waits behind the outstanding one and is answered in order.
     engine.workspace_restore(2).unwrap();
     assert!(
         matches!(event(&mut engine),Event::QueryPreferences{request_token:1,preferences} if preferences==QueryPreferences::default())

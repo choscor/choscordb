@@ -60,7 +60,6 @@ fn advanced_settings_reject_unbounded_or_ambiguous_values() {
 fn legacy_profiles_get_transport_defaults() {
     let settings = tunnel();
     assert_eq!(settings.options.connect_timeout_seconds, 15);
-    // A stored profile has no share_tunnels field, so it gets the engine policy.
     assert_eq!(settings.options.share_tunnels, cfg!(unix));
     assert_eq!(settings.options.server_alive_interval_seconds, 30);
     assert_eq!(settings.options.server_alive_count_max, 3);

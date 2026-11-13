@@ -44,7 +44,6 @@ void PreviewTest::toastCardUsesTokenInsetsWidthAndSharedDismissButton() {
     QCOMPARE(icon->geometry().left(), inset);
     QCOMPARE(dismiss->geometry().top(), inset);
     QCOMPARE(toast.width() - 1 - dismiss->geometry().right(), inset);
-    // The icon and the X sit on the title line.
     QCOMPARE(icon->geometry().center().y(), dismiss->geometry().center().y());
     QVERIFY(toast.contentsRect().top() >= inset);
     QVERIFY(toast.height() - toast.contentsRect().bottom() - 1 >= inset);
@@ -67,7 +66,6 @@ void PreviewTest::replacingToastShowsLatestNoticeAndCountWithoutQueueing() {
     QVERIFY(!toast.accessibleDescription().contains("First background failure."));
     QVERIFY(toast.accessibleDescription().contains("2 notices"));
     QCOMPARE(toast.property("variant").toString(), QString("danger"));
-    // A resolved message leaves the notice and its count; the notice hides with the last one.
     toast.clearReplacingToast("First background failure.");
     QVERIFY(toast.isVisible());
     QVERIFY(toast.accessibleDescription().contains("Second background failure."));
@@ -77,7 +75,6 @@ void PreviewTest::replacingToastShowsLatestNoticeAndCountWithoutQueueing() {
     QVERIFY(toast.accessibleDescription().contains("Second background failure."));
     toast.clearReplacingToast("Second background failure.");
     QTRY_VERIFY(toast.isHidden());
-    // A completion notice in front keeps one replacing notice in the queue.
     toast.showToast("Saved", "The file was saved.", ToastVariant::Success, 0);
     toast.showReplacingToast("Warning", "Queued one.", ToastVariant::Warning);
     toast.showReplacingToast("Warning", "Queued two.", ToastVariant::Warning);
@@ -85,14 +82,12 @@ void PreviewTest::replacingToastShowsLatestNoticeAndCountWithoutQueueing() {
     QTest::mouseClick(toast.findChild<QAbstractButton*>("toastDismiss"), Qt::LeftButton);
     QTRY_VERIFY(toast.accessibleDescription().contains("Queued two."));
     QVERIFY(toast.accessibleDescription().contains("2 notices"));
-    // A later ordinary notice shows in front; the replacing notice waits, then returns.
     toast.showToast("Exported", "The export finished.", ToastVariant::Success, 0);
     QVERIFY(toast.accessibleDescription().contains("The export finished."));
     QTest::mouseClick(toast.findChild<QAbstractButton*>("toastDismiss"), Qt::LeftButton);
     QTRY_VERIFY(toast.accessibleDescription().contains("Queued two."));
     QTest::mouseClick(toast.findChild<QAbstractButton*>("toastDismiss"), Qt::LeftButton);
     QTRY_VERIFY(toast.isHidden());
-    // A dismissed replacing notice starts its count again.
     toast.showReplacingToast("Warning", "Fresh notice.", ToastVariant::Warning);
     QTRY_VERIFY(toast.isVisible());
     QVERIFY(!toast.accessibleDescription().contains("notices"));

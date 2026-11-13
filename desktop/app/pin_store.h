@@ -28,7 +28,6 @@ class PinStore {
     bool save(const QList<PinRecord>& pins, QString* error = nullptr) const;
     static bool valid(const PinRecord& pin);
     static QString identityKey(const PinRecord& pin);
-    // Rust's pin list edits; nullopt when the list does not change.
     static std::optional<QList<PinRecord>> toggled(const QList<PinRecord>& pins,
                                                    const PinRecord& candidate, bool unpin);
     static std::optional<QList<PinRecord>> withoutPin(const QList<PinRecord>& pins,
@@ -41,4 +40,4 @@ class PinStore {
     bool profileStorage_ = false;
 };
 
-} // namespace choscordb
+}

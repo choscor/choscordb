@@ -475,7 +475,7 @@ class NavigatorModelTest : public QObject {
         const auto table = model->index(0, 0, schema);
         const auto view = model->index(1, 0, schema);
         QSignalSpy actions(&controller, &NavigatorController::objectActionRequested);
-        tree.setCurrentIndex(tree.model()->index(0, 0)); // Selection differs from clicked node.
+        tree.setCurrentIndex(tree.model()->index(0, 0));
 
         QMenu tableMenu;
         controller.populateContextMenu(&tableMenu, table);
@@ -519,7 +519,7 @@ class NavigatorModelTest : public QObject {
 
         model->refresh(schema);
         renameTable->trigger();
-        QCOMPARE(actions.count(), 3); // The old menu cannot act on removed metadata.
+        QCOMPARE(actions.count(), 3);
     }
 
     void viewRenameIsAvailableForPostgresAndMysql() {
@@ -813,7 +813,7 @@ class NavigatorModelTest : public QObject {
         auto snapshot = model.completionSnapshot(1, {100, 4096, 100 * 8 + 64});
         QCOMPARE(snapshot.objects.size(), size_t(1));
         QCOMPARE(snapshot.objects[0].name, QString("alpha"));
-        QVERIFY(snapshot.partial); // Columns under the accepted table are not loaded.
+        QVERIFY(snapshot.partial);
         QCOMPARE(changed.count(), 2);
         const auto table = model.index(0, 0, first);
         model.fetchMore(table);

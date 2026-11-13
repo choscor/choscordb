@@ -76,8 +76,6 @@ fn exact_decimal_for_navigation(text: &str) -> bool {
     real.is_finite() && normalized_decimal(&real.to_string()) == Some(normalized)
 }
 
-// QString::number(real, 'g', 17): seventeen significant digits, fixed notation for
-// decimal exponents -4..16 and scientific notation otherwise.
 fn real_literal(value: f64) -> Option<String> {
     if !value.is_finite() {
         return None;
@@ -145,7 +143,6 @@ fn literal(value: &Value) -> Option<String> {
     }
 }
 
-/// Whether a result value can be used for a foreign-key navigation predicate.
 pub fn foreign_key_value_filterable(value: &Value) -> bool {
     match value {
         Value::Bool(_)
@@ -162,7 +159,6 @@ pub fn foreign_key_value_filterable(value: &Value) -> bool {
     }
 }
 
-/// Build a quoted-column equality predicate for a foreign-key navigation target.
 pub fn foreign_key_predicate(target_column: &str, value: &Value) -> Option<String> {
     if target_column.is_empty() || target_column.len() > 1024 * 1024 || target_column.contains('\0')
     {

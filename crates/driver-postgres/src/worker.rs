@@ -10,21 +10,13 @@ struct Active {
     index: u64,
     summary: QuerySummary,
     completed: bool,
-    // Decoded rows that the next page starts with.
     lookahead: std::collections::VecDeque<Row>,
-    // Decoded rows and their estimated bytes, to size each Execute to the byte budget.
     decoded_rows: usize,
     decoded_bytes: usize,
     text_overrides: Arc<Vec<Option<String>>>,
 }
-// Rows that one blocking decode task receives.
 const DECODE_CHUNK_ROWS: usize = 256;
-// Distinct result shapes that one connection remembers.
 const OVERRIDE_CACHE_ENTRIES: usize = 256;
-/// The `text_overrides` of each result shape on one connection. A reconnect starts
-/// a new cache. A statement without result columns (all DDL) clears it, and the
-/// cache stays empty until that transaction ends, so a rollback leaves no stale entry.
-// The source table, source column and type OIDs of each result column.
 type ResultShape = Vec<(u32, i16, u32)>;
 #[derive(Default)]
 pub(super) struct OverrideCache {
@@ -36,13 +28,10 @@ impl OverrideCache {
         self.entries.clear();
         self.frozen = true;
     }
-    /// The transaction that froze the cache has ended.
     pub(super) fn begin_transaction(&mut self) {
         self.frozen = false;
     }
 }
-/// PostgreSQL describes a selected domain column with its base type OID.
-/// Recover the declared domain from the source-column identity before Bind.
 pub(super) async fn text_overrides<C: tokio_postgres::GenericClient + Sync>(
     client: &C,
     statement: &tokio_postgres::Statement,
@@ -98,8 +87,6 @@ async fn lookup_overrides<C: tokio_postgres::GenericClient + Sync>(
          JOIN pg_catalog.pg_type t ON t.oid = a.atttypid \
          WHERE t.typtype = 'd' AND (a.attrelid, a.attnum) IN ({ids})"
     );
-    // PostgreSQL identifiers are at most 63 bytes each, but quoting can
-    // double them. Reserve room for a qualified name and mapping per origin.
     if sql
         .len()
         .checked_add(origins.len().checked_mul(512).ok_or_else(resource)?)
@@ -107,7 +94,6 @@ async fn lookup_overrides<C: tokio_postgres::GenericClient + Sync>(
     {
         return Err(resource());
     }
-    // A typed query sends Parse, Bind and Execute together: one round trip.
     let stream = client
         .query_typed_raw(
             &sql,
@@ -255,15 +241,12 @@ fn collect_notices(summary: &mut QuerySummary, notices: &Mutex<Vec<String>>) {
 async fn was_cancelled(cancel: &Cancellation, id: u32) -> bool {
     cancel.state.lock().await.cancelled == Some(u64::from(id))
 }
-/// The setup statement of each transaction statement.
 pub(super) fn statement_timeout(options: &QueryOptions) -> String {
     let timeout = options
         .timeout
         .map_or(0, |n| n.as_millis().clamp(1, i32::MAX as u128));
     format!("SET LOCAL statement_timeout = {timeout}")
 }
-/// A first statement that began before its transaction, so that a cancel reaches
-/// its Parse. `start_and_prepare` parsed it with BEGIN and its `statement_timeout`.
 pub(super) struct Begun {
     id: u32,
     deadline: Option<std::time::Instant>,
@@ -274,14 +257,12 @@ fn deadline(options: &QueryOptions) -> Option<std::time::Instant> {
         .timeout
         .and_then(|duration| std::time::Instant::now().checked_add(duration))
 }
-/// Starts the cancellable generation of a statement.
 async fn begin_statement(cancel: &Cancellation, notices: &Mutex<Vec<String>>) -> Result<u32> {
     clear_notices(notices);
     let id = begin_generation(cancel).await?;
     running(cancel, true).await?;
     Ok(id)
 }
-/// Without `begun`, the statement starts here.
 #[allow(
     clippy::too_many_arguments,
     reason = "The worker owns each borrowed connection state."
@@ -309,13 +290,9 @@ async fn start(
         ),
     };
     let result = async {
-        // SET does not acquire a transaction snapshot. A SELECT here would
-        // make a following SET TRANSACTION ISOLATION LEVEL incorrectly fail.
-        // PostgreSQL Parse rejects multiple statements before Bind/Execute can write.
         let statement = match prepared {
             Some(prepared) => prepared,
             None => {
-                // The SET and the Parse share one round trip.
                 let (set, prepared) = futures_util::future::join(
                     tx.batch_execute(&statement_timeout(options)),
                     tx.prepare(&sql),
@@ -335,9 +312,6 @@ async fn start(
                 "Query parameters are not bound",
             ));
         }
-        // Account the owned schema before allocation or execution. PostgreSQL
-        // reports column origins, but they do not prove result nullability: outer
-        // joins and grouping can introduce NULL into NOT NULL source columns.
         let needed = statement
             .columns()
             .iter()
@@ -414,9 +388,6 @@ async fn start(
             .await
             .map_err(|_| DriverError::new(ErrorKind::Internal, "Spool worker failed"))??;
         let reader = spool.reader();
-        // Execute a bounded first row (or the complete zero-column command) before
-        // returning. Merely binding would silently lose writes committed without fetch.
-        // Bind and this Execute share one round trip.
         let (portal, first) = tx
             .bind_and_query_portal_with_result_formats(&statement, &[], &result_formats, 1)
             .await
@@ -513,7 +484,6 @@ async fn start_implicit(
         if max < std::mem::size_of::<Vec<Column>>() {
             return Err(resource());
         }
-        // Allocate every fallible local result resource before executing a write.
         let spool = tokio::task::spawn_blocking(move || spool::Spool::new(id))
             .await
             .map_err(|_| DriverError::new(ErrorKind::Internal, "Spool worker failed"))??;
@@ -562,7 +532,6 @@ async fn start_implicit(
         (Ok(_), Err(error)) => Err(error),
     }
 }
-// Borrow the wire field, avoiding a second copy before bounded decoding/spooling.
 struct Raw<'a>(Option<&'a [u8]>);
 impl<'a> tokio_postgres::types::FromSql<'a> for Raw<'a> {
     fn from_sql(
@@ -689,8 +658,6 @@ pub(super) fn decode(
 fn row_bytes(row: &Row) -> usize {
     std::mem::size_of::<Row>() + choscordb_driver_api::row_estimated_bytes(row)
 }
-/// Runs one Execute for up to `max_rows` rows and appends the decoded rows to the lookahead.
-/// `sent` is an Execute that was already sent for the portal.
 async fn execute(
     tx: &Transaction<'_>,
     active: &mut Active,
@@ -807,7 +774,6 @@ async fn fetch(
     let mut rows = Vec::with_capacity(size);
     let mut used = overhead;
     loop {
-        // Move buffered rows into the page until the page or the byte budget is full.
         let mut budget_full = false;
         while rows.len() < size {
             let Some(row) = active.lookahead.pop_front() else {
@@ -825,19 +791,15 @@ async fn fetch(
             rows.push(row);
             used += bytes;
         }
-        // One more row than the page tells if more rows exist.
         if budget_full || active.completed || !active.lookahead.is_empty() {
             break;
         }
         let wanted = size + 1 - rows.len();
-        // Ask only for the rows that the remaining budget can hold, so that the
-        // lookahead stays near one page. A narrow page takes one Execute.
         let average = (active.decoded_bytes / active.decoded_rows.max(1)).max(1);
         let fit = (max - used) / average + 1;
         execute(tx, active, None, wanted.min(fit), row_max, cancel).await?;
     }
     collect_notices(&mut active.summary, notices);
-    // The page accounting counts spare capacity, so keep only the rows.
     rows.shrink_to_fit();
     let page = ResultPage {
         index: active.index,
@@ -862,13 +824,10 @@ fn dispose(active: Option<Active>) {
         ..
     }) = active
     {
-        // The portal sends its Close messages when it drops. Drop it here, so they
-        // go before the next request instead of after its response.
         drop(portal);
         tokio::task::spawn_blocking(move || drop((spool, lookahead, text_overrides)));
     }
 }
-// The transaction borrows Client only inside this loop; no self-referential state.
 #[derive(Debug)]
 struct EditParam(Value);
 impl tokio_postgres::types::ToSql for EditParam {
@@ -1103,7 +1062,6 @@ pub(super) async fn run(
         };
         completed = None;
         if options.auto_commit && requires_implicit_transaction(&sql) {
-            // Commands outside a transaction can change the catalog at once.
             overrides.invalidate();
             overrides.begin_transaction();
             let reply = reply.take().expect("query reply");
@@ -1127,7 +1085,6 @@ pub(super) async fn run(
         }
         overrides.begin_transaction();
         let first_statement = begin_reply.is_none().then(|| statement_timeout(&options));
-        // The first statement begins before BEGIN, so that a cancel reaches its Parse.
         let generation = if first_statement.is_some() {
             match begin_statement(&cancel, &notices).await {
                 Ok(id) => Some((id, deadline(&options))),
@@ -1167,7 +1124,6 @@ pub(super) async fn run(
                 if let Some(deferrable) = characteristics.deferrable {
                     builder = builder.deferrable(deferrable);
                 }
-                // The first statement is parsed in the same round trip as BEGIN.
                 match &first_statement {
                     Some(setup) => builder
                         .start_and_prepare(setup, &sql)
@@ -1338,7 +1294,6 @@ pub(super) async fn run(
                     }
                 }
                 Command::Fetch(id, size, max, reply) => {
-                    // An old cursor is not a failure of the current transaction.
                     if active.as_ref().is_none_or(|active| active.id != id) {
                         let _ = reply.send(Err(stale()));
                         continue;
@@ -1492,8 +1447,6 @@ pub(super) async fn run(
                     let _ = reply.send(Ok(Some(idle)));
                 }
                 Command::BeginTransaction(_, reply) => {
-                    // PostgreSQL ignores new characteristics within an existing
-                    // transaction and reports a warning; do not execute a query.
                     dispose(active.take());
                     let result = cancel
                         .closing
@@ -1553,8 +1506,6 @@ pub(super) async fn run(
                 }
                 Command::Close(reply) => {
                     dispose(active.take());
-                    // Closing discards the session; the server rolls back its transaction
-                    // when the pump/socket is dropped. Never wait on another server reply.
                     drop(transaction);
                     let _ = reply.send(Ok(()));
                     break 'connection;

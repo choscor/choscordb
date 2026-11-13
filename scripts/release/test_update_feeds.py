@@ -1,5 +1,3 @@
-"""Signed update feeds and the post-publication Pages gate."""
-
 import base64
 import hashlib
 import importlib.util

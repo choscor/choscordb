@@ -15,8 +15,6 @@
 #include <QWidget>
 
 namespace choscordb::design::detail {
-// Qt still owns menu actions and combo selection. Only their presentation and
-// the outside-click/focus handling formerly provided by a native popup move here.
 class EmbeddedPopup final : public QObject {
   public:
     EmbeddedPopup(QWidget* surface, QWidget* origin, bool takeFocus, bool deleteWithOrigin)
@@ -50,8 +48,6 @@ class EmbeddedPopup final : public QObject {
         surface_->setProperty("embeddedPopupOwner",
                               origin ? QVariant::fromValue<QObject*>(origin) : QVariant());
         surface_->setParent(owner_, surface_->windowFlags() & ~Qt::WindowType_Mask);
-        // Ordinary children auto-show with their parent unless explicitly hidden.
-        // A popup must only appear when QMenu/QComboBox/QCompleter requests it.
         surface_->hide();
         if (!origin)
             return;
@@ -113,9 +109,6 @@ class EmbeddedPopup final : public QObject {
             const QSize size = surface_->size().boundedTo(owner_->size());
             surface_->setMinimumSize(0, 0);
             surface_->resize(size);
-            // Keep the visible context-menu panel inside its owner. Transparent
-            // shadow padding may be clipped at an edge without shifting the panel
-            // away from the invoking cursor.
             const int inset = cursor.isValid() ? menuShadowMargin() : 0;
             surface_->move(qBound(-inset, requested.x(), owner_->width() - size.width() + inset),
                            qBound(-inset, requested.y(), owner_->height() - size.height() + inset));
@@ -136,9 +129,6 @@ class EmbeddedPopup final : public QObject {
                  event->type() == QEvent::MouseButtonRelease)) {
                 auto* mouse = static_cast<QMouseEvent*>(event);
                 auto* action = menu->actionAt(mouse->position().toPoint());
-                // Native QMenu pointer handling assumes frameGeometry is global.
-                // Use local hit testing for a child, retaining Qt's public action
-                // selection and keyboard activation (including exec() results).
                 if (!action) {
                     if (auto* parent = qobject_cast<QMenu*>(origin_.data())) {
                         const QPoint point =
@@ -273,7 +263,7 @@ inline void embedPopup(QWidget* popup, QWidget* origin, bool takeFocus = true,
         new EmbeddedPopup(popup, origin, takeFocus, deleteWithOrigin);
 }
 
-} // namespace choscordb::design::detail
+}
 
 namespace choscordb::design::detail {
 inline QWidget* activeEmbeddedPopup() {
@@ -289,4 +279,4 @@ inline QWidget* activeEmbeddedPopup() {
             return widget;
     return nullptr;
 }
-} // namespace choscordb::design::detail
+}

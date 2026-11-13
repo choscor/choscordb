@@ -13,7 +13,6 @@ fn session_modes_change_quote_boundaries() {
             .unwrap()],
         "SELECT 2;"
     );
-    // Run All uses the same session mode to find the statement boundaries.
     let all = execution_range_mysql_with_mode(sql, 0, None, ExecutionScope::All, mode).unwrap();
     assert_eq!(&sql[all], sql);
     let quoted = "SELECT \"a\\\"; SELECT 3;";

@@ -329,8 +329,6 @@ void ControlStyleTest::rowNumberColumnHasVerticalSeparator() {
 
 void ControlStyleTest::selectedPaneTabKeepsAnOutlineInForcedContrast() {
     using namespace choscordb::design;
-    // Forced contrast flattens surface and surface-raised, so the selected
-    // segment needs an outline to stay distinguishable.
     QPalette contrast;
     contrast.setColor(QPalette::Window, Qt::black);
     contrast.setColor(QPalette::Base, Qt::black);
@@ -791,7 +789,6 @@ void ControlStyleTest::disabledCheckedIndicatorUsesMutedPrimaryOutlineAndCheck()
     style.drawPrimitive(QStyle::PE_IndicatorCheckBox, &option, &painter, &box);
     painter.end();
     QCOMPARE(image.pixelColor(8, 3), QColor(Qt::white));
-    // The orange primary keeps its hue when muted: red leads, blue trails.
     const auto outline = image.pixelColor(8, 0);
     QVERIFY(outline.red() > outline.green());
     QVERIFY(outline.green() > outline.blue());
@@ -862,7 +859,6 @@ void ControlStyleTest::standardTextContextMenusUseCursorAndDismissOutside() {
     QVERIFY(QTest::qWaitForWindowActive(&owner));
     for (QWidget* target : {static_cast<QWidget*>(&line), plain.viewport(), rich.viewport()}) {
         const QPoint cursor = target->mapToGlobal(QPoint(100, 15));
-        // Support both asynchronous menus and a nested menu event loop.
         bool inspected = false;
         QTimer::singleShot(0, &owner, [&, cursor] {
             inspected = true;

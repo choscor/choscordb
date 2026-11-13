@@ -23,7 +23,7 @@ bool sameConditions(const QList<ResultFilterCondition>& left,
     }
     return true;
 }
-} // namespace
+}
 
 ResultFilterBar::ResultFilterBar(QWidget* parent) : QWidget(parent) {
     setObjectName("resultFilterBar");
@@ -141,4 +141,4 @@ void ResultFilterBar::showValidationError(const QString& error) {
 void ResultFilterBar::restoreApplied() {
     loadDraft(applied_);
 }
-} // namespace choscordb
+}

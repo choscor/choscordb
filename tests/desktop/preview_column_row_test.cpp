@@ -70,7 +70,6 @@ void PreviewTest::columnRowSpecimenUsesRealDelegateInBothThemes() {
                  nestedAfter.copy(0, 0, nameRegionWidth, nestedAfter.height()));
         QVERIFY(nestedBefore != nestedAfter);
 
-        // A wide row renders the complete type at the right edge.
         tree->setFixedWidth(440);
         auto column = tree->model()->index(4, 0);
         tree->model()->setData(column, "created_at");
@@ -124,13 +123,11 @@ void PreviewTest::statusRowSpecimenShowsTrailingIconAndRedFailedRow() {
         const auto pixel = [&](int x, int y) {
             return image.pixelColor(qRound(x * scale), qRound(y * scale));
         };
-        // Antialiased strokes rarely hit the exact token, so ink is a near match.
         const auto near = [](const QColor& a, const QColor& b) {
             return qAbs(a.red() - b.red()) + qAbs(a.green() - b.green()) +
                        qAbs(a.blue() - b.blue()) <
                    120;
         };
-        // Counts the pixels of one color in the trailing icon square of a row.
         const auto iconInk = [&](const QRect& row, const QColor& color) {
             const int size = dimension(Dimension::IconSmall);
             int count = 0;
@@ -154,7 +151,6 @@ void PreviewTest::statusRowSpecimenShowsTrailingIconAndRedFailedRow() {
         QVERIFY(iconInk(loading, colors.fgMuted) > 0);
         QVERIFY(iconInk(unavailable, colors.fgMuted) > 0);
         QCOMPARE(iconInk(plain, colors.fgMuted), 0);
-        // The failed name is red; the status is never text in the name.
         int redName = 0;
         for (int y = failed.top(); y <= failed.bottom(); ++y)
             for (int x = failed.left(); x < failed.center().x(); ++x)
@@ -214,8 +210,6 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
         QCoreApplication::processEvents();
         QCOMPARE(tree->viewport()->grab().toImage().pixelColor(row.right() - 8, row.center().y()),
                  choscordb::design::resolvedThemeForWidget(*tree).colors.sidebarHover);
-        // The fills reach within half a pixel of each row boundary: adjacent
-        // highlighted rows leave a single logical pixel between them.
         const auto hoveredImage = tree->viewport()->grab().toImage();
         QVERIFY(hoveredImage.pixelColor(tree->viewport()->width() / 2, row.top()) !=
                 choscordb::design::resolvedThemeForWidget(*tree).colors.sidebarHover);
@@ -280,7 +274,6 @@ void PreviewTest::driverBadgeAndConnectionTileUseNeutralTokensInBothThemes() {
             const auto rect = list->visualItemRect(list->item(row));
             const auto image = list->viewport()->grab(rect).toImage();
             const auto scale = image.devicePixelRatio();
-            // Tile padding is neutral; the logo inside it is drawn unmodified.
             QCOMPARE(image.pixelColor(qRound(14 * scale), qRound(14 * scale)),
                      colors.surfaceRaised);
             int logoPixels = 0;

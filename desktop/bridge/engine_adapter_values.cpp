@@ -69,7 +69,7 @@ Cell gridCell(const CellDto& value) {
         return fromRust(value.text);
     }
 }
-} // namespace
+}
 bool EngineAdapter::applyEditBatch(quint64 connection,
                                    const std::vector<ReviewedEditStatement>& statements,
                                    quint64 token) {
@@ -85,8 +85,6 @@ bool EngineAdapter::applyEditBatch(quint64 connection,
         }
         for (size_t i = 0; i < statement.params.size(); ++i) {
             auto cell = bridge_detail::cellDto(statement.params[i]);
-            // Conversion guard: the planned kind below replaces the cell's own kind, so
-            // a partial value must never reach that relabeling.
             if (cell.kind == CellKindDto::InvalidUnicode || cell.kind == CellKindDto::Deferred ||
                 cell.kind == CellKindDto::DeferredFallback ||
                 cell.kind == CellKindDto::FallbackText || cell.kind == CellKindDto::Unavailable) {
@@ -242,7 +240,6 @@ const TransactionGuard& EngineAdapter::transactionGuard(bool transactionActive) 
     static const TransactionGuard idle = guard(false), open = guard(true);
     return transactionActive ? open : idle;
 }
-// The casts below need the C++ enumerators to keep the values of the Rust DTO enums.
 #define CHOSCORDB_SAME_ENUMERATOR(cpp, dto, name) static_assert(int(cpp::name) == int(dto::name))
 CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Null);
 CHOSCORDB_SAME_ENUMERATOR(CellKind, CellKindDto, Boolean);
@@ -397,4 +394,4 @@ bool EngineAdapter::appearanceThemeValid(const QString& theme) {
     const auto bytes = theme.toUtf8();
     return appearance_theme_valid(utf8View(bytes));
 }
-} // namespace choscordb
+}

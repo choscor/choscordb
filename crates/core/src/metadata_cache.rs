@@ -1,4 +1,3 @@
-//! Saved navigator children. The profile storage worker reads and writes them.
 use choscordb_driver_api::{DriverError, ErrorKind, ObjectId, SchemaObject};
 use choscordb_storage::{CachedChild, Storage};
 use tokio::sync::{mpsc, oneshot};
@@ -19,7 +18,6 @@ pub(crate) enum Command {
     },
 }
 impl Command {
-    /// Runs on the storage worker. A caller that stopped waiting gets no reply.
     pub(crate) fn execute(self, storage: Option<&mut Storage>) {
         fn answer<T>(
             reply: Reply<T>,
@@ -61,7 +59,6 @@ impl Command {
     }
 }
 
-/// The names and the kinds of navigator children, without details.
 pub(crate) fn saved_children(children: &[SchemaObject]) -> Vec<CachedChild> {
     children
         .iter()
@@ -75,7 +72,6 @@ pub(crate) fn saved_children(children: &[SchemaObject]) -> Vec<CachedChild> {
         .collect()
 }
 
-/// The saved children of one profile.
 #[derive(Clone)]
 pub(crate) struct CacheTarget {
     pub profile: String,
@@ -94,7 +90,6 @@ impl CacheTarget {
             .map_err(|_| stopped())?;
         answer.await.map_err(|_| stopped())?
     }
-    /// The saved children of `parent` as navigator rows, without details.
     pub(crate) async fn read(
         &self,
         parent: Option<ObjectId>,
@@ -123,7 +118,6 @@ impl CacheTarget {
                 .collect()
         }))
     }
-    /// Saves a complete child list.
     pub(crate) async fn write(
         &self,
         parent: Option<ObjectId>,

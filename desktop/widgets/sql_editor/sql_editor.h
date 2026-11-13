@@ -49,4 +49,4 @@ class SqlEditor final : public QsciScintilla {
     quint64 revision_ = 0;
     bool ioBusy_ = false;
 };
-} // namespace choscordb
+}

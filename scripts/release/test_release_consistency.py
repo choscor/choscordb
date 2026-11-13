@@ -18,8 +18,6 @@ class ConsistencyTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        # Hash DATA only is substituted for tiny fixture archives; validation logic
-        # and production pins remain unchanged outside this test's lifetime.
         fixture_bytes = b"controlled native fixture"
         fixture_hash = hashlib.sha256(fixture_bytes).hexdigest()
         pins = {name: fixture_hash for name in release_consistency.NATIVE_SOURCE_HASHES}

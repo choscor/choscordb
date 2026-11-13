@@ -1,4 +1,3 @@
-//! Typed transport for grid edit rules owned by driver-api.
 use crate::{convert, ffi};
 use choscordb_driver_api::{
     GridEditColumn, GridEditDriver, GridEditError, GridEditRequest, GridEditRow, grid_editability,

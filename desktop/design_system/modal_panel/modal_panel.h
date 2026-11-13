@@ -5,14 +5,12 @@
 namespace choscordb::design {
 class DialogSections;
 
-// Owner-window modal dialog. DialogPresentation owns its separate dimmed backdrop.
 class ModalDialog : public QDialog {
     Q_OBJECT
   public:
     explicit ModalDialog(QWidget* parent);
     ~ModalDialog() override;
     [[nodiscard]] QSize sizeHint() const override;
-    // Installs edge-to-edge dialog content. The sections own their compact spacing.
     [[nodiscard]] DialogSections* createSections();
 
   public slots:
@@ -27,4 +25,4 @@ class ModalDialog : public QDialog {
     DialogPresentation presentation_;
 };
 using ModalPanel = ModalDialog;
-} // namespace choscordb::design
+}

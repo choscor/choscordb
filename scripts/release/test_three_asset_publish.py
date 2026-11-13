@@ -1,5 +1,3 @@
-"""Three-package publication behavior through the release publisher seam."""
-
 import hashlib
 import json
 from pathlib import Path

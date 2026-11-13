@@ -16,8 +16,6 @@
 
 namespace choscordb::design::detail {
 namespace {
-// Blur only the source alpha. Drawing a QGraphicsDropShadowEffect through a scene
-// also paints its solid source silhouette, which leaves dark corner artifacts.
 void blurAlpha(std::vector<int>& alpha, int width, int height, int radius) {
     if (radius <= 0)
         return;
@@ -47,7 +45,7 @@ void blurAlpha(std::vector<int>& alpha, int width, int height, int radius) {
         }
     }
 }
-} // namespace
+}
 int menuShadowMargin() {
     int margin = 0;
     for (const auto& layer : elevation(Elevation::Popover))
@@ -58,7 +56,6 @@ int menuShadowMargin() {
 QPoint contextMenuPosition(const QPoint& cursor) {
     const int margin = menuShadowMargin();
     QPoint position = cursor - QPoint(margin, margin);
-    // Keep the popup window on screen when its shadow would extend past an edge.
     if (const auto* screen = QGuiApplication::screenAt(cursor)) {
         const QRect available = screen->availableGeometry();
         position.setX(qMax(position.x(), available.left()));
@@ -146,8 +143,6 @@ void prepareStandardContextMenu(QWidget* widget, QEvent* event) {
     if (!widget || event->type() != QEvent::ContextMenu ||
         widget->contextMenuPolicy() != Qt::DefaultContextMenu)
         return;
-    // Let Qt build its standard actions, including document-coordinate transforms
-    // for text and dock/toolbar toggles. Menu polish consumes only the screen anchor.
     widget->setProperty("standardContextMenuCursor",
                         static_cast<QContextMenuEvent*>(event)->globalPos());
     QTimer::singleShot(0, widget,
@@ -173,9 +168,6 @@ void positionSubmenu(QWidget* field, QEvent* event) {
         auto* parentMenu = qobject_cast<QMenu*>(menu->parentWidget());
         if (parentMenu && parentMenu->isVisible() &&
             parentMenu->activeAction() == menu->menuAction()) {
-            // Qt's screen-edge flip uses the whole window width, including our
-            // transparent shadow padding. Align visible panels after that flip;
-            // transparent shadow pixels may extend beyond the screen edge.
             const int margin = menuShadowMargin();
             const int panelWidth = menu->width() - 2 * margin;
             const auto available = menu->screen()->availableGeometry();
@@ -195,17 +187,16 @@ void positionSubmenu(QWidget* field, QEvent* event) {
     }
 }
 
-} // namespace choscordb::design::detail
+}
 
 namespace choscordb::design {
 namespace {
 void prepareContextMenu(QMenu& menu, const QPoint& cursor) {
     menu.ensurePolished();
     detail::polishMenu(&menu);
-    // Preserve the event position before QMenu applies native screen placement.
     menu.setProperty("contextMenuCursor", cursor);
 }
-} // namespace
+}
 void popupContextMenu(QMenu& menu, const QPoint& cursor) {
     prepareContextMenu(menu, cursor);
     menu.popup(detail::contextMenuPosition(cursor));
@@ -214,4 +205,4 @@ QAction* execContextMenu(QMenu& menu, const QPoint& cursor) {
     prepareContextMenu(menu, cursor);
     return menu.exec(detail::contextMenuPosition(cursor));
 }
-} // namespace choscordb::design
+}

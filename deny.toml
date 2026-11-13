@@ -1,5 +1,3 @@
-# Mechanical Cargo dependency license policy, not a distribution/legal approval.
-# Qt and QScintilla are audited separately: see docs/ci.md.
 [advisories]
 yanked = "deny"
 unmaintained = "workspace"
@@ -7,8 +5,6 @@ ignore = []
 
 [bans]
 multiple-versions = "warn"
-# Versionless dependencies are repository-local workspace paths; their source is
-# controlled by this checkout. Registry dependencies remain locked in Cargo.lock.
 wildcards = "allow"
 highlight = "all"
 skip = []
@@ -18,15 +14,11 @@ skip-tree = []
 allow = ["Apache-2.0", "GPL-3.0-or-later", "MIT", "Unicode-3.0", "Zlib"]
 confidence-threshold = 0.95
 
-# Reviewed BSD-3-Clause text in subtle 2.6.1, used by Secret Service cryptography.
-# See docs/ci.md; notices must be included in release artifacts.
 [[licenses.exceptions]]
 name = "subtle"
 version = "=2.6.1"
 allow = ["BSD-3-Clause"]
 
-# Reviewed BSD-3-Clause texts for the dedicated update signature verifier.
-# Release packaging includes their notices from Cargo metadata.
 [[licenses.exceptions]]
 name = "ed25519-dalek"
 version = "=2.2.0"
@@ -37,8 +29,6 @@ name = "curve25519-dalek"
 version = "=4.1.3"
 allow = ["BSD-3-Clause"]
 
-# Windows capability-directory traversal pulls winx through cap-primitives.
-# Its packaged Apache-2.0 text includes the LLVM linking exception.
 [[licenses.exceptions]]
 name = "winx"
 version = "=0.36.4"

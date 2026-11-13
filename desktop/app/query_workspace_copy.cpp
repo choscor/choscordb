@@ -22,7 +22,7 @@ QString copyAssemblyError(const QString& code) {
         return QObject::tr("The complete text value is not valid UTF-8.");
     return QObject::tr("Invalid or stale complete value chunk.");
 }
-} // namespace
+}
 
 void QueryWorkspace::copyResult(int scope) {
     ++copyGeneration_;
@@ -210,4 +210,4 @@ void QueryWorkspace::handleCopyEvent(const BridgeEvent& event) {
         return job->append(kind, offset, totalBytes, chunk, hasLease);
     }));
 }
-} // namespace choscordb
+}

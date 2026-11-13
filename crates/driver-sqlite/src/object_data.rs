@@ -1,4 +1,3 @@
-//! Short, bounded reads on the existing session, alongside its suspended SQL cursor.
 use super::*;
 use rusqlite::Connection as Db;
 struct Stop(Arc<AtomicBool>);
@@ -223,7 +222,6 @@ fn read(
         rows.push(row);
         used += bytes;
     }
-    // The page estimate counts capacity; the budget above counted only the rows.
     rows.shrink_to_fit();
     Ok(ResultPage {
         index,

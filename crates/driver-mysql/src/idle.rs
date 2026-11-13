@@ -1,4 +1,3 @@
-//! Conservative, wire-free idle transaction snapshots for the primary session.
 use choscordb_driver_api::IdleTransactionState;
 use mysql_async::Conn;
 use std::{
@@ -84,11 +83,7 @@ impl Tracker {
         }
     }
 }
-// Only inspect complete leading words, skipping ordinary comments. Executable
-// MySQL comments and unsupported forms remain unknown, never rollback-eligible.
 fn words(mut sql: &str) -> Option<Vec<String>> {
-    // A query can contain several server statements; do not infer a generation
-    // across ambiguous mode-dependent semicolon escaping.
     if sql.trim_end().trim_end_matches(';').contains(';') {
         return None;
     }

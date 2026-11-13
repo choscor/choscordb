@@ -365,7 +365,6 @@ void WorkspaceTest::exportsOriginalResultAfterBrowsing() {
     QCOMPARE(toast->parentWidget(), &f.parent);
     QVERIFY(toast->x() >= f.parent.width() / 2);
     QVERIFY(toast->y() >= f.parent.height() / 2);
-    // The toast owns the success outcome. The dialog status line does not repeat it.
     QVERIFY(toast->accessibleDescription().contains(destination));
     auto* statusLine = dialog->findChild<QWidget*>("exportStatusLine");
     QVERIFY(statusLine && !statusLine->isVisible());

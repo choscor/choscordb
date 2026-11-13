@@ -6,13 +6,10 @@
 #include <optional>
 
 namespace choscordb::design {
-// `Sidebar` buttons rest on the gray sidebar, so hover and checked lift to `surface`.
 enum class ButtonContext { Standard, EditorAction, Choice, Sidebar, TabAction };
 enum class ButtonVariant { Default, Secondary, Outline, Ghost, Destructive, Link };
-// Text sizes, then the square icon-only sizes in the same order.
 enum class ButtonSize { ExtraSmall, Small, Default, IconExtraSmall, IconSmall, Icon };
 
-// Keeps Qt's action, shortcut, accessibility and toggle semantics.
 class Button : public QPushButton {
     Q_OBJECT
   public:
@@ -45,6 +42,5 @@ class Button : public QPushButton {
     bool loading_ = false;
     bool enabledBeforeLoading_ = true;
 };
-// The shared ghost Close button for dialog headers and notifications.
 Button* createDismissButton(const QString& accessibleName, QWidget* parent);
-} // namespace choscordb::design
+}

@@ -33,8 +33,6 @@ void EditorPreferencesController::addAction(const QString& id, QAction* action, 
                      configurable});
 }
 void EditorPreferencesController::addEditor(SqlEditor* editor) {
-    // Application actions own these shortcuts so changing or disabling them also
-    // removes Scintilla's built-in primary and alternate bindings.
     for (auto id : {QsciCommand::Undo, QsciCommand::Redo, QsciCommand::SelectionCut,
                     QsciCommand::SelectionCopy, QsciCommand::Paste}) {
         if (auto* command = editor->standardCommands()->find(id)) {
@@ -75,8 +73,6 @@ bool EditorPreferencesController::eventFilter(QObject* watched, QEvent* event) {
             const auto sequence = action->shortcut();
             if (action->isEnabled() && !sequence.isEmpty() &&
                 sequence[0] == key->keyCombination()) {
-                // Let Qt route configured application shortcuts before Scintilla
-                // claims the same key for one of its built-in editing commands.
                 event->ignore();
                 return true;
             }
@@ -101,7 +97,6 @@ void EditorPreferencesController::initialize(EngineAdapter* adapter) {
                 const auto validation = validateShortcuts(value.shortcuts, catalog());
                 if (validation.ok())
                     apply(value);
-                // The startup load is background work. An open dialog reports a failed save.
                 else if (loaded) {
                     loadNotice_ = validation.message;
                     window_->reportNotice(loadNotice_, ToastVariant::Danger);
@@ -154,4 +149,4 @@ void EditorPreferencesController::open() {
     dialog_->raise();
     dialog_->activateWindow();
 }
-} // namespace choscordb
+}

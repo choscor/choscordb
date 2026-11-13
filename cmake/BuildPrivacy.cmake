@@ -1,5 +1,3 @@
-# Release diagnostics keep useful source paths without recording the builder's
-# account, checkout, dependency cache, or temporary build directories.
 set(CHOSCORDB_PRIVACY_MAPPINGS)
 macro(choscordb_privacy_map original replacement)
   if(IS_ABSOLUTE "${original}" AND NOT "${original}" STREQUAL "/")
@@ -17,12 +15,8 @@ if(CHOSCORDB_PRODUCTION_RELEASE OR CHOSCORDB_UPDATE_REHEARSAL)
     message(FATAL_ERROR "Release path privacy requires a compiler with -ffile-prefix-map")
   endif()
   if(APPLE)
-    # Apple ld can copy N_OSO archive/object paths from prebuilt Rust std into
-    # its debug map even after source remapping. Omit debug information at link
-    # time; keep normal symbols/backtraces and remapped runtime diagnostics.
     add_link_options("LINKER:-S")
   endif()
-  # The last matching mapping wins. More specific roots follow broader ones.
   choscordb_privacy_map("$ENV{HOME}" "/builder-home")
   choscordb_privacy_map("$ENV{TMPDIR}" "/temporary")
   choscordb_privacy_map("$ENV{HOME}/.cargo" "/cargo")
@@ -54,7 +48,6 @@ function(choscordb_rust_privacy_environment output rustc)
   string(ASCII 31 separator)
   set(encoded "$ENV{CARGO_ENCODED_RUSTFLAGS}")
   if(encoded STREQUAL "" AND NOT "$ENV{RUSTFLAGS}" STREQUAL "")
-    # Cargo's unencoded RUSTFLAGS itself uses whitespace-delimited arguments.
     string(STRIP "$ENV{RUSTFLAGS}" unencoded)
     string(REGEX REPLACE "[ \t\r\n]+" "${separator}" encoded "${unencoded}")
   endif()
@@ -64,8 +57,6 @@ function(choscordb_rust_privacy_environment output rustc)
       string(APPEND encoded "${separator}")
     endif()
     string(APPEND encoded "--remap-path-prefix=${mapping}")
-    # cc-rs parses these as shell words when CC_SHELL_ESCAPED_FLAGS is enabled.
-    # Quote each whole flag so spaces in user/source/build paths remain intact.
     string(REPLACE "\\" "\\\\" quoted "-ffile-prefix-map=${mapping}")
     string(REPLACE "\"" "\\\"" quoted "${quoted}")
     string(APPEND native_flags " \"${quoted}\"")

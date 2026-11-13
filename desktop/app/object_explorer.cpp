@@ -39,7 +39,6 @@
 #include <algorithm>
 namespace choscordb {
 namespace {
-// Objects whose tab shows only details and DDL; unknown kinds keep the relation layout.
 bool basicObject(const QString& kind) {
     const auto traits = EngineAdapter::objectKindTraits(kind);
     return traits.opensObjectTab && !traits.relation;
@@ -120,7 +119,6 @@ class DdlHighlighter final : public QSyntaxHighlighter {
     explicit DdlHighlighter(QPlainTextEdit* editor)
         : QSyntaxHighlighter(editor->document()), editor_(editor) {
         editor_->installEventFilter(this);
-        // Spans come from Rust once per text change; highlightBlock only paints them.
         connect(editor_->document(), &QTextDocument::contentsChange, this,
                 [this](int, int removed, int added) {
                     if (updating_ || (!removed && !added))
@@ -195,7 +193,7 @@ class ObjectColumnDelegate final : public QStyledItemDelegate {
         }
     }
 };
-} // namespace
+}
 ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     : QWidget(parent), adapter_(adapter) {
     setObjectName("objectScreen");
@@ -221,7 +219,6 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     table_->setShowGrid(false);
     table_->setWordWrap(false);
     table_->setFrameShape(QFrame::NoFrame);
-    // resizeColumnsToContents() samples rows by the vertical header's precision.
     table_->horizontalHeader()->setResizeContentsPrecision(50);
     table_->verticalHeader()->setResizeContentsPrecision(50);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -253,7 +250,6 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One),
         design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One));
     layout->insertWidget(0, headerBody);
-    // Pane tabs and their actions share one row; the segmented track hugs its tabs.
     header->addWidget(tabs_);
     auto* separator = new QFrame(headerBody);
     separator->setFrameShape(QFrame::VLine);
@@ -322,7 +318,6 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                                   : button == generate_ ? design::Icon::Code
                                                         : design::Icon::Refresh);
     }
-    // Tab order follows the shared row: pane tabs, then their actions.
     setTabOrder(tabs_, refresh_);
     updateActions();
     connect(refresh_, &QPushButton::clicked, this, [this] {
@@ -612,8 +607,6 @@ void ObjectExplorer::setStatus(const QString& state, const QString& text) {
     footer_->setContent({{}, text, {}, {}, {}, {}}, semantic);
     status_->setAccessibleName(tr("Object status: %1").arg(text));
     if (dataFooter_ && tabs_->currentIndex() == 5 && state == "busy") {
-        // The Data footer already carries its result origin. Keep the guard's
-        // explanation visible without adding a second footer or hiding Cancel.
         if (auto* dataLine = qobject_cast<design::StatusLine*>(dataFooter_.data()))
             dataLine->setMessage(text);
         else
@@ -636,7 +629,6 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
     }
     table_->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::Row));
     if (inspection.pane == ObjectInspectionPane::Columns) {
-        // Rust rejects templates beyond its column and size limits.
         columnsLoaded_ = true;
         for (const auto& row : inspection.rows)
             columns_.append(row.name);
@@ -655,13 +647,11 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
                 headers.append(property.name);
             }
     model_->setHorizontalHeaderLabels(headers);
-    // Resolve per-render presentation once rather than per row or cell.
     const auto mutedText = design::resolvedThemeForWidget(*this).colors.fgMuted;
     const QIcon keyIcon = design::themedIcon(design::Icon::Key, mutedText, objectIconSize());
     const QIcon fileIcon = design::themedIcon(design::Icon::File, mutedText, objectIconSize());
     const QFont metadataFont =
         design::resolveTypography(design::TextStyle::Callout, design::FontDesign::Monospaced);
-    // Grow the model once, then fill cells, instead of one insertion per row.
     const int firstRow = model_->rowCount();
     model_->setRowCount(firstRow + int(inspection.rows.size()));
     int modelRow = firstRow;
@@ -838,4 +828,4 @@ void ObjectExplorer::generateSql(const QString& kind) {
     }
     emit sqlGenerated(*connection_, result.sql);
 }
-} // namespace choscordb
+}

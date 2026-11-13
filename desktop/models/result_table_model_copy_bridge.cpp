@@ -24,7 +24,7 @@ QString copyError(const CopyResultDto& result) {
         return QObject::tr("Copied selection exceeds the clipboard size limit.");
     return QObject::tr("A copied value is invalid.");
 }
-} // namespace
+}
 
 ResultTableModel::CopyEvaluation ResultTableModel::evaluateCopy(CopySnapshot snapshot) {
     CopyRequestDto request;
@@ -63,4 +63,4 @@ ResultTableModel::CopyEvaluation ResultTableModel::evaluateCopy(CopySnapshot sna
         return {.text = {}, .error = copyError(result)};
     return {.text = fromRust(result.text), .error = {}};
 }
-} // namespace choscordb
+}

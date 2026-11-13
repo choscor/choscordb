@@ -106,8 +106,6 @@ struct WorkspaceFixture {
                  QString("mysql"));
     }
     void runConfirmedSql() {
-        // Accept only the SQL confirmation dialog through its public button.
-        // A repeating timer also handles prompts reached after nested events.
         QTimer confirm;
         QObject::connect(&confirm, &QTimer::timeout, &parent, [] {
             auto* box =

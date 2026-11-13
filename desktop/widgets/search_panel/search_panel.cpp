@@ -34,7 +34,6 @@ SearchPanel::SearchPanel(std::function<SqlEditor*()> currentEditor, QWidget* par
     needle_ = new QLineEdit(this);
     needle_->setObjectName("searchNeedle");
     needle_->setAccessibleName(tr("Find text"));
-    // Input hints one past Rust's limits, so Rust reports the overflow.
     const auto& limits = EngineAdapter::textLimits();
     needle_->setMaxLength(int(limits.maxSearchPatternBytes) + 1);
     needle_->setPlaceholderText(tr("Find text"));
@@ -352,4 +351,4 @@ void SearchPanel::showError(SearchInput field, const QString& message) {
 void SearchPanel::setStatus(const QString& message) {
     statusLine_->setMessage(message);
 }
-} // namespace choscordb
+}

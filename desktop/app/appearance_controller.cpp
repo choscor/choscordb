@@ -23,7 +23,7 @@ design::ThemeMode themeMode(const QString& value) {
         return design::ThemeMode::Light;
     return design::ThemeMode::System;
 }
-} // namespace
+}
 
 AppearanceController::AppearanceController(design::ThemeManager* theme, EngineAdapter* adapter,
                                            QMainWindow* window, QDockWidget* navigator,
@@ -136,8 +136,6 @@ AppearanceLayout AppearanceController::current() const {
     result.theme = theme_->mode() == design::ThemeMode::Dark    ? QStringLiteral("dark")
                    : theme_->mode() == design::ThemeMode::Light ? QStringLiteral("light")
                                                                 : QStringLiteral("system");
-    // Obsolete choices remain byte-compatible in storage, but no longer
-    // participate in rendering or theme-only edits.
     result.navigatorWidth = static_cast<quint32>(
         std::max(navigator_->width(), design::layoutMetrics().minimumNavigatorWidth));
     const auto sizes = workspace_->sizes();
@@ -145,7 +143,6 @@ AppearanceLayout AppearanceController::current() const {
     if (total > 0)
         result.editorResultsSplit =
             static_cast<quint16>(std::clamp((sizes[0] * 1000 + total / 2) / total, 100, 900));
-    // Dock placement is obsolete; retain compatible stored geometry and split.
     result.navigatorVisible = true;
     result.historyVisible = false;
     const auto geometry = window_->normalGeometry();
@@ -206,7 +203,6 @@ void AppearanceController::applyPreview() {
                                      .arg(EngineAdapter::recoveryHint(RecoveryHint::Retry)));
         return;
     }
-    // Keep the preview isolated from automatic layout writes until acknowledged.
     dirty_ = false;
     saveTimer_->stop();
     submitSave(Request::Save);
@@ -221,8 +217,6 @@ void AppearanceController::stageReset() {
     resetPreview_ = true;
     previewing_ = true;
     theme_->setMode(design::ThemeMode::System);
-    // Keep geometry unchanged until Save is acknowledged so Close can discard
-    // the entire reset without overwriting compatible persisted placement.
     emit resolvedChoicesChanged(current());
     emit warningChanged({});
     emit readyChanged(true);
@@ -333,9 +327,6 @@ bool AppearanceController::flush() {
     return false;
 }
 bool AppearanceController::eventFilter(QObject* watched, QEvent* event) {
-    // A stored width is an explicit compatible layout choice. Only fresh/reset
-    // defaults respond to the reference breakpoint; dragging the native divider
-    // turns that default into the user's own width.
     if (defaultSidebar_ && watched == window_ && event->type() == QEvent::MouseButtonPress) {
         const auto* mouse = static_cast<QMouseEvent*>(event);
         const auto dock = navigator_->geometry();
@@ -366,4 +357,4 @@ bool AppearanceController::eventFilter(QObject* watched, QEvent* event) {
         scheduleSave();
     return QObject::eventFilter(watched, event);
 }
-} // namespace choscordb
+}

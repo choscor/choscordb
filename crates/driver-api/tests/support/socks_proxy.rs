@@ -1,4 +1,3 @@
-//! Controlled test proxy forwards only to one disposable loopback database.
 use choscordb_driver_api::{SocksProtocol, SocksProxy};
 use std::sync::{
     Arc,

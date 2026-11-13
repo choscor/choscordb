@@ -33,8 +33,6 @@ QuerySettingsController::QuerySettingsController(EngineAdapter* adapter, QWidget
                 if (initial)
                     emit readyChanged(true);
             });
-    // Defer submission so owners can connect ready/error signals before an
-    // immediate queue or shutdown failure. Defaults are not ready until then.
     QTimer::singleShot(0, this, [this] {
         if (adapter_)
             adapter_->getQueryPreferences(initialToken_);
@@ -72,4 +70,4 @@ void QuerySettingsController::apply(const QueryPreferences& value) {
     preferences_ = value;
     emit preferencesChanged(preferences_);
 }
-} // namespace choscordb
+}

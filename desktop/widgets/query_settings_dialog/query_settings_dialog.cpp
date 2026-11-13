@@ -82,13 +82,11 @@ QuerySettingsDialog::QuerySettingsDialog(EngineAdapter* adapter, QWidget* parent
     connect(adapter, &EngineAdapter::queryPreferencesReady, this,
             [this](quint64 token, const QueryPreferences& value) {
                 if (!token_ || token != token_) {
-                    // Preferences can save this shared record while Query Settings is open.
                     showSystemSchemas_ = value.showSystemSchemas;
                     return;
                 }
                 token_ = 0;
                 statusLine_->setBusy(false);
-                // Rust validates stored settings and reports invalid ones as failures.
                 fill(value);
                 ready_ = true;
                 statusLine_->setAvailable(true);
@@ -153,8 +151,6 @@ void QuerySettingsDialog::apply() {
     statusLine_->setBusy(true);
     setStatus(tr("Saving query settings…"));
     updateControls();
-    // The owner registers this token before even a synchronous submission failure.
-    // Retain only locals afterward: a signal handler may close/delete this dialog.
     const QPointer<EngineAdapter> adapter = adapter_;
     emit queryPreferencesSaveSubmitted(token);
     if (adapter)
@@ -163,4 +159,4 @@ void QuerySettingsDialog::apply() {
 void QuerySettingsDialog::setStatus(const QString& message) {
     statusLine_->setMessage(message);
 }
-} // namespace choscordb
+}

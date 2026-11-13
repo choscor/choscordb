@@ -1,4 +1,3 @@
-//! Typed transport for Rust-owned signed update and readiness policy.
 use crate::ffi::{
     UpdateCheckDto, UpdateConsentDto, UpdateDownloadDto, UpdateHelperDto, UpdateInstallDto,
     UpdateProgressDto, UpdateRecordDto,
@@ -183,8 +182,6 @@ pub fn update_session_download(
             error: "No authenticated update is available".into(),
         };
     };
-    // Replacing a previously verified download can unlink its temporary file.
-    // This function is called by the Qt worker, never by the event thread.
     session.state.lock().expect("updater state").staged = None;
     let staging = match session.platform.as_str() {
         "windows" => Ok(StagingLocation::for_windows_temp()),

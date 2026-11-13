@@ -54,7 +54,6 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     pages->setProperty("designTabVariant", "pane");
     pages->setUsesScrollButtons(true);
     pages_ = pages;
-    // The pane tabs span the dialog; each page applies the shared inset.
     auto* body = sections->bodyLayout();
     body->setContentsMargins(0, 0, 0, 0);
     body->addWidget(pages, 1);
@@ -74,7 +73,6 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
         page->setProperty("designSurface", "panel");
         page->setAttribute(Qt::WA_StyledBackground);
         page->setBackgroundRole(QPalette::Base);
-        // Match the sibling settings forms on every platform style.
         if (auto* form = qobject_cast<QFormLayout*>(page->layout())) {
             form->setRowWrapPolicy(QFormLayout::WrapLongRows);
             form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
@@ -136,7 +134,6 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     preview_->setText("SELECT name, count(*)\nFROM sample\nWHERE active = true\nGROUP BY name;");
     preview_->setReadOnly(true);
     preview_->setFocusPolicy(Qt::NoFocus);
-    // fitPreview shows every sample line; only lines wider than the preview scroll sideways.
     preview_->SendScintilla(QsciScintillaBase::SCI_SETVSCROLLBAR, 0UL);
     preview_->SendScintilla(QsciScintillaBase::SCI_SETSCROLLWIDTHTRACKING, 1UL);
     connect(preview_->horizontalScrollBar(), &QScrollBar::rangeChanged, this,
@@ -263,8 +260,6 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
             if (!guard)
                 return;
             appearanceValid_ = valid;
-            // Readiness may arrive in a notification's nested event loop while
-            // preview still holds its earlier loading result.
             if (appearance_ && revision != appearanceRevision_) {
                 const bool current = appearance_->preview(theme_->currentData().toString());
                 if (!guard)
@@ -343,7 +338,6 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                     return;
                 const QPointer<PreferencesDialog> guard(this);
                 queryToken_ = 0;
-                // Rust validates stored settings and reports invalid ones as failures.
                 if (!saving_)
                     fillQuery(value);
                 else
@@ -386,15 +380,11 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     fillQuery(QueryPreferences{});
     fillHistory(HistoryPolicy{});
     setBusy(true);
-    // The tabs are disabled during asynchronous loading. Give the modal an
-    // enabled initial focus target instead of leaving Cocoa's focus empty.
     close->setFocus(Qt::OtherFocusReason);
     token_ = nextRequestToken();
     queryToken_ = nextRequestToken();
     historyToken_ = nextRequestToken();
     if (adapter_) {
-        // Startup may still have history/recovery replies awaiting Qt delivery.
-        // Advance each section after its result rather than adding a burst.
         adapter_->getEditorPreferences(token_);
     } else {
         token_ = queryToken_ = historyToken_ = 0;
@@ -456,7 +446,6 @@ void PreferencesDialog::updatePreview() {
             ? design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced)
             : font_->currentFont();
     selected.setPointSize(size_->value());
-    // Tracking only widens the scroll width; restart it so a smaller font drops the bar.
     preview_->SendScintilla(QsciScintillaBase::SCI_SETSCROLLWIDTH, 1UL);
     preview_->setEditorFont(selected);
     fitPreview();
@@ -514,8 +503,6 @@ void PreferencesDialog::apply() {
     saving_ = true;
     confirmedSystemSchemaVisibility_.reset();
     setBusy(true);
-    // Register every participant before submitting: shutdown/queue failures may
-    // be synchronous, while success must wait for all storage acknowledgements.
     const auto editorToken = token_ = nextRequestToken();
     const auto queryToken = queryToken_ = nextRequestToken();
     const auto historyToken = historyToken_ = nextRequestToken();
@@ -548,7 +535,6 @@ bool PreferencesDialog::advanceLoad() {
         else if (historyToken_)
             adapter_->getHistoryPolicy(historyToken_);
     }
-    // A rejected request can synchronously deliver a failure notification.
     return !guard.isNull();
 }
 void PreferencesDialog::finishRequests() {
@@ -595,4 +581,4 @@ void PreferencesDialog::setStatus(const QString& message) {
     statusLine_->setMessage(message);
     statusLine_->setVisible(!message.isEmpty());
 }
-} // namespace choscordb
+}

@@ -43,7 +43,6 @@ pub(crate) fn value(cell: ffi::CellDto) -> std::result::Result<Value, ()> {
             byte_length: cell.byte_length,
             database_type: cell.database_type,
         },
-        // Invalid C++ text, or a value outside the shared enum.
         _ => return Err(()),
     })
 }
@@ -191,7 +190,6 @@ fn capabilities(c: DriverCapabilities) -> u64 {
     .enumerate()
     .fold(0, |n, (bit, on)| n | ((on as u64) << bit))
 }
-/// Locks `leases` only to insert the transfer lease, after the conversion.
 pub fn event(
     event: Event,
     leases: &std::sync::Mutex<Arena<choscordb_core::PageLease>>,
@@ -696,7 +694,6 @@ pub fn event(
         }
         Event::Page { query, page, lease } => {
             transfer = Some(lease);
-            // The hot cache usually shares the page; the cells are then copied once.
             let page = std::sync::Arc::unwrap_or_clone(page);
             e.id = pack(query);
             e.page_index = page.index;

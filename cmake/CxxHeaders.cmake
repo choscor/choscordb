@@ -1,6 +1,3 @@
-# Publish Cargo's staged headers as declared build outputs. Order-only Cargo
-# dependencies alone cannot make Ninja reconsider consumers when build.rs
-# replaces a header after Ninja has computed its initial dirty graph.
 function(choscordb_export_cxx_headers target cargo_target source_dir output_dir)
     set(headers
         "${output_dir}/choscordb-bridge/src/lib.rs.h"
@@ -10,8 +7,6 @@ function(choscordb_export_cxx_headers target cargo_target source_dir output_dir)
         "${source_dir}/choscordb-bridge/src/lib.rs.h"
         "${source_dir}/rust/cxx.h"
     )
-    # Declare the headers written by build.rs as Cargo byproducts, so Ninja
-    # propagates their changed mtimes through the publication command.
     add_custom_command(TARGET ${cargo_target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E true
         BYPRODUCTS ${staged_headers}

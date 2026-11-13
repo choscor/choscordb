@@ -1,10 +1,6 @@
-//! Incremental, disk-backed results. Only the worker owns the wire protocol.
 use super::*;
 use std::sync::Mutex;
 
-// The wire codec may retain a 64 MiB packet and decoded row simultaneously.
-// Admit at most two workers to this native working-memory pool, independently
-// of the core's bounded page/schema reservations.
 static CONTROL_TRANSPORTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
 static NATIVE_WORKERS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
 struct Waiting(Option<Arc<Cancellation>>);
@@ -83,10 +79,8 @@ pub(super) struct Start {
     pub tunnel: Option<Arc<ssh::Tunnel>>,
     pub proxy: Option<Arc<crate::proxy::Tunnel>>,
 }
-/// A connection that a worker hands back after its statement.
 pub(super) struct Finished {
     pub conn: Conn,
-    /// The session mode after the statement; `None` when it is not known.
     pub sql_mode: Option<String>,
 }
 pub(super) async fn start(
@@ -159,21 +153,16 @@ pub(super) async fn start(
                     .as_ref()
                     .err()
                     .is_some_and(|error| error.vendor_code.is_some())
-                {
-                    // An ERR packet clears mysql_async's last OK status even when
-                    // the transaction remains active. Refresh server state before
-                    // reusing the session; guessing inactive could commit prior work
-                    // when the next manual query issues START TRANSACTION.
-                    if !matches!(
+                    && !matches!(
                         tokio::time::timeout(Duration::from_secs(5), conn.connection().ping())
                             .await,
                         Ok(Ok(()))
-                    ) {
-                        return Err(error(
-                            ErrorKind::Disconnected,
-                            "MySQL transaction state recovery failed; connection closed",
-                        ));
-                    }
+                    )
+                {
+                    return Err(error(
+                        ErrorKind::Disconnected,
+                        "MySQL transaction state recovery failed; connection closed",
+                    ));
                 }
                 worker_shared.idle.reconcile(conn.connection());
                 result
@@ -197,9 +186,6 @@ pub(super) async fn start(
             match interrupted {
                 Ok(result) => result,
                 Err(kind) => {
-                    // Draining may yield successful rows (notably interrupted
-                    // SLEEP). Publish the interruption before polling that drain,
-                    // so readers cannot mistake those rows for query success.
                     if let Ok(mut state) = worker_shared.lock() {
                         let set = state.sets.len().saturating_sub(1);
                         state.failure = Some((
@@ -209,9 +195,6 @@ pub(super) async fn start(
                     }
                     worker_cancel.cancelled.store(true, Ordering::Release);
                     worker_shared.changed.notify_waiters();
-                    // Keep the original future alive: dropping an in-flight read can
-                    // desynchronize packet framing. Kill from a second transport,
-                    // then drain the original response before returning the session.
                     let cleanup = async {
                         let _control = CONTROL_TRANSPORTS.acquire().await.map_err(|_| {
                             error(ErrorKind::Internal, "MySQL control admission closed")
@@ -276,7 +259,6 @@ pub(super) async fn start(
                     set.summary.sql_mode = None;
                 }
             }
-            // A failed statement may stop before the mode probe that follows it.
             if state.failure.is_none() {
                 sql_mode = state
                     .sets
@@ -285,9 +267,6 @@ pub(super) async fn start(
             }
         }
         worker_shared.changed.notify_waiters();
-        // An independent object read hands back only a connection that finished cleanly.
-        // It ends the read transaction at once, so the parked connection keeps no
-        // metadata lock while the view stays open.
         let ended = !independent
             || clean
                 && matches!(
@@ -309,8 +288,6 @@ pub(super) async fn start(
         }
     });
     let mut waiting = Waiting(Some(cancel.clone()));
-    // Do not wait for row spooling. Non-row commands wait for completion so
-    // affected-row and transaction summaries remain authoritative on return.
     loop {
         let changed = shared.changed.notified();
         tokio::pin!(changed);
@@ -348,7 +325,6 @@ pub(super) async fn start(
     }
 }
 
-/// The splitter's dialect: MariaDB also executes `/*M!` comments.
 fn sql_mode(flavor: Flavor, mode: Option<&str>) -> choscordb_sql_language::MysqlSqlMode {
     choscordb_sql_language::MysqlSqlMode {
         mariadb: flavor == Flavor::Mariadb,
@@ -367,10 +343,6 @@ async fn produce(
     if max < std::mem::size_of::<Vec<Column>>() {
         return Err(limit());
     }
-    // Preparing the complete input first preserves compound routine bodies. It
-    // also rejects multiple statements before any side effects occur.
-    // Preparing metadata can replace status flags without changing the session's
-    // transaction. Capture the last completed SQL state before preparing.
     let transaction_started = transaction_active(conn).unwrap_or(false);
     let whole = conn.prep(sql).await;
     match whole {
@@ -480,7 +452,6 @@ async fn produce_statement(
     let mut json = Arc::from([]);
     if let Some(stmt) = &stmt {
         if shared.flavor == Flavor::Mariadb {
-            // Without the catalog checks, values decode as text.
             json = json_columns(conn, stmt.columns())
                 .await
                 .unwrap_or_else(|_| Arc::from([]));
@@ -512,8 +483,6 @@ async fn produce_statement(
         collect(result, max, json.clone(), shared).await?;
         conn.close(stmt).await.map_err(normalize)?;
     } else {
-        // Administrative SQL unsupported by the prepared protocol is one server
-        // statement, validated by the mode-aware splitter above.
         let result = conn.query_iter(sql).await.map_err(normalize)?;
         collect(result, max, json, shared).await?;
     }
@@ -536,9 +505,6 @@ async fn produce_statement(
     shared.changed.notify_waiters();
     Ok(())
 }
-/// MariaDB's JSON type is an alias for LONGTEXT with a `json_valid` column
-/// check, so the wire type cannot identify JSON. Read the checks of the source
-/// tables once per statement, never per row.
 async fn json_columns(conn: &mut Conn, columns: &[mysql_async::Column]) -> Result<Arc<[bool]>> {
     let mut tables: Vec<(String, String)> = columns
         .iter()
@@ -579,7 +545,6 @@ async fn json_columns(conn: &mut Conn, columns: &[mysql_async::Column]) -> Resul
         .collect())
 }
 const SPOOL_BATCH_ROWS: usize = 256;
-/// The raw row bytes that one spool batch holds before its write.
 const SPOOL_BATCH_BYTES: usize = 4 * 1024 * 1024;
 fn wire_bytes(row: &mysql_async::Row) -> usize {
     (0..row.len())
@@ -589,7 +554,6 @@ fn wire_bytes(row: &mysql_async::Row) -> usize {
         } + std::mem::size_of::<mysql_async::Value>())
         .sum()
 }
-/// Converts one row, moves its large values to the spool and appends it to the result file.
 fn spool_row(
     row: mysql_async::Row,
     wire_columns: &[mysql_async::Column],
@@ -668,8 +632,6 @@ async fn collect<P: mysql_async::prelude::Protocol>(
             index
         };
         shared.changed.notify_waiters();
-        // Rows go to the spool in batches with one blocking task each. A batch starts at
-        // one row and doubles, so the first rows show at once.
         let mut batch_rows = 1;
         let mut ended = false;
         while !ended {
@@ -691,8 +653,6 @@ async fn collect<P: mysql_async::prelude::Protocol>(
             let json = json.clone();
             let file = file.clone();
             let mut spool = shared.spool.clone();
-            // Blocking disk work cannot be aborted. Keep its admission alive if
-            // cancellation drops the async producer before the write finishes.
             let native = shared
                 .native
                 .lock()
@@ -784,8 +744,6 @@ impl ResultCursor for StreamCursor {
                 })
                 .await
                 .map_err(|_| error(ErrorKind::Internal, "MySQL result worker failed"))??;
-                // Disk work yields to cancellation and producer failures. Do not
-                // expose the page or advance its position after either occurred.
                 {
                     let state = self.shared.lock()?;
                     self.check_interruption(&state, self.set)?;

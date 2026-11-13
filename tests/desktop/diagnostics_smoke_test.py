@@ -1,5 +1,3 @@
-"""Exercise the app's public smoke launch with isolated local diagnostics."""
-
 import json
 import os
 from pathlib import Path

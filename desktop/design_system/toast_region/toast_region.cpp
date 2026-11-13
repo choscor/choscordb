@@ -24,14 +24,13 @@
 #include <limits>
 namespace choscordb {
 namespace {
-// Row 1 is the bold title. Row 2 is the body in the muted text color.
 QString cardContent(const QString& title, const QString& body, const QColor& muted) {
     if (body.isEmpty())
         return QStringLiteral("<b>%1</b>").arg(title.toHtmlEscaped());
     return QStringLiteral("<b>%1</b><br/><span style=\"color:%2\">%3</span>")
         .arg(title.toHtmlEscaped(), muted.name(), body.toHtmlEscaped());
 }
-} // namespace
+}
 ToastRegion::ToastRegion(QWidget* parent)
     : QLabel(parent), timer_(new QTimer(this)), opacity_(new QGraphicsOpacityEffect(this)),
       fade_(new QPropertyAnimation(opacity_, "opacity", this)) {
@@ -50,8 +49,6 @@ ToastRegion::ToastRegion(QWidget* parent)
     dismiss_->installEventFilter(this);
     dismiss_->setFixedSize(dismiss_->sizeHint());
     connect(dismiss_, &QPushButton::clicked, this, &ToastRegion::dismissNotice);
-    // Reserve a leading status-icon column and a trailing column so wrapped
-    // notification text never meets the icon or the close button.
     applyCardMargins(0);
     details_ = new QToolButton(this);
     details_->setObjectName("toastDetails");
@@ -89,7 +86,6 @@ int ToastRegion::titleRowHeight() const {
 }
 void ToastRegion::applyCardMargins(int bottomExtra) {
     const int inset = design::spacing(design::Spacing::Three);
-    // Center the first text line on the title row, as the icon and the X are.
     const int top = inset + (titleRowHeight() - fontMetrics().height()) / 2;
     setContentsMargins(leadingInset(), top,
                        inset + dismiss_->width() + design::spacing(design::Spacing::Two),
@@ -196,7 +192,6 @@ void ToastRegion::placeOverlay() {
             title = tr("Notification");
             body = fullTitle_ + QStringLiteral("\n") + fullBody_;
         }
-        // Measure the real styled label, retaining only a whole UTF-16 prefix.
         const auto prefix = [&body](qsizetype length) {
             if (length > 0 && length < body.size() && body.at(length - 1).isHighSurrogate())
                 --length;
@@ -269,8 +264,6 @@ void ToastRegion::openDetails() {
 }
 void ToastRegion::showToast(const QString& title, const QString& body, ToastVariant variant,
                             int durationMs) {
-    // Warnings and failures require deliberate dismissal. Timed completion notices
-    // reserve reading time even when a caller requests a shorter duration.
     if (durationMs > 0) {
         const auto readingMs = qMin<qsizetype>(std::numeric_limits<int>::max(),
                                                2000 + (title.size() + body.size()) * 60);
@@ -286,7 +279,6 @@ void ToastRegion::showToast(const QString& title, const QString& body, ToastVari
     if ((currentNotice_ && same(*currentNotice_)) ||
         std::any_of(queuedNotices_.begin(), queuedNotices_.end(), same))
         return;
-    // The replacing notice waits in its own slot while other notices show.
     const bool replacingShown = currentNotice_ && currentNotice_->count > 0;
     if (pinned_ || (currentNotice_ && !dismissing_ && !replacingShown)) {
         queuedNotices_.push_back(notice);
@@ -361,7 +353,6 @@ void ToastRegion::renderNotice(const Notice& notice) {
     renderToast(title, notice.detail, notice.variant, notice.durationMs);
 }
 void ToastRegion::showPinnedToast(const QString& title, const QString& body, ToastVariant variant) {
-    // The replacing notice keeps its own slot and comes back after the queue.
     if (!pinned_ && currentNotice_ && !dismissing_ && currentNotice_->count == 0)
         queuedNotices_.push_front(*currentNotice_);
     currentNotice_.reset();
@@ -390,7 +381,6 @@ void ToastRegion::showProgress(const QString& title, const QString& detail) {
     renderProgress(title, detail);
 }
 void ToastRegion::showNextNotice() {
-    // A shown replacing notice that ends was dismissed with all the messages it holds.
     if (currentNotice_ && currentNotice_->count > 0)
         replacingNotices_.clear();
     currentNotice_.reset();
@@ -524,4 +514,4 @@ void clearProgressToast(QWidget* host) {
             toast->clearNotice();
     }
 }
-} // namespace choscordb
+}

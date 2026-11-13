@@ -53,7 +53,6 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
         if (owner)
             owner->captureInProgress_ = false;
     });
-    // Snapshot UI values before processing queued events, which can destroy the owner.
     const auto section = navigation_->currentItem()->text();
     const auto id = specimen_->currentData().toString();
     const auto source = source_->text();
@@ -67,8 +66,6 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
     const int paneWidth = logicalSize.width() / (comparison ? 2 : 1);
     const int paneHeight = logicalSize.height();
 
-    // Recreate fixtures so editing, focus/caret blink, scroll position and pointer
-    // location in the interactive preview cannot alter a reference capture.
     PreviewWindow fixture;
     (void)fixture.selectSpecimen(id);
     fixture.resize(1440, 1100);
@@ -79,10 +76,6 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
     target->setFixedSize(logicalSize);
     target->ensurePolished();
     target->layout()->activate();
-    // Scroll areas settle viewport/scrollbar geometry on show and the queued
-    // layout pass. Rendering a hidden fixture immediately can clip the final
-    // field edge or active tab indicator beneath stale scrollbars.
-    // These native popups require an active, focusable owner on Cocoa.
     fixture.setAttribute(Qt::WA_DontShowOnScreen, id != "selects");
     fixture.show();
     QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
@@ -102,8 +95,6 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
             host->setParent(nullptr);
             host->setAttribute(Qt::WA_DontShowOnScreen);
             host->setFixedSize(paneWidth, paneHeight);
-            // Reparenting can restore Qt's cached base palette. Keep detached
-            // popup/backdrop captures scoped to their own Light/Dark specimen.
             applySpecimenTheme(*host);
             host->layout()->activate();
             host->show();
@@ -129,8 +120,6 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
                 actual->adjustSize();
                 actual->show();
                 if (surface == "modal") {
-                    // Use the production backdrop's paint event, including its
-                    // token opacity, instead of approximating the overlay here.
                     QWidget* backdrop = nullptr;
                     const auto candidates =
                         actual->parentWidget()->window()->findChildren<QWidget*>(
@@ -244,8 +233,6 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
     }
     if (!owner)
         return false;
-    // The synchronous CLI/test API pumps a controlled Qt loop while Rust writes
-    // on a worker. User input is excluded and the busy flag rejects queued reentry.
     QEventLoop loop;
     QFutureWatcher<std::pair<bool, QString>> watcher;
     QObject::connect(&watcher, &QFutureWatcher<std::pair<bool, QString>>::finished, &loop,
@@ -270,4 +257,4 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
     owner->status_->setText(tr("Capture saved: %1").arg(path));
     return true;
 }
-} // namespace choscordb::design
+}

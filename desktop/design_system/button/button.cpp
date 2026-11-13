@@ -24,7 +24,7 @@ QFont buttonFont(ButtonSize size, ButtonContext context) {
     font.setWeight(QFont::Normal);
     return font;
 }
-} // namespace
+}
 
 Button::Button(const QString& text, QWidget* parent) : QPushButton(text, parent) {
     setProperty("designButton", true);
@@ -116,7 +116,6 @@ QStyle::State Button::visualState() const {
     return option.state;
 }
 void Button::focusInEvent(QFocusEvent* event) {
-    // Window activation and popup dismissal restore focus without changing its origin.
     if (event->reason() == Qt::MouseFocusReason)
         keyboardFocus_ = false;
     else if (event->reason() == Qt::TabFocusReason || event->reason() == Qt::BacktabFocusReason ||
@@ -145,7 +144,6 @@ void Button::paintEvent(QPaintEvent*) {
         foreground = colors.primaryFg;
         break;
     case ButtonVariant::Secondary:
-        // Secondary already rests on surface-raised; hover steps to the border tone.
         background = hover || pressed ? colors.border : colors.surfaceRaised;
         break;
     case ButtonVariant::Outline:
@@ -164,8 +162,6 @@ void Button::paintEvent(QPaintEvent*) {
         foreground = colors.primary;
         break;
     }
-    // Checked toggles, segments and choices are selected rows of a set; the
-    // sidebar selects with surface, like the selected tab on a tab bar.
     if (isChecked() && variant_ != ButtonVariant::Default) {
         background = context_ == ButtonContext::Sidebar ? colors.surface : colors.selection;
         foreground = colors.fg;
@@ -206,7 +202,6 @@ void Button::paintEvent(QPaintEvent*) {
         path.closeSubpath();
         painter.fillPath(path, background);
         painter.setBrush(Qt::NoBrush);
-        // The next button paints the shared edge; painting both makes a two-pixel line.
         if (!last) {
             painter.save();
             painter.setClipRect(vertical ? QRect(0, 0, width(), height() - 1)
@@ -272,4 +267,4 @@ Button* createDismissButton(const QString& accessibleName, QWidget* parent) {
     dismiss->setAutoDefault(false);
     return dismiss;
 }
-} // namespace choscordb::design
+}

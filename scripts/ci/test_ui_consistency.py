@@ -1,5 +1,3 @@
-"""Behavior checks for the desktop visual ownership audit."""
-
 from pathlib import Path
 import tempfile
 import unittest

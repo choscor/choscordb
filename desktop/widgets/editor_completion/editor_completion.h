@@ -35,4 +35,4 @@ class EditorCompletionController final : public QObject {
     quint64 shownStart_ = 0, shownEnd_ = 0;
     bool busy_ = false, pending_ = false, requested_ = false, inserting_ = false;
 };
-} // namespace choscordb
+}

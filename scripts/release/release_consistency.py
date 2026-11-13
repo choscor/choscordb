@@ -1,8 +1,3 @@
-"""Cross-artifact semantic validation for a local production release.
-
-Archives are inspected as streams and are never extracted.
-"""
-
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -32,7 +27,6 @@ NATIVE_SOURCE_HASHES = {
 
 
 def verify_release_consistency(root, manifest):
-    """Validate source, version, checksum inventory, and bundled dependency metadata."""
     root = Path(root)
     version = manifest["version"]
     source = json.loads((root / f"ChoscorDB-{version}-source.json").read_text())
@@ -123,8 +117,6 @@ def verify_release_consistency(root, manifest):
         raise ValueError(
             "Release dependency pins do not match supported production dependencies"
         )
-    # The caller already validates every artifact's actual bytes against hashes.
-    # Bind the native source receipts to upstream pins, not merely to each other.
     for suffix, expected_hash in NATIVE_SOURCE_HASHES.items():
         if hashes.get(f"ChoscorDB-{version}-{suffix}") != expected_hash:
             raise ValueError(

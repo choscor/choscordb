@@ -189,9 +189,6 @@ void SchemaSidebarWorkspaceTest::columnRowsShowDeclaredTypesWithoutLosingTheirNa
         QCOMPARE(longTypeRect.height(), blankRect.height());
         const QFontMetrics detailMetrics(design::resolveTypography(design::TextStyle::Callout));
         QVERIFY(detailMetrics.horizontalAdvance(longType.databaseType) > longTypeRect.width());
-        // Paint the same delegate at high resolution so small antialiased
-        // glyphs have interior pixels for the exact semantic-color assertion.
-        // Cropping a logical viewport rectangle also mismatches high-DPI grabs.
         QImage detailStrip(longTypeRect.size() * 4, QImage::Format_ARGB32_Premultiplied);
         detailStrip.setDevicePixelRatio(4);
         detailStrip.fill(Qt::transparent);

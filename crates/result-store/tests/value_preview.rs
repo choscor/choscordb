@@ -11,7 +11,6 @@ fn text_rows_never_split_characters_and_hold_back_a_partial_tail() {
     let rows = preview_rows(&bytes, false, true, 256);
     assert_eq!(rows.end, 259);
     assert_eq!(rows.boundaries, vec![0, 255, 259]);
-    // The value's tail keeps an incomplete character so it stays visible as invalid.
     let tail = preview_rows(&bytes, false, false, 256);
     assert_eq!(tail.end, 261);
     assert_eq!(tail.boundaries, vec![0, 255, 261]);
@@ -29,7 +28,6 @@ fn binary_and_invalid_text_split_at_the_row_width() {
 
 #[test]
 fn backward_paging_lands_on_character_boundaries() {
-    // The window starts at 100; the euro occupies 102..105.
     let window = [b'a', b'b', EURO[0], EURO[1], EURO[2], b'c', b'd'];
     assert_eq!(text_boundary_after(&window, 100, 103), 105);
     assert_eq!(text_boundary_after(&window, 100, 102), 102);

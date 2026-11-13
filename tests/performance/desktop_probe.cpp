@@ -140,7 +140,6 @@ class Probe : public QObject {
         connect(&app_, &QApplication::lastWindowClosed, this, [this] {
             if (closing_) {
                 report_["close_request_to_window_closed_ms"] = now() - closeStart_;
-                // Let the closing dispatch finish before serializing its timing.
                 QTimer::singleShot(0, this, [this] { finish({}); });
             }
         });
@@ -164,7 +163,6 @@ class Probe : public QObject {
                                "queued") {
                     query_ = event.id;
                 } else if (kind == "stored_page" && browsing_) {
-                    // A worker builds the grid page; the model reset shows it.
                     query_ = event.id;
                     browsePage_ = {event.page_index, event.row_count};
                 }
@@ -190,8 +188,6 @@ class Probe : public QObject {
         });
         QTimer::singleShot(0, this, [this] { checkReady(); });
         QTimer::singleShot(240000, this, [this] { finish("Measurement deadline exceeded"); });
-        // Keep the benchmark viewport reproducible despite asynchronous layout
-        // restoration and the native window manager's initial placement limits.
         window_.setFixedSize(1280, 800);
         window_.show();
     }
@@ -237,8 +233,6 @@ class Probe : public QObject {
         QTimer::singleShot(1000, this, [this] {
             if (!rss("idle_rss_bytes"))
                 return;
-            // The app starts on Start; measure connection/input on the same
-            // visible SQL workspace used by the original probe.
             if (!window_.showScreen(choscordb::MainWindow::Screen::Sql)) {
                 finish("Could not open SQL workspace for measurement");
                 return;
@@ -365,8 +359,6 @@ class Probe : public QObject {
             next_->click();
         }
     }
-    // A 10,000-row x 30-column result with mixed types, then a sort and a filter of it.
-    // The engine page byte budget can end each page early; the report records the rows shown.
     void startWidePage() {
         auto* settings = window_.findChild<choscordb::QuerySettingsController*>();
         auto preferences = settings->preferences();
@@ -401,7 +393,6 @@ class Probe : public QObject {
         wideStart_ = now();
         run_->trigger();
     }
-    // Each step ends when the grid model holds the expected page.
     void widePageShown() {
         if (finished_ || wideStep_.isEmpty())
             return;

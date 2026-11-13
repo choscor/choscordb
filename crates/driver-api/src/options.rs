@@ -62,7 +62,6 @@ pub enum TlsMode {
     VerifyCa,
     VerifyFull,
 }
-/// Secret bytes are deliberately excluded from Debug and serialization.
 pub struct Secret(zeroize::Zeroizing<String>);
 impl Secret {
     pub fn new(value: impl Into<String>) -> Self {
@@ -77,8 +76,6 @@ impl std::fmt::Debug for Secret {
         f.write_str("[REDACTED]")
     }
 }
-/// Validate a TCP hostname or IP literal, accepting brackets around IPv6 input.
-/// Host and port are separate fields; URLs, userinfo and socket paths are invalid.
 pub fn tcp_host(host: &str) -> Result<&str> {
     let invalid = || {
         DriverError::new(
@@ -100,7 +97,6 @@ pub fn tcp_host(host: &str) -> Result<&str> {
         host
     };
     if host.contains(['[', ']']) || address.contains(':') {
-        // A scope identifier is meaningful for link-local IPv6 endpoints.
         let (ip, scope) = address
             .split_once('%')
             .map_or((address, None), |(ip, scope)| (ip, Some(scope)));
@@ -147,7 +143,6 @@ pub enum ConnectionOptions {
         tls_identity: Option<TlsIdentity>,
         ssh: Option<SshTunnel>,
     },
-    /// The MySQL wire protocol against a MariaDB server.
     Mariadb {
         proxy: Option<crate::SocksProxy>,
         proxy_secret: Option<Secret>,

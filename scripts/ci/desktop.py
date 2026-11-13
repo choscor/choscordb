@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Install pinned CI Qt dependencies or configure/build/test the native app."""
 
 import argparse
 import os
@@ -30,7 +29,9 @@ def configuration():
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Install pinned CI Qt dependencies or configure/build/test the native app."
+    )
     parser.add_argument("stage", choices=["dependencies", "build", "test", "rust"])
     args = parser.parse_args()
     tools = ROOT / "build/ci"
@@ -44,8 +45,6 @@ def main():
     env["QT_PLUGIN_PATH"] = str(qt / "plugins")
     env["QT_QPA_PLATFORM"] = "offscreen"
     if host == "windows":
-        # The repository's optional compiler-cache launchers are POSIX scripts.
-        # Native Windows builds invoke both compilers directly.
         env["RUSTC_WRAPPER"] = ""
     if host == "linux":
         env["LD_LIBRARY_PATH"] = os.pathsep.join(
@@ -103,8 +102,6 @@ def main():
         if host == "windows":
             configure.append("-DCMAKE_CXX_COMPILER_LAUNCHER=")
         elif host == "mac":
-            # Keep CMake and QScintilla on the physical host architecture,
-            # including when Python runs under translation.
             configure.append(f"-DCMAKE_OSX_ARCHITECTURES={macos_native_architecture()}")
         run(configure, env=env)
         run(["cmake", "--build", "build/ci/native", "--parallel", "2"], env=env)

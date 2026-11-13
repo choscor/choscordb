@@ -1,5 +1,3 @@
-"""Tests for the native dead and duplicated code inventory."""
-
 from pathlib import Path
 import tempfile
 import unittest

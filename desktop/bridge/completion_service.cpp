@@ -9,13 +9,12 @@ QString compactText(const rust::String& text) {
     result.squeeze();
     return result;
 }
-} // namespace
+}
 struct CompletionService::Private {
     explicit Private(rust::Box<CompletionCatalog> value) : catalog(std::move(value)) {}
     rust::Box<CompletionCatalog> catalog;
 };
 CompletionService::CompletionService(QList<CompletionCandidate> items, bool partial) {
-    // Rust bounds the catalog; conversion skips text that is not well-formed UTF-16.
     rust::Vec<SqlCompletionDto> metadata;
     metadata.reserve(static_cast<size_t>(items.size()));
     for (const auto& item : items) {
@@ -60,4 +59,4 @@ CompletionPage CompletionService::complete(const QString& source, quint64 cursor
             {compactText(item.label), compactText(item.insert_text), compactText(item.kind)});
     return page;
 }
-} // namespace choscordb
+}

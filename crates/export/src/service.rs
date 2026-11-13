@@ -53,9 +53,7 @@ pub struct Progress {
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
     pub page_bytes: usize,
-    /// Maximum inline value bytes or raw deferred chunk bytes, never total deferred length.
     pub value_bytes: usize,
-    /// Conservative inline cell/schema allocation cap; all rows stream cell by cell.
     pub encoded_row_bytes: usize,
 }
 impl Default for Limits {
@@ -67,8 +65,6 @@ impl Default for Limits {
         }
     }
 }
-/// Sources start at row zero of the original result. Reads must be cancellation-safe
-/// and bound their own allocations; this service never submits SQL or reconnects.
 #[async_trait]
 pub trait ExportSource: Send {
     fn columns(&self) -> &[Column];
@@ -79,7 +75,6 @@ pub trait ExportSource: Send {
             "Whole value resolution unavailable",
         ))
     }
-    /// Read raw bytes without allocating the complete value. Text chunks may split UTF-8.
     async fn read_value_chunk(
         &mut self,
         _handle: Handle,
@@ -92,8 +87,6 @@ pub trait ExportSource: Send {
         ))
     }
 }
-/// Transactional sink seam. `finish` atomically publishes; `abort` discards partial
-/// data. Implementations must keep the prior destination untouched before finish.
 #[async_trait]
 pub trait ExportSink: Send {
     async fn write(&mut self, bytes: &[u8]) -> Result<()>;

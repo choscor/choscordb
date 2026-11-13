@@ -350,8 +350,6 @@ fn history_search_returns_large_valid_sql_and_reaches_older_match() {
     assert_eq!(second.entries[0].id, "older");
     assert!(!second.incomplete);
 
-    // JSON escapes each NUL as six bytes. Records above the 64 MiB scan
-    // budget are rejected by the existing saved-history storage limit.
     let oversized = HistoryEntry {
         id: "oversized".into(),
         profile_id: None,

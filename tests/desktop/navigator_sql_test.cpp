@@ -198,7 +198,6 @@ class NavigatorSqlTest : public QObject {
                                      {{"temp", "pg_temp_3", "pg_temp_3", "schema", true},
                                       {"public", "public", "public", "schema", false}}));
         filter.setText("pg_temp");
-        // Filtering and searching wait for typing to pause.
         QTRY_COMPARE(tree.model()->rowCount(), 0);
         QCoreApplication::processEvents();
         QCOMPARE(requests.count(), 2);
@@ -326,7 +325,6 @@ class NavigatorSqlTest : public QObject {
         const auto defaults = choscordb::SqlTemplateService::generate("insert", "\"t\"");
         QVERIFY(defaults.valid);
         QCOMPARE(defaults.sql, QString("INSERT INTO \"t\" DEFAULT VALUES;"));
-        // Rust's 1 MiB template input limit, in three-byte characters.
         QVERIFY(!choscordb::SqlTemplateService::generate(
                      "select", QString(qsizetype(1024 * 1024 / 3 + 1), QChar(0x4e00)))
                      .valid);
@@ -340,7 +338,6 @@ class NavigatorSqlTest : public QObject {
         QLineEdit filter;
         choscordb::NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
-        // Accepted model fixtures isolate menu behavior from database I/O.
         QObject::disconnect(model, &choscordb::NavigatorModel::childrenRequested, &engine,
                             &choscordb::EngineAdapter::loadMetadata);
         QSignalSpy requested(model, &choscordb::NavigatorModel::childrenRequested);
@@ -376,7 +373,7 @@ class NavigatorSqlTest : public QObject {
         loaded.findChild<QAction*>("generate_insert")->trigger();
         QCOMPARE(generated.count(), 3);
         QVERIFY(generated.last().at(1).toString().contains("\"a.b\""));
-        QCOMPARE(requested.count(), 2); // Generation never fetches metadata.
+        QCOMPARE(requested.count(), 2);
         model->refresh(table);
         loaded.findChild<QAction*>("generate_insert")->trigger();
         QCOMPARE(generated.count(), 3);

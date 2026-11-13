@@ -1,4 +1,3 @@
-//! Owned typed recovery transport; persistence and validation remain in core.
 use crate::{BridgeEngine, ffi, submit};
 pub fn workspace_tabs_save(
     engine: &mut BridgeEngine,
@@ -97,7 +96,6 @@ pub fn history_clear(engine: &mut BridgeEngine, token: u64) -> ffi::Submit {
             .map_err(|e| e.to_string())
     })
 }
-/// The retention a new profile directory starts with.
 pub fn history_policy_default() -> ffi::HistoryPolicyDto {
     let policy = choscordb_core::HistoryPolicy::default();
     ffi::HistoryPolicyDto {

@@ -18,7 +18,6 @@ fn preferences_are_correlated_gated_and_survive_restart() {
     };
     let mut engine = Engine::new(config.clone(), vec![]).unwrap();
     engine.editor_preferences_get(1).unwrap();
-    // A second request waits behind the outstanding one and is answered in order.
     engine.workspace_restore(2).unwrap();
     assert!(
         matches!(event(&mut engine),Event::EditorPreferences{request_token:1,preferences} if preferences==EditorPreferences::default())

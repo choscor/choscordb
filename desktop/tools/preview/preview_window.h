@@ -12,7 +12,6 @@ class QLabel;
 
 namespace choscordb::design {
 
-// Developer-only host; does not install a theme on QApplication or read preferences.
 class PreviewWindow final : public QMainWindow {
     Q_OBJECT
 
@@ -39,4 +38,4 @@ class PreviewWindow final : public QMainWindow {
     QLabel* status_ = nullptr;
 };
 
-} // namespace choscordb::design
+}

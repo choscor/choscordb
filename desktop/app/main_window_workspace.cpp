@@ -106,7 +106,7 @@ QString prepareSavedSqlDirectory(const QString& root) {
     return fromRust(saved_sql_prepare_directory(utf8View(encoded)));
 }
 
-} // namespace
+}
 
 void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto newQuery = ui.newQuery;
@@ -146,7 +146,6 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto discardResultEdits = ui.discardResultEdits;
     const auto applyResultEdits = ui.applyResultEdits;
     const auto messages = ui.messages;
-    // A partial catalog is a notice on the result footer of the SQL screen.
     connect(completion_, &EditorCompletionController::partialCatalog, this,
             [resultFooter = ui.resultFooter, partialShown = false](bool partial) mutable {
                 if (partial && !partialShown)
@@ -457,8 +456,6 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         }
         if (fitted)
             return;
-        // Sample only the first bounded page once. Subsequent paging
-        // retains column widths the user adjusted for this result.
         // perf-ok: configureResultTable limits the content sample to 50 rows.
         grid->resizeColumnsToContents();
         for (int column = 0; column < grid->model()->columnCount(); ++column)
@@ -482,7 +479,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     editors_->currentWidget()->setFocus();
             });
     auto* objectExplorer = makeObjectExplorer();
-    objectExplorer->hide(); // Not part of the workspace until its first object tab opens.
+    objectExplorer->hide();
     initialObjectExplorer_ = objectExplorer;
     connect(this, &MainWindow::objectContextSelected, this,
             [this, tree](quint64 connection, const QString& object, const QString& label,
@@ -798,7 +795,6 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     const bool selected = selectedProfileIds_.remove(profileId);
                     if (selected)
                         syncVisible();
-                    // One failure gives one report.
                     if (reconnectingProfile_ == profileId) {
                         finishReconnect(false);
                         reportError(tr("Could not reconnect %1: %2")
@@ -848,8 +844,6 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     auto* refreshSaved = viewMenu->addAction(tr("Refresh saved connections"));
     refreshSaved->setObjectName("refreshSavedConnections");
 #ifdef Q_OS_MACOS
-    // Keep commands available to internal callers and keyboard shortcuts without
-    // listing them in the native View menu. Qt hides the resulting empty menu.
     for (auto* action : viewMenu->actions()) {
         addAction(action);
         viewMenu->removeAction(action);
@@ -860,4 +854,4 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     connect(querySettings, &QAction::triggered, workspace_, &QueryWorkspace::showQuerySettings);
     preferences_->initialize(workspace_->adapter());
 }
-} // namespace choscordb
+}

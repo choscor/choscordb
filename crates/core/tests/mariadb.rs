@@ -1,5 +1,3 @@
-//! MariaDB-only engine behavior. Run with CHOSCORDB_MARIADB_PORT set to the
-//! repository's disposable MariaDB fixture.
 use choscordb_core::{Engine, Event};
 use choscordb_driver_api::{
     ConnectionId, ConnectionOptions, ErrorKind, HistoryTimestamp, ObjectDataTime, ObjectId,
@@ -41,7 +39,6 @@ fn engine() -> Engine {
     .unwrap()
 }
 
-/// The MariaDB fixture's settings as a MySQL connection.
 fn mysql_options() -> ConnectionOptions {
     let ConnectionOptions::Mariadb {
         proxy,
@@ -149,7 +146,6 @@ fn connected(engine: &mut Engine, driver: &str, options: ConnectionOptions) -> C
     connection
 }
 
-/// The column names and rows of an object read.
 fn object_rows(engine: &mut Engine, query: QueryId) -> (Vec<String>, Vec<Vec<Value>>) {
     let Event::Schema { columns, .. } = until(
         engine,

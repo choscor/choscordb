@@ -160,7 +160,6 @@ void QuickSearchDialog::setResults(const QList<QuickSearchResult>& results) {
         return left.id == right.id && left.icon == right.icon && left.type == right.type &&
                left.title == right.title && left.context == right.context;
     };
-    // Callers re-render on every partial result; rebuilding unchanged row widgets is wasted work.
     if (results.size() == results_.size() && list_->count() == results_.size() &&
         std::equal(results.cbegin(), results.cend(), results_.cbegin(), same)) {
         updateStatus();
@@ -332,4 +331,4 @@ void QuickSearchDialog::hideEvent(QHideEvent* event) {
     presentation_.hidden();
 }
 
-} // namespace choscordb::design
+}

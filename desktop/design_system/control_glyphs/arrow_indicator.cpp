@@ -36,4 +36,4 @@ bool drawArrowIndicator(QStyle::PrimitiveElement element, const QStyleOption* op
     return false;
 }
 
-} // namespace choscordb::design::detail
+}

@@ -1,4 +1,3 @@
-//! Bounded literal UTF-8 search. Returned offsets always index the original source.
 use regex::{Regex, RegexBuilder};
 use std::fmt;
 pub const MAX_SEARCH_SOURCE_BYTES: usize = 16 * 1024 * 1024;
@@ -49,19 +48,15 @@ impl fmt::Debug for Replacement {
             .finish()
     }
 }
-/// Whether `needle` is a searchable pattern (nonempty and within the pattern limit).
 pub fn pattern_usable(needle: &str) -> bool {
     !needle.is_empty() && needle.len() <= MAX_SEARCH_PATTERN_BYTES
 }
-/// Whether replacing `removed` bytes of a `document`-byte source with `added`
-/// bytes stays within the editable document limit.
 pub fn replacement_fits(document: usize, removed: usize, added: usize) -> bool {
     document
         .checked_sub(removed)
         .and_then(|kept| kept.checked_add(added))
         .is_some_and(|size| size <= MAX_SEARCH_SOURCE_BYTES)
 }
-/// A literal search compiled once and run against many sources.
 #[derive(Clone, Debug)]
 pub struct TextFinder {
     regex: Regex,
@@ -91,7 +86,6 @@ impl TextFinder {
         Ok(Self { regex })
     }
 
-    /// Up to `limit` nonoverlapping matches in `source`.
     pub fn find_all(
         &self,
         source: &str,
@@ -115,9 +109,6 @@ fn matcher(source: &str, needle: &str, options: SearchOptions) -> Result<Regex, 
     }
     TextFinder::new(needle, options).map(|finder| finder.regex)
 }
-/// Forward starts at `start_byte` inclusively. Backward searches for a match
-/// ending at or before it. Both directions wrap once; backward includes
-/// overlapping occurrences, so the nearest preceding literal wins.
 pub fn find(
     source: &str,
     needle: &str,
@@ -165,9 +156,6 @@ pub fn find(
         source.len()
     };
     found.wrapped = previous.is_none();
-    // find_iter skips overlaps. Only overlaps after its final eligible match
-    // can improve that answer, so refine this bounded tail rather than testing
-    // every overlapping occurrence throughout a large repetitive document.
     let mut position = found.start + source[found.start..].chars().next().unwrap().len_utf8();
     while position < limit {
         let Some(m) = regex.find_at(source, position) else {
@@ -182,7 +170,6 @@ pub fn find(
     }
     Ok(Some(found))
 }
-/// Up to `limit` nonoverlapping matches in source order, as byte ranges.
 pub fn find_all(
     source: &str,
     needle: &str,
@@ -194,9 +181,6 @@ pub fn find_all(
     }
     TextFinder::new(needle, options)?.find_all(source, limit)
 }
-/// Replaces nonoverlapping matches in the immutable input. Preflights the exact
-/// output length before allocation and never stores a match vector or rescans
-/// replacement text. Replacement syntax is entirely literal (including `$`).
 pub fn replace_all(
     source: &str,
     needle: &str,

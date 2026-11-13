@@ -275,7 +275,6 @@ fn connect_deadline_includes_waiting_for_the_credential_store() {
         }
         std::thread::sleep(Duration::from_millis(10));
     };
-    // Release the synchronous backend before any assertion/unwind or Engine drop.
     release.send(()).unwrap();
     assert!(
         matches!(result, Some(Event::ConnectionFailed {error,..}) if error.kind == choscordb_driver_api::ErrorKind::Timeout),

@@ -80,10 +80,8 @@ void DialogShell::paintEvent(QPaintEvent*) {
 
 void DialogShell::ensureContentHeight() {
     if (auto* root = layout(); root && root->hasHeightForWidth()) {
-        // Scrollable content may prefer more room without requiring it. Only grow
-        // for the layout's minimum, including labels that wrap at this width.
         setMinimumHeight(root->totalMinimumHeightForWidth(width()));
     }
 }
 
-} // namespace choscordb
+}

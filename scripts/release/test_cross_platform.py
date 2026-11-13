@@ -1,5 +1,3 @@
-"""Packaging safety checks that run without native toolchains."""
-
 import io
 import json
 from pathlib import Path
@@ -32,7 +30,6 @@ class PackagingSafetyTests(unittest.TestCase):
 
     def test_linux_tool_hash_mismatch_refuses_execution(self):
         with tempfile.TemporaryDirectory() as directory:
-            # A bad downloaded tool must be removed before it can be invoked.
             with patch(
                 "cross_platform.urllib.request.urlopen",
                 return_value=io.BytesIO(b"wrong"),

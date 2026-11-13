@@ -72,8 +72,6 @@
 #include <cstring>
 namespace {
 
-// Pick text ink from the independently opened public surface. Transparent
-// corners and the solid surface background cannot satisfy this witness.
 QImage textInkPatch(const QImage& source, bool lightInk = false, int darkCutoff = 64) {
     QRect bounds;
     int inkPixels = 0;
@@ -93,9 +91,6 @@ QImage textInkPatch(const QImage& source, bool lightInk = false, int darkCutoff 
     return source.copy(bounds.adjusted(-1, -1, 1, 1).intersected(source.rect()));
 }
 
-// Search rather than duplicating the exporter's placement calculation. The
-// expected content comes from a real open widget; only the exporter can place
-// it in the resulting PNG.
 bool containsExactPatch(const QImage& capture, const QImage& witness) {
     if (witness.isNull() || capture.width() < witness.width() ||
         capture.height() < witness.height()) {
@@ -132,7 +127,7 @@ bool containsExactPatch(const QImage& capture, const QImage& witness) {
     }
     return false;
 }
-} // namespace
+}
 
 void PreviewTest::recentHistoryRowsUseSharedDelegateInBothThemes() {
     choscordb::design::PreviewWindow window;
@@ -464,7 +459,7 @@ void PreviewTest::galleryOpenKeepsOverlayInsideWindow() {
     QSignalSpy finished(dialog, &QDialog::finished);
     QTest::mouseClick(open, Qt::LeftButton);
     QTRY_VERIFY(dialog->isVisible());
-    QCOMPARE(finished.count(), 0); // Opening remains asynchronous.
+    QCOMPARE(finished.count(), 0);
     QVERIFY(!dialog->isWindow());
     QCOMPARE(dialog->window(), &window);
     QVERIFY(window.rect().contains(QRect(dialog->mapTo(&window, QPoint()), dialog->size())));
@@ -721,7 +716,6 @@ void PreviewTest::exportedPopupContainsItsVisibleContent() {
         select->showPopup();
         QCoreApplication::processEvents();
         QVERIFY(select->view()->isVisible());
-        // Export uses logical pixels; native Cocoa grabs use device pixels.
         witness = textInkPatch(select->view()->grab().toImage().scaled(select->view()->size()));
         select->hidePopup();
     } else if (specimen == "dialogs") {
@@ -825,7 +819,6 @@ void PreviewTest::exportsRenderActualModalAndMenuSurfaces() {
     QCOMPARE(QJsonDocument::fromJson(metadata.readAll()).object().value("surface").toString(),
              QString("modal"));
     const auto backdrop = QImage(path).pixelColor(320, 880);
-    // Reference panel paper plus translucent tint; blur/8-bit compositing may round by two.
     QVERIFY(qAbs(backdrop.red() - 183) <= 2);
     QVERIFY(qAbs(backdrop.green() - 189) <= 2);
     QVERIFY(qAbs(backdrop.blue() - 192) <= 2);

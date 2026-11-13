@@ -1,4 +1,3 @@
-//! SQL editing services. All positions are UTF-8 byte offsets.
 mod completion;
 mod completion_context;
 pub use completion_context::{completion_context, completion_source_supported};
@@ -164,7 +163,6 @@ mod editor_tests {
     }
 }
 
-// Dialect-specific entry points retain the existing editor behavior by default.
 pub fn statement_ranges_mysql(sql: &str) -> Vec<std::ops::Range<usize>> {
     scanner::statement_ranges_dialect(sql, true)
 }
@@ -235,12 +233,10 @@ mod mysql_tests {
     }
 }
 
-/// Session modes that affect MySQL lexical boundaries.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MysqlSqlMode {
     pub no_backslash_escapes: bool,
     pub ansi_quotes: bool,
-    /// MariaDB also executes `/*M!` comments, which MySQL ignores.
     pub mariadb: bool,
 }
 impl MysqlSqlMode {

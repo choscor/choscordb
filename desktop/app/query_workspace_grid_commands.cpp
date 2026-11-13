@@ -14,12 +14,10 @@
 namespace choscordb {
 namespace {
 using GridCommand = QueryWorkspace::GridCommand;
-// One row for each GridCommand, in enum order.
 struct GridCommandSpec {
     const char* id;
     const char* label;
     const char* sequence;
-    // The object name of an action that no hidden button names.
     const char* name;
 };
 constexpr std::array<GridCommandSpec, 8> gridCommands = {{
@@ -38,13 +36,10 @@ constexpr std::array<GridCommandSpec, 8> gridCommands = {{
     {"grid_discard_edits", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Discard"),
      "Ctrl+Shift+Backspace", nullptr},
 }};
-// Set NULL keeps Backspace as a fixed alternate of its configurable primary key.
 constexpr auto setNullAlternate = "Backspace";
 QString gridLabel(std::size_t command) {
     return QueryWorkspace::tr(gridCommands[command].label);
 }
-// Qt's shortcut map also ignores the keypad flag, treats Enter as Return, and
-// accepts a symbol typed with Shift when the binding has no Shift.
 QList<QKeyCombination> keyCandidates(QKeyCombination key) {
     auto modifiers = key.keyboardModifiers() & ~Qt::KeypadModifier;
     const auto code = key.key() == Qt::Key_Enter ? Qt::Key_Return : key.key();
@@ -56,13 +51,12 @@ QList<QKeyCombination> keyCandidates(QKeyCombination key) {
         candidates.append(QKeyCombination(modifiers & ~Qt::ShiftModifier, code));
     return candidates;
 }
-} // namespace
+}
 QList<ShortcutDescriptor> QueryWorkspace::gridShortcuts() {
     QList<ShortcutDescriptor> rows;
     for (std::size_t i = 0; i < gridCommands.size(); ++i)
         rows.append({gridCommands[i].id, gridLabel(i), gridCommands[i].sequence, true,
                      ShortcutScope::ResultGrid});
-    // Fixed grid keys take part in the conflict check so no command can take them.
     rows.append({"grid_set_null_alternate", tr("Set NULL (alternate)"), setNullAlternate, false,
                  ShortcutScope::ResultGrid});
     rows.append({"grid_copy", tr("Copy"),
@@ -93,7 +87,6 @@ void QueryWorkspace::setupGridCommands() {
     for (std::size_t i = 0; i < gridActions_.size(); ++i) {
         const auto command = static_cast<GridCommand>(i);
         auto* action = new QAction(gridLabel(i), widgets_.grid);
-        // The menu items keep the object names of the commands they replace.
         action->setObjectName(buttons[i] ? buttons[i]->objectName()
                                          : QString::fromLatin1(gridCommands[i].name));
         action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
@@ -107,7 +100,6 @@ void QueryWorkspace::setupGridCommands() {
     for (const auto& command : gridCommands)
         setGridShortcut(command.id,
                         QKeySequence::fromString(command.sequence, QKeySequence::PortableText));
-    // The grid takes its keys before window shortcuts with the same keys can match.
     widgets_.grid->installEventFilter(this);
     widgets_.grid->viewport()->installEventFilter(this);
     connect(widgets_.grid->selectionModel(), &QItemSelectionModel::currentChanged, this,
@@ -134,7 +126,6 @@ void QueryWorkspace::updateGridActions() {
         ->setEnabled(gridAction(GridCommand::AddRow)->isEnabled() && target.isValid() &&
                      target.model() == model_);
     gridAction(GridCommand::EditCell)->setEnabled(cellEditEligible(target));
-    // The context menu shows each blocked reason as the item's tooltip.
     for (std::size_t i = 0; i < gridActions_.size(); ++i) {
         auto* action = gridActions_[i];
         const auto reason =
@@ -153,7 +144,6 @@ void QueryWorkspace::updateApplyToolTip() {
     apply->setToolTip(!blocked.isEmpty() ? blocked : key.isEmpty() ? name : name + " · " + key);
 }
 QString QueryWorkspace::gridBlockedReason(GridCommand command) const {
-    // Busy work and editability planning end by themselves; the key then does nothing.
     if (workInFlight() || editabilityPlanning_)
         return {};
     const auto* selection = widgets_.grid->selectionModel();
@@ -184,7 +174,6 @@ QString QueryWorkspace::gridBlockedReason(GridCommand command) const {
 }
 void QueryWorkspace::runGridCommand(GridCommand command) {
     if (!gridAction(command)->isEnabled()) {
-        // A command that a rule blocks shows the rule; one with nothing to act on does nothing.
         if (const auto reason = gridBlockedReason(command); !reason.isEmpty())
             message(reason);
         return;
@@ -200,7 +189,6 @@ void QueryWorkspace::runGridCommand(GridCommand command) {
         break;
     case GridCommand::DeleteRows:
     case GridCommand::RestoreRows:
-        // Rust rejects deleting rows it cannot match when the edits are planned.
         if (selection)
             model_->markRowsDeleted(model_->selectedRows(selection->selection()),
                                     command == GridCommand::DeleteRows);
@@ -239,7 +227,6 @@ void QueryWorkspace::discardStagedEdits() {
     box.setDefaultButton(cancel);
     const QPointer<QueryWorkspace> self(this);
     box.exec();
-    // Work that started while the dialog was open can make the discard stale.
     if (self && box.clickedButton() == discard &&
         gridAction(GridCommand::DiscardEdits)->isEnabled())
         model_->discardEdits();
@@ -267,14 +254,12 @@ bool QueryWorkspace::commitInlineEditor(QWidget* editor) {
     auto* delegate = widgets_.grid->itemDelegateForIndex(index);
     emit delegate->commitData(editor);
     disconnect(watch);
-    // A value that did not stage keeps its draft open for a fix.
     if (staged)
         emit delegate->closeEditor(editor, QAbstractItemDelegate::NoHint);
     return staged;
 }
 bool QueryWorkspace::eventFilter(QObject* watched, QEvent* event) {
     auto* viewport = widgets_.grid->viewport();
-    // The inline editor and its parts are children of the viewport.
     if (watched == viewport && event->type() == QEvent::ChildPolished)
         if (auto* editor = qobject_cast<QWidget*>(static_cast<QChildEvent*>(event)->child())) {
             editor->installEventFilter(this);
@@ -291,7 +276,6 @@ bool QueryWorkspace::eventFilter(QObject* watched, QEvent* event) {
         return true;
     }
     if (watched != widgets_.grid && watched != viewport) {
-        // An open inline editor keeps its keys. Only Apply stages its value first.
         if (*command != GridCommand::ApplyEdits)
             return false;
         auto* editor = static_cast<QWidget*>(watched);
@@ -301,10 +285,9 @@ bool QueryWorkspace::eventFilter(QObject* watched, QEvent* event) {
             runGridCommand(GridCommand::ApplyEdits);
         return true;
     }
-    // A key that the inline editor did not use has no grid effect.
     const auto* focus = QApplication::focusWidget();
     if (!focus || focus == viewport || !viewport->isAncestorOf(focus))
         runGridCommand(*command);
     return true;
 }
-} // namespace choscordb
+}

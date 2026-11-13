@@ -48,7 +48,7 @@ QString historyPreview(const QString& sql, quint32 maxChars, bool markTruncation
     return bridge_detail::fromRust(preview.text) +
            (markTruncation && preview.truncated ? QStringLiteral("…") : QString{});
 }
-} // namespace
+}
 
 void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     const auto fileMenu = ui.fileMenu;
@@ -107,8 +107,6 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
         workspaceTabs->workspaceBar()->setHeader(recoveryHeader);
         for (auto* action : {retry, startNew, discardClose, cancelClose})
             action->setEnabled(false);
-        // Disable the common ancestor so lifecycle updates can still change each
-        // action's own enabled state while recovery blocks normal interaction.
         const auto showRecovery = [toolbar, retry] {
             toolbar->setEnabled(false);
             retry->setEnabled(true);
@@ -437,4 +435,4 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                 });
             });
 }
-} // namespace choscordb
+}

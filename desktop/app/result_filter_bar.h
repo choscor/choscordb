@@ -39,4 +39,4 @@ class ResultFilterBar final : public QWidget {
     bool hasColumns_ = false;
     QList<ResultFilterCondition> applied_;
 };
-} // namespace choscordb
+}

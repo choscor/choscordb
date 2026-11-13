@@ -276,7 +276,6 @@ fn windows_saved_reader_rejects_file_and_directory_reparse_links() {
     fs::write(outside.join("private.sql"), b"outside secret").unwrap();
     let file_link = root.join("linked.sql");
     let dir_link = root.join("linked_folder");
-    // Windows hosts without Developer Mode may prohibit test symlink creation.
     if symlink_file(outside.join("private.sql"), &file_link).is_err()
         || symlink_dir(&outside, &dir_link).is_err()
     {

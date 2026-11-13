@@ -106,7 +106,6 @@ pub fn row_status_policy(cause: ffi::RowStatusCauseDto, detail: &str) -> ffi::Ro
         Dto::Disconnected => Cause::Disconnected,
         Dto::ChildrenCached => Cause::ChildrenCached,
         Dto::ChildrenCachedFailed => Cause::ChildrenCachedFailed,
-        // A value outside the shared enum is a bridge defect. Show it as a failure.
         _ => {
             return ffi::RowStatusDto {
                 kind: ffi::RowStatusKindDto::Failed,
@@ -156,7 +155,6 @@ pub fn recovery_hint_text(hint: ffi::RecoveryHintDto) -> String {
         Dto::RetryApproval => Hint::RetryApproval,
         Dto::ReconnectManually => Hint::ReconnectManually,
         Dto::ReconnectAndRefreshNavigator => Hint::ReconnectAndRefreshNavigator,
-        // A value outside the shared enum is a bridge defect. Show it.
         _ => return format!("Unknown recovery hint {}.", hint.repr),
     };
     choscordb_driver_api::recovery_hint(hint).to_owned()

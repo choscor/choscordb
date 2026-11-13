@@ -22,8 +22,6 @@ class ThemeManager final : public QObject {
 
     void setMode(ThemeMode mode);
 
-    // These hooks are fed by the platform integration layer. User choices are
-    // retained while accessibility policy temporarily takes precedence.
     void setSystemAppearance(ResolvedAppearance appearance);
     void setSystemPalette(const QPalette& palette);
     void setForcedContrast(bool enabled);
@@ -49,4 +47,4 @@ class ThemeManager final : public QObject {
     QApplication* application_ = nullptr;
 };
 
-} // namespace choscordb::design
+}

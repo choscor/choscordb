@@ -190,7 +190,6 @@ class NativeUpdater final : public QObject {
     ~NativeUpdater() override {
         auto session = std::move(session_);
         update_session_cancel(**session);
-        // A staged TempPath can unlink a file when the session is dropped.
         (void)QtConcurrent::run(&consentPool_, [session = std::move(session)] { (void)session; });
     }
 
@@ -509,7 +508,7 @@ class NativeUpdater final : public QObject {
     quint64 consentGeneration_ = 0;
     quint64 persistedConsentGeneration_ = 0;
 };
-} // namespace
+}
 
 void installNativeUpdater(MainWindow& window, bool isolated) {
     if (!isolated && !QStandardPaths::isTestModeEnabled() &&
@@ -551,4 +550,4 @@ int runNativeUpdateHelper(const QStringList& arguments) {
     return 2;
 #endif
 }
-} // namespace choscordb
+}

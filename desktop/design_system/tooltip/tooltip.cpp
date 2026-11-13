@@ -177,4 +177,4 @@ bool handleTooltipEvent(QWidget* field, QEvent* event, QPointer<QWidget>& toolti
     return false;
 }
 
-} // namespace choscordb::design::detail
+}

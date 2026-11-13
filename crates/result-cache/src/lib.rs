@@ -1,15 +1,6 @@
-//! Application-wide LRU enforcing result and global allocation budgets.
-//!
-//! Every owned allocation is charged, including list nodes and value capacities.
-//! Budgets exclude allocator bookkeeping, the fixed `size_of::<PageCache<K,V>>()`
-//! root, and values owned by callers before insertion or after FFI copying.
-//! List operations require no temporary heap allocations. Lookup/eviction are
-//! linear in page count; the list keeps most recently used pages first.
 pub const DEFAULT_RESULT_BYTES: usize = 64 * 1024 * 1024;
 pub const DEFAULT_GLOBAL_BYTES: usize = 256 * 1024 * 1024;
 
-/// Value size plus all exclusively owned allocation capacities. Implementations
-/// must not undercount or mutate allocations through a shared reference.
 pub trait ResidentSize {
     fn resident_bytes(&self) -> usize;
 }
@@ -37,7 +28,6 @@ pub enum CacheError {
     PinnedPagesExhaustBudget,
 }
 
-/// Keys must include the query generation, not only its reusable slot.
 pub struct PageCache<K, V> {
     head: Option<Box<Node<K, V>>>,
     per_result: usize,
@@ -46,7 +36,6 @@ pub struct PageCache<K, V> {
 }
 impl<K, V> Drop for PageCache<K, V> {
     fn drop(&mut self) {
-        // Avoid a recursive destructor for long lists.
         while let Some(mut node) = self.head.take() {
             self.head = node.next.take();
         }
@@ -61,7 +50,6 @@ impl<K: Copy + Eq, V: ResidentSize> PageCache<K, V> {
             bytes: 0,
         }
     }
-    /// Complete allocation charge of storing a value, including key and links.
     pub fn entry_bytes(value: &V) -> usize {
         std::mem::size_of::<Node<K, V>>().saturating_add(
             value
@@ -92,8 +80,6 @@ impl<K: Copy + Eq, V: ResidentSize> PageCache<K, V> {
     fn evict_lru(&mut self, result: Option<K>) {
         self.evict_one(result);
     }
-    /// Failed insertion preserves entries, pinning and LRU order. A pinned page
-    /// may be explicitly replaced by its owner using the same key.
     pub fn insert(
         &mut self,
         result: K,
@@ -116,8 +102,6 @@ impl<K: Copy + Eq, V: ResidentSize> PageCache<K, V> {
         if pinned_local > self.per_result - size || pinned_global > self.global - size {
             return Err(CacheError::PinnedPagesExhaustBudget);
         }
-        // Preflight proved an eviction solution exists; mutation is now atomic
-        // with respect to all recoverable errors and needs no scratch vectors.
         self.unlink(key);
         while self.result_bytes(result) > self.per_result - size {
             self.evict_lru(Some(result));
@@ -150,8 +134,6 @@ impl<K: Copy + Eq, V: ResidentSize> PageCache<K, V> {
         }
         false
     }
-    /// Evict the least-recently-used unpinned page, optionally within one result.
-    /// Used by the shared memory broker before waiting for transfer capacity.
     pub fn evict_one(&mut self, result: Option<K>) -> bool {
         let key = self
             .nodes()
@@ -160,7 +142,6 @@ impl<K: Copy + Eq, V: ResidentSize> PageCache<K, V> {
             .map(|n| n.key);
         key.is_some_and(|key| self.unlink(key).is_some())
     }
-    /// Explicit owner removal may remove a pinned entry and returns its value.
     pub fn remove_page(&mut self, result: K, page: u64) -> Option<V> {
         self.unlink((result, page)).map(|node| node.value)
     }

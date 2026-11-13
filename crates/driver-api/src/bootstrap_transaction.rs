@@ -1,4 +1,3 @@
-//! PostgreSQL transaction controls, deliberately narrower than arbitrary SQL.
 use crate::{DriverError, ErrorKind, Result, TransactionCharacteristics, TransactionIsolation};
 #[derive(Debug, PartialEq, Eq)]
 pub enum Control {
@@ -52,7 +51,6 @@ fn tokens(sql: &str) -> Result<Vec<String>> {
         } else {
             i += 1;
         }
-        // All accepted controls consist of ASCII keywords. Ordinary SQL is passed through.
         words.push(String::from_utf8_lossy(&bytes[start..i]).to_ascii_uppercase());
         if words.len() == 1
             && !matches!(

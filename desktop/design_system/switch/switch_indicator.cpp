@@ -28,4 +28,4 @@ bool drawSwitchIndicator(const QStyleOption* option, QPainter* painter, const QW
     }
     return false;
 }
-} // namespace choscordb::design::detail
+}

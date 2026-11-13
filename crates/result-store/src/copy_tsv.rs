@@ -1,4 +1,3 @@
-//! Complete, bounded grid copy rules. The caller supplies UI-selected coordinates.
 use choscordb_driver_api::Value;
 
 #[derive(Clone, Debug)]
@@ -10,9 +9,7 @@ pub struct CopyCell {
 
 #[derive(Clone, Debug)]
 pub struct CopyRequest {
-    /// Rectangular output in display order. `None` represents an unselected position.
     pub rows: Vec<Vec<Option<CopyCell>>>,
-    /// All loaded overrides, including those outside the copied rectangle.
     pub resolutions: Vec<(Option<Value>, Value)>,
     pub byte_budget: usize,
 }
@@ -132,8 +129,6 @@ fn display_real(value: f64) -> String {
     if value == 0.0 {
         return "0".into();
     }
-    // Qt's QString::number(value, 'g', 17) uses 17 significant digits and
-    // scientific notation outside the usual %g decimal exponent range.
     let scientific = format!("{value:.16e}");
     let (mantissa, exponent) = scientific.split_once('e').expect("scientific number");
     let exponent: i32 = exponent.parse().expect("scientific exponent");

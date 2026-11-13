@@ -634,8 +634,6 @@ class ObjectExplorerTest final : public QObject {
             QVERIFY(explorer.actions().contains(action));
             QVERIFY(!action->isEnabled());
         }
-        // Pane tabs share the action row; their track hugs the tabs and a
-        // separator divides them from the actions that follow.
         QCOMPARE(tabs->parentWidget(), header);
         QCOMPARE(tabs->width(), tabs->sizeHint().width());
         QFrame* separator = nullptr;
@@ -783,7 +781,6 @@ class ObjectExplorerTest final : public QObject {
                  QString("sqlite_autoindex_account_1"));
         QTest::mouseClick(tabs, Qt::LeftButton, Qt::NoModifier, tabs->tabRect(2).center());
         QTRY_COMPARE(inspection.count(), 3);
-        // The fixture declares both a primary key and a UNIQUE constraint.
         QCOMPARE(table->model()->rowCount(), 2);
         QCOMPARE(table->model()->index(0, 0).data().toString(), QString("id"));
         QCOMPARE(table->model()->index(0, 1).data().toString(), QString("Primary key"));
@@ -990,7 +987,6 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(!table->showGrid());
         QVERIFY(!table->wordWrap());
         QVERIFY(table->columnWidth(4) > 100);
-        // Columns keep their content widths instead of filling the page.
         QVERIFY(table->horizontalHeader()->length() < table->viewport()->width() / 2);
     }
 };

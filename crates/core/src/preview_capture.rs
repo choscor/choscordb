@@ -1,4 +1,3 @@
-//! Developer capture documents. Invoke persistence from a blocking worker.
 use std::path::Path;
 
 pub const MAX_PREVIEW_PNG_BYTES: usize = 32 * 1024 * 1024;
@@ -152,9 +151,6 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
                     "Capture destination is not a regular file.",
                 ));
             }
-            // Atomic replacement only needs a writable directory. Preserve
-            // QSaveFile's separate check of this account's access to the file.
-            // Open without truncating; permission bits alone miss ACLs/root.
             std::fs::OpenOptions::new().write(true).open(path)?;
             Some(metadata.permissions())
         }
@@ -172,14 +168,10 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(permissions) = permissions {
         temporary.as_file().set_permissions(permissions)?;
     }
-    // The atomic rename commits this developer artifact. Report no fallible
-    // work after commit: callers must know whether PNG replacement succeeded.
     temporary.persist(path).map_err(|error| error.error)?;
     Ok(())
 }
 
-// Preserve the gallery's former QSaveFile behavior, including dangling final
-// links. Parent-directory links remain the filesystem's responsibility.
 fn resolve_capture_destination(path: &Path) -> std::io::Result<std::path::PathBuf> {
     let mut destination = path.to_path_buf();
     for _ in 0..128 {

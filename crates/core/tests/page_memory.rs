@@ -12,7 +12,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-/// Queries in this file page 100 rows at a time.
 fn paged() -> QueryOptions {
     QueryOptions {
         page_size: PageSize::new(100).unwrap(),
@@ -149,7 +148,6 @@ fn old_generation_consumer_reservation_survives_reuse_and_wakes_other_connection
     let second = connection(&mut engine);
     let new = engine.execute(second, "SELECT 2".into(), paged()).unwrap();
     assert_ne!(old, new);
-    // The new source fits, but its schema transfer must wait on the old consumer.
     std::thread::sleep(Duration::from_millis(30));
     while let Some(event) = engine.try_event() {
         assert!(!matches!(event, Event::Schema {query, ..} if query == new));

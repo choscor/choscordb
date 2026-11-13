@@ -29,7 +29,7 @@
 namespace choscordb {
 namespace {
 using bridge_detail::fromRust;
-} // namespace
+}
 
 bool MainWindow::objectActionReady(quint64 connection, const QString& objectId, const QString& kind,
                                    const QString& parentObjectId, const QString& qualifiedName,
@@ -324,4 +324,4 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
                         .arg(EngineAdapter::recoveryHint(RecoveryHint::RefreshNavigator)));
     }
 }
-} // namespace choscordb
+}

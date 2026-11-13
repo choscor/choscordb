@@ -1,4 +1,3 @@
-# Optional explicit unsigned staging target; ordinary builds never deploy or sign.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(CHOSCORDB_STAGE_OUTPUT "${CMAKE_BINARY_DIR}/unsigned-stage" CACHE PATH "New staging output directory")
 set(CHOSCORDB_STAGE_QT_BIN "" CACHE PATH "Qt bin directory containing macdeployqt")

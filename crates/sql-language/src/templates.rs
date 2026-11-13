@@ -47,7 +47,6 @@ fn quote_with(output: &mut dyn Write, name: &str, delimiter: char) -> fmt::Resul
     }
     output.write_char(delimiter)
 }
-// Count exact output first. No quoted-name vectors or growing format buffers.
 fn bounded(render: impl Fn(&mut dyn Write) -> fmt::Result) -> Result<String, NameError> {
     struct Counter(usize);
     impl Write for Counter {
@@ -100,9 +99,6 @@ pub enum TemplateKind {
     Delete,
 }
 
-/// Why a template cannot be generated from the navigator yet; `None` when it can.
-/// INSERT and UPDATE list the relation's columns, so those must be loaded, and
-/// UPDATE needs at least one column to assign.
 pub fn template_unavailable_reason(
     kind: TemplateKind,
     columns_loaded: bool,
@@ -115,7 +111,6 @@ pub fn template_unavailable_reason(
         TemplateKind::Insert | TemplateKind::Update => None,
     }
 }
-/// Editable SQL only; templates never execute or bind parameters.
 pub fn template(
     kind: TemplateKind,
     object: &[&str],
@@ -124,8 +119,6 @@ pub fn template(
     let name = qualified_name(object)?;
     template_from_qualified(kind, &name, columns)
 }
-/// A template for a navigator relation from its loaded column names. Only INSERT
-/// and UPDATE list columns; SELECT and DELETE address the whole row.
 pub fn navigator_template(
     kind: TemplateKind,
     name: &str,
@@ -142,9 +135,6 @@ pub fn navigator_template(
     };
     template_from_qualified(kind, name, listed).map_err(|error| error.to_string())
 }
-/// Accepts complete double-quoted or MySQL backtick-quoted components separated by dots.
-/// Dots within components, escaped quotes and Unicode remain unchanged.
-/// Insert and update templates with columns include the editable placeholder guidance.
 pub fn template_from_qualified(
     kind: TemplateKind,
     name: &str,

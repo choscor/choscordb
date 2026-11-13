@@ -1,4 +1,3 @@
-//! Construct destination-scoped OpenSSH commands and snapshot their effective address.
 use crate::{DriverError, ErrorKind, Result, Secret, SshAskpass, SshTunnel};
 use std::{process::Stdio, sync::Arc};
 use tokio::{io::AsyncReadExt, process::Command};
@@ -74,8 +73,6 @@ pub(crate) async fn inspect_address(settings: &SshTunnel, routed: bool) -> Resul
     snapshot(&settings, &command, routed).await
 }
 async fn snapshot(settings: &SshTunnel, command: &Command, routed: bool) -> Result<Address> {
-    // -G evaluates Host/Match before connecting. No authentication broker reaches
-    // that child; a placeholder preserves the presence of a proxy for canonicalization.
     let mut preflight = Command::new("ssh");
     preflight
         .arg("-G")

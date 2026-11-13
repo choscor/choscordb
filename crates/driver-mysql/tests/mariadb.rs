@@ -1,5 +1,3 @@
-//! MariaDB-only behavior. Run with CHOSCORDB_MARIADB_PORT set to the disposable
-//! MariaDB test server; see support/server.rs.
 use choscordb_driver_api::*;
 #[path = "support/server.rs"]
 mod server;

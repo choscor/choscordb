@@ -15,7 +15,7 @@ namespace choscordb {
 namespace design {
 class FieldValidation;
 class StatusLine;
-} // namespace design
+}
 class SqlEditor;
 class AppearanceController;
 class PreferencesDialog final : public DialogShell {
@@ -78,4 +78,4 @@ class PreferencesDialog final : public DialogShell {
     std::optional<bool> confirmedSystemSchemaVisibility_;
     bool busy_ = false, ready_ = false, saving_ = false, appearanceValid_ = true;
 };
-} // namespace choscordb
+}

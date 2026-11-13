@@ -83,7 +83,6 @@ void WorkspaceTest::savedProfilesCreateDuplicateTestDeleteAndConnect() {
     dialog->selectProfile(profile.id);
     dialog->findChild<QPushButton*>("profileConnect")->click();
     QTRY_COMPARE(f.workspace.liveConnections().size(), 2);
-    // Connecting another session leaves this draft's existing target intact.
     QCOMPARE(f.editor.connectionTarget(), f.workspace.liveConnections().at(0).id);
     QVERIFY(
         f.workspace.changeDocumentConnection(&f.editor, f.workspace.liveConnections().at(1).id));
@@ -293,8 +292,6 @@ void WorkspaceTest::mysqlSelectedScriptNavigatesDifferentResultSchemas() {
     QCOMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("11"));
     QTRY_VERIFY(f.next.isEnabled());
     QCOMPARE(f.next.toolTip(), QString("Next result"));
-    // Refreshing the session mode must preserve these results if the user
-    // cancels the new statement's confirmation.
     f.editor.setText("DELETE FROM mysql_confirmation_must_not_execute");
     bool rejected = false;
     QTimer reject;
@@ -393,7 +390,6 @@ void WorkspaceTest::mysqlModeRefreshDoesNotExecuteChangedEditorInput() {
                 if (e.kind == "session_sql_mode" && e.request_token != 0)
                     ++replies;
             });
-    // A failed statement leaves the session mode unknown, so the next run reads it first.
     f.editor.setText("SELEC 40");
     f.runConfirmedSql();
     QTRY_VERIFY(f.run.isEnabled());
@@ -401,7 +397,6 @@ void WorkspaceTest::mysqlModeRefreshDoesNotExecuteChangedEditorInput() {
     states.clear();
     f.editor.setText("SELECT 41");
     f.run.trigger();
-    // The asynchronous reply has not entered the GUI event loop yet.
     f.editor.setText("SELECT 42");
     QTRY_COMPARE(replies, 1);
     QCOMPARE(states.count(), 0);
@@ -443,8 +438,6 @@ void WorkspaceTest::mysqlSessionModeChangesSubsequentCursorExecution() {
     QTRY_VERIFY(f.run.isEnabled());
     QTRY_VERIFY2(f.messages.toPlainText().contains("Completed"),
                  qPrintable(f.messages.toPlainText()));
-    // In the default mode this backslash escapes the closing quote, so
-    // the second SELECT would incorrectly belong to the first statement.
     const QString sql = "SELECT 'backslash\\'; SELECT 29 AS mode_result;";
     f.editor.setText(sql);
     f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS,
@@ -483,7 +476,6 @@ void WorkspaceTest::postgresProfileExecutesPagesAndCancels() {
     profile.tls = "verify_full";
     dialog->saveDraft(profile);
     QTRY_VERIFY(save->isEnabled());
-    // Dismiss the save notice, so the test outcome does not wait behind it in the toast queue.
     auto* toast = choscordb::windowToast(dialog);
     QTRY_VERIFY(toast->text().contains("Profile saved."));
     toast->findChild<QAbstractButton*>("toastDismiss")->click();

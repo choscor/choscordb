@@ -30,7 +30,6 @@ impl SshAskpass {
         let worker = tokio::spawn(async move {
             let deadline = tokio::time::sleep(lifetime);
             tokio::pin!(deadline);
-            // Keep unauthenticated local clients from creating unbounded tasks.
             let mut requests = tokio::task::JoinSet::new();
             loop {
                 let accepted = tokio::select! {
@@ -54,8 +53,6 @@ impl SshAskpass {
                     .await;
                 });
             }
-            // JoinSet aborts outstanding requests on expiry and when the broker
-            // is dropped, so no detached task retains a credential or socket.
         });
         Ok(Self {
             address,
@@ -112,14 +109,10 @@ async fn serve_request(
     socket.write_all(bytes).await
 }
 
-/// Validate credentials before creating a tunnel or starting detached relay work.
 pub fn validate_ssh_secret(settings: &SshTunnel, secret: Option<&Secret>) -> Result<()> {
     if settings.authentication == SshAuthentication::Agent {
         return Ok(());
     }
-    // This helper serves the legacy ProxyJump path. Its subprocesses inherit
-    // askpass environment, so credential-bearing chains must use isolated
-    // forwarding through validate_ssh_chain_authentication instead.
     if !settings.options.jump_hosts.is_empty()
         && (settings.authentication == SshAuthentication::Password
             || secret.is_some_and(|secret| !secret.expose().is_empty()))
@@ -171,8 +164,6 @@ pub fn configure_ssh_authentication(
             "Inline SSH identities require isolated forwarding",
         ));
     }
-    // Clearing a saved passphrase supplies an explicit empty secret. For jump
-    // chains this represents an unencrypted target key and needs no broker.
     let secret = if settings.authentication == SshAuthentication::PublicKey
         && !settings.options.jump_hosts.is_empty()
     {
@@ -266,7 +257,6 @@ async fn request_secret(address: SocketAddr, token: &str) -> std::io::Result<Sec
     Ok(Secret::new(value))
 }
 
-/// Returns `Some` only when OpenSSH launched this process as its askpass helper.
 pub fn run_ssh_askpass_if_requested() -> Option<i32> {
     if let Some(code) = crate::ssh_proxy::run_if_requested() {
         return Some(code);

@@ -45,7 +45,7 @@ void paintMarkedRow(QPainter* painter, QStyleOptionViewItem item, RowMark mark) 
     painter->restore();
 }
 
-} // namespace
+}
 
 ColumnRowDelegate::ColumnRowDelegate(int detailRole, QObject* parent, int markRole)
     : QStyledItemDelegate(parent), detailRole_(detailRole), markRole_(markRole) {}
@@ -98,8 +98,6 @@ void ColumnRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opt
                           ? name
                           : nameMetrics.elidedText(name, Qt::ElideRight, nameWidth));
     if (detailWidth > 0) {
-        // NavigationTreeView paints the selection itself and clears State_Selected, and
-        // `fg-muted` is below 4.5:1 on `sidebar-selection`.
         const auto* view = qobject_cast<const QAbstractItemView*>(option.widget);
         const bool selected =
             (option.state & QStyle::State_Selected) ||
@@ -115,4 +113,4 @@ void ColumnRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opt
     }
     painter->restore();
 }
-} // namespace choscordb::design
+}

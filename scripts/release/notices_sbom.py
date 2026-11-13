@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Generate local, deterministic notices and SPDX metadata; never publish."""
 
 import argparse
 from datetime import datetime
@@ -804,7 +803,9 @@ def generate(
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Generate local, deterministic notices and SPDX metadata; never publish."
+    )
     for name in [
         "stage",
         "cargo-metadata",

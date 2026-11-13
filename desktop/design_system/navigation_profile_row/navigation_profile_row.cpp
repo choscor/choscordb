@@ -15,7 +15,6 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     const auto& colors = theme.colors;
     const bool selected = option.state & QStyle::State_Selected;
     const bool hovered = option.state & QStyle::State_MouseOver;
-    // Rows abut and the highlight leaves the navigator tree's seam between them.
     const int sideInset = spacing(Spacing::One);
     const auto bounds = option.rect.adjusted(sideInset, 0, -sideInset, 0);
     const qreal gap = layoutMetrics().navigationHighlightGap;
@@ -25,13 +24,10 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(selected ? colors.border : Qt::transparent);
-    // Idle rows stay unfilled so the sidebar surface shows through.
     if (selected || hovered) {
         painter->setBrush(selected ? colors.sidebarSelection : colors.sidebarHover);
-        // Keep the selected outline inside the highlight so the seam stays clear.
         painter->drawRoundedRect(highlight.adjusted(.5, .5, -.5, -.5), rowRadius, rowRadius);
     }
-    // One neutral tile beside the unmodified driver logo.
     const int tileSize = dimension(Dimension::ControlExtraSmall);
     const QRect tile(bounds.left() + inset, bounds.center().y() - tileSize / 2 + 1, tileSize,
                      tileSize);
@@ -65,4 +61,4 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
     }
     painter->restore();
 }
-} // namespace choscordb::design
+}

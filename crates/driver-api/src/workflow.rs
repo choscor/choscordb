@@ -1,13 +1,6 @@
-//! How the desktop sequences requests for each driver.
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DriverWorkflow {
-    /// Editability and cell metadata are inspected only after the whole result has
-    /// arrived, because the session cannot run catalog queries while streaming.
     pub inspect_after_result: bool,
-    /// Statement splitting depends on the session's SQL mode, which must be
-    /// known before choosing what to execute. The connection keeps the mode that
-    /// it last read and reads it again only after a failure makes it unknown.
     pub sql_mode_before_execution: bool,
 }
 

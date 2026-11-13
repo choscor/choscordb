@@ -971,7 +971,5 @@ void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWit
     QSignalSpy shutdown(adapter, &choscordb::EngineAdapter::shutdownReady);
     adapter->beginShutdown();
     QTRY_COMPARE(shutdown.count(), 1);
-    // Actor disconnects and the metadata barrier drain accepted work, proving
-    // no generated draft submitted another queued query even asynchronously.
     QCOMPARE(started, queryCount);
 }

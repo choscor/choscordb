@@ -101,4 +101,4 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     return tokens;
 }
 
-} // namespace choscordb::design
+}

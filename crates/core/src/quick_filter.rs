@@ -1,4 +1,3 @@
-//! Typed cell predicates for captured result columns.
 use choscordb_driver_api::{DriverError, ErrorKind, Value};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Operator {
@@ -163,8 +162,6 @@ pub struct Composition {
     pub expression: String,
     pub validation_error: String,
 }
-/// Compose a generated predicate with the visible draft. Invalid drafts remain editable
-/// and carry the evaluator's error; callers must not submit them as a repaired expression.
 pub fn compose(
     columns: &[choscordb_driver_api::Column],
     draft: &str,
@@ -184,8 +181,6 @@ pub fn compose(
             validation_error: error.message,
         });
     }
-    // Only discard whole-expression wrappers when SQLite accepts the unwrapped
-    // expression too. In particular, scalar subqueries must keep their parentheses.
     loop {
         let tokens = tokens(draft);
         let mut depth = 0usize;
@@ -242,9 +237,6 @@ fn validate(columns: &[choscordb_driver_api::Column], expression: &str) -> Resul
     )
     .map(|_| ())
 }
-// Tokenize only after the existing SQLite evaluator has validated the entire
-// expression. Quoted tokens are opaque, including doubled delimiters. Keywords
-// inside function arguments, nested expressions or CASE do not govern root precedence.
 fn tokens(text: &str) -> Vec<&str> {
     let mut result = Vec::new();
     let mut chars = text.char_indices().peekable();

@@ -16,4 +16,4 @@ ResultColumn resultColumn(const ColumnDto& column) {
             fromRust(column.timezone),
             nullable};
 }
-} // namespace choscordb
+}

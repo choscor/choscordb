@@ -62,7 +62,6 @@ class GridEditWorkspaceTest : public QObject {
         grid->customContextMenuRequested(QPoint(10, 10));
     }
 
-    // An editable page with a read-only key column and an editable name column.
     static choscordb::ResultTableModel* editablePage(QTableView* grid) {
         auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
         choscordb::ResultColumn id{}, name{};
@@ -71,7 +70,6 @@ class GridEditWorkspaceTest : public QObject {
         if (!model->setPage({id, name}, {{qint64(1), QString("a")}, {qint64(2), QString("b")}}, 0))
             return nullptr;
         model->setEditableColumns({false, true}, true, true, {false, true});
-        // Staging and discarding one value runs the production enablement refresh.
         model->setData(model->index(0, 1), QString("x"));
         model->discardEdits();
         return model;
@@ -83,7 +81,6 @@ class GridEditWorkspaceTest : public QObject {
         grid->setFocus();
         QTRY_VERIFY(grid->hasFocus());
     }
-    // Ctrl is Cmd on macOS through Qt's modifier mapping, as in the default key sequences.
     static void checkRowKeys(QTableView* grid) {
         auto* model = editablePage(grid);
         QVERIFY(model);
@@ -121,8 +118,6 @@ class GridEditWorkspaceTest : public QObject {
         QVERIFY(model->index(1, 1).data(choscordb::design::CellNullRole).toBool());
     }
 
-    // Presses a key and answers the first dialog that it opens. Returns the review object
-    // name or the message text of that dialog, or an empty string when no dialog opened.
     static QString answerDialog(const std::function<void()>& press, const QString& choice = {}) {
         QString seen;
         QTimer poll;
@@ -277,7 +272,6 @@ class GridEditWorkspaceTest : public QObject {
         focusGrid(grid);
         QCOMPARE(answerDialog(applyKey), QString("gridEditReview"));
         QCOMPARE(saved.count(), 1);
-        // An open SQL transaction blocks Apply: the key shows the reason, not the review.
         QTRY_VERIFY(run->isEnabled());
         editor->setText("BEGIN;");
         run->trigger();
@@ -348,7 +342,6 @@ class GridEditWorkspaceTest : public QObject {
         QVERIFY(shown.contains("queryResultDiscardEdits"));
         QVERIFY(shown.value("queryResultDiscardEdits")->isEnabled());
         QVERIFY(!shown.value("editCell")->isEnabled());
-        // A read-only page gives Add row its reason.
         choscordb::ResultColumn column{};
         column.name = "value";
         QVERIFY(model->setPage({column}, {{QString("a")}}, 0));
@@ -372,7 +365,6 @@ class GridEditWorkspaceTest : public QObject {
         QTRY_VERIFY(qobject_cast<QLineEdit*>(grid->indexWidget(cell)));
         auto* editor = qobject_cast<QLineEdit*>(grid->indexWidget(cell));
         editor->setFocus();
-        // Keypad Delete inside the editor deletes text and never sets the cell to NULL.
         QTest::keyClick(editor, Qt::Key_Home);
         QTest::keyClick(editor, Qt::Key_Delete, Qt::KeypadModifier);
         QCOMPARE(editor->text(), QString());
@@ -384,7 +376,6 @@ class GridEditWorkspaceTest : public QObject {
         grid->selectionModel()->select(cell, QItemSelectionModel::Select);
         QTest::keyClick(grid, Qt::Key_Delete, Qt::KeypadModifier);
         QVERIFY(cell.data(choscordb::design::CellNullRole).toBool());
-        // A layout that needs Shift for "=" still restores rows with Ctrl+Alt+=.
         grid->selectionModel()->select(model->index(1, 0), QItemSelectionModel::ClearAndSelect |
                                                                QItemSelectionModel::Rows);
         QTest::keyClick(grid, Qt::Key_Minus, Qt::ControlModifier | Qt::AltModifier);

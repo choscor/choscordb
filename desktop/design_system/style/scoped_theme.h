@@ -14,4 +14,4 @@ inline QVariant scopedThemeValue(const QWidget* widget) {
     }
     return qApp->property("designTheme");
 }
-} // namespace choscordb::design::detail
+}

@@ -1,4 +1,3 @@
-//! Round-trip budgets through a counting relay. Run against the disposable MySQL server.
 use choscordb_driver_api::*;
 #[path = "../../driver-api/tests/support/round_trip_proxy.rs"]
 #[allow(dead_code, reason = "Each test file uses part of the shared relay.")]
@@ -21,8 +20,6 @@ fn through(proxy: &RoundTripProxy) -> ConnectionOptions {
 #[tokio::test]
 #[ignore = "requires disposable MySQL server on localhost:33306"]
 async fn connect_and_object_open_fit_their_budgets() {
-    // A first login after a server start does the full password exchange. This one fills
-    // the server's authentication cache, so the counted connect is the usual fast login.
     let mut warm = server::driver()
         .connect(server::options(TlsMode::Disable))
         .await
@@ -30,7 +27,6 @@ async fn connect_and_object_open_fit_their_budgets() {
     warm.close().await.unwrap();
     let proxy = RoundTripProxy::start("127.0.0.1", server::port()).await;
     let mut connection = server::driver().connect(through(&proxy)).await.unwrap();
-    // The engine reads the session mode at once after it connects.
     connection.sql_mode().await.unwrap().unwrap();
     let connect = proxy.turnarounds();
     println!("connect: {connect} turnarounds");
@@ -85,7 +81,6 @@ async fn the_known_sql_mode_follows_the_session() {
     let mut connection = server::driver().connect(through(&proxy)).await.unwrap();
     let initial = connection.sql_mode().await.unwrap().unwrap();
     assert_ne!(initial, "ANSI_QUOTES");
-    // A run that sets the mode reports the new mode with its result.
     run(&mut connection, "SET SESSION sql_mode = 'ANSI_QUOTES'")
         .await
         .unwrap();
@@ -95,7 +90,6 @@ async fn the_known_sql_mode_follows_the_session() {
         Some("ANSI_QUOTES")
     );
     assert_eq!(proxy.turnarounds(), 0);
-    // After a failed run the mode is unknown, so the next request reads it again.
     run(
         &mut connection,
         "SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'",
@@ -114,7 +108,6 @@ async fn the_known_sql_mode_follows_the_session() {
     );
     assert!(proxy.turnarounds() >= 1);
     connection.close().await.unwrap();
-    // A new connection reads the mode of its own new session.
     let mut reconnected = server::driver().connect(through(&proxy)).await.unwrap();
     assert_eq!(
         reconnected.sql_mode().await.unwrap().as_deref(),
@@ -123,13 +116,9 @@ async fn the_known_sql_mode_follows_the_session() {
     reconnected.close().await.unwrap();
 }
 
-// Measured budgets. A connect is one authentication turnaround and one query, which
-// also reads the session mode.
 const BASELINE_CONNECT: usize = 2;
-// The connection keeps one idle object connection for the next open.
 const BASELINE_SECOND_OPEN: usize = 0;
 
-/// The table that the object tests open.
 async fn object_table(connection: &mut Box<dyn Connection>) -> ObjectId {
     connection
         .execute(
@@ -158,7 +147,6 @@ async fn object_table(connection: &mut Box<dyn Connection>) -> ObjectId {
 #[tokio::test]
 #[ignore = "requires disposable MySQL server on localhost:33306"]
 async fn an_idle_object_connection_does_not_use_the_transport_budget() {
-    // Four connections each keep an idle object connection after their tab closed.
     let mut connections = Vec::new();
     for _ in 0..4 {
         let mut connection = server::driver()
@@ -173,7 +161,6 @@ async fn an_idle_object_connection_does_not_use_the_transport_budget() {
         cursor.close().await.unwrap();
         connections.push(connection);
     }
-    // No object tab is open, so a fifth connection fits.
     let mut fifth = server::driver()
         .connect(server::options(TlsMode::Disable))
         .await

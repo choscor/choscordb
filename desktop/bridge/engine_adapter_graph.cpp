@@ -32,7 +32,7 @@ ObjectGraph objectGraph(const ObjectGraphDto& dto) {
     }
     return graph;
 }
-} // namespace choscordb::engine_adapter_detail
+}
 
 namespace choscordb {
 void EngineAdapter::loadObjectGraph(quint64 connection, const QString& object,
@@ -54,4 +54,4 @@ void EngineAdapter::loadObjectGraph(quint64 connection, const QString& object,
                                engine_adapter_detail::fromRust(reply.error));
     }
 }
-} // namespace choscordb
+}

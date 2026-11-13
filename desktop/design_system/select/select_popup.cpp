@@ -13,9 +13,6 @@
 
 namespace choscordb::design::detail {
 namespace {
-// Qt's private combo list view copies the combo font into every item option,
-// overriding the view font. Forward to the installed delegate so custom item
-// painting and separator behavior remain intact.
 class NormalFontPopupDelegate final : public QAbstractItemDelegate {
   public:
     NormalFontPopupDelegate(QAbstractItemDelegate* delegate, QObject* parent)
@@ -120,7 +117,7 @@ class PopupContentFitFilter final : public QObject {
     QPointer<QComboBox> combo_;
     QPointer<QWidget> popup_;
 };
-} // namespace
+}
 
 bool handleFontComboResize(QComboBox& combo, QEvent* event) {
     if (event->type() != QEvent::Resize || !qobject_cast<QFontComboBox*>(&combo) ||
@@ -129,10 +126,6 @@ bool handleFontComboResize(QComboBox& combo, QEvent* event) {
     QPointer<QWidget> popup = combo.view()->parentWidget();
     if (!popup->property("embeddedPopupOwner").isValid())
         return false;
-    // QFontComboBox::event resizes view()->window(), assuming the view still
-    // belongs to a native popup. Give that one Qt event its original hierarchy,
-    // then restore the child surface. Forwarding preserves QComboBox's normal
-    // resize handling, including its editable line field geometry.
     QPointer<QComboBox> origin = &combo;
     combo.setProperty("designForwardingFontResize", true);
     combo.hidePopup();
@@ -158,9 +151,6 @@ void prepareComboPopup(QComboBox& combo) {
     popup->setAttribute(Qt::WA_TranslucentBackground);
     popup->setAttribute(Qt::WA_MacShowFocusRect, false);
     popup->setPalette(applicationPalette(theme));
-    // Qt deliberately excludes its private combo container from inherited QSS.
-    // Keep the container borderless so its frame does not double the view's
-    // visible border. Retain the native list/delegate for custom models.
     popup->setStyleSheet(themedStyleSheet(u"select/select_popup_style_sheet.qss", theme));
     embedPopup(popup, &combo);
     if (!popup->property("designPopupContentFit").toBool()) {
@@ -172,4 +162,4 @@ void prepareComboPopup(QComboBox& combo) {
     view->setStyleSheet(themedStyleSheet(u"select/select_popup_view_style_sheet.qss", theme));
 }
 
-} // namespace choscordb::design::detail
+}

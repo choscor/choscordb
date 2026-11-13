@@ -15,18 +15,13 @@ class QItemSelectionModel;
 class QAbstractItemModel;
 
 namespace choscordb::design {
-// Neutral cell presentation roles. Producers retain all eligibility decisions.
 inline constexpr int ChoiceLabelsRole = Qt::UserRole + 20;
 inline constexpr int ChoiceNullableRole = Qt::UserRole + 21;
 inline constexpr int ForeignKeyLinkLabelRole = Qt::UserRole + 22;
 inline constexpr int TypedNullEditRole = Qt::UserRole + 23;
 inline constexpr int CellNullRole = Qt::UserRole + 24;
-// Cheap boolean form of ForeignKeyLinkLabelRole for painting and hit testing. Models that
-// do not provide it fall back to a non-empty label.
 inline constexpr int ForeignKeyLinkRole = Qt::UserRole + 25;
-// Staged-change state painted with theme surfaces by ResultTableDelegate.
 inline constexpr int CellChangeRole = Qt::UserRole + 26;
-// Opens the row that the current cell references.
 inline constexpr QKeyCombination OpenReferenceKey = Qt::CTRL | Qt::ALT | Qt::Key_Return;
 enum class CellChange { None, Changed, Inserted, Deleted };
 
@@ -53,8 +48,6 @@ class ResultTableDelegate final : public QStyledItemDelegate {
     bool eventFilter(QObject* watched, QEvent* event) override;
     void bindSelectionModel();
     void updateLinkAction();
-    // Painting reuses the resolved theme and rendered link glyphs until the table's
-    // palette, style, or device pixel ratio changes.
     const ResolvedTheme& theme(const QWidget& widget) const;
     QPixmap linkPixmap(const QColor& color, int size, qreal ratio) const;
     struct LinkPixmap {
@@ -73,4 +66,4 @@ class ResultTableDelegate final : public QStyledItemDelegate {
 };
 
 ResultTableDelegate* configureResultTable(QTableView& table, bool showGrid = true);
-} // namespace choscordb::design
+}

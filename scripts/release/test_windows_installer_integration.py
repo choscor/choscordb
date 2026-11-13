@@ -1,5 +1,3 @@
-"""Windows runner rehearsal of NSIS upgrade rollback and startup readiness."""
-
 import hashlib
 import os
 from pathlib import Path
@@ -167,10 +165,6 @@ int main(void) {
             self.assertFalse(new_launched.exists())
             winreg.DeleteKey(winreg.HKEY_CURRENT_USER, registration)
             marker.unlink(missing_ok=True)
-            # Prove a clean account reaches startup verification rather than
-            # accepting a registration-enumeration failure as a startup failure.
-            # The helper has a 60-second readiness window; use the same bounded
-            # launch/rollback budget as the upgrade cases below.
             first_failed = subprocess.run(
                 [bad_setup, "/S"], env=installer_env, timeout=90
             )

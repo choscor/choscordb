@@ -19,7 +19,7 @@ QuickSearchDestinationKind destinationKind(QuickSearchDestination::Kind kind) {
     }
     return QuickSearchDestinationKind::Object;
 }
-} // namespace
+}
 
 struct QuickSearchNeedle::Rust {
     rust::Box<QuickSearchQuery> needle;
@@ -65,4 +65,4 @@ const QuickSearchLimits& QuickSearchNeedle::limits() {
     return cached;
 }
 
-} // namespace choscordb
+}

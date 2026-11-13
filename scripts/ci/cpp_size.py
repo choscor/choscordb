@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Limit handwritten C/C++/Objective-C++ sources and headers to 1,000 lines."""
 
 import argparse
 from pathlib import Path
@@ -29,7 +28,9 @@ def violations(root):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Limit handwritten C/C++/Objective-C++ sources and headers to 1,000 lines."
+    )
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args(argv)
     problems = violations(args.root)

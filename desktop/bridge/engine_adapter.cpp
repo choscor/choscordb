@@ -76,7 +76,7 @@ AppearanceLayout appearanceLayout(const AppearanceLayoutDto& dto) {
     assignAppearance(value, dto);
     return value;
 }
-} // namespace
+}
 AppearanceLayout::AppearanceLayout() {
     assignAppearance(*this, appearance_layout_default());
 }
@@ -222,7 +222,6 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             preferences.connectionTimeoutSeconds =
                 event.query_preferences.connection_timeout_seconds;
             preferences.showSystemSchemas = event.query_preferences.show_system_schemas;
-            // Rust validated the stored preferences before reporting them.
             d_->connectionTimeoutSeconds = preferences.connectionTimeoutSeconds;
             emit queryPreferencesReady(event.request_token, preferences);
         } else if (kind == "appearance_layout") {
@@ -337,13 +336,12 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                     d_->transfers.insert(event.lease_id,
                                          {event.reserved_bytes, std::nullopt, false});
                 }
-                // A nested event loop in a handler dispatches other events meanwhile.
                 const auto owned = std::make_shared<const BridgeEvent>(std::move(event));
                 const auto outer = std::exchange(d_->dispatching, owned);
                 emit eventReady(*owned);
                 d_->dispatching = outer;
             }
-        } // Destroy all CXX strings/vectors before reducing the transfer reservations.
+        }
         for (const auto id : transfers) {
             const auto transfer = d_->transfers.take(id);
             if (transfer.retained && !transfer.released) {
@@ -410,7 +408,7 @@ SearchInput searchField(TextSearchField field) {
         return SearchInput::General;
     }
 }
-} // namespace
+}
 TextMatch EngineAdapter::findText(const QString& source, const QString& needle, quint64 start,
                                   bool backwards, bool caseSensitive, bool wholeWord) {
     if (!source.isValidUtf16() || !needle.isValidUtf16()) {
@@ -700,7 +698,7 @@ ObjectDataTimeMode rustTimeMode(ObjectDataTime::Mode mode) {
     }
     return ObjectDataTimeMode::Current;
 }
-} // namespace
+}
 std::optional<quint64> EngineAdapter::openObjectData(quint64 connection, const QString& object,
                                                      const QueryPreferences& preferences,
                                                      const ObjectDataTime& time) {
@@ -757,7 +755,6 @@ bool EngineAdapter::inspectResultCells(quint64 connection, const QString& object
 }
 void EngineAdapter::loadObjectInspection(quint64 connection, const QString& object,
                                          ObjectInspectionPane pane, quint64 requestToken) {
-    // Each pane retains only its newest request; late responses cannot populate a new context.
     for (auto it = d_->inspections.begin(); it != d_->inspections.end();) {
         if (it->connection == connection && it->pane == pane)
             it = d_->inspections.erase(it);
@@ -835,7 +832,6 @@ std::shared_ptr<const BridgeEvent> EngineAdapter::retainEvent(const BridgeEvent&
 bool EngineAdapter::shrinkPageLease(quint64 lease, quint64 payloadBytes) {
     auto transfer = d_->transfers.find(lease);
     if (transfer != d_->transfers.end()) {
-        // The drain that delivered the lease has not finished; it applies the size.
         if (transfer->released || !page_lease_fits(transfer->reserved, payloadBytes))
             return false;
         transfer->retained = payloadBytes;
@@ -846,7 +842,6 @@ bool EngineAdapter::shrinkPageLease(quint64 lease, quint64 payloadBytes) {
 void EngineAdapter::releasePageLease(quint64 lease) {
     auto transfer = d_->transfers.find(lease);
     if (transfer != d_->transfers.end()) {
-        // A nested Qt event loop may replace the view before the outer DTO dies.
         transfer->released = true;
         return;
     }
@@ -874,4 +869,4 @@ SqlSelection EngineAdapter::executionRange(const QString& sql, quint64 cursor, q
                             utf8View(driverBytes), utf8View(modeBytes));
     return {range.valid, range.start, range.end, range.confirmation_required};
 }
-} // namespace choscordb
+}

@@ -1,10 +1,3 @@
-//! Synchronous temporary storage for original result pages. Call only on a blocking
-//! worker. Random reads use a fixed disk index; memory use does not grow with pages.
-//!
-//! Deferred values retain their original cursor handle. They cannot be resolved
-//! after that cursor closes unless a caller separately copies their backing values.
-//! This store never connects to a database or replays SQL. CRCs detect corruption;
-//! they are not authentication. Files are ephemeral, with no crash recovery promise.
 mod codec;
 mod copy_tsv;
 pub use copy_tsv::{CopyCell, CopyError, CopyRequest, render_copy_tsv};
@@ -53,10 +46,8 @@ impl std::fmt::Debug for StoreError {
 pub type Result<T> = std::result::Result<T, StoreError>;
 #[derive(Clone, Debug)]
 pub struct StoreConfig {
-    /// Total schema, page data and index file bytes.
     pub max_disk_bytes: u64,
     pub max_page_encoded_bytes: u64,
-    /// Owned allocation budget for one decoded page (excludes fixed I/O buffer).
     pub max_page_decoded_bytes: usize,
     pub max_schema_bytes: u64,
 }
@@ -75,7 +66,6 @@ pub struct StoredPage {
     pub page: ResultPage,
 }
 pub struct ResultStore {
-    // Close file descriptors before TempDir removal, including on Windows.
     pages: File,
     index: File,
     schema_file: File,
@@ -145,11 +135,9 @@ impl ResultStore {
             complete: false,
             poisoned: false,
         };
-        // Reject schemas that cannot later be decoded under the allocation budget.
         store.schema()?;
         Ok(store)
     }
-    /// Directory is exposed for diagnostics and integrity tests, not persistence/reopening.
     pub fn directory(&self) -> &Path {
         self.directory.path()
     }
@@ -176,8 +164,6 @@ impl ResultStore {
         reader.finish(self.schema_checksum)?;
         Ok(columns)
     }
-    /// Publishes the fixed index record only after the complete page has been written.
-    /// Any write failure truncates unpublished bytes; a failed truncation poisons appends.
     pub fn append(&mut self, page: &ResultPage) -> Result<()> {
         if self.poisoned {
             return Err(StoreError::Poisoned);
@@ -290,7 +276,6 @@ impl ResultStore {
             page,
         })
     }
-    /// Explicit cleanup reports removal errors; Drop otherwise performs best-effort cleanup.
     pub fn close(self) -> Result<()> {
         let Self {
             pages,

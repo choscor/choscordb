@@ -14,7 +14,7 @@ namespace design {
 class Button;
 class StatusLine;
 class Text;
-} // namespace design
+}
 class HistoryModel;
 class HistoryDock final : public QWidget {
     Q_OBJECT
@@ -62,4 +62,4 @@ class HistoryDock final : public QWidget {
     QString statusText_;
     bool failed_ = false;
 };
-} // namespace choscordb
+}

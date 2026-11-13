@@ -22,7 +22,7 @@ bool idle(choscordb::EditorCompletionController* controller) {
             return false;
     return true;
 }
-} // namespace
+}
 class EditorCompletionLifecycleTest : public QObject {
     Q_OBJECT
   private slots:
@@ -91,7 +91,7 @@ class EditorCompletionLifecycleTest : public QObject {
         QCOMPARE(popup->objectName(), QString("sqlCompletionPopup"));
         controller->requestCompletion();
         QTRY_COMPARE(controller->findChildren<QFutureWatcherBase*>().size(), 1);
-        QVERIFY(!popup->isVisible()); // Worker is queued behind the semaphore holder.
+        QVERIFY(!popup->isVisible());
         switch (change) {
         case 0:
             controller->setEditor(&other);

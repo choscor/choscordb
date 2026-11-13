@@ -7,4 +7,4 @@ bool writeUpdateReadinessFile(const QString& path) {
     const auto utf8 = path.toUtf8();
     return update_write_readiness(bridge_detail::utf8View(utf8));
 }
-} // namespace choscordb
+}

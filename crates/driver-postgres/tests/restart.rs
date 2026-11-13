@@ -1,4 +1,3 @@
-//! Exclusive crash/restart regression for the repository-owned disposable fixture.
 use choscordb_driver_api::{
     ConnectionOptions, DatabaseDriver, ErrorKind, QueryOptions, Secret, TlsMode,
 };

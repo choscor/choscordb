@@ -1,4 +1,3 @@
-//! MySQL and MariaDB adapters with disk-backed results and bounded pages.
 mod connection;
 mod editing;
 mod flavor;
@@ -11,8 +10,6 @@ mod spool;
 mod ssh;
 mod tls;
 use async_trait::async_trait;
-/// The active MySQL transports of the process. An idle object connection is not active,
-/// so it holds no permit. There is at most one for each connection.
 static TRANSPORTS: std::sync::LazyLock<Arc<tokio::sync::Semaphore>> =
     std::sync::LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(8)));
 fn reserve_transport() -> Result<Arc<tokio::sync::OwnedSemaphorePermit>> {
@@ -59,13 +56,9 @@ impl CancelHandle for Cancellation {
         Ok(())
     }
 }
-/// An object-data connection that waits for the next `open_object`. It holds no
-/// transport permit, so an idle connection does not use the budget of open tabs.
 struct IdleObject {
     conn: Conn,
 }
-/// The auxiliary object-data connection of one `MysqlConnection`. It closes with
-/// that connection.
 #[derive(Default)]
 struct ObjectSlot {
     idle: Option<IdleObject>,
@@ -75,7 +68,6 @@ type Objects = Arc<std::sync::Mutex<ObjectSlot>>;
 fn objects_unavailable() -> DriverError {
     error(ErrorKind::Internal, "MySQL object connection state failed")
 }
-/// Takes the idle object connection, or `None` when the slot is empty or closed.
 fn take_idle_object(objects: &Objects) -> Result<Option<IdleObject>> {
     Ok(objects
         .lock()
@@ -83,14 +75,12 @@ fn take_idle_object(objects: &Objects) -> Result<Option<IdleObject>> {
         .idle
         .take())
 }
-/// Closes the slot and its idle connection.
 fn close_objects(objects: &Objects) {
     let idle = match objects.lock() {
         Ok(mut slot) => {
             slot.closed = true;
             slot.idle.take()
         }
-        // A poisoned slot still owns its connection; close it too.
         Err(poisoned) => {
             let mut slot = poisoned.into_inner();
             slot.closed = true;
@@ -101,7 +91,6 @@ fn close_objects(objects: &Objects) {
         drop(connection::PendingConnection::new(idle.conn));
     }
 }
-/// What another session of the same Connect needs: the settings and the transport.
 #[derive(Clone)]
 struct Sessions {
     flavor: Flavor,
@@ -117,8 +106,6 @@ impl Sessions {
         let pending = connection::connect(self.opts.clone(), self.prefer_tls).await?;
         let idle = pending.1.clone();
         let mut conn = pending.ready();
-        // The version only selects an optional notice, so an account limited to
-        // changing its password still connects. Its session mode is then unknown.
         let (version, sql_mode): (Option<String>, Option<String>) = conn
             .query_first("SELECT VERSION(), @@SESSION.sql_mode")
             .await
@@ -164,7 +151,6 @@ struct MysqlConnection {
     idle: idle::Tracker,
     connect_timeout: Duration,
     conn: Option<Conn>,
-    // The session mode, set at connect and after each statement; `None` when unknown.
     sql_mode: Option<String>,
     objects: Objects,
     opts: Opts,
@@ -347,7 +333,6 @@ async fn connect_native(
     let connect_timeout = ssh.as_ref().map_or(Duration::from_secs(15), |settings| {
         Duration::from_secs(u64::from(settings.options.connect_timeout_seconds))
     });
-    // The budget includes queued TLS preparation, DNS, tunnel establishment, and authentication.
     tokio::time::timeout(connect_timeout, async move {
         let prefer_tls = tls == TlsMode::Prefer && !unix_socket;
         let ssl = tls::options(
@@ -418,8 +403,6 @@ async fn connect_native(
             .ssl_opts(ssl)
             .client_found_rows(true)
             .prefer_socket(false)
-            // Direct TCP gets the PostgreSQL default keepalive time of two hours.
-            // A tunnel or a proxy keeps its own link alive.
             .tcp_keepalive((!unix_socket && forwarding_port.is_none()).then_some(7_200_000u32))
             .max_allowed_packet(Some(64 * 1024 * 1024));
         let sessions = Sessions {
@@ -635,8 +618,6 @@ impl Connection for MysqlConnection {
     async fn apply_edit_batch(&mut self, batch: EditBatch) -> Result<EditBatchSummary> {
         editing::apply_batch(self.connection().await?, batch).await
     }
-    /// A session changes its mode only through its own statements, so a known mode
-    /// needs no probe.
     async fn sql_mode(&mut self) -> Result<Option<String>> {
         self.connection().await?;
         if self.sql_mode.is_none() {
@@ -663,8 +644,6 @@ impl Connection for MysqlConnection {
             time.require_current()?;
         }
         let (db, table) = parse_table(object)?;
-        // Reuse the idle object connection. A transport failure on it, for example
-        // after the server closed it, opens a new connection. A server error is final.
         let transport = reserve_transport()?;
         let mut reused = None;
         if let Some(idle) = take_idle_object(&self.objects)? {
@@ -810,7 +789,6 @@ impl Connection for MysqlConnection {
         Ok(())
     }
 }
-/// Whether a transaction was open, the object read and its columns.
 async fn describe_object(
     conn: &mut connection::PendingConnection,
     db: &str,
@@ -818,8 +796,6 @@ async fn describe_object(
     time: &ObjectDataTime,
     max: usize,
 ) -> Result<(bool, String, Vec<Column>)> {
-    // COM_STMT_PREPARE metadata may replace the last OK status flags.
-    // It cannot change the live transaction, so retain its pre-prepare state.
     let transaction_started = transaction_active(conn.connection()).unwrap_or(false);
     let (sql, stmt) = tokio::time::timeout(Duration::from_secs(15), async {
         let sql = object_select(conn.connection(), db, table, time).await?;
@@ -832,7 +808,6 @@ async fn describe_object(
     conn.connection().close(stmt).await.map_err(normalize)?;
     Ok((transaction_started, sql, schema))
 }
-/// Keeps a finished object connection for the next `open_object`.
 fn park_object(objects: &Objects, conn: Conn) {
     let conn = connection::PendingConnection::new(conn);
     if let Ok(mut slot) = objects.lock()
@@ -842,8 +817,6 @@ fn park_object(objects: &Objects, conn: Conn) {
         slot.idle = Some(IdleObject { conn: conn.ready() });
     }
 }
-/// The object read for `time`. History reads add MariaDB's period columns,
-/// which `*` omits while they are invisible.
 async fn object_select(
     conn: &mut Conn,
     db: &str,
@@ -863,7 +836,6 @@ async fn object_select(
         )
         .await
         .map_err(normalize)?;
-    // Implicit period columns are absent from the catalog and always hidden.
     let extra: Vec<String> = if periods.is_empty() {
         vec!["ROW_START".into(), "ROW_END".into()]
     } else {
@@ -916,7 +888,6 @@ impl ResultCursor for ObjectCursor {
         }
         if self.inner.is_none() {
             let mut conn = connection::PendingConnection::new(self.conn.take().ok_or_else(closed)?);
-            // Starting another transaction would implicitly commit manual startup writes.
             if !self.transaction_started {
                 conn.connection()
                     .query_drop("START TRANSACTION READ ONLY")
@@ -937,7 +908,6 @@ impl ResultCursor for ObjectCursor {
                     independent: true,
                     idle: Default::default(),
                     spool: self.spool.clone(),
-                    // The cursor keeps the permit with the connection it may park.
                     transport: self.transport.clone().ok_or_else(closed)?,
                     tunnel: self._tunnel.clone(),
                     proxy: self._proxy.clone(),
@@ -963,16 +933,13 @@ impl ResultCursor for ObjectCursor {
         if let Some(cursor) = &mut self.inner {
             cursor.close().await?;
         }
-        // A worker that failed or was interrupted hands back no connection.
         let finished = match self.task.take() {
             Some(task) => task.await.unwrap_or(None).map(|finished| finished.conn),
             None => None,
         };
         let conn = finished.or_else(|| self.conn.take());
-        // The closed tab gives back its transport permit.
         self.transport = None;
         match conn {
-            // A user transaction stays with this connection, so it cannot serve a later read.
             Some(conn) if !self.transaction_started => park_object(&self.objects, conn),
             Some(conn) => drop(connection::PendingConnection::new(conn)),
             None => {}
@@ -1016,15 +983,12 @@ fn read_page(
     if max < std::mem::size_of::<ResultPage>() {
         return Err(limit());
     }
-    // The page estimate with only the used row slots, kept as the rows arrive.
     let mut used = std::mem::size_of::<ResultPage>();
     while position < count && page.rows.len() < size.get() as usize {
         let offset = file.stream_position().map_err(io_error)?;
         let mut bound = [0; 8];
         file.read_exact(&mut bound).map_err(io_error)?;
         let bound = u64::from_le_bytes(bound);
-        // The bound covers the record bytes, the decoded values and the row slots,
-        // before either the input or the decoded values are allocated.
         if bound > max.saturating_sub(used) as u64 {
             file.seek(SeekFrom::Start(offset)).map_err(io_error)?;
             if page.rows.is_empty() {

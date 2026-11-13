@@ -70,8 +70,6 @@ struct State {
     query_starts: Mutex<HashMap<u64, Instant>>,
 }
 
-/// Thread-safe, bounded diagnostic capture. `record` queues typed data without disk I/O;
-/// preview, clear, and export are blocking operations for a caller-owned background task.
 pub struct Service {
     state: Arc<State>,
 }
@@ -686,9 +684,6 @@ fn os_family() -> &'static str {
     }
 }
 fn os_version() -> String {
-    // A trusted absolute version tool is available on these platforms. Windows has no
-    // equivalent fixed-path command across supported installations, so report it unavailable
-    // instead of resolving an executable from PATH during diagnostics export.
     #[cfg(target_os = "linux")]
     let mut command = {
         let mut command = std::process::Command::new("/usr/bin/uname");
@@ -1001,9 +996,7 @@ fn folder_lock(folder: &Path, timeout: Duration) -> Option<FolderLock> {
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
-        // Open the reparse point itself so the post-open attribute check cannot
-        // accidentally inspect a target selected between the two checks.
-        options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
+        options.custom_flags(0x0020_0000);
     }
     let file = options.open(&path).ok()?;
     if !file.metadata().ok()?.is_file() {
@@ -1013,7 +1006,6 @@ fn folder_lock(folder: &Path, timeout: Duration) -> Option<FolderLock> {
     {
         use std::os::windows::fs::MetadataExt;
         if file.metadata().ok()?.file_attributes() & 0x0000_0400 != 0 {
-            // FILE_ATTRIBUTE_REPARSE_POINT
             return None;
         }
     }
@@ -1262,7 +1254,6 @@ const EVENT_NAMES: &[&str] = &[
     "error",
     "memory_sample",
 ];
-// Persisted in exported reports; append new drivers, never reorder.
 const DRIVER_NAMES: &[&str] = &["unknown", "sqlite", "postgresql", "mysql", "mariadb"];
 const ERROR_NAMES: &[&str] = &[
     "unknown",

@@ -1,7 +1,3 @@
-//! Actor-owned execution history. Retained SQL and queued writes share a 64 MiB
-//! budget. The single metadata worker additionally permits one bounded storage
-//! JSON encoding buffer (at most MAX_COLLECTION_BYTES, currently 64 MiB). These
-//! are separate bounds, not a claim that the combined pipeline fits 64 MiB.
 use crate::{Event, HistoryEntry, HistoryStatus};
 use choscordb_driver_api::{DriverError, ErrorKind, QueryId};
 use std::sync::{
@@ -156,9 +152,6 @@ impl Ticket {
 }
 impl Drop for Ticket {
     fn drop(&mut self) {
-        // Only abrupt task cancellation/panic reaches this fallback. Normal actor
-        // termination awaits finish/fail before its terminal connection event.
-        // Never spawn detached tasks or wait in Drop.
         if let Some(error) = self.prepare_write(HistoryStatus::Disconnected, None) {
             let _ = self.events.try_send(Event::HistoryWriteFailed {
                 query: self.query,
@@ -202,8 +195,6 @@ mod tests {
                 Some(Event::HistoryFlushed { .. })
             ));
             settled.await;
-            // Settlement must enqueue the error before the caller proceeds to
-            // Disconnected and the metadata flush barrier.
             assert!(matches!(
                 received.try_recv(),
                 Ok(Event::HistoryWriteFailed { .. })

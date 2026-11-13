@@ -1,9 +1,6 @@
-//! Versioned, credential-free editor preferences. Native clients validate the
-//! syntax and conflicts of effective platform-specific key sequences.
 use crate::{Result, Storage, StorageError};
 use serde::{Deserialize, Serialize};
 pub const EDITOR_PREFERENCES_VERSION: u32 = 2;
-/// Version 1 commands that version 2 retired with the manual transaction mode.
 const RETIRED_V1_COMMANDS: [&str; 2] = ["commit", "rollback"];
 pub const DEFAULT_EDITOR_FONT_SIZE: u16 = 13;
 pub const MIN_EDITOR_FONT_SIZE: u16 = 8;
@@ -145,7 +142,6 @@ impl Storage {
     }
 }
 
-/// Drops the retired version 1 commands. Any other unknown command still fails to parse.
 fn migrate_version_one(stored: &mut serde_json::Value) -> Result<()> {
     let shortcuts = stored
         .get_mut("shortcuts")

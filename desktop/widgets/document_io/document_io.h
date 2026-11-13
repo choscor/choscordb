@@ -8,7 +8,6 @@ struct DocumentIoResult {
     QByteArray bytes;
     QString error;
 };
-// Workers own only value snapshots; destroying an editor never waits for I/O.
 class DocumentIo final : public QObject {
     Q_OBJECT
   public:
@@ -17,4 +16,4 @@ class DocumentIo final : public QObject {
     QFuture<DocumentIoResult> readSaved(QString root, QString path) const;
     QFuture<DocumentIoResult> write(QString path, QByteArray bytes) const;
 };
-} // namespace choscordb
+}

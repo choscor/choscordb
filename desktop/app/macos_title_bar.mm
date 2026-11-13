@@ -12,8 +12,6 @@ void MainWindow::showEvent(QShowEvent* event) {
 }
 
 void MainWindow::updateNativeTitleBar() {
-    // Offscreen Qt windows do not expose an NSView. Do not create a native
-    // window early while the workspace and its saved appearance are loading.
     if (QApplication::platformName() != QStringLiteral("cocoa") ||
         !testAttribute(Qt::WA_WState_Created)) {
         return;
@@ -23,12 +21,8 @@ void MainWindow::updateNativeTitleBar() {
         return;
     }
     const auto color = theme_->resolvedTheme().colors.bg;
-    // Keep Qt's content below AppKit's title bar. A full-size content view plus
-    // a Qt top margin leaves a blank strip above the tabs and navigator.
     window.styleMask &= ~NSWindowStyleMaskFullSizeContentView;
     window.titleVisibility = NSWindowTitleVisible;
-    // Qt 6.8 keeps this property across window flag updates; 6.9+ also takes
-    // it from Qt::NoTitleBarBackgroundHint in MainWindow.
     window.titlebarAppearsTransparent = YES;
     window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
     window.backgroundColor = [NSColor colorWithSRGBRed:color.redF()
@@ -41,4 +35,4 @@ void MainWindow::updateNativeTitleBar() {
                             : NSAppearanceNameAqua];
 }
 
-} // namespace choscordb
+}

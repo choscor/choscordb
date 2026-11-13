@@ -11,13 +11,10 @@ pub struct Completion {
     pub insert_text: String,
     pub kind: CompletionKind,
 }
-/// Metadata is supplied by the caller from its asynchronous metadata cache.
-/// This service never connects to a database.
 pub const MAX_COMPLETION_RESULTS: usize = 100;
 pub const MAX_COMPLETION_PREFIX_BYTES: usize = 256;
 pub const MAX_COMPLETION_METADATA_ENTRIES: usize = 10_000;
 pub const MAX_COMPLETION_METADATA_BYTES: usize = 8 * 1024 * 1024;
-/// Navigator nodes one completion snapshot may visit, including skipped nodes.
 pub const MAX_COMPLETION_METADATA_VISITS: usize = MAX_COMPLETION_METADATA_ENTRIES * 8 + 64;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CompletionError {
@@ -37,17 +34,11 @@ pub struct CompletionPage {
     pub items: Vec<Completion>,
     pub partial: bool,
 }
-/// Compatibility wrapper. Invalid input produces no suggestions.
 pub fn completions(prefix: &str, metadata: &[Completion], limit: usize) -> Vec<Completion> {
     bounded_completions(prefix, metadata, limit)
         .map(|page| page.items)
         .unwrap_or_default()
 }
-/// Metadata is borrowed, and only the best 100 candidates are cloned. Insertion
-/// text is returned verbatim: callers must replace the entire qualified prefix.
-/// `partial` means metadata exceeded cache bounds, not merely the visible limit.
-/// Callers suppress completion in SQL strings/comments; no scope/alias inference
-/// or database requests occur here.
 pub fn bounded_completions(
     prefix: &str,
     metadata: &[Completion],
@@ -206,8 +197,6 @@ impl Segment<'_> {
         })
     }
 }
-// Driver paths contain at most schema.table.column. Borrow raw slices; even a
-// large malformed metadata name cannot create a large temporary segment vector.
 fn segments(source: &str, prefix: bool) -> Option<Vec<Segment<'_>>> {
     let mut result = Vec::with_capacity(3);
     let mut rest = source;

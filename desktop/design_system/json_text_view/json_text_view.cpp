@@ -14,8 +14,6 @@
 namespace choscordb::design {
 namespace {
 
-// Syntax colors are presentation only. Very large documents stay plain so that a large page
-// view does not spend its layout time in per-token regular-expression formatting.
 constexpr int MaxHighlightedCharacters = 1024 * 1024;
 
 class JsonSyntaxHighlighter final : public QSyntaxHighlighter {
@@ -24,7 +22,6 @@ class JsonSyntaxHighlighter final : public QSyntaxHighlighter {
 
     explicit JsonSyntaxHighlighter(QTextDocument* document) : QSyntaxHighlighter(document) {}
 
-    // Returns whether the token colors changed.
     bool setColors(const Colors& colors) {
         const std::array<QColor, 4> next{colors.codeKeyword, colors.codeString, colors.codeComment,
                                          colors.codeNumber};
@@ -41,8 +38,6 @@ class JsonSyntaxHighlighter final : public QSyntaxHighlighter {
     void highlightBlock(const QString& line) override {
         if (!resolved_ || document()->characterCount() > MaxHighlightedCharacters)
             return;
-        // JSON strings cannot contain a raw line break. Escapes stay within one
-        // block, so no cross-block parser state is needed for valid documents.
         static const QRegularExpression tokens(QStringLiteral(
             R"json("(?:\\.|[^"\\])*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|\b(?:true|false|null)\b)json"));
         auto matches = tokens.globalMatch(line);
@@ -71,7 +66,7 @@ class JsonSyntaxHighlighter final : public QSyntaxHighlighter {
     bool resolved_ = false;
 };
 
-} // namespace
+}
 
 JsonTextView::JsonTextView(QWidget* parent) : QPlainTextEdit(parent) {
     setReadOnly(true);
@@ -84,8 +79,6 @@ JsonTextView::JsonTextView(QWidget* parent) : QPlainTextEdit(parent) {
 }
 
 void JsonTextView::refreshHighlighting() {
-    // Text changes are highlighted incrementally by QSyntaxHighlighter. Rehighlight the
-    // whole document only when the resolved theme changed its token colors.
     if (highlighter_ && static_cast<JsonSyntaxHighlighter*>(highlighter_)
                             ->setColors(resolvedThemeForWidget(*this).colors))
         highlighter_->rehighlight();
@@ -103,4 +96,4 @@ void JsonTextView::showEvent(QShowEvent* event) {
     refreshHighlighting();
 }
 
-} // namespace choscordb::design
+}

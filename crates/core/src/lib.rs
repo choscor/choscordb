@@ -1,5 +1,3 @@
-//! Nonblocking application boundary. Database work belongs to bounded per-connection
-//! actors; dropping the engine never joins workers on the caller's thread.
 mod actor;
 mod catalog;
 mod deferred;
@@ -98,7 +96,6 @@ pub struct Engine {
     query_owners: HashMap<QueryId, ConnectionId>,
     exports: Arena<ExportSlot>,
     export_owners: HashMap<ConnectionId, ExportId>,
-    /// The saved profile of a connection, which keys its saved navigator children.
     connection_profiles: HashMap<ConnectionId, String>,
     events_tx: mpsc::Sender<Event>,
     events: mpsc::Receiver<Event>,
@@ -108,21 +105,16 @@ pub struct Engine {
     cache: Arc<hot_cache::HotCache>,
     diagnostics: DiagnosticsSlot,
 }
-/// Owned result bytes one result view may hold (pages, staged edits, and caches).
 pub use choscordb_result_cache::DEFAULT_RESULT_BYTES as RESULT_VIEW_BYTES;
-/// Children the navigator requests per metadata page.
 pub const METADATA_PAGE_SIZE: u32 = 1_000;
-/// The largest metadata page a single request may ask for.
 pub const MAX_METADATA_PAGE: u32 = 10_000;
 
 impl Engine {
-    /// Attach local diagnostics capture to subsequent engine operations.
     pub fn set_diagnostics(&mut self, service: Arc<DiagnosticsService>) {
         if let Ok(mut slot) = self.diagnostics.write() {
             *slot = Some(service);
         }
     }
-    /// Construct during application initialization. Subsequent commands never wait for I/O.
     pub fn new(
         config: EngineConfig,
         drivers: Vec<Arc<dyn DatabaseDriver>>,
@@ -396,7 +388,6 @@ impl Engine {
         self.query_owners.insert(id, connection);
         Ok(id)
     }
-    /// Export the original result, from row zero, without executing SQL again.
     pub fn start_export(
         &mut self,
         query: QueryId,
@@ -443,7 +434,6 @@ impl Engine {
             .cancel();
         Ok(())
     }
-    /// An out-of-band signal, so a saturated command queue cannot prevent cancellation.
     pub fn cancel(&self, query: QueryId) -> std::result::Result<(), SubmitError> {
         self.ensure_running()?;
         let slot = self.queries.get(query).ok_or(SubmitError::StaleHandle)?;
@@ -465,8 +455,6 @@ impl Engine {
             .connection;
         self.submit(owner, actor::Command::NextResult { query })
     }
-    /// The page size the query was started with; fetches reuse it.
-    /// Fetch the next page at the page size the query started with.
     pub fn fetch_page(&self, query: QueryId) -> std::result::Result<(), SubmitError> {
         let slot = self.queries.get(query).ok_or(SubmitError::StaleHandle)?;
         let (owner, size) = (slot.connection, slot.page_size);
@@ -510,8 +498,6 @@ impl Engine {
         )
     }
     pub fn cancel_result_view(&self, query: QueryId) -> std::result::Result<(), SubmitError> {
-        // Observed between bounded cursor fetches. A driver call already in flight is
-        // allowed to finish so the captured original cursor remains resumable.
         self.queries
             .get(query)
             .ok_or(SubmitError::StaleHandle)?
@@ -527,8 +513,6 @@ impl Engine {
             .connection;
         self.submit(owner, actor::Command::ClearResultView { query })
     }
-    /// Read a persisted ordinal, or continue the original cursor at the next ordinal.
-    /// Previously fetched pages and deferred readers survive a new query until release.
     pub fn fetch_page_at(
         &self,
         query: QueryId,
@@ -563,7 +547,6 @@ impl Engine {
             .connection;
         self.submit(owner, actor::Command::LoadValue { query, handle })
     }
-    /// Read bounded original value bytes without accessing the database cursor.
     pub fn load_value_chunk(
         &self,
         query: QueryId,
@@ -644,8 +627,6 @@ impl Engine {
             },
         )
     }
-    /// History reads are never editable, so their targets say so without a
-    /// catalog request.
     pub fn edit_target_request(
         &self,
         connection: ConnectionId,
@@ -717,7 +698,6 @@ impl Engine {
                     request_token,
                 },
             ),
-            // A SQL result names its tables as the query session resolves them.
             None => self.submit(
                 connection,
                 actor::Command::ResultCells {
@@ -735,8 +715,6 @@ impl Engine {
     ) -> std::result::Result<(), SubmitError> {
         self.load_metadata_request(connection, parent, 0)
     }
-    /// Echoes the caller's request token, allowing a navigator to discard stale refreshes.
-    /// Saved children have no properties, so an inspection reads only live children.
     pub fn load_metadata_request(
         &self,
         connection: ConnectionId,
@@ -755,7 +733,6 @@ impl Engine {
     ) -> std::result::Result<(), SubmitError> {
         self.metadata_page(connection, parent, request_token, offset, limit, true)
     }
-    /// Loads children from the server only, for a manual refresh.
     pub fn refresh_metadata_page(
         &self,
         connection: ConnectionId,
@@ -766,8 +743,6 @@ impl Engine {
     ) -> std::result::Result<(), SubmitError> {
         self.metadata_page(connection, parent, request_token, offset, limit, false)
     }
-    /// A first page of a saved profile is saved for the next connection. With
-    /// `show_saved`, its saved children show first, until the live children arrive.
     fn metadata_page(
         &self,
         connection: ConnectionId,
@@ -798,7 +773,6 @@ impl Engine {
         let Some(saved) = cache.clone().filter(|_| show_saved) else {
             return self.submit_catalog(connection, read(cache));
         };
-        // Reserve the live read now, so a full queue fails this request at once.
         let live = self.reserve_catalog(connection)?;
         let read = read(cache);
         let events = self.events_tx.clone();
@@ -819,7 +793,6 @@ impl Engine {
                     Ok(None) => None,
                     Err(error) => Some(Event::OperationFailed { connection, error }),
                 };
-                // A closed event queue means that the engine stopped.
                 if let Some(event) = event
                     && events.send(event).await.is_err()
                 {
@@ -856,7 +829,6 @@ impl Engine {
         self.query_count -= 1;
         Ok(())
     }
-    /// Release the connection handle after the disconnect command has been accepted.
     pub fn disconnect(&mut self, connection: ConnectionId) -> std::result::Result<(), SubmitError> {
         self.ensure_running()?;
         self.connections
@@ -930,7 +902,6 @@ impl Engine {
         }
         Some(event)
     }
-    /// Starts cooperative cancellation. Continue draining events during shutdown.
     pub fn initiate_shutdown(&self) {
         self.shutdown.send_replace(true);
     }
@@ -941,8 +912,6 @@ impl Engine {
             Ok(())
         }
     }
-    /// Sends a catalog read to the catalog session. The query session answers it
-    /// during a transaction, or when the driver has no catalog session.
     fn submit_catalog(
         &self,
         connection: ConnectionId,
@@ -964,7 +933,6 @@ impl Engine {
             match reads.clone().try_reserve_owned() {
                 Ok(permit) => return Ok(CatalogPermit::Catalog(permit)),
                 Err(mpsc::error::TrySendError::Full(_)) => return Err(SubmitError::QueueFull),
-                // The catalog session stopped, so the query session answers.
                 Err(mpsc::error::TrySendError::Closed(_)) => {}
             }
         }
@@ -989,7 +957,6 @@ impl Engine {
             .map_err(map_send)
     }
 }
-/// A reserved place for one catalog read on the catalog session or the query session.
 enum CatalogPermit {
     Catalog(mpsc::OwnedPermit<actor::CatalogRead>),
     Session(mpsc::OwnedPermit<actor::Request>),
@@ -1015,7 +982,6 @@ fn map_send<T>(error: mpsc::error::TrySendError<T>) -> SubmitError {
     }
 }
 impl Engine {
-    /// The engine runtime, for work that must not run on the thread of the caller.
     pub fn runtime_handle(&self) -> Option<tokio::runtime::Handle> {
         self.runtime
             .as_ref()

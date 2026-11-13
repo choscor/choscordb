@@ -1,5 +1,3 @@
-//! Deferred spool ownership follows the stored query, independently of its cursor.
-//! Cleanup has the same runtime-shutdown limitations as result-store cleanup.
 use choscordb_driver_api::{DeferredReader, DriverError, ErrorKind, Handle, Result, ValueChunk};
 use std::sync::Arc;
 
@@ -17,7 +15,6 @@ impl Reader {
         lease: T,
     ) -> Result<(ValueChunk, T)> {
         tokio::task::spawn_blocking(move || {
-            // Both reservation and reader remain in the worker if its waiter is dropped.
             let reader = self;
             let result = reader
                 .0

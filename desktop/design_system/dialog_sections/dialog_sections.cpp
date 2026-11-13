@@ -10,14 +10,12 @@
 
 namespace choscordb::design {
 namespace {
-// Shows the footer bar and its separator only while the footer holds items.
 class FooterLayout final : public QHBoxLayout {
   public:
     FooterLayout(QWidget* footer, QWidget* separator)
         : QHBoxLayout(footer), separator_(separator) {}
     void invalidate() override {
         QHBoxLayout::invalidate();
-        // Showing the footer activates this layout again; the isHidden() guards end that.
         const bool used = count() > 0;
         if (parentWidget()->isHidden() == used)
             parentWidget()->setVisible(used);
@@ -28,7 +26,7 @@ class FooterLayout final : public QHBoxLayout {
   private:
     QPointer<QWidget> separator_;
 };
-} // namespace
+}
 
 DialogSections::DialogSections(QWidget* parent) : QWidget(parent) {
     root_ = new QVBoxLayout(this);
@@ -67,8 +65,6 @@ QHBoxLayout* DialogSections::footerLayout() const {
 Button* DialogSections::addDismissButton(const QString& accessibleName) {
     header_->addStretch();
     auto* dismiss = createDismissButton(accessibleName, header_->parentWidget());
-    // Escape dismisses from the keyboard. Kept out of the tab chain and auto-default,
-    // the X never takes initial focus or Enter from the dialog's content.
     dismiss->setFocusPolicy(Qt::ClickFocus);
     header_->addWidget(dismiss);
     return dismiss;
@@ -87,4 +83,4 @@ void DialogSections::applyCompactSpacing() {
                                 spacing(Spacing::Three));
 }
 
-} // namespace choscordb::design
+}

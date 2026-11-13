@@ -11,7 +11,6 @@
 namespace choscordb {
 struct BridgeEvent;
 struct RustDiagnostics;
-// The representation of a cell value, in the order of the Rust DTO enum.
 enum class CellKind : uint8_t {
     Null,
     Boolean,
@@ -34,7 +33,6 @@ enum class CellKind : uint8_t {
 struct ReviewedEditStatement {
     QString sql;
     std::vector<Cell> params;
-    // Exact Rust Value kinds accompany the presentation values through review and apply.
     std::vector<CellKind> paramKinds;
     std::optional<quint64> expectedRows;
 };
@@ -65,8 +63,6 @@ struct GridEditPlan {
     QString error;
 };
 struct Submit;
-// Secrets as typed in the profile form; Rust decides which apply and how each
-// is stored or sent (crates/core/src/profile_draft.rs).
 struct ProfileSecretDrafts {
     bool saveCredentials = false;
     QString database;
@@ -85,8 +81,6 @@ struct SshHostKeyCandidate {
     QString originalHost, hostname, hostKeyAlias, keyType, publicKey, sha256, opaqueJson;
     quint16 port = 22;
 };
-// Mirrors the bridge ProfileDto. Defaults for new drafts come from Rust
-// (EngineAdapter::profileDraftDefaults).
 struct SavedProfile {
     QString id, name, groupId, driver, path, host, database, user;
     QString tls, rootCertificate, credentialRef, sshCredentialRef;
@@ -108,7 +102,6 @@ struct SavedHistoryEntry {
     QString status;
     bool hasRowCount = false;
 };
-// Preference records start from Rust's defaults.
 struct HistoryPolicy {
     HistoryPolicy();
     bool enabled;
@@ -199,39 +192,29 @@ struct PageMemoryUsage {
     quint64 source;
     quint64 peak;
 };
-// Which rows an object data read returns; Rust validates `asOf`.
 struct ObjectDataTime {
     enum class Mode : uint8_t { Current, AsOf, All };
     Mode mode = Mode::Current;
     QString asOf;
 };
-// What the desktop may offer for a navigator object kind; Rust owns the table.
 struct ObjectKindTraits {
     bool opensObjectTab = false, ddl = false, relation = false, container = false, pinnable = false,
          navigationAnchor = false, searchDescends = false, completionCandidate = false;
-    // The owning object tab's pane that shows this kind; -1 when none does.
     int detailPane = -1;
     bool connection = false, column = false, diagram = false;
-    // The pane an object tab opens on when its object is selected; -1 for the default.
     int initialPane = -1;
     bool repeatsAcrossParents = false;
-    // Drop and rename may apply; objectActionUnavailableReason decides per driver.
     bool objectActions = false;
 };
-// How the desktop sequences requests for one driver; Rust owns the rules.
 struct DriverWorkflow {
     bool inspectAfterResult = false, sqlModeBeforeExecution = false;
 };
-// Which connection fields a driver uses and what their blank values mean.
 struct ProfileDriverForm {
     bool server = false, userOptional = false, databaseSelectsServer = false;
 };
-// Why an open transaction blocks an action; empty when it does not.
 struct TransactionGuard {
     QString applyEdits;
 };
-// Rust's status of a sidebar row: the icon, the retry gesture and the message.
-// The enumerators have the order of the Rust DTO enums.
 enum class RowStatusKind : uint8_t { None, Loading, Failed, Unavailable };
 enum class RowRetry : uint8_t { None, Refresh };
 enum class RowStatusCause : uint8_t {
@@ -250,7 +233,6 @@ enum class RowStatusCause : uint8_t {
     ChildrenCached,
     ChildrenCachedFailed
 };
-// Rust's sentence that tells the user how to recover from a failure.
 enum class RecoveryHint : uint8_t {
     Retry,
     RetryQuery,
@@ -272,7 +254,6 @@ enum class RecoveryHint : uint8_t {
     UseApprovedKey,
     RetryApproval,
     ReconnectManually,
-    // Keep this hint last: it sizes the hint table in engine_adapter_values.cpp.
     ReconnectAndRefreshNavigator,
 };
 struct RowStatus {
@@ -280,11 +261,9 @@ struct RowStatus {
     RowRetry retry = RowRetry::None;
     QString message;
 };
-// Rust's work bounds for one navigator search pass.
 struct NavigatorSearchBudget {
     int quickVisits = 0, quickRequests = 0, quickResults = 0, filterVisits = 0, filterRequests = 0;
 };
-// The search input a Rust search error belongs to.
 enum class SearchInput : uint8_t { General, Needle, Replacement };
 struct TextMatch {
     bool valid = false, found = false, wrapped = false;
@@ -301,7 +280,6 @@ struct TextReplacement {
 struct TextLimits {
     quint64 maxDocumentBytes, maxSearchPatternBytes;
 };
-// What an execution without a selection runs: the statement at the cursor or all statements.
 enum class RunScope { Current, All };
 struct SqlSelection {
     bool valid;
@@ -309,7 +287,6 @@ struct SqlSelection {
     quint64 end;
     bool confirmation;
 };
-// Values match the Rust object-kind detail panes.
 enum class ObjectInspectionPane { Columns = 0, Indexes = 1, Keys = 2, Ddl = 3 };
 enum class MetadataAvailability { Available, Unsupported, Unavailable };
 struct ObjectProperty {
@@ -354,7 +331,6 @@ class EngineAdapter final : public QObject {
     ~EngineAdapter() override;
     void attachDiagnostics(const RustDiagnostics& service);
     std::optional<quint64> connectSqlite(const QString& path, bool readOnly = false);
-    // The SQL editor always runs with auto-commit; SQL `BEGIN` opens a transaction.
     std::optional<quint64> execute(quint64 connection, const QString& sql,
                                    const QString& profileId = {},
                                    const QueryPreferences& preferences = {});
@@ -370,14 +346,11 @@ class EngineAdapter final : public QObject {
     static QStringList keywordCompletions(const QString& prefix);
     static TextMatch findText(const QString& source, const QString& needle, quint64 start,
                               bool backwards, bool caseSensitive, bool wholeWord);
-    // Case-insensitive matches in source order, at most `limit`.
     static TextReplacement replaceAllText(const QString& source, const QString& needle,
                                           const QString& replacement, bool caseSensitive,
                                           bool wholeWord);
-    // Rust's editable-document and search-text limits, read once per process.
     static const TextLimits& textLimits();
     static bool searchPatternUsable(const QString& needle);
-    // Why replacing one match would leave an unsupported document; empty when it fits.
     static QString replacementError(quint64 documentBytes, quint64 removedBytes,
                                     quint64 addedBytes);
     bool listHistory(quint32 limit, quint32 offset, quint64 token);
@@ -410,11 +383,8 @@ class EngineAdapter final : public QObject {
     static ProfileDriverForm profileDriverForm(const QString& driver);
     static bool profileHasSavedCredentials(const SavedProfile& profile);
     static bool sshKnownHostsPathValid(const QString& path);
-    // Why pasted private key text cannot be used; empty when it can.
     static QString sshPrivateKeyTextError(const QString& text);
-    // Input hint for secret fields; Rust validates the draft.
     static int profileSecretMaxBytes();
-    // Rust names the copy after `name` and assigns its id.
     void duplicateProfile(const QString& source, const QString& name, quint64 token);
     void deleteProfile(const QString& id, quint64 token);
     std::optional<quint64> connectProfile(const SavedProfile& profile);
@@ -431,13 +401,10 @@ class EngineAdapter final : public QObject {
                                               const QString& format, const QStringList& table,
                                               const QString& dialect);
     void cancelExport(quint64 id);
-    // Rust's per-request value window; a request may ask for less, never more.
     static quint32 valueChunkBytes();
-    // Why a resident value cannot open in the value detail view; empty when it can.
     static QString valueDetailError(quint64 bytes);
     void loadValueChunk(quint64 query, quint64 handle, quint64 offset,
                         quint32 maxBytes = valueChunkBytes());
-    // A fresh load is a manual refresh, which skips the saved children.
     void loadMetadata(quint64 connection, const QString& parent = {}, quint64 requestToken = 0,
                       bool fresh = false);
     void loadMetadataPage(quint64 connection, const QString& parent, quint64 requestToken,
@@ -465,39 +432,26 @@ class EngineAdapter final : public QObject {
                                                       const Cell& value);
     static std::optional<Cell> parseGridEditValue(const QString& databaseType, const QString& text,
                                                   QString* error = nullptr);
-    // Read once per process, so paint and flags() paths make no bridge calls.
     static const GridCellPolicy& gridCellPolicy(GridCell kind);
-    // Why another staged row cannot be added to a page of `rows`; empty when it can.
     static QString gridRowInsertError(qsizetype rows);
-    // Cached per kind, so filter and data() paths make one bridge call per kind.
     static ObjectKindTraits objectKindTraits(const QString& kind);
-    // Read once per process.
     static const NavigatorSearchBudget& navigatorSearchBudget();
     static DriverWorkflow driverWorkflow(const QString& driver);
     static const TransactionGuard& transactionGuard(bool transactionActive);
-    // Statuses without a detail are cached; a detail is the error or the reason.
     static RowStatus rowStatus(RowStatusCause cause, const QString& detail = {});
     static const QString& recoveryHint(RecoveryHint hint);
-    // How long an info notice stays on the main panel bottom line.
     static int panelNoticeMs();
-    // Whether a child of `parentKind` appears in the sidebar tree (cached per pair).
     static bool sidebarChildVisible(const QString& parentKind, const QString& kind);
-    // Whether objects of this relation subtype browse history (cached per subtype).
     static bool relationSubtypeHasHistory(const QString& subtype);
-    // Why drop or rename is unavailable for this object; empty when it applies.
     static QString objectActionUnavailableReason(bool rename, const QString& driver,
                                                  const QString& kind, const QString& subtype);
     static bool navigatorObjectVisible(const QString& driver, bool showSystemSchemas,
                                        const QString& qualifiedName);
     static bool systemSchemaNode(const QString& kind, const QString& name);
-    // Why `table` cannot name a SQL export target; empty when it can.
     static QString sqlExportTableError(const QStringList& table);
-    // Whether `driver` hides system schemas under `showSystemSchemas`.
     static bool systemSchemasHidden(const QString& driver, bool showSystemSchemas);
     static bool appearanceThemeValid(const QString& theme);
-    // A new identity for an editor document in workspace recovery.
     static QString newDocumentId();
-    // The recovery context of an object tab: its saved profile, else its session connection.
     static QString objectTabContext(const QString& profileId, quint64 connection);
     struct ObjectTabContext {
         bool session = false;
@@ -512,11 +466,7 @@ class EngineAdapter final : public QObject {
     void releaseQuery(quint64 query);
     void beginShutdown();
     void shutdown();
-    // Single owner; retain during eventReady and release only after dropping the Qt buffers.
     bool retainTransfer(quint64 lease, quint64 payloadBytes);
-    // Keeps the event that eventReady delivers, and its whole transfer reservation, after the
-    // signal returns. Null for any other event. The owner later calls shrinkPageLease or
-    // releasePageLease.
     std::shared_ptr<const BridgeEvent> retainEvent(const BridgeEvent& event);
     bool shrinkPageLease(quint64 lease, quint64 payloadBytes);
     void releasePageLease(quint64 lease);
@@ -554,7 +504,6 @@ class EngineAdapter final : public QObject {
     void sshHostKeyApproved(quint64 token, const QString& outcome);
     void sshHostKeyOperationFailed(quint64 token, const QString& error);
     void profileConnectFailed(const QString& error);
-    // Direct connections only: the DTO reference lives for the current event dispatch.
     void eventReady(const choscordb::BridgeEvent& event);
     void commandFailed(const QString& error);
     void exportSubmissionFailed(quint64 query, const QString& error);
@@ -575,14 +524,13 @@ class EngineAdapter final : public QObject {
     void requestMetadataPage(quint64 connection, const QString& parent, quint64 requestToken,
                              quint64 offset, bool fresh);
     void trackHistoryClears();
-    // Rust queues storage requests and answers them in order.
     bool submitRecovery(quint64 token, const std::function<Submit()>& command,
                         bool duringShutdown = false);
     void finishShutdown();
     struct Private;
     std::unique_ptr<Private> d_;
 };
-} // namespace choscordb
+}
 
 Q_DECLARE_METATYPE(choscordb::SavedProfile)
 Q_DECLARE_METATYPE(choscordb::SshHostKeyCandidate)

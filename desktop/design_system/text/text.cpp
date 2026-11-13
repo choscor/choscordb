@@ -44,7 +44,7 @@ QSize measure(const QString& text, const QFont& font, int lineHeight, int width,
     return {static_cast<int>(std::ceil(measuredWidth)), height};
 }
 
-} // namespace
+}
 
 Text::Text(const QString& text, QWidget* parent) : QLabel(text, parent) {
     setTextFormat(Qt::PlainText);
@@ -114,4 +114,4 @@ void Text::paintEvent(QPaintEvent*) {
             &painter, QPointF(area.x(), y));
 }
 
-} // namespace choscordb::design
+}

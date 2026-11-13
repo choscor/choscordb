@@ -7,8 +7,6 @@
 namespace choscordb::design {
 
 ThemeManager::ThemeManager(QObject* parent) : QObject(parent) {
-    // resolveTheme reads accessibility policy members declared after the theme.
-    // Resolve only after all member initializers have established that policy.
     resolvedTheme_ = resolveTheme();
 }
 
@@ -83,8 +81,6 @@ void ThemeManager::applyTo(QWidget& topLevelWidget) const {
     topLevelWidget.setProperty("forcedContrast", resolvedTheme_.forcedContrast);
     topLevelWidget.setFont(resolveTypography(TextStyle::Body));
     topLevelWidget.setStyleSheet(applicationStyleSheet(resolvedTheme_));
-    // Replacing an existing QSS can restore its cached base palette. Apply the
-    // resolved palette afterward so scoped themes also update background paper.
     topLevelWidget.setPalette(applicationPalette(resolvedTheme_));
 }
 
@@ -123,4 +119,4 @@ void ThemeManager::refreshTheme() {
     emit themeChanged(resolvedTheme_);
 }
 
-} // namespace choscordb::design
+}

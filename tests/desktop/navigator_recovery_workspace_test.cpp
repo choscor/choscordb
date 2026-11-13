@@ -250,7 +250,6 @@ void NavigatorSqlWorkspaceTest::startNavigationPreservesDocumentsAndIndependentF
     QVERIFY(toast);
     window.reportNotice("Wait for database work");
     QVERIFY(toast->text().contains("Wait for database work"));
-    // A resolved appearance warning does not remove a different notice.
     auto* appearance = window.findChild<choscordb::AppearanceController*>();
     QVERIFY(appearance);
     QVERIFY(QMetaObject::invokeMethod(appearance, "warningChanged", Qt::DirectConnection,
@@ -263,7 +262,6 @@ void NavigatorSqlWorkspaceTest::startNavigationPreservesDocumentsAndIndependentF
     QTRY_VERIFY(dialog && dialog->isVisible());
     QCOMPARE(dialog->text(), QString("1 error:\n\n• Saved file could not open"));
     dialog->reject();
-    // An error after the list closes starts a new list.
     window.reportError("Second file could not open");
     QTRY_VERIFY(
         (dialog = window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog")) &&
@@ -271,7 +269,6 @@ void NavigatorSqlWorkspaceTest::startNavigationPreservesDocumentsAndIndependentF
     QCOMPARE(dialog->text(), QString("1 error:\n\n• Second file could not open"));
     dialog->reject();
     QTRY_VERIFY(!window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog"));
-    // An error waits until the open modal closes, and then shows.
     auto* blocker = new choscordb::ConfirmationDialog(QMessageBox::Information, "Busy", "Busy",
                                                       QMessageBox::Close, &window);
     blocker->setAttribute(Qt::WA_DeleteOnClose);
@@ -280,7 +277,6 @@ void NavigatorSqlWorkspaceTest::startNavigationPreservesDocumentsAndIndependentF
     window.reportError("Third file could not open");
     QCoreApplication::processEvents();
     QVERIFY(!window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog"));
-    // A modal that only hides also releases the list.
     blocker->hide();
     QTRY_VERIFY(
         (dialog = window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog")) &&
@@ -307,7 +303,6 @@ void NavigatorSqlWorkspaceTest::userActionErrorsShareOneModalWithACount() {
         return record;
     };
     QString error;
-    // Pins of saved connections that no longer exist fail when they expand.
     QVERIFY2(
         PinStore(path).save({pin("missing-a", "orders"), pin("missing-b", "invoices")}, &error),
         qPrintable(error));
@@ -326,18 +321,15 @@ void NavigatorSqlWorkspaceTest::userActionErrorsShareOneModalWithACount() {
     pins->expand(pins->model()->index(0, 0));
     QTRY_COMPARE(dialogs().size(), 1);
     const auto first = dialogs().first()->text();
-    // The missing profile reports once, from the reconnect.
     QVERIFY2(first.contains("saved connection is unavailable") && !first.contains("errors"),
              qPrintable(first));
     pins->expand(pins->model()->index(1, 0));
     QTRY_VERIFY(dialogs().first()->text() != first);
     QCOMPARE(dialogs().size(), 1);
     QVERIFY(dialogs().first()->text().contains("2 errors"));
-    // Each failed pin stays red with its own message.
     for (int row = 0; row < 2; ++row)
         QCOMPARE(pins->model()->index(row, 0).data(NavigatorModel::StatusRole).toInt(),
                  int(RowStatusKind::Failed));
-    // The sidebar has no status text line for pins.
     QVERIFY(!window.findChild<QWidget*>("pinsStatusLine"));
     dialogs().first()->reject();
     QTRY_VERIFY(dialogs().isEmpty());

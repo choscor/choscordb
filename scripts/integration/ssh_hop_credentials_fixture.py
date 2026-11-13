@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Verify isolated per-hop credentials without writing global SSH configuration."""
 
 import os
 from pathlib import Path
@@ -85,7 +84,6 @@ def database_certificates(directory):
         str(tls / "server.crt"),
         **quiet,
     )
-    # Only this generated fixture key is shared with the disposable database users.
     (tls / "server.key").chmod(0o644)
     return tls
 
@@ -204,8 +202,6 @@ def main():
                         "PubkeyAuthentication yes",
                         "PasswordAuthentication yes",
                         "KbdInteractiveAuthentication no",
-                        # Negative authentication cases must not penalize later
-                        # positive connections from the same Docker source.
                         "PerSourcePenalties no",
                         "AllowTcpForwarding yes",
                         "UsePAM no",
@@ -255,7 +251,6 @@ def main():
             (directory / "empty_hosts").write_text("")
             shutil.copyfile(directory / "identity", directory / "identity-127.0.0.1")
             (directory / "identity-127.0.0.1").chmod(0o600)
-            # -F is inherited by OpenSSH's native jump subprocess; no global SSH files change.
             (directory / "ssh_config").write_text(
                 f'Host jump-alias\n    HostName 127.0.0.1\n    IdentityAgent none\nMatch host 127.0.0.1\n    IdentityFile "{directory / "identity-%h"}"\n'
                 "Host target-alias\n    HostName target-ssh\n    HostKeyAlias fixture-target\n"
@@ -360,7 +355,6 @@ def main():
                 "--locked",
                 cwd=root,
             )
-            # The real helper executable path exercises shell quoting and SSH token escaping.
             application_directory = directory / "app's % helpers"
             application_directory.mkdir()
             application = application_directory / "ssh_hops"
@@ -449,7 +443,6 @@ def main():
                 "-c",
                 "echo 'root:target-password' | chpasswd",
             )
-            # A jump accepting the target password must still reject its own wrong secret.
             run(
                 "docker",
                 "exec",

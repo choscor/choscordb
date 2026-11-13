@@ -30,7 +30,7 @@ QString statusLabel(const QString& status) {
         return RecentHistoryRowDelegate::tr("Disconnected");
     return status;
 }
-} // namespace
+}
 
 QSize RecentHistoryRowDelegate::sizeHint(const QStyleOptionViewItem& option,
                                          const QModelIndex&) const {
@@ -110,4 +110,4 @@ void RecentHistoryRowDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     }
     painter->restore();
 }
-} // namespace choscordb::design
+}

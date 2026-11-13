@@ -104,8 +104,6 @@ int dimension(Dimension value) {
 }
 
 int radius(Radius value) {
-    // Small: badges, kbd, menu items, progress. Medium: controls, rows,
-    // toasts, tooltips. Large: menus, popovers, dialogs, sheets.
     switch (value) {
     case Radius::Small:
         return 4;
@@ -136,4 +134,4 @@ MotionSpec motionSpec(Motion value, bool reducedMotion) {
             QStringLiteral("cubic-bezier(0.4, 0, 0.2, 1)")};
 }
 
-} // namespace choscordb::design
+}

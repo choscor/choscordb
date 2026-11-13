@@ -62,7 +62,7 @@ inline ProfileSecretDraftsDto secretDraftsDto(const ProfileSecretDrafts& value) 
 }
 QList<SshHostKeyCandidate> hostKeyCandidates(const rust::Vec<SshHostKeyCandidateDto>& values);
 ObjectGraph objectGraph(const ObjectGraphDto& dto);
-} // namespace engine_adapter_detail
+}
 struct EngineAdapter::Private {
     explicit Private(const QString& path);
     rust::Box<BridgeEngine> engine;
@@ -90,7 +90,6 @@ struct EngineAdapter::Private {
         bool released = false;
     };
     QHash<quint64, Transfer> transfers;
-    // The event that eventReady delivers now.
     std::shared_ptr<const BridgeEvent> dispatching;
 };
-} // namespace choscordb
+}

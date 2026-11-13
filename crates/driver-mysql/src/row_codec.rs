@@ -1,4 +1,3 @@
-//! The binary form of a spooled result row.
 use choscordb_driver_api::*;
 
 fn corrupt() -> DriverError {
@@ -73,7 +72,6 @@ pub(crate) fn encode(row: &[Value]) -> Result<Vec<u8>> {
     Ok(out.0)
 }
 
-/// Reads a row of `columns` values. The bytes must hold exactly that row.
 pub(crate) fn decode(bytes: &[u8], columns: usize) -> Result<Row> {
     let mut input = Reader(bytes);
     let mut row = Vec::with_capacity(columns);
@@ -144,7 +142,6 @@ mod tests {
         let mut padded = bytes.clone();
         padded.push(0);
         assert!(decode(&padded, row.len()).is_err());
-        // A forged length larger than the record is rejected before it allocates.
         let mut forged = vec![5];
         forged.extend_from_slice(&u32::MAX.to_le_bytes());
         assert!(decode(&forged, 1).is_err());

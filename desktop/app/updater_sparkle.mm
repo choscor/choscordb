@@ -1,4 +1,3 @@
-// Qt 6.8 references the ARM yield intrinsic in Objective-C++ headers.
 #include <arm_acle.h>
 
 #include "app/main_window.h"
@@ -42,7 +41,6 @@
     self.installHandler = installHandler;
     if (checkAction)
         checkAction->setEnabled(true);
-    // Return to Sparkle before starting Qt's asynchronous persistence/shutdown path.
     QTimer::singleShot(0, window, [self] { [self retryInstall]; });
     return YES;
 }
@@ -85,26 +83,22 @@ class NativeUpdater final : public QObject {
              forKeyPath:@"canCheckForUpdates"
                 options:(NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew)
                 context:nullptr];
-        // A cancelled close leaves Sparkle's postponed install pending. The remaining
-        // update action must let the user retry after resolving unsaved work.
         connect(check, &QAction::triggered, this, [this] {
             if (delegate_.installHandler)
                 [delegate_ retryInstall];
             else
                 [delegate_.controller checkForUpdates:nil];
         });
-        // Sparkle owns consent and persisted NSUserDefaults. With no plist override,
-        // its standard permission prompt appears before scheduled checks are enabled.
         [delegate_.controller startUpdater];
     }
 
   private:
     ChoscorUpdaterDelegate* delegate_;
 };
-} // namespace
+}
 void installNativeUpdater(MainWindow& window, bool isolated) {
     if (!isolated && !QStandardPaths::isTestModeEnabled() &&
         qEnvironmentVariable("QT_QPA_PLATFORM") != "offscreen")
         new NativeUpdater(window);
 }
-} // namespace choscordb
+}

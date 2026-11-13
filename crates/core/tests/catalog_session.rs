@@ -1,4 +1,3 @@
-//! Catalog reads use a second session of the Connect when the driver can open one.
 use async_trait::async_trait;
 use choscordb_core::{Engine, Event};
 use choscordb_driver_api::*;
@@ -10,13 +9,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Counts the catalog sessions that the driver opens and closes.
 #[derive(Default)]
 struct Opens {
     count: AtomicUsize,
     closed: AtomicUsize,
     fail: bool,
-    /// The transaction state of the query session: 0 none, 1 open, 2 unreadable.
     transaction: AtomicUsize,
 }
 struct Driver(Arc<Opens>);
@@ -86,7 +83,6 @@ impl Connection for Session {
     ) -> Result<Box<dyn ResultCursor>> {
         Err(DriverError::new(ErrorKind::Unsupported, "no SQL"))
     }
-    /// Names the session that answered.
     async fn load_metadata(&mut self, _: Option<ObjectId>) -> Result<Vec<SchemaObject>> {
         Ok(vec![SchemaObject {
             id: ObjectId(self.name.into()),
@@ -176,7 +172,6 @@ fn a_catalog_session_that_cannot_open_shows_the_error_and_the_query_session_answ
     }
 }
 
-/// Runs one statement, so the engine reads the transaction state again.
 fn statement(engine: &mut Engine, connection: Handle) {
     engine
         .execute(connection, "SELECT 1".into(), QueryOptions::default())

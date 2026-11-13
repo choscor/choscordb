@@ -25,8 +25,7 @@ namespace design {
 class Button;
 class StatusLine;
 class Text;
-} // namespace design
-// Construction-only widget references; callbacks capture individual pointers by value.
+}
 struct MainWindow::Ui {
     QMenu* fileMenu{};
     QAction* newQuery{};
@@ -90,4 +89,4 @@ struct MainWindow::Ui {
     QList<QAction*> searchActions{};
     ToastRegion* toast{};
 };
-} // namespace choscordb
+}

@@ -30,8 +30,6 @@ pub(crate) async fn perform<T>(
     cancel: Arc<dyn CancelHandle>,
     control: Control<'_>,
 ) -> Outcome<T> {
-    // Do not poll an operation that was cancelled or expired before it began:
-    // polling it merely to settle cancellation could itself start a write.
     let preflight = if *control.shutdown.borrow() {
         Some(ErrorKind::Disconnected)
     } else if *control.cancellation.borrow() {
@@ -67,8 +65,6 @@ pub(crate) async fn perform<T>(
         _ = deadline => ErrorKind::Timeout,
         result = &mut future => return Outcome { result, poisoned: false },
     };
-    // Poll cancellation and work together. Do not start any later command until both
-    // have settled. A stuck adapter poisons this connection instead of risking a write retry.
     let settlement = tokio::time::timeout(control.grace, async {
         let (cancel_result, work_result) = tokio::join!(cancel.cancel(), &mut future);
         drop(work_result);
@@ -93,8 +89,6 @@ pub(crate) async fn perform<T>(
     }
 }
 
-/// Capacity waits have no database operation to settle. Never poll execute merely
-/// to cancel a query which has not acquired its source reservation.
 pub(crate) async fn wait_capacity<T>(
     future: impl Future<Output = T>,
     cancellation: Option<&mut watch::Receiver<bool>>,

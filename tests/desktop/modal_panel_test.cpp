@@ -363,8 +363,6 @@ class ModalPanelTest final : public QObject {
         dialog->activateWindow();
         QTRY_COMPARE(choscordb::design::DialogPresentation::activeDialog(), dialog.get());
         QCOMPARE(dialog->windowModality(), Qt::NonModal);
-        // Presses routed through the actual owner window hit the backdrop,
-        // never an underlying control. Release is tested separately as dismissal.
         QTest::mousePress(owner.windowHandle(), Qt::LeftButton, {},
                           ownerAction.mapTo(&owner, ownerAction.rect().center()));
         QTest::mouseClick(other.windowHandle(), Qt::LeftButton, {},
@@ -379,7 +377,6 @@ class ModalPanelTest final : public QObject {
             QVERIFY(focused && (focused == dialog.get() || dialog->isAncestorOf(focused)));
         }
         QTest::keyClick(dialog.get(), Qt::Key_Escape);
-        // QMessageBox animates its Escape button on macOS before closing.
         QTRY_VERIFY(!dialog->isVisible());
         if (confirmation) {
             auto* messageBox = qobject_cast<QMessageBox*>(dialog.get());
@@ -387,8 +384,6 @@ class ModalPanelTest final : public QObject {
             QCOMPARE(messageBox->standardButton(messageBox->clickedButton()), QMessageBox::Cancel);
         }
         QTRY_VERIFY(original.hasFocus());
-        // A positive control verifies the same window-level input reaches the
-        // underlying action once the application modal session has ended.
         QTest::mouseClick(other.windowHandle(), Qt::LeftButton, {},
                           otherAction.mapTo(&other, otherAction.rect().center()));
         QCOMPARE(otherClicked.count(), 2);
@@ -406,8 +401,6 @@ class ModalPanelTest final : public QObject {
         panel.show();
         auto* backdrop = parent.findChild<QWidget*>("modalBackdrop");
         QVERIFY(backdrop && backdrop->isVisible());
-        // The sibling backdrop must contain only the dimmed canvas and the
-        // exterior shadow, never an opaque shadow source or mirrored panel.
         const auto capture = backdrop->grab();
         const auto image = capture.toImage();
         const auto center = backdrop->mapFromGlobal(panel.mapToGlobal(panel.rect().center()));
@@ -437,7 +430,6 @@ class ModalPanelTest final : public QObject {
         panel.show();
         QCoreApplication::processEvents();
 
-        // The live child surface must be in the owner's own backing store.
         const auto capture = parent.grab();
         const auto point = parent.mapFromGlobal(marker->mapToGlobal(marker->rect().center()));
         const auto color =
@@ -478,7 +470,7 @@ class ModalPanelTest final : public QObject {
         dialog->raise();
         dialog->activateWindow();
         QVERIFY(QTest::qWaitForWindowExposed(dialog.get()));
-        QTest::qWait(150); // Allow the OS compositor to present the shown window.
+        QTest::qWait(150);
         const auto topLeft = dialog->mapToGlobal(QPoint());
         const auto capture = dialog->screen()->grabWindow(0, topLeft.x(), topLeft.y(),
                                                           dialog->width(), dialog->height());
@@ -493,13 +485,10 @@ class ModalPanelTest final : public QObject {
         }
         const auto color = capture.toImage().pixelColor(qRound(5 * capture.devicePixelRatio()),
                                                         qRound(5 * capture.devicePixelRatio()));
-        // (5,5) is inside the painted 8px corner, but outside macOS's larger
-        // dialog clipping radius. Capture the compositor, not QWidget::grab.
         QVERIFY2(color.red() > 240 && color.green() > 240 && color.blue() > 240,
                  qPrintable(color.name()));
         QVERIFY(!dialog->isWindow());
         QTest::keyClick(dialog.get(), Qt::Key_Escape);
-        // QMessageBox animates its Escape button on macOS before closing.
         QTRY_VERIFY(!dialog->isVisible());
         if (confirmation) {
             auto* messageBox = qobject_cast<QMessageBox*>(dialog.get());
@@ -575,7 +564,6 @@ class ModalPanelTest final : public QObject {
         QVERIFY(backdrop && backdrop->isVisible());
         const auto rendered = parent.grab().toImage();
         const auto scale = rendered.devicePixelRatio();
-        // CSS #192c3650 composited over the reference #f6f7f8 canvas.
         const auto tint = rendered.pixelColor(qRound(8 * scale), qRound(8 * scale));
         QCOMPARE(tint.alpha(), 255);
         QVERIFY(qAbs(tint.red() - 177) <= 1);
@@ -587,9 +575,6 @@ class ModalPanelTest final : public QObject {
         const auto dark = parent.grab().toImage();
         const auto darkTint = dark.pixelColor(qRound(8 * scale), qRound(8 * scale));
         QCOMPARE(parent.palette().color(QPalette::Window), QColor("#171d20"));
-        // The same tint over the new #171d20 canvas must replace the light snapshot.
-        // Qt's 8-bit blur/compositing rounds the dark channels by up to two.
-        // This still rejects the stale light snapshot by more than 150 levels.
         QVERIFY2(qAbs(darkTint.red() - 24) <= 2, qPrintable(darkTint.name()));
         QVERIFY(qAbs(darkTint.green() - 34) <= 2);
         QVERIFY(qAbs(darkTint.blue() - 39) <= 2);
@@ -732,8 +717,6 @@ class ModalPanelTest final : public QObject {
         dialog.show();
         const auto stalePosition = dialog.pos();
 
-        // A queued stale layout position must be superseded by the final
-        // owner geometry after a zoom/resize transition.
         QTimer::singleShot(0, &dialog, [&dialog, stalePosition] { dialog.move(stalePosition); });
         parent.resize(960, 640);
         QCoreApplication::processEvents();

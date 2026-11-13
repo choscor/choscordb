@@ -43,4 +43,4 @@ void QueryWorkspace::shutdown() {
     adapter_->shutdown();
     updateActions();
 }
-} // namespace choscordb
+}

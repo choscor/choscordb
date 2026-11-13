@@ -1,5 +1,3 @@
-# Keep source paths relative to the project root for the quality gate registry.
-# Dependencies flow from application composition down to reusable Qt controls.
 choscordb_add_library(choscordb-design-system
   desktop/resources/resources.qrc
   desktop/resources/styles.qrc

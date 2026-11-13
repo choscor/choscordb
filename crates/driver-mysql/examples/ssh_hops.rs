@@ -89,7 +89,7 @@ async fn auxiliary_preflight_cancellation(options: ConnectionOptions) {
             result=&mut attempt=>panic!("auxiliary preflight completed instead of stalling: {:?}",result.err()),
             _=tokio::time::sleep(std::time::Duration::from_secs(3))=>panic!("controlled preflight did not start"),
         }
-    }; // Dropping the future closes only the auxiliary local client, not the main tunnel.
+    };
     let mut bytes = Vec::new();
     tokio::time::timeout(
         std::time::Duration::from_secs(2),

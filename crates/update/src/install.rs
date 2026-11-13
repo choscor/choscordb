@@ -1,4 +1,3 @@
-//! Verified update installation. Native process and file operations stay in this Rust service.
 #[cfg(target_os = "linux")]
 #[path = "linux_helper.rs"]
 mod linux_helper;
@@ -240,8 +239,6 @@ pub fn launch_prepared_install(
     #[cfg(windows)]
     let _installer_lock = if matches!(command.kind, InstallKind::Windows) {
         use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
-        // TempPath::keep changes file attributes, so persist before locking.
-        // The handle then refuses writes and renames until CreateProcess opens it.
         let handle = std::fs::OpenOptions::new()
             .read(true)
             .share_mode(0x0000_0001)

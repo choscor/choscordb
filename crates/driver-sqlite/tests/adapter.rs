@@ -641,8 +641,6 @@ async fn cancellation_before_worker_starts_is_remembered_and_does_not_write() {
     run(&mut c, "CREATE TABLE t(value INTEGER)", true).await;
     let pending = c.cancellation_handle();
     pending.cancel().await.unwrap();
-    // A delayed cancellation of the previous generation must not overwrite the
-    // remembered cancellation of the queued next generation.
     previous.cancel().await.unwrap();
     let error = match c
         .execute("INSERT INTO t VALUES (1)", QueryOptions::default())
@@ -747,8 +745,6 @@ async fn bounded_wide_rows_defer_payload_and_keep_lookahead_on_budget_error() {
         vec!["printf('%01000d',43)"; 80].join(",")
     );
     let mut r = c.execute(&sql, QueryOptions::default()).await.unwrap();
-    // Reserve the fixed row envelope as Value gains new typed states, while
-    // keeping room for only one of these wide rows in the page.
     let limit = 80 * std::mem::size_of::<Value>() + 2048;
     let first = r
         .fetch_page_bounded(PageSize::default(), limit)

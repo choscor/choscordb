@@ -303,7 +303,6 @@ void ModernUiTest::connectionNoticesAppearInTheNoticeToast() {
     window.show();
     window.findChild<QAction*>("newQuery")->trigger();
     auto* adapter = window.findChild<choscordb::QueryWorkspace*>()->adapter();
-    // Fixture for a session whose server is another family than its driver.
     choscordb::BridgeEvent connected{};
     connected.kind = "connected";
     connected.id = 4242;
@@ -343,7 +342,6 @@ void ModernUiTest::backgroundNoticesReplaceOneToastWithACount() {
     QVERIFY(toast->text().contains("Second server notice"));
     QVERIFY(!toast->text().contains("First server notice"));
     QVERIFY(toast->text().contains("2 notices"));
-    // Dismissal ends the notice; nothing queued behind it repeats the first warning.
     toast->findChild<QPushButton*>("toastDismiss")->click();
     QTRY_VERIFY(!toast->text().contains("server notice"));
 }
@@ -399,7 +397,6 @@ void ModernUiTest::operationFailureRemainsRedAfterDisconnectCleanup() {
     run->trigger();
     QTRY_VERIFY(queryId.has_value());
     const auto connection = editor->connectionTarget().value_or(0);
-    // Fixture for the backend's ordered query failure, then connection cleanup.
     choscordb::BridgeEvent failure{};
     failure.kind = "query_failed";
     failure.id = *queryId;

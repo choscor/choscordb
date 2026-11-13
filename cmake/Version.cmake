@@ -1,4 +1,3 @@
-# Cargo's workspace version is the single checked-in release version.
 file(READ "${CMAKE_CURRENT_LIST_DIR}/../Cargo.toml" choscordb_manifest)
 string(REGEX MATCH "\\[workspace\\.package\\][^[]*" choscordb_package "${choscordb_manifest}")
 string(REGEX MATCH "(^|\n)version[ \t]*=[ \t]*\"([^\"]+)\"" choscordb_version_line "${choscordb_package}")

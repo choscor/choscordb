@@ -22,7 +22,7 @@ AppearanceLayoutDto appearanceDto(const AppearanceLayout& value) {
     dto.screen_name = toRust(value.screenName);
     return dto;
 }
-} // namespace
+}
 QueryPreferences::QueryPreferences() {
     const auto limits = query_preference_limits();
     version = limits.version;
@@ -189,4 +189,4 @@ EngineAdapter::ObjectTabContext EngineAdapter::parseObjectTabContext(const QStri
     const auto dto = parse_object_tab_context(bridge_detail::utf8View(bytes));
     return {dto.session, bridge_detail::fromRust(dto.profile_id)};
 }
-} // namespace choscordb
+}

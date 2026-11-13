@@ -1,4 +1,3 @@
-# Runs only from the NSIS installer after the new payload has replaced the old one.
 $ErrorActionPreference = 'Stop'
 $exe = Join-Path $env:LOCALAPPDATA 'Programs\ChoscorDB\choscordb.exe'
 $ready = Join-Path $env:TEMP ("ChoscorDB-update-ready-" + [Guid]::NewGuid().ToString('N') + '.txt')
@@ -39,7 +38,6 @@ try {
                 $child.WaitForExit(5000) | Out-Null
             }
         } catch {
-            # NSIS verifies rollback and leaves .previous intact if files stay locked.
         }
     }
     Remove-Item -LiteralPath $ready -Force -ErrorAction SilentlyContinue

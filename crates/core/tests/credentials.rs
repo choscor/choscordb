@@ -591,7 +591,6 @@ fn blocked_os_prompt_keeps_submission_bounded_and_shutdown_nonblocking() {
     for _ in 0..5 {
         engine.connect_profile(p.clone(), None).unwrap();
     }
-    // A saturated worker queue reports bounded failure; it never starts more OS calls.
     loop {
         if matches!(event(&mut engine), Event::ConnectionFailed { .. }) {
             break;

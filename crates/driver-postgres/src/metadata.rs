@@ -1,4 +1,3 @@
-//! Lazy, OID-addressed PostgreSQL catalog navigation.
 use choscordb_driver_api::{
     Column, DriverError, EditColumn, EditQueryTarget, EditTarget, ErrorKind, MetadataProperty,
     ObjectId, ObjectKind, Result, ResultCellMetadata, SchemaObject, simple_select,
@@ -18,8 +17,6 @@ impl<'a> FromSql<'a> for RawMetadata<'a> {
         true
     }
 }
-/// Runs one catalog read. A typed query sends Parse, Bind and Execute together, so
-/// each read is one round trip, and concurrent reads share it.
 async fn bounded_query<C: GenericClient + Sync>(
     client: &C,
     sql: &str,
@@ -104,14 +101,12 @@ fn group(id: &ObjectId) -> Option<(u32, &str)> {
 fn quote(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
-/// One relation, by OID or by a name that may not resolve.
 #[derive(Clone, Copy)]
 enum Relation<'a> {
     Oid(u32),
     Name(&'a str),
 }
 impl Relation<'_> {
-    /// The SQL expression of the relation OID. It reads parameter $1.
     fn sql(self) -> &'static str {
         match self {
             Relation::Oid(_) => "$1",
@@ -148,8 +143,6 @@ pub(crate) async fn edit_target<C: GenericClient + Sync>(
             )
         })
 }
-/// The edit target of `relation`, or `None` when no relation matches. Its catalog
-/// reads run concurrently in one round trip.
 async fn relation_edit_target<C: GenericClient + Sync>(
     client: &C,
     relation: Relation<'_>,
@@ -160,7 +153,6 @@ async fn relation_edit_target<C: GenericClient + Sync>(
     let columns_read = format!(
         "SELECT attname::text, pg_catalog.format_type(atttypid,atttypmod), attnotnull, attgenerated::text FROM pg_catalog.pg_attribute WHERE attrelid={rel} AND attnum>0 AND NOT attisdropped ORDER BY attnum LIMIT 10001"
     );
-    // The key columns of each usable unique index, in key order.
     let keys_read = format!(
         "SELECT i.indisprimary, array_agg(a.attname::text ORDER BY k.ordinality), bool_and(a.attnotnull) FROM pg_catalog.pg_index i JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum,ordinality) ON k.ordinality<=i.indnkeyatts JOIN pg_catalog.pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum WHERE i.indrelid={rel} AND i.indisunique AND i.indisvalid AND i.indisready AND i.indpred IS NULL AND i.indexprs IS NULL GROUP BY i.indexrelid, i.indisprimary ORDER BY i.indisprimary DESC, i.indexrelid LIMIT 10001"
     );
@@ -286,8 +278,6 @@ pub(crate) async fn result_cells<C: GenericClient + Sync>(
     };
     let parameter = relation.parameter();
     let rel = relation.sql();
-    // The catalog reads run concurrently in one round trip. One read gives the
-    // labels of every enum type that the relation uses.
     let relation_read = relation_sql(relation);
     let columns_read = format!(
         "SELECT a.attname::text, a.attnotnull, a.atttypid::oid, t.typtype::text FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_type t ON t.oid=a.atttypid WHERE a.attrelid={rel} AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum LIMIT 10001"
@@ -355,7 +345,6 @@ pub(crate) async fn result_cells<C: GenericClient + Sync>(
         meta.boolean = *type_oid == 16;
         if type_kind == "e" {
             let labels = choices.get(type_oid).map_or(&[][..], Vec::as_slice);
-            // The labels of all enum columns share one budget, checked before the copy.
             enum_bytes = enum_bytes.saturating_add(labels.iter().map(String::len).sum::<usize>());
             if enum_bytes > MAX_TEXT {
                 return Err(limit());

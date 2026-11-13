@@ -9,7 +9,6 @@ class QScrollArea;
 namespace choscordb::design {
 class Text;
 
-// Owner-contained modal sheet. Callers supply the body widget and footer actions.
 class RightSheet final : public QDialog {
     Q_OBJECT
   public:
@@ -33,4 +32,4 @@ class RightSheet final : public QDialog {
     QScrollArea* body_ = nullptr;
     QHBoxLayout* footer_ = nullptr;
 };
-} // namespace choscordb::design
+}

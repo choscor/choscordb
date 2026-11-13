@@ -23,4 +23,4 @@ void ButtonGroup::addButton(Button* button) {
         item->update();
     }
 }
-} // namespace choscordb::design
+}

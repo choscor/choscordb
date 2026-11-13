@@ -19,8 +19,6 @@ inline QString layoutSpacing(const QLayout* layout) {
         .arg(layout->spacing());
 }
 
-// The dialog root, the sections' own layout and the header/footer bars; bodies
-// may set their own content inset and spacing.
 inline QString sectionedSpacing(const QDialog& dialog) {
     const auto* sections = dialog.findChild<choscordb::design::DialogSections*>();
     if (!sections)
@@ -37,7 +35,6 @@ inline QString compactSectionedSpacing() {
              layoutSpacing(reference.footerLayout()));
 }
 
-// The header's Headline title, or empty when the header has none.
 inline QString headerHeadline(const QDialog& dialog) {
     const auto* sections = dialog.findChild<choscordb::design::DialogSections*>();
     if (!sections)
@@ -52,8 +49,6 @@ inline QString headerHeadline(const QDialog& dialog) {
     return {};
 }
 
-// The header dismiss shared by sectioned dialogs, or null when it differs. It must
-// never take initial focus or become the default button that Enter triggers.
 inline choscordb::design::Button* headerDismiss(const QDialog& dialog, const char* name) {
     const auto* sections = dialog.findChild<choscordb::design::DialogSections*>();
     auto* dismiss = dialog.findChild<choscordb::design::Button*>(name);
@@ -67,7 +62,6 @@ inline choscordb::design::Button* headerDismiss(const QDialog& dialog, const cha
     return shared ? dismiss : nullptr;
 }
 
-// Screen-set footer surfaces and non-default footer button sizes.
 inline QString footerOverrides(const QDialog& dialog) {
     const auto* sections = dialog.findChild<choscordb::design::DialogSections*>();
     if (!sections)

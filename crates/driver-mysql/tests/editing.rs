@@ -1,4 +1,3 @@
-//! Run against the disposable MySQL or MariaDB test server; see support/server.rs.
 use choscordb_driver_api::*;
 #[path = "support/server.rs"]
 mod server;

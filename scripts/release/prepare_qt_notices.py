@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Prepare pinned Qt source license metadata for release staging and SBOM generation."""
 
 import argparse
 import hashlib
@@ -83,9 +82,6 @@ def prepare(archive, output, svg_archive=None):
                     member = members[name]
                     if not member.isfile():
                         raise ValueError("Qt attribution is not regular")
-                    # Pinned Qt attribution records use literal multiline text
-                    # strings. Preserve their bytes while accepting that upstream
-                    # format; archive digests and referenced paths stay validated.
                     records = json.loads(
                         source.extractfile(member).read(), strict=False
                     )
@@ -155,7 +151,9 @@ def prepare(archive, output, svg_archive=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Prepare pinned Qt source license metadata for release staging and SBOM generation."
+    )
     parser.add_argument("--archive", type=Path)
     parser.add_argument("--qtsvg-archive", type=Path)
     parser.add_argument("--output", type=Path, required=True)

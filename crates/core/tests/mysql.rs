@@ -1,4 +1,3 @@
-//! Run only against the repository's disposable MySQL or MariaDB fixture.
 use choscordb_core::{ConnectionProfile, Engine, Event, PostgresTls, ProfileConfiguration};
 use choscordb_driver_api::{PageSize, QueryOptions, Secret, TlsMode, Value};
 #[path = "../../driver-mysql/tests/support/server.rs"]
@@ -40,7 +39,6 @@ fn server_profile() -> ProfileConfiguration {
     }
 }
 
-/// Queries that page 100 rows at a time, as these tests fetch.
 fn paged() -> QueryOptions {
     QueryOptions {
         page_size: PageSize::new(100).unwrap(),
@@ -362,7 +360,6 @@ fn a_mariadb_connection_to_mysql_connects_with_a_notice() {
         notices,
         ["This server is MySQL; use a MySQL connection for MySQL behavior"]
     );
-    // MariaDB's JSON catalog lookup fails on MySQL; the query still runs.
     let query = engine
         .execute(
             connection,

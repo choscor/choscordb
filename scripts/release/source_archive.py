@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Prepare a deterministic, unpublished working-tree source candidate."""
 
 import argparse
 from contextlib import ExitStack
@@ -114,11 +113,6 @@ def raise_walk_error(error):
 
 
 def read_source(path):
-    """Traverse every component through pinned directory handles, never symlinks.
-
-    Platforms without descriptor-relative no-follow opens fail closed rather than
-    using a check-then-open fallback with an ancestor replacement race.
-    """
     if os.open not in os.supports_dir_fd or not hasattr(os, "O_NOFOLLOW"):
         raise ValueError(
             "Secure source traversal requires descriptor-relative no-follow opens"
@@ -267,7 +261,9 @@ def create_candidate(root, output):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Prepare a deterministic, unpublished working-tree source candidate."
+    )
     parser.add_argument(
         "--root", type=Path, default=Path(__file__).resolve().parents[2]
     )

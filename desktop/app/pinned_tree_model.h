@@ -14,7 +14,6 @@ namespace choscordb {
 
 class NavigatorModel;
 
-// Presents saved shortcuts as roots and their verified, live navigator rows as children.
 class PinnedTreeModel final : public QAbstractItemModel {
     Q_OBJECT
   public:
@@ -32,8 +31,6 @@ class PinnedTreeModel final : public QAbstractItemModel {
 
     void setPins(const QList<PinRecord>& pins);
     bool setResolved(const QString& key, const QModelIndex& verifiedSourceIndex);
-    // The message joins the tooltip; the kind is the row's StatusRole. An unavailable pin
-    // accepts only an unavailable status, for example one with the reason.
     void setStatus(const QString& key, const RowStatus& status);
     QModelIndex sourceIndex(const QModelIndex& index) const;
     QString pinKey(const QModelIndex& root) const;
@@ -55,7 +52,6 @@ class PinnedTreeModel final : public QAbstractItemModel {
     NavigatorModel* source_;
     std::vector<std::unique_ptr<Entry>> roots_;
     QHash<QString, Entry*> rootsByKey_;
-    // Mirrored entries by their source row's internal pointer, verified on lookup.
     QMultiHash<const void*, Entry*> entriesBySource_;
     std::vector<Entry*> pendingInsertParents_;
     int pendingInsertFirst_ = -1;
@@ -66,4 +62,4 @@ class PinnedTreeModel final : public QAbstractItemModel {
     bool updating_ = false;
 };
 
-} // namespace choscordb
+}

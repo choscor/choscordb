@@ -47,7 +47,7 @@ bool jsonActionAvailable(ResultTableModel::JsonViewState state, bool deferredAva
            state == ResultTableModel::JsonViewState::Invalid ||
            (state == ResultTableModel::JsonViewState::NeedsDeferred && deferredAvailable);
 }
-} // namespace
+}
 bool QueryWorkspace::jsonResultCurrent() const {
     if (jsonResultInvalidated_)
         return false;
@@ -466,4 +466,4 @@ void QueryWorkspace::handleRowJsonEvent(const BridgeEvent& event) {
         return job->append(chunkKind, offset, totalBytes, chunk, hasLease);
     }));
 }
-} // namespace choscordb
+}

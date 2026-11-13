@@ -166,7 +166,6 @@ class ResultViewWorkspaceTest : public QObject {
         QVERIFY(model->setPage(
             {id, name}, {{qint64(1), QString("clicked")}, {qint64(2), QString("selected")}}, 0));
         model->setEditableColumns({false, true}, true, true, {false, true});
-        // Staging and discarding one value runs the production enablement refresh.
         model->setData(model->index(0, 1), QString("x"));
         model->discardEdits();
         grid->setCurrentIndex(model->index(1, 1));
@@ -682,7 +681,6 @@ class ResultViewWorkspaceTest : public QObject {
         metadata.targetObject = R"(["main","parent"])";
         metadata.targetQualifiedName = "parent";
         metadata.targetColumn = "id";
-        // The filterable bit comes from Rust, as the bridge gives it for each page cell.
         const auto showDecimal = [&](const QString& text) {
             const choscordb::Cell value = choscordb::DecimalValue{text};
             return model->setPage(choscordb::ResultTableModel::preparePage(

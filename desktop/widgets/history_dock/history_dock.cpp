@@ -32,9 +32,6 @@ namespace {
 // ui-budget: characters of SQL the preview pane shows per page; it is display paging only.
 constexpr qsizetype PreviewChars = 65536;
 constexpr quint32 pageSize = 100;
-// The table keeps the full history columns (rows, duration) that the compact
-// design::RecentHistoryRowDelegate list row does not carry, so this delegate
-// paints the wider variant with the same spacing, badge, radius and focus tokens.
 class HistoryRowDelegate final : public QStyledItemDelegate {
   public:
     using QStyledItemDelegate::QStyledItemDelegate;
@@ -109,7 +106,7 @@ class HistoryRowDelegate final : public QStyledItemDelegate {
     }
 };
 
-} // namespace
+}
 HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     : QWidget(parent), adapter_(adapter) {
     setObjectName("historyDock");
@@ -515,4 +512,4 @@ void HistoryDock::updateControls() {
                                        : statusText_;
     footer_->setContent({{}, status, {}, {}, {}, range}, state);
 }
-} // namespace choscordb
+}

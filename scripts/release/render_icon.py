@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Render the existing app SVG into a macOS icon; generated files stay in build/."""
 
 import argparse
 from pathlib import Path
@@ -34,7 +33,9 @@ def render(source, output):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Render the existing app SVG into a macOS icon; generated files stay in build/."
+    )
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()

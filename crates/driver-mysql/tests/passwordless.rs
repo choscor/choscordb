@@ -1,4 +1,3 @@
-//! Run against a disposable MySQL server configured for empty-password TCP login.
 use choscordb_driver_api::{ConnectionOptions, DatabaseDriver, TlsMode};
 use choscordb_driver_mysql::MysqlDriver;
 

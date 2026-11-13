@@ -15,7 +15,6 @@ pub enum ExportFormat {
         dialect: SqlDialect,
     },
 }
-/// Always quote non-NULL fields. An unquoted empty field is NULL; "" is empty text.
 pub fn csv_field(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
 }
@@ -42,7 +41,6 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 fn quoted(value: &str) -> String {
     serde_json::to_string(value).expect("string serialization is infallible")
 }
-/// Strict JSON numeric grammar; excludes SQL tokens and preserves digits verbatim.
 pub fn valid_decimal(value: &str) -> bool {
     let b = value.as_bytes();
     let mut i = usize::from(b.first() == Some(&b'-'));
@@ -198,10 +196,8 @@ pub(crate) fn sql(value: &Value, dialect: SqlDialect) -> Result<String> {
         }
     })
 }
-/// Why a SQL export target is incomplete.
 pub const SQL_EXPORT_TABLE_REQUIRED: &str = "Enter a table for SQL export.";
 
-/// A SQL export target is a table name with an optional schema; `None` when valid.
 pub fn sql_export_table_error(table: &[String]) -> Option<&'static str> {
     let complete = matches!(table.len(), 1 | 2) && table.iter().all(|part| !part.is_empty());
     (!complete).then_some(SQL_EXPORT_TABLE_REQUIRED)

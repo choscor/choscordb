@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""Reject local desktop visual constants/stylesheets and drifted icon resources.
-
-Rules added after the design-system consistency audit accept a reviewed
-``// ui-ok: <reason>`` marker on the line or the line above. Icon assets and
-icon sizes have no marker: every icon is an upstream Lucide file or a recorded
-brand logo, and renders at an icon-size token.
-"""
 
 import hashlib
 import json
@@ -29,9 +22,8 @@ FEATURE_INCLUDE = re.compile(
 REQUIRED_ICONS = {"app-mark.svg", "mysql.svg", "play.svg", "square.svg", "plus.svg"}
 MARKER = re.compile(r"//\s*ui-ok:\s*\S")
 LITERAL = re.compile(r"^\s*[1-9][0-9]*\s*$")
-# Calls whose listed argument positions are presentation metrics.
 METRIC_ARGUMENTS = {
-    "setContentsMargins": None,  # every argument
+    "setContentsMargins": None,
     "QMargins": None,
     "QSize": None,
     "addSpacing": (0,),
@@ -43,7 +35,6 @@ METRIC_ARGUMENTS = {
     "resizeSection": (1,),
 }
 CALL = re.compile(r"\b(" + "|".join(METRIC_ARGUMENTS) + r")\s*\(")
-# Calls whose listed argument positions are icon sizes; QSize arguments are unpacked.
 ICON_SIZE_ARGUMENTS = {"themedIcon": (2,), "setIconSize": (0,), "pixmap": (0, 1)}
 ICON_SIZE_CALL = re.compile(r"\b(themedIcon|setIconSize|pixmap)\s*\(")
 QSIZE = re.compile(r"^\s*QSize\s*\(")
@@ -66,7 +57,6 @@ QSS_SELECTOR = re.compile(r"\[\s*(\w+)\s*=\s*\"?([\w-]+)\"?\s*\]")
 
 
 def arguments(text, start):
-    """Return top-level arguments of the call whose '(' is at start."""
     depth, current, parts = 0, [], []
     for char in text[start:]:
         if char in "([{":
@@ -87,7 +77,6 @@ def arguments(text, start):
 
 
 def styled_values(design):
-    """Property values the design system styles in QSS or reads in C++."""
     known = {}
     for path in design.rglob("*"):
         if path.suffix == ".qss":
@@ -111,7 +100,6 @@ def reviewed(lines, index):
 
 
 def audit_rules(path, root, text, known):
-    """Rules from the consistency audit; each honours a ui-ok marker."""
     problems = []
     lines = text.splitlines()
     for index, line in enumerate(lines):
@@ -124,7 +112,7 @@ def audit_rules(path, root, text, known):
             if name == "QSize" and re.search(
                 r"setIconSize\s*\(\s*$", stripped[: match.start()]
             ):
-                continue  # Reported by the icon-size rule.
+                continue
             args = arguments(stripped, match.end() - 1)
             positions = METRIC_ARGUMENTS[name] or range(len(args))
             if any(i < len(args) and LITERAL.match(args[i]) for i in positions):
@@ -160,9 +148,7 @@ def audit_rules(path, root, text, known):
 
 
 def icon_size_rules(path, root, text):
-    """Icons render only at Dimension::IconSmall or Dimension::Icon."""
     problems = []
-    # Calls often wrap, so read arguments across lines with comments removed.
     code = "\n".join(line.split("//", 1)[0] for line in text.splitlines())
     for match in ICON_SIZE_CALL.finditer(code):
         name = match.group(1)
@@ -196,7 +182,6 @@ def svg_root(path):
 
 
 def icon_asset_rules(root, manifest):
-    """Icons are recorded upstream Lucide files or square, unsized brand SVGs."""
     problems = []
     icon_dir = root / "desktop/resources/icons"
     relative = "desktop/resources/icons/"
@@ -272,7 +257,6 @@ def violations(root=ROOT):
                         f"{path.relative_to(root)}:{line_number}: design-system dependency"
                     )
                 continue
-            # Developer specimens deliberately exercise fixed reference dimensions.
             if preview in path.parents:
                 continue
             if COLOR.search(line):

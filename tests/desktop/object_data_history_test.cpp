@@ -10,7 +10,6 @@
 #include <QTabWidget>
 #include <QTableView>
 #include <QtTest>
-// The object data time selector for relations that keep row history.
 class ObjectDataHistoryTest : public QObject {
     Q_OBJECT
 
@@ -55,13 +54,11 @@ class ObjectDataHistoryTest : public QObject {
         QTRY_VERIFY(timeMode->isEnabled());
         QTRY_COMPARE(grid->model()->rowCount(), 1);
 
-        // A mode whose read cannot start must not label the current rows.
         sql->setExternalWork(true);
         timeMode->setCurrentIndex(2);
         QCOMPARE(timeMode->currentIndex(), 0);
         sql->setExternalWork(false);
 
-        // SQLite cannot browse history, so Rust rejects the submitted mode.
         timeMode->setCurrentIndex(2);
         QTRY_VERIFY(failure().contains("History browsing is unavailable for this connection"));
         QTRY_VERIFY(timeMode->isEnabled());

@@ -33,7 +33,6 @@ pub(crate) async fn inspect_target(
         target.reason = "Only transactional InnoDB base tables can be edited".into();
         return Ok(target);
     }
-    // MariaDB maintains system-versioning period columns itself; they are never written.
     let columns: Vec<(String, String, String, String, String)> = conn.exec(
         "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, EXTRA, COLUMN_KEY FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COALESCE(GENERATION_EXPRESSION, '') NOT IN ('ROW START', 'ROW END') ORDER BY ORDINAL_POSITION",
         (&database, &table),
@@ -57,8 +56,6 @@ pub(crate) async fn inspect_target(
     Ok(target)
 }
 
-// Adapt MySQL backtick identifiers to the shared conservative shape recognizer.
-// Reject escape-dependent and double-quoted syntax rather than guessing modes.
 fn query_shape(sql: &str, columns: &[String]) -> Option<SimpleSelect> {
     let mut translated = String::new();
     let mut chars = sql.chars().peekable();
@@ -173,8 +170,6 @@ fn enum_labels(database_type: &str) -> Option<Vec<String>> {
                     label.push('\'');
                 }
                 '\'' => break,
-                // COLUMN_TYPE quoting depends on server SQL mode. Without a
-                // catalog encoding guarantee, escaped labels stay text-editable.
                 '\\' => return None,
                 ch => label.push(ch),
             }
@@ -372,8 +367,6 @@ pub(crate) async fn apply_batch(conn: &mut Conn, batch: EditBatch) -> Result<Edi
             choscordb_driver_api::EDITS_NEED_NO_TRANSACTION,
         ));
     }
-    // Bind and validate every statement before opening the owned transaction.
-    // Restrict this API to DML: MySQL DDL implicitly commits transactions.
     let mut statements = Vec::with_capacity(batch.statements.len());
     for edit in batch.statements {
         if !edit.sql.split_whitespace().next().is_some_and(|word| {

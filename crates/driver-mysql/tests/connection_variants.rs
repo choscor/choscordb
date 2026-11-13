@@ -37,7 +37,6 @@ async fn anonymous_and_explicit_usernames_are_sent_unchanged() {
             .await
             .expect("connection must reach server")
             .unwrap();
-        // Protocol 10 greeting with CLIENT_PROTOCOL_41 and CLIENT_SECURE_CONNECTION.
         let mut greeting = vec![10];
         greeting.extend_from_slice(b"8.0.0\0");
         greeting.extend_from_slice(&1u32.to_le_bytes());
@@ -99,7 +98,6 @@ async fn prefer_uses_plaintext_on_local_unix_socket() {
         .await
         .expect("Prefer should reach the local Unix socket")
         .unwrap();
-    // Advertise TLS even though a local Unix socket must not request it.
     let mut greeting = vec![10];
     greeting.extend_from_slice(b"8.0.0\0");
     greeting.extend_from_slice(&1u32.to_le_bytes());

@@ -1,5 +1,3 @@
-"""Tests for the repository-owned quality command interface."""
-
 import contextlib
 import io
 from pathlib import Path
@@ -46,6 +44,7 @@ class QualityCommandTest(unittest.TestCase):
                 [quality.PYTHON, "scripts/ci/perf_policy.py"],
                 [quality.PYTHON, "scripts/ci/source_inventory.py"],
                 [quality.PYTHON, "scripts/ci/docs_policy.py"],
+                [quality.PYTHON, "scripts/ci/comment_policy.py"],
                 ["ruff", "check", "scripts", "examples"],
                 ["ruff", "format", "--check", "scripts", "examples"],
                 ["actionlint", "-color"],

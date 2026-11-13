@@ -1,7 +1,3 @@
-//! Ownership moves to the blocking pool for file operations and normal cleanup.
-//! Shutdown may reject cleanup tasks and dispose their captures on the submitting
-//! thread; strict off-thread cleanup and a disk shutdown deadline remain unproven.
-//! The actor awaits one operation at a time; no queue of page copies is accumulated.
 use choscordb_driver_api::{Column, DriverError, ErrorKind, ResultPage, Row, Value};
 use choscordb_result_store::{ResultStore, StoreConfig, StoreError, StoredPage};
 

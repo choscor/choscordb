@@ -1,4 +1,3 @@
-//! Route raw controls through the same native ownership paths as explicit UI actions.
 use super::*;
 pub(super) async fn execute(
     connection: &mut PostgresConnection,
@@ -54,8 +53,6 @@ pub(super) async fn execute(
     let active = match result {
         Ok(result) => result?,
         Err(_) => {
-            // A dropped control future may otherwise still own a native operation.
-            // Closing is sticky and aborts its pump; never reuse an ambiguous session.
             connection.cancel.closing.request();
             let _ = tokio::time::timeout(
                 std::time::Duration::from_millis(100),

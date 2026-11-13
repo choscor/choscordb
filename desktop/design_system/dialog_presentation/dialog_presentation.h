@@ -8,7 +8,6 @@ class QWidget;
 
 namespace choscordb::design {
 
-// Shared modal behavior for QDialog and QMessageBox without replacing their APIs.
 class DialogPresentation final : public QObject {
   public:
     enum class Placement { Center, RightEdge, TopCenter };
@@ -37,4 +36,4 @@ class DialogPresentation final : public QObject {
 
 void paintDialogSurface(QWidget& widget, bool drawBorder = true);
 
-} // namespace choscordb::design
+}

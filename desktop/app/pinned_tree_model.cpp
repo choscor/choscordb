@@ -9,12 +9,11 @@ namespace choscordb {
 struct PinnedTreeModel::Entry {
     Entry* parent = nullptr;
     int row = 0;
-    const void* sourceKey = nullptr; // Registration key; survives source invalidation.
+    const void* sourceKey = nullptr;
     PinRecord pin;
     QString key;
     RowStatus status;
     QPersistentModelIndex source;
-    // Set from Rust when a root takes its pin, so data() never asks.
     bool sidebarChild = true;
     std::vector<std::unique_ptr<Entry>> children;
 };
@@ -23,7 +22,7 @@ template <typename Entries> void renumber(Entries& entries, std::size_t from) {
     for (auto row = from; row < entries.size(); ++row)
         entries[row]->row = static_cast<int>(row);
 }
-} // namespace
+}
 PinnedTreeModel::PinnedTreeModel(NavigatorModel* source, QObject* parent)
     : QAbstractItemModel(parent), source_(source) {
     connect(source_, &QAbstractItemModel::rowsAboutToBeInserted, this,
@@ -379,4 +378,4 @@ bool PinnedTreeModel::sourceRowsIncludeRoot(const QModelIndex& parent, int first
             return ancestor.row() >= first && ancestor.row() <= last;
     return false;
 }
-} // namespace choscordb
+}

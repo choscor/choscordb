@@ -1,14 +1,8 @@
-//! Versioned, bounded appearance and workspace-layout persistence.
-//!
-//! Screen intersection is deliberately a native-client decision because this
-//! crate has no display-system dependency. The persisted coordinates and
-//! dimensions are nevertheless bounded before they can reach that client.
 use crate::{Result, Storage, StorageError};
 use rusqlite::{TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 
 pub const APPEARANCE_LAYOUT_VERSION: u32 = 2;
-/// Version 1 also persisted `density` and `accent`; loading drops them.
 const LEGACY_APPEARANCE_LAYOUT_VERSION: u64 = 1;
 const LEGACY_APPEARANCE_FIELDS: [&str; 2] = ["density", "accent"];
 pub const MAX_APPEARANCE_LAYOUT_BYTES: usize = 4096;
@@ -28,7 +22,6 @@ pub enum ThemeMode {
 }
 
 impl ThemeMode {
-    /// Parse a theme choice supplied by the desktop UI.
     pub fn parse_choice(value: &str) -> Option<Self> {
         match value {
             "system" => Some(Self::System),
@@ -43,7 +36,6 @@ impl ThemeMode {
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceLayout {
     pub navigator_width: u32,
-    /// Permille of the editor/results area's height assigned to the editor.
     pub editor_results_split: u16,
     pub history_height: u32,
     pub navigator_visible: bool,
@@ -70,7 +62,6 @@ pub struct WindowGeometry {
     pub width: u32,
     pub height: u32,
     pub maximized: bool,
-    /// Last-known native screen identifier, used only as a restoration hint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub screen_name: Option<String>,
 }
@@ -141,7 +132,6 @@ impl Default for AppearanceLayout {
 }
 
 impl Storage {
-    /// Missing, corrupt, and unsupported records remain observably distinct.
     pub fn appearance_layout(&self) -> Result<Option<AppearanceLayout>> {
         let mut statement = self
             .db
@@ -183,7 +173,6 @@ impl Storage {
         Ok(Some(value))
     }
 
-    /// Validates and replaces the singleton record in one immediate transaction.
     pub fn set_appearance_layout(&mut self, value: &AppearanceLayout) -> Result<()> {
         value.validate()?;
         let encoded = serde_json::to_string(value)?;
@@ -202,8 +191,6 @@ impl Storage {
         Ok(())
     }
 
-    /// Explicit reset is the only automatic-default path allowed to delete a
-    /// corrupt or unsupported saved record.
     pub fn reset_appearance_layout(&mut self) -> Result<()> {
         let tx = self
             .db

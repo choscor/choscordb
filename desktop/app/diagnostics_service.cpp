@@ -8,7 +8,7 @@ namespace choscordb {
 namespace {
 using bridge_detail::fromRust;
 using bridge_detail::utf8View;
-} // namespace
+}
 
 struct DiagnosticsService::State {
     rust::Box<RustDiagnostics> service;
@@ -118,4 +118,4 @@ const RustDiagnostics& DiagnosticsService::backend() const {
 void DiagnosticsService::observeCommandFailure() {
     diagnostics_observe_command_failure(*state_->service);
 }
-} // namespace choscordb
+}

@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Stage three verified packages on one draft before publishing a stable Release."""
 
 import argparse
 import contextlib
 
 try:
     import fcntl
-except ImportError:  # Windows candidates import parse_feed, but never publish.
+except ImportError:
     fcntl = None
 import hashlib
 import json
@@ -68,7 +67,6 @@ def parse_feed(data, base_url):
 
 @contextlib.contextmanager
 def publication_lock():
-    # Per-user, independent of checkout, repository, and selected manifest.
     if fcntl is None:
         raise ValueError("local publication requires a Unix maintainer host")
     path = Path(tempfile.gettempdir()) / f"choscordb-publish-{os.getuid()}.lock"
@@ -281,7 +279,6 @@ class GitHubStore:
         raise ValueError("remote tag does not resolve to a commit")
 
     def releases(self):
-        # A successful complete list establishes absence; no HTTP failure means absent.
         records = []
         page = 1
         while True:
@@ -309,8 +306,6 @@ class GitHubStore:
                 str(notes),
             ]
         )
-        # The by-tag endpoint excludes drafts. Resolve the newly created draft
-        # through the authenticated, paginated release list instead.
         matching = [
             release for release in self.releases() if release["tag_name"] == tag
         ]
@@ -399,7 +394,9 @@ class GitHubStore:
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Stage three verified packages on one draft before publishing a stable Release."
+    )
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--sparkle-tools", type=Path)
     parser.add_argument("--notes-file", type=Path)

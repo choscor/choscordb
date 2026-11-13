@@ -651,8 +651,6 @@ void ModernUiTest::quickSearchHidesRecentSystemObjectAfterPreferenceChanges() {
     emit overlay->activated(ordinaryRecentId);
     QTRY_COMPARE(requested.count(), 3);
     QCOMPARE(requested.last().at(1).toString(), QString("public"));
-    // A queued UI refresh must not cancel verification of an activated recent
-    // object while its metadata request is still outstanding.
     emit navigator->browsingVisibilityChanged();
     QVERIFY(model->applyChildren(connection, "public", requested.last().at(2).toULongLong(),
                                  {{"unloaded-normal", "unloaded_normal",

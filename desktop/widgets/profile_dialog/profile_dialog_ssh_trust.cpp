@@ -140,4 +140,4 @@ void ProfileDialog::inspectHostKeys() {
     statusLine_->show();
     adapter_->inspectSshHostKeys(profile, trustToken_);
 }
-} // namespace choscordb
+}

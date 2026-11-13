@@ -55,7 +55,7 @@ void clickPin(QTreeView* pins) {
     QTest::mouseClick(pins->viewport(), Qt::LeftButton, Qt::NoModifier,
                       QPoint(rect.right() - 4, rect.center().y()));
 }
-} // namespace
+}
 
 class PinnedMenuProbe : public QObject {
   public:
@@ -144,7 +144,6 @@ class PinningFlowTest : public QObject {
         QVERIFY(guardRaised);
         auto* toast = window.findChild<ToastRegion*>("toastRegion");
         QVERIFY(toast);
-        // The blocked open reports once; the pin adds no second message.
         QTRY_VERIFY(toast->text().contains("Finish or cancel active database work"));
         QVERIFY(!toast->text().contains("notices"));
         QVERIFY(!window.findChild<QMessageBox*>("errorFeedbackDialog"));
@@ -602,7 +601,6 @@ class PinningFlowTest : public QObject {
         QTRY_VERIFY(pins->isExpanded(root));
         QTRY_VERIFY(root.data(Qt::ToolTipRole).toString().contains("retry", Qt::CaseInsensitive));
         QCOMPARE(reopened.count(), 0);
-        // Active work blocks the expansion, so it is a notice and not an error.
         auto* toast = restored.findChild<ToastRegion*>("toastRegion");
         QVERIFY(toast);
         QTRY_VERIFY(toast->isVisible() && toast->text().contains("Connection unavailable"));
@@ -721,7 +719,7 @@ class PinningFlowTest : public QObject {
         SavedProfile bad;
         bad.id = "bad";
         bad.name = "Broken";
-        bad.path = directory.path(); // Opening a directory as a database must fail.
+        bad.path = directory.path();
         workspace->adapter()->saveProfile(bad, 7102);
         QTRY_COMPARE(profiles->count(), 2);
         QTRY_COMPARE(pinCount(pins), 2);
@@ -747,7 +745,6 @@ class PinningFlowTest : public QObject {
         QCOMPARE(badRoot.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Failed));
         QCOMPARE(badRoot.data().toString(), QString("orders"));
         QVERIFY(goodRoot.data(Qt::ToolTipRole).toString().contains("Loading"));
-        // The failed pin has the same Refresh action as a failed navigator row.
         pins->customContextMenuRequested(pins->visualRect(badRoot).center());
         QPointer<QMenu> pinMenu = window.findChild<QMenu*>("pinnedMenu");
         QVERIFY(pinMenu);
@@ -758,7 +755,6 @@ class PinningFlowTest : public QObject {
         pinMenu->close();
         QCOMPARE(badRoot.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Loading));
         QTRY_COMPARE(badRoot.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Failed));
-        // A healthy pin has no Refresh action.
         pins->customContextMenuRequested(pins->visualRect(goodRoot).center());
         QTRY_VERIFY(window.findChild<QMenu*>("pinnedMenu"));
         for (auto* menu : window.findChildren<QMenu*>("pinnedMenu")) {

@@ -1,10 +1,7 @@
-/// PostgreSQL namespaces reserved for system use.
 pub fn is_postgres_system_schema(schema: &str) -> bool {
     schema == "information_schema" || schema.starts_with("pg_")
 }
 
-/// Whether a loaded navigator node is a PostgreSQL system schema, hidden with
-/// everything below it until system schemas are shown.
 pub fn is_system_schema_node(kind: &str, name: &str) -> bool {
     kind == "schema" && is_postgres_system_schema(name)
 }
@@ -50,8 +47,6 @@ fn component(input: &str, position: &mut usize) -> Option<String> {
     (!result.is_empty()).then(|| result.to_ascii_lowercase())
 }
 
-/// Parse a PostgreSQL qualified object name and return its schema component.
-/// Unquoted names fold to lowercase; quoted names preserve case and doubled quotes.
 pub fn postgres_schema_from_qualified(qualified_name: &str) -> Option<String> {
     if qualified_name.len() > 1024 * 1024 {
         return None;
@@ -70,12 +65,10 @@ pub fn postgres_schema_from_qualified(qualified_name: &str) -> Option<String> {
     (parts >= 2).then_some(schema)
 }
 
-/// Whether `driver` hides system schemas from the navigator under this setting.
 pub fn system_schemas_hidden(driver: &str, show_system_schemas: bool) -> bool {
     !show_system_schemas && driver.eq_ignore_ascii_case("postgres")
 }
 
-/// Whether an unverified navigator object is visible under the current schema policy.
 pub fn navigator_object_visible(
     driver: &str,
     show_system_schemas: bool,
@@ -88,10 +81,8 @@ pub fn navigator_object_visible(
         .is_some_and(|schema| !is_postgres_system_schema(&schema))
 }
 
-/// The column property naming its 1-based primary-key position (0 when not a key).
 pub const PRIMARY_KEY_POSITION: &str = "Primary key position";
 
-/// Whether column metadata reports the column as part of the primary key.
 pub fn primary_key_column(properties: &[crate::MetadataProperty]) -> bool {
     properties.iter().any(|property| {
         property.name == PRIMARY_KEY_POSITION
@@ -103,10 +94,8 @@ pub fn primary_key_column(properties: &[crate::MetadataProperty]) -> bool {
     })
 }
 
-/// Catalog labels one result's column metadata may carry across the bridge.
 pub const MAX_RESULT_CELL_METADATA_BYTES: usize = 1024 * 1024;
 
-/// Rejects result column metadata whose labels exceed the transfer budget.
 pub fn check_result_cell_metadata(
     columns: &[crate::ResultCellMetadata],
 ) -> Result<(), crate::DriverError> {

@@ -23,7 +23,6 @@ struct QuickSearchResult final {
     Icon icon = Icon::Search;
 };
 
-// Shared presentation for every destination returned by quick search.
 class QuickSearchResultRow final : public QWidget {
   public:
     explicit QuickSearchResultRow(const QuickSearchResult& result, QWidget* parent = nullptr);
@@ -43,7 +42,6 @@ class QuickSearchResultRow final : public QWidget {
     bool refreshing_ = false;
 };
 
-// Presentation and input only. The caller supplies result ordering and owns activation.
 class QuickSearchDialog final : public QDialog {
     Q_OBJECT
   public:
@@ -89,4 +87,4 @@ class QuickSearchDialog final : public QDialog {
     bool loading_ = false;
 };
 
-} // namespace choscordb::design
+}

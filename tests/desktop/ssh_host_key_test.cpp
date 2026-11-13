@@ -19,7 +19,7 @@ void prepareInspection(choscordb::ProfileDialog& dialog) {
     dialog.findChild<QLineEdit*>("profileSshHost")->setText("192.0.2.30");
     dialog.findChild<QLineEdit*>("profileSshUser")->setText("target-user");
 }
-} // namespace
+}
 
 void WorkspaceTest::sshHostKeyInspectionRequiresExplicitActionAndKeepsUiResponsive() {
 #ifndef Q_OS_UNIX
@@ -140,7 +140,6 @@ void WorkspaceTest::sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint() 
         path->setText(invalid);
         QVERIFY2(!approve->isEnabled(), qPrintable(invalid));
     }
-    // Rust accepts an absolute path for this platform, e.g. C:/ on Windows.
     const auto knownHosts = QDir::rootPath() + QStringLiteral("tmp/explicit known hosts");
     path->setText(knownHosts);
     QVERIFY(approve->isEnabled());

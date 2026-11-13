@@ -11,8 +11,6 @@ namespace choscordb::design {
 
 enum class ThemeMode { System, Light, Dark };
 enum class ResolvedAppearance { Light, Dark };
-// ChoscorDB color roles. Kebab-case names (`surface-raised`) are used in QSS
-// and the gallery token catalog; see docs/design-system.md.
 struct Colors final {
     QColor bg;
     QColor surface;
@@ -48,13 +46,10 @@ struct Colors final {
 [[nodiscard]] double contrastRatio(const QColor& foreground, const QColor& background);
 [[nodiscard]] Colors resolveColors(ResolvedAppearance appearance);
 [[nodiscard]] Colors resolveForcedContrastColors(const QPalette& palette);
-// The switch thumb is computed rather than a role: `surface` in Light and
-// white in Dark.
 [[nodiscard]] QColor switchThumb(const Colors& colors, ResolvedAppearance appearance);
-// Every color role with its kebab-case token name, in catalog order.
 [[nodiscard]] QList<std::pair<QString, QColor>> colorTokens(const Colors& colors);
 
-} // namespace choscordb::design
+}
 
 Q_DECLARE_METATYPE(choscordb::design::ThemeMode)
 Q_DECLARE_METATYPE(choscordb::design::ResolvedAppearance)

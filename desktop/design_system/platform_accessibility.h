@@ -35,4 +35,4 @@ class PlatformAccessibilityMonitor final : public QObject {
     QPalette systemPalette_;
 };
 
-} // namespace choscordb::design
+}

@@ -95,7 +95,6 @@ fn global_pinning_failure_preserves_lru_and_existing_pages() {
     cache.insert(1, 0, vec![1; 36], false).unwrap();
     cache.insert(2, 0, vec![2; 36], true).unwrap();
     cache.insert(3, 0, vec![3; 36], true).unwrap();
-    // New allocation requires more than the only unpinned node can free.
     assert_eq!(
         cache.insert(4, 0, vec![4; 37], false),
         Err(CacheError::PinnedPagesExhaustBudget)

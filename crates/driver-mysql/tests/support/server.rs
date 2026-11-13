@@ -1,5 +1,3 @@
-//! The disposable server for live tests: MySQL on `CHOSCORDB_MYSQL_PORT`
-//! (default 33306), or MariaDB when `CHOSCORDB_MARIADB_PORT` is set.
 use choscordb_driver_api::*;
 use std::sync::Arc;
 

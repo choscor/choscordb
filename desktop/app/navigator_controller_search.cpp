@@ -9,7 +9,6 @@
 #include <QTimer>
 #include <QTreeView>
 
-// Object search over the navigator tree: the sidebar filter and quick-search lookup.
 namespace choscordb {
 void NavigatorController::startQuickObjectSearch(const QString& query,
                                                  std::optional<quint64> connection, int delayMs) {
@@ -202,7 +201,6 @@ void NavigatorController::advanceSearch(quint64 generation, bool resume) {
         finishSearch({});
         return;
     }
-    // A finished request continues the paused traversal; anything else starts over.
     if (resume && searchStateGeneration_ == generation) {
         if (searchFinished_)
             return;
@@ -262,7 +260,6 @@ void NavigatorController::advanceSearch(quint64 generation, bool resume) {
             searchStack_.push_back({model_->index(row, 0, current)});
     }
     searchFinished_ = true;
-    // Expand each distinct ancestor once, even when many matches share it.
     QSet<QModelIndex> ancestors;
     for (const auto& found : std::exchange(searchMatches_, {})) {
         for (auto ancestor = QModelIndex(found).parent(); ancestor.isValid();
@@ -294,4 +291,4 @@ bool NavigatorController::matchesSearchRequest(quint64 connection, const QString
            searchPendingIndex_.data(NavigatorModel::ObjectIdRole).toString() == parent &&
            searchPendingToken_ == token;
 }
-} // namespace choscordb
+}

@@ -1,5 +1,3 @@
-//! Dedicated metadata worker. All SQLite initialization, operations and disposal
-//! stay on this thread; the engine only submits bounded, nonblocking commands.
 use crate::{ConnectionProfile, Engine, Event, ProfileConfiguration, SubmitError};
 use choscordb_credentials::{CredentialStore, MAX_SECRET_BYTES};
 use choscordb_driver_api::{
@@ -98,8 +96,6 @@ pub(crate) fn start(
                     }
                 });
                 let Some(command) = command else { break };
-                // A failed open is recoverable (e.g. permissions/path repaired).
-                // Retry only in response to an explicit queued operation.
                 if storage.is_err() {
                     storage = open_storage(path.clone());
                     if let Ok((storage, lock)) = storage.as_mut()
@@ -508,8 +504,6 @@ impl Engine {
         {
             updates.database = CredentialUpdate::Clear;
         }
-        // Submitted references are draft metadata. Keep only references owned by
-        // the previously saved profile inside the metadata worker.
         profile.ssh_jump_credential_refs.clear();
         profile.ssh_private_key_ref = None;
         profile.ssh_jump_private_key_refs.clear();
@@ -1001,8 +995,6 @@ impl CredentialReferences {
         }
     }
 }
-// Resolve only credentials consumed by the selected transport. A stale saved
-// reference from a previous transport must not prompt or block the connection.
 async fn resolve_options(
     commands: &mpsc::Sender<Command>,
     references: CredentialReferences,
@@ -1256,8 +1248,6 @@ impl Engine {
     }
 }
 
-// One sidecar lock orders publication and orphan cleanup across application instances.
-// Its path is canonicalized so equivalent metadata paths share the same lock.
 fn open_storage(path: Option<PathBuf>) -> Result<(Storage, Option<std::fs::File>), ()> {
     match path {
         None => Storage::in_memory().map(|s| (s, None)).map_err(|_| ()),

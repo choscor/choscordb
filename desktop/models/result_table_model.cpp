@@ -10,8 +10,6 @@
 #include <numeric>
 namespace choscordb {
 namespace {
-// Qt's refcount/capacity header and conservative alignment padding are owned
-// allocations too. Allocator bookkeeping itself is outside the page budget.
 constexpr std::size_t QtHeaderBytes = sizeof(QArrayData) + alignof(std::max_align_t);
 struct AllocationCounter {
     std::size_t limit;
@@ -84,7 +82,6 @@ QString valueText(const Cell& cell) {
         },
         cell);
 }
-// Long or multi-line text is shown as a bounded single-line preview.
 QString displayText(const Cell& cell) {
     const auto* value = std::get_if<QString>(&cell);
     if (!value)
@@ -106,7 +103,6 @@ QString displayText(const Cell& cell) {
         preview += QChar(0x2026);
     return preview;
 }
-// The text that `display` shares with `cell` is already charged with the cell.
 bool sharesText(const QString& display, const Cell& cell) {
     if (const auto* text = std::get_if<QString>(&cell))
         return display.isSharedWith(*text);
@@ -124,11 +120,10 @@ QString headerType(const ResultColumn& column) {
     }
     return type;
 }
-// The bits of a staged insert row; its cells and their edits are charged separately.
 std::size_t insertedRowBytes(std::size_t columns) {
     return columns * sizeof(Cell) + sizeof(ResultTableModel::Row) + 2;
 }
-} // namespace
+}
 ResultTableModel::ResultTableModel(QObject* parent, std::size_t byteBudget)
     : QAbstractTableModel(parent), byteBudget_(byteBudget) {
     for (std::size_t kind = 0; kind < GridCellKinds; ++kind)
@@ -183,7 +178,6 @@ std::size_t ResultTableModel::editBytes(int row, int column) const {
 bool ResultTableModel::cellFilterable(int row, int column) const {
     if (const auto* value = edit(row, column))
         return value->filterable;
-    // Staged inserts follow the page rows, and their unstaged cells are omitted.
     return static_cast<std::size_t>(row) < originalRowCount_ &&
            filterable_[static_cast<std::size_t>(row) * columns_.size() +
                        static_cast<std::size_t>(column)];
@@ -228,7 +222,6 @@ void ResultTableModel::multiData(const QModelIndex& index, QModelRoleDataSpan ro
 QVariant ResultTableModel::cellData(int row, int column, int role) const {
     const auto& cell = rows_[row][column];
     const bool staged = touched(row, column);
-    // The delegate maps staged-change state to theme surfaces.
     if (role == design::CellChangeRole)
         return deleted_[row]    ? int(design::CellChange::Deleted)
                : inserted_[row] ? int(design::CellChange::Inserted)
@@ -345,7 +338,6 @@ ResultTableModel::PreparedPage ResultTableModel::preparePage(std::vector<ResultC
     PreparedPage page{std::move(columns), std::move(rows), {}, std::move(filterable), {},
                       firstRow,           std::nullopt};
     const auto cells = page.rows.size() * page.columns.size();
-    // Rust bounds every page to its page-size limit.
     if (page.columns.size() > std::numeric_limits<int>::max() ||
         firstRow > std::numeric_limits<quint64>::max() - page.rows.size() ||
         std::any_of(page.rows.begin(), page.rows.end(),
@@ -401,7 +393,6 @@ ResultTableModel::PreparedPage ResultTableModel::preparePage(std::vector<ResultC
     count.add(page.headerTypes.capacity(), sizeof(QString));
     for (const auto& type : page.headerTypes)
         count.string(type);
-    // The row and column flags, and the originals that an edit keeps beside the visible page.
     count.add((cells + 7) / 8);
     count.add(page.rows.size() * 2 + page.columns.size() * 5);
     count.add(page.rows.size(), sizeof(Row));
@@ -415,7 +406,6 @@ bool ResultTableModel::setPage(PreparedPage page, std::vector<ResultCellMetadata
         (!metadata.empty() && metadata.size() != page.columns.size()))
         return false;
     beginResetModel();
-    // Destroy the previous page before adopting the validated transfer.
     std::vector<ResultColumn>().swap(columns_);
     std::vector<ResultCellMetadata>().swap(cellMetadata_);
     std::vector<Row>().swap(rows_);
@@ -460,7 +450,6 @@ bool ResultTableModel::setCellMetadata(std::vector<ResultCellMetadata> metadata)
     return true;
 }
 void ResultTableModel::applyCellMetadata(std::vector<ResultCellMetadata> metadata) {
-    // Rust bounds catalog labels before they cross the bridge.
     cellMetadata_ = std::move(metadata);
     linkColumns_.assign(columns_.size(), false);
     for (std::size_t column = 0; column < cellMetadata_.size(); ++column) {
@@ -510,7 +499,6 @@ void ResultTableModel::preserveOriginal(int row) {
         editedOriginals_.try_emplace(static_cast<std::size_t>(row), rows_[row]);
 }
 std::size_t ResultTableModel::editCharge(const Cell& value, const QString& display) {
-    // A hash node holds the key, the edit and about two pointers of bookkeeping.
     AllocationCounter charge{std::numeric_limits<std::size_t>::max()};
     charge.add(sizeof(std::pair<const quint64, CellEdit>) + 2 * sizeof(void*));
     if (!sharesText(display, value))
@@ -571,7 +559,6 @@ ResultTableModel::CellEditEvaluation ResultTableModel::evaluateCellEdit(CellEdit
             tr("This cell is no longer editable. Close the editor and reopen an eligible cell.");
         return result;
     }
-    // Bound text before UTF-8 conversion and backend parsing can allocate copies.
     AllocationCounter preflight{snapshot.byteBudget};
     if (!preflight.add(sizeof(Cell)) || !preflight.add(QtHeaderBytes) ||
         !preflight.add(std::size_t(snapshot.text.size()) + 1, sizeof(QChar))) {
@@ -649,7 +636,6 @@ bool ResultTableModel::setNull(const QModelIndex& index) {
     return true;
 }
 bool ResultTableModel::setNull(const QItemSelection& selection) {
-    // Stage all of the selection or none of it.
     const Cell null;
     const auto charge = editCharge(null, displayText(null));
     std::size_t needed = 0, released = 0;
@@ -829,7 +815,6 @@ void ResultTableModel::markRowsDeleted(std::vector<int> selectedRows, bool delet
     emit pendingEditsChanged(hasPendingEdits());
 }
 void ResultTableModel::eraseInsertedRow(int row) {
-    // Staged inserts are the last rows, so only their edits move down.
     stagedBytes_ -= insertedRowBytes(columns_.size());
     for (std::size_t column = 0; column < columns_.size(); ++column)
         if (const auto found = edits_.find(cellKey(row, column)); found != edits_.end()) {
@@ -874,7 +859,6 @@ ResultTableModel::copyShape(const QItemSelection& selection, int scope) const {
         std::iota(shape.rows.begin(), shape.rows.end(), 0);
         return shape;
     }
-    // Clip each range once; overlapping ranges are deduplicated by the masks below.
     std::vector<QRect> ranges;
     const QRect page(0, 0, columnCount(), rowCount());
     for (const auto& range : selection) {
@@ -963,4 +947,4 @@ ResultTableModel::copySnapshot(const QItemSelection& selection, int scope,
     }
     return snapshot;
 }
-} // namespace choscordb
+}

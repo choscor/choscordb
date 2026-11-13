@@ -4,7 +4,6 @@ use choscordb_core::quick_search::{
     QUICK_SEARCH_HISTORY_ROWS,
 };
 
-/// A folded quick-search query kept across one ranking pass.
 pub struct QuickSearchQuery(choscordb_core::quick_search::QuickSearchNeedle);
 
 pub fn quick_search_query(query: &str) -> Box<QuickSearchQuery> {
@@ -14,7 +13,6 @@ pub fn quick_search_query(query: &str) -> Box<QuickSearchQuery> {
 }
 
 impl QuickSearchQuery {
-    /// The rank of `name`, lower first, or -1 when it does not match.
     pub fn score(&self, name: &str) -> i32 {
         self.0.score(name).map_or(-1, |score| score as i32)
     }
@@ -59,7 +57,6 @@ pub fn quick_search_limits() -> ffi::QuickSearchLimitsDto {
     }
 }
 
-/// A list filter query folded once in Rust and tested against many labels.
 pub struct TextFilterQuery(choscordb_core::text_filter::TextFilter);
 
 pub fn text_filter_query(query: &str) -> Box<TextFilterQuery> {
@@ -78,7 +75,6 @@ impl TextFilterQuery {
     }
 }
 
-/// A literal search compiled once in Rust; blank or invalid needles find nothing.
 pub struct TextFinderQuery(Option<choscordb_sql_language::TextFinder>);
 
 pub fn text_finder(needle: &str) -> Box<TextFinderQuery> {

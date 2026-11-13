@@ -22,4 +22,4 @@ QString loadStyleSheet(QStringView relativePath) {
     }
     return QString::fromUtf8(file.readAll());
 }
-} // namespace choscordb::design
+}

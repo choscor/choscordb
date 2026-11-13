@@ -1,4 +1,3 @@
-//! Bounded SQL document persistence. Call from a blocking worker, never the UI thread.
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt, OpenOptionsSyncExt};
 use cap_std::fs::Dir;
 use std::{
@@ -36,8 +35,6 @@ pub enum DocumentIoError {
     Io(#[from] std::io::Error),
 }
 
-/// Enumerate regular `.sql` files under the saved directory without following
-/// symlinks. A missing directory is an empty collection, as on a first launch.
 pub fn list_saved_sql_documents(root: &Path) -> Result<SavedSqlDocuments, DocumentIoError> {
     let mut listing = SavedSqlDocuments {
         documents: Vec::new(),
@@ -54,7 +51,6 @@ pub fn list_saved_sql_documents(root: &Path) -> Result<SavedSqlDocuments, Docume
         let entries = match directory.entries() {
             Ok(entries) => entries,
             Err(_) if !relative_dir.as_os_str().is_empty() => {
-                // A nested folder may disappear or become inaccessible during refresh.
                 continue;
             }
             Err(error) => return Err(error.into()),
@@ -144,8 +140,6 @@ fn open_saved_root(root: &Path) -> std::io::Result<Dir> {
     }
 }
 
-/// Open a saved SQL file only when every path component is still an ordinary
-/// directory or file beneath the saved directory.
 pub fn read_saved_sql_document(root: &Path, path: &Path) -> Result<Vec<u8>, DocumentIoError> {
     let relative = path
         .strip_prefix(root)
@@ -162,8 +156,6 @@ pub fn read_saved_sql_document(root: &Path, path: &Path) -> Result<Vec<u8>, Docu
     {
         use rustix::fs::{CWD, Mode, OFlags, openat};
 
-        // Each directory handle anchors the next lookup. A renamed component
-        // cannot turn the final read into an open outside this directory tree.
         let directory_flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW;
         let mut directory =
             openat(CWD, root, directory_flags, Mode::empty()).map_err(std::io::Error::from)?;
@@ -188,9 +180,6 @@ pub fn read_saved_sql_document(root: &Path, path: &Path) -> Result<Vec<u8>, Docu
     }
     #[cfg(windows)]
     {
-        // The directory capability anchors all child opens even if a path is
-        // renamed or replaced while this request is running. Open each child
-        // without following a Windows reparse point.
         let mut directory = open_saved_root(root)?;
         let components: Vec<_> = relative.components().collect();
         for component in &components[..components.len() - 1] {
@@ -216,9 +205,6 @@ fn is_sql_path(path: &Path) -> bool {
         .is_some_and(|extension| extension.eq_ignore_ascii_case("sql"))
 }
 
-/// Prepare the default saved SQL directory before opening the native save dialog.
-/// The saved-SQL folder beside the application database at `storage_path`, or in
-/// `default_data_directory` when the application runs without a database file.
 pub fn saved_sql_root(storage_path: &Path, default_data_directory: &Path) -> PathBuf {
     match storage_path.parent() {
         Some(directory) if !storage_path.as_os_str().is_empty() => directory.join("sql"),
@@ -231,8 +217,6 @@ pub fn ensure_saved_sql_directory(root: &Path) -> Result<(), DocumentIoError> {
     Ok(())
 }
 
-/// Identify an existing document through its canonical path. Keep an absolute
-/// fallback for a new save destination, matching the editor's tab identity.
 pub fn saved_sql_document_identity(path: &Path) -> Result<PathBuf, DocumentIoError> {
     if let Ok(canonical) = path.canonicalize() {
         return Ok(canonical);
@@ -311,8 +295,6 @@ pub fn write_sql_document(path: &Path, bytes: &[u8]) -> Result<(), DocumentIoErr
     Ok(())
 }
 
-/// Probe an export destination on a blocking worker. Execution must still
-/// validate and atomically replace the path; this is only a confirmation hint.
 pub fn document_path_exists(path: &Path) -> Result<bool, std::io::Error> {
     match fs::metadata(path) {
         Ok(_) => Ok(true),

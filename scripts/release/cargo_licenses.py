@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Collect license texts for the normal Rust dependency closure into a local sidecar.
-
-A package without license files is recorded as spdx-only: its declared license
-expression and repository URL, with no text files.
-"""
 
 import argparse
 import hashlib
@@ -93,7 +88,9 @@ def collect(metadata_path, output, root_package):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Collect license texts for the normal Rust dependency closure into a local sidecar."
+    )
     parser.add_argument("--cargo-metadata", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cargo-root-package", required=True)

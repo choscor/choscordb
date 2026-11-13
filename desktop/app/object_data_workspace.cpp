@@ -27,7 +27,7 @@ struct HeaderSizingState {
     QVector<bool> keys;
     bool newLabels = false;
 };
-} // namespace
+}
 ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* parent)
     : QWidget(parent), sql_(sqlWorkspace) {
     setObjectName("objectDataWorkspace");
@@ -102,7 +102,6 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     statusLine->configure({summary, outcome, duration, memory, page, rows, previous, next});
     statusLine->setContent({{}, tr("Open Data to read an object."), {}, {}, {}, {}},
                            design::StatusLine::State::Neutral);
-    // Shown only for relations that keep history; Rust validates the time.
     history_ = new QWidget(toolbar_);
     history_->setObjectName("objectDataHistory");
     auto* historyLayout = new QHBoxLayout(history_);
@@ -134,7 +133,6 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     auto* setNull = makeButton(toolbar, tr("Set NULL"), "objectDataSetNull", design::Icon::Square);
     auto* discardEdits =
         makeButton(toolbar, tr("Discard"), "objectDataDiscardEdits", design::Icon::Cancel);
-    // Keep the shared edit controls as command/state bindings for the table menu.
     for (auto* button : {addRow, deleteRows, restoreRows, setNull, discardEdits}) {
         toolbar->removeWidget(button);
         button->hide();
@@ -146,8 +144,6 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     cancelButton->hide();
     toolbar->addStretch(1);
     layout->addWidget(footer_);
-    // Reuse the production result lifecycle on the same engine. Object mode has
-    // no SQL document and never enables execution/transaction/profile commands.
     auto* run = new QAction(this);
     auto* runAll = new QAction(this);
     auto* cancel = new QAction(tr("Cancel"), this);
@@ -292,4 +288,4 @@ void ObjectDataWorkspace::invalidate(bool connectionLost) {
 bool ObjectDataWorkspace::resolvePendingEdits() {
     return !result_ || result_->resolvePendingEdits();
 }
-} // namespace choscordb
+}

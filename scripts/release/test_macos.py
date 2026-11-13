@@ -1,5 +1,3 @@
-"""Production release CLI rejection tests use real disposable Git repositories."""
-
 import json
 import base64
 import hashlib
@@ -216,7 +214,6 @@ class ReleaseCLI(unittest.TestCase):
 )
 class PackageFailureCLI(ReleaseCLI):
     def test_external_failures_never_produce_verified_output_or_publish(self):
-        # Actual clean Git/source/archive/hash path; only external tools are fixtures.
         import source_archive
 
         for name in source_archive.ROOT_FILES:
@@ -272,7 +269,6 @@ if name=='cmake':
             path = tools / name
             path.write_text(script)
             path.chmod(0o755)
-        # host_tools only checks converter importability before CMake invokes it.
         (tools / "cairosvg.py").write_text("")
         deps = self.root / "build/dependencies"
         for name in ["qt/6.8.3/macos", "qscintilla", "sparkle/bin"]:

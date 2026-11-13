@@ -1,4 +1,3 @@
-//! Catalog reads beside the query session. Run against the disposable PostgreSQL fixture.
 use choscordb_core::{Engine, Event, QueryState};
 use choscordb_driver_api::{
     ConnectionId, ConnectionOptions, ObjectId, ObjectKind, QueryId, QueryOptions, SchemaObject,
@@ -78,7 +77,6 @@ fn children(
     }
 }
 
-/// Whether the navigator shows a table of this name under `public` and then `Tables`.
 fn shows_table(engine: &mut Engine, connection: ConnectionId, name: &str) -> bool {
     let child = |engine: &mut Engine, parent, name: &str| {
         children(engine, connection, parent)
@@ -91,7 +89,6 @@ fn shows_table(engine: &mut Engine, connection: ConnectionId, name: &str) -> boo
     child(engine, Some(tables.id), name).is_some_and(|table| table.kind == ObjectKind::Table)
 }
 
-/// Reads the result to its end, as the desktop does after the schema arrives.
 fn finished(engine: &mut Engine, query: QueryId) {
     until(
         engine,
@@ -137,7 +134,6 @@ fn the_navigator_shows_uncommitted_ddl_of_the_open_transaction() {
     let table = format!("choscordb_catalog_{}", uuid::Uuid::new_v4().simple());
     let mut engine = Engine::new(Default::default(), vec![Arc::new(PostgresDriver)]).unwrap();
     let connection = connect(&mut engine);
-    // A first expand opens the catalog session before the transaction starts.
     assert!(!shows_table(&mut engine, connection, &table));
     let query = engine
         .execute(
@@ -151,6 +147,5 @@ fn the_navigator_shows_uncommitted_ddl_of_the_open_transaction() {
         .unwrap();
     finished(&mut engine, query);
     assert!(shows_table(&mut engine, connection, &table));
-    // The disconnect rolls the transaction back, so the table is not left behind.
     engine.disconnect(connection).unwrap();
 }

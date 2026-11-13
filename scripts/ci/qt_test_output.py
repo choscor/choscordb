@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Relay Qt Test's file output for Windows GUI-subsystem test executables."""
 
 import subprocess
 import sys

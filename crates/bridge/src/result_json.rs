@@ -1,4 +1,3 @@
-//! Typed transport for result JSON rendering owned by result-store.
 use crate::{convert, ffi};
 use choscordb_driver_api::{Column, Value};
 use choscordb_result_store::{

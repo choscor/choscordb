@@ -83,4 +83,4 @@ void DiagnosticsWatchdog::stop() {
     if (state_->worker.joinable())
         state_->worker.join();
 }
-} // namespace choscordb
+}

@@ -89,7 +89,6 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QCOMPARE(tabs->count(), 3);
     auto* recovery = window.findChild<WorkspaceRecoveryController*>();
     QVERIFY(recovery);
-    // Opening object tabs may finish background data requests before the actions below.
     const int settledFinished = finished;
 
     QMenu renameMenu;
@@ -100,7 +99,6 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     rename->trigger();
     QCOMPARE(finished, settledFinished);
     QVERIFY(!window.findChild<QDialog*>("renameObjectDialog"));
-    // A blocked navigator action warns in the notice toast, never on the main panel line.
     auto* toast = window.findChild<ToastRegion*>("toastRegion");
     QVERIFY(toast);
     QVERIFY(toast->text().contains("Finish or cancel active database work"));
@@ -149,7 +147,6 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
         }
         dialog->reject();
     });
-    // Hold the navigator refresh to see the state between the action and the refresh.
     QObject::disconnect(model, &NavigatorModel::childrenRequested, adapter,
                         &EngineAdapter::loadMetadata);
     QSignalSpy refreshRequested(model, &NavigatorModel::childrenRequested);
@@ -208,7 +205,6 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     });
     collisionRename->trigger();
     QVERIFY(collisionSubmitted);
-    // A failed user action reports in the one error modal.
     ConfirmationDialog* failure = nullptr;
     QTRY_VERIFY((failure = window.findChild<ConfirmationDialog*>("errorFeedbackDialog")) &&
                 failure->isVisible());

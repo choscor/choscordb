@@ -11,7 +11,7 @@ namespace design {
 class Button;
 class StatusLine;
 class FieldValidation;
-} // namespace design
+}
 class SqlEditor;
 enum class SearchInput : uint8_t;
 class SearchPanel final : public QWidget {
@@ -48,4 +48,4 @@ class SearchPanel final : public QWidget {
     quint64 matchRevision_ = 0, matchStart_ = 0, matchEnd_ = 0, generation_ = 0;
     bool hasMatch_ = false, pending_ = false;
 };
-} // namespace choscordb
+}

@@ -51,8 +51,6 @@ void MainWindow::connectNavigator(const Ui& ui) {
         const auto* model = tree->model();
         if (!model)
             return;
-        // Rows share one height (uniformRowHeights), so the sidebar height is the
-        // visible row count times that height; only expanded branches are walked.
         int rows = 0;
         std::vector<QModelIndex> pending{QModelIndex()};
         while (!pending.empty()) {
@@ -73,7 +71,6 @@ void MainWindow::connectNavigator(const Ui& ui) {
         tree->setFixedHeight(std::max(design::spacing(design::Spacing::Two),
                                       rows * rowHeight + 2 * tree->frameWidth()));
     };
-    // One pending recompute absorbs bursts of inserts, expansions, and filter changes.
     auto* treeHeightTimer = new QTimer(tree);
     treeHeightTimer->setSingleShot(true);
     treeHeightTimer->setInterval(0);
@@ -104,7 +101,6 @@ void MainWindow::connectNavigator(const Ui& ui) {
     connect(treeModel, &QAbstractItemModel::modelReset, tree, scheduleTreeHeight);
     connect(treeModel, &QAbstractItemModel::layoutChanged, tree, scheduleTreeHeight);
     connect(treeModel, &QAbstractItemModel::dataChanged, tree, scheduleTreeHeight);
-    // Expansion resizes at once so the newly shown rows are immediately hittable.
     const auto updateTreeHeightNow = [treeHeightTimer, updateTreeHeight] {
         treeHeightTimer->stop();
         updateTreeHeight();
@@ -248,7 +244,6 @@ void MainWindow::connectNavigator(const Ui& ui) {
             reportError(tr("The selected connection is no longer available."));
             return;
         }
-        // Rust bounds generated SQL to the template limit.
         const auto bytes = sql.toUtf8();
         auto* editor = addEditor();
         if (!editor)
@@ -278,7 +273,6 @@ void MainWindow::connectNavigator(const Ui& ui) {
     const auto completionConnection = [this]() -> std::optional<quint64> {
         const auto* editor = qobject_cast<SqlEditor*>(editors_->currentWidget());
         const auto target = editor ? editor->connectionTarget() : std::nullopt;
-        // A disconnected target keeps its id; it has no catalog to complete from.
         return target && workspace_->liveConnectionLabel(*target) ? target : std::nullopt;
     };
     auto rebuildCompletion = [this, completionConnection, catalogSize,
@@ -299,8 +293,6 @@ void MainWindow::connectNavigator(const Ui& ui) {
         completion_->setCatalog(CompletionService(std::move(items), snapshot.partial));
     };
     connect(workspace_, &QueryWorkspace::documentTargetChanged, this, rebuildCompletion);
-    // Metadata pages arrive in bursts. Small catalogs stay current on every page; large
-    // ones, whose rebuild cost grows with each page, rebuild at most once per interval.
     const auto rebuildLoadedCompletion = coalescedCall(this, 250, rebuildCompletion);
     connect(navigatorController->model(), &NavigatorModel::completionChanged, this,
             [completionConnection, catalogSize, rebuildCompletion,
@@ -371,4 +363,4 @@ void MainWindow::activateNavigatorObject(const QModelIndex& current) {
                       object.data(NavigatorModel::PropertiesRole).toList(), pane);
     }
 }
-} // namespace choscordb
+}

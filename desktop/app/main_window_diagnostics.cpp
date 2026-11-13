@@ -157,7 +157,7 @@ QString summaryText(const DiagnosticSummary& summary) {
         text += QObject::tr("\nDropped records: %1.").arg(summary.droppedRecords);
     return text;
 }
-} // namespace
+}
 
 void MainWindow::connectDiagnostics() {
     if (!diagnostics_ || !workspace_)
@@ -371,8 +371,6 @@ void MainWindow::showDiagnosticsExport() {
                         if (answer != QMessageBox::Yes)
                             return;
                     }
-                    // The nested confirmation event loop may process a failed async
-                    // diagnostics startup and disable this service before returning.
                     if (!guard || !guard->isVisible() || !diagnostics_)
                         return;
                     save->setEnabled(false);
@@ -431,4 +429,4 @@ void MainWindow::showDiagnosticsExport() {
     }
 }
 
-} // namespace choscordb
+}

@@ -1,5 +1,3 @@
-"""Tests for the desktop large-data performance policy."""
-
 from pathlib import Path
 import tempfile
 import unittest

@@ -262,7 +262,6 @@ class ObjectDataWorkspaceTest : public QObject {
             QVERIFY2(label.contains(QStringLiteral(" · ")), qPrintable(label));
             const int fitted = header->sectionSize(column);
             QCOMPARE(fitted, header->sectionSizeHint(column));
-            // A fitted label paints exactly as it does with ample room, so it is not elided.
             const QRect labelArea(header->sectionViewportPosition(column), 0, fitted - 1,
                                   header->height());
             const auto atFit = header->grab(labelArea).toImage();
@@ -289,7 +288,6 @@ class ObjectDataWorkspaceTest : public QObject {
         QCoreApplication::processEvents();
         const auto firstCell = grid->visualRect(model->index(0, 0));
         const auto secondCell = grid->visualRect(model->index(0, 1));
-        // Glyph coverage relative to this grab's background, not a fixed cutoff.
         const auto textLeft = [&] {
             const auto image = grid->viewport()->grab().toImage();
             const int background =
@@ -649,7 +647,6 @@ class ObjectDataWorkspaceTest : public QObject {
         QTRY_COMPARE(grid->horizontalHeader()->sortIndicatorOrder(), Qt::AscendingOrder);
         QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
                      QString("completed"));
-        // Page completion precedes asynchronous editability planning.
         QTRY_VERIFY(data.findChild<QPushButton*>("objectDataAddRow")->isEnabled());
         triggerTableAction(grid, "Duplicate row");
         QCOMPARE(model->rowCount(), 2);

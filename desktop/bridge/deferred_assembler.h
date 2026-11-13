@@ -14,8 +14,6 @@ struct DeferredAssemblyOutcome {
     QString error;
 };
 
-// Created and called only on a QtConcurrent worker; the UI owns the shared pointer
-// but never reads or mutates the Rust assembler state directly.
 class DeferredAssemblerJob final {
   public:
     DeferredAssemblerJob(const QString& databaseType, bool fallback, quint64 declaredBytes,
@@ -51,4 +49,4 @@ class DeferredAssemblerJob final {
     }
     rust::Box<RustDeferredAssembler> assembler_;
 };
-} // namespace choscordb
+}

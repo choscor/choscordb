@@ -19,14 +19,13 @@ QList<SshHostKeyCandidate> hostKeyCandidates(const rust::Vec<SshHostKeyCandidate
     }
     return candidates;
 }
-} // namespace engine_adapter_detail
+}
 
 void EngineAdapter::inspectSshHostKeys(const SavedProfile& profile, quint64 token) {
     if (d_->closing || d_->stopping) {
         emit sshHostKeyOperationFailed(token, tr("Workspace is closing."));
         return;
     }
-    // The form inspects the final SSH server; jump hosts are no longer configurable.
     const auto submitted =
         profile_inspect_ssh_host_keys(*d_->engine, engine_adapter_detail::profileDto(profile),
                                       ProfileCredentialsDto{}, "target", "", 0, token);
@@ -63,4 +62,4 @@ void EngineAdapter::approveSshHostKey(const SshHostKeyCandidate& candidate,
     if (!submitted.accepted)
         emit sshHostKeyOperationFailed(token, engine_adapter_detail::fromRust(submitted.error));
 }
-} // namespace choscordb
+}

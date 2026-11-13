@@ -150,7 +150,6 @@ class SchemaSidebarModelTest final : public QObject {
         QVERIFY(model->matchesObject(7, "table-key", "primarykey", "public.orders.customer_pk",
                                      "table"));
 
-        // The sidebar filter applies once typing pauses.
         filter.setText("customer_idx");
         QTRY_VERIFY(!visible->mapFromSource(table).isValid());
         QVERIFY(!visible->mapFromSource(model->index(1, 0, table)).isValid());

@@ -1,6 +1,3 @@
-//! What an open transaction blocks until it is committed or rolled back.
-
-/// Grid edits run in their own transaction, so they cannot join one that SQL opened.
 pub const EDITS_NEED_NO_TRANSACTION: &str =
     "Commit or roll back the open transaction before applying grid changes.";
 

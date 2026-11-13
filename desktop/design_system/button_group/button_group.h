@@ -16,4 +16,4 @@ class ButtonGroup final : public QWidget {
   private:
     QBoxLayout* layout_;
 };
-} // namespace choscordb::design
+}

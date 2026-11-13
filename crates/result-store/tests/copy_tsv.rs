@@ -41,7 +41,7 @@ fn copies_sparse_coordinates_with_tsv_escaping_and_typed_values() {
 #[test]
 fn limits_exact_utf16_output_including_escape_and_binary_expansion() {
     let mut selection = request(vec![vec![cell(Value::Text("é\"".into()))]]);
-    selection.byte_budget = 10; // five UTF-16 units: quoted text plus escaped quote
+    selection.byte_budget = 10;
     assert_eq!(render_copy_tsv(selection.clone()).unwrap(), "\"é\"\"\"");
     selection.byte_budget = 8;
     assert_eq!(render_copy_tsv(selection), Err(CopyError::Limit));

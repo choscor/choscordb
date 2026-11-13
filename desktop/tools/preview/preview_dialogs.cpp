@@ -116,4 +116,4 @@ void populateDialogSections(QWidget* host, QVBoxLayout* layout) {
     QObject::connect(openProgress, &QPushButton::clicked, progressDialog, &QDialog::open);
     layout->addStretch();
 }
-} // namespace choscordb::design::preview_detail
+}

@@ -1,5 +1,3 @@
-//! Private, process-scoped keys for optional SSH sharing. No credential is stored
-//! in a registry key, filesystem name, log, or externally visible digest.
 use crate::{Result, Secret, SshTunnel};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -110,9 +108,6 @@ pub(crate) async fn configuration(
                 | "globalknownhostsfile"
                 | "revokedhostkeys"
         ) {
-            // Also consider the whole value: older OpenSSH dumps may omit quotes
-            // around a single path containing spaces. More ambiguous lists never
-            // reuse a session rather than guessing which trust/key file is used.
             let words = shlex::split(values).unwrap_or_default();
             if words.len() > 2 || words.is_empty() {
                 uncertain = true;
@@ -132,8 +127,6 @@ pub(crate) async fn configuration(
     }
     for identity in identities {
         if inline_path.as_ref() != Some(&identity) && identity != "none" {
-            // OpenSSH may load a public identity and its implicit user
-            // certificate even when ssh -G contains no CertificateFile.
             paths.push(format!("{identity}.pub"));
             paths.push(format!("{identity}-cert.pub"));
         }
@@ -168,9 +161,6 @@ pub(crate) async fn configuration(
                         if path == std::path::Path::new("/dev/null")
                             && metadata.file_type().is_char_device()
                         {
-                            // macOS changes the null device's timestamps on writes.
-                            // Its trust contents remain empty; scope reuse to the
-                            // device identity and ownership, never mutable times.
                             for value in [
                                 metadata.dev(),
                                 metadata.ino(),
@@ -228,8 +218,6 @@ pub(crate) async fn configuration(
         Ok(metadata) => field(&mut hash, &metadata),
         Err(_) => field(&mut hash, uuid::Uuid::new_v4().as_bytes()),
     };
-    // Agent identities can change without changing the socket inode. Snapshot
-    // public identities as well when public-key authentication is enabled.
     if public_key {
         let configured = configuration
             .lines()

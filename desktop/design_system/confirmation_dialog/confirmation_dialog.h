@@ -13,7 +13,6 @@ namespace design {
 class Text;
 }
 
-// Retains QMessageBox's public button/role/result contract for workflow callers.
 class ConfirmationDialog final : public QMessageBox {
     Q_OBJECT
   public:
@@ -44,4 +43,4 @@ class ConfirmationDialog final : public QMessageBox {
     design::DialogPresentation presentation_;
 };
 
-} // namespace choscordb
+}

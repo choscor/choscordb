@@ -1,9 +1,5 @@
-//! The server family a connection was configured for. MySQL and MariaDB share
-//! the wire protocol; only catalog queries, value decoding, authentication
-//! errors and MariaDB-only features depend on it.
 use choscordb_driver_api::ObjectKind;
 
-/// The navigator kind and relation subtype for an `information_schema.TABLES` row.
 pub(crate) struct Relation {
     pub kind: ObjectKind,
     pub subtype: Option<&'static str>,
@@ -23,7 +19,6 @@ impl Flavor {
         }
     }
 
-    /// The family a `VERSION()` string reports, such as `11.4.13-MariaDB-log`.
     pub(crate) fn of_server(version: &str) -> Self {
         if version.contains("-MariaDB") {
             Self::Mariadb
@@ -32,8 +27,6 @@ impl Flavor {
         }
     }
 
-    /// Whether an `information_schema.TABLES` type stores rows in a base table,
-    /// as a system-versioned MariaDB table does.
     pub(crate) fn base_table(self, table_type: &str) -> bool {
         table_type == "BASE TABLE" || (self == Self::Mariadb && table_type == "SYSTEM VERSIONED")
     }
@@ -48,8 +41,6 @@ impl Flavor {
         Relation { kind, subtype }
     }
 
-    /// The notice for a connection whose server is another family. The
-    /// connection keeps this flavor's behavior.
     pub(crate) fn mismatch_notice(self, server: Self) -> Option<&'static str> {
         match (self, server) {
             (Self::Mysql, Self::Mariadb) => {

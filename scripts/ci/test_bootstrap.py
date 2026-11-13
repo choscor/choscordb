@@ -1,5 +1,3 @@
-"""Security regression tests for the source bootstrap, without network or compilers."""
-
 import hashlib
 import io
 from pathlib import Path

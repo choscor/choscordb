@@ -13,12 +13,10 @@ async fn assert_stalled_connection_times_out(tls: TlsMode) {
         let mut request = vec![0; length as usize - 4];
         socket.read_exact(&mut request).await.unwrap();
         if expect_tls {
-            assert_eq!(request, [4, 210, 22, 47]); // PostgreSQL SSLRequest
+            assert_eq!(request, [4, 210, 22, 47]);
         } else {
-            assert_eq!(&request[..4], &[0, 3, 0, 0]); // StartupMessage
+            assert_eq!(&request[..4], &[0, 3, 0, 0]);
         }
-        // Accept TCP but never answer the TLS/startup request. The client must
-        // bound the protocol handshake and release its socket on timeout.
         let mut byte = [0];
         assert_eq!(socket.read(&mut byte).await.unwrap(), 0);
     });

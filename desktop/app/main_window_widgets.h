@@ -32,7 +32,6 @@
 #include <utility>
 
 namespace choscordb::main_window_detail {
-// Centered placeholder text shared by the start page and sidebar empty states.
 inline design::Text* createEmptyStateText(const QString& text, QWidget* parent) {
     auto* label = new design::Text(text, parent);
     label->setWordWrap(true);
@@ -43,7 +42,6 @@ inline design::Text* createEmptyStateText(const QString& text, QWidget* parent) 
     return label;
 }
 
-// The design system reads the status role as a RowMark.
 static_assert(int(design::RowMark::None) == int(RowStatusKind::None) &&
               int(design::RowMark::Loading) == int(RowStatusKind::Loading) &&
               int(design::RowMark::Failed) == int(RowStatusKind::Failed) &&
@@ -57,7 +55,6 @@ class NavigatorIconDelegate final : public design::ColumnRowDelegate {
     std::function<design::Icon(quint64)> connectionIcon;
     void paint(QPainter* painter, const QStyleOptionViewItem& option,
                const QModelIndex& index) const override {
-        // The column row paints both the column layout and the status mark of any row.
         if (RowStatusKind(index.data(NavigatorModel::StatusRole).toInt()) != RowStatusKind::None ||
             navigatorRowStyle(index.data(NavigatorModel::KindRole).toString()) ==
                 NavigatorRowStyle::Column) {
@@ -230,7 +227,6 @@ class SidebarConnectionListScroll final : public QObject {
                 break;
             targetRow = row;
         }
-        // MultiSelection page keys move focus without changing the selected connections.
         list_->setCurrentRow(targetRow, QItemSelectionModel::NoUpdate);
         key->accept();
         return true;
@@ -265,7 +261,6 @@ class HoveredTabCloseVisibility final : public QObject {
             hovered_ = -1;
             updateButtons();
         } else if (event->type() == QEvent::ChildAdded || event->type() == QEvent::LayoutRequest) {
-            // Showing a close button posts a LayoutRequest, so keep the hovered tab.
             QTimer::singleShot(0, this, [this] {
                 if (tabs_->count() != hoveredCount_) {
                     recomputeHovered();
@@ -278,7 +273,6 @@ class HoveredTabCloseVisibility final : public QObject {
     }
 
   private:
-    // An insert, close or move can give the stored index to a different tab.
     void recomputeHovered() {
         const QPoint pointer = tabs_->mapFromGlobal(QCursor::pos());
         hovered_ = tabs_->underMouse() ? tabs_->tabAt(pointer) : -1;
@@ -298,7 +292,6 @@ class HoveredTabCloseVisibility final : public QObject {
 
     QTabBar* tabs_;
     int hovered_ = -1;
-    // The tab count when hovered_ was found; a different count means an insert or close.
     int hoveredCount_ = 0;
 };
 
@@ -306,7 +299,6 @@ class WorkspaceTabBar final : public design::DocumentTabBar {
   public:
     using design::DocumentTabBar::DocumentTabBar;
 
-    // The header spans the tab widget, beneath the tab row and over its trailing corner.
     void setHeader(QWidget* header) {
         header_ = header;
         header_->setParent(parentWidget());
@@ -382,4 +374,4 @@ class WorkspaceTabs final : public QTabWidget {
     design::TabAddCorner* addCorner_;
 };
 
-} // namespace choscordb::main_window_detail
+}

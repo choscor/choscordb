@@ -109,7 +109,6 @@ void ModernUiTest::menuBarMenusShowNoIcons() {
         QVERIFY(checked > window.menuBar()->actions().size());
     };
     walk();
-    // A theme change used to put menu icons back.
     auto palette = window.palette();
     palette.setColor(QPalette::Window, palette.color(QPalette::WindowText));
     window.setPalette(palette);
@@ -340,7 +339,6 @@ void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections(
     QTRY_COMPARE(sidebar->width(), 235);
     window.resize(1280, 900);
     QTRY_COMPARE(sidebar->width(), 260);
-    // A slim resize handle between the sidebar and the workspace.
     QCOMPARE(window.centralWidget()->geometry().left() - sidebar->geometry().right() - 1, 3);
     auto* title = window.findChild<QLabel*>("navigatorTitle");
     QVERIFY(!window.findChild<QStatusBar*>());
@@ -350,7 +348,6 @@ void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections(
     QVERIFY(qApp->styleSheet().contains("QWidget#navigatorBody"));
     QCOMPARE(navBody->layout()->contentsMargins().top(),
              choscordb::design::spacing(choscordb::design::Spacing::One));
-    // One flat gray from the tab row to the bottom edge, matching the document tab bar.
     const auto sidebarGray =
         choscordb::design::resolveColors(choscordb::design::ResolvedAppearance::Light)
             .surfaceRaised;
@@ -361,7 +358,6 @@ void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections(
           QPoint(navBody->width() - 3, navBody->height() - 3)})
         QVERIFY2(flatSidebar.pixelColor(point * flatScale) == sidebarGray,
                  qPrintable(QString("sidebar pixel at %1,%2").arg(point.x()).arg(point.y())));
-    // Section labels are small, muted uppercase labels. The source text keeps its case.
     QCOMPARE(title->text(), QString("Connections"));
     QCOMPARE(title->font().pixelSize(),
              choscordb::design::typographySpec(choscordb::design::TextStyle::Caption).pixelSize);
@@ -412,8 +408,6 @@ void ModernUiTest::savedProfileBadgesDistinguishDriversInBothThemes() {
     QTRY_COMPARE(profiles->geometry().top() - navLayout->itemAt(0)->geometry().bottom() - 1,
                  navLayout->spacing());
     QTRY_VERIFY(!profiles->verticalScrollBar()->isVisible());
-    // Connection rows abut at full row height, like the navigator tree; the
-    // delegate leaves the seam between highlights.
     const auto firstRow = profiles->visualItemRect(profiles->item(0));
     const auto secondRow = profiles->visualItemRect(profiles->item(1));
     QCOMPARE(firstRow.height(), choscordb::design::dimension(choscordb::design::Dimension::Row));
@@ -429,7 +423,6 @@ void ModernUiTest::savedProfileBadgesDistinguishDriversInBothThemes() {
 
         for (int row = 0; row < profiles->count(); ++row) {
             auto* item = profiles->item(row);
-            // Sample the neutral tile padding, outside the downloaded logo artwork.
             const auto point = profiles->visualItemRect(item).topLeft() + QPoint(14, 14);
             QCOMPARE(
                 pixels.pixelColor(point * pixels.devicePixelRatio()),
@@ -507,8 +500,6 @@ void ModernUiTest::findFromHistoryReturnsToExistingSqlAndDoesNotCreateClosedDocu
     QCOMPARE(window.findChild<QStackedWidget*>("centralScreens")->currentWidget()->objectName(),
              QString("startScreen"));
 }
-// Opt-in native screenshot fixture. All displayed values come from this isolated
-// SQLite database; the application itself contains no screenshot fixtures.
 
 void ModernUiTest::captureScreenFixtures() {
     const auto output = qEnvironmentVariable("CHOSCORDB_SCREEN_CAPTURE_DIR");
@@ -552,14 +543,11 @@ void ModernUiTest::captureScreenFixtures() {
             const auto capture = [&](const QString& state, bool settle = true) {
                 if (settle) {
                     QCoreApplication::processEvents();
-                    // Let native layout settle after separately asserted data readiness.
                     QTest::qWait(60);
                 }
                 if (state == "sql-results") {
                     auto* result = window.findChild<QTableView*>("queryResults");
                     const auto pixels = result->viewport()->grab().toImage();
-                    // Sample below the text baseline: at narrow widths the last
-                    // numeric value legitimately reaches the right edge.
                     const int y = result->visualRect(result->model()->index(1, 0)).bottom() - 4;
                     QCOMPARE(pixels.pixelColor(QPoint(result->viewport()->width() - 3, y) *
                                                pixels.devicePixelRatio()),
@@ -617,8 +605,6 @@ void ModernUiTest::captureScreenFixtures() {
             QSignalSpy connected(workspace, &choscordb::QueryWorkspace::connectionReady);
             QListWidgetItem* commerce = nullptr;
             for (int row = 0; row < profiles->count(); ++row) {
-                // Read from an lvalue: GCC 13 reports a false -Warray-bounds when
-                // value<T>() moves out of the temporary QVariant.
                 const QVariant data = profiles->item(row)->data(Qt::UserRole);
                 if (data.value<choscordb::SavedProfile>().id == profile.id)
                     commerce = profiles->item(row);
@@ -640,8 +626,6 @@ void ModernUiTest::captureScreenFixtures() {
                 "BLOB)");
             run->trigger();
             QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
-            // Literal customer fixture from docs/mvp-design/prototype.js at commit b298239.
-            // SQLite's real affinity/types remain visible instead of pretending PostgreSQL.
             editor->setText(
                 "INSERT INTO customers(id,name,email,plan,status,created_at,total_spent) "
                 "VALUES "
@@ -738,8 +722,6 @@ void ModernUiTest::captureScreenFixtures() {
             run->trigger();
             window.findChild<QPushButton*>("cancelQueryButton")->click();
             QCOMPARE(summary->property("state").toString(), QString("cancelling"));
-            // Capture the actual local pending state before dispatching the
-            // asynchronously acknowledged terminal event; never synthesize it.
             capture("sql-cancelling", false);
             QTRY_VERIFY(workspace->navigationAllowed());
             editor->setModified(false);
@@ -782,7 +764,6 @@ void ModernUiTest::sidebarHeaderButtonHoverLiftsToSurface() {
     };
     QTest::mouseMove(&window, QPoint(window.width() - 2, window.height() - 2));
     QTRY_COMPARE(fill(), colors.surfaceRaised);
-    // On the gray sidebar, hover lifts to surface instead of vanishing into it.
     QTest::mouseMove(addConnection, addConnection->rect().center());
     QTRY_COMPARE(fill(), colors.surface);
 }

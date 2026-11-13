@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Prepare and verify an unpublished, unsigned relocatable application stage."""
 
 import argparse
 import hashlib
@@ -138,7 +137,6 @@ class MacOSAdapter:
         for library in libraries:
             if not library.resolve(strict=True).is_relative_to(qsci):
                 raise ValueError("QScintilla library escapes its prefix")
-            # Materialize aliases to avoid copying absolute development symlinks.
             shutil.copy2(library.resolve(), framework / library.name)
         notices = app / "Contents/Resources/licenses"
         if not (notices / "LICENSE").is_file():
@@ -225,7 +223,7 @@ class MacOSAdapter:
                     raise ValueError(f"Non-relocatable rpath in {binary.name}: {path}")
             for dependency in dependencies(binary):
                 if dependency.startswith(("/usr/lib/", "/System/Library/")):
-                    continue  # Apple shared-cache libraries need not exist as individual files.
+                    continue
                 if dependency.startswith("@rpath/"):
                     tail = dependency[len("@rpath/") :]
                     candidates = [expand(path, binary) / tail for path in search]
@@ -355,7 +353,9 @@ def create_stage(build, output, qt_bin, qsci, source_manifest, adapter=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Prepare and verify an unpublished, unsigned relocatable application stage."
+    )
     for name in [
         "build",
         "output",

@@ -7,8 +7,6 @@
 namespace choscordb::design::detail {
 bool drawTabIndicator(QStyle::PrimitiveElement element, const QStyleOption* option,
                       QPainter* painter, const QWidget* widget) {
-    // Scroll buttons already signal overflow. Fusion's torn edge overlaps the
-    // first/last visible document with a jagged line in the accent color.
     if ((element == QStyle::PE_IndicatorTabTearLeft ||
          element == QStyle::PE_IndicatorTabTearRight) &&
         widget && widget->property("designTabVariant").toString() == "document")
@@ -29,4 +27,4 @@ bool drawTabIndicator(QStyle::PrimitiveElement element, const QStyleOption* opti
     return false;
 }
 
-} // namespace choscordb::design::detail
+}

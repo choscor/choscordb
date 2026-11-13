@@ -1,4 +1,3 @@
-//! Independent OpenSSH processes: each destination sees only its own credential.
 use crate::{
     DriverError, ErrorKind, Result, Secret, SshAuthentication, SshJumpAuthentication, SshOptions,
     SshTunnel,
@@ -133,8 +132,6 @@ fn failure() -> DriverError {
         "Cannot establish isolated SSH forwarding",
     )
 }
-/// The host application must dispatch `run_ssh_askpass_if_requested` before its
-/// normal entry point. This also handles the app-owned proxy byte relay.
 pub struct SshForward {
     pub(crate) master: Option<Arc<crate::ssh_shared::Master>>,
     local: Option<Arc<crate::SshLocalForward>>,
@@ -199,8 +196,6 @@ impl SshForward {
         .await
         .map_err(|_| DriverError::new(ErrorKind::Timeout, "SSH connection preparation timed out"))?
     }
-    /// Open an additional channel on an already-owned listener without rebinding
-    /// its local port (used by cancellation and the local relay itself).
     pub async fn open_channel_with_keys(
         settings: &SshTunnel,
         secret: Option<&Secret>,
@@ -311,8 +306,6 @@ impl SshForward {
         );
         Ok(destinations)
     }
-    /// Retire only the matching sharing registrations; existing healthy leases
-    /// retain ownership of their master and listener until they close normally.
     pub async fn invalidate_shared_context(
         settings: &SshTunnel,
         secret: Option<&Secret>,
@@ -400,8 +393,6 @@ impl SshForward {
         let count = destinations.len();
         let mut route: Option<Arc<Relay>> = None;
         for (index, mut node) in destinations.into_iter().enumerate() {
-            // Pin the resolved remote address, not a loopback replacement. Original
-            // Host/Match originalhost and HostKeyAlias/certificate semantics survive.
             let proxy = match &route {
                 Some(route) => format!("ProxyCommand={}", route.configure(&mut node.command)?),
                 None => "ProxyCommand=none".into(),

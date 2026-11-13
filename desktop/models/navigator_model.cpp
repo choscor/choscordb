@@ -16,12 +16,9 @@ struct NavigatorModel::Node {
     Node* parent = nullptr;
     int row = 0;
     bool placeholder = false;
-    // The children are saved children that the live page has not replaced yet.
     bool cached = false;
-    // Set from Rust's kind traits when the node is created, so data() never asks.
     bool column = false;
     bool sidebarChild = true;
-    // -1 unknown; otherwise whether this node or an ancestor is a hidden system schema.
     mutable signed char systemSchema = -1;
     std::vector<std::unique_ptr<Node>> children;
 };
@@ -38,7 +35,6 @@ void NavigatorModel::setShowSystemSchemas(bool show) {
         return;
     showSystemSchemas_ = show;
     unverifiedVisibleByDriver_.clear();
-    // Only drivers whose objects the system-schema policy can hide change completions.
     for (const auto& root : roots_)
         if (driverResolver_ &&
             EngineAdapter::systemSchemasHidden(driverResolver_(root->connection), false))
@@ -68,7 +64,6 @@ bool NavigatorModel::isBrowsable(const Node* value) const {
     return visible.value() || !hiddenBySystemSchema(value);
 }
 bool NavigatorModel::hiddenBySystemSchema(const Node* value) const {
-    // Names and kinds of loaded schema rows never change, so the ancestor walk is cached.
     if (value->systemSchema < 0)
         value->systemSchema =
             (value->parent && hiddenBySystemSchema(value->parent)) ||
@@ -105,7 +100,6 @@ CompletionSnapshot NavigatorModel::completionSnapshot(quint64 connection,
                                                       const CompletionLimits& limits) const {
     CompletionSnapshot snapshot;
     const auto maxEntries = limits.maxMetadataEntries;
-    // Bound ignored nodes and root lookup as well as accepted completion entries.
     const quint64 visitLimit = limits.maxMetadataVisits;
     quint64 visited = 0;
     const Node* root = nullptr;
@@ -123,7 +117,6 @@ CompletionSnapshot NavigatorModel::completionSnapshot(quint64 connection,
         return snapshot;
     quint64 remaining = limits.maxMetadataBytes;
     auto charge = [](const QString& text, quint64& budget) {
-        // Count UTF-8 without allocating an unbounded conversion of a stored label.
         for (qsizetype i = 0; i < text.size(); ++i) {
             const auto unit = text[i].unicode();
             quint64 bytes = unit < 0x80 ? 1 : unit < 0x800 ? 2 : 3;
@@ -277,8 +270,6 @@ bool NavigatorModel::hasChildren(const QModelIndex& parent) const {
 }
 bool NavigatorModel::canFetchMore(const QModelIndex& parent) const {
     const auto* value = node(parent);
-    // Failed nodes stay failed until Refresh or collapse. A view that probes
-    // again during layout must not start a retry loop.
     return value && !value->placeholder && value->object.hasChildren &&
            value->state == Node::Unloaded && nextToken_ < std::numeric_limits<quint64>::max();
 }
@@ -318,8 +309,6 @@ void NavigatorModel::request(Node* value, bool fresh) {
     const auto connection = value->connection;
     const auto objectId = value->object.id;
     const auto token = value->token;
-    // QTreeView calls fetchMore() from inside its expansion layout. Defer the
-    // request boundary so even an immediate reply cannot mutate rows reentrantly.
     QTimer::singleShot(0, this, [this, connection, objectId, token, fresh] {
         const auto* current = find(connection, objectId);
         if (current && current->state == Node::Loading && current->token == token) {
@@ -413,7 +402,6 @@ bool NavigatorModel::insertChildren(Node* value, std::vector<NavigatorObject> ch
     const auto& parentObjectId = value->object.id;
     const auto token = value->token;
     const auto offset = value->offset;
-    // A live page replaces the saved children only after it is valid, so a bad page keeps them.
     const bool replacing = value->cached;
     if (hasMore && (nextOffset <= offset || children.empty())) {
         failChildren(connection, parentObjectId, token, tr("Invalid metadata continuation."));
@@ -432,7 +420,6 @@ bool NavigatorModel::insertChildren(Node* value, std::vector<NavigatorObject> ch
         const auto* existing = find(connection, object.id);
         if (replacing && existing && existing->parent == value)
             existing = nullptr;
-        // Rust names the kinds one object may list under several parents.
         const bool repeated = existing && existing->parent != value &&
                               object.kind == existing->object.kind &&
                               EngineAdapter::objectKindTraits(object.kind).repeatsAcrossParents &&
@@ -445,7 +432,6 @@ bool NavigatorModel::insertChildren(Node* value, std::vector<NavigatorObject> ch
         ids.insert(object.id);
     }
     std::vector<std::unique_ptr<Node>> prepared;
-    // The live page keeps the saved nodes that it lists, so their expansion stays.
     if (replacing && !reconcileSaved(value, children))
         clearChildren(value);
     if (!replacing || value->children.empty()) {
@@ -454,7 +440,6 @@ bool NavigatorModel::insertChildren(Node* value, std::vector<NavigatorObject> ch
             prepared.push_back(makeChild(value, std::move(object)));
     }
     const auto parentIndex = indexFor(value);
-    // Saved children keep the node loading until its live page arrives.
     value->cached = cached;
     value->state = cached ? Node::Loading : Node::Loaded;
     value->status = cached ? EngineAdapter::rowStatus(RowStatusCause::ChildrenCached) : RowStatus{};
@@ -517,7 +502,6 @@ bool NavigatorModel::reconcileSaved(Node* value, std::vector<NavigatorObject>& c
         for (auto i = from; i < rows.size(); ++i)
             rows[i]->row = static_cast<int>(i);
     };
-    // Remove the saved rows that the live page does not list, one range at a time.
     for (auto last = static_cast<int>(rows.size()) - 1; last >= 0;) {
         if (keeps(rows[last].get())) {
             --last;
@@ -534,7 +518,6 @@ bool NavigatorModel::reconcileSaved(Node* value, std::vector<NavigatorObject>& c
         endRemoveRows();
         last = first - 1;
     }
-    // A changed order rebuilds the rows. A refresh of the parent is the same as that.
     std::vector<bool> kept(children.size(), false);
     for (std::size_t i = 0; i < rows.size(); ++i) {
         const auto at = listed.value(rows[i]->object.id);
@@ -544,7 +527,6 @@ bool NavigatorModel::reconcileSaved(Node* value, std::vector<NavigatorObject>& c
     }
     for (const auto& child : rows) {
         auto& object = children[listed.value(child->object.id)];
-        // A renamed node, such as a PostgreSQL schema, finds its system-schema state again.
         if (object.name != child->object.name)
             for (std::vector<Node*> stack{child.get()}; !stack.empty();) {
                 auto* current = stack.back();
@@ -558,7 +540,6 @@ bool NavigatorModel::reconcileSaved(Node* value, std::vector<NavigatorObject>& c
     if (!rows.empty())
         emit dataChanged(index(0, 0, parentIndex),
                          index(static_cast<int>(rows.size()) - 1, 0, parentIndex));
-    // Insert each run of new children at its place.
     std::size_t row = 0;
     for (std::size_t i = 0; i < children.size();) {
         if (kept[i]) {
@@ -670,4 +651,4 @@ NavigatorModel::objectSnapshot(quint64 connection, const QString& objectId) cons
     }
     return snapshot;
 }
-} // namespace choscordb
+}

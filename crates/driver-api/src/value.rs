@@ -1,6 +1,5 @@
 use crate::Handle;
 use serde::{Deserialize, Serialize};
-/// Exact database representations; Decimal never passes through a float.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum Value {
     Null,
@@ -15,19 +14,15 @@ pub enum Value {
     Uuid(String),
     Json(String),
     Binary(Vec<u8>),
-    /// PostgreSQL or another server's text output for a type without a native decoder.
-    /// This is presentation data, not a native text value suitable for predicates or edits.
     FallbackText {
         text: String,
         database_type: String,
     },
-    /// A chunk-readable server text representation of an unfamiliar type.
     DeferredFallback {
         handle: Handle,
         byte_length: u64,
         database_type: String,
     },
-    /// Only a value conversion failed; the surrounding result remains readable.
     Unavailable {
         database_type: String,
         reason: String,
@@ -65,7 +60,6 @@ impl Value {
     }
 }
 pub type Row = Vec<Value>;
-/// The estimated bytes of one row, without its slot in the row vector of a page.
 pub fn row_estimated_bytes(row: &Row) -> usize {
     (row.capacity() - row.len()) * std::mem::size_of::<Value>()
         + row.iter().map(Value::estimated_bytes).sum::<usize>()
@@ -99,7 +93,6 @@ impl std::fmt::Debug for Value {
     }
 }
 
-/// Maximum allocation for an individual deferred-value read.
 pub const MAX_VALUE_CHUNK_BYTES: usize = 64 * 1024;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeferredKind {

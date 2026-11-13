@@ -20,7 +20,6 @@ fn appearance_get_set_reset_are_correlated_gated_and_persistent() {
     };
     let mut engine = Engine::new(config.clone(), vec![]).unwrap();
     engine.appearance_layout_get(1).unwrap();
-    // A second request waits behind the outstanding one and is answered in order.
     engine.appearance_layout_get(2).unwrap();
     for token in [1, 2] {
         assert!(matches!(

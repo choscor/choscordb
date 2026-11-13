@@ -1,4 +1,3 @@
-//! Optional multiplexing uses only application-owned, private control sockets.
 use crate::{DriverError, ErrorKind, Result};
 use crate::{ssh_command::Destination, ssh_process::OwnedChild, ssh_proxy::Relay};
 use std::{
@@ -53,8 +52,6 @@ impl Master {
             "ControlPersist=no",
             "-o",
             "ClearAllForwardings=yes",
-            // A missing/dead master must never fall back to a new direct login.
-            // This fixed shell command contains no user-controlled text.
             "-o",
             "ProxyCommand=exit 1",
             "-o",
@@ -113,7 +110,6 @@ pub(crate) async fn acquire(
     {
         return Ok(master);
     }
-    // Retired masters can still serve healthy leases; count them too.
     let admission = MASTERS.try_acquire().map_err(|_| {
         DriverError::new(ErrorKind::ResourceLimit, "SSH shared session limit reached")
     })?;
@@ -136,7 +132,6 @@ pub(crate) async fn acquire(
             use std::os::unix::fs::PermissionsExt;
             builder.permissions(std::fs::Permissions::from_mode(0o700));
         }
-        // Control sockets have short platform path limits; do not inherit a long TMPDIR.
         builder.tempdir_in("/tmp")
     })
     .await

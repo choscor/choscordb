@@ -74,7 +74,6 @@ fn bound_graph_payload(graph: &mut ObjectGraph) -> Result<()> {
         } else {
             return Err(limit());
         }
-        // Recompute once after trimming a table or edge, including its new warning.
         bytes = graph_payload_bytes(graph);
     }
     Ok(())
@@ -924,9 +923,6 @@ impl Budget {
         serde_json::to_writer(&mut encoded, parts).expect("strings serialize");
         let qualified_bytes = qualified.iter().map(|s| quoted_bytes(s)).sum::<usize>()
             + qualified.len().saturating_sub(1);
-        // Reserve every owned identity copy before cloning a long parent into
-        // another row. Fixed object storage includes its inline optional Column
-        // and Vec headers; their separately allocated payloads are charged below.
         self.reserve(
             std::mem::size_of::<SchemaObject>()
                 + encoded.0
@@ -988,7 +984,6 @@ impl Budget {
     }
 }
 fn push(output: &mut Vec<SchemaObject>, object: SchemaObject) {
-    // Budget::object has already reserved this element; avoid geometric spare capacity.
     output.reserve_exact(1);
     output.push(object);
 }
@@ -1379,7 +1374,6 @@ pub fn ddl(db: &Connection, object: ObjectId) -> Result<String> {
     Ok(text.to_owned())
 }
 
-// Bound aggregate metadata transferred to the application, including property text.
 pub fn load(db: &Connection, parent: Option<ObjectId>) -> Result<Vec<SchemaObject>> {
     if let Some(ref parent) = parent {
         let names = parts(parent)?;

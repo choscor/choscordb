@@ -41,7 +41,7 @@ bool workspaceBoolean(const char* selectorName) {
 }
 #endif
 
-} // namespace
+}
 
 PlatformAccessibilityPreferences readPlatformAccessibilityPreferences() {
 #if defined(Q_OS_MACOS)
@@ -62,7 +62,6 @@ PlatformAccessibilityPreferences readPlatformAccessibilityPreferences() {
         .reducedMotion = animationAvailable && animationsEnabled == FALSE,
     };
 #else
-    // Linux portal reads are asynchronous and owned by PlatformAccessibilityMonitor.
     return {};
 #endif
 }
@@ -140,4 +139,4 @@ void PlatformAccessibilityMonitor::requestLinuxPreference(
 }
 #endif
 
-} // namespace choscordb::design
+}

@@ -6,11 +6,8 @@
 
 namespace choscordb {
 namespace {
-// Unlike bridge_detail::toRust, rejects lone surrogates instead of replacing them.
 rust::String toRust(const QString& value) {
     const auto utf8 = value.toUtf8();
-    // A lone UTF-16 surrogate cannot cross a UTF-8 bridge losslessly. Send a
-    // sentinel that Rust policy rejects instead of silently replacing it.
     if (QString::fromUtf8(utf8) != value)
         return rust::String("\0", 1);
     return rust::String(utf8.constData(), size_t(utf8.size()));
@@ -79,7 +76,7 @@ void setError(QString* destination, const rust::String& error) {
     if (destination)
         *destination = fromRust(error);
 }
-} // namespace
+}
 
 PinStore::PinStore(QString storagePath) {
     profileStorage_ = !storagePath.isEmpty();
@@ -128,4 +125,4 @@ bool PinStore::save(const QList<PinRecord>& pins, QString* error) const {
     setError(error, result.error);
     return result.success;
 }
-} // namespace choscordb
+}

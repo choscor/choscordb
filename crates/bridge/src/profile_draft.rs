@@ -1,4 +1,3 @@
-//! Typed transport for the profile form's draft policy in `choscordb_core::profile_draft`.
 use crate::ffi;
 use choscordb_core::profile_draft::{self, DraftAction, DraftSecrets, ProfileDraft, SecretDraft};
 
@@ -127,7 +126,6 @@ fn action(value: DraftAction) -> String {
     .into()
 }
 
-/// Credentials for saving (`saving`) or for a test/connection with the draft.
 pub fn profile_draft_credentials(
     profile: &ffi::ProfileDto,
     drafts: &ffi::ProfileSecretDraftsDto,

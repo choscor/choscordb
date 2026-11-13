@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Run the release desktop probe and record externally observed process timings."""
 
 import argparse
 import json
@@ -10,7 +9,6 @@ import threading
 import time
 
 
-# The 10,000-row x 30-column page, its sort and its filter, with the longest UI dispatch.
 WIDE_PAGE_KEYS = (
     "wide_page_ready_ms",
     "wide_page_notify_max_ms",
@@ -46,7 +44,6 @@ def run(binary, destination, timeout):
 
         def read_errors():
             for line in process.stderr:
-                # Keep diagnostics bounded; never include them in a published report.
                 diagnostics.append(line[:1024])
                 if len(diagnostics) > 32:
                     del diagnostics[0]
@@ -93,7 +90,9 @@ def run(binary, destination, timeout):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Run the release desktop probe and record externally observed process timings."
+    )
     parser.add_argument("binary", type=Path)
     parser.add_argument("report", type=Path)
     parser.add_argument("--timeout", type=float, default=600)

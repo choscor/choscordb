@@ -1,4 +1,3 @@
-//! Typed CXX transport for bounded TSV copy policy in result-store.
 use crate::{convert, ffi};
 use choscordb_result_store::{CopyCell, CopyError, CopyRequest, render_copy_tsv};
 

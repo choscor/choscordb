@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Sign stable Windows/Linux feeds and advance GitHub Pages after publication."""
 
 import argparse
 import base64
@@ -50,7 +49,6 @@ def public_from_private(path):
 
 
 def create_private_key(path):
-    """Create a dedicated key without ever replacing an existing private file."""
     target = Path(path).expanduser()
     if target.exists() or target.is_symlink():
         raise ValueError("private update key already exists; refusing replacement")
@@ -219,7 +217,6 @@ def deploy(
     dry_run=False,
     wait_seconds=0,
 ):
-    """Verify the already-public three-asset Release, then advance all feeds."""
     version = manifest["version"]
     stable(version)
     base = release_base(manifest["base_url"])
@@ -304,8 +301,6 @@ def deploy(
 
 
 class GitHubPages:
-    """Publish three files as one fast-forward git-tree update to gh-pages."""
-
     def __init__(self, repo):
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
             raise ValueError("invalid Pages repository")
@@ -552,7 +547,9 @@ def bootstrap(
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Sign stable Windows/Linux feeds and advance GitHub Pages after publication."
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     first = sub.add_parser(
         "bootstrap", help="install an existing signed appcast on Pages"

@@ -25,7 +25,6 @@
 #include <QTimer>
 #include <QtTest>
 namespace {
-// Production copy path: capture a snapshot on the model thread, then evaluate it.
 QString copyScope(const choscordb::ResultTableModel& model, const QModelIndexList& indexes,
                   int scope, QString* error) {
     error->clear();
@@ -60,7 +59,7 @@ choscordb::ResultColumn column(const QString& name, const QString& databaseType)
     value.databaseType = databaseType;
     return value;
 }
-} // namespace
+}
 class ResultCopyWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
@@ -114,7 +113,6 @@ class ResultCopyWorkspaceTest : public QObject {
         QVERIFY(model.setPage({column("a")}, {{choscordb::DeferredValue{1, 90000, "text"}}}, 0));
         QVERIFY(copyPage(model, &error).isEmpty());
         QVERIFY(error.contains("Export"));
-        // Escaped quotes double the text, so the copy needs more than the page holds.
         QVERIFY(model.setPage({column("a")}, {{QString(512, QChar('"'))}}, 0));
         QVERIFY(model.setByteBudget(model.residentBytes()));
         QVERIFY(copyRows(model, {model.index(0, 0)}, &error).isEmpty());
@@ -151,7 +149,6 @@ class ResultCopyWorkspaceTest : public QObject {
         grid.resize(640, 480);
         grid.show();
         grid.selectionModel()->select(model->index(1, 0), QItemSelectionModel::Select);
-        // Initial preference loading is unrelated to the context actions under test.
         auto* settings = workspace.findChild<choscordb::QuerySettingsController*>();
         QVERIFY(settings);
         QTRY_VERIFY(settings->isReady());

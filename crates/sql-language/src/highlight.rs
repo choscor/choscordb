@@ -1,4 +1,3 @@
-//! Read-only SQL highlighting spans, such as for inspected object DDL.
 use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,8 +54,6 @@ fn word_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_' || byte >= 0x80
 }
 
-/// Spans in UTF-8 byte offsets, in source order. Quoted text and comments hide
-/// the keywords and numbers inside them; an unterminated segment runs to the end.
 pub fn highlight(sql: &str) -> Vec<HighlightSpan> {
     let bytes = sql.as_bytes();
     let mut spans = Vec::new();
@@ -83,7 +80,6 @@ pub fn highlight(sql: &str) -> Vec<HighlightSpan> {
                     }
                     Some(offset) => {
                         i += offset + 1;
-                        // A doubled quote is an escaped quote inside the segment.
                         if bytes.get(i) != Some(&quote) {
                             break;
                         }

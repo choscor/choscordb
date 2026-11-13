@@ -209,7 +209,6 @@ fn saving_replaces_typed_secrets_and_keeps_untouched_saved_ones() {
     assert_eq!(saved_action(true, true, secret("", true), true), Clear);
     assert_eq!(saved_action(true, true, secret("", false), true), Keep);
     assert_eq!(saved_action(true, true, secret("", false), false), Clear);
-    // Unchecked "save credentials" and unused secrets are never stored.
     assert_eq!(saved_action(true, false, secret("pw", true), true), Clear);
     assert_eq!(saved_action(false, true, secret("pw", true), true), Clear);
 }
@@ -332,7 +331,6 @@ fn oversized_secrets_report_their_own_field() {
     assert_eq!(error.field, DraftField::Password);
     assert!(error.message.contains("Credential exceeds"));
 
-    // A secret the transport does not use is not checked.
     let sqlite = ProfileDraft {
         name: "Local".into(),
         driver: "sqlite".into(),

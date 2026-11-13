@@ -315,7 +315,6 @@ class HistoryTest : public QObject {
         record->trigger();
         QTRY_VERIFY(record->isEnabled());
         QVERIFY(!record->isChecked());
-        // Old policy deliveries and unrelated failures cannot overwrite current state.
         const auto oldToken = policies.at(0).at(0).toULongLong();
         emit adapter.historyPolicyReady(oldToken, choscordb::HistoryPolicy{});
         QVERIFY(!record->isChecked());

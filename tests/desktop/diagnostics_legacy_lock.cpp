@@ -126,4 +126,4 @@ void DiagnosticsFileLock::unlock() {
 #endif
     state_->held = false;
 }
-} // namespace choscordb
+}

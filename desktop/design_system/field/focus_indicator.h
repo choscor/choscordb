@@ -9,4 +9,4 @@ class QWidget;
 namespace choscordb::design::detail {
 bool drawFocusIndicator(QStyle::PrimitiveElement element, const QStyleOption* option,
                         QPainter* painter, const QWidget* widget);
-} // namespace choscordb::design::detail
+}

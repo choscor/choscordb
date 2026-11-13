@@ -2,43 +2,43 @@
   {
     "path": "desktop/design_system/style/style_resource.cpp",
     "rule": "storage",
-    "sha256": "61730ee39b3a5b2052b15556d83b8f59d181d070b1350721eaf16a8f2d55ea3a",
+    "sha256": "ecf8b080e5f44aafb6eb0bfbd8e16f133299c023ea700248534e40d8efc3acb8",
     "reason": "QFile reads only the compiled :/styles/ resource namespace for presentation."
   },
   {
     "path": "desktop/design_system/json_text_view/json_text_view.cpp",
     "rule": "domain-parsing",
-    "sha256": "daef44b438b0d549bc0cae78ebd82f359ab76dcb1f36f205d4f945d7441a06db",
+    "sha256": "470195c30985304366250dce110451eb05730e9de26e3449ff004daeb2a83a9c",
     "reason": "Regular expressions select syntax highlighting spans; they do not validate or transform backend results."
   },
   {
     "path": "desktop/models/shortcut_catalog.cpp",
     "rule": "domain-parsing",
-    "sha256": "4ff25883af5946426eb2602b7c2a181c259675eb30b986d513ed492e9153f3f8",
+    "sha256": "71fe0f32f3e0a90ca14639c743dab78e62a095ffef97b006868689e1228be512",
     "reason": "QRegularExpression strips modifier names only to compare Qt QKeySequence round trips. Qt owns native key/chord parsing and conflicts between catalog actions; Rust validates the stored preference document (version, font, sizes, duplicate commands)."
   },
   {
     "path": "desktop/models/shortcut_catalog.cpp",
     "rule": "text-matching",
-    "sha256": "4ff25883af5946426eb2602b7c2a181c259675eb30b986d513ed492e9153f3f8",
+    "sha256": "71fe0f32f3e0a90ca14639c743dab78e62a095ffef97b006868689e1228be512",
     "reason": "The case-insensitive compare checks that a Qt QKeySequence PortableText round trip preserved the typed keys; it is native key parsing, not user-text filtering. Rust validates the stored preference document, including sequence size and NUL bytes."
   },
   {
     "path": "desktop/tools/preview/preview_standard.cpp",
     "rule": "sql-text",
-    "sha256": "284150f988a1cbc0fa1ea84f91815ca8eec3dafd82e0eba7536a40c8043080b4",
+    "sha256": "eb91a634ff60be6485c11587fcbc01eede2d9ad1bcae6b1b4d09aaa5ef4546fd",
     "reason": "The CREATE TABLE literal populates a synthetic read-only SQL-editor specimen. This developer gallery does not execute it or derive application SQL from it."
   },
   {
     "path": "desktop/tools/preview/preview_window.cpp",
     "rule": "sql-text",
-    "sha256": "1fe495cd40de0549dc2cc4d1683bb72b142dd24e3f3cf5f59e20300cb698147f",
+    "sha256": "dd163302cf934207dad0d0d2a4deea1aa3ee482de085bdfb559caae97d0c8888",
     "reason": "The SELECT literal is synthetic content for the SQL-editor gallery specimen in Light and Dark themes. The gallery does not execute it or generate database requests."
   },
   {
     "path": "desktop/app/object_kind_icon.h",
     "rule": "object-kind-literal",
-    "sha256": "4375dcfca38d6584c1f1c31674b95928935e7313740f0ce20def271ad062c0dd",
+    "sha256": "8bac622af46654375d5d387c854fdf3b96418b75c7ca8ec299cf98234e8a677b",
     "reason": "The shared presentation map from object kinds to icons, navigator row styles and translated labels. It chooses appearance only; behavior that depends on a kind uses Rust ObjectKindTraits through EngineAdapter::objectKindTraits."
   }
 ]

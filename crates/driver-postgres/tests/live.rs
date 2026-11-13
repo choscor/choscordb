@@ -451,7 +451,6 @@ async fn enum_choices_of_all_columns_share_one_byte_budget() {
         true,
     )
     .await;
-    // 9,000 labels of 63 bytes are about 567 KB. Two columns are more than 1 MiB.
     let labels = (0..9_000)
         .map(|i| format!("'{i:0>63}'"))
         .collect::<Vec<_>>()
@@ -844,7 +843,6 @@ async fn pages_types_transactions_and_snapshot_values() {
 #[ignore = "requires disposable live PostgreSQL fixture"]
 async fn a_cancel_stops_a_large_page_execute() {
     let mut connection = PostgresDriver.connect(settings()).await.unwrap();
-    // Each row takes about 1 ms, so a 10,000-row page needs about 10 seconds.
     let slow =
         "SELECT n FROM generate_series(1,20000) n CROSS JOIN LATERAL pg_sleep(n * 0 + 0.001)";
     let token = connection.cancellation_handle();
@@ -1637,7 +1635,6 @@ async fn cancelling_object_read_keeps_user_savepoint_transaction_and_sql_portal(
     });
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     cancel.cancel().await.unwrap();
-    // A repeated request must not cancel cleanup or the existing SQL portal.
     cancel.cancel().await.unwrap();
     let result = tokio::time::timeout(std::time::Duration::from_secs(3), read)
         .await

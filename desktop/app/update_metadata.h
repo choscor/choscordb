@@ -5,7 +5,6 @@
 #include <QUrl>
 
 namespace choscordb {
-// Presentation copy of a Rust-verified signed update record.
 struct UpdateRecord {
     QString version;
     QUrl url;
@@ -13,4 +12,4 @@ struct UpdateRecord {
     QByteArray sha256;
     QString notes;
 };
-} // namespace choscordb
+}

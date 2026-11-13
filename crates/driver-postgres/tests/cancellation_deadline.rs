@@ -28,8 +28,6 @@ async fn direct_cancel_bounds_stalled_tls_negotiation_and_closes_socket() {
         let length = connection.read_u32().await.unwrap();
         let mut begin = vec![0; length as usize - 4];
         connection.read_exact(&mut begin).await.unwrap();
-        // BEGIN, the statement timeout and the Parse arrive together. The server
-        // stalls, and the statement is already cancellable.
         assert_eq!(
             begin,
             b"START TRANSACTION; SET LOCAL statement_timeout = 0\0"

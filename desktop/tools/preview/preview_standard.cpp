@@ -57,7 +57,7 @@ class PreviewDocumentTabs final : public QTabWidget {
         setTabBar(new DocumentTabBar(this));
     }
 };
-} // namespace
+}
 
 void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
     if (id == "numeric-fields") {
@@ -400,7 +400,6 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         loading->setMessage("orders · Loading rows…");
         loading->setBusy(true);
         layout->addWidget(loading);
-        // A notice replaces the message until it expires; this one stays.
         auto* notice = new StatusLine(host);
         notice->setObjectName("previewStatusNotice");
         notice->setNeutral();
@@ -423,7 +422,6 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
                 badge->setProperty("variant", variant);
             badges->addWidget(badge);
         }
-        // A driver is named by one neutral badge beside its unmodified logo.
         auto* logo = new QLabel(host);
         logo->setObjectName("previewDriverLogo");
         logo->setPixmap(themedIcon(Icon::PostgreSQL, resolvedThemeForWidget(*host).colors.fg,
@@ -502,7 +500,6 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         QObject::connect(resolvePinned, &QPushButton::clicked, toast,
                          [toast] { toast->clearPinnedToast(); });
         pinnedActions->addWidget(resolvePinned);
-        // Background failures replace one notice and count; they never queue.
         auto* replacing = new Button("Show background failure", host);
         replacing->setObjectName("previewToast_replacing");
         QObject::connect(
@@ -535,4 +532,4 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
     }
     layout->addStretch();
 }
-} // namespace choscordb::design::preview_detail
+}

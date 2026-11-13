@@ -1,5 +1,3 @@
-"""Mutation-style ownership checks; no Qt/compiler dependencies required."""
-
 import hashlib
 import json
 from pathlib import Path
@@ -71,7 +69,6 @@ class OwnershipTests(unittest.TestCase):
         ]:
             with self.subTest(source=source):
                 self.assertIn("retry-policy-text", self.rules(source))
-        # A button label is not a recovery sentence.
         for label in [
             'b->setText(tr("&Retry"));',
             'm->addAction(tr("Retry workspace recovery"));',

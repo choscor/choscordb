@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""Reject desktop patterns that scale with result, navigator, or selection size.
-
-Each rule targets a regression found in large result pages, wide selections,
-deep navigator trees, or long pin lists. A line may opt out with a trailing or
-preceding ``// perf-ok: <reason>`` comment; the reason must be non-empty so the
-exception is reviewable.
-"""
 
 from pathlib import Path
 import argparse
@@ -19,7 +12,6 @@ SCANNED = ("desktop/app", "desktop/models", "desktop/widgets", "desktop/design_s
 SCREEN = ("desktop/app", "desktop/models", "desktop/widgets")
 MARKER = re.compile(r"//\s*perf-ok:\s*(\S.*)?$")
 
-# Functions that run per paint, per size hint, or per model role lookup.
 HOT_FUNCTIONS = re.compile(
     r"^(?:paint|paintEvent|paintSection|drawRow|drawBranches|sizeHint|"
     r"sectionSizeFromContents|initStyleOption|data|headerData|flags|"
@@ -32,7 +24,6 @@ FUNCTION = re.compile(
 )
 CONTROL = {"if", "for", "while", "switch", "catch", "return", "sizeof", "connect"}
 OWNER = re.compile(r"(\w+)::$")
-# An unqualified call: a member of the same class or a free function, not obj.f() or ns::f().
 CALL = re.compile(r"(?<![\w.>:~])([A-Za-z_]\w*)\s*\(")
 BRIDGE = re.compile(r"\bEngineAdapter::\w+\s*\(")
 
@@ -88,14 +79,12 @@ LINE_RULES = (
     ),
 )
 
-# Statement rules: evaluated on the balanced text of each connect(...) call.
 CONNECT_SIGNALS = re.compile(
     r"&\w+::(?:rowsInserted|rowsRemoved|dataChanged|layoutChanged|modelReset|"
     r"completionChanged|textChanged|textEdited|selectionChanged)\b"
 )
 ZERO_SHOT = re.compile(r"\bQTimer::singleShot\s*\(\s*0\s*,")
 
-# Expressions that must stay out of HOT_FUNCTIONS.
 HOT_RULES = (
     (re.compile(r"\bQSvgRenderer\b"), "SVG parsing on a paint/data path"),
     (re.compile(r"\bQTextDocument\b"), "text document layout on a paint/data path"),
@@ -119,7 +108,6 @@ HOT_RULES = (
 
 
 def strip_comments_and_strings(text):
-    """Blank comments and string literals while keeping offsets and newlines."""
     out = []
     index, length = 0, len(text)
     while index < length:
@@ -161,7 +149,6 @@ def balanced(text, start, open_char="(", close_char=")"):
 
 
 def functions(code):
-    """Yield (owner, name, body_start, body_end) for function definitions."""
     for match in FUNCTION.finditer(code):
         name = match.group("name").split("::")[-1]
         if name in CONTROL:
@@ -179,8 +166,6 @@ def functions(code):
 
 
 class Definitions:
-    """Function bodies of all scanned files, by (class or None, name)."""
-
     def __init__(self):
         self.bodies = {}
         self.chains = {}
@@ -189,7 +174,6 @@ class Definitions:
         self.bodies.setdefault((owner, name), []).append((lines, code, start, end))
 
     def bridge_chain(self, owner, name, visiting=()):
-        """The helper names from (owner, name) to a bridge call, or None."""
         key = (owner, name)
         if key in self.chains:
             return self.chains[key]
@@ -321,7 +305,9 @@ def violations(root=ROOT):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Reject desktop patterns that scale with result, navigator, or selection size."
+    )
     parser.add_argument("--json", action="store_true", help="print findings as JSON")
     args = parser.parse_args(argv)
     found = violations()

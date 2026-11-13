@@ -12,7 +12,7 @@ namespace design {
 class Button;
 class FieldValidation;
 class StatusLine;
-} // namespace design
+}
 class EngineAdapter;
 struct BridgeEvent;
 class ExportDialog final : public DialogShell {
@@ -63,4 +63,4 @@ class ExportDialog final : public DialogShell {
     design::StatusLine* statusLine_;
     design::FieldValidation *formatValidation_, *destinationValidation_, *tableValidation_;
 };
-} // namespace choscordb
+}

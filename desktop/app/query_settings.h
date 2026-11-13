@@ -31,4 +31,4 @@ class QuerySettingsController final : public QObject {
     quint64 initialToken_ = 0;
     bool ready_ = false;
 };
-} // namespace choscordb
+}

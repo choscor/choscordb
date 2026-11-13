@@ -82,7 +82,6 @@ void QueryWorkspace::activateQuickFilter(const QPersistentModelIndex& clicked, q
                                          CellFilterOperator operation) {
     if (query_ != query || !quickFilterAvailable(clicked))
         return;
-    // Capture the staged typed value before edit review can discard it or refresh the model.
     const auto value = model_->cellValue(clicked);
     if (!value)
         return;
@@ -158,7 +157,6 @@ void QueryWorkspace::setupResultViewControls() {
                 [this](int column) {
                     if (referenceFilterFailed_)
                         return;
-                    // Rust rejects sorting on fallback, unavailable, or deferred values.
                     QString direction = QStringLiteral("ascending");
                     qint32 nextColumn = column;
                     if (viewSortColumn_ == column && viewSortDirection_ == "ascending")
@@ -373,4 +371,4 @@ void QueryWorkspace::updateSortIndicator() {
                                                   : Qt::DescendingOrder);
     header->setSortIndicatorShown(true);
 }
-} // namespace choscordb
+}

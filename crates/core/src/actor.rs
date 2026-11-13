@@ -89,15 +89,12 @@ pub(crate) enum Command {
     },
     Release(QueryId),
 }
-/// A catalog read that names its objects by ID, so any session of the Connect
-/// gives the same answer outside a transaction.
 pub(crate) enum CatalogRead {
     Metadata {
         parent: Option<ObjectId>,
         request_token: u64,
         offset: u64,
         limit: u32,
-        /// Where a complete first page is saved for the next connection.
         cache: Option<crate::metadata_cache::CacheTarget>,
     },
     EditTarget {
@@ -224,8 +221,6 @@ fn diagnostic_action(event: &Event) -> Option<DiagnosticAction> {
     })
 }
 async fn send(events: &EventSink, event: Event) {
-    // Capture an outcome when it is produced. A full UI event channel can wait
-    // for a drain indefinitely; diagnostics must remain independent of that drain.
     if let Some(action) = diagnostic_action(&event) {
         events.record(action);
     }
@@ -233,8 +228,6 @@ async fn send(events: &EventSink, event: Event) {
     tokio::select! {
         biased;
         _ = crate::operation::signalled(&mut shutdown) => {
-            // Shutdown must never retain transport ownership behind UI backpressure.
-            // Preserve terminal notifications when the receiver still has capacity.
             let _ = events.sender.try_send(event);
         }
         permit = events.sender.reserve() => {
@@ -248,9 +241,6 @@ async fn metadata_operation<T>(
     operation: impl std::future::Future<Output = Result<T>>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<T> {
-    // Query cancellation handles target an execution generation, not metadata.
-    // Drop the borrowed operation on disconnect so connection.close can perform
-    // adapter-specific cancellation/rollback. Never retry the abandoned request.
     tokio::select! {
         biased;
         _ = crate::operation::signalled(shutdown) => Err(DriverError::new(
@@ -260,7 +250,6 @@ async fn metadata_operation<T>(
         result = operation => result,
     }
 }
-/// Reports the cell metadata of a result. Returns the error of a failed read.
 async fn result_cells(
     id: ConnectionId,
     cells: impl std::future::Future<Output = Result<Vec<ResultCellMetadata>>>,
@@ -294,7 +283,6 @@ async fn result_cells(
     send(events, event).await;
     error
 }
-/// Runs one catalog read and reports its result. Returns the error of a failed read.
 pub(crate) async fn catalog_read(
     connection: &mut dyn Connection,
     id: ConnectionId,
@@ -355,8 +343,6 @@ pub(crate) async fn catalog_read(
             let page = connection.load_metadata_page(parent.clone(), offset, limit);
             match metadata_operation(page, shutdown).await {
                 Ok(page) => {
-                    // Only a complete child list replaces the saved children. The
-                    // navigator gets the children first, so the write does not delay them.
                     let save = cache
                         .filter(|_| page.next_offset.is_none())
                         .map(|cache| (cache, crate::metadata_cache::saved_children(&page.objects)));
@@ -452,8 +438,6 @@ async fn close_active(active: &mut Option<Active>, events: &EventSink) {
         }
     }
 }
-/// Fetch and persist exactly once; grid paging and export share cursor advancement
-/// and completion bookkeeping. The reservation follows blocking serialization.
 #[allow(clippy::too_many_arguments)]
 async fn fetch_stored<T: Send + 'static>(
     current: &mut Active,
@@ -599,9 +583,6 @@ pub(crate) async fn run(
             return;
         }
     };
-    // A successful login is not usable until initial session state is known.
-    // Interrupting a native query can leave unread protocol bytes, so discard
-    // the connection on timeout/shutdown instead of returning it to the actor.
     let mode = tokio::select! {
         biased;
         _ = shutdown.wait_for(|stopped| *stopped) => None,
@@ -640,8 +621,6 @@ pub(crate) async fn run(
             return;
         }
     };
-    // Route the catalog reads before Connected, so the first read after it
-    // goes to the catalog session.
     route.follow(Ok(transaction_active));
     route.start(
         &*connection,
@@ -804,7 +783,6 @@ pub(crate) async fn run(
         } else {
             &mut sql_active
         };
-        // A statement can open or end a transaction.
         let statement = matches!(
             command,
             Command::Execute { object: None, .. }
@@ -814,8 +792,6 @@ pub(crate) async fn run(
         );
         match command {
             Command::SqlMode { request_token } => {
-                // Inspect the session without retiring its current results. A
-                // user may still reject the subsequent execution confirmation.
                 let outcome = if let Some(current) = active.as_mut() {
                     perform(
                         connection.sql_mode(),
@@ -1093,7 +1069,6 @@ pub(crate) async fn run(
                                 continue;
                             }
                         };
-                        // Schema payload remains pinned separately from pages in consumers.
                         schema_lease
                             .shrink_to(raw_limit * 4)
                             .expect("schema fits transfer reservation");
@@ -1124,8 +1099,6 @@ pub(crate) async fn run(
                         if let Some(history) = &mut history {
                             history.fail(error.kind).await;
                         }
-                        // A failed statement can leave an open transaction;
-                        // report the session state before the failure.
                         if !outcome.poisoned
                             && error.kind != ErrorKind::Disconnected
                             && let Ok(Some(active)) =
@@ -1158,8 +1131,6 @@ pub(crate) async fn run(
                     .await;
                     continue;
                 };
-                // Navigation of completed result sets is not SQL execution. The
-                // MySQL producer enforces its own execution deadline while active.
                 if current.completed {
                     current.deadline = None;
                 }
@@ -1278,8 +1249,6 @@ pub(crate) async fn run(
                 };
                 let live = active.as_mut().filter(|a| a.id == query && !a.completed);
                 let deadline = live.as_ref().and_then(|a| a.deadline);
-                // Archived pages survive execution cancellation. Only releasing
-                // their query (or disconnecting) stops an archived capacity wait.
                 let cancellation = live.map_or(&mut released, |a| &mut a.cancellation);
                 let lease = match wait_capacity(
                     memory.acquire(query, false),
@@ -1334,7 +1303,6 @@ pub(crate) async fn run(
                                         && active
                                             .as_ref()
                                             .is_some_and(|a| a.id == query && !a.completed));
-                                // Copies a shared page only when the flag changes.
                                 if page.has_more != has_more {
                                     Arc::make_mut(&mut page).has_more = has_more;
                                 }
@@ -1457,9 +1425,6 @@ pub(crate) async fn run(
                     })?;
                     if let Some(current) = active.as_mut().filter(|a| a.id == query && !a.completed)
                     {
-                        // Observe view cancellation between bounded fetches. Let an in-flight
-                        // database operation settle so the original cursor remains resumable;
-                        // query cancellation, timeout and shutdown remain authoritative.
                         loop {
                             if *cancellation.borrow() {
                                 return Err(DriverError::new(
@@ -1935,14 +1900,8 @@ pub(crate) async fn run(
                 }
             }
         }
-        // The state is local, but a session that still streams a result answers
-        // only after the result ends. Ask again when the result is complete.
-        //
-        // A script that opens a transaction and ends in a result that still streams
-        // keeps the earlier state until that result completes.
         if statement && sql_active.as_ref().is_none_or(|a| a.completed) {
             let state = metadata_operation(connection.transaction_state(), &mut shutdown).await;
-            // The disconnect reports itself. Another failure sends reads to the query session.
             if let Err(error) = &state
                 && error.kind != ErrorKind::Disconnected
             {
@@ -1962,14 +1921,9 @@ pub(crate) async fn run(
     if let Some(old) = sql_active.as_ref() {
         let _ = tokio::time::timeout(grace, old.cancel.cancel()).await;
     }
-    // Cursor close may commit an automatic transaction (e.g. a suspended
-    // PostgreSQL RETURNING portal). Disconnect must roll back the connection
-    // before any cursor finalizer can run, even if native cancellation failed.
     let _ = tokio::time::timeout(grace, connection.close()).await;
     drop(connection);
     if let Some(mut old) = sql_active.take() {
-        // The connection is closed; a cursor finalizer cannot make progress if
-        // its worker has already stopped. Dropping it releases local resources.
         if let Some(history) = &mut old.history {
             history.fail(ErrorKind::Disconnected).await;
         }

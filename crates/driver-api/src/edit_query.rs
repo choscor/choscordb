@@ -1,4 +1,3 @@
-//! Deliberately narrow shape recognition for editable query results.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Token {
     text: String,
@@ -87,7 +86,6 @@ fn identifier(token: &Token) -> bool {
 pub struct SimpleSelect {
     pub schema: Option<String>,
     pub table: String,
-    /// Empty entries represent computed result columns.
     pub source_columns: Vec<String>,
     pub wildcard: bool,
 }

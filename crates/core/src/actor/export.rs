@@ -1,6 +1,3 @@
-//! Original-result export is serialized with the connection actor. A pending read
-//! owns its cursor, store and reservation until settlement, even when the exporter
-//! drops its waiter on cancellation.
 use super::*;
 use choscordb_export::{Cancellation, ExportSource, FileSink, Limits};
 use std::{collections::HashMap, path::PathBuf};
@@ -69,7 +66,6 @@ impl ExportSource for Source {
                     return Ok(Some(stored.page));
                 }
                 let Some(current) = state.active.as_mut() else {
-                    // An incomplete archived result must never silently export a prefix.
                     if count > 0 {
                         let (last, _) = state.store.read_reserved(count - 1, lease).await?;
                         if !last.page.has_more {
@@ -263,8 +259,6 @@ pub(super) async fn run(
             }
             Err(error) => Err(error),
         };
-        // Cancellation of export() may have dropped next_page's waiter. Recover
-        // ownership only after its native operation and file append have settled.
         let settled = source.settle().await;
         if let Some(state) = source.state.take() {
             stores.insert(query, state.store);

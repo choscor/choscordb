@@ -29,7 +29,7 @@ QColor paletteColor(const QPalette& palette, QPalette::ColorRole role, const QCo
     return value.isValid() ? value : fallback;
 }
 
-} // namespace
+}
 
 double contrastRatio(const QColor& foreground, const QColor& background) {
     if (!foreground.isValid() || !background.isValid()) {
@@ -41,8 +41,6 @@ double contrastRatio(const QColor& foreground, const QColor& background) {
 }
 
 Colors resolveColors(ResolvedAppearance appearance) {
-    // Orange brand from the app mark on cool blue-slate neutrals; green is
-    // reserved for success. Every text pair is at least 4.5:1 (WCAG 2).
     const bool dark = appearance == ResolvedAppearance::Dark;
     const QColor surface(dark ? "#20272b" : "#ffffff");
     const QColor fg(dark ? "#e0e8e8" : "#222b32");
@@ -60,7 +58,6 @@ Colors resolveColors(ResolvedAppearance appearance) {
         .primaryPressed = QColor(dark ? "#f07800" : "#9a330a"),
         .primaryFg = QColor(dark ? "#1f1206" : "#ffffff"),
         .selection = QColor(dark ? "#4a2c14" : "#fde4d3"),
-        // Hover keeps `fg-muted` at 4.5:1; selected rows switch muted text to `fg`.
         .sidebarHover = QColor(dark ? "#2c3539" : "#eaedef"),
         .sidebarSelection = QColor(dark ? "#3c484f" : "#d9dfe2"),
         .ring = primary,
@@ -151,4 +148,4 @@ QList<std::pair<QString, QColor>> colorTokens(const Colors& colors) {
     };
 }
 
-} // namespace choscordb::design
+}

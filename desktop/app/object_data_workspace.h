@@ -37,9 +37,8 @@ class ObjectDataWorkspace final : public QWidget {
     QWidget* history_ = nullptr;
     QComboBox* timeMode_ = nullptr;
     QLineEdit* asOf_ = nullptr;
-    // The selector entry whose rows are shown, restored when a read does not start.
     int shownTimeMode_ = 0;
     quint64 connection_ = 0;
     QString object_, label_;
 };
-} // namespace choscordb
+}

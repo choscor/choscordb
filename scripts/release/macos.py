@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Local macOS production release preparation, packaging and verification."""
 
 import argparse
 import base64
@@ -163,7 +162,6 @@ def production_base(value):
 
 
 def release_base(value):
-    """Accept only a public GitHub repository's canonical releases root."""
     parsed = urlsplit(value)
     if (
         parsed.scheme != "https"
@@ -186,7 +184,6 @@ def feed_url(base):
 
 
 def verify_live_feed(base):
-    """Refuse a production build until its exact Pages host serves a valid feed."""
     url = feed_url(base)
     try:
         with urllib.request.urlopen(url, timeout=30) as response:
@@ -272,7 +269,6 @@ def prepare(root, dependencies, qt_mirror=None):
     dependencies.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "MACOSX_DEPLOYMENT_TARGET": "26.0"}
     qt = dependencies / "qt/6.8.3/macos"
-    # aqt 3.3.0 verifies every Qt archive against upstream HTTPS checksum metadata.
     if (
         run(
             [
@@ -389,8 +385,6 @@ def prepare(root, dependencies, qt_mirror=None):
 
 def source_output(root, output):
     source_archive.create_candidate(root, output)
-    # The caller proves clean Git state before and after packaging; source candidate
-    # stays a truthful working-tree snapshot and is bound to the release commit.
     return output / "manifest.json"
 
 
@@ -511,7 +505,6 @@ def sign(app, identity):
             ]
         )
 
-    # Deepest Mach-O first, then each enclosing code bundle, then the application.
     for binary in sorted(
         stage.regular_files(app), key=lambda p: len(p.parts), reverse=True
     ):
@@ -626,14 +619,10 @@ def safe_artifact(root, value):
 
 
 def write_portable_tar_gz(destination, sources):
-    """Export source/license bytes without local owners or filesystem timestamps."""
-
     def portable(member):
         member.uid = member.gid = 0
         member.uname = member.gname = ""
         member.mtime = 0
-        # Do not allow extended headers to override normalized fields. Tarfile
-        # recreates required long-name headers from the explicit relative arcname.
         member.pax_headers = {}
         return member
 
@@ -653,7 +642,6 @@ def write_public_manifest(path, manifest):
 
 
 def resolve_sparkle_tools(value=None):
-    """Resolve maintainer-local tool configuration, never public release metadata."""
     return (
         Path(
             value
@@ -759,8 +747,6 @@ def verify_manifest(path, sparkle_tools=None):
     signature = enclosure.get("{" + NS + "}edSignature", "")
     if len(base64.b64decode(signature, validate=True)) != 64:
         raise ValueError("Invalid Sparkle update signature")
-    # OpenSSL's system build may lack Ed25519; pinned Sparkle tool reads ONLY the
-    # explicit app-specific key account and verifies the signature over final bytes.
     tool = resolve_sparkle_tools(sparkle_tools) / "bin/sign_update"
     public = run([tool.parent / "generate_keys", "--account", ACCOUNT, "-p"]).strip()
     if public != data["sparkle_public_key"]:
@@ -1074,8 +1060,6 @@ def package(args):
     license_archive = output / f"ChoscorDB-{version}-licenses.tar.gz"
     write_portable_tar_gz(license_archive, [(output / "notices", "licenses")])
     artifact(license_archive, "metadata")
-    # Ship the exact native source archives alongside app sources, including Qt's
-    # build-required sources, rather than relying on an upstream URL staying live.
     for original in [
         dependencies / "cache/qtbase-6.8.3.tar.xz",
         dependencies / "cache/qtsvg-6.8.3.tar.xz",
@@ -1134,7 +1118,9 @@ def package(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Local macOS production release preparation, packaging and verification."
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     for command in ["preflight", "prepare", "package"]:
         p = sub.add_parser(command)

@@ -1,9 +1,5 @@
-//! Blocking operating-system credential access. Call from a serialized worker,
-//! never the UI thread. No plaintext persistence or fallback credential backend.
 pub use choscordb_driver_api::Secret;
 
-/// The credential store also holds inline SSH identities; ordinary passwords
-/// remain bounded to 16 KiB by the connection layer.
 pub const MAX_SECRET_BYTES: usize = 64 * 1024;
 const SERVICE: &str = match option_env!("CHOSCORDB_CREDENTIAL_SERVICE") {
     Some(service) => service,
@@ -35,12 +31,9 @@ impl std::error::Error for CredentialError {}
 pub trait CredentialStore: Send + Sync {
     fn get(&self, reference: &str) -> Result<Secret>;
     fn put(&self, reference: &str, secret: &Secret) -> Result<()>;
-    /// Deletion is idempotent: an absent credential is already deleted.
     fn delete(&self, reference: &str) -> Result<()>;
 }
 
-/// Explicit backend for headless tests or builds without a credential service.
-/// It never silently stores secrets in memory or on disk.
 pub struct UnavailableStore;
 impl CredentialStore for UnavailableStore {
     fn get(&self, _: &str) -> Result<Secret> {
@@ -73,7 +66,6 @@ impl NativeCredentialStore {
             service: SERVICE.into(),
         }
     }
-    /// Isolated native tests must never share the production namespace.
     pub fn for_test_namespace(namespace: &str) -> Result<Self> {
         if !namespace.starts_with("com.choscor.ChoscorDB.tests.")
             || namespace.len() <= "com.choscor.ChoscorDB.tests.".len()
@@ -95,7 +87,6 @@ fn validate_reference(reference: &str) -> Result<()> {
     }
 }
 
-// Process-wide serialization also orders calls from independent adapter instances.
 static NATIVE_ACCESS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]

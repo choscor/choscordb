@@ -6,4 +6,4 @@ namespace choscordb {
 struct ColumnDto;
 
 ResultColumn resultColumn(const ColumnDto& column);
-} // namespace choscordb
+}

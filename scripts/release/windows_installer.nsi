@@ -80,7 +80,6 @@ Function FailInstall
   FileOpen $R0 "$LOCALAPPDATA\ChoscorDB\update-install-failure.txt" w
   FileWrite $R0 "ChoscorDB update installation failed. Retry or install manually.$\r$\n"
   FileClose $R0
-  ; Never launch the new executable when rollback could not be confirmed.
   ${If} $OldRestored == "1"
     ${If} $MayRelaunchOld == "1"
       IfFileExists "$INSTDIR\choscordb.exe" 0 done_failure
@@ -106,7 +105,6 @@ Function RestorePrevious
   no_backup:
     Return
   rollback_failed:
-    ; Keep .previous and the failed payload for manual recovery.
     Return
 FunctionEnd
 
@@ -131,7 +129,6 @@ Section "Install"
   previous_check:
   IfFileExists "$INSTDIR.previous" previous_conflict registration_check
   previous_conflict:
-    ; Only a verified prior success may safely discard a leftover backup.
     IfFileExists "$INSTDIR\choscordb.exe" 0 manual_previous
     ClearErrors
     FileOpen $R1 "$LOCALAPPDATA\ChoscorDB\update-cleanup-pending.txt" r
@@ -181,7 +178,6 @@ Section "Install"
       Abort
     ${EndIf}
   ${EndIf}
-  ; This unique staging path was absent at entry and belongs to this invocation.
   StrCpy $OwnPending "1"
   ClearErrors
   SetOutPath "$PendingDir"
@@ -233,8 +229,6 @@ Section "Install"
     Call FailInstall
     Abort
   new_install:
-    ; Release the current-directory handle before renaming the staged payload.
-    ; Windows otherwise keeps the staging directory open and Rename fails.
     ClearErrors
     SetOutPath "$TEMP"
     IfErrors failed_install
@@ -277,7 +271,6 @@ Section "Install"
     RMDir /r "$INSTDIR.previous"
     IfFileExists "$INSTDIR.previous" cleanup_pending clean_success
   cleanup_pending:
-    ; The new app is running. Keep its verified backup and report nonzero status.
     CreateDirectory "$LOCALAPPDATA\ChoscorDB"
     FileOpen $R1 "$LOCALAPPDATA\ChoscorDB\update-cleanup-pending.txt" w
     FileWrite $R1 "ready-upgrade-backup"

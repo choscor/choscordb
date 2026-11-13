@@ -10,8 +10,7 @@ ResultColumn column(const QString& name, const QString& databaseType) {
     value.databaseType = databaseType;
     return value;
 }
-} // namespace
-// How a page and its later metadata reach the views.
+}
 class ResultPageModelTest : public QObject {
     Q_OBJECT
   private slots:
@@ -22,7 +21,6 @@ class ResultPageModelTest : public QObject {
         metadata.enumChoices = {"ready", "queued"};
         QSignalSpy reset(&model, &QAbstractItemModel::modelReset);
         QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
-        // Metadata that arrives with the page is part of the same reset.
         QVERIFY(model.setPage({column("state", "text")}, {{QString("ready")}, {QString("queued")}},
                               0, {metadata}));
         QCOMPARE(reset.count(), 1);
@@ -84,7 +82,6 @@ class ResultPageModelTest : public QObject {
                     distinct += expected.isValid();
                 }
             }
-        // The sample sets many roles, so equal empty values cannot pass the check.
         QVERIFY(distinct > model.rowCount() * model.columnCount() * 4);
     }
 };

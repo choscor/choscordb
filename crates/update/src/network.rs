@@ -223,8 +223,6 @@ impl UpdateNetworkService {
         })
     }
 
-    // The native menu test checks that an unavailable feed does not grant consent.
-    // This endpoint can only fail a check and can never authorize a package.
     pub fn new_failure_feed_fixture(feed_url: &str) -> Result<Self, NetworkError> {
         let feed_url = url::Url::parse(feed_url).map_err(|_| NetworkError::FeedPolicy)?;
         let loopback = matches!(feed_url.host_str(), Some("127.0.0.1" | "[::1]" | "::1"));

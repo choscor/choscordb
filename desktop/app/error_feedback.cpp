@@ -35,7 +35,6 @@ void ErrorFeedback::present() {
     if (!blocker)
         blocker = QApplication::activeModalWidget();
     if (blocker) {
-        // Two modals never stack. The list shows when the open modal hides or goes away.
         blocker_ = blocker;
         blocker->installEventFilter(this);
         connect(blocker, &QObject::destroyed, this, &ErrorFeedback::retryAfterBlocker,
@@ -66,4 +65,4 @@ void ErrorFeedback::retryAfterBlocker() {
     blocker_.clear();
     present();
 }
-} // namespace choscordb
+}

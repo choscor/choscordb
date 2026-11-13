@@ -46,4 +46,4 @@ QPalette applicationPalette(const ResolvedTheme& theme) {
     return palette;
 }
 
-} // namespace choscordb::design
+}

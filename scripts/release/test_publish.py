@@ -456,8 +456,6 @@ pathlib.Path(args[args.index('--output')+1]).write_bytes(b'dmg')
                 self.assertNotIn("private-details", str(caught.exception))
 
     def test_full_cli_dry_run_verifies_before_store_and_rejects_tampering(self):
-        # Executable fixtures exercise the real CLI and validation wiring only;
-        # these are deliberately not evidence of actual Apple notarization.
         manifest = self.release()
         public = base64.b64encode(bytes(range(32))).decode()
         signature = base64.b64encode(bytes(range(64))).decode()
@@ -720,15 +718,10 @@ if name == 'gh':
             "FIXTURE_APP": str(app),
             "CHOSCORDB_SPARKLE_TOOLS": str(tools.parent),
         }
-        # The unmodified production CLI must reject tiny synthetic native archives,
-        # even though their fixture manifest/checksums agree with their bytes.
         result = subprocess.run(command, env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 1)
         self.assertIn("native source does not match reviewed pin", result.stdout)
         self.assertFalse(log.exists())
-        # For orchestration coverage only, substitute expected hash DATA in this
-        # subprocess, never a production CLI flag or environment override. Real
-        # upstream archives and Apple signatures are not claimed by this fixture.
         launcher = self.root / "fixture_launcher.py"
         fixture_hash = hashlib.sha256(b"controlled fixture metadata/source").hexdigest()
         launcher.write_text(
@@ -757,7 +750,6 @@ if name == 'gh':
         self.assertIn("sign_update --account com.choscor.ChoscorDB --verify", commands)
         self.assertIn("gh api repos/choscor/choscordb/git/ref/tags/v1.0.0", commands)
         self.assertNotIn("gh release", commands)
-        # Explicit local configuration wins over an unrelated local environment.
         env["CHOSCORDB_SPARKLE_TOOLS"] = str(self.root / "wrong-tools")
         command.extend(["--sparkle-tools", str(tools.parent)])
         result = subprocess.run(command, env=env, capture_output=True, text=True)
@@ -786,7 +778,6 @@ if name == 'gh':
         self.assertNotIn(str(pathlib.Path.home()), result.stdout)
         self.assertEqual(log.read_text(), "")
         leaked_resource.unlink()
-        # A legacy field is rejected before any executable can be selected from it.
         path.write_text(
             json.dumps(
                 {**manifest, "sparkle_tools": str(self.root / "untrusted-tools")}

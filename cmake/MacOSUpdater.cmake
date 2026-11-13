@@ -8,7 +8,6 @@ if(APPLE AND (CHOSCORDB_PRODUCTION_RELEASE OR CHOSCORDB_UPDATE_REHEARSAL))
   enable_language(OBJCXX)
 endif()
 function(choscordb_configure_updater target)
-  # Windows and Linux use their own updater and package contract.
   if(NOT APPLE)
     if(CHOSCORDB_PRODUCTION_RELEASE OR CHOSCORDB_UPDATE_REHEARSAL)
       message(FATAL_ERROR "macOS Sparkle release options cannot be used on Windows or Linux")

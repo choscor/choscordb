@@ -7,7 +7,6 @@ struct SshPrivateKeyDraft {
     QString secret;
     bool modified = false;
 };
-// The text document contains only a masked preview, never private-key material.
 class SshPrivateKeyEditor final : public QWidget {
     Q_OBJECT
   public:
@@ -27,4 +26,4 @@ class SshPrivateKeyEditor final : public QWidget {
     QPlainTextEdit* preview_;
     QLabel* error_;
 };
-} // namespace choscordb
+}

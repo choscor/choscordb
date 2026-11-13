@@ -558,8 +558,6 @@ pub async fn sharing(driver: &dyn DatabaseDriver, make_options: impl Fn() -> Con
     };
     let before = authentication_count("CHOSCORDB_SSH_TARGET_CONTAINER");
     let mut first = driver.connect(options()).await.unwrap();
-    // The configured empty global trust store must remain shareable even on
-    // macOS, where writing this device changes its modification timestamps.
     std::fs::write("/dev/null", b"unrelated process output").unwrap();
     let mut second = driver.connect(options()).await.unwrap();
     verify(driver, options(), "sharing").await;

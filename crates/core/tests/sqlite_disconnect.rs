@@ -4,7 +4,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-/// Queries in this file page 100 rows at a time.
 fn paged() -> QueryOptions {
     QueryOptions {
         page_size: PageSize::new(100).unwrap(),
@@ -144,7 +143,7 @@ fn direct_driver_close_aborts_returning_but_normal_finish_still_commits() {
             if normal_finish {
                 cursor.close().await.unwrap();
             }
-            connection.close().await.unwrap(); // No cancellation handle invocation.
+            connection.close().await.unwrap();
         });
         let db = rusqlite::Connection::open(&path).unwrap();
         db.busy_timeout(Duration::from_secs(5)).unwrap();

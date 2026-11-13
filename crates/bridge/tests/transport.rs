@@ -36,7 +36,6 @@ fn typed_transport_connects_and_streams_sqlite_without_json() {
     assert!(page.cells[1].kind == ffi::CellKindDto::Text);
     assert_eq!(page.cells[2].integer, 42);
     assert_eq!(page.cells[3].bytes, vec![0, 255]);
-    // Rust decides each cell's link filter, so the grid never asks while it paints.
     let filterable: Vec<_> = page
         .cells
         .iter()
@@ -159,7 +158,6 @@ fn event_drain_is_bounded_during_burst() {
     for _ in 0..40 {
         assert!(execute(&mut engine, c.id, "SELECT 1", 1000, 0).accepted);
     }
-    // Let the burst queue up. Each drain then returns at most the budget, in batches.
     std::thread::sleep(std::time::Duration::from_millis(500));
     let mut sizes = Vec::new();
     for _ in 0..100 {
@@ -177,7 +175,6 @@ fn one_drain_returns_a_small_event_that_core_has_queued() {
     assert!(c.accepted);
     await_event(&mut engine, "connected");
     assert!(metadata_request(&mut engine, c.id, "", 7).accepted);
-    // Core has the reply long before this; conversion must not cost the UI another tick.
     std::thread::sleep(std::time::Duration::from_millis(500));
     let events = drain_events(&mut engine);
     assert!(
@@ -898,7 +895,6 @@ fn mysql_sql_ranges_keep_escaped_quote_and_hash_comment_in_statement() {
         &sql[selected.start as usize..selected.end as usize],
         "SELECT 'it\\'s; intact';"
     );
-    // The shared grammar conservatively confirms dialect-specific escaped strings.
     assert!(selected.confirmation_required);
     assert!(
         !sql_execution_range(

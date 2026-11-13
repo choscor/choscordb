@@ -5,7 +5,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-/// Queries that page 100 rows at a time, as these tests fetch.
 fn paged() -> QueryOptions {
     QueryOptions {
         page_size: PageSize::new(100).unwrap(),
@@ -122,7 +121,6 @@ fn pressure_evicts_old_pages_but_preserves_visible_copy_and_disk_fallback() {
         matches!(result(&mut engine), Event::StoredPage {first_row: 0, page, ..} if page.rows == visible.rows)
     );
     assert_eq!(engine.cache_usage().misses, 1);
-    // Fetch later pages again to evict the reread, then prove a miss really uses disk.
     for index in 1..30 {
         engine.fetch_page_at(q, index).unwrap();
         assert!(matches!(result(&mut engine), Event::StoredPage { .. }));

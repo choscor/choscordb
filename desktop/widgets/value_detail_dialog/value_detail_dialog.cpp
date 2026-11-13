@@ -20,11 +20,10 @@
 namespace choscordb {
 namespace {
 using bridge_detail::fromRust;
-// The value column starts at three standard table columns before content sizing.
 int initialValueColumnWidth() {
     return 3 * design::dimension(design::Dimension::TableColumn);
 }
-} // namespace
+}
 ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter), model_(new ValuePreviewModel(this)),
       table_(new QTableView(this)), previous_(new design::Button(tr("Previous"), this)),
@@ -96,7 +95,6 @@ ValueDetailDialog::~ValueDetailDialog() {
 }
 void ValueDetailDialog::openValue(quint64 query, quint64 handle, const QString& type,
                                   std::optional<quint64> length) {
-    // Reopening an in-flight target keeps a single request for that target.
     if (query_ == query && handle_ == handle) {
         show();
         raise();
@@ -183,7 +181,6 @@ void ValueDetailDialog::previousChunk() {
         request(0);
         return;
     }
-    // Seven bytes cover any UTF-8 character crossing the desired byte boundary.
     alignmentTarget_ = target;
     request(target > 3 ? target - 3 : 0, 7);
 }
@@ -193,7 +190,6 @@ void ValueDetailDialog::request(quint64 offset, quint32 maxBytes) {
     retry_->hide();
     statusLine_->setAvailable(true);
     statusLine_->setNeutral();
-    // Release the displayed allocation before waiting for another transfer reservation.
     dropChunk();
     offset_ = offset;
     if (inlineMode_) {
@@ -305,4 +301,4 @@ void ValueDetailDialog::updateActions() {
 void ValueDetailDialog::setStatus(const QString& message) {
     statusLine_->setMessage(message);
 }
-} // namespace choscordb
+}

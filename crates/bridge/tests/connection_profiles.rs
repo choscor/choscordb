@@ -315,7 +315,6 @@ fn draft_credentials_follow_save_choice_and_transport() {
         (saved.tls_action.as_str(), saved.tls.as_str()),
         ("replace", "identity")
     );
-    // SSH is disabled, so its typed secret is neither stored nor sent.
     assert_eq!(
         (saved.ssh_action.as_str(), saved.ssh.as_str()),
         ("clear", "")
@@ -380,7 +379,6 @@ fn mariadb_profiles_save_reload_as_mariadb_with_server_defaults() {
     assert!(validate_connection_profile(saved).is_empty());
 }
 
-/// The bridge events in order. One drain can hold the saved page and the live page.
 struct Events(std::collections::VecDeque<ffi::BridgeEvent>);
 impl Events {
     fn next(&mut self, engine: &mut BridgeEngine) -> ffi::BridgeEvent {
@@ -405,7 +403,6 @@ impl Events {
         while self.next(engine).kind != "connected" {}
         submitted.id
     }
-    /// The saved flags of the pages that one root request shows.
     fn expand(&mut self, engine: &mut BridgeEngine, connection: u64, fresh: bool) -> Vec<bool> {
         let submitted = metadata_page_request(engine, connection, "", 5, 0, fresh);
         assert!(submitted.accepted, "{}", submitted.error);

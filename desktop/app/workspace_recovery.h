@@ -7,11 +7,8 @@ class QTabWidget;
 class QWidget;
 namespace choscordb {
 class SqlEditor;
-// Recovery values 4 (Data) and 5 (ERD) intentionally differ from their tab positions.
 quint32 savedObjectPane(int paneIndex);
 int restoredObjectPane(quint32 savedPane);
-// Recovery transports inert editor data only. The controller never opens a
-// connection or reads a restored file, and owns at most one pending snapshot.
 class WorkspaceRecoveryController final : public QObject {
     Q_OBJECT
   public:
@@ -64,4 +61,4 @@ class WorkspaceRecoveryController final : public QObject {
     bool dirty_ = false;
     bool failed_ = false;
 };
-} // namespace choscordb
+}

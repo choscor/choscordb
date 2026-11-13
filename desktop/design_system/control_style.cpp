@@ -29,7 +29,6 @@ void ControlStyle::polish(QWidget* widget) {
         tabs->setDrawBase(false);
     if (qobject_cast<QLineEdit*>(widget) || qobject_cast<QComboBox*>(widget) ||
         qobject_cast<QAbstractSpinBox*>(widget) || qobject_cast<QKeySequenceEdit*>(widget)) {
-        // Field values use Callout at medium weight; placeholders stay regular.
         auto fieldFont = resolveTypography(TextStyle::Callout);
         fieldFont.setWeight(QFont::Medium);
         widget->setFont(fieldFont);
@@ -101,8 +100,6 @@ bool ControlStyle::eventFilter(QObject* watched, QEvent* event) {
 ControlStyle::ControlStyle() : QProxyStyle(QStyleFactory::create("Fusion")) {}
 int ControlStyle::styleHint(StyleHint hint, const QStyleOption* option, const QWidget* widget,
                             QStyleHintReturn* returnData) const {
-    // A list popup uses the view's item styling. The menu delegate instead
-    // paints each option through the combo's field style, including its frame.
     if (hint == SH_ComboBox_Popup)
         return 0;
     return QProxyStyle::styleHint(hint, option, widget, returnData);
@@ -136,14 +133,11 @@ int ControlStyle::pixelMetric(PixelMetric metric, const QStyleOption* option,
         return dimension(Dimension::IconSmall);
     if (metric == PM_ExclusiveIndicatorWidth || metric == PM_ExclusiveIndicatorHeight)
         return 18;
-    // Anchor nested menus to the painted panel, excluding transparent shadow
-    // padding from their separation. Qt handles the mirrored/edge placement.
     if (metric == PM_SubMenuOverlap && qobject_cast<const QMenu*>(widget))
         return spacing(Spacing::One) - detail::menuShadowMargin();
     if (metric == PM_HeaderDefaultSectionSizeVertical)
         return dimension(Dimension::Row);
     if (metric == PM_FocusFrameHMargin || metric == PM_FocusFrameVMargin) {
-        // Qt adds one pixel to this metric when laying out item text.
         if (metric == PM_FocusFrameHMargin && widget &&
             widget->property("designNavigationTree").toBool())
             return spacing(Spacing::Half) - 1;
@@ -157,4 +151,4 @@ int ControlStyle::pixelMetric(PixelMetric metric, const QStyleOption* option,
     }
     return QProxyStyle::pixelMetric(metric, option, widget);
 }
-} // namespace choscordb::design
+}

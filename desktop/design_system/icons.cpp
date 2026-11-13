@@ -18,13 +18,11 @@ namespace choscordb::design {
 namespace {
 
 QByteArray themedSvg(Icon icon, const QColor& color) {
-    // QResource only resolves the compiled :/icons namespace, never the filesystem.
     QResource source(iconResourcePath(icon));
     if (!source.isValid()) {
         return {};
     }
     auto svg = source.uncompressedData();
-    // The app mark and database logos retain their brand colors in both themes.
     if (icon == Icon::AppMark || icon == Icon::PostgreSQL || icon == Icon::SQLite ||
         icon == Icon::MySQL || icon == Icon::MariaDB) {
         return svg;
@@ -62,8 +60,6 @@ class SvgIconEngine final : public QIconEngine {
     explicit SvgIconEngine(QByteArray svg) : svg_(std::move(svg)) {}
 
     void paint(QPainter* painter, const QRect& rect, QIcon::Mode, QIcon::State) override {
-        // Render into the final paint device/transform. An intermediate pixmap
-        // cannot account for fractional painter scaling and softens SVG edges.
         if (!renderer_) // perf-ok: parsed once per engine, then reused.
             renderer_ = std::make_unique<QSvgRenderer>(svg_);
         renderer_->render(painter, QRectF(rect));
@@ -74,7 +70,6 @@ class SvgIconEngine final : public QIconEngine {
     }
 
     QPixmap scaledPixmap(const QSize& size, QIcon::Mode, QIcon::State, qreal scale) override {
-        // Delegates request the same few sizes for every row; rasterize each once.
         const PixmapKey key{size, scale};
         if (const auto found = pixmaps_.constFind(key); found != pixmaps_.cend())
             return found.value();
@@ -95,7 +90,7 @@ class SvgIconEngine final : public QIconEngine {
     QHash<PixmapKey, QPixmap> pixmaps_;
 };
 
-} // namespace
+}
 
 QList<IconDefinition> iconCatalog() {
     ::qInitResources_resources();
@@ -243,12 +238,10 @@ QIcon createThemedIcon(Icon icon, const QColor& color, int size) {
     qWarning() << "Could not render required SVG icon:" << iconResourcePath(icon);
     return {};
 }
-} // namespace
+}
 
 QIcon themedIcon(Icon icon, const QColor& color, int size) {
     ::qInitResources_resources();
-    // Item delegates request icons per painted row. Parsing and validating the SVG
-    // each time dominates large trees, so reuse icons for identical inputs.
     static QMutex mutex;
     static QHash<IconKey, QIcon> cache;
     const IconKey key{icon, color.rgba(), size};
@@ -273,4 +266,4 @@ Icon driverIcon(const QString& driver) {
         return Icon::MariaDB;
     return Icon::Database;
 }
-} // namespace choscordb::design
+}

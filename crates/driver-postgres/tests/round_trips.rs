@@ -1,4 +1,3 @@
-//! Round-trip budgets through a counting relay. Run with the disposable PostgreSQL fixture.
 #[path = "../../driver-api/tests/support/round_trip_proxy.rs"]
 #[allow(dead_code, reason = "Each test file uses part of the shared relay.")]
 mod round_trip_proxy;
@@ -19,7 +18,6 @@ async fn proxy() -> RoundTripProxy {
     RoundTripProxy::start("127.0.0.1", config.get_ports()[0]).await
 }
 
-// Plain TCP through the relay, so that each protocol message is visible.
 fn options(port: u16) -> ConnectionOptions {
     let config = fixture();
     ConnectionOptions::Postgres {
@@ -134,7 +132,6 @@ async fn a_byte_budget_stops_a_page_and_keeps_the_rest_for_the_next_page() {
             break;
         }
     }
-    // Each page stops early, and no row is lost or repeated.
     assert!(pages > 2, "{pages} pages");
     assert_eq!(seen, (1..=50).collect::<Vec<_>>());
     cursor.close().await.unwrap();
@@ -161,7 +158,6 @@ async fn a_select_and_its_inspection_fit_their_turnaround_budgets() {
     println!("select to first page: {select} turnarounds");
     assert_eq!(page.rows.len(), 20);
     cursor.close().await.unwrap();
-    // The connection remembers the domain lookup of this result shape.
     proxy.reset();
     let mut cursor = connection
         .execute(sql, QueryOptions::default())
@@ -243,7 +239,6 @@ async fn a_column_type_change_on_the_connection_shows_the_new_domain() {
         column_type(&mut connection, select, auto.clone()).await,
         "int4"
     );
-    // DDL that rolls back leaves no remembered domain behind.
     connection
         .execute(
             "ALTER TABLE round_trip_domain ALTER COLUMN n TYPE round_trip_positive",
@@ -263,7 +258,6 @@ async fn a_column_type_change_on_the_connection_shows_the_new_domain() {
         column_type(&mut connection, select, auto.clone()).await,
         "int4"
     );
-    // Committed DDL on the connection replaces the remembered lookup.
     connection
         .execute(
             "ALTER TABLE round_trip_domain ALTER COLUMN n TYPE round_trip_positive",
@@ -317,7 +311,6 @@ async fn each_later_object_page_reuses_the_prepared_read() {
     let second = cursor.fetch_page_bounded(size, 1 << 20).await.unwrap();
     let turnarounds = proxy.turnarounds();
     println!("later object page: {turnarounds} turnarounds");
-    // LIMIT/OFFSET stays, so the page is the next 100 rows of the relation.
     assert_eq!(ids(&second).len(), 100);
     assert!(second.has_more);
     assert_eq!(turnarounds, 1, "{turnarounds} turnarounds");
@@ -325,18 +318,7 @@ async fn each_later_object_page_reuses_the_prepared_read() {
     connection.close().await.unwrap();
 }
 
-// One Execute fetches the page and the row that tells if more rows exist.
 const PAGE_BUDGET: usize = 2;
-// The spec budget of 3 is not possible, for these protocol reasons:
-// 1. BEGIN, SET LOCAL statement_timeout and Parse share one turnaround.
-// 2. The domain lookup needs the column origins that Parse returns.
-// 3. Bind needs the result formats from the lookup. It shares a turnaround
-//    with the first Execute, which reads one row: before that row, the driver
-//    cannot know the row width, so it cannot size a page to the byte budget.
-// 4. The page Execute.
-// 5. COMMIT, after the result ends.
 const SELECT_BUDGET: usize = 5;
-// The connection remembers the lookup of step 2.
 const REPEATED_SELECT_BUDGET: usize = 4;
-// The catalog reads of both inspections run concurrently on one connection.
 const INSPECTION_BUDGET: usize = 3;

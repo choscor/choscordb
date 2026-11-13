@@ -1,4 +1,3 @@
-//! Versioned local pin storage and pin identity policy.
 use serde_json::{Value, json};
 #[cfg(windows)]
 use std::fs::OpenOptions;
@@ -243,7 +242,6 @@ fn open_pin_file(path: &Path) -> std::io::Result<File> {
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
-        // FILE_FLAG_OPEN_REPARSE_POINT makes a swapped link visible on the handle.
         OpenOptions::new()
             .read(true)
             .custom_flags(0x0020_0000)
@@ -264,7 +262,6 @@ fn same_file_identity(original: &std::fs::Metadata, opened: &std::fs::Metadata) 
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
-        // FILE_ATTRIBUTE_REPARSE_POINT: the nofollow handle must be a regular file.
         opened.file_attributes() & 0x0000_0400 == 0 && original.file_attributes() & 0x0000_0400 == 0
     }
     #[cfg(not(any(unix, windows)))]
@@ -355,8 +352,6 @@ fn read_pin(value: &Value) -> Option<PinRecord> {
     valid(&pin).then_some(pin)
 }
 
-/// The pin list after pinning or unpinning `candidate`; `None` when nothing changes.
-/// New pins go first.
 pub fn toggle_pin(pins: &[PinRecord], candidate: PinRecord, unpin: bool) -> Option<Vec<PinRecord>> {
     if !valid(&candidate) {
         return None;
@@ -378,7 +373,6 @@ pub fn toggle_pin(pins: &[PinRecord], candidate: PinRecord, unpin: bool) -> Opti
     }
 }
 
-/// The pin list without the pin whose identity key is `key`.
 pub fn remove_pin(pins: &[PinRecord], key: &str) -> Option<Vec<PinRecord>> {
     let row = pins.iter().position(|pin| identity_key(pin) == key)?;
     let mut updated = pins.to_vec();
@@ -386,7 +380,6 @@ pub fn remove_pin(pins: &[PinRecord], key: &str) -> Option<Vec<PinRecord>> {
     Some(updated)
 }
 
-/// The pin list without the pins of a deleted connection profile.
 pub fn remove_profile_pins(pins: &[PinRecord], profile_id: &str) -> Option<Vec<PinRecord>> {
     let updated: Vec<_> = pins
         .iter()

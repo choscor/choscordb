@@ -1,6 +1,4 @@
-//! Conservative local recognition; unknown statements never authorize idle rollback.
 pub(super) fn is_write(sql: &str) -> bool {
-    // Keep maintenance bookkeeping bounded even for unusually large public-driver SQL.
     if sql.len() > 64 * 1024 {
         return false;
     }
@@ -14,8 +12,6 @@ pub(super) fn is_write(sql: &str) -> bool {
     let mut write = false;
     loop {
         let kind = cursor.node().kind();
-        // EXPLAIN without ANALYZE does not execute its nested statement. Leave all
-        // EXPLAIN forms conservative rather than guess at dialect options.
         if kind == "keyword_explain" {
             return false;
         }

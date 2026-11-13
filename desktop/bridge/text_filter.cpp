@@ -56,4 +56,4 @@ QList<TextSpan> TextFinder::findAll(const QString& source, int limit) const {
     return spans;
 }
 
-} // namespace choscordb
+}

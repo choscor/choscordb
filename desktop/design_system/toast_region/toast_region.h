@@ -21,22 +21,13 @@ class ToastRegion final : public QLabel {
     Q_OBJECT
   public:
     explicit ToastRegion(QWidget* parent = nullptr);
-    // Render above host content without taking space in its layout.
     void attachTo(QWidget* host);
-    // Completion notices reserve at least ten seconds of reading time. Warnings
-    // and failures require dismissal. Later notices wait in display order.
     void showToast(const QString& title, const QString& body, ToastVariant variant,
                    int durationMs = 10000);
-    // An important notice stays in front of ordinary notifications until resolved or dismissed.
     void showPinnedToast(const QString& title, const QString& body, ToastVariant variant);
-    // One notice for background failures and warnings. It shows the latest active message
-    // and the count of active messages; it never queues a second copy. It stays until it is
-    // dismissed, and it waits while other notices show.
     void showReplacingToast(const QString& title, const QString& body, ToastVariant variant);
-    // Removes the message `body`; the notice hides when no active message is left.
     void clearReplacingToast(const QString& body);
     void clearPinnedToast();
-    // Compatibility for the gallery; production progress belongs in StatusLine.
     void showProgress(const QString& title, const QString& detail = {});
     void clearNotice();
 
@@ -47,7 +38,6 @@ class ToastRegion final : public QLabel {
 
   private:
     [[nodiscard]] static int leadingInset();
-    // The title row holds the status icon, the first text line and the X.
     [[nodiscard]] int titleRowHeight() const;
     void applyCardMargins(int bottomExtra);
     void showStatusIcon(design::Icon icon, const QColor& color);
@@ -57,7 +47,6 @@ class ToastRegion final : public QLabel {
         ToastVariant variant = ToastVariant::Success;
         int durationMs = 0;
         bool progress = false;
-        // The number of notices that a replacing notice holds; 0 for other notices.
         int count = 0;
     };
     void renderNotice(const Notice& notice);
@@ -90,14 +79,11 @@ class ToastRegion final : public QLabel {
     bool pinned_ = false;
     std::optional<Notice> currentNotice_;
     std::deque<Notice> queuedNotices_;
-    // The active messages of the replacing notice, oldest first.
     std::vector<Notice> replacingNotices_;
     int readingTimeLeft_ = 0;
     bool hovered_ = false;
 };
-// Shared window-level notification surface, including while an embedded modal is open.
 ToastRegion* windowToast(QWidget* context);
-// Feature widgets use one progress overlay per host and dismiss it when work ends.
 ToastRegion* progressToast(QWidget* host);
 void clearProgressToast(QWidget* host);
-} // namespace choscordb
+}

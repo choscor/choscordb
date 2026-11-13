@@ -1,5 +1,3 @@
-"""Tests for the documentation policy: links, STE sentence length, and doc updates."""
-
 from pathlib import Path
 import subprocess
 import tempfile

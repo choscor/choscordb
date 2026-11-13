@@ -5,7 +5,6 @@
 namespace choscordb {
 namespace {
 bool parseSequence(const QString& text, QKeySequence& sequence) {
-    // Rust bounds the stored sequence and rejects NUL; Qt parses only valid UTF-16.
     if (!text.isValidUtf16())
         return false;
     sequence = QKeySequence::fromString(text, QKeySequence::PortableText);
@@ -16,21 +15,17 @@ bool parseSequence(const QString& text, QKeySequence& sequence) {
     for (int i = 0; i < sequence.count(); ++i)
         if (sequence[i].key() == Qt::Key_unknown || sequence[i].key() == Qt::Key(0))
             return false;
-    // Portable persisted notation must survive a round trip. This also catches
-    // malformed suffixes Qt's permissive parser could otherwise discard.
     auto canonical = sequence.toString(QKeySequence::PortableText);
     auto requested = text.trimmed();
     canonical.remove(' ');
     requested.remove(' ');
-    // Modifier ordering is semantically irrelevant; key/chord text must still
-    // survive, so a fifth chord or a trailing delimiter cannot disappear.
     static const QRegularExpression modifiers("(?:Ctrl|Alt|Shift|Meta|Num)\\+",
                                               QRegularExpression::CaseInsensitiveOption);
     canonical.remove(modifiers);
     requested.remove(modifiers);
     return canonical.compare(requested, Qt::CaseInsensitive) == 0;
 }
-} // namespace
+}
 ShortcutValidation validateShortcuts(const QList<ShortcutOverride>& shortcuts,
                                      const QList<ShortcutDescriptor>& catalog) {
     QHash<QString, qsizetype> identifiers;
@@ -57,7 +52,6 @@ ShortcutValidation validateShortcuts(const QList<ShortcutOverride>& shortcuts,
         QKeySequence sequence;
         if (!parseSequence(custom.sequence, sequence))
             return {QObject::tr("Invalid shortcut for %1.").arg(catalog[index].label), index};
-        // The grid reads each key press by itself, so a grid key has one combination.
         if (catalog[index].scope == ShortcutScope::ResultGrid && sequence.count() > 1)
             return {QObject::tr("The shortcut for %1 must be one key combination.")
                         .arg(catalog[index].label),
@@ -79,4 +73,4 @@ ShortcutValidation validateShortcuts(const QList<ShortcutOverride>& shortcuts,
     }
     return {};
 }
-} // namespace choscordb
+}

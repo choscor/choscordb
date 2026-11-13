@@ -40,10 +40,6 @@ class PreferencesWorkspaceTest : public QObject {
         QVERIFY(workspace);
         QSignalSpy profilesReady(workspace->adapter(), &EngineAdapter::profilesReady);
         window.show();
-        // This test controls navigator visibility directly. The initial saved
-        // profile reply must finish before installing its synthetic roots,
-        // otherwise the normal sidebar synchronization clears that fixture. The history
-        // dock also lists profiles, and one drain can deliver both replies.
         QTRY_VERIFY(profilesReady.count() >= 1);
         auto* controller = window.findChild<NavigatorController*>();
         auto* tree = window.findChild<QTreeView*>("databaseNavigator");
@@ -337,7 +333,6 @@ class PreferencesWorkspaceTest : public QObject {
         QTemporaryDir directory;
         const auto path = directory.filePath("broken-appearance.sqlite");
         {
-            // Seed through the real SQL adapter, without a second SQLite dependency.
             EngineAdapter writer(nullptr, path);
             bool connected = false, completed = false;
             connect(&writer, &EngineAdapter::eventReady, &writer, [&](const BridgeEvent& event) {
@@ -472,8 +467,6 @@ class PreferencesWorkspaceTest : public QObject {
                 [&](const QString& message) {
                     if (message.isEmpty() || !reloaded.isEmpty())
                         return;
-                    // A notification can run a nested event loop while preview
-                    // still holds its earlier "loading" result.
                     QEventLoop delivery;
                     connect(appearance, &choscordb::AppearanceController::readyChanged, &delivery,
                             &QEventLoop::quit);
@@ -555,7 +548,6 @@ class PreferencesWorkspaceTest : public QObject {
     void gridShortcutOverrideReachesEveryGridAndSurvivesRestart() {
         QTemporaryDir directory;
         const auto path = directory.filePath("preferences.sqlite");
-        // The grid commands are actions of each result grid.
         const auto gridActions = [](choscordb::MainWindow& window, const QString& label) {
             QList<QAction*> found;
             for (auto* grid : window.findChildren<QTableView*>())
@@ -594,8 +586,6 @@ class PreferencesWorkspaceTest : public QObject {
                 ->setKeySequence(QKeySequence("Ctrl+K"));
             apply->click();
             QTRY_VERIFY(!dialog || !dialog->isVisible());
-            // Grids created after the save get the saved key too. The first object tab uses
-            // the explorer that the window made at startup.
             auto* sql = window.findChild<choscordb::QueryWorkspace*>();
             QSignalSpy connected(sql, &choscordb::QueryWorkspace::connectionReady);
             sql->connectSqlite(":memory:");
@@ -614,9 +604,7 @@ class PreferencesWorkspaceTest : public QObject {
         choscordb::MainWindow restarted(nullptr, path);
         restarted.show();
         QTRY_VERIFY(restarted.findChild<QTabWidget*>("editorTabs")->isEnabled());
-        // Recovery restores the object tabs, so each restored grid has the saved key.
         QTRY_COMPARE(addRowKeys(restarted), QList<QKeySequence>(3, custom));
-        // Set NULL keeps its fixed alternate after an override of its primary key.
         const auto setNulls = gridActions(restarted, "Set NULL");
         QCOMPARE(setNulls.size(), 3);
         for (auto* setNull : setNulls)

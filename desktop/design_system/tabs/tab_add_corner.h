@@ -29,7 +29,6 @@ class TabEndCap final : public QWidget {
     int width_;
 };
 
-// Keeps one add action next to the last tab, or fixed at the trailing edge during overflow.
 class TabAddCorner final : public QWidget {
   public:
     explicit TabAddCorner(QTabWidget* tabs) : QWidget(tabs), tabs_(tabs) {
@@ -90,4 +89,4 @@ class TabAddCorner final : public QWidget {
     const int leftPadding_ = spacing(Spacing::One);
     bool positionPending_ = false;
 };
-} // namespace choscordb::design
+}

@@ -26,7 +26,7 @@ class KeywordApis final : public QsciAbstractAPIs {
         return {};
     }
 };
-} // namespace
+}
 SqlEditor::SqlEditor(QWidget* parent) : QsciScintilla(parent) {
     setUtf8(true);
     setAccessibleName(tr("SQL editor"));
@@ -44,8 +44,6 @@ SqlEditor::SqlEditor(QWidget* parent) : QsciScintilla(parent) {
     auto* lexer = new QsciLexerSQL(this);
     setLexer(lexer);
     setEditorFont(font);
-    // Immutable keywords do not require QScintilla's asynchronous API preparation,
-    // whose worker can access a lexer while its QObject children are destroyed.
     new KeywordApis(lexer);
     setAutoCompletionSource(QsciScintilla::AcsAll);
     setAutoCompletionCaseSensitivity(false);
@@ -68,7 +66,6 @@ bool SqlEditor::viewportEvent(QEvent* event) {
 }
 bool SqlEditor::restoreDocument(const QByteArray& sql, const QString& path, quint64 cursor,
                                 quint64 anchor, bool modified) {
-    // Rust bounds every recovered, generated, and history document.
     if (ioBusy_)
         return false;
     const auto boundary = [&sql](quint64 offset) {
@@ -91,9 +88,6 @@ bool SqlEditor::restoreDocument(const QByteArray& sql, const QString& path, quin
 void SqlEditor::setEditorFont(const QFont& requestedFont) {
     auto font = requestedFont;
     if (font.pixelSize() > 0) {
-        // QScintilla 2.x forwards pointSizeF() to Scintilla even for a pixel
-        // QFont (where that value is -1). Normalize at this adapter boundary;
-        // the Qt rendering backend then recovers the requested logical pixels.
         font.setPointSizeF(font.pixelSize() * 72.0 / logicalDpiY());
     }
     QWidget::setFont(font);
@@ -111,8 +105,6 @@ void SqlEditor::setEditorFont(const QFont& requestedFont) {
         }
         lexer()->setDefaultFont(font);
     }
-    // Persisted point fonts and pixel defaults share the reference minimum.
-    // Larger custom fonts retain their natural, unclipped line box.
     setExtraAscent(0);
     setExtraDescent(0);
     const auto naturalHeight = SendScintilla(SCI_TEXTHEIGHT, 0UL);
@@ -124,8 +116,6 @@ void SqlEditor::setEditorFont(const QFont& requestedFont) {
     updateLineNumberMargin();
 }
 void SqlEditor::updateLineNumberMargin() {
-    // Scintilla places line numbers against the right edge of this margin.
-    // Reserve room for its inset so a one-digit number is not clipped by the frame.
     const auto digits = qMax<qsizetype>(3, QString::number(lines()).size());
     setMarginWidth(0, QString(digits, QChar('0')));
 }
@@ -232,4 +222,4 @@ void SqlEditor::changeEvent(QEvent* event) {
     if (event->type() == QEvent::PaletteChange && lexer())
         applyPalette();
 }
-} // namespace choscordb
+}

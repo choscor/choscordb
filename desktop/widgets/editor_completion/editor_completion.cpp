@@ -84,8 +84,6 @@ bool EditorCompletionController::eventFilter(QObject* watched, QEvent* event) {
         if (watched == editor_ && keyEvent->modifiers() == Qt::NoModifier &&
             (key == Qt::Key_Up || key == Qt::Key_Down || key == Qt::Key_PageUp ||
              key == Qt::Key_PageDown)) {
-            // The embedded list keeps typing focus in the editor. Route its
-            // navigation keys to the same view QCompleter used as a popup.
             QKeyEvent navigation(QEvent::KeyPress, key, Qt::NoModifier);
             QCoreApplication::sendEvent(completer_->popup(), &navigation);
             event->accept();
@@ -134,7 +132,6 @@ void EditorCompletionController::launch() {
         editor_->isIoBusy() || !editor_->hasFocus())
         return;
     const auto cursor = quint64(editor_->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS));
-    // Check before copying the document for the worker.
     if (cursor != quint64(editor_->SendScintilla(QsciScintilla::SCI_GETANCHOR)) ||
         !CompletionService::sourceSupported(
             quint64(editor_->SendScintilla(QsciScintilla::SCI_GETLENGTH))))
@@ -226,4 +223,4 @@ void EditorCompletionController::accept(const QModelIndex& index) {
     inserting_ = false;
     dismiss();
 }
-} // namespace choscordb
+}

@@ -10,7 +10,7 @@ DocumentIoResult fromDto(const DocumentIoResultDto& value) {
             bridge_detail::fromRust(value.error)};
 }
 using bridge_detail::utf8View;
-} // namespace
+}
 
 QFuture<DocumentIoResult> DocumentIo::read(QString path) const {
     return QtConcurrent::run([path = std::move(path)]() {
@@ -37,4 +37,4 @@ QFuture<DocumentIoResult> DocumentIo::write(QString path, QByteArray bytes) cons
         return fromDto(write_sql_document_file(utf8View(encoded), bridge_detail::byteView(bytes)));
     });
 }
-} // namespace choscordb
+}

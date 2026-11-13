@@ -1,5 +1,3 @@
-"""Check that Qt style rules stay in colocated, readable QSS resources."""
-
 from pathlib import Path
 import re
 import sys
@@ -21,7 +19,6 @@ RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
 
 
 def declarations(content):
-    """Yield (selector, property) pairs, splitting selector lists."""
     for selectors, body in RULE.findall(COMMENT.sub("", content)):
         names = [" ".join(item.split()) for item in selectors.split(",")]
         for declaration in body.split(";"):
@@ -34,7 +31,6 @@ def declarations(content):
 
 
 def duplicate_definitions(root):
-    """Report selector and property pairs defined in two shared-cascade files."""
     source = root / CASCADE_SOURCE
     if not source.is_file():
         return []

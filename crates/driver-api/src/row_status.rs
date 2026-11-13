@@ -1,6 +1,3 @@
-//! The status of a sidebar row: the icon kind, the retry gesture and the message.
-
-/// The icon that a row shows after its name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RowStatusKind {
     None,
@@ -9,35 +6,27 @@ pub enum RowStatusKind {
     Unavailable,
 }
 
-/// The gesture that tries a failed operation again.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RetryAction {
     None,
-    /// The row's Refresh action, or collapse and expand.
     Refresh,
 }
 
-/// Why a row has a status.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RowStatusCause {
     Connecting,
     ChildrenLoading,
-    /// The detail is the metadata error.
     ChildrenFailed,
     ConnectionFailed,
     ConnectionUnavailable,
     ConnectionNotReady,
     ConnectionDeselected,
-    /// The detail is a sentence that tells why the pinned object was not found.
     RevealFailed,
-    /// The optional detail is a sentence that tells why the object is unavailable.
     ObjectUnavailable,
     Connected,
     Hidden,
     Disconnected,
-    /// Saved children show while the current children load.
     ChildrenCached,
-    /// Saved children stay after the current children failed. The detail is the error.
     ChildrenCachedFailed,
 }
 
@@ -48,17 +37,13 @@ pub struct RowStatus {
     pub message: String,
 }
 
-/// How long an info notice stays on the main panel bottom line.
 pub const PANEL_NOTICE_MILLISECONDS: u32 = 6_000;
 
-/// The sentence that tells the user how to recover from a failure. A message ends with it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecoveryHint {
     Retry,
     RetryQuery,
-    /// For an incomplete search.
     RefineOrRetry,
-    /// For a failed sidebar row.
     Refresh,
     ActivatePin,
     RetryFromNavigator,
@@ -69,18 +54,13 @@ pub enum RecoveryHint {
     RestoreConnection,
     RefreshNavigator,
     CheckConnection,
-    /// For an action with an unknown outcome.
     ReconnectAndRefresh,
     RetryRecovery,
     RetryConnection,
-    /// After the SSH settings changed during an approval.
     InspectSshServer,
-    /// After the user approved an SSH host key.
     UseApprovedKey,
     RetryApproval,
-    /// After the connection of a document closed.
     ReconnectManually,
-    /// After an object changed while its connection closed.
     ReconnectAndRefreshNavigator,
 }
 
@@ -186,7 +166,6 @@ pub fn row_status(cause: RowStatusCause, detail: &str) -> RowStatus {
     }
 }
 
-/// The failure, its reason when there is one, and the Refresh hint.
 fn could_not(failure: &str, detail: &str) -> String {
     let hint = recovery_hint(RecoveryHint::Refresh);
     match detail.trim_end_matches('.') {

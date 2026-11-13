@@ -1,4 +1,3 @@
-//! Durable update consent and migration from the previous native Qt preference.
 use serde_json::{Value, json};
 use std::{
     fs::File,
@@ -198,7 +197,6 @@ fn legacy_config_paths(user_config: Option<&Path>, system_config: &[PathBuf]) ->
         paths.push(user.join("com.choscor.ChoscorDB/ChoscorDB.conf"));
         paths.push(user.join("com.choscor.ChoscorDB.conf"));
     }
-    // Qt checks every system application file before any system organization file.
     for suffix in [
         "com.choscor.ChoscorDB/ChoscorDB.conf",
         "com.choscor.ChoscorDB.conf",

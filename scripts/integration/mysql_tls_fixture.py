@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Run native TLS policy/client-certificate tests against an isolated MySQL container."""
 
 import json
 import os
@@ -111,7 +110,6 @@ def main():
             directory / "client.p12",
             **quiet,
         )
-        # Only the disposable server material is mounted, readable by the container's mysql user.
         server = directory / "server"
         server.mkdir()
         for filename in ["ca.crt", "server.crt", "server.key"]:

@@ -1,5 +1,3 @@
-"""Tests for the QSS source and resource policy."""
-
 from pathlib import Path
 import tempfile
 import unittest

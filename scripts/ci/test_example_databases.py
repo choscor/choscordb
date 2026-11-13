@@ -1,5 +1,3 @@
-"""Behavior checks for the runnable example databases."""
-
 from contextlib import closing
 import importlib.util
 import json

@@ -1,4 +1,3 @@
-//! Run against the repository's disposable PostgreSQL fixture, never production.
 use choscordb_core::{Engine, Event, HistoryStatus, QueryState};
 use choscordb_driver_api::{
     Connection, ConnectionOptions, DatabaseDriver, PageSize, QueryOptions, Row, Secret, TlsMode,
@@ -10,7 +9,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Queries that page 100 rows at a time, as these tests fetch.
 fn paged() -> QueryOptions {
     QueryOptions {
         page_size: PageSize::new(100).unwrap(),
@@ -176,7 +174,6 @@ fn suspended_returning_disconnect_rolls_back_before_cursor_finalization() {
             };
             assert_eq!(entries.len(), 1);
             assert_eq!(entries[0].status, HistoryStatus::Disconnected);
-            // A fresh connection proves actual committed database state, not actor bookkeeping.
             let mut reader = runtime.block_on(PostgresDriver.connect(options())).unwrap();
             let rows = runtime.block_on(sql(
                 &mut *reader,
@@ -184,7 +181,6 @@ fn suspended_returning_disconnect_rolls_back_before_cursor_finalization() {
             ));
             observed.push(rows);
             runtime.block_on(reader.close()).unwrap();
-            // Reset fixture rows so every case is independent even on the red implementation.
             runtime.block_on(sql(
                 &mut *setup,
                 &format!("DELETE FROM {table} WHERE id > 300"),

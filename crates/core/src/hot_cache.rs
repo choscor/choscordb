@@ -1,5 +1,3 @@
-//! Original pages are expendable hot copies. Transfers have separate reservations
-//! so eviction never invalidates a page already held by a consumer.
 use crate::{PageLease, PageMemoryConfig, memory::Memory};
 use choscordb_driver_api::{QueryId, ResultPage};
 use choscordb_result_cache::{PageCache, ResidentSize};
@@ -50,7 +48,6 @@ impl HotCache {
     pub fn remove(&self, query: QueryId) {
         self.0.lock().unwrap().pages.remove_result(query);
     }
-    /// The first row and the shared page. The actor acquires the transfer reservation first.
     pub fn read(&self, query: QueryId, index: u64) -> Option<(u64, Arc<ResultPage>)> {
         let mut state = self.0.lock().unwrap();
         let page = state
@@ -64,8 +61,6 @@ impl HotCache {
         }
         page
     }
-    /// Shares `page` with the cache. The charge is the whole page, because the cache keeps
-    /// the page alive after the other holders drop it.
     pub fn insert(
         &self,
         memory: &Arc<Memory>,
@@ -92,9 +87,6 @@ impl HotCache {
         entry._lease = Some(lease);
         let _ = state.pages.insert(query, page.index, entry, false);
         drop(state);
-        // A waiter may have found no evictable page just before this insertion.
-        // Wake it even though total reserved memory increased: reclaimable
-        // capacity has become available.
         memory.cache_changed();
     }
 }

@@ -14,7 +14,6 @@
 #include <optional>
 
 namespace choscordb {
-// Keeps the full model label for accessibility while giving its type less visual weight.
 class ResultColumnHeader final : public QHeaderView {
   public:
     explicit ResultColumnHeader(QWidget* parent = nullptr) : QHeaderView(Qt::Horizontal, parent) {
@@ -95,12 +94,9 @@ class ResultColumnHeader final : public QHeaderView {
             x += keyAdvance();
         }
         painter->setPen(text);
-        // QRect::right() is one pixel inside the section; measure from its full width as
-        // sectionSizeFromContents does so a fitted label is not elided.
         const int available = std::max(0, rect.left() + rect.width() - x - inset());
         const QString label = type.isEmpty() ? name : name + QStringLiteral(" · ") + type;
         const QFont& small = secondaryFont();
-        // Elision is a binary search over text advances; reuse it until the label or width changes.
         auto& elided = elided_[logicalIndex];
         if (elided.label != label || elided.available != available) {
             const QFontMetrics primaryMetrics(font());
@@ -175,4 +171,4 @@ class ResultColumnHeader final : public QHeaderView {
     mutable QRgb keyIconColor_ = 0;
     mutable QHash<int, ElidedLabel> elided_;
 };
-} // namespace choscordb
+}

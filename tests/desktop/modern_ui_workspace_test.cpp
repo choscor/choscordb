@@ -495,7 +495,6 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     window.showToast("Connected", choscordb::ToastVariant::Success);
     QTRY_VERIFY_WITH_TIMEOUT(
         qobject_cast<QGraphicsOpacityEffect*>(toast->graphicsEffect())->opacity() > 0.99, 2000);
-    // Sample the bottom padding, clear of the text and the top-right dismiss glyph.
     const auto sample = toast->mapTo(&window, QPoint(toast->width() - 20, toast->height() - 4));
     const auto capture = window.grab();
     const auto scale = capture.devicePixelRatioF();
@@ -598,7 +597,6 @@ void ModernUiTest::inactiveEditorCloseButtonAppearsOnHover() {
     QVERIFY(close->isVisible());
     QVERIFY(tabs->tabButton(editors->currentIndex(), side)->isVisible());
 
-    // A new tab while the pointer stays on the hovered tab keeps only the current and hovered X.
     const QPoint hoverPoint = tabs->tabRect(inactive).center();
     QCursor::setPos(tabs->mapToGlobal(hoverPoint));
     const auto expectOnlyCurrentAndPointedTab = [&] {
@@ -613,7 +611,6 @@ void ModernUiTest::inactiveEditorCloseButtonAppearsOnHover() {
     newQuery->trigger();
     QCOMPARE(editors->count(), 3);
     expectOnlyCurrentAndPointedTab();
-    // Moving tabs puts a different tab under the pointer.
     tabs->moveTab(0, tabs->count() - 1);
     expectOnlyCurrentAndPointedTab();
 

@@ -49,7 +49,6 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 &QueryWorkspace::activateForeignKey);
     widgets_.grid->horizontalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
     widgets_.grid->verticalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
-    // Set NULL and the row commands act on the selection.
     connect(widgets_.grid->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this] {
         ++selectionGeneration_;
         updateSetNullAction();
@@ -132,7 +131,6 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             updateActions();
             return;
         }
-        // Coalesce replanning for edits staged while eligibility is being planned.
         if (editabilityReplanQueued_)
             return;
         editabilityReplanQueued_ = true;
@@ -270,7 +268,6 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                                  widgets_.grid->selectionModel()->model() == model_;
             const bool selected = current && widgets_.grid->selectionModel()->hasSelection();
             const QPersistentModelIndex clicked = widgets_.grid->indexAt(point);
-            // The shared grid actions act on the cell under the pointer while the menu is open.
             menuTarget_ = current ? clicked : QPersistentModelIndex();
             updateGridActions();
             menu.addAction(gridAction(GridCommand::EditCell));
@@ -448,7 +445,6 @@ void QueryWorkspace::disconnectConnection(quint64 connection) {
         emit documentTargetChanged();
         return;
     }
-    // Separate dialogs can otherwise submit work even with the toolbar disabled.
     if (queryConnection_ == connection) {
         if (export_)
             export_->clearQuery();
@@ -560,7 +556,6 @@ bool QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
         clearViewState();
         message(tr("The previous result view was invalidated because refresh could not start."));
     }
-    // The driver checks the catalog; a navigator label can be stale or approximate.
     if (query_) {
         editTargetToken_ = nextEditRequestToken();
         adapter_->inspectEditTarget(connection, object, editTargetToken_, time);
@@ -691,7 +686,6 @@ void QueryWorkspace::updateActions() {
     const bool perDocumentResults =
         !widgets_.objectReadOnly &&
         qobject_cast<design::StatusLine*>(widgets_.summary->parentWidget());
-    // A standalone display-model page may be supplied without a backend query.
     const bool standalonePage =
         !query_ && !resultEditor_ && resultOrigin_.isEmpty() && model_->columnCount() > 0;
     const bool displayedResult =
@@ -772,7 +766,6 @@ void QueryWorkspace::execute(RunScope scope) {
         return;
     if (!resolvePendingEdits())
         return;
-    // The mode from the connect or the last completed run stays valid until a run fails.
     if (EngineAdapter::driverWorkflow(driverForConnection(*connection)).sqlModeBeforeExecution &&
         !executionModeReady_ && !connectionSqlModes_.contains(*connection)) {
         if (executionModeToken_ != 0)
@@ -815,7 +808,6 @@ void QueryWorkspace::execute(RunScope scope) {
         if (box.exec() != QMessageBox::Yes)
             return;
     }
-    // Confirmation runs a nested event loop: the target may have disconnected.
     if (!connectionAvailable(*connection) || workInFlight() || widgets_.currentEditor() != editor)
         return;
     if (resultEditor_ && resultEditor_ != editor &&
@@ -855,4 +847,4 @@ void QueryWorkspace::execute(RunScope scope) {
         message(commandError_);
     updateActions();
 }
-} // namespace choscordb
+}

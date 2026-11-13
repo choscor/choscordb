@@ -9,8 +9,6 @@ class TypographyTest final : public QObject {
   private slots:
     void uiResolvesTheBundledGeistFamilies() {
         using namespace choscordb::design;
-        // Run first (or by this slot name in a fresh process). No test/helper
-        // registers bundled fonts: resolve the UI exactly as startup does.
         const auto ui = resolveTypography(TextStyle::Body);
         QVERIFY(bundledFontsAvailable());
         QCOMPARE(QFontInfo(ui).family(), QString("Geist"));
@@ -24,7 +22,6 @@ class TypographyTest final : public QObject {
     }
     void stylesUseTheGeistScale() {
         using namespace choscordb::design;
-        // Eight styles, Large Title through Caption, with a 12px minimum.
         QCOMPARE(static_cast<int>(TextStyle::LargeTitle), 0);
         QCOMPARE(static_cast<int>(TextStyle::Caption), 7);
         struct Expected {

@@ -107,7 +107,6 @@ fn parse_date(value: &str) -> Option<i64> {
     if day == 0 || day > days {
         return None;
     }
-    // Howard Hinnant's civil-date mapping, relative to 1970-01-01.
     let adjusted = year - i64::from(month <= 2);
     let era = adjusted.div_euclid(400);
     let year_of_era = adjusted - era * 400;
@@ -577,8 +576,6 @@ pub(crate) fn validate_sort_value(row: &[Value], sort: ResultSort) -> Result<(),
     }
 }
 
-/// The rows of one view page with a running byte estimate. The estimate is equal to
-/// `ResultPage::estimated_bytes` of the finished page, without a walk of the page per row.
 pub(crate) struct PageRows {
     rows: Vec<Vec<Value>>,
     row_bytes: usize,
@@ -608,7 +605,6 @@ impl PageRows {
             + self.rows.capacity() * std::mem::size_of::<Vec<Value>>()
             + self.row_bytes
     }
-    /// Returns the rows and starts an empty page with the same capacity.
     pub(crate) fn take(&mut self) -> Vec<Vec<Value>> {
         self.row_bytes = 0;
         let capacity = self.rows.capacity();

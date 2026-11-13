@@ -62,7 +62,7 @@ void answer(QObject* context, bool accept, bool* rollbackNotice = nullptr) {
         box->button(QMessageBox::Cancel)->click();
     });
 }
-} // namespace
+}
 class DisconnectWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
@@ -76,7 +76,6 @@ class DisconnectWorkspaceTest : public QObject {
                          "x<1001) SELECT x FROM n");
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         f.run.trigger();
-        // Cold hosted macOS workers can exceed Qt Test's five-second default here.
         QTRY_COMPARE_WITH_TIMEOUT(f.grid.model()->rowCount(), 1000, 30000);
         QTRY_VERIFY(f.run.isEnabled());
         answer(&f.window, false);
@@ -87,7 +86,6 @@ class DisconnectWorkspaceTest : public QObject {
         QTRY_COMPARE(f.grid.model()->rowCount(), 1);
         f.previous.click();
         QTRY_COMPARE(f.grid.model()->rowCount(), 1000);
-        // Archived navigation is not an unfinished database execution.
         answer(&f.window, false);
         QVERIFY(f.workspace.confirmShutdown());
     }
@@ -128,14 +126,13 @@ class DisconnectWorkspaceTest : public QObject {
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         f.run.trigger();
         QTRY_COMPARE(finished, 4);
-        // The page builds off the UI thread after the query finishes.
         QTRY_COMPARE(f.grid.model()->index(0, 0).data().toString(), QString("1"));
         QTimer::singleShot(0, &f.window, [&] {
             auto* box =
                 qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(box);
             QVERIFY(box->defaultButton() == box->button(QMessageBox::Cancel));
-            f.workspace.disconnectConnection(id); // Duplicate confirmation is ignored.
+            f.workspace.disconnectConnection(id);
             for (auto* button : box->buttons())
                 if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
                     QVERIFY(button->text().contains("Roll back"));
@@ -146,7 +143,7 @@ class DisconnectWorkspaceTest : public QObject {
         });
         const auto buffer = f.editor.text();
         f.workspace.disconnectConnection(id);
-        f.workspace.disconnectConnection(id); // Accepted duplicate is ignored too.
+        f.workspace.disconnectConnection(id);
         QTRY_COMPARE(f.workspace.liveConnections().size(), 0);
         QCOMPARE(f.editor.text(), buffer);
         f.workspace.connectSqlite(path);
@@ -221,7 +218,6 @@ class DisconnectWorkspaceTest : public QObject {
         f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
         QTRY_VERIFY(f.run.isEnabled());
         f.run.trigger();
-        // Generating the first page can exceed Qt Test's default on hosted macOS.
         QTRY_COMPARE_WITH_TIMEOUT(f.grid.model()->rowCount(), 1000, 30000);
         QTRY_VERIFY(f.exportResult.isEnabled());
         f.exportResult.click();
@@ -246,7 +242,7 @@ class DisconnectWorkspaceTest : public QObject {
         const auto destination = directory.filePath("rows.csv");
         dialog->startExportToDialect(destination, "csv", {}, "sqlite");
         QTRY_VERIFY(dialog->isRunning());
-        QTRY_VERIFY(exportProgress > 0); // Actual accepted export, not just destination preflight.
+        QTRY_VERIFY(exportProgress > 0);
         QTimer::singleShot(0, &f.window, [&] {
             auto* box =
                 qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
@@ -293,7 +289,7 @@ class DisconnectWorkspaceTest : public QObject {
         });
         f.workspace.disconnectConnection(id);
         QCOMPARE(f.workspace.liveConnections().size(), 0);
-        QCOMPARE(failures.count(), 0); // A second submission would report a stale handle.
+        QCOMPARE(failures.count(), 0);
     }
     void cancelThenDisconnectUnselectedSessionPreservesEditor() {
         Fixture f;

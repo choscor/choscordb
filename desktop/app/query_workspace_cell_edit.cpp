@@ -19,13 +19,9 @@
 
 namespace choscordb {
 namespace {
-// Qt normalizes paragraph separators and toPlainText also normalizes NBSP. Keep
-// the literal draft and edit deltas beside the presentation, including Qt undo.
 class CellDraftTextEdit final : public QPlainTextEdit {
   public:
     explicit CellDraftTextEdit(QWidget* parent) : QPlainTextEdit(parent) {
-        // Qt drops combine edits after the MIME insertion returns, hiding the
-        // literal source boundaries. Keep this editor to typing and clipboard.
         setAcceptDrops(false);
         viewport()->setAcceptDrops(false);
         connect(document(), &QTextDocument::undoCommandAdded, this, [this] { newCommand_ = true; });
@@ -64,8 +60,6 @@ class CellDraftTextEdit final : public QPlainTextEdit {
   private:
     struct Edit {
         int steps, position;
-        // Adjacent CR and LF created by separate edits are two document chars.
-        // Restore their actual lengths and mappings rather than recounting text.
         int removedLength, insertedLength;
         QString removed, inserted;
         std::vector<qsizetype> removedCrlf, insertedCrlf;
@@ -101,8 +95,6 @@ class CellDraftTextEdit final : public QPlainTextEdit {
         if (initializing_)
             return;
         const int steps = document()->availableUndoSteps();
-        // Qt updates steps before this signal. New commands distinguish editing
-        // from redo; merged typing can contribute several deltas at one step.
         if (steps < previousSteps_) {
             while (!undo_.empty() && undo_.back().steps > steps) {
                 auto edit = std::move(undo_.back());
@@ -150,7 +142,7 @@ class CellDraftTextEdit final : public QPlainTextEdit {
     int previousSteps_ = 0;
     bool initializing_ = false, newCommand_ = false;
 };
-} // namespace
+}
 void QueryWorkspace::setupCellEditor() {
     connect(model_, &QAbstractItemModel::dataChanged, this,
             [this](const QModelIndex& first, const QModelIndex& last, const QList<int>& roles) {
@@ -324,4 +316,4 @@ void QueryWorkspace::saveCellEditor() {
         return ResultTableModel::evaluateCellEdit(std::move(snapshot));
     }));
 }
-} // namespace choscordb
+}

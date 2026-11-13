@@ -156,7 +156,6 @@ void ProfileDialog::saveDraft(const SavedProfile& profile) {
     const auto secrets = secretDrafts();
     const auto privateKey = sshPrivateKey_->draft();
     setDraft(profile);
-    // setDraft resets the form's secret fields; keep what the user typed.
     sshPrivateKey_->setDraft(privateKey, !profile.sshPrivateKeyRef.isEmpty());
     password_->setText(secrets.database);
     password_->setModified(secrets.databaseModified);
@@ -191,4 +190,4 @@ bool ProfileDialog::validateConnectionDraft(const SavedProfile& profile) {
         showFieldError(field, error.message);
     return false;
 }
-} // namespace choscordb
+}

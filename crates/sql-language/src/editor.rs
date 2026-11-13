@@ -1,14 +1,10 @@
 use crate::scanner::statement_ranges_with_mode;
 use std::ops::Range;
-/// What an execution without a selection runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExecutionScope {
-    /// The statement at the cursor.
     Current,
-    /// All statements of the document, from the start of the first to the end of the last.
     All,
 }
-/// A nonempty selection wins in each scope. Invalid UTF-8 boundaries are rejected.
 pub fn execution_range(
     sql: &str,
     cursor: usize,

@@ -18,7 +18,6 @@ impl TransactionIsolation {
         }
     }
 }
-/// Native characteristics for the next explicit transaction.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TransactionCharacteristics {
     pub isolation: Option<TransactionIsolation>,

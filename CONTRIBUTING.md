@@ -52,7 +52,7 @@ canonical.
 ## C++ file size
 
 Keep handwritten sources and headers under `desktop/` and `tests/` at or below
-1,000 physical lines, including comments and blank lines. The `cpp-size` stage
+1,000 physical lines, including blank lines. The `cpp-size` stage
 runs in both `fast` and `full`, and CTest exposes it as `cpp-source-size` when
 Python is available. Run it directly with:
 
@@ -64,8 +64,8 @@ Split by responsibility before reaching the limit. Keep related operations
 together, keep private implementation details out of public headers, and register
 new translation units in CMake. Prefer smaller functions with one logical task;
 moving a large function to another file alone does not simplify it. Do not meet
-the limit by compressing formatting, removing useful comments, or including
-implementation `.cpp` files.
+the limit by compressing formatting or including implementation `.cpp`
+files.
 
 ## Documentation
 

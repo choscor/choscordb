@@ -1,5 +1,3 @@
-"""Exercise the file-size gate through its command-line interface."""
-
 from pathlib import Path
 import subprocess
 import sys

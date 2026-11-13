@@ -72,7 +72,7 @@ class NavigatorPinModelTest : public QObject {
         QVERIFY(controller.revealObject(22, {}, "target", "table", "main.target", {},
                                         [&](NavigatorController::RevealResult result,
                                             const QString&) { results.append(result); }));
-        QTRY_COMPARE(requested.count(), 2); // Verify the cached target against fresh metadata.
+        QTRY_COMPARE(requested.count(), 2);
         QVERIFY(model->applyChildren(22, {}, requested.last().at(2).toULongLong(),
                                      {{"target", "target", "main.target", "table", false}}));
         QTRY_COMPARE(results.size(), 1);
@@ -111,10 +111,10 @@ class NavigatorPinModelTest : public QObject {
                 aResults.append(result);
             },
             [&] { return aIsPinnedAndActive; }));
-        QTRY_COMPARE(requested.count(), 3); // Group A's metadata is still delayed.
+        QTRY_COMPARE(requested.count(), 3);
         const auto aToken = requested.last().at(2).toULongLong();
 
-        aIsPinnedAndActive = false; // Unpin A, then activate B.
+        aIsPinnedAndActive = false;
         QList<NavigatorController::RevealResult> bResults;
         QVERIFY(controller.revealObject(23, {"group-b"}, "b", "table", "main.B", {},
                                         [&](NavigatorController::RevealResult result,
@@ -186,7 +186,7 @@ class NavigatorPinModelTest : public QObject {
         QVERIFY(controller.revealObject(27, {}, "old", "table", "main.old", {},
                                         [&](NavigatorController::RevealResult result,
                                             const QString&) { outcomes.append(result); }));
-        QTRY_COMPARE(requested.count(), 2); // Activation discards the cached first page.
+        QTRY_COMPARE(requested.count(), 2);
         QVERIFY(!tree.currentIndex().isValid());
         QVERIFY(!model->failChildren(27, {}, staleToken, "stale page failure"));
         QVERIFY(model->applyChildren(27, {}, requested.last().at(2).toULongLong(), {}));
@@ -221,7 +221,7 @@ class NavigatorPinModelTest : public QObject {
         QVERIFY(controller.revealObject(19, {}, "object", "table", "main.object", {},
                                         [&](NavigatorController::RevealResult result,
                                             const QString&) { outcomes.append(result); }));
-        QTRY_COMPARE(requested.count(), 3); // Reject the earlier pending reply.
+        QTRY_COMPARE(requested.count(), 3);
         QVERIFY(model->applyChildren(19, {}, requested.last().at(2).toULongLong(),
                                      {{"different", "other", "main.other", "table", false}}));
         QTRY_COMPARE(outcomes.size(), 1);
@@ -255,7 +255,7 @@ class NavigatorPinModelTest : public QObject {
         QTRY_COMPARE(first.count(), 1);
         QVERIFY(model->applyChildren(15, {}, first.last().at(2).toULongLong(),
                                      {{"db", "main", "main", "database", true}}));
-        QTRY_COMPARE(first.count(), 3); // Reveal replaces the filter's in-flight load.
+        QTRY_COMPARE(first.count(), 3);
         QVERIFY(model->applyChildrenPage(15, "db", first.last().at(2).toULongLong(),
                                          {{"other", "other", "main.other", "table", false}}, 0,
                                          true, 1));
@@ -291,8 +291,7 @@ class NavigatorPinModelTest : public QObject {
         QTRY_COMPARE(requested.count(), 2);
         QVERIFY(model->applyChildren(31, "table", requested.last().at(2).toULongLong(),
                                      {{"index", "orders_ix", "main.orders_ix", "index", false}}));
-        QCOMPARE(tree.model()->rowCount(tree.model()->index(0, 0, tree.model()->index(0, 0))),
-                 0); // Hidden from the sidebar, still present in source metadata.
+        QCOMPARE(tree.model()->rowCount(tree.model()->index(0, 0, tree.model()->index(0, 0))), 0);
         QList<NavigatorController::RevealResult> outcomes;
         QVERIFY(controller.revealObject(31, {"table"}, "index", "index", "main.orders_ix", {},
                                         [&](NavigatorController::RevealResult result,
@@ -324,7 +323,7 @@ class NavigatorPinModelTest : public QObject {
                                         [&](NavigatorController::RevealResult result,
                                             const QString&) { outcomes.append(result); }));
         QTRY_COMPARE(requested.count(), 5);
-        QVERIFY(outcomes.isEmpty()); // Loading is not confirmed absence.
+        QVERIFY(outcomes.isEmpty());
         QVERIFY(model->failChildren(31, "table", requested.last().at(2).toULongLong(),
                                     "temporary catalog failure"));
         QTRY_COMPARE(outcomes.size(), 1);

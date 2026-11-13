@@ -7,7 +7,6 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
-// Answers each line with the same line.
 async fn echo_server() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -45,7 +44,6 @@ async fn counts_one_turnaround_for_each_request_and_response_exchange() {
     assert_eq!(proxy.turnarounds(), 5);
     assert_eq!(proxy.accepted(), 1);
 
-    // Two requests in one write, before the response, count as one turnaround.
     exchange(&mut first, b"one\ntwo\n").await;
     assert_eq!(proxy.turnarounds(), 6);
 

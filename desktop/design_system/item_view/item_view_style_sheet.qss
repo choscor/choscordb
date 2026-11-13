@@ -6,8 +6,6 @@ QWidget[designSurface="sidebar"] {
   background: @surface-raised;
 }
 
-/* One flat sidebar surface, shared by all three sidebar panes, in the gray of
-   the tab bars. */
 QWidget#navigatorBody {
   background: @surface-raised;
   border-right: 1px solid @border;

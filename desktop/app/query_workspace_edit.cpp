@@ -64,7 +64,7 @@ GridEditRequest editRequest(const QString& driver, const QString& qualifiedName,
     }
     return request;
 }
-} // namespace
+}
 void QueryWorkspace::configureEditability() {
     const auto generation = ++editPolicyGeneration_;
     const auto job = ++editabilityJobToken_;
@@ -233,4 +233,4 @@ bool QueryWorkspace::applyStagedEdits() {
         editApplying_ = false;
     return editApplied_;
 }
-} // namespace choscordb
+}

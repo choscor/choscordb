@@ -5,8 +5,6 @@ pub enum Safety {
     ConfirmationRequired,
 }
 
-/// Parse with the shipped Tree-sitter SQL grammar. Unsupported dialect syntax
-/// remains an error and therefore requires confirmation rather than bypassing it.
 pub fn parse(sql: &str) -> Option<tree_sitter::Tree> {
     let mut parser = tree_sitter::Parser::new();
     parser
@@ -60,8 +58,6 @@ pub(crate) fn classify_with_mode(sql: &str, mode: Option<crate::MysqlSqlMode>) -
     Safety::Ordinary
 }
 
-// The shared grammar does not cover plain transaction control. Users run these
-// statements to open and end a transaction, so recognize a closed subset.
 fn transaction_control_statement(sql: &str) -> bool {
     use std::sync::OnceLock;
     static CONTROL: OnceLock<regex::Regex> = OnceLock::new();
@@ -79,10 +75,6 @@ fn transaction_control_statement(sql: &str) -> bool {
         .is_match(sql)
 }
 
-// The shared grammar does not cover several MySQL metadata commands. Recognize
-// a closed, read-only subset rather than trusting a statement's first keyword.
-// Backslashes in literals and ANSI double-quoted identifiers intentionally stay
-// on the conservative parser path; lexical validity alone is not grammar proof.
 fn mysql_metadata_statement(sql: &str) -> bool {
     use std::sync::OnceLock;
     static METADATA: OnceLock<regex::Regex> = OnceLock::new();

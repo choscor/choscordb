@@ -1,5 +1,3 @@
-//! Converts core events to bridge events on the engine runtime, so that the UI thread only
-//! takes finished events. One task converts in arrival order.
 use crate::{convert, ffi};
 use choscordb_core::{Event, PageLease};
 use choscordb_driver_api::Arena;
@@ -11,10 +9,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 
-/// The most events that are in conversion or wait for the UI thread at one time.
 pub const EVENT_DRAIN_BUDGET: usize = 64;
-/// The longest time that one drain waits for events in conversion. Small events finish in this
-/// time and reach the UI in the same tick; a large page goes to a later tick.
 const CONVERSION_WAIT: Duration = Duration::from_millis(2);
 
 #[derive(Default)]
@@ -26,7 +21,6 @@ struct Ready {
 pub(crate) struct EventForwarder {
     raw: mpsc::UnboundedSender<Event>,
     ready: Arc<Ready>,
-    /// Events sent for conversion and not yet taken.
     outstanding: usize,
 }
 
@@ -55,7 +49,6 @@ impl EventForwarder {
             outstanding: 0,
         }
     }
-    /// True while the budget allows one more event in conversion.
     pub(crate) fn has_capacity(&self) -> bool {
         self.outstanding < EVENT_DRAIN_BUDGET
     }
@@ -64,7 +57,6 @@ impl EventForwarder {
         self.outstanding += 1;
         Ok(())
     }
-    /// The converted events, in arrival order, after a short wait for the events in conversion.
     pub(crate) fn take(&mut self) -> Result<Vec<ffi::BridgeEvent>, ()> {
         let queue = self.ready.events.lock().map_err(|_| ())?;
         let outstanding = self.outstanding;

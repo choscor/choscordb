@@ -8,7 +8,6 @@
 
 namespace choscordb::design {
 
-// Palette-driven so independent preview roots can share the production style.
 class ControlStyle final : public QProxyStyle {
   public:
     ControlStyle();
@@ -29,4 +28,4 @@ class ControlStyle final : public QProxyStyle {
     QPointer<QWidget> tooltipOwner_;
 };
 
-} // namespace choscordb::design
+}

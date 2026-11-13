@@ -31,7 +31,7 @@ ObjectActionStatement prepare(const QString& driver, const QString& kind, const 
             .newQualifiedName = fromRust(result.new_qualified_name)};
 }
 
-} // namespace
+}
 
 ObjectActionStatement ObjectActionSql::drop(const QString& driver, const QString& kind,
                                             const QString& objectId, const QString& qualifiedName,
@@ -46,4 +46,4 @@ ObjectActionStatement ObjectActionSql::rename(const QString& driver, const QStri
     return prepare(driver, kind, objectId, qualifiedName, newName, relationSubtype, true);
 }
 
-} // namespace choscordb
+}

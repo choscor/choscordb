@@ -1,9 +1,3 @@
-//! Test relay that counts protocol round trips to one loopback database.
-//!
-//! A turnaround is a change of direction to client->server. The connection starts in the
-//! server direction, so each request that waits for a response counts once. Requests that a
-//! client pipelines without a response between them count once together. The relay adds no
-//! delay.
 use std::sync::{Arc, Mutex};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -14,7 +8,6 @@ use tokio::{
 #[derive(Default)]
 struct Counts {
     accepted: usize,
-    // One entry for each accepted connection, in accept order.
     turnarounds: Vec<usize>,
     client_sent_last: Vec<bool>,
 }
@@ -70,22 +63,18 @@ impl RoundTripProxy {
         }
     }
 
-    /// Turnarounds of all connections.
     pub fn turnarounds(&self) -> usize {
         self.counts.lock().unwrap().turnarounds.iter().sum()
     }
 
-    /// Turnarounds of each accepted connection, in accept order.
     pub fn connection_turnarounds(&self) -> Vec<usize> {
         self.counts.lock().unwrap().turnarounds.clone()
     }
 
-    /// Connections accepted since the start or the last reset.
     pub fn accepted(&self) -> usize {
         self.counts.lock().unwrap().accepted
     }
 
-    /// Sets all counts to zero. Open connections continue to count.
     pub fn reset(&self) {
         let mut counts = self.counts.lock().unwrap();
         counts.accepted = 0;
@@ -113,8 +102,6 @@ async fn relay(
             Ok(read) => read,
         };
         {
-            // The count changes before the bytes go on, so a response is always counted
-            // before the client can read it and send the next request.
             let mut counts = counts.lock().unwrap();
             if from_client && !counts.client_sent_last[index] {
                 counts.turnarounds[index] += 1;

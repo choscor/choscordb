@@ -19,7 +19,7 @@ PinRecord pin(QString name, QString kind, QString id, QString parent = {}) {
     record.parentObjectId = std::move(parent);
     return record;
 }
-} // namespace
+}
 
 class PinnedTreeModelTest : public QObject {
     Q_OBJECT
@@ -68,7 +68,6 @@ class PinnedTreeModelTest : public QObject {
         QCOMPARE(missing.data(Qt::DisplayRole).toString(), QString("id"));
         QCOMPARE(missing.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Unavailable));
         QVERIFY(missing.data(Qt::ToolTipRole).toString().contains("Unavailable"));
-        // A later connection status does not hide that the object is unavailable.
         pins.setStatus(PinStore::identityKey(unavailable),
                        EngineAdapter::rowStatus(RowStatusCause::Connected));
         QCOMPARE(missing.data(NavigatorModel::StatusRole).toInt(), int(RowStatusKind::Unavailable));
@@ -100,7 +99,7 @@ class PinnedTreeModelTest : public QObject {
         QVERIFY(navigator.applyChildrenPage(
             42, "schema-id", requested.last().at(2).toULongLong(),
             {{"table-id", "orders", "public.orders", "table", true}}, 0, true, 1));
-        QCOMPARE(pins.rowCount(pinnedRoot), 2); // Live table and continuation row.
+        QCOMPARE(pins.rowCount(pinnedRoot), 2);
         const auto pinnedTable = pins.index(0, 0, pinnedRoot);
         QCOMPARE(pins.sourceIndex(pinnedTable), navigator.index(0, 0, schema));
         QVERIFY(!pins.isPinnedRoot(pinnedTable));

@@ -1,6 +1,5 @@
 use std::process::ExitStatus;
 use tokio::process::{Child, Command};
-/// An unreaped group leader pins the Unix process-group identifier until cleanup.
 pub(crate) struct OwnedChild {
     child: Option<Child>,
     #[cfg(unix)]
@@ -29,7 +28,6 @@ impl OwnedChild {
     #[cfg(unix)]
     pub(crate) fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
         let result = self.child().try_wait();
-        // Reaping releases the leader's numeric ID, just as with wait().
         #[cfg(unix)]
         if matches!(result, Ok(Some(_))) {
             self.group = None;
@@ -38,7 +36,6 @@ impl OwnedChild {
     }
     pub(crate) async fn wait(&mut self) -> std::io::Result<ExitStatus> {
         let result = self.child().wait().await;
-        // Never signal a group after reaping its leader: its numeric ID can be reused.
         #[cfg(unix)]
         if result.is_ok() {
             self.group = None;

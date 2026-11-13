@@ -4,7 +4,6 @@
 #include <QTabBar>
 
 namespace choscordb::design {
-// Document tabs own left-aligned icon/text painting while QTabBar keeps its input behavior.
 class DocumentTabBar : public QTabBar {
   public:
     explicit DocumentTabBar(QWidget* parent = nullptr);
@@ -17,4 +16,4 @@ class DocumentTabBar : public QTabBar {
   private:
     bool keyboardFocus_ = false;
 };
-} // namespace choscordb::design
+}

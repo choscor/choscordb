@@ -22,7 +22,7 @@ class ToastRegion;
 namespace design {
 class FieldValidation;
 class StatusLine;
-} // namespace design
+}
 class ProfileDialog final : public DialogShell {
     Q_OBJECT
   public:
@@ -116,7 +116,6 @@ class ProfileDialog final : public DialogShell {
     QHash<QWidget*, design::FieldValidation*> validations_;
     design::FieldValidation* nameValidation_;
     QList<QPushButton*> actions_;
-    // Driver choices keyed by their driver_ index.
     QButtonGroup* driverChoices_;
 };
-} // namespace choscordb
+}

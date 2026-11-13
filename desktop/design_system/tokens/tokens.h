@@ -14,4 +14,4 @@ struct DesignToken final {
 
 [[nodiscard]] QList<DesignToken> designTokens(ResolvedAppearance appearance);
 
-} // namespace choscordb::design
+}

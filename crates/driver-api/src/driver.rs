@@ -3,7 +3,6 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-/// Default owned-memory budget for convenience execution and paging calls.
 pub const DEFAULT_RESULT_MEMORY_BUDGET: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -74,7 +73,6 @@ pub struct SchemaObject {
     pub properties: Vec<MetadataProperty>,
 }
 impl SchemaObject {
-    /// Column metadata, reported only for column rows.
     pub fn column_metadata(&self) -> Option<&Column> {
         self.column
             .as_ref()
@@ -87,9 +85,6 @@ pub struct QuerySummary {
     pub has_more_results: bool,
     #[serde(default)]
     pub sql_mode: Option<String>,
-    /// Authoritative connection transaction state when this execution summary was
-    /// captured. None means the adapter cannot report it; do not infer SQL keywords.
-    /// This is a snapshot, not a live connection state after subsequent operations.
     #[serde(default)]
     pub transaction_active: Option<bool>,
     pub affected_rows: Option<u64>,
@@ -100,7 +95,6 @@ pub struct MetadataPage {
     pub objects: Vec<SchemaObject>,
     pub next_offset: Option<u64>,
 }
-/// Bounded, one-hop foreign-key neighborhood returned by native catalog metadata.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObjectGraph {
     pub availability: MetadataAvailability,
@@ -131,12 +125,10 @@ pub struct ObjectGraphEdge {
     pub target_columns: Vec<String>,
 }
 
-/// A statement and its values as shown in the edit review. Values are always bound.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EditStatement {
     pub sql: String,
     pub params: Vec<Value>,
-    /// Updates and deletes must affect exactly one original row.
     pub expected_rows: Option<u64>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -162,8 +154,6 @@ pub struct EditQueryTarget {
     pub reason: String,
 }
 impl EditQueryTarget {
-    /// One target column per result column, in result order. A result column the
-    /// target does not own is read-only and is never a key.
     pub fn aligned_columns(&self) -> Vec<EditColumn> {
         self.source_columns
             .iter()
@@ -193,14 +183,10 @@ pub struct EditColumn {
     pub key: bool,
 }
 impl EditColumn {
-    /// Whether a duplicated row copies this column's value. Keys and generated or
-    /// unnamed columns are left for the database to fill.
     pub fn duplicable(&self) -> bool {
         !self.key && !self.generated && !self.name.is_empty()
     }
 }
-/// Catalog-verified presentation metadata for one result column. Empty source or
-/// target fields mean that no corresponding cell action can be offered.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResultCellMetadata {
     pub source_column: String,
@@ -218,21 +204,14 @@ pub trait DatabaseDriver: Send + Sync {
     fn id(&self) -> &'static str;
     fn capabilities(&self) -> DriverCapabilities;
     async fn connect(&self, options: ConnectionOptions) -> Result<Box<dyn Connection>>;
-    /// Open a fresh session after recovery invalidates a failed connection.
     async fn reconnect(&self, options: ConnectionOptions) -> Result<Box<dyn Connection>> {
         self.connect(options).await
     }
 }
-/// Acquire a fresh handle immediately before each execute. It targets that next
-/// execution only; a retained token must never cancel a later execution.
-/// The actor handles cancellation of queued commands before dispatch. Cancellation
-/// cannot wait for the mutable connection lock.
 #[async_trait]
 pub trait CancelHandle: Send + Sync {
     async fn cancel(&self) -> Result<()>;
 }
-/// Local, monotonic information used only for opt-in idle write rollback.
-/// Unknown state must never be treated as permission to roll back.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct IdleTransactionState {
     pub active: bool,
@@ -240,52 +219,22 @@ pub struct IdleTransactionState {
     pub write_pending: bool,
     pub started_at: Option<std::time::Instant>,
 }
-/// Opens another session of one Connect. It uses the settings, the credentials and
-/// the transport of the first session, so a tunnel serves both.
 #[async_trait]
 pub trait SessionOpener: Send + Sync {
     async fn open(&self) -> Result<Box<dyn Connection>>;
 }
-/// Connections must supply schema-budget enforcement before query execution.
-/// An implementation with only unbounded execution is incomplete:
-///
-/// ```compile_fail,E0046
-/// use async_trait::async_trait;
-/// use choscordb_driver_api::*;
-/// use std::sync::Arc;
-/// struct UnboundedConnection;
-/// #[async_trait]
-/// impl Connection for UnboundedConnection {
-///     fn cancellation_handle(&self) -> Arc<dyn CancelHandle> { unimplemented!() }
-///     async fn execute(&mut self, _: &str, _: QueryOptions) -> Result<Box<dyn ResultCursor>> {
-///         unimplemented!()
-///     }
-///     async fn load_metadata(&mut self, _: Option<ObjectId>) -> Result<Vec<SchemaObject>> {
-///         Ok(vec![])
-///     }
-///     async fn commit(&mut self) -> Result<()> { Ok(()) }
-///     async fn rollback(&mut self) -> Result<()> { Ok(()) }
-///     async fn close(&mut self) -> Result<()> { Ok(()) }
-/// }
-/// ```
 #[async_trait]
 pub trait Connection: Send {
-    /// An opener for a catalog session beside this one. `None` keeps all catalog
-    /// reads on this session, for example where a second session cannot see the
-    /// same database.
     fn sibling_sessions(&self) -> Option<Arc<dyn SessionOpener>> {
         None
     }
-    /// Does not issue SQL or change transaction state.
     async fn idle_transaction_state(&mut self) -> Result<Option<IdleTransactionState>> {
         Ok(None)
     }
 
-    /// Local session transaction state; does not issue a database query.
     async fn transaction_state(&mut self) -> Result<Option<bool>> {
         Ok(None)
     }
-    /// Begin an explicitly tracked transaction with native characteristics.
     async fn begin_transaction(
         &mut self,
         _characteristics: crate::TransactionCharacteristics,
@@ -295,14 +244,12 @@ pub trait Connection: Send {
             "Explicit transaction characteristics are unavailable",
         ))
     }
-    /// Finish and immediately replace the transaction, retaining its characteristics.
     async fn chain_transaction(&mut self, _commit: bool) -> Result<()> {
         Err(DriverError::new(
             ErrorKind::Unsupported,
             "Chained transactions are unavailable",
         ))
     }
-    /// SQL-level keepalive on a session with no pending transaction.
     async fn ping(&mut self) -> Result<()> {
         tokio::time::timeout(std::time::Duration::from_secs(15), async {
             if self.transaction_state().await? != Some(false) {
@@ -344,8 +291,6 @@ pub trait Connection: Send {
         .map_err(|_| DriverError::new(ErrorKind::Timeout, "SQL keepalive timed out"))?
     }
     fn cancellation_handle(&self) -> Arc<dyn CancelHandle>;
-    /// Non-blocking messages about this session, such as a server that is a
-    /// different family than the profile's driver.
     fn notices(&self) -> Vec<String> {
         Vec::new()
     }
@@ -365,8 +310,6 @@ pub trait Connection: Send {
             "Editable query results are unavailable",
         ))
     }
-    /// Read-only catalog inspection, independent of result edit eligibility.
-    /// `object` identifies Object Data; otherwise `sql` identifies a SQL result.
     async fn inspect_result_cells(
         &mut self,
         _object: Option<&ObjectId>,
@@ -375,31 +318,22 @@ pub trait Connection: Send {
     ) -> Result<Vec<ResultCellMetadata>> {
         Ok(vec![ResultCellMetadata::default(); result_columns.len()])
     }
-    /// Execute the reviewed statements in one owned transaction.
     async fn apply_edit_batch(&mut self, _batch: EditBatch) -> Result<EditBatchSummary> {
         Err(DriverError::new(
             ErrorKind::Unsupported,
             "Editable results are unavailable",
         ))
     }
-    /// Execute using the default schema budget. Adapters implement `execute_bounded`.
     async fn execute(&mut self, sql: &str, options: QueryOptions) -> Result<Box<dyn ResultCursor>> {
         self.execute_bounded(sql, options, DEFAULT_RESULT_MEMORY_BUDGET)
             .await
     }
-    /// Limit owned result schema storage. Inspect borrowed metadata before
-    /// allocating owned schema or executing writes. A budget smaller than the
-    /// empty schema container must be rejected before dispatch, keeping the
-    /// connection usable. Other resource-limit failures may invalidate a session.
     async fn execute_bounded(
         &mut self,
         sql: &str,
         options: QueryOptions,
         max_schema_bytes: usize,
     ) -> Result<Box<dyn ResultCursor>>;
-    /// Opens a bounded read-only object source alongside the existing SQL cursor.
-    /// Must neither release that cursor nor begin, commit, or roll back a transaction.
-    /// History modes read the past rows of a system-versioned relation.
     async fn open_object(
         &mut self,
         _object: &ObjectId,
@@ -456,46 +390,16 @@ pub trait Connection: Send {
     }
     async fn commit(&mut self) -> Result<()>;
     async fn rollback(&mut self) -> Result<()>;
-    /// Ends the session without committing unfinished work. Abort live cursors
-    /// and roll back uncommitted transactions before their finalizers can commit.
-    /// The session must be terminal even when cleanup reports an error.
     async fn close(&mut self) -> Result<()>;
 }
-/// Independent disk-backed deferred value access, without a database connection.
-/// Call reads and the final reader drop on a blocking worker. A reader keeps its
-/// backing storage alive independently of cursor close or subsequent executions.
 pub trait DeferredReader: Send + Sync {
-    /// Read raw bytes; text chunks may split UTF-8 code points. `max_bytes` must
-    /// be between 1 and MAX_VALUE_CHUNK_BYTES. Offset equal to total length
-    /// returns an empty chunk; greater offsets are invalid. The returned offset
-    /// must equal the requested offset, and bytes must not extend beyond total_bytes.
-    /// Implementers must bound byte-vector capacity by max_bytes before allocation;
-    /// a non-EOF successful read must return at least one byte.
     fn read_chunk(&self, handle: Handle, offset: u64, max_bytes: usize) -> Result<ValueChunk>;
 }
-/// Every cursor must implement allocation-aware bounded paging explicitly.
-/// A cursor implementing only the convenience method is incomplete:
-///
-/// ```compile_fail,E0046
-/// use async_trait::async_trait;
-/// use choscordb_driver_api::*;
-/// struct UnboundedCursor;
-/// #[async_trait]
-/// impl ResultCursor for UnboundedCursor {
-///     fn columns(&self) -> &[Column] { &[] }
-///     async fn fetch_page(&mut self, _: PageSize) -> Result<ResultPage> {
-///         Ok(ResultPage { index: 0, rows: vec![], has_more: false })
-///     }
-///     fn summary(&self) -> QuerySummary { QuerySummary::default() }
-///     async fn close(&mut self) -> Result<()> { Ok(()) }
-/// }
-/// ```
 #[async_trait]
 pub trait ResultCursor: Send {
     async fn next_result_set(&mut self) -> Result<bool> {
         Ok(false)
     }
-    /// Independent object sources own a cancellation handle that cannot cancel SQL.
     fn independent_cancellation_handle(&self) -> Option<Arc<dyn CancelHandle>> {
         None
     }
@@ -504,16 +408,10 @@ pub trait ResultCursor: Send {
         None
     }
     fn columns(&self) -> &[Column];
-    /// Fetch using the default page budget. Adapters implement `fetch_page_bounded`.
     async fn fetch_page(&mut self, size: PageSize) -> Result<ResultPage> {
         self.fetch_page_bounded(size, DEFAULT_RESULT_MEMORY_BUDGET)
             .await
     }
-    /// Return a page whose owned allocations fit `max_bytes`, including vector
-    /// capacities. Enforce the budget before allocation; one retained lookahead
-    /// row must independently fit it. A budget smaller than an empty page must
-    /// be rejected before fetching, allowing a retry with a larger budget. Other
-    /// resource-limit failures may terminate the cursor.
     async fn fetch_page_bounded(&mut self, size: PageSize, max_bytes: usize) -> Result<ResultPage>;
     async fn load_value(&mut self, _handle: Handle) -> Result<Value> {
         Err(DriverError::new(
@@ -521,9 +419,6 @@ pub trait ResultCursor: Send {
             "Deferred values are not supported",
         ))
     }
-    /// Conservative owned-memory bound after EOF, excluding native database
-    /// working memory. Callers MUST use this only after a page has `has_more=false`.
-    /// None means the original source reservation must remain held.
     fn retained_bytes_after_completion(&self) -> Option<usize> {
         None
     }

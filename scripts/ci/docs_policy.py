@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""Keep human documentation linked, short-sentenced, and current with the code.
-
-Default mode checks every page in scope:
-
-- links: relative Markdown links, `#anchor` targets, and `docs/...` or
-  `user-guide/...` paths resolve; every glob in the `docs/README.md` map matches
-  a file.
-- sentence length (ASD-STE100): a sentence in a list item has at most 20 words;
-  any other sentence has at most 25. Fenced code, inline code, tables, headings
-  and link targets are not counted.
-
-`--changed --base <ref>` instead fails when a file under a mapped glob changed
-in `<ref>...HEAD` but none of its owning pages changed, unless `PR_BODY` or a
-commit message in the range has a `Docs: none needed, <reason>` line.
-
-A line may opt out with `<!-- docs-ok: <reason> -->` on it or on the line
-above; the reason must be non-empty so the exception is reviewable.
-"""
 
 from pathlib import Path
 import argparse
@@ -72,7 +54,6 @@ def anchors(path):
 
 
 def doc_map(root):
-    """Return (line, glob, owning pages) rows from the docs/README.md map block."""
     path = root / MAP_PAGE
     if not path.is_file():
         return []
@@ -90,7 +71,6 @@ def doc_map(root):
 
 
 def matches(glob, name):
-    # fnmatch's `*` also matches `/`, so `dir/**` and `dir/prefix_*` cover nested files.
     return fnmatch.fnmatchcase(name, glob)
 
 
@@ -137,7 +117,6 @@ def link_findings(root, path, relative, lines):
 
 
 def prose_blocks(lines):
-    """Yield (first line index, is list item, [(line index, text)]) blocks."""
     block, is_item, fenced = [], False, False
     for index, line in enumerate(lines):
         if FENCE.match(line):
@@ -210,7 +189,6 @@ def marker_findings(relative, lines):
 
 
 def tracked(root):
-    """Files in the Git index; a new file matches map globs only after `git add`."""
     result = subprocess.run(
         ["git", "ls-files"], cwd=root, capture_output=True, text=True, check=False
     )
@@ -282,7 +260,9 @@ def changed_violations(root, base, pr_body=""):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Keep human documentation linked, short-sentenced, and current with the code."
+    )
     parser.add_argument("--json", action="store_true", help="print findings as JSON")
     parser.add_argument(
         "--changed", action="store_true", help="check doc updates for changed code"

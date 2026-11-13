@@ -1,8 +1,5 @@
-//! Which rows an object data read returns from a system-versioned relation.
 use crate::{DriverError, ErrorKind, Result};
 
-/// A validated `YYYY-MM-DD HH:MM:SS[.ffffff]` time. It holds only ASCII
-/// digits and `-`, ` `, `:`, `.`, so drivers may embed it in a quoted literal.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HistoryTimestamp(String);
 
@@ -70,7 +67,6 @@ pub enum ObjectDataTime {
 }
 
 impl ObjectDataTime {
-    /// Rejects history modes on connections that cannot browse history.
     pub fn require_current(&self) -> Result<()> {
         if *self == Self::Current {
             return Ok(());
@@ -82,7 +78,6 @@ impl ObjectDataTime {
     }
 }
 
-/// Whether objects of this relation subtype offer history browsing.
 pub fn relation_subtype_has_history(subtype: &str) -> bool {
     subtype == "system_versioned"
 }

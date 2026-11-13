@@ -146,8 +146,6 @@ QList<Specimen> specimens() {
          "desktop/design_system/toast_region/toast_region.cpp"},
     };
 }
-// Forced visual options live only in the developer host. Button's production
-// renderer consumes the same options for real pointer and keyboard input.
 class StateButton final : public Button {
   public:
     using Button::Button;
@@ -156,8 +154,6 @@ class StateButton final : public Button {
   protected:
     QStyle::State visualState() const override { return Button::visualState() | forcedState; }
 };
-// Keep the specimen vector-backed through its actual display path. QLabel's
-// stored one-times pixmap would otherwise be enlarged on Retina displays.
 class IconDisplay final : public QLabel {
   public:
     IconDisplay(Icon role, int size, bool dimmed, QWidget* parent)
@@ -191,7 +187,6 @@ void populateIcons(QWidget* host, QVBoxLayout* layout) {
     int row = 0;
     QStringList shown;
     for (const auto& entry : iconCatalog()) {
-        // Roles that share one Lucide file share its name; show the file once.
         if (shown.contains(entry.name))
             continue;
         shown.append(entry.name);
@@ -618,7 +613,7 @@ void populateTokens(QWidget* host, QVBoxLayout* layout, ResolvedAppearance appea
     });
     layout->addWidget(copy);
 }
-} // namespace
+}
 PreviewWindow::PreviewWindow(QWidget* parent) : QMainWindow(parent) {
     auto* chrome = new ThemeManager(this);
     chrome->setMode(ThemeMode::Light);
@@ -834,7 +829,6 @@ void PreviewWindow::rebuildSpecimens() {
             pinnedLayout->addWidget(pinnedTree);
             pinnedSurface->setFixedHeight(250);
             contentLayout->addWidget(pinnedSurface);
-            // Row status: an icon after the name; a failed row is red.
             constexpr int markRole = Qt::UserRole + 2;
             auto* statusTree = new NavigationTreeView(content);
             statusTree->setObjectName("previewStatusRows");
@@ -943,4 +937,4 @@ void PreviewWindow::rebuildSpecimens() {
         applySpecimenTheme(*host);
     }
 }
-} // namespace choscordb::design
+}

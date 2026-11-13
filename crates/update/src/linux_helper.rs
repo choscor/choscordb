@@ -191,9 +191,6 @@ pub fn run_linux_helper(request: &LinuxHelperRequest) -> Result<u32, InstallErro
             Err(InstallError::ManualRestoreNeeded)
         };
     }
-    // Command::spawn resolves the path again. A concurrent writer can still replace it
-    // between this identity check and exec; renameat2 has no inode-conditional exchange.
-    // The updater's install directory must be trusted against concurrent mutation.
     if FileIdentity::at(&request.target) != Some(request.staged_identity) {
         return Err(InstallError::ManualRestoreNeeded);
     }

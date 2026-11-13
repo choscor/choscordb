@@ -30,8 +30,6 @@ ConfirmationDialog::ConfirmationDialog(Icon icon, const QString& title, const QS
     refreshIcon();
 }
 void ConfirmationDialog::open() {
-    // Connect finished/buttonClicked before this asynchronous entry point.
-    // Keep the embedded surface instead of requesting a native sheet.
     setResult(0);
     show();
 }
@@ -82,8 +80,6 @@ QMessageBox::StandardButton ConfirmationDialog::question(QWidget* parent, const 
 }
 void ConfirmationDialog::prepareContent() {
     const int padding = design::spacing(design::Spacing::Four);
-    // QMessageBox installs additional platform-specific QWidget margins (on macOS,
-    // 24/15/24/20). The shared panel owns its margins at the layout boundary.
     setContentsMargins(0, 0, 0, 0);
     if (auto* grid = qobject_cast<QGridLayout*>(layout())) {
         if (!heading_) {
@@ -148,8 +144,6 @@ void ConfirmationDialog::prepareContent() {
                     delete cell.item;
                     continue;
                 }
-                // The informative label is folded into bodyText_ above. Its former
-                // grid row must not leave a blank band above the buttons.
                 const int row = cell.row + 1 - (cell.row >= 2 ? 1 : 0);
                 const int rows = cell.row == 0 && cell.rows > 1 ? cell.rows - 1 : cell.rows;
                 const int column = cell.column > 1 ? cell.column - 1 : cell.column;
@@ -194,15 +188,11 @@ void ConfirmationDialog::prepareContent() {
     }
     setFixedWidth(width);
     if (bodyScroll_) {
-        // Measure the assigned viewport, including Qt's icon/column geometry,
-        // rather than guessing its width from the nominal icon size.
         layout()->invalidate();
         layout()->activate();
         const int bodyWidth = qMax(1, bodyScroll_->maximumViewportSize().width());
         const int naturalHeight = bodyText_->heightForWidth(bodyWidth);
         const int maximumHeight = qMax(40, availableHeight / 2);
-        // A body that fits must not reserve a scroll bar: the bar narrows the
-        // text, which can rewrap a line that exactly fits and then scroll it.
         bodyScroll_->setVerticalScrollBarPolicy(
             naturalHeight > maximumHeight ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff);
         bodyScroll_->setFixedHeight(qMin(naturalHeight, maximumHeight));
@@ -230,4 +220,4 @@ void ConfirmationDialog::hideEvent(QHideEvent* event) {
 void ConfirmationDialog::paintEvent(QPaintEvent*) {
     design::paintDialogSurface(*this);
 }
-} // namespace choscordb
+}

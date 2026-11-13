@@ -73,7 +73,6 @@ void NavigatorSqlWorkspaceTest::sqlRowActionsLiveInResultContextMenu() {
             auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
             menu->close();
-            // The menu shows the grid's shared actions, so the actions are not its children.
             const auto find = [menu](const QString& objectName) -> QAction* {
                 for (auto* action : menu->actions())
                     if (action->objectName() == objectName)
@@ -506,7 +505,6 @@ void NavigatorSqlWorkspaceTest::tabContextMenuStopsBulkCloseWhenDiscardIsCancell
     QCOMPARE(tabs->widget(0), first);
     QCOMPARE(tabs->widget(1), draft);
     QCOMPARE(draft->text(), QString("SELECT 'keep this draft';"));
-    // The modal confirmation dismisses and deletes the original popup.
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::sendEvent(bar, &event);
     menu = window.findChild<QMenu*>("editorTabContextMenu");
@@ -562,7 +560,6 @@ void NavigatorSqlWorkspaceTest::resultsAutomaticallyShowGridOrFailureMessage() {
 void NavigatorSqlWorkspaceTest::capturesSqlAndObjectTabsAtBothWorkspaceWidths() {
     choscordb::MainWindow window;
     window.show();
-    // The stored layout restores the window geometry; resize only after it is applied.
     QTRY_VERIFY(window.findChild<choscordb::AppearanceController*>()->isReady());
     window.findChild<QAction*>("newQuery")->trigger();
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
@@ -711,7 +708,6 @@ void NavigatorSqlWorkspaceTest::historySearchAppliesToRefreshedFullSql() {
                         ->findChild<QLabel*>("sidebarSectionBusy");
     QVERIFY(loading && loading->isHidden());
     window.findChild<QPushButton*>("sidebarHistory")->click();
-    // History progress is only the Loader icon on the section header.
     QVERIFY(!loading->isHidden());
     QCOMPARE(loading->accessibleName(), QString::fromUtf8("Loading recent history…"));
     QVERIFY(window.findChild<QLabel*>("sidebarHistoryStatus")->isHidden());

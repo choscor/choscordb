@@ -41,7 +41,7 @@ QList<SavedEditorDocument> documentsOf(const QList<SavedWorkspaceTab>& tabs) {
             documents.append(tab.document);
     return documents;
 }
-} // namespace
+}
 class RecoveryTest : public QObject {
     Q_OBJECT
   private slots:
@@ -174,7 +174,6 @@ class RecoveryTest : public QObject {
         auto* footer = explorer->findChild<design::StatusLine*>("objectFooter");
         QVERIFY(footer);
         reconnect->trigger();
-        // Reconnect progress is a busy notice on the object tab's own bottom line.
         QVERIFY(footer->accessibleDescription().contains("Reconnecting the saved connection…"));
         QVERIFY(footer->property("busy").toBool());
         QTRY_VERIFY(!explorer->needsConnection());
@@ -257,8 +256,6 @@ class RecoveryTest : public QObject {
         }
     }
     void duplicateObjectTabsRestoreAsSeparateTabs() {
-        // Rust persists the same object twice with independent panes; restoring that
-        // snapshot must not be rejected by the native workspace.
         QTabWidget tabs;
         WorkspaceRecoveryController recovery(&tabs, [] { return new SqlEditor; });
         recovery.setObjectFactory([](const SavedWorkspaceTab&) -> QWidget* { return new QWidget; });
@@ -394,7 +391,6 @@ class RecoveryTest : public QObject {
         QSignalSpy closed(&recovery, &WorkspaceRecoveryController::closeReady);
         QSignalSpy errors(&recovery, &WorkspaceRecoveryController::errorOccurred);
         recovery.start();
-        // Rust rejects an invalid snapshot and reports the restore as failed.
         recovery.failed(restores.at(0).at(0).toULongLong(), "Saved SQL tab is invalid.");
         QCOMPARE(errors.count(), 1);
         QCOMPARE(tabs.widget(0), original);

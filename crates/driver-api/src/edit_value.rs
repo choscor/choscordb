@@ -1,6 +1,5 @@
 use crate::Value;
 
-/// Parse an explicit cell draft and preserve an actionable type rejection.
 pub fn parse_grid_edit_value_checked(database_type: &str, text: &str) -> Result<Value, String> {
     let database_type = database_type.to_ascii_lowercase();
     const INTEGER_ERROR: &str =
@@ -47,8 +46,6 @@ pub fn parse_grid_edit_value_checked(database_type: &str, text: &str) -> Result<
     Ok(value)
 }
 
-/// Parse a user-entered grid cell using its database type.
-/// Unknown types remain text; invalid input for recognized types returns `None`.
 pub fn parse_grid_edit_value(database_type: &str, text: &str) -> Option<Value> {
     parse_grid_edit_value_checked(database_type, text).ok()
 }

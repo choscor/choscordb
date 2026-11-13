@@ -1,4 +1,3 @@
-//! Shared conformance checks through the application driver traits.
 use choscordb_driver_api::*;
 
 const BUDGET: usize = 64 * 1024;
@@ -167,8 +166,6 @@ pub async fn close_rolls_back(
     )
     .await;
     assert_eq!(connection.transaction_state().await.unwrap(), Some(true));
-    // Leave an auto-commit cursor alive: its finalizer must not commit the
-    // unfinished transaction after the connection has been explicitly closed.
     let pending = connection
         .execute_bounded("SELECT 7", QueryOptions::default(), BUDGET)
         .await
@@ -221,8 +218,6 @@ pub async fn cancellation_generation(
     connection.close().await.unwrap();
 }
 
-/// An impossible schema budget is invalid input to execution, before native
-/// dispatch, transaction setup, cursor replacement, or cancellation generation.
 pub async fn schema_preflight_preserves_session(
     driver: &dyn DatabaseDriver,
     options: impl Fn() -> ConnectionOptions,

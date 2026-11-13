@@ -31,7 +31,7 @@ QModelIndex loadSchema(NavigatorModel& model, QSignalSpy& requested) {
         return {};
     return model.index(0, 0, connection);
 }
-} // namespace
+}
 
 class NavigatorScaleTest : public QObject {
     Q_OBJECT
@@ -50,17 +50,14 @@ class NavigatorScaleTest : public QObject {
         QVERIFY(
             model.applyChildren(42, "schema-id", requested.last().at(2).toULongLong(), tables()));
         QCOMPARE(model.rowCount(schema), kTables);
-        // Every parent() and objectSnapshot() lookup must stay constant time.
         for (int row = 0; row < kTables; ++row)
             QCOMPARE(model.index(row, 0, schema).parent(), schema);
         const auto last = model.objectSnapshot(42, QString("t%1-id").arg(kTables - 1));
         QVERIFY(last.has_value());
         QCOMPARE(last->parentObjectId, QString("schema-id"));
         QVERIFY(model.matchesObject(42, "t0-id", "table", "public.t0", "schema-id"));
-        // Generous bound: quadratic lookups take seconds at this size.
         QVERIFY2(timer.elapsed() < 5000, qPrintable(QString::number(timer.elapsed())));
 
-        // Refreshing drops the old subtree from the index; reapplying the same IDs resolves anew.
         model.refresh(schema);
         QTRY_COMPARE(requested.size(), 3);
         QVERIFY(!model.objectSnapshot(42, "t0-id").has_value());

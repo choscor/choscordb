@@ -17,7 +17,6 @@ class QTimer;
 
 namespace choscordb::design {
 
-// The shared bottom line for workspace results and object panes.
 class StatusLine final : public QWidget {
     Q_OBJECT
   public:
@@ -43,8 +42,6 @@ class StatusLine final : public QWidget {
     void setAvailable(bool available);
     void setNeutral(bool neutral = true);
     void setMessage(const QString& message);
-    // Shows `message`. A positive `expiryMs` clears it after that time if it still shows;
-    // zero keeps it until other content replaces it.
     void showNotice(const QString& message, int expiryMs);
     void setBusy(bool busy);
 
@@ -79,4 +76,4 @@ class StatusLine final : public QWidget {
     bool refreshing_ = false;
 };
 
-} // namespace choscordb::design
+}

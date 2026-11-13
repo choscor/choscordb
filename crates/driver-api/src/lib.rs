@@ -1,4 +1,3 @@
-//! Database-independent contracts shared by adapters and application services.
 mod bootstrap_transaction;
 mod driver;
 mod edit_query;

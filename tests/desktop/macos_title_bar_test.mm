@@ -16,13 +16,10 @@ static bool contentClearsTitleBar(choscordb::MainWindow& window, NSWindow* nativ
     const int contentTop = window.centralWidget()->mapTo(&window, QPoint(0, 0)).y();
     const auto* navigator = window.findChild<QDockWidget*>("navigator");
     const int navigatorTop = navigator ? navigator->mapTo(&window, QPoint(0, 0)).y() : -1;
-    // AppKit reserves the native title bar outside Qt's content rectangle.
     return window.contentsMargins().top() == 0 && contentTop == 0 && navigatorTop == 0;
 }
 
 static bool waitForNativeState(const std::function<bool()>& ready) {
-    // A manually pumped processEvents() does not enter Cocoa's NSApp run loop.
-    // Full-screen completion needs that native loop, just like the running app.
     QEventLoop loop;
     QTimer poll;
     QTimer deadline;
@@ -104,8 +101,6 @@ int main(int argc, char** argv) {
                                         *exitedState = true;
                                       }];
     window.showFullScreen();
-    // Qt sets the style mask before AppKit completes the transition. Wait for
-    // the native completion notification before asking it to exit full screen.
     const bool fullScreenSafe = waitForNativeState([&] {
         return entered && (native.styleMask & NSWindowStyleMaskFullScreen) &&
                contentClearsTitleBar(window, native);
@@ -128,8 +123,6 @@ int main(int argc, char** argv) {
             window.contentsMargins().top(), entered, exited);
         return 1;
     }
-    // Qt rewrites NSWindow.titlebarAppearsTransparent whenever it reapplies the
-    // window flags, which happens during normal app startup after showEvent.
     window.windowHandle()->setFlags(window.windowHandle()->flags());
     app.processEvents();
     if (!native.titlebarAppearsTransparent ||

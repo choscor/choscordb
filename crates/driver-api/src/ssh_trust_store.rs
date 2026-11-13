@@ -145,8 +145,6 @@ pub(crate) async fn append(
         if current != prepared.original {
             return Err(failure("SSH known hosts file changed during approval"));
         }
-        // This atomic transition races cancellation. A cancelled approval cannot
-        // begin a delayed append after a blocked read or lock finally completes.
         state.begin_append()?;
         if prepared
             .file
@@ -231,7 +229,7 @@ mod tests {
             let _guard = ApprovalGuard(copy.clone());
             blocking(copy, move |state| {
                 let _ = started_tx.send(());
-                release_rx.recv().unwrap(); // Controlled stalled filesystem operation.
+                release_rx.recv().unwrap();
                 let permitted = state.begin_append().is_ok();
                 let _ = completed_tx.send(permitted);
                 Ok(())

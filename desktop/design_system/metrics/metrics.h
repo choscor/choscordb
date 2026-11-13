@@ -10,8 +10,6 @@ namespace choscordb::design {
 
 enum class DialogSize { Short, Export, Preferences, Profiles, Detail, Ddl };
 enum class Spacing { Half, One, OneHalf, Two, Three, Four, Six, Eight };
-// The compact scale, in logical pixels on a 4px grid. Controls share one
-// height per size; every data row and header is Row/Header high.
 enum class Dimension {
     ControlExtraSmall,
     ControlSmall,
@@ -71,8 +69,6 @@ struct MotionSpec final {
 [[nodiscard]] FocusSpec focusSpec();
 [[nodiscard]] MotionSpec motionSpec(Motion value, bool reducedMotion = false);
 
-// Layout-only constants: window defaults and minimums, initial pane sizes and
-// label limits. Sizes on the design scale come from Dimension, Spacing and Radius.
 struct LayoutMetrics final {
     int connectionContentInset = 21;
     int connectionDriverHeight = 44;
@@ -97,4 +93,4 @@ struct LayoutMetrics final {
 }
 [[nodiscard]] QSize dialogInitialSize(DialogSize size);
 
-} // namespace choscordb::design
+}

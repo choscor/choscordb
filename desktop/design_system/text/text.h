@@ -6,14 +6,12 @@
 
 namespace choscordb::design {
 
-// Plain descriptive text. Selectable diagnostics use the existing text editors.
 class Text final : public QLabel {
     Q_OBJECT
   public:
     explicit Text(const QString& text = {}, QWidget* parent = nullptr);
     void setTextStyle(TextStyle style, FontDesign design = FontDesign::Default);
     void setWeight(QFont::Weight weight);
-    // A muted, uppercase Caption label for sidebar and gallery section headers.
     void setSectionLabel();
 
     [[nodiscard]] QSize sizeHint() const override;
@@ -28,4 +26,4 @@ class Text final : public QLabel {
     FontDesign design_ = FontDesign::Default;
 };
 
-} // namespace choscordb::design
+}

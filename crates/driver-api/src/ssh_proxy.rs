@@ -1,4 +1,3 @@
-//! A capability-authenticated byte relay; it never handles SSH authentication.
 use crate::{DriverError, ErrorKind, Result};
 use std::{
     io::{Read, Write},
@@ -38,7 +37,6 @@ impl Relay {
         let token = uuid::Uuid::new_v4().to_string();
         let expected = token.clone();
         let worker = tokio::spawn(async move {
-            // Wrong capabilities never consume the single authorized byte stream.
             let mut attempts = tokio::task::JoinSet::new();
             let mut socket = loop {
                 tokio::select! {
@@ -95,7 +93,6 @@ fn proxy_command(executable: &Path, address: SocketAddr) -> Result<String> {
         .to_str()
         .filter(|value| !value.chars().any(char::is_control))
         .ok_or_else(failure)?;
-    // OpenSSH expands percent tokens before invoking the user's shell.
     #[cfg(unix)]
     let quoted = format!("'{}'", executable.replace('%', "%%").replace('\'', "'\\''"));
     #[cfg(not(unix))]
@@ -107,8 +104,6 @@ fn proxy_command(executable: &Path, address: SocketAddr) -> Result<String> {
     };
     Ok(format!("{quoted} {MODE} {address}"))
 }
-/// Dispatch before askpass mode: the first helper only re-execs with broker
-/// environment removed. No application or SSH bytes are read before that step.
 pub(crate) fn run_if_requested() -> Option<i32> {
     let args: Vec<_> = std::env::args_os().collect();
     let mode = args.get(1)?.to_str()?;
@@ -182,8 +177,6 @@ pub(crate) fn run_if_requested() -> Option<i32> {
             let Ok(executable) = std::env::current_exe() else {
                 return Some(1);
             };
-            // Socket ownership crosses exec through a standard descriptor; no raw-fd
-            // ownership reconstruction or unsafe environment mutation is needed.
             let mut command = std::process::Command::new(executable);
             command
                 .arg(STREAM_MODE)
@@ -243,7 +236,6 @@ fn relay(mut socket: std::net::TcpStream) -> std::io::Result<()> {
         let _ = std::io::copy(&mut std::io::stdin().lock(), &mut writer);
         let _ = writer.shutdown(std::net::Shutdown::Write);
     });
-    // SSH packets need not contain a newline: flush every write to line-buffered stdout.
     let mut output = std::io::stdout().lock();
     let mut bytes = [0; 16 * 1024];
     loop {

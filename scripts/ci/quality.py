@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Run ChoscorDB's canonical local quality gates."""
 
 import argparse
 from pathlib import Path
@@ -17,18 +16,16 @@ QT_VERSION = "6.8.3"
 
 
 class QualityError(RuntimeError):
-    """A quality stage cannot start because its prerequisites are unavailable."""
+    pass
 
 
 def run_command(command, **kwargs):
-    """Print and run a quality command from the repository root."""
     rendered = subprocess.list2cmdline([str(argument) for argument in command])
     print(f"Running: {rendered}", flush=True)
     subprocess.run(command, check=True, cwd=ROOT, **kwargs)
 
 
 def require_tool(tool, *, install):
-    """Require an executable and provide stage-specific installation guidance."""
     if shutil.which(tool) is None:
         raise QualityError(
             f"Required tool '{tool}' was not found. Install it with: {install}"
@@ -37,7 +34,6 @@ def require_tool(tool, *, install):
 
 
 def require_pinned_tool(tool, version_args, expected, *, install):
-    """Require a tool and reject a version outside the repository pin."""
     executable = require_tool(tool, install=install)
     command = [executable, *version_args]
     print(f"Running: {subprocess.list2cmdline(command)}", flush=True)
@@ -60,7 +56,6 @@ def require_pinned_tool(tool, version_args, expected, *, install):
 
 
 def clang_format_tool():
-    """Locate clang-format and verify the repository's pinned LLVM major."""
     executable = next(
         (
             candidate
@@ -94,7 +89,6 @@ def clang_format_tool():
 
 
 def cpp_files():
-    """Return the deterministic first-party hand-written C/C++ formatting scope."""
     files = []
     for directory in (ROOT / "desktop", ROOT / "tests"):
         files.extend(
@@ -135,6 +129,10 @@ def perf_policy():
 
 def docs_policy():
     run_command([PYTHON, "scripts/ci/docs_policy.py"])
+
+
+def comment_policy():
+    run_command([PYTHON, "scripts/ci/comment_policy.py"])
 
 
 def source_inventory():
@@ -243,7 +241,6 @@ def cargo_deny():
 
 
 def desktop(stage):
-    """Delegate native definitions to desktop.py, their single source of truth."""
     run_command([PYTHON, "scripts/ci/desktop.py", stage])
 
 
@@ -258,7 +255,6 @@ def qmake_name():
 
 
 def require_native_dependencies():
-    """Fail before CMake with the command that provisions Qt and QScintilla."""
     tools = ROOT / "build/ci"
     qt = tools / "qt" / QT_VERSION / qt_directory()
     qsci = tools / "qscintilla"
@@ -312,6 +308,7 @@ STAGES = {
     "perf-policy": perf_policy,
     "source-inventory": source_inventory,
     "docs-policy": docs_policy,
+    "comment-policy": comment_policy,
     "python-lint": python_lint,
     "python-format": python_format,
     "actionlint": actionlint,
@@ -336,6 +333,7 @@ FAST_STAGES = (
     "perf-policy",
     "source-inventory",
     "docs-policy",
+    "comment-policy",
     "python-lint",
     "python-format",
     "actionlint",
@@ -350,7 +348,9 @@ FULL_STAGES = (*FAST_STAGES, "native-build", "native-tests")
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Run ChoscorDB's canonical local quality gates."
+    )
     parser.add_argument("stage", choices=["fast", "full", *STAGES])
     args = parser.parse_args(argv)
     selected = (

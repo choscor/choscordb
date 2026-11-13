@@ -87,7 +87,6 @@ async fn dropping_broker_closes_pending_requests() {
         .await
         .unwrap();
     stalled.write_all(&[0]).await.unwrap();
-    // A completed request proves the worker has run and accepted the earlier socket.
     request_ssh_secret(broker.address(), broker.token())
         .await
         .unwrap();

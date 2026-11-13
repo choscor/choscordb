@@ -1,5 +1,3 @@
-"""Fail-closed checks for adding platform assets to an existing release."""
-
 import hashlib
 import json
 from pathlib import Path

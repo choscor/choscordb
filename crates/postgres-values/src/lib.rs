@@ -1,5 +1,3 @@
-//! PostgreSQL binary scalar decoding. Inputs must come from a UTF-8 connection.
-//! Protocol reference: PostgreSQL numeric_send and datatype/timestamp.h.
 use choscordb_driver_api::{DriverError, ErrorKind, Result, Value};
 use std::fmt::Write;
 fn malformed() -> DriverError {
@@ -18,8 +16,6 @@ fn bound(n: usize, max: usize) -> Result<()> {
 fn array<const N: usize>(b: &[u8]) -> Result<[u8; N]> {
     b.try_into().map_err(|_| malformed())
 }
-/// Whether this crate has a native decoder for the PostgreSQL binary result format.
-/// Other OIDs must be requested in server text format at Bind time.
 pub fn supports_binary_oid(oid: u32) -> bool {
     matches!(
         oid,
@@ -46,12 +42,9 @@ pub fn supports_binary_oid(oid: u32) -> bool {
             | 3802
     )
 }
-/// Decode without an allocation budget. Prefer `decode_bounded` in result pipelines.
 pub fn decode(oid: u32, bytes: Option<&[u8]>) -> Result<Value> {
     decode_bounded(oid, bytes, usize::MAX)
 }
-/// `max_bytes` bounds owned payload capacity (excluding the fixed `Value` structure).
-/// No payload allocation occurs before its conservative capacity check.
 pub fn decode_bounded(oid: u32, bytes: Option<&[u8]>, max_bytes: usize) -> Result<Value> {
     let Some(b) = bytes else {
         return Ok(Value::Null);
@@ -131,8 +124,6 @@ fn numeric(b: &[u8], max: usize) -> Result<String> {
         }
     }
     if matches!(sign, 0xc000 | 0xd000 | 0xf000) {
-        // PostgreSQL validates the wire fields, but special values use only sign.
-        // In particular numeric_send emits dscale=32 for infinity on PostgreSQL 17.
         let s = match sign {
             0xc000 => "NaN",
             0xd000 => "Infinity",
@@ -144,7 +135,6 @@ fn numeric(b: &[u8], max: usize) -> Result<String> {
     if !matches!(sign, 0 | 0x4000) {
         return Err(malformed());
     }
-    // Reject fractional precision that the declared scale would silently lose.
     for i in 0..n {
         let position = weight - i as i32;
         if position < 0 {
@@ -190,7 +180,6 @@ fn numeric(b: &[u8], max: usize) -> Result<String> {
 }
 
 fn temporal(oid: u32, b: &[u8], max: usize) -> Result<Value> {
-    // Fixed upper bound includes seven-digit years, BC marker and UTC suffix.
     bound(48, max)?;
     let mut s = String::with_capacity(48);
     if oid == 1082 {
@@ -279,7 +268,6 @@ fn time(s: &mut String, micros: i64) {
     }
 }
 fn date(s: &mut String, days: i64) -> bool {
-    // Gregorian 400-year eras, measured from March 1 of astronomical year zero.
     let z = days + 10_957 + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;

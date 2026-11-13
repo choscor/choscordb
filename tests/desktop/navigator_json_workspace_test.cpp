@@ -106,7 +106,7 @@ void NavigatorSqlWorkspaceTest::sqlCellJsonUsesClickedCellAndValidatesEligibilit
     QVERIFY(sheet);
     auto* copy = sheet->findChild<QPushButton*>("rowJsonCopy");
     QVERIFY(copy);
-    QVERIFY(!copy->isEnabled()); // Rendering completes after the UI event returns.
+    QVERIFY(!copy->isEnabled());
     QTRY_VERIFY(sheet->isVisible());
     QTRY_COMPARE(sheet->findChild<QLabel*>("rowJsonStatus")->text(), QString());
     QVERIFY(!sheet->findChild<QLabel*>("rowJsonStatus")->isVisible());
@@ -389,7 +389,7 @@ void NavigatorSqlWorkspaceTest::sqlJsonViewsCloseAndDisableAfterDisconnect() {
     QTRY_VERIFY(sheet->findChild<QPushButton*>("rowJsonCopy")->isEnabled());
     QVERIFY(workspace->adapter()->disconnectConnection(connection));
     QTRY_VERIFY(!sheet->isVisible());
-    QCOMPARE(model->rowCount(), 1); // The existing grid still displays its last page.
+    QCOMPARE(model->rowCount(), 1);
     QTimer::singleShot(0, grid, [&] {
         auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
         QVERIFY(menu);
@@ -401,7 +401,7 @@ void NavigatorSqlWorkspaceTest::sqlJsonViewsCloseAndDisableAfterDisconnect() {
         menu->close();
     });
     grid->customContextMenuRequested(point);
-    model->discardEdits(); // A model reset must not make the disconnected page current again.
+    model->discardEdits();
     bool staleActionEnabled = false, sawMenu = false;
     QTimer::singleShot(0, grid, [&] {
         auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());

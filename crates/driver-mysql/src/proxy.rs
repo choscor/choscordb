@@ -1,4 +1,3 @@
-//! Loopback transport shim retaining the database hostname for native TLS.
 use choscordb_driver_api::{DriverError, ErrorKind, Result, Secret, SocksProxy, connect_socks};
 use std::{sync::Arc, time::Duration};
 use tokio::{
@@ -20,8 +19,6 @@ impl Tunnel {
         port: u16,
         timeout: Duration,
     ) -> Result<Arc<Self>> {
-        // Establish one transport before creating the local relay so proxy errors
-        // (notably authentication) retain their public classification.
         let first = connect_socks(&settings, secret.as_ref(), &host, port, timeout).await?;
         let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .await

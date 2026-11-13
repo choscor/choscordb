@@ -1,7 +1,3 @@
-# Test targets. Kept under tests/ so test-only dependencies (such as the Qt Network
-# fixture server in updater_menu_test.cpp) are reviewed as test code and never as
-# production build configuration. Included from the root only when BUILD_TESTING.
-
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 choscordb_add_executable(choscordb-diagnostics-tests tests/desktop/diagnostics_service_test.cpp tests/desktop/diagnostics_legacy_lock.cpp)
 target_link_libraries(choscordb-diagnostics-tests PRIVATE choscordb-diagnostics Qt6::Test)
@@ -81,8 +77,6 @@ if(WIN32)
 else()
   add_test(NAME modern-ui COMMAND choscordb-modern-ui-tests)
 endif()
-# These event-loop tests assert asynchronous completion deadlines. Avoid
-# competing native engines/keychain operations when CTest runs in parallel.
 set_tests_properties(modern-ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE)
 choscordb_add_executable(choscordb-result-copy-workspace-tests tests/desktop/result_copy_workspace_test.cpp)
 target_link_libraries(choscordb-result-copy-workspace-tests PRIVATE choscordb-desktop Qt6::Test)

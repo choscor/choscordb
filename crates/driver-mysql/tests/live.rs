@@ -1,4 +1,3 @@
-//! Run against the disposable MySQL or MariaDB test server; see support/server.rs.
 use choscordb_driver_api::*;
 #[path = "support/server.rs"]
 mod server;
@@ -65,7 +64,6 @@ async fn object_graph_preserves_direct_composite_parallel_self_and_cross_schema_
             .collect::<Vec<_>>(),
         vec!["id", "parent_id", "peer_id", "peer_code"]
     );
-    // MariaDB keeps the integer display width in COLUMN_TYPE.
     let int = if server::mariadb() { "int(11)" } else { "int" };
     assert_eq!(center.columns[0].database_type, int);
     assert!(center.columns[0].primary_key);
@@ -898,9 +896,6 @@ async fn large_values_are_deferred_and_survive_cursor_close() {
 #[ignore = "requires disposable MySQL server on localhost:33306"]
 async fn first_page_arrives_before_full_result_finishes() {
     let mut conn = connect().await;
-    // Send a substantial prefix immediately, then block the final row. This
-    // proves streaming without depending on accumulated per-row sleep timing
-    // or the server flushing each small group of delayed rows.
     let mut cursor = tokio::time::timeout(std::time::Duration::from_secs(8), conn.execute(
         "WITH RECURSIVE n AS (SELECT 1 AS i UNION ALL SELECT i+1 FROM n WHERE i<900) SELECT i, REPEAT('x',4096), IF(i=900,SLEEP(30),0) FROM n",
         QueryOptions::default(),
@@ -1098,7 +1093,6 @@ async fn leading_set_is_ready_and_cancelling_script_stops_later_writes() {
     assert!(first.rows.is_empty());
     assert!(!first.has_more);
     cancel.cancel().await.unwrap();
-    // Advancing may obtain the interrupted set or its cancellation error.
     let result = match cursor.next_result_set().await {
         Ok(true) => cursor.fetch_page(PageSize::default()).await.map(|_| ()),
         Ok(false) => panic!("interrupted result must report cancellation"),
@@ -1198,7 +1192,6 @@ async fn ambiguous_text_fallback_is_rejected_before_side_effects() {
             QueryOptions::default(),
         )
         .await;
-    // MariaDB prepares the whole routine as one statement, so nothing is split.
     let created = if server::mariadb() {
         drop(result.unwrap());
         1
@@ -1245,8 +1238,6 @@ async fn json_columns_decode_as_json_and_checked_text_follows_the_server() {
         matches!(&row[0], Value::Json(text) if text.contains("\"a\"")),
         "{row:?}"
     );
-    // MariaDB stores JSON as LONGTEXT with a json_valid check, so a checked
-    // LONGTEXT is JSON there; MySQL keeps its own JSON type distinct.
     if server::mariadb() {
         assert_eq!(row[1], Value::Json("[1]".into()));
     } else {

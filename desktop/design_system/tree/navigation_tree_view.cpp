@@ -34,7 +34,6 @@ void NavigationTreeView::updateHoveredIndex() {
 }
 
 void NavigationTreeView::updateRow(const QModelIndex& index) {
-    // The hover fill spans the viewport width, beyond the indented item rectangle.
     const QRect item = index.isValid() ? visualRect(index) : QRect{};
     if (item.isValid())
         viewport()->update(QRect(0, item.top(), viewport()->width(), item.height()));
@@ -89,11 +88,10 @@ void NavigationTreeView::drawBranches(QPainter* painter, const QRect& rect,
     if (selected || hoveredIndex_ == index) {
         painter->save();
         painter->setClipRect(rect);
-        // drawRow already stroked the forced-contrast ring; refill without restroking it.
         paintHighlight(painter, rect.top(), rect.height(), selected, false);
         painter->restore();
     }
     QTreeView::drawBranches(painter, rect, index);
 }
 
-} // namespace choscordb::design
+}

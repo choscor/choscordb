@@ -8,7 +8,7 @@ namespace choscordb {
 namespace design {
 class Button;
 class StatusLine;
-} // namespace design
+}
 class QuerySettingsDialog final : public DialogShell {
     Q_OBJECT
   public:
@@ -33,4 +33,4 @@ class QuerySettingsDialog final : public DialogShell {
     quint64 token_ = 0;
     bool ready_ = false, saving_ = false;
 };
-} // namespace choscordb
+}

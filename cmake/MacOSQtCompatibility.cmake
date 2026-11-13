@@ -1,6 +1,3 @@
-# Qt 6.8's macOS package links AGL through WrapOpenGL even when the selected
-# SDK no longer ships that deprecated framework. Keep the workaround local to
-# that imported compatibility target and only apply it when AGL is unavailable.
 function(choscordb_remove_unavailable_agl)
   if(NOT APPLE OR NOT TARGET WrapOpenGL::WrapOpenGL)
     return()

@@ -25,7 +25,7 @@
 namespace choscordb {
 namespace {
 using bridge_detail::fromRust;
-} // namespace
+}
 ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter), format_(new QComboBox(this)),
       dialect_(new QComboBox(this)), destination_(new QLineEdit(this)),
@@ -162,8 +162,6 @@ void ExportDialog::setResultViewActive(bool active) {
 void ExportDialog::clearQuery() {
     query_.reset();
     if (isRunning()) {
-        // Invalidate new submissions immediately, but retain the accepted
-        // export identity until the engine acknowledges destination cleanup.
         closeAfter_ = true;
         cancel();
         return;
@@ -198,7 +196,6 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
                                         const QStringList& table, const QString& dialect) {
     if (!adapter_ || !query_ || isRunning())
         return;
-    // Rust decides what names a SQL export target; Qt shows its reason on the field.
     const auto tableError = format == "sql" ? EngineAdapter::sqlExportTableError(table) : QString{};
     if (path.isEmpty() || format_->findData(format) < 0 || !tableError.isEmpty()) {
         destinationValidation_->setError(path.isEmpty() ? tr("Choose a destination.") : QString{});
@@ -245,7 +242,6 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
                     confirmation.setTextFormat(Qt::PlainText);
                     confirmation.setDefaultButton(QMessageBox::No);
                     const auto answer = confirmation.exec();
-                    // Confirmation dispatches events: never revive a cancelled or replaced request.
                     if (!adapter_ || query_ != query || submissionToken_ != token || !submitting_)
                         return;
                     if (answer != QMessageBox::Yes) {
@@ -321,7 +317,6 @@ void ExportDialog::finish(const QString& message, Outcome outcome) {
     submitting_ = false;
     cancelling_ = false;
     statusLine_->setBusy(false);
-    // A toast owns the success outcome. The status line keeps it only when no toast can show it.
     auto* toast = outcome == Outcome::Success ? windowToast(this) : nullptr;
     if (toast) {
         toast->showToast(tr("Success"), message, ToastVariant::Success);
@@ -362,4 +357,4 @@ void ExportDialog::reject() {
         QDialog::reject();
     }
 }
-} // namespace choscordb
+}

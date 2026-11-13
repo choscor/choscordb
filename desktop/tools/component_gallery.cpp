@@ -11,7 +11,6 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setApplicationName("ChoscorDB Component Gallery");
     QApplication::setStyle(new choscordb::design::ControlStyle);
-    // Match the application font the main window installs through ThemeManager.
     QApplication::setFont(choscordb::design::resolveTypography(choscordb::design::TextStyle::Body));
     QCommandLineParser parser;
     parser.setApplicationDescription(

@@ -1,4 +1,3 @@
-//! Typed transport for the saved SQL sidebar and document picker.
 use crate::ffi::{DocumentIoResultDto, SavedSqlEntryDto, SavedSqlListingDto, SavedSqlPathDto};
 use std::path::Path;
 

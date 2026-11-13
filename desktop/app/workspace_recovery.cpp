@@ -11,14 +11,14 @@
 #include <QTabWidget>
 namespace choscordb {
 quint32 savedObjectPane(int paneIndex) {
-    if (paneIndex == 4) // ERD is inserted before Data in the UI.
+    if (paneIndex == 4)
         return 5;
     if (paneIndex == 5)
         return 4;
     return static_cast<quint32>(paneIndex);
 }
 int restoredObjectPane(quint32 savedPane) {
-    if (savedPane == 4) // Legacy value 4 must continue to select Data.
+    if (savedPane == 4)
         return 5;
     if (savedPane == 5)
         return 4;
@@ -72,8 +72,6 @@ void WorkspaceRecoveryController::watchEditor(SqlEditor* editor) {
     const auto fileFinished = [this](const QString&, const QString& error) {
         if (error.isEmpty())
             changed();
-        // A pending file operation defers snapshots, including close flushes.
-        // Both success and failure settle the operation and permit a retry.
         if (closing_)
             flush();
         else if (dirty_ && !failed_)
@@ -155,8 +153,6 @@ void WorkspaceRecoveryController::restoredTabs(quint64 token, const QList<SavedW
                                                quint32 activeIndex) {
     if (token != pending_ || !restoring_)
         return;
-    // Rust validates the snapshot (limits, identities, panes, cursor offsets) before
-    // emitting it; the native workspace applies what it receives.
     pending_ = 0;
     restoring_ = false;
     failed_ = false;
@@ -183,7 +179,6 @@ void WorkspaceRecoveryController::flush() {
         return;
     if (!dirty_ && !closing_)
         return;
-    // Rust enforces recovery limits on save and reports failures through failed().
     for (int i = 0; i < tabs_->count(); ++i)
         if (auto* editor = qobject_cast<SqlEditor*>(tabs_->widget(i)); editor && editor->isIoBusy())
             return;
@@ -269,4 +264,4 @@ void WorkspaceRecoveryController::closeWithoutRecovery() {
     debounce_.stop();
     emit closeReady();
 }
-} // namespace choscordb
+}

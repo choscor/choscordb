@@ -1,4 +1,3 @@
-//! SQLite adapter. All SQLite and spool I/O runs on a dedicated bounded worker.
 mod metadata;
 mod object_data;
 mod spool;
@@ -100,8 +99,6 @@ impl CancelHandle for QueryCancellation {
             self.shared.requested.store(true, Ordering::Release);
             self.shared.interrupt.interrupt();
         } else if state.generation.checked_add(1) == Some(self.generation) {
-            // The execute command can still be queued. Remember its cancellation
-            // without interrupting the previous generation's active cursor.
             state.cancelled_generation = Some(self.generation);
         }
         Ok(())

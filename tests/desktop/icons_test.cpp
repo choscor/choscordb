@@ -10,7 +10,6 @@
 #include <algorithm>
 
 namespace {
-// Element markup copied from the upstream Lucide 1.61.0 files, independent of the assets.
 QByteArray lucideSvg(const QColor& color, const QByteArray& elements) {
     return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" "
            "stroke=\"" +
@@ -32,7 +31,7 @@ QImage renderReference(const QByteArray& svg) {
 
 const QByteArray playElements = "<path d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 "
                                 ".003 3.458l-12 7A2 2 0 0 1 5 19z\"/>";
-} // namespace
+}
 
 class IconsTest final : public QObject {
     Q_OBJECT
@@ -63,7 +62,6 @@ class IconsTest final : public QObject {
         expected.fill(Qt::transparent);
         QPainter vectorPainter(&expected);
         vectorPainter.scale(painterScale, painterScale);
-        // Reference path, directly rasterized at the final device transform.
         QSvgRenderer reference(lucideSvg(Qt::black, playElements));
         reference.render(&vectorPainter, QRectF(0, 0, 24, 24));
         vectorPainter.end();
@@ -120,8 +118,6 @@ class IconsTest final : public QObject {
         using namespace choscordb::design;
         const auto image =
             themedIcon(Icon::Add, Qt::black, 24).pixmap(QSize(24, 24), 2.0).toImage();
-        // Lucide draws a 2px stroke. Away from the plus intersection and round
-        // end caps, the two-times render covers 4 physical pixels.
         double coverage = 0;
         for (int y = 0; y < image.height(); ++y)
             coverage += image.pixelColor(16, y).alphaF();
@@ -133,7 +129,7 @@ class IconsTest final : public QObject {
             const auto role = definition.role;
             if (role == Icon::AppMark || role == Icon::PostgreSQL || role == Icon::SQLite ||
                 role == Icon::MySQL || role == Icon::MariaDB) {
-                continue; // Brand identities keep their own colors, checked below.
+                continue;
             }
             for (const auto& color : {QColor("#171717"), QColor("#fafafa")}) {
                 const auto icon = themedIcon(role, color, 20);
@@ -206,7 +202,6 @@ class IconsTest final : public QObject {
                 const auto pixel = image.pixelColor(x, y);
                 if (pixel.alpha() <= 200)
                     continue;
-                // The devicon dolphin is a single #00618A fill.
                 dolphinBlue += qAbs(pixel.red() - 0x00) < 12 && qAbs(pixel.green() - 0x61) < 12 &&
                                qAbs(pixel.blue() - 0x8a) < 12;
                 QVERIFY2(!(pixel.red() > pixel.blue() + 50 && pixel.red() > pixel.green() + 25),
@@ -215,7 +210,6 @@ class IconsTest final : public QObject {
         QVERIFY2(dolphinBlue > 20, qPrintable(QString::number(dolphinBlue)));
         QFile artwork(iconResourcePath(Icon::MySQL));
         QVERIFY(artwork.open(QIODevice::ReadOnly));
-        // Pin the unmodified devicon v2.18.0 icons/mysql/mysql-original.svg.
         QCOMPARE(QCryptographicHash::hash(artwork.readAll(), QCryptographicHash::Sha256).toHex(),
                  QByteArray("f73fa5d6b9da33fbf540ff96f5360c24b6d29d883ecfe6fcaecf89a8d3456067"));
     }
@@ -259,7 +253,6 @@ class IconsTest final : public QObject {
         QVERIFY(bottom.red() > 230 && bottom.green() > 140 && bottom.green() < 230);
         QVERIFY(bottom.green() > top.green() + 30);
 
-        // The Lucide paw-print is white and retains its four distinct pads.
         const QList<QPoint> pawStrokeSamples{{120, 48}, {176, 80}, {192, 144}, {91, 112}};
         for (const auto& point : pawStrokeSamples) {
             const auto pixel = dark.pixelColor(point);
@@ -285,7 +278,6 @@ class IconsTest final : public QObject {
         QVERIFY(names.contains("mysql"));
         QVERIFY(names.contains("copy"));
         QVERIFY(names.contains("square"));
-        // Cancel and Square share the Lucide square file and so its name.
         QCOMPARE(names.removeDuplicates(), 1);
     }
 
@@ -298,7 +290,6 @@ class IconsTest final : public QObject {
     }
     void applicationIconAssetsAreAvailableOffline() {
         using namespace choscordb::design;
-        // Load the resource collection through the public icon API.
         QVERIFY(!themedIcon(Icon::Add, Qt::black, 16).isNull());
         for (const auto* filename :
              {"refresh-cw.svg", "x.svg", "chevron-down.svg", "chevron-right.svg",

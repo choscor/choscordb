@@ -1,16 +1,8 @@
-/// Physical footprint as reported by the same macOS Mach task info field used by
-/// the previous native diagnostics sampler. A failed kernel query is unavailable.
 #[cfg(target_os = "macos")]
-// This one Mach call needs raw pointers; the buffer/count invariant is documented
-// at the call below and covered by the native footprint test. libc marks its
-// mach_task_self wrapper deprecated in favor of mach2, but using that existing
-// binding keeps this one-field sampler independent of a second Mach crate.
 #[allow(unsafe_code, deprecated)]
 pub(crate) fn footprint_bytes() -> Option<u64> {
     use std::mem::size_of;
 
-    // Prefix through `phys_footprint` of Apple's task_vm_info (rev 1).
-    // The kernel accepts TASK_VM_INFO_REV1_COUNT and writes only this prefix.
     #[repr(C)]
     #[derive(Default)]
     struct TaskVmInfoRev1 {

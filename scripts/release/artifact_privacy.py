@@ -1,12 +1,9 @@
-"""Reject local build locations in the payload before it is signed or published."""
-
 from pathlib import Path
 
 from stage import regular_files
 
 
 def verify_payload_privacy(app, forbidden_roots):
-    """Inspect all payload bytes; callers supply local home and source roots."""
     roots = {str(Path(root)).rstrip("/") for root in forbidden_roots}
     needles = {
         root.encode(encoding)

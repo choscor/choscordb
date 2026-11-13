@@ -9,4 +9,4 @@ void configureRichTextArea(QTextEdit& editor) {
     editor.document()->setDefaultStyleSheet(
         loadStyleSheet(QStringLiteral("text_area/configure_rich_text_area.qss")));
 }
-} // namespace choscordb::design
+}

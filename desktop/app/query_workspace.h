@@ -68,12 +68,10 @@ class QueryWorkspace final : public QObject {
         QLabel* rowsMetric = nullptr;
         QLabel* visibleSizeMetric = nullptr;
     };
-    // A live database session that a SQL document can target.
     struct LiveConnection {
         quint64 id = 0;
         QString label;
     };
-    // The staged-edit commands of the result grid, in catalog order.
     enum class GridCommand {
         AddRow,
         DuplicateRow,
@@ -84,7 +82,6 @@ class QueryWorkspace final : public QObject {
         ApplyEdits,
         DiscardEdits
     };
-    // The catalog rows of the grid commands and of the fixed grid keys.
     static QList<ShortcutDescriptor> gridShortcuts();
     explicit QueryWorkspace(Widgets widgets, QObject* parent = nullptr);
     ~QueryWorkspace() override;
@@ -118,7 +115,6 @@ class QueryWorkspace final : public QObject {
     QueryPreferences queryPreferences() const;
     void setExternalWork(bool busy);
     void setExternalWork(QObject* source, bool busy);
-    // False when the read did not start, such as when pending edits were kept.
     bool openObjectData(quint64 connection, const QString& object, const QString& label,
                         const QueryPreferences& preferences, bool preserveView = false,
                         const QString& initialFilter = {}, const ObjectDataTime& time = {});
@@ -130,12 +126,10 @@ class QueryWorkspace final : public QObject {
     const QList<LiveConnection>& liveConnections() const { return liveConnections_; }
     std::optional<QString> liveConnectionLabel(quint64 connection) const;
     std::optional<LiveConnection> liveConnectionForProfile(const QString& profileId) const;
-    // Binds a SQL document to a live connection. Work in flight blocks the change.
     bool changeDocumentConnection(SqlEditor* editor, quint64 connection);
     void refreshEditActions() { updateActions(); }
     bool resolvePendingEdits();
     bool navigationAllowed() const { return !workInFlight() && !stopping_; }
-    // Sets the primary key of a grid command. A fixed alternate key stays.
     void setGridShortcut(const QString& id, const QKeySequence& primary);
   signals:
     void connectionReady(quint64 connection);
@@ -173,15 +167,11 @@ class QueryWorkspace final : public QObject {
     void updateGridActions();
     void updateApplyToolTip();
     QAction* gridAction(GridCommand command) const;
-    // Why a disabled command cannot run, or empty when it has nothing to act on yet.
     QString gridBlockedReason(GridCommand command) const;
     std::optional<GridCommand> gridCommandForKey(QKeyCombination key) const;
-    // Stages the open inline editor's value and closes it. False, with the editor
-    // still open, when the value did not stage.
     bool commitInlineEditor(QWidget* editor);
     void duplicateRow(const QModelIndex& index);
     void discardStagedEdits();
-    // The cell under the pointer while the context menu is open; else the current cell.
     QModelIndex gridTarget() const;
     std::array<QAction*, 8> gridActions_{};
     std::optional<QPersistentModelIndex> menuTarget_;
@@ -223,9 +213,7 @@ class QueryWorkspace final : public QObject {
     void handleCopyEvent(const BridgeEvent& event);
     void failCopy(const QString& error);
     void handleEvent(const BridgeEvent& event);
-    // Swaps in a page that a worker built from `page`.
     void showPage(const BridgeEvent& page, ResultTableModel::PreparedPage prepared);
-    // A cancellation, a cleared result or a newer page supersedes the page in its build.
     void dropPageBuild();
     bool connectionCanDisconnect(quint64 connection) const;
     void updateActions();
@@ -233,7 +221,6 @@ class QueryWorkspace final : public QObject {
     bool connectionAvailable(quint64 connection) const;
     bool queryAvailable() const;
     bool workInFlight() const;
-    // Rust's transaction rules for the connection whose result is being edited.
     const TransactionGuard& editTransactionGuard() const;
     void message(const QString& text);
     void setExecutionState(const QString& state, const QString& detail = {},
@@ -243,7 +230,6 @@ class QueryWorkspace final : public QObject {
     void presentExecutionState(const QString& state, const QString& detail,
                                const ExecutionMetrics& metrics, const QString& source);
     std::optional<quint64> selectedConnection() const;
-    // The status line source of a document without a displayed result.
     QString documentTarget(const SqlEditor* editor) const;
     Widgets widgets_;
     QPointer<EngineAdapter> adapter_;
@@ -296,7 +282,6 @@ class QueryWorkspace final : public QObject {
     };
     std::optional<PendingCopy> pendingCopy_;
     quint64 copyGeneration_ = 0;
-    // Changes whenever the grid selection or the rows it addresses change.
     quint64 selectionGeneration_ = 0;
     bool setNullAvailable_ = false;
     bool editabilityReplanQueued_ = false;
@@ -341,7 +326,6 @@ class QueryWorkspace final : public QObject {
     std::optional<quint64> currentPage_;
     std::optional<quint64> visibleLease_;
     std::optional<quint64> schemaLease_;
-    // The request token of the page in its build; dropPageBuild replaces it.
     quint64 pageBuild_ = 0;
     std::optional<quint64> buildingLease_;
     bool executionFinished_ = true;
@@ -362,4 +346,4 @@ class QueryWorkspace final : public QObject {
     bool proposedFiltersFromDraft_ = false;
     std::optional<quint64> viewRefreshQuery_;
 };
-} // namespace choscordb
+}

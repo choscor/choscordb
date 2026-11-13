@@ -337,7 +337,6 @@ void ModernUiTest::rejectedSidebarOpenKeepsOtherRootsAndShowsOneReason() {
     const auto first = *window.browsingConnection();
     workspace->setExternalWork(true);
     click(beta.name);
-    // A blocked open is a warning in the notice toast, not an error modal.
     auto* toast = window.findChild<choscordb::ToastRegion*>("toastRegion");
     QVERIFY(toast);
     QTRY_VERIFY(toast->text().contains(beta.name));
@@ -387,7 +386,6 @@ void ModernUiTest::removedPendingSidebarOpenCannotRestoreItsRoot() {
     QCOMPARE(tree->model()->index(1, 0).data(choscordb::NavigatorModel::StatusRole).toInt(),
              int(choscordb::RowStatusKind::Loading));
     filter->setText("needle");
-    // Search progress is only a Loader icon on the section header, never sidebar text.
     QVERIFY(!busy->isHidden());
     QCOMPARE(busy->accessibleName(), QString("Searching objects…"));
     QVERIFY(busy->text().isEmpty());

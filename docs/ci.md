@@ -37,6 +37,7 @@ To run one stage, give its name, for example `python3 scripts/ci/quality.py ui-p
 | `perf-policy` | Code patterns that become slow with large data (`scripts/ci/perf_policy.py`). |
 | `source-inventory` | Dead or copied native code (`scripts/ci/source_inventory.py`). |
 | `docs-policy` | Documentation links and sentence length (`scripts/ci/docs_policy.py`). |
+| `comment-policy` | No comments in first-party code (`scripts/ci/comment_policy.py`). |
 | `python-lint` | `ruff check` on `scripts` and `examples`. |
 | `python-format` | `ruff format --check` on `scripts` and `examples`. |
 | `actionlint` | The workflow files. Needs actionlint 1.7.7. |
@@ -77,6 +78,7 @@ Fix the finding before you add a marker.
 | `cpp-ownership` | `// ui-budget: <reason>` for a UI number that is equal to a Rust limit | `scripts/ci/cpp_ownership_exceptions.json` |
 | `source-inventory` | None | `EXCEPTIONS` in `scripts/ci/source_inventory.py` |
 | `docs-policy` | `<!-- docs-ok: <reason> -->` | None |
+| `comment-policy` | None | `SKIPPED_DIRECTORIES` in `scripts/ci/comment_policy.py` |
 
 Use `--json` with `ui_consistency.py`, `perf_policy.py`, `source_inventory.py`, `cpp_ownership.py` or `docs_policy.py` to get the findings as JSON.
 
@@ -143,6 +145,30 @@ If the component uses a new construction pattern, extend the checker and add a r
 
 An exception in `EXCEPTIONS` needs a reason.
 An exception that no longer matches a finding fails the gate.
+
+### comment-policy
+
+`comment-policy` rejects comments in first-party code.
+Names, types, tests and the pages in `docs/` give the meaning of the code.
+Rust doc comments (`///` and `//!`) and Python docstrings are comments too.
+
+The gate scans Rust, C, C++, Objective-C++, Python, QSS, SQL, CMake, shell, PowerShell, NSIS, TOML and YAML files.
+It does not scan `build/`, `target/` or vendored code in `third_party/` directories.
+
+The gate accepts only these directives, because tools or other gates read them:
+
+- `// SAFETY: <reason>` above an `unsafe` block.
+- `// ui-ok: <reason>`, `// perf-ok: <reason>` and `// ui-budget: <reason>`.
+- `// clang-format off` and `// clang-format on`.
+- A shebang on the first line of a script.
+
+A directive with a reason can continue on the next `//` lines at the same column.
+A directive without a reason does not count.
+
+To delete the comments that the gate rejects, run `python3 scripts/ci/comment_policy.py --fix`.
+Then run `cargo fmt --all`, `clang-format` and `ruff format`.
+A deleted comment can change a lint result, for example `clippy::collapsible_if`.
+Thus, run the full `fast` stage after a fix.
 
 ### cpp-size
 
@@ -337,11 +363,27 @@ Cargo writes the generated CXX headers to a staging directory.
 Thus Ninja recompiles the C++ consumers only when the bridge layout changes.
 `scripts/ci/test_cxx_headers.py` tests a changed layout, a build with no change and a deleted header.
 
+## Add a check for each new error
+
+Each error that you find during work must have a deterministic check.
+This check keeps the error from occurring again.
+
+1. Find the gate or test that must find the error.
+2. If a gate or test found it, fix the cause.
+3. If no gate or test found it, write a check that fails on the error (red).
+4. Fix the error. Make sure that the check passes (green).
+5. Put a new gate in `scripts/ci/` with a `test_*.py` suite that has a failing fixture.
+6. Add the gate to `fast` in `scripts/ci/quality.py` and to the stage table on this page.
+
+A check gives the same result each time for the same files.
+It does not use the network, the clock or random values.
+
 ## Suppressions
 
 Fix warnings and analyzer findings.
 An exception must name one diagnostic at the narrowest location and give the reason.
-Do not add broad `NOLINT` comments, directory exclusions, automatic retries or longer timeouts as a fix.
+Do not add `NOLINT` comments, directory exclusions, automatic retries or longer timeouts as a fix.
+`comment-policy` rejects `NOLINT` comments.
 The workspace denies `unsafe` Rust code.
 The `cxx::bridge` macro is the only exception, for the generated interface code.
 

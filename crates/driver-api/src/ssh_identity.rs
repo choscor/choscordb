@@ -1,4 +1,3 @@
-//! Destination-scoped temporary identities. Never persist inline key text in profiles.
 use crate::{DriverError, ErrorKind, Result, Secret, SshIdentitySource, SshTunnel};
 
 pub(crate) struct Identity {
@@ -54,8 +53,6 @@ pub(crate) fn materialize(
             .open(&path)
             .map_err(|_| failure())?;
         let key = key.ok_or_else(invalid)?;
-        // DBeaver trims pasted key lines; preserve that behavior without a second
-        // plaintext allocation. OpenSSH accepts the canonical trailing newline.
         for line in key.expose().lines() {
             file.write_all(line.trim().as_bytes())
                 .map_err(|_| failure())?;

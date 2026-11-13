@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Verify native SSH ProxyJump with isolated agent, host trust and Docker servers."""
 
 import os
 from pathlib import Path
@@ -118,7 +117,6 @@ def main():
             (directory / "known_hosts").write_text(
                 f"[127.0.0.1]:{port} {key}target-ssh {key}"
             )
-            # -F is inherited by OpenSSH's native jump subprocess; no global SSH files change.
             (directory / "ssh_config").write_text(
                 f'Host *\n    UserKnownHostsFile "{directory / "known_hosts"}"\n'
                 "    GlobalKnownHostsFile /dev/null\n    StrictHostKeyChecking yes\n    BatchMode yes\n"

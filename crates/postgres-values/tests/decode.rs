@@ -2,7 +2,6 @@ use choscordb_driver_api::{ErrorKind, Value};
 use choscordb_postgres_values::{decode, decode_bounded};
 #[test]
 fn exact_numeric_protocol_vector() {
-    // 12345678901234567890.001200, four decimal digits per network-order group.
     let bytes = [
         0, 7, 0, 4, 0, 0, 0, 6, 4, 210, 22, 46, 35, 52, 13, 128, 30, 210, 0, 12, 0, 0,
     ];
@@ -150,7 +149,6 @@ fn numeric_fraction_sign_and_specials() {
 }
 #[test]
 fn numeric_does_not_silently_discard_nonzero_digits() {
-    // Fraction .1234 cannot be represented at scale two without changing value.
     assert_eq!(
         decode(1700, Some(&[0, 1, 255, 255, 0, 0, 0, 2, 4, 210]))
             .unwrap_err()
@@ -175,7 +173,6 @@ fn temporal_full_server_boundaries() {
 }
 #[test]
 fn postgres_17_numeric_send_infinities() {
-    // Actual numeric_send output: the special value's dscale is not zero.
     for (sign, expected) in [(0xd0, "Infinity"), (0xf0, "-Infinity")] {
         assert_eq!(
             decode(1700, Some(&[0, 0, 0, 0, sign, 0, 0, 32])).unwrap(),
@@ -196,20 +193,16 @@ fn era_boundary_has_no_year_zero() {
 }
 #[test]
 fn numeric_maximum_scale_and_integer_padding() {
-    // A numeric with a negative declared typmod scale is rounded by the server;
-    // its transmitted display scale is zero. 12000 remains an exact integer.
     assert_eq!(
         decode(1700, Some(&[0, 2, 0, 1, 0, 0, 0, 0, 0, 1, 7, 208])).unwrap(),
         Value::Decimal("12000".into())
     );
-    // A single base-10000 group at maximum weight: 1 followed by 131068 zeros.
     let Value::Decimal(s) = decode(1700, Some(&[0, 1, 127, 255, 0, 0, 0, 0, 0, 1])).unwrap() else {
         panic!()
     };
     assert_eq!(s.len(), 131069);
     assert!(s.starts_with('1'));
     assert!(s[1..].bytes().all(|b| b == b'0'));
-    // Full legal display scale of 16383 decimal places, including trailing zeros.
     let Value::Decimal(s) = decode(1700, Some(&[0, 0, 0, 0, 0, 0, 63, 255])).unwrap() else {
         panic!()
     };
@@ -233,7 +226,6 @@ fn xml_and_internal_char() {
 }
 #[test]
 fn timetz_preserves_offset_and_seconds() {
-    // Independently obtained from PostgreSQL 17 timetz_send on the live fixture.
     let wire = [0, 0, 0, 10, 14, 237, 146, 64, 255, 255, 178, 123];
     assert_eq!(
         decode(1266, Some(&wire)).unwrap(),

@@ -17,7 +17,7 @@ namespace choscordb {
 namespace design {
 class Text;
 class StatusLine;
-} // namespace design
+}
 class EngineAdapter;
 class ObjectErdWidget;
 struct ObjectGraph;
@@ -39,8 +39,6 @@ class ObjectExplorer final : public QWidget {
     void setDisconnected();
     void installDataWidget(QWidget* widget);
     void setOperationBusy(bool busy);
-    // Shows a main panel notice on the footer. A busy notice stays until the next one;
-    // an info notice expires after the Rust interval.
     void showNotice(const QString& message, bool busy = false);
   signals:
     void dataRequested(quint64 connection, const QString& object, const QString& label,
@@ -88,4 +86,4 @@ class ObjectExplorer final : public QWidget {
     bool restoredInert_ = false;
     int activePane_ = 0;
 };
-} // namespace choscordb
+}

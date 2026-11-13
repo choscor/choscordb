@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Audit desktop UI construction sites and local visual ownership."""
 
 import argparse
 from bisect import bisect_right
@@ -11,8 +10,6 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 CPP_SUFFIXES = {".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".mm"}
 
-# Stock Qt controls styled by the shared control style or application palette.
-# Their component families are documented in desktop/design_system/README.md.
 STOCK_CONTROLS = {
     "QCheckBox",
     "QComboBox",
@@ -116,8 +113,6 @@ MESSAGE_BOX = re.compile(
 )
 
 SECTIONED_DIALOG = r"(?:[A-Za-z_]\w*::)*(?:DialogShell|ModalDialog|ModalPanel)"
-# Inline dialogs and subclass constructors; ConfirmationDialog, RightSheet and
-# QuickSearchDialog are separate shared components.
 INLINE_DIALOG = re.compile(
     rf"\bnew\s+{SECTIONED_DIALOG}\s*[({{]|"
     rf"\b(?:std::)?make_(?:unique|shared)\s*<\s*{SECTIONED_DIALOG}\s*>|"
@@ -130,7 +125,6 @@ LAYOUT_RESET = re.compile(r"\bset(?:ContentsMargins|Spacing)\s*\(")
 
 
 def block_end(code, start):
-    """Return the offset that closes the brace block containing `start`."""
     depth = 0
     for index in range(start, len(code)):
         if code[index] == "{":
@@ -143,11 +137,9 @@ def block_end(code, start):
 
 
 def constructor_body(code, start):
-    """Return the body brace after a member initializer list that opened at `start`."""
     depth = 1
     for index in range(start, len(code)):
         character = code[index]
-        # A brace right after a member name initializes that member, not the body.
         if character == "{" and depth == 0 and code[:index].rstrip()[-1:] in ")}":
             return index
         if character in "({":
@@ -158,7 +150,6 @@ def constructor_body(code, start):
 
 
 def dialog_problems(code, starts, relative):
-    """Dialog content must use DialogSections, and showEvent must not restyle layouts."""
     problems = []
     inline = [match.start() for match in INLINE_DIALOG.finditer(code)]
     for pattern in (INLINE_DIALOG, DIALOG_BASE_INIT):
@@ -167,7 +158,6 @@ def dialog_problems(code, starts, relative):
                 body = constructor_body(code, match.end())
                 scope = code[body : block_end(code, body + 1)]
             else:
-                # Sections that follow a later dialog belong to that dialog.
                 later = inline[bisect_right(inline, match.start()) :]
                 end = min([block_end(code, match.end()), *later[:1]])
                 scope = code[match.end() : end]
@@ -187,7 +177,6 @@ def dialog_problems(code, starts, relative):
 
 
 def screen_sources(desktop):
-    """Group every production C++ source, including loose and nested widgets."""
     groups = {}
     for area in ("app", "widgets"):
         directory = desktop / area
@@ -208,7 +197,6 @@ def screen_sources(desktop):
 
 
 def cpp_without_comments(source, *, mask_literals=False):
-    """Preserve offsets and newlines while hiding comments (and optionally literals)."""
     output = list(source)
     index = 0
     while index < len(source):
@@ -251,7 +239,6 @@ def cpp_without_comments(source, *, mask_literals=False):
 
 
 def feature_composites(sources):
-    """Find feature UI classes by their QWidget inheritance, including local bases."""
     bases = {}
     for path in sources:
         code = cpp_without_comments(
@@ -357,8 +344,6 @@ def audit(root=ROOT):
                         problems.append(f"{path.relative_to(root)}:{number}: {problem}")
         screens[screen] = counts
 
-    # Check every production application / widget file, including controllers that
-    # are not themselves visual composition roots.
     for path in feature_sources:
         source = cpp_without_comments(path.read_text(encoding="utf-8"))
         code = cpp_without_comments(source, mask_literals=True)
@@ -378,7 +363,6 @@ def audit(root=ROOT):
                 number = bisect_right(starts, match.start())
                 problems.append(f"{path.relative_to(root)}:{number}: {label}")
 
-    # Hex tokens belong to the colors foundation, including those embedded in QSS.
     for path in sorted(desktop.rglob("*")):
         if not path.is_file() or path.suffix not in CPP_SUFFIXES | {".qss"}:
             continue
@@ -451,7 +435,9 @@ def audit(root=ROOT):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Audit desktop UI construction sites and local visual ownership."
+    )
     parser.add_argument(
         "--json", action="store_true", help="write the full report as JSON"
     )

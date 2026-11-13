@@ -1,4 +1,3 @@
-//! Local SQL predicates run only against bound materialized rows, never the source connection.
 use crate::{FilterCondition, FilterOperator, value_matches};
 use choscordb_driver_api::{Column, DriverError, ErrorKind, Value};
 use rusqlite::{Connection, params_from_iter, types::Value as SqlValue};
@@ -270,8 +269,6 @@ pub(crate) fn sql_value(value: &Value) -> Result<SqlValue, DriverError> {
     })
 }
 
-// Accept SQL literals, including escaped quotes and commas inside quoted strings.
-// Subqueries and expressions are reserved for SQL mode.
 fn parse_literal_list(text: &str) -> Result<Vec<Value>, DriverError> {
     let mut rest = text.trim();
     let mut values = Vec::new();

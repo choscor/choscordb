@@ -205,8 +205,6 @@ fn bounded_queue_backpressure_and_shutdown_are_nonblocking() {
         vec![],
     )
     .unwrap();
-    // With events deliberately undrained the single worker can hold at most one
-    // response, one pending response and one queued request.
     let start = Instant::now();
     let mut full = false;
     for token in 0..20 {
@@ -251,7 +249,6 @@ fn recovery_requests_wait_in_order_behind_the_outstanding_payload() {
     for token in 5..11 {
         engine.workspace_restore(token).unwrap();
     }
-    // One payload is with the worker and eight wait; the next request is refused.
     assert_eq!(engine.workspace_restore(11), Err(SubmitError::QueueFull));
     let answered: Vec<u64> = (0..9).map(|_| request_token(&event(&mut engine))).collect();
     assert_eq!(answered, [1, 2, 3, 5, 6, 7, 8, 9, 10]);

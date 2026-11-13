@@ -5,8 +5,6 @@ use std::{
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-/// Reject malformed SSLRequest replies before the upstream Prefer policy can
-/// interpret them as a server refusal and send a plaintext startup message.
 pub(super) struct TlsResponseGuard<S> {
     inner: S,
     check_first_read: bool,

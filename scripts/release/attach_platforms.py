@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Verify Windows/Linux candidates before the three-asset draft publisher runs.
-
-This compatibility CLI deliberately cannot attach files to a public Release.
-"""
 
 import argparse
 import os
@@ -49,7 +45,9 @@ def attach(repo, tag, windows, linux, dry_run=False, store=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Verify Windows/Linux candidates before the three-asset draft publisher runs."
+    )
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY"))
     parser.add_argument("--tag", required=True)
     parser.add_argument("--windows", type=Path, required=True)

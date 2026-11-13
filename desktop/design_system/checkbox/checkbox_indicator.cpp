@@ -88,4 +88,4 @@ bool drawCheckboxIndicator(QStyle::PrimitiveElement element, const QStyleOption*
     return false;
 }
 
-} // namespace choscordb::design::detail
+}

@@ -151,10 +151,10 @@ async fn close_interrupts_pending_auxiliary_requests_and_rolls_back() {
                     }
                 }) => result.is_ok()
             }
-        }; // Drop only the caller future; the adapter worker is still blocked.
+        };
         let closed =
             tokio::time::timeout(std::time::Duration::from_millis(750), connection.close()).await;
-        admin.batch_execute("ROLLBACK").await.unwrap(); // Always release catalog lock before asserting.
+        admin.batch_execute("ROLLBACK").await.unwrap();
         drop(connection);
         drop(retained);
         let backend_gone = tokio::time::timeout(std::time::Duration::from_secs(2), async {

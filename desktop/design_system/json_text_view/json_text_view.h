@@ -8,8 +8,6 @@ class QSyntaxHighlighter;
 
 namespace choscordb::design {
 
-// Selectable, read-only JSON presentation. The document remains plain text;
-// syntax colors live only in the layout formats.
 class JsonTextView final : public QPlainTextEdit {
     Q_OBJECT
 
@@ -25,4 +23,4 @@ class JsonTextView final : public QPlainTextEdit {
     QSyntaxHighlighter* highlighter_ = nullptr;
 };
 
-} // namespace choscordb::design
+}

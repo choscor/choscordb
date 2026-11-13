@@ -1,5 +1,3 @@
-//! Self-contained protocol tests run locally; ignored integration tests require
-//! the disposable MySQL TLS fixture documented in mysql.md.
 use choscordb_driver_api::*;
 use choscordb_driver_mysql::MysqlDriver;
 use tokio::{
@@ -208,7 +206,6 @@ async fn prefer_retries_tls_for_later_object_transport() {
         let response = read_packet(&mut session).await;
         assert_eq!(response[1] & 0x08, 0);
         send_packet(&mut session, 2, &[0, 0, 0, 2, 0, 0, 0]).await;
-        // The server-version query gets no reply; the session still opens.
         let _ = read_packet(&mut session).await;
         drop(session);
 
