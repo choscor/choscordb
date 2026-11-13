@@ -8,6 +8,7 @@ mod grid_edit;
 mod ids;
 mod metadata_policy;
 mod options;
+mod presentation;
 mod row_status;
 mod socks;
 mod sqlite_uri;
@@ -22,6 +23,10 @@ mod ssh_process;
 mod transaction;
 mod value_codec;
 mod workflow;
+pub use presentation::{
+    Body, Pane, Presentation, ToastSpec, ToastVariant, Tone, TransitionError, detail_or,
+    failure_message,
+};
 pub use row_status::{
     PANEL_NOTICE_MILLISECONDS, RecoveryHint, RetryAction, RowStatus, RowStatusCause, RowStatusKind,
     recovery_hint, row_status,

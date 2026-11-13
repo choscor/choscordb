@@ -1,0 +1,31 @@
+{
+  "states": ["Idle", "Testing", "Succeeded", "Failed", "AwaitingTrust", "Trusting", "Trusted"],
+  "events": ["Test", "Passed", "TestFailed", "HostKeyUnknown", "Approve", "Approved", "ApprovalFailed", "Reject", "Edit"],
+  "transitions": [
+    ["AwaitingTrust", "Approve", "Trusting"],
+    ["AwaitingTrust", "Edit", "Idle"],
+    ["AwaitingTrust", "Reject", "Idle"],
+    ["Failed", "Edit", "Idle"],
+    ["Failed", "Test", "Testing"],
+    ["Idle", "Edit", "Idle"],
+    ["Idle", "Test", "Testing"],
+    ["Succeeded", "Edit", "Idle"],
+    ["Succeeded", "Test", "Testing"],
+    ["Testing", "HostKeyUnknown", "AwaitingTrust"],
+    ["Testing", "Passed", "Succeeded"],
+    ["Testing", "TestFailed", "Failed"],
+    ["Trusted", "Edit", "Idle"],
+    ["Trusted", "Test", "Testing"],
+    ["Trusting", "ApprovalFailed", "Failed"],
+    ["Trusting", "Approved", "Trusted"]
+  ],
+  "presentation": {
+    "Idle": {"tone": "Neutral", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "Testing": {"tone": "Neutral", "busy": true, "body": "None", "pane": "Unchanged", "toast": false},
+    "Succeeded": {"tone": "Success", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "Failed": {"tone": "Error", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "AwaitingTrust": {"tone": "Neutral", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "Trusting": {"tone": "Neutral", "busy": true, "body": "None", "pane": "Unchanged", "toast": false},
+    "Trusted": {"tone": "Success", "busy": false, "body": "None", "pane": "Unchanged", "toast": false}
+  }
+}

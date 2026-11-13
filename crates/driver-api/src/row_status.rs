@@ -167,11 +167,7 @@ pub fn row_status(cause: RowStatusCause, detail: &str) -> RowStatus {
 }
 
 fn could_not(failure: &str, detail: &str) -> String {
-    let hint = recovery_hint(RecoveryHint::Refresh);
-    match detail.trim_end_matches('.') {
-        "" => format!("{failure}. {hint}"),
-        reason => format!("{failure}: {reason}. {hint}"),
-    }
+    crate::failure_message(failure, detail, RecoveryHint::Refresh)
 }
 
 fn failed(reason: &str) -> (RowStatusKind, RetryAction, String) {

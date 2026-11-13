@@ -1,0 +1,32 @@
+{
+  "states": ["Idle", "Submitting", "Running", "Cancelling", "Succeeded", "Cancelled", "Failed"],
+  "events": ["Submit", "Start", "Cancel", "Finish", "Fail", "CancelSettled", "Reset"],
+  "transitions": [
+    ["Cancelled", "Reset", "Idle"],
+    ["Cancelled", "Submit", "Submitting"],
+    ["Cancelling", "Cancel", "Cancelling"],
+    ["Cancelling", "CancelSettled", "Cancelled"],
+    ["Cancelling", "Fail", "Failed"],
+    ["Cancelling", "Finish", "Succeeded"],
+    ["Failed", "Reset", "Idle"],
+    ["Failed", "Submit", "Submitting"],
+    ["Idle", "Submit", "Submitting"],
+    ["Running", "Cancel", "Cancelling"],
+    ["Running", "Fail", "Failed"],
+    ["Running", "Finish", "Succeeded"],
+    ["Submitting", "Cancel", "Cancelling"],
+    ["Submitting", "Fail", "Failed"],
+    ["Submitting", "Start", "Running"],
+    ["Succeeded", "Reset", "Idle"],
+    ["Succeeded", "Submit", "Submitting"]
+  ],
+  "presentation": {
+    "Idle": {"tone": "Neutral", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "Submitting": {"tone": "Neutral", "busy": true, "body": "None", "pane": "Unchanged", "toast": false},
+    "Running": {"tone": "Neutral", "busy": true, "body": "None", "pane": "Unchanged", "toast": false},
+    "Cancelling": {"tone": "Neutral", "busy": true, "body": "None", "pane": "Unchanged", "toast": false},
+    "Succeeded": {"tone": "Success", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "Cancelled": {"tone": "Neutral", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "Failed": {"tone": "Error", "busy": false, "body": "None", "pane": "Unchanged", "toast": false}
+  }
+}

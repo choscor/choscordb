@@ -121,14 +121,23 @@ struct Active {
     started: Instant,
     deadline: Option<Instant>,
 }
-async fn finish_queued_history(commands: &mut mpsc::Receiver<Request>, events: &EventSink) {
+async fn fail_queued_queries(commands: &mut mpsc::Receiver<Request>, events: &EventSink) {
     commands.close();
     while let Ok(command) = commands.try_recv() {
-        if let Command::Execute { mut history, .. } = command.command
-            && let Some(history) = &mut history
+        if let Command::Execute {
+            query, mut history, ..
+        } = command.command
         {
-            history.bind_events(events.clone());
-            history.fail(ErrorKind::Disconnected).await;
+            if let Some(history) = &mut history {
+                history.bind_events(events.clone());
+                history.fail(ErrorKind::Disconnected).await;
+            }
+            failure(
+                events,
+                query,
+                DriverError::new(ErrorKind::Disconnected, "Connection closed"),
+            )
+            .await;
         }
     }
 }
@@ -389,12 +398,16 @@ pub(crate) async fn catalog_read(
     error
 }
 async fn failure(events: &EventSink, query: QueryId, error: DriverError) {
-    let state = if error.kind == ErrorKind::Disconnected {
-        QueryState::Disconnected
-    } else {
-        QueryState::Failed
-    };
-    send(events, Event::QueryState { query, state }).await;
+    for state in crate::query_machine::failure_path(error.kind) {
+        send(
+            events,
+            Event::QueryState {
+                query,
+                state: *state,
+            },
+        )
+        .await;
+    }
     send(events, Event::QueryFailed { query, error }).await;
 }
 async fn close_active(active: &mut Option<Active>, events: &EventSink) {
@@ -414,7 +427,7 @@ async fn close_active(active: &mut Option<Active>, events: &EventSink) {
                     events,
                     Event::QueryState {
                         query: old.id,
-                        state: QueryState::Completed,
+                        state: QueryState::Completed { empty: false },
                     },
                 )
                 .await;
@@ -500,11 +513,12 @@ async fn complete_result(current: &mut Active, events: &EventSink) {
             .shrink_to(retained)
             .expect("source reservation only shrinks");
     }
+    let empty = !current.cursor.columns().is_empty() && current.fetched_rows == 0;
     send(
         events,
         Event::QueryState {
             query: current.id,
-            state: QueryState::Completed,
+            state: QueryState::Completed { empty },
         },
     )
     .await;
@@ -562,8 +576,8 @@ pub(crate) async fn run(
         }
     };
     let connected = tokio::select! { biased; _ = stopped => {
-        finish_queued_history(&mut commands, &events).await;
         send(&events, Event::Disconnected { connection: id }).await;
+        fail_queued_queries(&mut commands, &events).await;
         return;
     }, value = tokio::time::timeout_at(attempt_deadline, async {
         driver.connect(options).await
@@ -571,7 +585,6 @@ pub(crate) async fn run(
     let mut connection = match connected {
         Ok(connection) => connection,
         Err(error) => {
-            finish_queued_history(&mut commands, &events).await;
             send(
                 &events,
                 Event::ConnectionFailed {
@@ -580,6 +593,7 @@ pub(crate) async fn run(
                 },
             )
             .await;
+            fail_queued_queries(&mut commands, &events).await;
             return;
         }
     };
@@ -605,7 +619,6 @@ pub(crate) async fn run(
             })
             .await;
             drop(connection);
-            finish_queued_history(&mut commands, &events).await;
             send(
                 &events,
                 match failure {
@@ -618,6 +631,7 @@ pub(crate) async fn run(
                 },
             )
             .await;
+            fail_queued_queries(&mut commands, &events).await;
             return;
         }
     };
@@ -719,7 +733,6 @@ pub(crate) async fn run(
             _ = idle_cancel => {
                 if let Some(mut old) = sql_active.take() {
                     let settled = tokio::time::timeout(grace, old.cancel.cancel()).await;
-                    send(&events, Event::QueryState { query: old.id, state: QueryState::Cancelling }).await;
                     let _ = old.cursor.close().await;
                     if let Some(history) = &mut old.history { history.fail(ErrorKind::Cancelled).await; }
                     failure(&events, old.id, DriverError::new(ErrorKind::Cancelled, "Query cancelled")).await;
@@ -730,7 +743,6 @@ pub(crate) async fn run(
             _ = idle_timeout => {
                 if let Some(mut old) = sql_active.take() {
                     let settled = tokio::time::timeout(grace, old.cancel.cancel()).await;
-                    send(&events, Event::QueryState { query: old.id, state: QueryState::Cancelling }).await;
                     let _ = old.cursor.close().await;
                     if let Some(history) = &mut old.history { history.fail(ErrorKind::Timeout).await; }
                     failure(&events, old.id, DriverError::new(ErrorKind::Timeout, "Query timed out")).await;
@@ -740,7 +752,6 @@ pub(crate) async fn run(
             }
             _ = object_cancelled => {
                 if let Some(mut old)=object_active.take() {
-                    send(&events,Event::QueryState{query:old.id,state:QueryState::Cancelling}).await;
                     let _=old.cancel.cancel().await;let _=old.cursor.close().await;
                     failure(&events,old.id,DriverError::new(ErrorKind::Cancelled,"Object read cancelled")).await;
                 }
@@ -1243,7 +1254,7 @@ pub(crate) async fn run(
                 } {
                     Ok(count) => count,
                     Err(error) => {
-                        send(&events, Event::QueryFailed { query, error }).await;
+                        failure(&events, query, error).await;
                         continue;
                     }
                 };
@@ -1268,7 +1279,7 @@ pub(crate) async fn run(
                                 break;
                             }
                         } else {
-                            send(&events, Event::QueryFailed { query, error }).await;
+                            failure(&events, query, error).await;
                         }
                         continue;
                     }
@@ -1317,20 +1328,18 @@ pub(crate) async fn run(
                                 )
                                 .await;
                             }
-                            Err(error) => send(&events, Event::QueryFailed { query, error }).await,
+                            Err(error) => failure(&events, query, error).await,
                         }
                         continue;
                     }
                     if index > count {
-                        send(
+                        failure(
                             &events,
-                            Event::QueryFailed {
-                                query,
-                                error: DriverError::new(
-                                    ErrorKind::InvalidInput,
-                                    "Page ordinal skips unfetched rows",
-                                ),
-                            },
+                            query,
+                            DriverError::new(
+                                ErrorKind::InvalidInput,
+                                "Page ordinal skips unfetched rows",
+                            ),
                         )
                         .await;
                         continue;
@@ -1347,15 +1356,13 @@ pub(crate) async fn run(
                     continue;
                 };
                 if current.completed {
-                    send(
+                    failure(
                         &events,
-                        Event::QueryFailed {
-                            query,
-                            error: DriverError::new(
-                                ErrorKind::InvalidInput,
-                                "No page exists beyond the completed result",
-                            ),
-                        },
+                        query,
+                        DriverError::new(
+                            ErrorKind::InvalidInput,
+                            "No page exists beyond the completed result",
+                        ),
                     )
                     .await;
                     continue;
@@ -1806,18 +1813,13 @@ pub(crate) async fn run(
                             )
                             .await
                         }
-                        Err(error) => send(&events, Event::QueryFailed { query, error }).await,
+                        Err(error) => failure(&events, query, error).await,
                     }
                 } else {
-                    send(
+                    failure(
                         &events,
-                        Event::QueryFailed {
-                            query,
-                            error: DriverError::new(
-                                ErrorKind::StaleHandle,
-                                "Result cursor is closed",
-                            ),
-                        },
+                        query,
+                        DriverError::new(ErrorKind::StaleHandle, "Result cursor is closed"),
                     )
                     .await;
                 }
@@ -1943,23 +1945,7 @@ pub(crate) async fn run(
         )
         .await;
     }
-    while let Ok(command) = commands.try_recv() {
-        if let Command::Execute {
-            query, mut history, ..
-        } = command.command
-        {
-            if let Some(history) = &mut history {
-                history.bind_events(events.clone());
-                history.fail(ErrorKind::Disconnected).await;
-            }
-            failure(
-                &events,
-                query,
-                DriverError::new(ErrorKind::Disconnected, "Connection closed"),
-            )
-            .await;
-        }
-    }
+    fail_queued_queries(&mut commands, &events).await;
     for query in stores.keys() {
         cache.remove(*query);
     }

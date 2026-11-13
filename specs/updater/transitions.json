@@ -1,0 +1,42 @@
+{
+  "states": ["Idle", "Checking", "UpToDate", "Available", "Downloading", "ReadyToInstall", "Installing", "Cancelling", "Cancelled", "Failed"],
+  "events": ["Check", "NoUpdate", "Found", "Download", "Downloaded", "Install", "Cancel", "CancelSettled", "Fail", "Dismiss"],
+  "transitions": [
+    ["Available", "Check", "Checking"],
+    ["Available", "Dismiss", "Idle"],
+    ["Available", "Download", "Downloading"],
+    ["Cancelled", "Check", "Checking"],
+    ["Cancelled", "Dismiss", "Idle"],
+    ["Cancelling", "Cancel", "Cancelling"],
+    ["Cancelling", "CancelSettled", "Cancelled"],
+    ["Cancelling", "Fail", "Failed"],
+    ["Checking", "Cancel", "Cancelling"],
+    ["Checking", "Fail", "Failed"],
+    ["Checking", "Found", "Available"],
+    ["Checking", "NoUpdate", "UpToDate"],
+    ["Downloading", "Cancel", "Cancelling"],
+    ["Downloading", "Downloaded", "ReadyToInstall"],
+    ["Downloading", "Fail", "Failed"],
+    ["Failed", "Check", "Checking"],
+    ["Failed", "Dismiss", "Idle"],
+    ["Idle", "Check", "Checking"],
+    ["Idle", "Dismiss", "Idle"],
+    ["Installing", "Fail", "Failed"],
+    ["ReadyToInstall", "Dismiss", "Idle"],
+    ["ReadyToInstall", "Install", "Installing"],
+    ["UpToDate", "Check", "Checking"],
+    ["UpToDate", "Dismiss", "Idle"]
+  ],
+  "presentation": {
+    "Idle": {"tone": "Neutral", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "Checking": {"tone": "Neutral", "busy": true, "body": "None", "pane": "Unchanged", "toast": false},
+    "UpToDate": {"tone": "Success", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "Available": {"tone": "Neutral", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "Downloading": {"tone": "Neutral", "busy": true, "body": "None", "pane": "Unchanged", "toast": false},
+    "ReadyToInstall": {"tone": "Success", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "Installing": {"tone": "Neutral", "busy": true, "body": "None", "pane": "Unchanged", "toast": false},
+    "Cancelling": {"tone": "Neutral", "busy": true, "body": "None", "pane": "Unchanged", "toast": false},
+    "Cancelled": {"tone": "Neutral", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "Failed": {"tone": "Error", "busy": false, "body": "FailedPlaceholder", "pane": "Unchanged", "toast": true}
+  }
+}

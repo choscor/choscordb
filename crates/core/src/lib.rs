@@ -1,5 +1,6 @@
 mod actor;
 mod catalog;
+pub mod connection_machine;
 mod deferred;
 mod document_io;
 mod metadata_cache;
@@ -34,11 +35,17 @@ pub use profiles::{CredentialUpdate, CredentialUpdates, ProfileSecrets};
 pub use recovery::{
     ObjectTabContext, new_document_id, object_tab_context, parse_object_tab_context,
 };
+pub mod export_machine;
+pub mod grid_edit_machine;
+pub mod panel_machine;
+pub mod profile_test_machine;
 mod protocol;
+pub mod query_machine;
 pub mod quick_filter;
 mod result_predicate;
 mod result_view;
 mod ssh_trust;
+pub mod updater_machine;
 pub use choscordb_storage::{
     APPEARANCE_LAYOUT_VERSION, AppearanceLayout, ConnectionProfile,
     DEFAULT_CONNECTION_TIMEOUT_SECONDS, DEFAULT_EDITOR_FONT_SIZE, EDITOR_PREFERENCES_VERSION,

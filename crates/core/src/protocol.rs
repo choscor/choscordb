@@ -44,15 +44,7 @@ pub enum SubmitError {
     #[error("engine is shutting down")]
     ShuttingDown,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum QueryState {
-    Queued,
-    Running,
-    Cancelling,
-    Completed,
-    Failed,
-    Disconnected,
-}
+pub use crate::query_machine::QueryState;
 pub type ExportId = Handle;
 pub use choscordb_export::{ExportFormat, SqlDialect, sql_export_table_error};
 

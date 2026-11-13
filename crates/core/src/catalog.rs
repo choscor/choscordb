@@ -1,6 +1,7 @@
 use crate::{
     Event,
     actor::{CatalogRead, Command, EventSink, Request, catalog_read},
+    connection_machine::{CatalogSession as Catalog, ReadSession, read_session},
 };
 use choscordb_driver_api::*;
 use std::{
@@ -21,10 +22,15 @@ pub(crate) struct CatalogRoute {
 }
 impl CatalogRoute {
     pub(crate) fn reads(&self) -> Option<&mpsc::Sender<CatalogRead>> {
-        if self.in_transaction() {
-            None
+        let reads = self.reads.get();
+        let catalog = if reads.is_some() {
+            Catalog::Closed
         } else {
-            self.reads.get()
+            Catalog::Unsupported
+        };
+        match read_session(self.in_transaction(), catalog) {
+            ReadSession::Catalog => reads,
+            ReadSession::Query => None,
         }
     }
     pub(crate) fn in_transaction(&self) -> bool {
@@ -74,11 +80,15 @@ async fn run(
                 None => break,
             },
         };
-        let waiting = retry_at.is_some_and(|at| Instant::now() < at);
-        let current = match &mut session {
-            Some(current) => Some(current),
-            None if waiting => None,
-            None => {
+        let catalog = match (&session, retry_at.is_some_and(|at| Instant::now() < at)) {
+            (Some(_), _) => Catalog::Open,
+            (None, true) => Catalog::RetryPending,
+            (None, false) => Catalog::Closed,
+        };
+        let current = match (read_session(false, catalog), &mut session) {
+            (ReadSession::Query, _) => None,
+            (ReadSession::Catalog, Some(current)) => Some(current),
+            (ReadSession::Catalog, None) => {
                 let opened = tokio::select! {
                     biased;
                     _ = crate::operation::signalled(&mut task.shutdown) => break,

@@ -1,0 +1,30 @@
+{
+  "states": ["Connecting", "Failed", "Disconnected", "Connected { transaction_active: false }", "Connected { transaction_active: true }", "Probing", "Disconnecting"],
+  "events": ["Probed { transaction_active: false }", "Probed { transaction_active: true }", "TransactionChanged { active: false }", "TransactionChanged { active: true }", "Opened", "OpenFailed", "ProbeFailed", "Shutdown", "Closed"],
+  "transitions": [
+    ["Connected { transaction_active: false }", "Shutdown", "Disconnecting"],
+    ["Connected { transaction_active: false }", "TransactionChanged { active: false }", "Connected { transaction_active: false }"],
+    ["Connected { transaction_active: false }", "TransactionChanged { active: true }", "Connected { transaction_active: true }"],
+    ["Connected { transaction_active: true }", "Shutdown", "Disconnecting"],
+    ["Connected { transaction_active: true }", "TransactionChanged { active: false }", "Connected { transaction_active: false }"],
+    ["Connected { transaction_active: true }", "TransactionChanged { active: true }", "Connected { transaction_active: true }"],
+    ["Connecting", "OpenFailed", "Failed"],
+    ["Connecting", "Opened", "Probing"],
+    ["Connecting", "Shutdown", "Disconnected"],
+    ["Disconnecting", "Closed", "Disconnected"],
+    ["Probing", "ProbeFailed", "Failed"],
+    ["Probing", "Probed { transaction_active: false }", "Connected { transaction_active: false }"],
+    ["Probing", "Probed { transaction_active: true }", "Connected { transaction_active: true }"],
+    ["Probing", "Shutdown", "Disconnected"]
+  ],
+  "read_sessions": [
+    [false, "Closed", "Catalog"],
+    [false, "Open", "Catalog"],
+    [false, "RetryPending", "Query"],
+    [false, "Unsupported", "Query"],
+    [true, "Closed", "Query"],
+    [true, "Open", "Query"],
+    [true, "RetryPending", "Query"],
+    [true, "Unsupported", "Query"]
+  ]
+}
