@@ -10,6 +10,7 @@
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/text/text.h"
+#include "widgets/screen_state/screen_state.h"
 
 #include <QApplication>
 #include <QDesktopServices>
@@ -159,6 +160,10 @@ class NativeUpdater final : public QObject {
         automatic->setObjectName(QStringLiteral("automaticUpdateChecks"));
         automatic->setCheckable(true);
         automatic->setEnabled(false);
+        status_ = menu->addAction(QString());
+        status_->setObjectName(QStringLiteral("updateStatus"));
+        status_->setEnabled(false);
+        status_->setVisible(false);
         connect(automatic, &QAction::toggled, this, [this](bool enabled) {
             persistConsent(enabled);
             if (enabled) {
@@ -208,14 +213,23 @@ class NativeUpdater final : public QObject {
         const auto next = EngineAdapter::updaterTransition(state_, event);
         if (next.allowed)
             state_ = next.state;
+        if (status_ &&
+            EngineAdapter::updaterPresentation(state_).body != PanelBody::FailedPlaceholder)
+            status_->setVisible(false);
         return next.allowed;
+    }
+    void presentFailure(const QString& detail) {
+        const auto shown = EngineAdapter::updaterPresentation(UpdaterState::Failed, detail);
+        if (status_) {
+            status_->setText(shown.message);
+            status_->setVisible(shown.body == PanelBody::FailedPlaceholder);
+        }
+        if (window_)
+            showPresentationToast(window_, shown);
     }
     void settleStaged() {
         if (readyToInstall_)
             step(UpdaterEvent::Staged);
-    }
-    QString failure(const QString& detail) const {
-        return EngineAdapter::updaterPresentation(UpdaterState::Failed, detail).message;
     }
 
     void loadConsent() {
@@ -337,9 +351,8 @@ class NativeUpdater final : public QObject {
             watcher->deleteLater();
             if (!result.error.empty()) {
                 step(UpdaterEvent::Fail);
+                presentFailure(fromRust(result.error));
                 settleStaged();
-                if (manual_ && window_)
-                    report(window_, tr("Update check failed"), failure(fromRust(result.error)));
                 return;
             }
             if (!result.found) {
@@ -449,8 +462,8 @@ class NativeUpdater final : public QObject {
             progress_ = nullptr;
         }
         if (!success) {
-            if (!error.isEmpty() && window_)
-                report(window_, tr("Update could not be downloaded"), failure(error));
+            if (!error.isEmpty())
+                presentFailure(error);
         } else {
             readyToInstall_ = true;
             installAction_->setEnabled(true);
@@ -479,7 +492,7 @@ class NativeUpdater final : public QObject {
             return;
         const auto allowed = EngineAdapter::updaterTransition(state_, UpdaterEvent::Install);
         if (!allowed.allowed) {
-            report(window_, tr("Update could not be installed"), failure(allowed.error));
+            presentFailure(allowed.error);
             return;
         }
         QPointer<MainWindow> window = window_;
@@ -489,7 +502,7 @@ class NativeUpdater final : public QObject {
             const auto next = EngineAdapter::updaterTransition(state_, UpdaterEvent::Install);
             if (!next.allowed) {
                 window->setEnabled(true);
-                report(window, tr("Update could not be installed"), failure(next.error));
+                presentFailure(next.error);
                 return;
             }
             state_ = next.state;
@@ -515,8 +528,7 @@ class NativeUpdater final : public QObject {
                         if (!window)
                             return;
                         window->setEnabled(true);
-                        report(window, tr("Update could not be installed"),
-                               failure(fromRust(result.error)));
+                        presentFailure(fromRust(result.error));
                     });
             watcher->setFuture(QtConcurrent::run([session, appimage, invoked, parentPid] {
                 const auto target = appimage.toUtf8(), invocation = invoked.toUtf8();
@@ -529,6 +541,7 @@ class NativeUpdater final : public QObject {
     QPointer<MainWindow> window_;
     QPointer<QAction> installAction_;
     QPointer<QAction> automaticAction_;
+    QPointer<QAction> status_;
     QPointer<UpdateProgressDialog> progress_;
     std::shared_ptr<rust::Box<RustUpdateSession>> session_;
     QThreadPool consentPool_;

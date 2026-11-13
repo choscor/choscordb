@@ -2,6 +2,7 @@
 #include "app/updater.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/toast_region/toast_region.h"
 #include <QAction>
 #include <QHostAddress>
 #include <QMenu>
@@ -117,32 +118,86 @@ class UpdaterMenuTest : public QObject {
                 }
             });
         });
-        int networkErrors = 0;
-        int unexpectedInstallPrompts = 0;
-        QString failureText;
+        int unexpectedDialogs = 0;
         QTimer dismiss;
         dismiss.setInterval(10);
         connect(&dismiss, &QTimer::timeout, &window, [&] {
             if (auto* dialog = window.findChild<choscordb::ConfirmationDialog*>()) {
-                if (dialog->windowTitle() == QStringLiteral("Update check failed")) {
-                    ++networkErrors;
-                    failureText = dialog->text();
-                } else if (dialog->windowTitle() == QStringLiteral("Install update"))
-                    ++unexpectedInstallPrompts;
+                ++unexpectedDialogs;
+                dialog->done(QMessageBox::No);
+            }
+        });
+        dismiss.start();
+        auto* status = window.findChild<QAction*>("updateStatus");
+        QVERIFY(status && !status->isVisible());
+        check->trigger();
+        QTRY_COMPARE(requestLine, QStringLiteral("GET /updates/feed.json HTTP/1.1"));
+        QTRY_VERIFY(choscordb::windowToast(&window) &&
+                    !choscordb::windowToast(&window)->isHidden());
+        auto* toast = choscordb::windowToast(&window);
+        QCOMPARE(toast->property("variant").toString(), QString("danger"));
+        QVERIFY2(toast->text().contains("Update failed: "), qPrintable(toast->text()));
+        QVERIFY(!status->isVisible());
+        QCOMPARE(unexpectedDialogs, 0);
+        dismiss.stop();
+        declineInstall();
+        QCOMPARE(prompts, 2);
+        QVERIFY(window.isEnabled());
+        qunsetenv("CHOSCORDB_TEST_UPDATE_FEED_URL");
+        qunsetenv("CHOSCORDB_TEST_UPDATE_DATA_DIR");
+        qunsetenv("CHOSCORDB_TEST_UPDATE_LEGACY_INI");
+    }
+    void checkFailureShowsAToastAndTheFailedStatus() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        connect(&server, &QTcpServer::newConnection, &server, [&] {
+            auto* socket = server.nextPendingConnection();
+            connect(socket, &QTcpSocket::readyRead, &server, [socket] {
+                if (!socket->readAll().isEmpty()) {
+                    socket->write("HTTP/1.1 503 Service Unavailable\r\nContent-Length: "
+                                  "0\r\nConnection: close\r\n\r\n");
+                    socket->disconnectFromHost();
+                }
+            });
+        });
+        qputenv("CHOSCORDB_TEST_UPDATE_FEED_URL",
+                QStringLiteral("http://127.0.0.1:%1/updates/feed.json")
+                    .arg(server.serverPort())
+                    .toLatin1());
+        QSettings legacy(directory.filePath("legacy.ini"), QSettings::IniFormat);
+        legacy.setValue(QStringLiteral("updates/backgroundConsent"), false);
+        legacy.sync();
+        qputenv("CHOSCORDB_TEST_UPDATE_LEGACY_INI", directory.filePath("legacy.ini").toUtf8());
+        qputenv("CHOSCORDB_TEST_UPDATE_DATA_DIR", directory.filePath("update-data").toUtf8());
+        choscordb::MainWindow window(nullptr, directory.filePath("workspace.sqlite"));
+        choscordb::installNativeUpdaterForTest(window);
+        auto* check = window.findChild<QAction*>("checkForUpdates");
+        auto* status = window.findChild<QAction*>("updateStatus");
+        QVERIFY(check && status);
+        QVERIFY(!status->isVisible());
+        int dialogs = 0;
+        QTimer dismiss;
+        dismiss.setInterval(10);
+        connect(&dismiss, &QTimer::timeout, &window, [&] {
+            if (auto* dialog = window.findChild<choscordb::ConfirmationDialog*>()) {
+                ++dialogs;
                 dialog->done(QMessageBox::No);
             }
         });
         dismiss.start();
         check->trigger();
-        QTRY_COMPARE(requestLine, QStringLiteral("GET /updates/feed.json HTTP/1.1"));
-        QTRY_COMPARE(networkErrors, 1);
-        QCOMPARE(unexpectedInstallPrompts, 0);
-        QVERIFY2(failureText.startsWith("Update failed: ") && failureText.endsWith(". Retry."),
-                 qPrintable(failureText));
-        dismiss.stop();
-        declineInstall();
-        QCOMPARE(prompts, 2);
-        QVERIFY(window.isEnabled());
+        QTRY_VERIFY(status->isVisible());
+        QVERIFY2(status->text().startsWith("Update failed: ") &&
+                     status->text().endsWith(". Retry."),
+                 qPrintable(status->text()));
+        QVERIFY(!status->isEnabled());
+        auto* toast = choscordb::windowToast(&window);
+        QVERIFY(toast && !toast->isHidden());
+        QCOMPARE(toast->property("variant").toString(), QString("danger"));
+        QVERIFY(toast->text().contains(status->text().chopped(QString(". Retry.").size())));
+        QCOMPARE(dialogs, 0);
         qunsetenv("CHOSCORDB_TEST_UPDATE_FEED_URL");
         qunsetenv("CHOSCORDB_TEST_UPDATE_DATA_DIR");
         qunsetenv("CHOSCORDB_TEST_UPDATE_LEGACY_INI");
