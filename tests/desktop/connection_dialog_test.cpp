@@ -71,7 +71,7 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
     QVERIFY(progressSections->bodyLayout()->parentWidget()->isAncestorOf(
         progress->findChild<QWidget*>("profileProgressBar")));
     QCOMPARE(progress->findChild<QLabel*>("profileProgressMessage")->text(),
-             QString("Testing connection…"));
+             QString("Testing the connection…"));
     QTRY_VERIFY(!progress->isVisible());
     QVERIFY(!dialog->findChild<QWidget*>("profileStatusLine")->isVisible());
     auto* feedback =

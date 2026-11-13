@@ -360,14 +360,7 @@ class NativeUpdater final : public QObject {
                 settleStaged();
                 if (manual_ && window_)
                     report(window_, tr("Updates"),
-                           EngineAdapter::updaterPresentation(
-                               state_, readyToInstall_ && record_
-                                           ? tr("ChoscorDB %1 is downloaded. Choose Install "
-                                                "Downloaded Update from the Updates menu when you "
-                                                "are ready.")
-                                                 .arg(record_->version)
-                                           : QString())
-                               .message);
+                           EngineAdapter::updaterPresentation(state_).message);
                 return;
             }
             step(UpdaterEvent::Found);

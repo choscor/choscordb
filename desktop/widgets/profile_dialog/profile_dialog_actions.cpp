@@ -47,15 +47,16 @@ void ProfileDialog::connectDraft(bool openQuery) {
     if (!validateConnectionDraft(value))
         return;
     ++token_;
-    setBusy(true, tr("Connecting…"));
+    present(ProfileOperation::Connecting);
     connectionSubmissionError_.clear();
     connecting_ = true;
     const auto id = adapter_->connectProfileDraft(value, secretDrafts());
     connecting_ = false;
     if (!id) {
-        setBusy(false, connectionSubmissionError_.isEmpty()
-                           ? tr("Connection could not be submitted.")
-                           : connectionSubmissionError_);
+        if (connectionSubmissionError_.isEmpty())
+            present(ProfileOperation::ConnectUnsubmitted);
+        else
+            present(ProfileOperation::Failed, connectionSubmissionError_);
         return;
     }
     pendingConnection_ = id;
@@ -167,7 +168,7 @@ void ProfileDialog::saveDraft(const SavedProfile& profile) {
     dirty_ = true;
     ++revision_;
     savingDraft_ = true;
-    setBusy(true, tr("Saving profile…"));
+    present(ProfileOperation::Saving);
     adapter_->saveProfileDraft(profile, secrets, ++token_);
 }
 
@@ -177,7 +178,7 @@ void ProfileDialog::testDraft(const SavedProfile& profile) {
     if (!validateConnectionDraft(profile))
         return;
     testToken_ = ++token_;
-    showTest(ProfileTestState::Testing, tr("Testing connection…"));
+    showTest(ProfileTestState::Testing);
     adapter_->testProfileDraft(profile, secretDrafts(), token_);
 }
 
@@ -186,7 +187,7 @@ bool ProfileDialog::validateConnectionDraft(const SavedProfile& profile) {
     if (error.message.isEmpty())
         return true;
     auto* field = fieldWidget(error.field);
-    setBusy(false, field ? QString() : error.message);
+    present(ProfileOperation::Failed, field ? QString() : error.message);
     if (field)
         showFieldError(field, error.message);
     return false;

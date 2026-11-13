@@ -23,15 +23,16 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                 updateTrustControls();
                 if (revision_ != trustRevision_) {
                     stepTrust(ProfileTestEvent::TestFailed,
-                              tr("Connection settings changed. Inspect the host keys again."));
+                              EngineAdapter::sshTrustNote(SshTrustNote::SettingsChanged));
                     return;
                 }
                 if (candidates.isEmpty()) {
-                    stepTrust(ProfileTestEvent::TestFailed, tr("No SSH host keys were returned."));
+                    stepTrust(ProfileTestEvent::TestFailed,
+                              EngineAdapter::sshTrustNote(SshTrustNote::NoHostKeys));
                     return;
                 }
                 stepTrust(ProfileTestEvent::HostKeyUnknown,
-                          tr("SSH host keys inspected. Review the keys before approving."));
+                          EngineAdapter::sshTrustNote(SshTrustNote::KeysInspected));
                 if (trustDialog_)
                     trustDialog_->close();
                 auto* review = new SshHostKeyDialog(candidates, trustPath_, this);
@@ -83,17 +84,15 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                 if (revision_ != trustRevision_) {
                     if (trustDialog_)
                         trustDialog_->invalidate();
-                    stepTrust(
-                        ProfileTestEvent::ApprovalFailed,
-                        tr("The approval request finished for the previous settings. %1")
-                            .arg(EngineAdapter::recoveryHint(RecoveryHint::InspectSshServer)));
+                    stepTrust(ProfileTestEvent::ApprovalFailed,
+                              EngineAdapter::sshTrustNote(SshTrustNote::ApprovalStale));
                     return;
                 }
                 if (outcome == "approved")
                     stepTrust(ProfileTestEvent::Approved);
                 else
                     stepTrust(ProfileTestEvent::ApprovalFailed,
-                              tr("SSH host key approval outcome is unknown."));
+                              EngineAdapter::sshTrustNote(SshTrustNote::ApprovalUnknown));
                 if (trustDialog_)
                     trustDialog_->finishApproval(outcome);
             });
@@ -142,7 +141,7 @@ void ProfileDialog::inspectHostKeys() {
         profile.name = tr("SSH host inspection");
     if (trustState_ == ProfileTestState::AwaitingTrust)
         stepTrust(ProfileTestEvent::Reject);
-    if (!stepTrust(ProfileTestEvent::Test, tr("Inspecting SSH host keys…")))
+    if (!stepTrust(ProfileTestEvent::Test, EngineAdapter::sshTrustNote(SshTrustNote::Inspecting)))
         return;
     trustRevision_ = revision_;
     trustToken_ = ++token_;

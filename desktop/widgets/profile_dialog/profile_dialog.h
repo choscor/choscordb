@@ -58,8 +58,8 @@ class ProfileDialog final : public DialogShell {
     void setDraft(const SavedProfile& profile);
     void refresh();
     void showTest(ProfileTestState state, const QString& detail = {});
-    void setBusy(bool busy, const QString& message = {}, bool success = false,
-                 bool warning = false);
+    void present(const Presentation& shown);
+    void present(ProfileOperation operation, const QString& detail = {});
     void updateDriver();
     bool discardChanges();
     bool validateConnectionDraft(const SavedProfile& profile);
@@ -70,8 +70,7 @@ class ProfileDialog final : public DialogShell {
     SavedProfile current_;
     QString pendingSelection_;
     QString managedProfile_, managedAction_;
-    QString refreshNotice_;
-    bool refreshHasWarning_ = false;
+    std::optional<Presentation> refreshNotice_;
     bool savingDraft_ = false;
     bool connectAfterSave_ = false;
     bool openQueryAfterConnect_ = false;

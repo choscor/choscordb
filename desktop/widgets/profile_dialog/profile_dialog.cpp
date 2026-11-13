@@ -416,7 +416,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     connect(duplicate, &QPushButton::clicked, this, [this] {
         if (busy_ || !adapter_ || current_.id.isEmpty())
             return;
-        setBusy(true, tr("Duplicating profile…"));
+        present(ProfileOperation::Duplicating);
         adapter_->duplicateProfile(current_.id, name_->text(), ++token_);
     });
     connect(remove, &QPushButton::clicked, this, [this] {
@@ -434,7 +434,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
             return;
         if (busy_ || !adapter_ || current_.id != id || token_ != token || revision_ != revision)
             return;
-        setBusy(true, tr("Deleting profile…"));
+        present(ProfileOperation::Deleting);
         adapter_->deleteProfile(id, ++token_);
     });
     connect(list_, &QListWidget::currentRowChanged, this, [this](int row) {
@@ -454,59 +454,60 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
             }
         }
     });
-    connect(adapter, &EngineAdapter::profilesReady, this,
-            [this](quint64 token, const QList<SavedProfile>& profiles) {
-                if (token != token_)
-                    return;
-                profiles_ = profiles;
-                QSignalBlocker blocker(list_);
-                list_->clear();
-                for (const auto& profile : profiles_)
-                    list_->addItem(profile.name);
-                setBusy(false, refreshNotice_, true, refreshHasWarning_);
-                if (isVisible() && focusWidget() == findChild<QPushButton*>("profileDismiss"))
-                    name_->setFocus(Qt::OtherFocusReason);
-                refreshNotice_.clear();
-                refreshHasWarning_ = false;
-                const auto sessionPassword =
-                    preservePasswordOnRefresh_ ? password_->text() : QString();
-                const bool passwordModified = password_->isModified();
-                const auto sessionSshSecret =
-                    preserveSshSecretOnRefresh_ ? sshSecret_->text() : QString();
-                const bool sshSecretModified = sshSecret_->isModified();
-                const auto sessionTlsSecret =
-                    preserveTlsSecretOnRefresh_ ? tlsSecret_->text() : QString();
-                const bool tlsSecretModified = tlsSecret_->isModified();
-                if (!pendingSelection_.isEmpty()) {
-                    const auto id = pendingSelection_;
-                    pendingSelection_.clear();
-                    selectProfile(id);
-                }
-                if (preservePasswordOnRefresh_) {
-                    password_->setText(sessionPassword);
-                    password_->setModified(passwordModified);
-                    preservePasswordOnRefresh_ = false;
-                }
-                if (preserveSshSecretOnRefresh_) {
-                    sshSecret_->setText(sessionSshSecret);
-                    sshSecret_->setModified(sshSecretModified);
-                    preserveSshSecretOnRefresh_ = false;
-                }
-                if (preserveTlsSecretOnRefresh_) {
-                    tlsSecret_->setText(sessionTlsSecret);
-                    tlsSecret_->setModified(tlsSecretModified);
-                    preserveTlsSecretOnRefresh_ = false;
-                }
-                if (pendingPrivateKey_) {
-                    sshPrivateKey_->setDraft(*pendingPrivateKey_);
-                    pendingPrivateKey_.reset();
-                }
-                if (connectAfterSave_) {
-                    connectAfterSave_ = false;
-                    connectDraft(true);
-                }
-                dispatchProfileAction();
-            });
+    connect(
+        adapter, &EngineAdapter::profilesReady, this,
+        [this](quint64 token, const QList<SavedProfile>& profiles) {
+            if (token != token_)
+                return;
+            profiles_ = profiles;
+            QSignalBlocker blocker(list_);
+            list_->clear();
+            for (const auto& profile : profiles_)
+                list_->addItem(profile.name);
+            present(refreshNotice_
+                        ? *refreshNotice_
+                        : EngineAdapter::profileOperationPresentation(ProfileOperation::Listed));
+            if (isVisible() && focusWidget() == findChild<QPushButton*>("profileDismiss"))
+                name_->setFocus(Qt::OtherFocusReason);
+            refreshNotice_.reset();
+            const auto sessionPassword = preservePasswordOnRefresh_ ? password_->text() : QString();
+            const bool passwordModified = password_->isModified();
+            const auto sessionSshSecret =
+                preserveSshSecretOnRefresh_ ? sshSecret_->text() : QString();
+            const bool sshSecretModified = sshSecret_->isModified();
+            const auto sessionTlsSecret =
+                preserveTlsSecretOnRefresh_ ? tlsSecret_->text() : QString();
+            const bool tlsSecretModified = tlsSecret_->isModified();
+            if (!pendingSelection_.isEmpty()) {
+                const auto id = pendingSelection_;
+                pendingSelection_.clear();
+                selectProfile(id);
+            }
+            if (preservePasswordOnRefresh_) {
+                password_->setText(sessionPassword);
+                password_->setModified(passwordModified);
+                preservePasswordOnRefresh_ = false;
+            }
+            if (preserveSshSecretOnRefresh_) {
+                sshSecret_->setText(sessionSshSecret);
+                sshSecret_->setModified(sshSecretModified);
+                preserveSshSecretOnRefresh_ = false;
+            }
+            if (preserveTlsSecretOnRefresh_) {
+                tlsSecret_->setText(sessionTlsSecret);
+                tlsSecret_->setModified(tlsSecretModified);
+                preserveTlsSecretOnRefresh_ = false;
+            }
+            if (pendingPrivateKey_) {
+                sshPrivateKey_->setDraft(*pendingPrivateKey_);
+                pendingPrivateKey_.reset();
+            }
+            if (connectAfterSave_) {
+                connectAfterSave_ = false;
+                connectDraft(true);
+            }
+            dispatchProfileAction();
+        });
     connect(adapter, &EngineAdapter::profileSaved, this,
             [this](quint64 token, const SavedProfile& profile, const QString& warning) {
                 if (token != token_)
@@ -546,9 +547,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                     tlsSecret_->setText(sessionTlsSecret);
                     tlsSecret_->setModified(tlsSecretModified);
                 }
-                refreshHasWarning_ = !warning.isEmpty();
                 refreshNotice_ =
-                    warning.isEmpty() ? tr("Profile saved.") : tr("Profile saved. %1").arg(warning);
+                    EngineAdapter::profileOperationPresentation(ProfileOperation::Saved, warning);
                 pendingSelection_ = profile.id;
                 refresh();
             });
@@ -557,29 +557,28 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                 if (token != token_)
                     return;
                 setDraft({});
-                refreshHasWarning_ = !warning.isEmpty();
-                refreshNotice_ = warning.isEmpty() ? tr("Profile deleted.")
-                                                   : tr("Profile deleted. %1").arg(warning);
+                refreshNotice_ =
+                    EngineAdapter::profileOperationPresentation(ProfileOperation::Deleted, warning);
                 refresh();
             });
-    connect(
-        adapter, &EngineAdapter::profileFailed, this, [this](quint64 token, const QString& error) {
-            if (token == token_) {
-                savingDraft_ = false;
-                pendingPrivateKey_.reset();
-                preservePasswordOnRefresh_ = false;
-                preserveTlsSecretOnRefresh_ = false;
-                connectAfterSave_ = false;
-                if (std::exchange(testToken_, 0) == token) {
-                    showTest(ProfileTestState::Failed, error);
-                    return;
+    connect(adapter, &EngineAdapter::profileFailed, this,
+            [this](quint64 token, const QString& error) {
+                if (token == token_) {
+                    savingDraft_ = false;
+                    pendingPrivateKey_.reset();
+                    preservePasswordOnRefresh_ = false;
+                    preserveTlsSecretOnRefresh_ = false;
+                    connectAfterSave_ = false;
+                    if (std::exchange(testToken_, 0) == token) {
+                        showTest(ProfileTestState::Failed, error);
+                        return;
+                    }
+                    present(refreshNotice_ ? ProfileOperation::ListRefreshFailed
+                                           : ProfileOperation::Failed,
+                            error);
+                    refreshNotice_.reset();
                 }
-                setBusy(false, refreshNotice_.isEmpty()
-                                   ? error
-                                   : tr("%1 List refresh failed: %2").arg(refreshNotice_, error));
-                refreshNotice_.clear();
-            }
-        });
+            });
     connect(adapter, &EngineAdapter::profileTested, this, [this](quint64 token) {
         if (token == token_ && std::exchange(testToken_, 0) == token)
             showTest(ProfileTestState::Succeeded);
@@ -598,21 +597,20 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         pendingConnection_.reset();
         if (kind == "connected") {
             if (openQueryAfterConnect_) {
-                setBusy(false, tr("Connected."), true);
+                present(ProfileOperation::Connected);
                 openQueryAfterConnect_ = false;
                 emit openQueryRequested(connection);
                 accept();
             } else
-                setBusy(false, tr("Connected."), true);
+                present(ProfileOperation::Connected);
         } else if (kind == "disconnected") {
-            setBusy(false, tr("Connection closed before it was established. %1")
-                               .arg(EngineAdapter::recoveryHint(RecoveryHint::RetryConnection)));
+            present(ProfileOperation::ConnectionClosed);
         } else {
             auto message = bridge_detail::fromRust(event.error);
             if (!event.vendor_code.empty()) {
                 message += tr(" [Code: %1]").arg(bridge_detail::fromRust(event.vendor_code));
             }
-            setBusy(false, message);
+            present(ProfileOperation::Failed, message);
         }
     });
     setDraft({});
@@ -659,47 +657,45 @@ void ProfileDialog::showFieldError(QWidget* field, const QString& message) {
 }
 
 void ProfileDialog::showTest(ProfileTestState state, const QString& detail) {
-    const auto shown = EngineAdapter::profileTestPresentation(state, detail);
-    setBusy(shown.busy, shown.message, shown.tone == Tone::Success);
-    statusLine_->setState(statusLineState(shown.tone));
+    present(EngineAdapter::profileTestPresentation(state, detail));
 }
-void ProfileDialog::setBusy(bool busy, const QString& message, bool success, bool warning) {
-    if (busy) {
-        progressMessage_->setText(message);
-        progressMessage_->setAccessibleName(message);
+void ProfileDialog::present(ProfileOperation operation, const QString& detail) {
+    present(EngineAdapter::profileOperationPresentation(operation, detail));
+}
+void ProfileDialog::present(const Presentation& shown) {
+    if (shown.busy) {
+        progressMessage_->setText(shown.message);
+        progressMessage_->setAccessibleName(shown.message);
         if (isVisible() && progressDialog_)
             progressDialog_->open();
     } else if (progressDialog_) {
         progressDialog_->hide();
     }
-    busy_ = busy;
-    list_->setEnabled(!busy);
-    form_->setEnabled(!busy);
+    busy_ = shown.busy;
+    list_->setEnabled(!busy_);
+    form_->setEnabled(!busy_);
     for (auto* action : actions_)
-        action->setEnabled(!busy && adapter_);
+        action->setEnabled(!busy_ && adapter_);
     updateTrustControls();
-    if (!busy && success && !message.isEmpty() && isVisible()) {
+    if (shown.toast && isVisible()) {
         feedbackToast_ = windowToast(this);
         if (feedbackToast_) {
-            feedbackToast_->showToast(warning ? tr("Warning") : tr("Success"), message,
-                                      warning ? ToastVariant::Warning : ToastVariant::Success);
+            showPresentationToast(this, shown);
             statusLine_->setMessage({});
             statusLine_->setBusy(false);
             statusLine_->hide();
             return;
         }
     }
-    statusLine_->setMessage(message);
-    statusLine_->setBusy(busy);
-    statusLine_->setAvailable(success);
-    if (warning || busy)
-        statusLine_->setNeutral();
-    statusLine_->setVisible(!message.isEmpty());
+    statusLine_->setMessage(shown.message);
+    statusLine_->setBusy(shown.busy);
+    statusLine_->setState(statusLineState(shown.tone));
+    statusLine_->setVisible(!shown.message.isEmpty());
 }
 void ProfileDialog::refresh() {
     if (!adapter_)
         return;
-    setBusy(true, tr("Loading profiles…"));
+    present(ProfileOperation::Loading);
     adapter_->listProfiles(++token_);
 }
 void ProfileDialog::selectProfile(const QString& id) {
@@ -730,7 +726,7 @@ void ProfileDialog::dispatchProfileAction() {
     const auto action = managedAction_;
     managedAction_.clear();
     if (current_.id != managedProfile_) {
-        setBusy(false, tr("The saved profile is no longer available. Refresh the profile list."));
+        present(ProfileOperation::ProfileMissing);
         return;
     }
     if (action == "edit")

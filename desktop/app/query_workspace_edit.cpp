@@ -152,7 +152,7 @@ bool QueryWorkspace::applyStagedEdits() {
                          connectionAvailable(connectionId);
     const auto detail = !current ? QString()
                         : plan   ? plan->error
-                                 : tr("The change check did not finish.");
+                                 : EngineAdapter::gridEditNote(GridEditNote::PlanUnfinished);
     if (gridEditBusy())
         stepGridEdit(plan && plan->error.isEmpty() ? GridEditEvent::Planned
                                                    : GridEditEvent::PlanFailed,
@@ -228,7 +228,8 @@ bool QueryWorkspace::applyStagedEdits() {
     connect(this, &QObject::destroyed, &loop, &QEventLoop::quit);
     connect(adapter_, &QObject::destroyed, &loop, &QEventLoop::quit);
     if (!adapter_ || !adapter_->applyEditBatch(connectionId, batch, editApplyToken_)) {
-        stepGridEdit(GridEditEvent::ApplyFailed, tr("The changes could not be submitted."));
+        stepGridEdit(GridEditEvent::ApplyFailed,
+                     EngineAdapter::gridEditNote(GridEditNote::SubmitFailed));
         updateActions();
         return false;
     }
@@ -238,7 +239,8 @@ bool QueryWorkspace::applyStagedEdits() {
     if (!self)
         return false;
     if (!adapter_ && gridEdit_.edits == EditPhase::Applying)
-        stepGridEdit(GridEditEvent::ApplyFailed, tr("The workspace closed."));
+        stepGridEdit(GridEditEvent::ApplyFailed,
+                     EngineAdapter::gridEditNote(GridEditNote::WorkspaceClosed));
     return editApplied_;
 }
 }
