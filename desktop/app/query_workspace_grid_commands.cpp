@@ -229,7 +229,7 @@ void QueryWorkspace::discardStagedEdits() {
     box.exec();
     if (self && box.clickedButton() == discard &&
         gridAction(GridCommand::DiscardEdits)->isEnabled())
-        model_->discardEdits();
+        discardGridEdits();
 }
 std::optional<QueryWorkspace::GridCommand>
 QueryWorkspace::gridCommandForKey(QKeyCombination key) const {

@@ -332,7 +332,7 @@ bool QueryWorkspace::resolvePendingEdits() {
     if (!self)
         return false;
     if (box.clickedButton() == discard) {
-        model_->discardEdits();
+        discardGridEdits();
         return true;
     }
     if (box.clickedButton() == apply && widgets_.applyEdits) {
@@ -404,12 +404,31 @@ void QueryWorkspace::setExternalWork(QObject* source, bool busy) {
     }
     updateActions();
 }
+bool QueryWorkspace::editTransactionActive() const {
+    return queryConnection_ &&
+           (pendingTransactions_.contains(*queryConnection_) ||
+            (widgets_.transactionActive && widgets_.transactionActive(*queryConnection_)));
+}
 const TransactionGuard& QueryWorkspace::editTransactionGuard() const {
-    const bool active =
-        queryConnection_ &&
-        (pendingTransactions_.contains(*queryConnection_) ||
-         (widgets_.transactionActive && widgets_.transactionActive(*queryConnection_)));
-    return EngineAdapter::transactionGuard(active);
+    return EngineAdapter::transactionGuard(editTransactionActive());
+}
+void QueryWorkspace::observeEditTransaction() {
+    const bool active = editTransactionActive();
+    const auto next = EngineAdapter::gridEditTransition(gridEdit_, active ? GridEditEvent::Begin
+                                                                          : GridEditEvent::Commit);
+    if (!next.allowed)
+        return;
+    gridEdit_ = next.state;
+    if (active)
+        return;
+    const auto ended = EngineAdapter::gridEditTransition(gridEdit_, GridEditEvent::Ended);
+    if (ended.allowed)
+        gridEdit_ = ended.state;
+}
+void QueryWorkspace::discardGridEdits() {
+    model_->discardEdits();
+    if (EngineAdapter::gridEditTransition(gridEdit_, GridEditEvent::Discard).allowed)
+        stepGridEdit(GridEditEvent::Discard);
 }
 void QueryWorkspace::disconnectConnection(quint64 connection) {
     if (gridEdit_.edits == EditPhase::Planning || !connectionCanDisconnect(connection) ||
@@ -671,6 +690,7 @@ std::optional<quint64> QueryWorkspace::selectedConnection() const {
     return editor ? editor->connectionTarget() : std::nullopt;
 }
 void QueryWorkspace::updateActions() {
+    observeEditTransaction();
     if (invalidatePending_ && !workInFlight()) {
         invalidateResult();
         return;

@@ -288,6 +288,12 @@ class GridEditWorkspaceTest : public QObject {
         QVERIFY(dataMessages->toPlainText().contains(guard));
         QVERIFY(model->index(0, 1).data(choscordb::design::CellChangeRole).toInt() !=
                 int(choscordb::design::CellChange::None));
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("COMMIT;");
+        run->trigger();
+        QTRY_VERIFY(applyAction->isEnabled());
+        focusGrid(grid);
+        QCOMPARE(answerDialog(applyKey), QString("gridEditReview"));
     }
     void menuShowsGridKeysAndApplyTooltipShowsItsKey() {
         choscordb::MainWindow window;

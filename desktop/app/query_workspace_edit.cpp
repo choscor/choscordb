@@ -153,8 +153,10 @@ bool QueryWorkspace::applyStagedEdits() {
     const auto detail = !current ? QString()
                         : plan   ? plan->error
                                  : tr("The change check did not finish.");
-    stepGridEdit(plan && plan->error.isEmpty() ? GridEditEvent::Planned : GridEditEvent::PlanFailed,
-                 detail);
+    if (gridEditBusy())
+        stepGridEdit(plan && plan->error.isEmpty() ? GridEditEvent::Planned
+                                                   : GridEditEvent::PlanFailed,
+                     detail);
     emit gridEditPlanningChanged(false);
     updateActions();
     if (!plan || !current || workInFlight())
@@ -218,8 +220,9 @@ bool QueryWorkspace::applyStagedEdits() {
     QEventLoop loop;
     const auto eventConnection =
         connect(adapter_, &EngineAdapter::eventReady, &loop, [self, &loop](const BridgeEvent& e) {
-            if (self && e.request_token == self->editApplyToken_ &&
-                (text(e.kind) == "edit_applied" || text(e.kind) == "edit_failed"))
+            if (self && ((e.request_token == self->editApplyToken_ &&
+                          (text(e.kind) == "edit_applied" || text(e.kind) == "edit_failed")) ||
+                         !self->gridEditBusy()))
                 loop.quit();
         });
     connect(this, &QObject::destroyed, &loop, &QEventLoop::quit);

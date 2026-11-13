@@ -223,6 +223,9 @@ class QueryWorkspace final : public QObject {
     bool queryAvailable() const;
     bool workInFlight() const;
     const TransactionGuard& editTransactionGuard() const;
+    bool editTransactionActive() const;
+    void observeEditTransaction();
+    void discardGridEdits();
     void message(const QString& text);
     void setExecutionState(QueryState state, const QString& detail = {},
                            const ExecutionMetrics& metrics = {});

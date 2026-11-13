@@ -251,8 +251,9 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     if ((eventKind == "edit_applied" || eventKind == "edit_failed") &&
         e.request_token == editApplyToken_ && queryConnection_ == e.id) {
         editApplied_ = eventKind == "edit_applied";
-        stepGridEdit(editApplied_ ? GridEditEvent::Applied : GridEditEvent::ApplyFailed,
-                     text(e.error));
+        if (gridEditBusy())
+            stepGridEdit(editApplied_ ? GridEditEvent::Applied : GridEditEvent::ApplyFailed,
+                         text(e.error));
         if (editApplied_) {
             model_->discardEdits();
             quint64 total = 0;
@@ -389,6 +390,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         liveConnections_.removeIf([&e](const LiveConnection& live) { return live.id == e.id; });
         documentChanged();
         if (queryConnection_ == e.id) {
+            stepGridEdit(GridEditEvent::Disconnect);
             clearRowJson();
             jsonResultInvalidated_ = true;
             if (detail_)
