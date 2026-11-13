@@ -115,8 +115,7 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
         hasMore_ = e.has_more;
         const bool hasResultPage = !columns_.empty();
         setExecutionState(
-            hasResultPage && e.row_count == 0 ? QueryState::CompletedEmpty
-                                              : QueryState::CompletedRows,
+            EngineAdapter::queryResultState(hasResultPage, e.row_count),
             e.row_count == 0 && !viewFilters_.isEmpty()
                 ? tr("No rows match the active filters · Clear filters to restore all rows")
                 : QString{},
@@ -251,8 +250,9 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
     }
     if ((eventKind == "edit_applied" || eventKind == "edit_failed") &&
         e.request_token == editApplyToken_ && queryConnection_ == e.id) {
-        editApplying_ = false;
         editApplied_ = eventKind == "edit_applied";
+        stepGridEdit(editApplied_ ? GridEditEvent::Applied : GridEditEvent::ApplyFailed,
+                     text(e.error));
         if (editApplied_) {
             model_->discardEdits();
             quint64 total = 0;
@@ -288,7 +288,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             deferredViewRequest_ = false;
             if (filterBar_)
                 filterBar_->restoreApplied();
-            message(tr("Grid changes were not applied: %1").arg(text(e.error)));
         }
         updateActions();
         return;
@@ -323,9 +322,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         if (connectionAttemptEditors_.contains(e.id)) {
             auto* editor = connectionAttemptEditors_.take(e.id).data();
             const auto previous = connectionAttemptStatus_.take(e.id);
-            const auto previousState = previous.contains("state")
-                                           ? QueryState(previous.value("state").toInt())
-                                           : QueryState::Idle;
+            const auto previousState =
+                QueryState(previous.value("state", int(QueryState::Idle)).toInt());
             if (editor && editor == resultEditor_ &&
                 EngineAdapter::queryPresentation(previousState).tone == Tone::Success &&
                 previous.value("source").toString() == resultOrigin_)
@@ -621,9 +619,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             rowMetric += (rowMetric.isEmpty() ? QString{} : QStringLiteral(" · ")) +
                          tr("%1 rows").arg(model_->rowCount());
         setExecutionState(
-            hasResultPage && model_->rowCount() == 0 ? QueryState::CompletedEmpty
-                                                     : QueryState::CompletedRows,
-            {},
+            EngineAdapter::queryResultState(hasResultPage, quint64(model_->rowCount())), {},
             {tr("Executed in %1 ms").arg(e.duration_ms),
              hasResultPage ? tr("Page %1").arg(*currentPage_ + 1) : QString{}, rowMetric,
              hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024) : QString{}});

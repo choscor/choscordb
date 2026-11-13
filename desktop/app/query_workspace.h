@@ -227,6 +227,8 @@ class QueryWorkspace final : public QObject {
     void setExecutionState(QueryState state, const QString& detail = {},
                            const ExecutionMetrics& metrics = {});
     void applyExecutionEvent(QueryEvent event, const QString& detail = {});
+    bool stepGridEdit(GridEditEvent event, const QString& detail = {});
+    bool gridEditBusy() const;
     void setDocumentStatus(SqlEditor* editor, QueryState state, const QString& detail,
                            const QString& source);
     void presentExecutionState(QueryState state, const QString& detail,
@@ -305,8 +307,8 @@ class QueryWorkspace final : public QObject {
     std::vector<bool> editKey_, editGenerated_, editDuplicable_;
     quint64 editTargetToken_ = 0, editApplyToken_ = 0;
     quint64 editPolicyGeneration_ = 0, editabilityJobToken_ = 0;
-    bool editabilityPlanning_ = false, editPlanRunning_ = false;
-    bool editApplying_ = false, editApplied_ = false;
+    bool editabilityPlanning_ = false, editApplied_ = false;
+    GridEditState gridEdit_;
     bool exporting_ = false;
     std::optional<quint64> query_;
     std::optional<quint64> queryConnection_;

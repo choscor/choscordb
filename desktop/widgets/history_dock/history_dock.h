@@ -52,6 +52,7 @@ class HistoryDock final : public QWidget {
     design::Button *clear_, *previous_, *next_, *open_;
     design::Button *previewPrevious_, *previewNext_;
     design::StatusLine* footer_ = nullptr;
+    design::Text* placeholder_ = nullptr;
     HistoryPolicy policy_;
     quint64 listToken_ = 0, policyToken_ = 0, clearToken_ = 0, profilesToken_ = 0;
     quint32 offset_ = 0, pendingOffset_ = 0;

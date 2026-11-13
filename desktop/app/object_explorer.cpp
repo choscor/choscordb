@@ -473,11 +473,13 @@ void ObjectExplorer::restoreObject(std::optional<quint64> connection, const QStr
     reconnect_->setEnabled(!connection_);
     updateActions();
     updateFooter();
-    setStatus(connection_ ? PanelState::Idle : PanelState::Disconnected,
-              connection_
-                  ? tr("%1 · Select this tab to load fresh metadata.").arg(label_)
-                  : tr("%1 · Connection unavailable. %2")
-                        .arg(label_, EngineAdapter::recoveryHint(RecoveryHint::ReconnectManually)));
+    setStatus(
+        EngineAdapter::panelObservation(PanelKind::ObjectDetails, {.disconnected = !connection_})
+            .state,
+        connection_
+            ? tr("%1 · Select this tab to load fresh metadata.").arg(label_)
+            : tr("%1 · Connection unavailable. %2")
+                  .arg(label_, EngineAdapter::recoveryHint(RecoveryHint::ReconnectManually)));
     refresh_->setEnabled(false);
     emit objectChanged();
 }

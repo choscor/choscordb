@@ -51,4 +51,10 @@ inline void presentPanel(design::Text* label, PanelKind kind, PanelState state,
     showPresentationToast(label, shown);
 }
 
+inline void presentPanel(design::Text* label, PanelKind kind, const PanelFacts& facts) {
+    const auto shown = EngineAdapter::panelObservation(kind, facts).presentation;
+    showPanelState(label, shown);
+    showPresentationToast(label, shown);
+}
+
 }

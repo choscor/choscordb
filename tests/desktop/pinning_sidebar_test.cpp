@@ -8,6 +8,7 @@
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
+#include <QDir>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -164,6 +165,23 @@ class PinningSidebarTest final : public QObject {
             unusedHeight <= design::spacing(design::Spacing::Two),
             qPrintable(
                 QStringLiteral("Pinned tree leaves %1 px after its last row").arg(unusedHeight)));
+    }
+
+    void unreadablePinsShowTheFailedPlaceholder() {
+        QTemporaryDir storage;
+        QVERIFY(storage.isValid());
+        QVERIFY(QDir(storage.path()).mkdir(QStringLiteral("settings.sqlite.pins.json")));
+        choscordb::MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+        window.show();
+        auto* section = window.findChild<QWidget*>("pinnedSection");
+        auto* empty = window.findChild<QLabel*>("pinnedEmpty");
+        QVERIFY(section && empty);
+        const auto expected = QStringLiteral("Could not load pinned objects: Pin storage path is "
+                                             "not a regular file. Activate the pin to retry.");
+        QTRY_VERIFY(section->isVisible());
+        QTRY_VERIFY(empty->isVisible());
+        QCOMPARE(empty->text(), expected);
+        QCOMPARE(empty->property("state").toString(), QStringLiteral("error"));
     }
 
     void pinnedSectionIsHiddenWithoutPins() {

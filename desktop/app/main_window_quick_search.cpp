@@ -360,14 +360,16 @@ void MainWindow::renderQuickSearch() {
     results.append(quickEditorRows_.mid(0, plan.editorRows));
     results.append(quickHistoryRows_.mid(0, plan.historyRows));
     quickSearch_->setResults(results);
-    const auto searchState = !quickHistoryError_.isEmpty()                 ? PanelState::Failed
-                             : quickEditorPending_ || quickHistoryPending_ ? PanelState::Loading
-                             : !results.isEmpty()                          ? PanelState::Ready
-                             : needle.isEmpty()                            ? PanelState::Empty
-                                                                           : PanelState::NoMatch;
-    const auto shown = EngineAdapter::panelPresentation(
-        PanelKind::QuickSearch, searchState,
-        searchState == PanelState::Failed ? quickHistoryError_ : QString{});
+    const auto shown = EngineAdapter::panelObservation(
+                           PanelKind::QuickSearch,
+                           {.failed = !quickHistoryError_.isEmpty(),
+                            .work = quickEditorPending_ || quickHistoryPending_ ? PanelWork::Loading
+                                                                                : PanelWork::None,
+                            .loaded = true,
+                            .hasRows = !results.isEmpty(),
+                            .filtered = !needle.isEmpty()},
+                           quickHistoryError_)
+                           .presentation;
     quickSearch_->setSearchState(shown.message, shown.tone == Tone::Error);
     if (std::exchange(quickSearchToast_, quickHistoryError_) != quickHistoryError_)
         showPresentationToast(this, shown);

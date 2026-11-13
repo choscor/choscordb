@@ -200,7 +200,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     connect(widgets_.run, &QAction::triggered, this, [this] { execute(RunScope::Current); });
     connect(widgets_.runAll, &QAction::triggered, this, [this] { execute(RunScope::All); });
     connect(widgets_.cancel, &QAction::triggered, this, [this] {
-        if (editPlanRunning_)
+        if (gridEdit_.edits == EditPhase::Planning)
             return;
         if (query_ && viewBusy_) {
             if (adapter_->cancelResultView(*query_)) {
@@ -316,7 +316,7 @@ QueryWorkspace::~QueryWorkspace() {
     delete profiles_;
 }
 bool QueryWorkspace::resolvePendingEdits() {
-    if (editPlanRunning_ || editApplying_)
+    if (gridEditBusy())
         return false;
     if (!model_->hasPendingEdits())
         return true;
@@ -380,7 +380,7 @@ bool QueryWorkspace::queryAvailable() const {
 }
 bool QueryWorkspace::workInFlight() const {
     return quickFilterPreparing_ || externalWorkActive() || executionModeToken_ != 0 || viewBusy_ ||
-           editPlanRunning_ || editApplying_ ||
+           gridEditBusy() ||
            ((cancellationPending_ || busy_ || fetching_ || exporting_) &&
             !(queryConnection_ && disconnecting_.contains(*queryConnection_)));
 }
@@ -412,7 +412,7 @@ const TransactionGuard& QueryWorkspace::editTransactionGuard() const {
     return EngineAdapter::transactionGuard(active);
 }
 void QueryWorkspace::disconnectConnection(quint64 connection) {
-    if (editPlanRunning_ || !connectionCanDisconnect(connection) ||
+    if (gridEdit_.edits == EditPhase::Planning || !connectionCanDisconnect(connection) ||
         confirmingDisconnects_.contains(connection))
         return;
     const auto label = liveConnectionLabel(connection).value_or(QString{});
@@ -561,9 +561,9 @@ bool QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
     }
     busy_ = query_.has_value();
     executionFinished_ = !busy_;
-    setExecutionState(busy_ ? QueryState::Queued : QueryState::Failed,
-                      busy_ ? tr("Loading object data…")
-                            : tr("Object read could not be submitted: %1").arg(commandError_));
+    applyExecutionEvent(busy_ ? QueryEvent::Submit : QueryEvent::Fail,
+                        busy_ ? tr("Loading object data…")
+                              : tr("Object read could not be submitted: %1").arg(commandError_));
     updateActions();
     return true;
 }
@@ -838,8 +838,8 @@ void QueryWorkspace::execute(RunScope scope) {
     busy_ = query_.has_value();
     executionFinished_ = !query_.has_value();
     cancellationPending_ = false;
-    setExecutionState(busy_ ? QueryState::Queued : QueryState::Failed,
-                      busy_ ? QString{} : tr("Submission failed: %1").arg(commandError_));
+    applyExecutionEvent(busy_ ? QueryEvent::Submit : QueryEvent::Fail,
+                        busy_ ? QString{} : tr("Submission failed: %1").arg(commandError_));
     if (!busy_ && !commandError_.isEmpty())
         message(commandError_);
     updateActions();

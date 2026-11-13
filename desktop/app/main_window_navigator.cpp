@@ -157,10 +157,10 @@ void MainWindow::connectNavigator(const Ui& ui) {
         });
     const auto updateObjectsEmpty = [this, tree, filter, objectsEmpty] {
         presentPanel(objectsEmpty, PanelKind::Objects,
-                     tree->model()->rowCount() > 0   ? PanelState::Ready
-                     : selectedProfileIds_.isEmpty() ? PanelState::Disconnected
-                     : !filter->text().isEmpty()     ? PanelState::NoMatch
-                                                     : PanelState::Empty);
+                     {.loaded = true,
+                      .hasRows = tree->model()->rowCount() > 0,
+                      .filtered = !filter->text().isEmpty(),
+                      .disconnected = selectedProfileIds_.isEmpty()});
     };
     connect(tree->model(), &QAbstractItemModel::rowsInserted, objectsEmpty, updateObjectsEmpty);
     connect(tree->model(), &QAbstractItemModel::rowsRemoved, objectsEmpty, updateObjectsEmpty);

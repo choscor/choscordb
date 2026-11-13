@@ -2,6 +2,7 @@
 #include "design_system/status_line/status_line.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/profile_dialog/ssh_host_key_dialog.h"
+#include "widgets/screen_state/screen_state.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
@@ -19,21 +20,18 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                 if (token != trustToken_)
                     return;
                 trustToken_ = 0;
-                statusLine_->setBusy(false);
-                statusLine_->setMessage(
-                    tr("SSH host keys inspected. Review the keys before approving."));
-                statusLine_->setAvailable(true);
-                statusLine_->show();
                 updateTrustControls();
                 if (revision_ != trustRevision_) {
-                    showTrustStatus(
-                        tr("Connection settings changed. Inspect the host keys again."));
+                    stepTrust(ProfileTestEvent::TestFailed,
+                              tr("Connection settings changed. Inspect the host keys again."));
                     return;
                 }
                 if (candidates.isEmpty()) {
-                    showTrustStatus(tr("No SSH host keys were returned."));
+                    stepTrust(ProfileTestEvent::TestFailed, tr("No SSH host keys were returned."));
                     return;
                 }
+                stepTrust(ProfileTestEvent::HostKeyUnknown,
+                          tr("SSH host keys inspected. Review the keys before approving."));
                 if (trustDialog_)
                     trustDialog_->close();
                 auto* review = new SshHostKeyDialog(candidates, trustPath_, this);
@@ -51,6 +49,10 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                 connect(review, &SshHostKeyDialog::approvalRequested, this,
                         [this, review](const SshHostKeyCandidate& candidate, const QString& path) {
                             if (!adapter_ || trustToken_ || revision_ != trustRevision_) {
+                                review->invalidate();
+                                return;
+                            }
+                            if (!stepTrust(ProfileTestEvent::Approve)) {
                                 review->invalidate();
                                 return;
                             }
@@ -78,21 +80,17 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                 if (revision_ != trustRevision_) {
                     if (trustDialog_)
                         trustDialog_->invalidate();
-                    showTrustStatus(
+                    stepTrust(
+                        ProfileTestEvent::ApprovalFailed,
                         tr("The approval request finished for the previous settings. %1")
                             .arg(EngineAdapter::recoveryHint(RecoveryHint::InspectSshServer)));
                     return;
                 }
-                if (outcome == "approved") {
-                    statusLine_->setBusy(false);
-                    statusLine_->setAvailable(true);
-                    statusLine_->setMessage(
-                        tr("SSH host key approved. %1")
-                            .arg(EngineAdapter::recoveryHint(RecoveryHint::UseApprovedKey)));
-                    statusLine_->show();
-                } else {
-                    showTrustStatus(tr("SSH host key approval outcome is unknown."));
-                }
+                if (outcome == "approved")
+                    stepTrust(ProfileTestEvent::Approved);
+                else
+                    stepTrust(ProfileTestEvent::ApprovalFailed,
+                              tr("SSH host key approval outcome is unknown."));
                 if (trustDialog_)
                     trustDialog_->finishApproval(outcome);
             });
@@ -102,19 +100,27 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                     return;
                 trustToken_ = 0;
                 updateTrustControls();
-                showTrustStatus(error, true);
+                stepTrust(trustState_ == ProfileTestState::Trusting
+                              ? ProfileTestEvent::ApprovalFailed
+                              : ProfileTestEvent::TestFailed,
+                          error);
                 if (trustDialog_)
                     trustDialog_->showFailure(error);
             });
     updateTrustControls();
 }
-void ProfileDialog::showTrustStatus(const QString& message, bool failure) {
-    statusLine_->setMessage(message);
-    statusLine_->setBusy(false);
-    statusLine_->setAvailable(!failure);
-    if (!failure)
-        statusLine_->setNeutral();
-    statusLine_->show();
+bool ProfileDialog::stepTrust(ProfileTestEvent event, const QString& detail) {
+    const auto next = EngineAdapter::profileTestTransition(trustState_, event);
+    if (next.allowed)
+        trustState_ = next.state;
+    const auto shown =
+        next.allowed ? EngineAdapter::profileTestPresentation(trustState_, detail)
+                     : EngineAdapter::profileTestPresentation(ProfileTestState::Failed, next.error);
+    statusLine_->setMessage(shown.message);
+    statusLine_->setBusy(shown.busy);
+    statusLine_->setState(statusLineState(shown.tone));
+    statusLine_->setVisible(!shown.message.isEmpty());
+    return next.allowed;
 }
 void ProfileDialog::updateTrustControls() {
     if (!inspectSshKeys_)
@@ -131,13 +137,13 @@ void ProfileDialog::inspectHostKeys() {
         return;
     if (profile.name.isEmpty())
         profile.name = tr("SSH host inspection");
+    if (trustState_ == ProfileTestState::AwaitingTrust)
+        stepTrust(ProfileTestEvent::Reject);
+    if (!stepTrust(ProfileTestEvent::Test, tr("Inspecting SSH host keys…")))
+        return;
     trustRevision_ = revision_;
     trustToken_ = ++token_;
     updateTrustControls();
-    statusLine_->setMessage(tr("Inspecting SSH host keys…"));
-    statusLine_->setAvailable(true);
-    statusLine_->setBusy(true);
-    statusLine_->show();
     adapter_->inspectSshHostKeys(profile, trustToken_);
 }
 }

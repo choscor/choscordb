@@ -666,7 +666,7 @@ class ObjectDataWorkspaceTest : public QObject {
             QVERIFY(reviewed);
         };
         acceptReview();
-        QTRY_VERIFY(messages->toPlainText().contains("not applied"));
+        QTRY_VERIFY(messages->toPlainText().contains("Could not apply the grid changes: "));
         QCOMPARE(model->rowCount(), 2);
         QVERIFY(model->hasPendingEdits());
         QVERIFY(model->setData(model->index(1, 1), QString("copy")));

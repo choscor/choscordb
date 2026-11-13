@@ -73,6 +73,11 @@ void WorkspaceTest::sshHostKeyInspectionRequiresExplicitActionAndKeepsUiResponsi
     QTRY_COMPARE(failures.count(), 1);
     QCOMPARE(username->text(), QString("changed-user"));
     QVERIFY(connections.isEmpty());
+    auto* status = dialog.findChild<QLabel*>("profileStatus");
+    QVERIFY(status->text().startsWith("Connection test failed: "));
+    QVERIFY(status->text().endsWith(
+        failures.first().last().toString() + ". " +
+        choscordb::EngineAdapter::recoveryHint(choscordb::RecoveryHint::RetryConnection)));
 }
 
 void WorkspaceTest::sshHostKeyStaleInspectionSuccessCannotOpenApproval() {

@@ -95,6 +95,23 @@ class HistoryTest : public QObject {
         QVERIFY(footer->toolTip().contains("Workspace is closed."));
         QVERIFY(!status->wordWrap());
     }
+    void historyOperationFailureShowsTheFailedPlaceholder() {
+        choscordb::EngineAdapter adapter;
+        choscordb::HistoryDock history(&adapter);
+        history.resize(800, 600);
+        history.show();
+        auto* refresh = history.findChild<QAction*>("refreshHistory");
+        QTRY_VERIFY(refresh->isEnabled());
+        auto* placeholder = history.findChild<QLabel*>("historyPlaceholder");
+        QVERIFY(placeholder);
+        QVERIFY(!placeholder->isVisible());
+        adapter.beginShutdown();
+        refresh->trigger();
+        QTRY_VERIFY(placeholder->isVisible());
+        QVERIFY(placeholder->text().startsWith("Could not load query history: "));
+        QVERIFY(placeholder->text().contains("Workspace is closed."));
+        QCOMPARE(placeholder->property("state").toString(), QString("error"));
+    }
     void queryRowsUseFullWidthAndFullTextPreviewIsExplicit() {
         choscordb::EngineAdapter adapter;
         choscordb::HistoryDock history(&adapter);

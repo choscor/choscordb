@@ -143,6 +143,7 @@ class MainWindow final : public QMainWindow {
     quint64 pinPersistedGeneration_ = 0;
     QString pinSaveNotice_;
     bool pinsLoaded_ = false;
+    std::optional<Presentation> pinsLoadFailure_;
     QPointer<QTreeView> pinnedList_;
     PinnedTreeModel* pinnedModel_ = nullptr;
     QSet<QString> pendingExpansionKeys_;

@@ -220,12 +220,28 @@ void QueryWorkspace::applyExecutionEvent(QueryEvent event, const QString& detail
         setExecutionState(next.state, detail);
 }
 
+bool QueryWorkspace::stepGridEdit(GridEditEvent event, const QString& detail) {
+    const auto next = EngineAdapter::gridEditTransition(gridEdit_, event);
+    if (!next.allowed) {
+        message(next.error);
+        return false;
+    }
+    gridEdit_ = next.state;
+    if (const auto shown = EngineAdapter::gridEditPresentation(gridEdit_, detail);
+        shown.tone == Tone::Error)
+        message(shown.message);
+    return true;
+}
+
+bool QueryWorkspace::gridEditBusy() const {
+    return gridEdit_.edits == EditPhase::Planning || gridEdit_.edits == EditPhase::Applying;
+}
+
 QueryState QueryWorkspace::documentState(const SqlEditor* editor) const {
     if (!editor)
         return executionState_;
     const auto saved = editor->property("resultStatus").toMap();
-    return saved.contains("state") ? QueryState(saved.value("state").toInt())
-                                   : QueryState::Disconnected;
+    return QueryState(saved.value("state", int(QueryState::Disconnected)).toInt());
 }
 
 void QueryWorkspace::setDocumentStatus(SqlEditor* editor, QueryState state, const QString& detail,
@@ -337,7 +353,8 @@ void QueryWorkspace::requestResultView(const QList<ResultFilterCondition>& filte
             filterBar_->restoreApplied();
             return;
         }
-        if (model_->hasPendingEdits() || editApplying_ || preserveViewOnRefresh_)
+        if (model_->hasPendingEdits() || gridEdit_.edits == EditPhase::Applying ||
+            preserveViewOnRefresh_)
             return;
         deferredViewRequest_ = false;
     }

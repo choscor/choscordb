@@ -222,7 +222,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
         }
         if (historyItems->count() > 0)
             presentPanel(historyStatus, PanelKind::History,
-                         anyMatch ? PanelState::Ready : PanelState::NoMatch);
+                         {.loaded = true, .hasRows = anyMatch, .filtered = !query.blank()});
     };
     connect(historySearch, &QLineEdit::textChanged, this, filterHistory);
     auto refreshRecentHistory = [this, historyStatus, historyItems, historySection] {
@@ -231,10 +231,8 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
         historyItems->clear();
         historyStatus->hide();
         sidebarHistoryToken_ = nextRequestToken();
-        if (!workspace_->adapter()->listHistory(50, 0, sidebarHistoryToken_)) {
-            presentPanel(historyStatus, PanelKind::History, PanelState::Failed);
+        if (!workspace_->adapter()->listHistory(50, 0, sidebarHistoryToken_))
             return;
-        }
         historySection->setBusy(true, tr("Loading recent history…"));
     };
     connect(sidebarPanels, &QStackedWidget::currentChanged, this,
@@ -279,7 +277,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                     item->setToolTip(historyPreview(entry.sql, 2000, true));
                 }
                 presentPanel(historyStatus, PanelKind::History,
-                             entries.isEmpty() ? PanelState::Empty : PanelState::Ready);
+                             {.loaded = true, .hasRows = !entries.isEmpty()});
                 filterHistory();
             });
     connect(workspace_->adapter(), &EngineAdapter::recoveryFailed, this,

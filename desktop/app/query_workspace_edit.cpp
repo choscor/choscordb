@@ -113,7 +113,7 @@ void QueryWorkspace::configureEditability() {
 bool QueryWorkspace::applyStagedEdits() {
     if (!model_->hasPendingEdits())
         return true;
-    if (!queryConnection_ || workInFlight() || editabilityPlanning_ || editApplying_ ||
+    if (!queryConnection_ || workInFlight() || editabilityPlanning_ || gridEditBusy() ||
         editQualifiedName_.isEmpty())
         return false;
     if (const auto& blocked = editTransactionGuard().applyEdits; !blocked.isEmpty()) {
@@ -134,7 +134,8 @@ bool QueryWorkspace::applyStagedEdits() {
     connect(&planner, &QFutureWatcher<std::shared_ptr<GridEditPlan>>::finished, &planningLoop,
             &QEventLoop::quit);
     connect(this, &QObject::destroyed, &planningLoop, &QEventLoop::quit);
-    editPlanRunning_ = true;
+    if (!stepGridEdit(GridEditEvent::Edit) || !stepGridEdit(GridEditEvent::Plan))
+        return false;
     emit gridEditPlanningChanged(true);
     updateActions();
     planner.setFuture(QtConcurrent::run([request = std::move(request)] {
@@ -144,21 +145,22 @@ bool QueryWorkspace::applyStagedEdits() {
         planningLoop.exec();
     if (!self)
         return false;
-    editPlanRunning_ = false;
+    const auto plan = planner.isFinished() ? planner.result() : nullptr;
+    stepGridEdit(!plan                   ? GridEditEvent::PlanFailed
+                 : plan->error.isEmpty() ? GridEditEvent::Planned
+                                         : GridEditEvent::PlanFailed,
+                 plan ? plan->error : tr("The change check did not finish."));
     emit gridEditPlanningChanged(false);
     updateActions();
-    if (!planner.isFinished() || generation != editPolicyGeneration_ ||
-        queryConnection_ != connectionId || query_ != queryId || editTargetToken_ != targetToken ||
+    if (!plan || generation != editPolicyGeneration_ || queryConnection_ != connectionId ||
+        query_ != queryId || editTargetToken_ != targetToken ||
         editQualifiedName_ != qualifiedName || stopping_ || !connectionAvailable(connectionId) ||
         workInFlight())
         return false;
-    auto plan = std::move(*planner.result());
-    if (!plan.error.isEmpty()) {
-        message(plan.error);
+    if (!plan->error.isEmpty())
         return false;
-    }
-    auto batch = std::move(plan.statements);
-    const auto review = plan.review;
+    auto batch = std::move(plan->statements);
+    const auto review = plan->review;
     if (batch.empty())
         return false;
     design::ModalDialog box(widgets_.dialogParent);
@@ -207,7 +209,8 @@ bool QueryWorkspace::applyStagedEdits() {
         editQualifiedName_ != qualifiedName || !connectionAvailable(connectionId) || workInFlight())
         return false;
     editApplyToken_ = nextEditRequestToken();
-    editApplying_ = true;
+    if (!stepGridEdit(GridEditEvent::Apply))
+        return false;
     editApplied_ = false;
     updateActions();
     QEventLoop loop;
@@ -220,17 +223,17 @@ bool QueryWorkspace::applyStagedEdits() {
     connect(this, &QObject::destroyed, &loop, &QEventLoop::quit);
     connect(adapter_, &QObject::destroyed, &loop, &QEventLoop::quit);
     if (!adapter_ || !adapter_->applyEditBatch(connectionId, batch, editApplyToken_)) {
-        editApplying_ = false;
+        stepGridEdit(GridEditEvent::ApplyFailed, tr("The changes could not be submitted."));
         updateActions();
         return false;
     }
-    if (editApplying_)
+    if (gridEdit_.edits == EditPhase::Applying)
         loop.exec();
     disconnect(eventConnection);
     if (!self)
         return false;
-    if (!adapter_)
-        editApplying_ = false;
+    if (!adapter_ && gridEdit_.edits == EditPhase::Applying)
+        stepGridEdit(GridEditEvent::ApplyFailed, tr("The workspace closed."));
     return editApplied_;
 }
 }

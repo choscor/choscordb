@@ -8,6 +8,7 @@
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
+#include "widgets/screen_state/screen_state.h"
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
@@ -660,6 +661,7 @@ void ProfileDialog::showFieldError(QWidget* field, const QString& message) {
 void ProfileDialog::showTest(ProfileTestState state, const QString& detail) {
     const auto shown = EngineAdapter::profileTestPresentation(state, detail);
     setBusy(shown.busy, shown.message, shown.tone == Tone::Success);
+    statusLine_->setState(statusLineState(shown.tone));
 }
 void ProfileDialog::setBusy(bool busy, const QString& message, bool success, bool warning) {
     if (busy) {

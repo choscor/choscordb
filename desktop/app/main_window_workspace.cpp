@@ -214,7 +214,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             anyMatch = filterItem(filterItem, savedFiles->topLevelItem(i), {}) || anyMatch;
         if (savedFiles->topLevelItemCount() > 0)
             presentPanel(savedStatus, PanelKind::SavedSql,
-                         anyMatch ? PanelState::Ready : PanelState::NoMatch);
+                         {.loaded = true, .hasRows = anyMatch, .filtered = !query.blank()});
     };
     connect(savedSearch, &QLineEdit::textChanged, this, filterSavedFiles);
     const auto savedRefreshGeneration = std::make_shared<quint64>(0);
@@ -226,7 +226,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         savedSection->setBusy(true, QObject::tr("Loading saved queries…"));
         auto* watcher = new QFutureWatcher<SavedSqlListing>(this);
         connect(watcher, &QFutureWatcher<SavedSqlListing>::finished, this,
-                [watcher, savedFiles, savedStatus, savedSection, savedDirectory, filterSavedFiles,
+                [watcher, savedFiles, savedStatus, savedSection, filterSavedFiles,
                  savedRefreshGeneration, generation] {
                     const auto result = watcher->result();
                     watcher->deleteLater();
@@ -235,7 +235,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     savedSection->setBusy(false);
                     if (!result.error.isEmpty()) {
                         presentPanel(savedStatus, PanelKind::SavedSql, PanelState::Failed,
-                                     savedDirectory);
+                                     result.error);
                         return;
                     }
                     QHash<QString, QTreeWidgetItem*> folders;
@@ -261,7 +261,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                     }
                     savedFiles->sortItems(0, Qt::AscendingOrder);
                     presentPanel(savedStatus, PanelKind::SavedSql,
-                                 result.entries.isEmpty() ? PanelState::Empty : PanelState::Ready);
+                                 {.loaded = true, .hasRows = !result.entries.isEmpty()});
                     filterSavedFiles();
                     if (result.hasMore) {
                         savedStatus->setText(

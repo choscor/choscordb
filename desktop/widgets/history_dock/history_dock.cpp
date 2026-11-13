@@ -179,6 +179,9 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     previewLayout->setSpacing(design::spacing(design::Spacing::Two));
     content->addWidget(previewBody);
     previewBody->hide();
+    placeholder_ = design::createPanelStateText({}, body);
+    placeholder_->setObjectName("historyPlaceholder");
+    layout->addWidget(placeholder_);
     layout->addWidget(content, 1);
     auto* previewToolbar = new QHBoxLayout;
     previewStatus_ = new design::Text({}, previewBody);
@@ -498,18 +501,23 @@ void HistoryDock::updateControls() {
             ? tr("Rows %1–%2").arg(quint64(offset_) + 1).arg(quint64(offset_) + model_->rowCount())
         : offset_ == 0 ? tr("No rows")
                        : tr("After row %1").arg(offset_);
-    const auto panel = failed_                                     ? PanelState::Failed
-                       : clearToken_ || policyToken_ || listToken_ ? PanelState::Loading
-                       : !havePolicy_                              ? PanelState::Idle
-                       : model_->rowCount() == 0                   ? PanelState::Empty
-                                                                   : PanelState::Ready;
-    const auto detail = failed_                      ? statusText_
-                        : clearToken_                ? tr("Clearing history…")
-                        : policyToken_               ? tr("Updating history preference…")
-                        : listToken_                 ? tr("Loading history…")
-                        : panel == PanelState::Empty ? tr("No query history on this page.")
-                                                     : QString{};
-    const auto shown = EngineAdapter::panelPresentation(PanelKind::History, panel, detail);
+    const auto work = clearToken_    ? PanelWork::Clearing
+                      : policyToken_ ? PanelWork::Saving
+                      : listToken_   ? PanelWork::Loading
+                                     : PanelWork::None;
+    const auto shown = EngineAdapter::panelObservation(PanelKind::History,
+                                                       {.failed = failed_,
+                                                        .work = work,
+                                                        .loaded = havePolicy_,
+                                                        .hasRows = model_->rowCount() > 0,
+                                                        .paged = true},
+                                                       statusText_)
+                           .presentation;
     footer_->setContent({{}, shown.message, {}, {}, {}, range}, statusLineState(shown.tone));
+    design::showPanelState(placeholder_,
+                           shown.body == PanelBody::FailedPlaceholder
+                               ? design::PanelStateKind::Failed
+                               : design::PanelStateKind::Hidden,
+                           shown.message);
 }
 }

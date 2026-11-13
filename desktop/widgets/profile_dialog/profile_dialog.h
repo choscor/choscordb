@@ -44,7 +44,7 @@ class ProfileDialog final : public DialogShell {
     void createTrustControls(QFormLayout* form);
     void inspectHostKeys();
     void updateTrustControls();
-    void showTrustStatus(const QString& message, bool failure = false);
+    bool stepTrust(ProfileTestEvent event, const QString& detail = {});
     QWidget* validated(QWidget* field);
     design::FieldValidation* validationFor(QWidget* field) const;
     void showFieldError(QWidget* field, const QString& message);
@@ -80,6 +80,7 @@ class ProfileDialog final : public DialogShell {
     bool preserveTlsSecretOnRefresh_ = false;
     quint64 token_ = 0;
     quint64 testToken_ = 0;
+    ProfileTestState trustState_ = ProfileTestState::Idle;
     quint64 revision_ = 0;
     bool busy_ = false;
     bool connecting_ = false;

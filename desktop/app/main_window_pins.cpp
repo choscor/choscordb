@@ -10,6 +10,7 @@
 #include "design_system/menu/menu.h"
 #include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
+#include "widgets/screen_state/screen_state.h"
 #include <QAbstractItemModel>
 #include <QAction>
 #include <QFutureWatcher>
@@ -96,13 +97,17 @@ void MainWindow::initializePins(const Ui& ui) {
     pinnedList_ = ui.pinnedList;
     pinnedModel_ = new PinnedTreeModel(navigatorController_->model(), pinnedList_);
     pinnedList_->setModel(pinnedModel_);
-    const auto updatePinnedGeometry = [this] {
+    const auto updatePinnedGeometry = [this, empty = ui.pinnedEmpty] {
         if (!pinnedList_ || !pinnedModel_)
             return;
         const bool hasPins = pinnedModel_->rowCount() > 0;
         auto* section = findChild<QWidget*>("pinnedSection");
         if (section)
-            section->setVisible(hasPins);
+            section->setVisible(hasPins || pinsLoadFailure_);
+        if (pinsLoadFailure_)
+            showPanelState(empty, *pinsLoadFailure_);
+        else
+            empty->hide();
         pinnedList_->setVisible(hasPins);
         if (!hasPins)
             return;
@@ -210,9 +215,13 @@ void MainWindow::initializePins(const Ui& ui) {
                     renderPins();
                     updatePinnedGeometry();
                 }
-                if (!error.isEmpty())
-                    reportNotice(tr("Some saved pins could not be loaded: %1").arg(error),
-                                 ToastVariant::Danger);
+                if (error.isEmpty())
+                    return;
+                pinsLoadFailure_ =
+                    EngineAdapter::panelObservation(PanelKind::Pins, {.failed = true}, error)
+                        .presentation;
+                showPresentationToast(this, *pinsLoadFailure_);
+                updatePinnedGeometry();
             });
     loadWatcher->setFuture(QtConcurrent::run(&pinIoPool_, [store = pinStore_] {
         QString error;
