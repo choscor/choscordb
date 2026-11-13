@@ -26,6 +26,7 @@ pub use screen_state::{
     export_presentation, export_transition, grid_edit_presentation, grid_edit_transition,
     panel_observation, panel_presentation, panel_transition, profile_test_presentation,
     profile_test_transition, query_presentation, query_result_state, query_transition,
+    updater_presentation, updater_transition,
 };
 mod result_json;
 pub use completion::*;
@@ -55,7 +56,7 @@ pub use profile_draft::{
 };
 pub use quick_search::{
     QuickSearchQuery, TextFilterQuery, TextFinderQuery, quick_search_limits, quick_search_query,
-    text_filter_query, text_finder,
+    quick_search_status, text_filter_query, text_finder,
 };
 mod query_preferences;
 pub use query_preferences::{
@@ -598,6 +599,18 @@ pub mod ffi {
         recent_objects: u32,
         history_rows: u32,
     }
+    struct QuickSearchStatusDto {
+        editor_incomplete: bool,
+        history_incomplete: bool,
+        history_clearing: bool,
+        history_empty: bool,
+        filtered: bool,
+        recording_off: bool,
+        policy_error: String,
+        object_status: String,
+        recent_status: String,
+        more: bool,
+    }
     struct ProfileDriverFormDto {
         server: bool,
         user_optional: bool,
@@ -804,6 +817,38 @@ pub mod ffi {
         Fail,
         CancelSettled,
         Reset,
+    }
+    #[derive(Debug)]
+    enum UpdaterStateDto {
+        Idle,
+        Checking,
+        UpToDate,
+        Available,
+        Downloading,
+        ReadyToInstall,
+        Installing,
+        Cancelling,
+        Cancelled,
+        Failed,
+    }
+    #[derive(Debug)]
+    enum UpdaterEventDto {
+        Check,
+        NoUpdate,
+        Found,
+        Download,
+        Downloaded,
+        Install,
+        Cancel,
+        CancelSettled,
+        Fail,
+        Dismiss,
+        Staged,
+    }
+    struct UpdaterTransitionDto {
+        allowed: bool,
+        state: UpdaterStateDto,
+        error: String,
     }
     struct ExportTransitionDto {
         allowed: bool,
@@ -1484,6 +1529,7 @@ pub mod ffi {
             history_rows: u32,
         ) -> QuickSearchPlanDto;
         fn quick_search_limits() -> QuickSearchLimitsDto;
+        fn quick_search_status(facts: &QuickSearchStatusDto) -> String;
         type TextFinderQuery;
         fn text_finder(needle: &str) -> Box<TextFinderQuery>;
         fn find_all(self: &TextFinderQuery, source: &str, limit: u32) -> Vec<TextRangeDto>;
@@ -1529,6 +1575,11 @@ pub mod ffi {
         ) -> PanelObservationDto;
         fn export_presentation(state: ExportStateDto, detail: &str) -> PresentationDto;
         fn export_transition(state: ExportStateDto, event: ExportEventDto) -> ExportTransitionDto;
+        fn updater_presentation(state: UpdaterStateDto, detail: &str) -> PresentationDto;
+        fn updater_transition(
+            state: UpdaterStateDto,
+            event: UpdaterEventDto,
+        ) -> UpdaterTransitionDto;
         fn grid_edit_presentation(state: GridEditStateDto, detail: &str) -> PresentationDto;
         fn grid_edit_transition(
             state: GridEditStateDto,

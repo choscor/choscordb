@@ -361,6 +361,31 @@ enum class ExportState : uint8_t {
     Failed
 };
 enum class ExportEvent : uint8_t { Submit, Start, Cancel, Finish, Fail, CancelSettled, Reset };
+enum class UpdaterState : uint8_t {
+    Idle,
+    Checking,
+    UpToDate,
+    Available,
+    Downloading,
+    ReadyToInstall,
+    Installing,
+    Cancelling,
+    Cancelled,
+    Failed
+};
+enum class UpdaterEvent : uint8_t {
+    Check,
+    NoUpdate,
+    Found,
+    Download,
+    Downloaded,
+    Install,
+    Cancel,
+    CancelSettled,
+    Fail,
+    Dismiss,
+    Staged
+};
 enum class EditPhase : uint8_t { Clean, Pending, Planning, Applying, Failed };
 enum class TransactionPhase : uint8_t { Inactive, Active, Ending };
 struct GridEditState {
@@ -593,6 +618,8 @@ class EngineAdapter final : public QObject {
                                              const QString& error = {});
     static Presentation exportPresentation(ExportState state, const QString& detail = {});
     static Transition<ExportState> exportTransition(ExportState state, ExportEvent event);
+    static Presentation updaterPresentation(UpdaterState state, const QString& detail = {});
+    static Transition<UpdaterState> updaterTransition(UpdaterState state, UpdaterEvent event);
     static Presentation gridEditPresentation(GridEditState state, const QString& detail = {});
     static Transition<GridEditState> gridEditTransition(GridEditState state, GridEditEvent event);
     static Presentation profileTestPresentation(ProfileTestState state, const QString& detail = {});

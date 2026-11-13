@@ -5,6 +5,7 @@ use choscordb_core::{
     panel_machine::{self, PanelEvent, PanelFacts, PanelKind, PanelState, PanelWork},
     profile_test_machine::{self, ProfileTestEvent, ProfileTestState},
     query_machine::{self, QueryEvent, QueryState},
+    updater_machine::{self, UpdaterEvent, UpdaterState},
 };
 use choscordb_driver_api::{Body, Pane, Presentation, RetryAction, Tone, TransitionError};
 use std::fmt::Debug;
@@ -495,5 +496,78 @@ pub fn grid_edit_transition(
             state,
             error,
         },
+    }
+}
+
+fn updater_state(dto: ffi::UpdaterStateDto) -> Result<UpdaterState, String> {
+    use ffi::UpdaterStateDto as D;
+    Ok(match dto {
+        D::Idle => UpdaterState::Idle,
+        D::Checking => UpdaterState::Checking,
+        D::UpToDate => UpdaterState::UpToDate,
+        D::Available => UpdaterState::Available,
+        D::Downloading => UpdaterState::Downloading,
+        D::ReadyToInstall => UpdaterState::ReadyToInstall,
+        D::Installing => UpdaterState::Installing,
+        D::Cancelling => UpdaterState::Cancelling,
+        D::Cancelled => UpdaterState::Cancelled,
+        D::Failed => UpdaterState::Failed,
+        _ => return Err(unknown("updater state", dto.repr)),
+    })
+}
+
+fn updater_state_dto(state: UpdaterState) -> ffi::UpdaterStateDto {
+    use ffi::UpdaterStateDto as D;
+    match state {
+        UpdaterState::Idle => D::Idle,
+        UpdaterState::Checking => D::Checking,
+        UpdaterState::UpToDate => D::UpToDate,
+        UpdaterState::Available => D::Available,
+        UpdaterState::Downloading => D::Downloading,
+        UpdaterState::ReadyToInstall => D::ReadyToInstall,
+        UpdaterState::Installing => D::Installing,
+        UpdaterState::Cancelling => D::Cancelling,
+        UpdaterState::Cancelled => D::Cancelled,
+        UpdaterState::Failed => D::Failed,
+    }
+}
+
+fn updater_event(dto: ffi::UpdaterEventDto) -> Result<UpdaterEvent, String> {
+    use ffi::UpdaterEventDto as D;
+    Ok(match dto {
+        D::Check => UpdaterEvent::Check,
+        D::NoUpdate => UpdaterEvent::NoUpdate,
+        D::Found => UpdaterEvent::Found,
+        D::Download => UpdaterEvent::Download,
+        D::Downloaded => UpdaterEvent::Downloaded,
+        D::Install => UpdaterEvent::Install,
+        D::Cancel => UpdaterEvent::Cancel,
+        D::CancelSettled => UpdaterEvent::CancelSettled,
+        D::Fail => UpdaterEvent::Fail,
+        D::Dismiss => UpdaterEvent::Dismiss,
+        D::Staged => UpdaterEvent::Staged,
+        _ => return Err(unknown("updater event", dto.repr)),
+    })
+}
+
+pub fn updater_presentation(state: ffi::UpdaterStateDto, detail: &str) -> ffi::PresentationDto {
+    match updater_state(state) {
+        Ok(state) => presentation(updater_machine::present(&state, detail)),
+        Err(error) => invalid(error),
+    }
+}
+
+pub fn updater_transition(
+    state: ffi::UpdaterStateDto,
+    event: ffi::UpdaterEventDto,
+) -> ffi::UpdaterTransitionDto {
+    let (allowed, next, error) = match (updater_state(state), updater_event(event)) {
+        (Ok(current), Ok(event)) => transition(current, updater_machine::step(&current, &event)),
+        (Err(error), _) | (_, Err(error)) => (false, UpdaterState::Failed, error),
+    };
+    ffi::UpdaterTransitionDto {
+        allowed,
+        state: updater_state_dto(next),
+        error,
     }
 }

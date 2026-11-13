@@ -57,6 +57,20 @@ QuickSearchPlan QuickSearchNeedle::plan(const QList<QuickSearchDestination>& des
     return plan;
 }
 
+QString quickSearchStatus(const QuickSearchStatus& facts) {
+    const QuickSearchStatusDto dto{facts.editorIncomplete,
+                                   facts.historyIncomplete,
+                                   facts.historyClearing,
+                                   facts.historyEmpty,
+                                   facts.filtered,
+                                   facts.recordingOff,
+                                   toRust(facts.policyError),
+                                   toRust(facts.objectStatus),
+                                   toRust(facts.recentStatus),
+                                   facts.more};
+    return bridge_detail::fromRust(quick_search_status(dto));
+}
+
 const QuickSearchLimits& QuickSearchNeedle::limits() {
     static const QuickSearchLimits cached = [] {
         const auto limits = quick_search_limits();

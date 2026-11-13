@@ -1258,6 +1258,24 @@ fn panel_presentation_carries_the_toast_and_the_placeholder() {
 }
 
 #[test]
+fn updater_state_crosses_the_bridge() {
+    let checking = updater_transition(
+        ffi::UpdaterStateDto::ReadyToInstall,
+        ffi::UpdaterEventDto::Check,
+    );
+    assert!(checking.allowed && checking.state == ffi::UpdaterStateDto::Checking);
+    let staged = updater_transition(checking.state, ffi::UpdaterEventDto::Staged);
+    assert!(staged.allowed && staged.state == ffi::UpdaterStateDto::ReadyToInstall);
+    let refused = updater_transition(ffi::UpdaterStateDto::Idle, ffi::UpdaterEventDto::Install);
+    assert!(!refused.allowed);
+    let failed = updater_presentation(ffi::UpdaterStateDto::Failed, "feed signature is invalid");
+    assert_eq!(
+        failed.message,
+        "Update failed: feed signature is invalid. Retry."
+    );
+}
+
+#[test]
 fn grid_edit_state_crosses_the_bridge() {
     let pending = ffi::GridEditStateDto {
         edits: ffi::EditPhaseDto::Pending,

@@ -101,3 +101,18 @@ impl TextFinderQuery {
             .collect()
     }
 }
+
+pub fn quick_search_status(facts: &ffi::QuickSearchStatusDto) -> String {
+    choscordb_core::quick_search::status(&choscordb_core::quick_search::QuickSearchStatus {
+        editor_incomplete: facts.editor_incomplete,
+        history_incomplete: facts.history_incomplete,
+        history_clearing: facts.history_clearing,
+        history_empty: facts.history_empty,
+        filtered: facts.filtered,
+        recording_off: facts.recording_off,
+        policy_error: &facts.policy_error,
+        object_status: &facts.object_status,
+        recent_status: &facts.recent_status,
+        more: facts.more,
+    })
+}

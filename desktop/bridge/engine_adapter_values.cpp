@@ -375,6 +375,27 @@ CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, Finish);
 CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, Fail);
 CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, CancelSettled);
 CHOSCORDB_SAME_ENUMERATOR(ExportEvent, ExportEventDto, Reset);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterState, UpdaterStateDto, Idle);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterState, UpdaterStateDto, Checking);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterState, UpdaterStateDto, UpToDate);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterState, UpdaterStateDto, Available);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterState, UpdaterStateDto, Downloading);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterState, UpdaterStateDto, ReadyToInstall);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterState, UpdaterStateDto, Installing);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterState, UpdaterStateDto, Cancelling);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterState, UpdaterStateDto, Cancelled);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterState, UpdaterStateDto, Failed);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterEvent, UpdaterEventDto, Check);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterEvent, UpdaterEventDto, NoUpdate);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterEvent, UpdaterEventDto, Found);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterEvent, UpdaterEventDto, Download);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterEvent, UpdaterEventDto, Downloaded);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterEvent, UpdaterEventDto, Install);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterEvent, UpdaterEventDto, Cancel);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterEvent, UpdaterEventDto, CancelSettled);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterEvent, UpdaterEventDto, Fail);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterEvent, UpdaterEventDto, Dismiss);
+CHOSCORDB_SAME_ENUMERATOR(UpdaterEvent, UpdaterEventDto, Staged);
 CHOSCORDB_SAME_ENUMERATOR(ProfileTestEvent, ProfileTestEventDto, Test);
 CHOSCORDB_SAME_ENUMERATOR(ProfileTestEvent, ProfileTestEventDto, Passed);
 CHOSCORDB_SAME_ENUMERATOR(ProfileTestEvent, ProfileTestEventDto, TestFailed);
@@ -501,6 +522,14 @@ GridEditStateDto toDto(GridEditState state) {
     return {static_cast<EditPhaseDto>(state.edits),
             static_cast<TransactionPhaseDto>(state.transaction)};
 }
+}
+Presentation EngineAdapter::updaterPresentation(UpdaterState state, const QString& detail) {
+    const auto bytes = detail.toUtf8();
+    return fromDto(updater_presentation(static_cast<UpdaterStateDto>(state), utf8View(bytes)));
+}
+Transition<UpdaterState> EngineAdapter::updaterTransition(UpdaterState state, UpdaterEvent event) {
+    return fromDto<UpdaterState>(updater_transition(static_cast<UpdaterStateDto>(state),
+                                                    static_cast<UpdaterEventDto>(event)));
 }
 Presentation EngineAdapter::gridEditPresentation(GridEditState state, const QString& detail) {
     const auto bytes = detail.toUtf8();

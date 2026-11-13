@@ -20,6 +20,13 @@ struct QuickSearchPlan {
 struct QuickSearchLimits {
     qsizetype editorRows = 0, recentObjects = 0, historyRows = 0;
 };
+struct QuickSearchStatus {
+    bool editorIncomplete = false, historyIncomplete = false, historyClearing = false;
+    bool historyEmpty = false, filtered = false, recordingOff = false;
+    QString policyError, objectStatus, recentStatus;
+    bool more = false;
+};
+QString quickSearchStatus(const QuickSearchStatus& facts);
 
 class QuickSearchNeedle final {
   public:
