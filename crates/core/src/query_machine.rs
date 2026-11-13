@@ -109,6 +109,13 @@ pub fn result_state(has_columns: bool, rows: u64) -> QueryState {
     }
 }
 
+pub(crate) fn starts_tracking(state: &QueryState) -> bool {
+    matches!(
+        state,
+        QueryState::Connecting | QueryState::Queued | QueryState::Running | QueryState::Cancelling
+    )
+}
+
 pub fn failure_path(state: &QueryState, kind: ErrorKind) -> Vec<QueryState> {
     let events: &[QueryEvent] = match kind {
         ErrorKind::Cancelled => &[QueryEvent::Cancel, QueryEvent::CancelSettled],

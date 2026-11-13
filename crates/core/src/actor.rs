@@ -258,7 +258,12 @@ fn diagnostic_action(event: &Event) -> Option<DiagnosticAction> {
 }
 async fn send(events: &EventSink, event: Event) {
     if let Event::QueryState { query, state } = &event {
-        events.query_states().insert(*query, *state);
+        let mut states = events.query_states();
+        if let Some(tracked) = states.get_mut(query) {
+            *tracked = *state;
+        } else if crate::query_machine::starts_tracking(state) {
+            states.insert(*query, *state);
+        }
     }
     if let Some(action) = diagnostic_action(&event) {
         events.record(action);
@@ -2024,5 +2029,26 @@ mod diagnostics_tests {
             Some(&1)
         );
         service.stop();
+    }
+}
+#[cfg(test)]
+mod query_state_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_settled_state_after_release_is_not_tracked() {
+        let (sender, _receiver) = mpsc::channel(8);
+        let (_shutdown_sender, shutdown) = watch::channel(false);
+        let sink = EventSink::new(sender, shutdown);
+        let query = QueryId {
+            slot: 1,
+            generation: 1,
+        };
+        let state = |state| Event::QueryState { query, state };
+        send(&sink, state(QueryState::Running)).await;
+        assert_eq!(sink.query_state(query), QueryState::Running);
+        sink.forget_query(query);
+        send(&sink, state(QueryState::Completed { empty: false })).await;
+        assert!(sink.query_states().is_empty());
     }
 }
