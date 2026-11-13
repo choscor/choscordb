@@ -51,6 +51,10 @@ STOCK_BUTTONS = re.compile(
 STYLED_PROPERTY = re.compile(
     r"setProperty\s*\(\s*\"(designRole|variant|state|designSurface)\"\s*,"
 )
+AD_HOC_PANEL_STATE = re.compile(
+    r"(?:\b(?:setText|QLabel|Text)\s*\(\s*tr\(\s*\"(?:No |Nothing |Could not load)"
+    r"|setProperty\s*\(\s*\"state\"\s*,\s*\"(?:error|empty|noMatch|failed)\")"
+)
 PAINT_GEOMETRY = re.compile(r"(?:\.|->)\s*(adjusted|drawRoundedRect)\s*\(")
 LARGE_LITERAL = re.compile(r"^\s*-?\s*(?:[2-9]|[1-9][0-9]+)(?:\.0*)?\s*$")
 QSS_SELECTOR = re.compile(r"\[\s*(\w+)\s*=\s*\"?([\w-]+)\"?\s*\]")
@@ -127,6 +131,12 @@ def audit_rules(path, root, text, known):
             problems.append(f"{location}: Qt standard icon (use design::Icon)")
         if STOCK_BUTTONS.search(stripped):
             problems.append(f"{location}: stock dialog buttons (use design::Button)")
+        if AD_HOC_PANEL_STATE.search(stripped):
+            problems.append(
+                f"{location}: ad-hoc panel state label "
+                "(use design::createPanelStateText and showPanelState)"
+            )
+            continue
         for match in PAINT_GEOMETRY.finditer(stripped):
             if any(
                 LARGE_LITERAL.match(arg) for arg in arguments(stripped, match.end() - 1)

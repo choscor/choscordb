@@ -58,6 +58,32 @@ class UiPolicyTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def test_rejects_ad_hoc_panel_state_labels(self):
+        source = (
+            'empty->setText(tr("No saved queries yet."));\n'
+            'auto* failed = new QLabel(tr("Could not load pins"), this);\n'
+            'status->setProperty("state", "error");\n'
+        )
+        temporary, root = self.fixture(source)
+        with temporary:
+            found = ui_policy.violations(root)
+        rule = "ad-hoc panel state label (use design::createPanelStateText and showPanelState)"
+        self.assertEqual(
+            found,
+            [f"desktop/widgets/sample.cpp:{line}: {rule}" for line in (1, 2, 3)],
+        )
+
+    def test_accepts_panel_state_component(self):
+        source = (
+            "auto* empty = design::createPanelStateText({}, this);\n"
+            "showPanelState(empty, shown);\n"
+            'timeout->setSpecialValueText(tr("No timeout"));\n'
+        )
+        temporary, root = self.fixture(source)
+        with temporary:
+            found = ui_policy.violations(root)
+        self.assertEqual(found, [])
+
     def test_rejects_changed_lucide_bytes(self):
         temporary, root = self.fixture("")
         with temporary:
