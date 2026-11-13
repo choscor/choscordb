@@ -115,6 +115,26 @@ class OwnershipTests(unittest.TestCase):
             },
         )
 
+    def test_screens_do_not_choose_a_machine_state_from_flags(self):
+        for source in [
+            "setExecutionState(busy_ ? QueryState::Queued : QueryState::Failed, detail);",
+            "const auto panel = failed_ ? PanelState::Failed\n    : PanelState::Ready;",
+            "auto state = rows == 0 ? QueryState::CompletedEmpty : QueryState::CompletedRows;",
+            "setStatus(connection_ ? PanelState::Idle : PanelState::Disconnected, text);",
+            "show(done ? ExportState::Succeeded : ExportState::Failed);",
+            "show(ok ? ProfileTestState::Succeeded : ProfileTestState::Failed);",
+        ]:
+            with self.subTest(source=source):
+                self.assertIn("screen-state-choice", self.rules(source))
+        for source in [
+            "setExecutionState(QueryState::Failed, detail);",
+            "applyExecutionEvent(busy_ ? QueryEvent::Submit : QueryEvent::Fail, detail);",
+            "const auto work = clearToken_ ? PanelWork::Clearing : PanelWork::None;",
+            "if (state == QueryState::Failed) return;",
+        ]:
+            with self.subTest(source=source):
+                self.assertNotIn("screen-state-choice", self.rules(source))
+
     def test_text_matching_uses_the_rust_filter(self):
         for source in [
             "bool m = name.contains(needle, Qt::CaseInsensitive);",

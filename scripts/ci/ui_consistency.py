@@ -51,6 +51,7 @@ DESIGN_COMPOSITES = {
     "StatusLine",
     "TabAddCorner",
 }
+DESIGN_FACTORIES = {"createPanelStateText"}
 SHARED_DIALOGS = {"ConfirmationDialog", "DialogShell"}
 DESIGN_NON_VISUAL = {
     "PlatformAccessibilityMonitor",
@@ -76,6 +77,9 @@ STRUCTURAL_CONTROLS = {
 TYPE = r"(?:(?:[A-Za-z_]\w*)::)*[A-Z][A-Za-z0-9_]*"
 NEW_CONTROL = re.compile(r"\bnew\s+(" + TYPE + r")\s*(?=[({;])")
 SMART_CONTROL = re.compile(rf"\b(?:std::)?make_(?:unique|shared)\s*<\s*({TYPE})\s*>")
+FACTORY_CONTROL = re.compile(
+    r"\bdesign::(" + "|".join(sorted(DESIGN_FACTORIES)) + r")\s*\("
+)
 STACK_CONTROL = re.compile(
     r"(?<![\w:])(?:const\s+)?(" + TYPE + r")\s+[A-Za-z_]\w*\s*(?=[({])"
 )
@@ -342,6 +346,7 @@ def audit(root=ROOT):
                     if problem:
                         number = bisect_right(starts, match.start())
                         problems.append(f"{path.relative_to(root)}:{number}: {problem}")
+            counts["composite"] += len(FACTORY_CONTROL.findall(source))
         screens[screen] = counts
 
     for path in feature_sources:
