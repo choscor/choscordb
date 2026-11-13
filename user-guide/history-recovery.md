@@ -20,6 +20,7 @@ The history shows one row for each query that you ran:
 
 The history shows its rows in pages.
 Use `Previous` and `Next` to move between the pages.
+If the history cannot load, the history shows the error above the rows and in the footer.
 To filter the current page, type text in `Filter this page`.
 To show only one status, select it in the status list.
 

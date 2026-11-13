@@ -152,6 +152,9 @@ To approve a host key:
 4. Click `Approve selected key`.
 5. Click `Retry connection`.
 
+The status line of the profile dialog shows each step: inspect, review, approve and approved.
+If a step fails, the status line shows the error and a recovery hint.
+
 On macOS and Linux, the SSH tunnels of one connection share one SSH login.
 A navigator session or a second query then does not log in to the SSH server again.
 On Windows, each SSH tunnel logs in to the SSH server.

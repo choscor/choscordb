@@ -226,6 +226,11 @@ Use `design::Icon` roles. Do not use Qt standard icons. Do not show icons in men
   It paints the name and one trailing `IconSmall` icon: `Loader` for loading, `Error` for failed and `Warning` for unavailable.
   A failed row has a `danger-surface` fill, and its name and icon use `danger`.
   The status text is only in the tooltip and the accessible description, never in the name.
+- **Panel state:** `design::createPanelStateText` makes the one centered placeholder of a panel.
+  `design::showPanelState` shows the empty, no-match or failed kind, or hides the placeholder.
+  The failed kind uses the `fieldError` role and the `error` state. The other kinds use the description role.
+  Rust gives the text and the kind through the panel `Presentation`.
+  The gallery specimen `panel-state` shows each kind in the Light and Dark themes.
 - **Driver badge:** The Badge `driver` variant has a `surface-raised` fill, a `border` outline and `fg` text.
   It shows next to the unmodified driver logo.
   Connection profile rows show the logo on the same neutral tile.

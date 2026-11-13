@@ -115,6 +115,7 @@ Right-click a database object in the navigator to see its actions:
 
 - `Pin` or `Unpin` adds the object to the `Pinned` section or removes it.
   Save the connection profile before you pin its objects.
+  If ChoscorDB cannot read the saved pins, the `Pinned` section shows the error.
 - `Refresh` loads the object again.
 - `Copy qualified name` copies the full quoted name of the object.
 - `Show DDL` opens the `DDL` pane of the object.

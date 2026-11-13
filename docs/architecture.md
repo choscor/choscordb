@@ -168,15 +168,22 @@ Each machine is in `crates/core/src` and has one `step` function and one `presen
 | Query | `query_machine.rs` | `specs/query/Query.tla` | SQL results, object data |
 | Connection | `connection_machine.rs` | `specs/connection/Connection.tla` | The connection actor and its catalog session |
 | Panel | `panel_machine.rs` | `specs/panel/Panel.tla` | Saved SQL, history, pins, objects, object details, diagram, quick search |
-| Grid edit | `grid_edit_machine.rs` | `specs/grid_edit/GridEdit.tla` | Not connected to C++ |
+| Grid edit | `grid_edit_machine.rs` | `specs/grid_edit/GridEdit.tla` | The plan and the apply steps of grid changes |
 | Export | `export_machine.rs` | `specs/export/Export.tla` | Export dialog |
 | Updater | `updater_machine.rs` | `specs/updater/Updater.tla` | Not connected to C++ |
-| Profile test | `profile_test_machine.rs` | `specs/profile_test/ProfileTest.tla` | Connection test in the profile dialog |
+| Profile test | `profile_test_machine.rs` | `specs/profile_test/ProfileTest.tla` | Connection test and SSH host key trust in the profile dialog |
 
 The bridge sends each state and each presentation as a typed DTO.
 `EngineAdapter` gives the `*Transition` and `*Presentation` accessors.
 C++ keeps the typed state, asks Rust for the next state and shows the presentation.
 C++ does not compare state names and does not choose a tone or a failure message.
+
+Some screens know only facts, for example "a load failed" or "the list has rows".
+These screens send a `PanelFacts` value to `EngineAdapter::panelObservation`.
+`panel_machine::settle` chooses the state from the facts in one fixed order.
+The order is failed, work in progress, disconnected, not loaded, rows, filter and then empty.
+`query_machine::result_state` chooses between a result with rows and an empty result.
+The connection actor and `EngineAdapter::queryResultState` use the same function.
 
 Some rules apply to all machines:
 
