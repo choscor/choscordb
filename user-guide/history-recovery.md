@@ -87,6 +87,9 @@ Use the `File` > `Workspace recovery` menu:
 
 - `Retry workspace recovery` tries again.
 - `Start new workspace` starts with an empty workspace.
+
+If ChoscorDB cannot load the query history, the history panel shows the error and a notification.
+The message tells you how to try again.
 - `Close without recovery` closes ChoscorDB without a saved workspace.
 - `Keep workspace open` stops the close.
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Query, panel, export and connection-test status now come from one set of state machines in the engine. Each screen shows the same busy, empty and failure states, and each failure message ends with a recovery hint.
+- A query that fails because its connection closes now stays red and shows the error, also after the disconnect.
+- Saved SQL, query history and the object explorer now show a placeholder and a notification when they cannot load, and a separate message when a filter matches nothing.
+- Object reads that time out now show `Cancelling…` before the failure, and queued queries end when their connection fails.
+
 ## [0.1.11]
 
 - Added MariaDB 10.11+ connections with their own profile choice and icon, including sequences, system-versioned tables with Current, As of and All history views, JSON values, and ed25519 accounts. A MySQL connection to a MariaDB server (or the reverse) still connects and shows a notice suggesting the matching connection type.

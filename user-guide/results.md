@@ -15,6 +15,16 @@ To change the page size, see [Query settings](sql-editor.md#query-settings).
 A result page can have fewer rows when the rows are large or when the result ends.
 The status line shows the page number, the row count and the memory that the visible rows use.
 
+The status line also shows the state of the query:
+
+- `Queued`, `Running` and `Cancelling…` show a busy indicator.
+- `Completed` has a green status line.
+  If the query returned no rows, the status line tells you this.
+  An empty result is not a failure.
+- If the query fails, the status line is red and starts with `Failed:`.
+  The `Messages` pane opens and shows the error.
+  A query stays failed when its connection closes later.
+
 A query can give more than one result.
 On the last page of a result, `Next page` changes to `Next result`.
 Click `Next result` to show the next result.

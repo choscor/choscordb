@@ -60,6 +60,7 @@ desktop/widgets/history_dock/** -> user-guide/history-recovery.md
 desktop/app/workspace_recovery* -> user-guide/history-recovery.md
 desktop/app/diagnostics_* -> user-guide/diagnostics.md
 scripts/ci/** -> docs/ci.md
+specs/** -> docs/architecture.md
 .github/workflows/** -> docs/ci.md
 scripts/release/** -> docs/release-macos.md, docs/release-windows-linux.md
 CMakeLists.txt -> docs/build.md

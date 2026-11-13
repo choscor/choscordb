@@ -156,6 +156,48 @@ It is not an example for new code.
 When you change such code, move the non-frontend behavior to Rust.
 Test policy in Rust, and keep C++ tests on UI and bridge behavior.
 
+## State machines
+
+Rust owns the state machines of the screens.
+Each machine is in `crates/core/src` and has one `step` function and one `present` function.
+`step` returns the next state or a typed `TransitionError`.
+`present` returns a `Presentation`: the tone, the busy flag, the body, the result pane, the retry action, the message and the toast.
+
+| Machine | Rust module | Spec | Screens |
+| --- | --- | --- | --- |
+| Query | `query_machine.rs` | `specs/query/Query.tla` | SQL results, object data |
+| Connection | `connection_machine.rs` | `specs/connection/Connection.tla` | The connection actor and its catalog session |
+| Panel | `panel_machine.rs` | `specs/panel/Panel.tla` | Saved SQL, history, pins, objects, object details, diagram, quick search |
+| Grid edit | `grid_edit_machine.rs` | `specs/grid_edit/GridEdit.tla` | Not connected to C++ |
+| Export | `export_machine.rs` | `specs/export/Export.tla` | Export dialog |
+| Updater | `updater_machine.rs` | `specs/updater/Updater.tla` | Not connected to C++ |
+| Profile test | `profile_test_machine.rs` | `specs/profile_test/ProfileTest.tla` | Connection test in the profile dialog |
+
+The bridge sends each state and each presentation as a typed DTO.
+`EngineAdapter` gives the `*Transition` and `*Presentation` accessors.
+C++ keeps the typed state, asks Rust for the next state and shows the presentation.
+C++ does not compare state names and does not choose a tone or a failure message.
+
+Some rules apply to all machines:
+
+- A busy state has the neutral tone.
+- A failure has the error tone and a message that ends with a recovery hint.
+- An empty result is not a failure.
+- A failed panel shows a placeholder and a toast.
+- A filter does not hide a failure.
+
+### Verification
+
+Each spec has a `transitions.json` table in its directory.
+The table gives the states, the events, the transitions and the presentation.
+The Rust tests in `crates/core/tests/state_machines` compare `step` and `present` with the table.
+`scripts/ci/tla.py check` makes TLC compare the same table with the spec and check the invariants and the liveness properties.
+If the Rust code, the table or the spec changes alone, one of these checks fails.
+
+`crates/core/tests/connection_traces.rs` runs the connection actor with a fake driver.
+It writes each run to `target/tla-traces/*.ndjson`.
+`scripts/ci/tla.py traces` makes TLC accept each run as a behavior of `Connection.tla`.
+
 ## The ownership gate
 
 `scripts/ci/cpp_ownership.py` enforces the ownership rules.
@@ -229,9 +271,10 @@ The digests normalize CRLF to LF, so LF and CRLF checkouts give the same report.
 | `text-matching` | Case-insensitive searches, lowercase searches and `QSortFilterProxyModel` text filters. |
 | `object-kind-literal` | Branches on object-kind words such as `"table"`. |
 | `driver-literal` | Branches on driver names such as `"mysql"`, in any letter case. |
+| `screen-state-literal` | String screen states, for example `property("state") == "failed"`, `setProperty("state", "loading")` or `setExecutionState(QStringLiteral("queued"))`. Use the typed states of the Rust state machines. |
 | `retry-policy-text` | Recovery sentences such as `Refresh to retry.` or `Refine the text or retry.` in string literals. `EngineAdapter::rowStatus` and `EngineAdapter::recoveryHint` supply them. A button label such as `Retry` has no full stop and is not a recovery sentence. |
 
-The last four rules apply to presentation, display-model and bridge code.
+The last five rules apply to presentation, display-model and bridge code.
 They find equality, list membership, `compare` and prefix or suffix searches.
 They also find wrapped literals, for example `QStringLiteral("table")` or `u"table"_s`.
 Design-system and developer-tool code can map kinds and drivers to appearance.

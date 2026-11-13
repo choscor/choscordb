@@ -46,6 +46,8 @@ To run one stage, give its name, for example `python3 scripts/ci/quality.py ui-p
 | `rust-check` | `cargo check` on all workspace targets and features. |
 | `rust-clippy` | `cargo clippy` on all targets and features, with warnings as errors. |
 | `rust-tests` | `cargo test` on the workspace with all features. |
+| `tla-check` | TLC model checks each spec in `specs/` and compares it with its `transitions.json` (`scripts/ci/tla.py check`). Needs Java 17 and TLC 1.7.4. |
+| `tla-traces` | TLC accepts each connection trace in `target/tla-traces` as a behavior of `Connection.tla` (`scripts/ci/tla.py traces`). Runs after `rust-tests`, which writes the traces. |
 | `cargo-deny` | Advisories, bans, licenses and sources of the Cargo graph. Needs cargo-deny 0.20.2. |
 
 ### Native stages
@@ -78,7 +80,7 @@ Fix the finding before you add a marker.
 | `cpp-ownership` | `// ui-budget: <reason>` for a UI number that is equal to a Rust limit | `scripts/ci/cpp_ownership_exceptions.json` |
 | `source-inventory` | None | `EXCEPTIONS` in `scripts/ci/source_inventory.py` |
 | `docs-policy` | `<!-- docs-ok: <reason> -->` | None |
-| `comment-policy` | None | `SKIPPED_DIRECTORIES` in `scripts/ci/comment_policy.py` |
+| `comment-policy` | The directives in [comment-policy](#comment-policy) | None |
 
 Use `--json` with `ui_consistency.py`, `perf_policy.py`, `source_inventory.py`, `cpp_ownership.py` or `docs_policy.py` to get the findings as JSON.
 
@@ -153,7 +155,9 @@ Names, types, tests and the pages in `docs/` give the meaning of the code.
 Rust doc comments (`///` and `//!`) and Python docstrings are comments too.
 
 The gate scans Rust, C, C++, Objective-C++, Python, QSS, SQL, CMake, shell, PowerShell, NSIS, TOML and YAML files.
-It does not scan `build/`, `target/` or vendored code in `third_party/` directories.
+It also scans `Dockerfile`, `.gitignore`, `.gitattributes` and scripts that have a shebang and no suffix.
+It reads the file list from `git ls-files`, so it does not scan the files that Git ignores.
+It does not scan vendored code in `third_party/` directories.
 
 The gate accepts only these directives, because tools or other gates read them:
 
@@ -161,9 +165,15 @@ The gate accepts only these directives, because tools or other gates read them:
 - `// ui-ok: <reason>`, `// perf-ok: <reason>` and `// ui-budget: <reason>`.
 - `// clang-format off` and `// clang-format on`.
 - A shebang on the first line of a script.
+- A version label such as `# v7` after a `uses:` action that is pinned to a full commit SHA. Dependabot reads and updates this label.
 
 A directive with a reason can continue on the next `//` lines at the same column.
 A directive without a reason does not count.
+
+The gate stops with an error for an unterminated multi-line string, comment or bracket.
+It also stops for a byte order mark and for a C++ comment that ends in `\`.
+It does not know shell heredocs, PowerShell here-strings or SQL dollar-quoted strings.
+Do not put `#` or `--` lines in these constructs.
 
 To delete the comments that the gate rejects, run `python3 scripts/ci/comment_policy.py --fix`.
 Then run `cargo fmt --all`, `clang-format` and `ruff format`.
@@ -188,6 +198,19 @@ File size does not measure cohesion, so also keep each function short and single
 
 `cpp-ownership` makes sure that C++ does not take behavior that belongs to Rust.
 Read [Architecture](architecture.md) for the rules, the exceptions and the limits of this gate.
+
+### tla-check and tla-traces
+
+Install TLC one time:
+
+```sh
+python3 scripts/ci/tla.py install
+```
+
+The command downloads the pinned `tla2tools.jar` to `build/ci/tla` and checks its sha256.
+If Java or the jar is missing, `tla.py` stops with exit code 2 and gives the install command.
+Exit code 1 means that TLC found a violation or rejected a trace.
+[Architecture](architecture.md#state-machines) gives the machines and the checks.
 
 ### docs-policy
 
@@ -253,6 +276,7 @@ It does not prove that ChoscorDB starts on macOS 13.
 This job uses LLVM 23 and runs these targets:
 
 - `choscordb-clang-tidy` in the `clang-tidy` preset. This step does not block the job.
+  It becomes blocking after the first LLVM 23 result is examined and passes.
 - `choscordb-header-check`, which compiles each public header alone. This step blocks the job.
 - `choscordb-iwyu` in the `iwyu` preset. This step is advisory.
 
@@ -292,6 +316,8 @@ The stress job runs the `workspace`, `disconnect` and `history` tests up to 20 t
 | aqtinstall, CMake, Ninja, Ruff | See the file | `scripts/ci/requirements.txt` |
 | actionlint | 1.7.7 | `scripts/ci/quality.py` |
 | cargo-deny | 0.20.2 | `scripts/ci/quality.py` |
+| TLC (`tla2tools.jar`) | 1.7.4, with a sha256 | `scripts/ci/tla.py` |
+| Java | 17 | `ci.yml` |
 | cargo-llvm-cov, lcov2xml | 0.6.21, 1.0.9 | `coverage.yml` |
 
 The LLVM stages reject a major version other than 23.
@@ -372,8 +398,12 @@ This check keeps the error from occurring again.
 2. If a gate or test found it, fix the cause.
 3. If no gate or test found it, write a check that fails on the error (red).
 4. Fix the error. Make sure that the check passes (green).
-5. Put a new gate in `scripts/ci/` with a `test_*.py` suite that has a failing fixture.
-6. Add the gate to `fast` in `scripts/ci/quality.py` and to the stage table on this page.
+5. Put the check in the correct location:
+   - For an engine error, add a Rust test.
+   - For a UI or bridge error, add a C++ test.
+   - For a source, build or process error, add a gate in `scripts/ci/`.
+     Give the gate a `test_*.py` suite with a failing fixture.
+6. Add a new gate to `fast` in `scripts/ci/quality.py` and to the stage table on this page.
 
 A check gives the same result each time for the same files.
 It does not use the network, the clock or random values.
@@ -384,6 +414,8 @@ Fix warnings and analyzer findings.
 An exception must name one diagnostic at the narrowest location and give the reason.
 Do not add `NOLINT` comments, directory exclusions, automatic retries or longer timeouts as a fix.
 `comment-policy` rejects `NOLINT` comments.
+Put a clang-tidy exception in `.clang-tidy`.
+Put a Rust lint exception in an `#[allow(<lint>, reason = "<reason>")]` attribute on the smallest item.
 The workspace denies `unsafe` Rust code.
 The `cxx::bridge` macro is the only exception, for the generated interface code.
 
