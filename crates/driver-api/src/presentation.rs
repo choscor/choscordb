@@ -27,6 +27,8 @@ pub enum Pane {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToastVariant {
     Error,
+    Success,
+    Warning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,12 +90,13 @@ impl Presentation {
     }
 
     pub fn with_error_toast(self) -> Self {
+        self.with_toast(ToastVariant::Error)
+    }
+
+    pub fn with_toast(self, variant: ToastVariant) -> Self {
         let text = self.message.clone();
         Self {
-            toast: Some(ToastSpec {
-                variant: ToastVariant::Error,
-                text,
-            }),
+            toast: Some(ToastSpec { variant, text }),
             ..self
         }
     }

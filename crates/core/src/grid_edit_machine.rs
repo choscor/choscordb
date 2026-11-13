@@ -148,3 +148,18 @@ pub fn present(state: &GridEditState, detail: &str) -> Presentation {
         (P::Clean, _) => Presentation::idle(detail.trim()),
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GridEditNote {
+    PlanUnfinished,
+    SubmitFailed,
+    WorkspaceClosed,
+}
+
+pub fn note(note: GridEditNote) -> &'static str {
+    match note {
+        GridEditNote::PlanUnfinished => "The change check did not finish.",
+        GridEditNote::SubmitFailed => "The changes could not be submitted.",
+        GridEditNote::WorkspaceClosed => "The workspace closed.",
+    }
+}

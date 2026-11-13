@@ -77,3 +77,30 @@ fn a_running_connection_test_is_neutral() {
         "SSH host key approved. Retry the connection to use it."
     );
 }
+
+#[test]
+fn ssh_trust_and_grid_edit_notes_are_engine_owned() {
+    use choscordb_core::grid_edit_machine::{GridEditNote, note};
+    use choscordb_driver_api::{RecoveryHint, recovery_hint};
+    use profile_test_machine::{SshTrustNote, ssh_trust_note};
+    assert_eq!(
+        ssh_trust_note(SshTrustNote::ApprovalStale),
+        format!(
+            "The approval request finished for the previous settings. {}",
+            recovery_hint(RecoveryHint::InspectSshServer)
+        )
+    );
+    assert_eq!(
+        ssh_trust_note(SshTrustNote::NoHostKeys),
+        "No SSH host keys were returned."
+    );
+    assert_eq!(
+        note(GridEditNote::PlanUnfinished),
+        "The change check did not finish."
+    );
+    assert_eq!(
+        updater_machine::present(&updater_machine::UpdaterState::ReadyToInstall, "").message,
+        "The update is downloaded. Choose Install Downloaded Update from the Updates menu when \
+         you are ready."
+    );
+}

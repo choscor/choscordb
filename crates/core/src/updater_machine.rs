@@ -104,10 +104,12 @@ pub fn present(state: &UpdaterState, detail: &str) -> Presentation {
             .with_tone(Tone::Success),
         S::Available => Presentation::idle(detail_or(detail, "An update is available.")),
         S::Downloading => Presentation::busy(detail_or(detail, "Downloading the update…")),
-        S::ReadyToInstall => {
-            Presentation::idle(detail_or(detail, "The update is ready to install."))
-                .with_tone(Tone::Success)
-        }
+        S::ReadyToInstall => Presentation::idle(detail_or(
+            detail,
+            "The update is downloaded. Choose Install Downloaded Update from the Updates menu \
+                 when you are ready.",
+        ))
+        .with_tone(Tone::Success),
         S::Installing => Presentation::busy(detail_or(detail, "Installing the update…")),
         S::Cancelling => Presentation::busy(detail_or(detail, "Cancelling the update…")),
         S::Cancelled => Presentation::idle(detail_or(detail, "Update cancelled.")),

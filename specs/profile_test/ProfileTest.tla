@@ -27,7 +27,7 @@ Busy(s) == s \in Working
 Tone(s) == CASE s \in {"Succeeded", "Trusted"} -> "Success"
              [] s = "Failed" -> "Error"
              [] OTHER -> "Neutral"
-Presentation == {<<s, Tone(s), Busy(s), "None", "Unchanged", FALSE>> : s \in States}
+Presentation == {<<s, Tone(s), Busy(s), "None", "Unchanged", s = "Succeeded">> : s \in States}
 
 VARIABLES state, failing
 vars == <<state, failing>>

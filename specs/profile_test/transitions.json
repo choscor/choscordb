@@ -22,7 +22,7 @@
   "presentation": {
     "Idle": {"tone": "Neutral", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
     "Testing": {"tone": "Neutral", "busy": true, "body": "None", "pane": "Unchanged", "toast": false},
-    "Succeeded": {"tone": "Success", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
+    "Succeeded": {"tone": "Success", "busy": false, "body": "None", "pane": "Unchanged", "toast": true},
     "Failed": {"tone": "Error", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
     "AwaitingTrust": {"tone": "Neutral", "busy": false, "body": "None", "pane": "Unchanged", "toast": false},
     "Trusting": {"tone": "Neutral", "busy": true, "body": "None", "pane": "Unchanged", "toast": false},
