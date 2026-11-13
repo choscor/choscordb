@@ -133,3 +133,25 @@ fn each_failure_path_is_a_walk_of_the_machine_from_a_working_state() {
     );
     assert_eq!(failure_path(ErrorKind::Disconnected), [QueryState::Failed]);
 }
+
+#[test]
+fn a_result_is_empty_only_when_it_has_columns_and_no_rows() {
+    use choscordb_core::query_machine::result_state;
+    assert_eq!(result_state(true, 0), QueryState::Completed { empty: true });
+    assert_eq!(
+        result_state(true, 3),
+        QueryState::Completed { empty: false }
+    );
+    assert_eq!(
+        result_state(false, 0),
+        QueryState::Completed { empty: false }
+    );
+}
+
+#[test]
+fn a_submission_that_fails_while_disconnected_shows_the_failure() {
+    assert_eq!(
+        step(&QueryState::Disconnected, &QueryEvent::Fail),
+        Ok(QueryState::Failed)
+    );
+}

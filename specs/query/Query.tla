@@ -34,7 +34,7 @@ Step(s, e) ==
       [] e = "Cancel" /\ s = "Failed" -> "Failed"
       [] e = FinishRows /\ s = "Running" -> CompletedRows
       [] e = FinishEmpty /\ s = "Running" -> CompletedEmpty
-      [] e = "Fail" /\ s \in {"Idle", "Failed"} \cup Working \cup {CompletedRows, CompletedEmpty} -> "Failed"
+      [] e = "Fail" /\ s \in {"Idle", "Failed", "Disconnected"} \cup Working \cup {CompletedRows, CompletedEmpty} -> "Failed"
       [] e = "CancelSettled" /\ s = "Cancelling" -> "Cancelled"
       [] e = "Disconnect" /\ s = "Failed" -> "Failed"
       [] e = "Disconnect" /\ s # "Failed" -> "Disconnected"

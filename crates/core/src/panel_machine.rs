@@ -203,3 +203,54 @@ pub fn present(kind: PanelKind, state: &PanelState, detail: &str) -> Presentatio
         .with_body(Body::Empty),
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PanelWork {
+    Loading,
+    Clearing,
+    Saving,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PanelFacts {
+    pub failed: bool,
+    pub work: Option<PanelWork>,
+    pub loaded: bool,
+    pub has_rows: bool,
+    pub filtered: bool,
+    pub paged: bool,
+    pub disconnected: bool,
+}
+
+pub fn settle(facts: &PanelFacts) -> PanelState {
+    use PanelState as S;
+    if facts.failed {
+        S::Failed
+    } else if facts.work.is_some() {
+        S::Loading
+    } else if facts.disconnected {
+        S::Disconnected
+    } else if !facts.loaded {
+        S::Idle
+    } else if facts.has_rows {
+        S::Ready
+    } else if facts.filtered {
+        S::NoMatch
+    } else {
+        S::Empty
+    }
+}
+
+pub fn observe(kind: PanelKind, facts: &PanelFacts, error: &str) -> (PanelState, Presentation) {
+    use PanelState as S;
+    let state = settle(facts);
+    let subject = texts(kind).subject;
+    let detail = match (state, facts.work) {
+        (S::Failed, _) => error.to_owned(),
+        (S::Loading, Some(PanelWork::Clearing)) => format!("Clearing {subject}…"),
+        (S::Loading, Some(PanelWork::Saving)) => format!("Saving the {subject} preference…"),
+        (S::Empty, _) if facts.paged => format!("No {subject} on this page."),
+        _ => String::new(),
+    };
+    (state, present(kind, &state, &detail))
+}

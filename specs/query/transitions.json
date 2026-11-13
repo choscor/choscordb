@@ -32,6 +32,7 @@
     ["Failed", "Cancel", "Failed"],
     ["Failed", "Connect", "Connecting"],
     ["Failed", "Disconnect", "Failed"],
+    ["Disconnected", "Fail", "Failed"],
     ["Failed", "Fail", "Failed"],
     ["Failed", "Reset", "Idle"],
     ["Failed", "Submit", "Queued"],

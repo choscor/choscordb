@@ -513,12 +513,14 @@ async fn complete_result(current: &mut Active, events: &EventSink) {
             .shrink_to(retained)
             .expect("source reservation only shrinks");
     }
-    let empty = !current.cursor.columns().is_empty() && current.fetched_rows == 0;
     send(
         events,
         Event::QueryState {
             query: current.id,
-            state: QueryState::Completed { empty },
+            state: crate::query_machine::result_state(
+                !current.cursor.columns().is_empty(),
+                current.fetched_rows,
+            ),
         },
     )
     .await;

@@ -106,3 +106,128 @@ fn quick_search_loading_says_searching_and_other_panels_say_loading() {
         "Loading…"
     );
 }
+
+#[test]
+fn panel_facts_settle_in_one_order() {
+    use choscordb_core::panel_machine::{PanelFacts, PanelWork, settle};
+    let ready = PanelFacts {
+        loaded: true,
+        has_rows: true,
+        ..PanelFacts::default()
+    };
+    let cases = [
+        (
+            PanelFacts {
+                failed: true,
+                work: Some(PanelWork::Loading),
+                ..ready
+            },
+            PanelState::Failed,
+        ),
+        (
+            PanelFacts {
+                work: Some(PanelWork::Clearing),
+                ..ready
+            },
+            PanelState::Loading,
+        ),
+        (PanelFacts::default(), PanelState::Idle),
+        (ready, PanelState::Ready),
+        (
+            PanelFacts {
+                has_rows: false,
+                filtered: true,
+                ..ready
+            },
+            PanelState::NoMatch,
+        ),
+        (
+            PanelFacts {
+                has_rows: false,
+                ..ready
+            },
+            PanelState::Empty,
+        ),
+    ];
+    for (facts, expected) in cases {
+        assert_eq!(settle(&facts), expected, "{facts:?}");
+    }
+}
+
+#[test]
+fn panel_facts_choose_the_detail_for_work_and_paged_views() {
+    use choscordb_core::panel_machine::{PanelFacts, PanelWork, observe};
+    let loaded = PanelFacts {
+        loaded: true,
+        ..PanelFacts::default()
+    };
+    let message = |facts| {
+        observe(PanelKind::History, &facts, "disk is full")
+            .1
+            .message
+    };
+    assert_eq!(
+        message(PanelFacts {
+            work: Some(PanelWork::Clearing),
+            ..loaded
+        }),
+        "Clearing query history…"
+    );
+    assert_eq!(
+        message(PanelFacts {
+            work: Some(PanelWork::Saving),
+            ..loaded
+        }),
+        "Saving the query history preference…"
+    );
+    assert_eq!(
+        message(PanelFacts {
+            work: Some(PanelWork::Loading),
+            ..loaded
+        }),
+        "Loading…"
+    );
+    assert_eq!(
+        message(PanelFacts {
+            paged: true,
+            ..loaded
+        }),
+        "No query history on this page."
+    );
+    assert_eq!(
+        message(loaded),
+        "No query history yet.\nRun a query to see it here."
+    );
+    assert_eq!(
+        message(PanelFacts {
+            failed: true,
+            ..loaded
+        }),
+        "Could not load query history: disk is full. Retry from Query history."
+    );
+}
+
+#[test]
+fn a_disconnected_panel_settles_before_its_rows_load() {
+    use choscordb_core::panel_machine::{PanelFacts, PanelWork, settle};
+    let disconnected = PanelFacts {
+        disconnected: true,
+        ..PanelFacts::default()
+    };
+    assert_eq!(settle(&disconnected), PanelState::Disconnected);
+    assert_eq!(
+        settle(&PanelFacts {
+            work: Some(PanelWork::Loading),
+            ..disconnected
+        }),
+        PanelState::Loading
+    );
+    assert_eq!(
+        settle(&PanelFacts {
+            loaded: true,
+            has_rows: true,
+            ..PanelFacts::default()
+        }),
+        PanelState::Ready
+    );
+}

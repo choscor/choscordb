@@ -87,7 +87,7 @@ pub fn step(state: &QueryState, event: &QueryEvent) -> Result<QueryState, QueryT
         (_, E::Cancel | E::TimedOut) if working => S::Cancelling,
         (S::Failed, E::Cancel) => S::Failed,
         (S::Running, E::Finish { empty }) => S::Completed { empty },
-        (S::Idle | S::Failed | S::Completed { .. }, E::Fail) => S::Failed,
+        (S::Idle | S::Failed | S::Disconnected | S::Completed { .. }, E::Fail) => S::Failed,
         (_, E::Fail) if working => S::Failed,
         (S::Cancelling, E::CancelSettled) => S::Cancelled,
         (S::Failed, E::Disconnect) => S::Failed,
@@ -101,6 +101,12 @@ pub fn step(state: &QueryState, event: &QueryEvent) -> Result<QueryState, QueryT
         }
     };
     Ok(next)
+}
+
+pub fn result_state(has_columns: bool, rows: u64) -> QueryState {
+    QueryState::Completed {
+        empty: has_columns && rows == 0,
+    }
 }
 
 pub fn failure_path(kind: ErrorKind) -> &'static [QueryState] {
