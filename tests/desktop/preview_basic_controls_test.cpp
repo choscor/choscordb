@@ -1,3 +1,4 @@
+#include "design_system/text/text.h"
 #include "preview_test.h"
 #include "tools/preview/preview_window.h"
 
@@ -37,5 +38,27 @@ void PreviewTest::switchSpecimenUsesRealControlsInBothThemes() {
         QCOMPARE(on->property("designRole").toString(), QString("switch"));
         QVERIFY(!off->isChecked());
         QVERIFY(on->isChecked());
+    }
+}
+
+void PreviewTest::panelStateSpecimenShowsEachPlaceholderInBothThemes() {
+    using namespace choscordb::design;
+    PreviewWindow window;
+    QVERIFY(window.selectSpecimen("panel-state"));
+    window.show();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        for (const auto* placeholder : {"previewPanelEmpty", "previewPanelNoMatch"}) {
+            auto* label = host->findChild<Text*>(placeholder);
+            QVERIFY(label && label->isVisible());
+            QCOMPARE(label->property("designRole").toString(), QString("description"));
+            QCOMPARE(label->foregroundRole(), QPalette::PlaceholderText);
+        }
+        auto* failed = host->findChild<Text*>("previewPanelFailed");
+        QVERIFY(failed && failed->isVisible());
+        QCOMPARE(failed->property("designRole").toString(), QString("fieldError"));
+        QCOMPARE(failed->property("state").toString(), QString("error"));
+        QVERIFY(failed->text().startsWith("Could not load saved queries"));
     }
 }

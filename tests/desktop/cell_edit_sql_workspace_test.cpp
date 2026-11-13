@@ -5,6 +5,7 @@
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/embedded_popup.h"
 #include "models/result_table_model.h"
+#include "screen_state_checks.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QComboBox>
@@ -118,8 +119,8 @@ class CellEditSqlWorkspaceTest : public QObject {
         QTest::keyClicks(text, "obsolete connection draft");
         QVERIFY(!model->hasPendingEdits());
         QVERIFY(sql->adapter()->disconnectConnection(connection));
-        QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
-                     QString("failed"));
+        QTRY_COMPARE(summaryState(data.findChild<QLabel*>("objectDataSummary")),
+                     choscordb::QueryState::Failed);
         QVERIFY(data.findChild<QLabel*>("objectDataSummary")
                     ->accessibleDescription()
                     .contains("Connection closed"));
@@ -389,8 +390,7 @@ class CellEditSqlWorkspaceTest : public QObject {
         QCOMPARE(model->index(1, 1).data().toString(), QString("saved via alias"));
         observer.openObject(connection, R"(["main","sql_sheet_rows"])", "sql_sheet_rows");
         QTRY_COMPARE(database->model()->index(1, 1).data().toString(), QString("second"));
-        QTRY_COMPARE(observer.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
-                     QString("completed"));
+        QTRY_VERIFY(queryCompleted(summaryState(observer.findChild<QLabel*>("objectDataSummary"))));
 
         QVERIFY(reviewEdits(apply, &window, true));
         QTRY_VERIFY(!model->hasPendingEdits());

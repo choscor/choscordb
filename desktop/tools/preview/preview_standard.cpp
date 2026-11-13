@@ -8,6 +8,7 @@
 #include "design_system/menu/menu.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/panel_state/panel_state.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/tabs/tab_add_corner.h"
 #include "design_system/tabs/tabs_style.h"
@@ -411,6 +412,20 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         detail->setMessage(
             QString("Storage could not finish. Retry after checking permissions. ").repeated(20));
         layout->addWidget(detail);
+    } else if (id == "panel-state") {
+        auto* empty = createPanelStateText("No saved queries yet.", host);
+        empty->setObjectName("previewPanelEmpty");
+        layout->addWidget(empty);
+        auto* noMatch = createPanelStateText({}, host);
+        noMatch->setObjectName("previewPanelNoMatch");
+        showPanelState(noMatch, PanelStateKind::NoMatch,
+                       "No matching saved queries.\nTry a different filter or clear the search.");
+        layout->addWidget(noMatch);
+        auto* failed = createPanelStateText({}, host);
+        failed->setObjectName("previewPanelFailed");
+        showPanelState(failed, PanelStateKind::Failed,
+                       "Could not load saved queries: Permission denied. Refresh to try again.");
+        layout->addWidget(failed);
     } else if (id == "feedback") {
         auto* badges = new QHBoxLayout;
         badges->setSpacing(spacing(Spacing::Two));

@@ -443,4 +443,15 @@ void StatusLine::refreshAppearance() {
     update();
 }
 
+void setStatusTone(QWidget* label, StatusLine::State state) {
+    const char* tone = state == StatusLine::State::Success ? "success"
+                       : state == StatusLine::State::Error ? "error"
+                                                           : "";
+    if (label->property("state").toString() == QLatin1String(tone))
+        return;
+    label->setProperty("state", tone);
+    label->style()->unpolish(label);
+    label->style()->polish(label);
+}
+
 }

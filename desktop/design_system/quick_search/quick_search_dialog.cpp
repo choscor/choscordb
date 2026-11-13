@@ -210,12 +210,9 @@ void QuickSearchDialog::setStatus(const QString& message) {
     statusMessage_ = message;
     updateStatus();
 }
-void QuickSearchDialog::setLoading(bool loading) {
-    loading_ = loading;
-    updateStatus();
-}
-void QuickSearchDialog::setError(const QString& message) {
-    errorMessage_ = message;
+void QuickSearchDialog::setSearchState(const QString& message, bool failed) {
+    searchMessage_ = message;
+    failed_ = failed;
     updateStatus();
 }
 void QuickSearchDialog::setReopenShortcut(const QKeySequence& shortcut) {
@@ -224,21 +221,13 @@ void QuickSearchDialog::setReopenShortcut(const QKeySequence& shortcut) {
 
 void QuickSearchDialog::updateStatus() {
     QStringList messages;
-    if (loading_)
-        messages << tr("Searching…");
-    if (!errorMessage_.isEmpty())
-        messages << errorMessage_;
+    if (!searchMessage_.isEmpty())
+        messages << searchMessage_;
     if (!statusMessage_.isEmpty())
         messages << statusMessage_;
-    if (messages.isEmpty() && results_.isEmpty())
-        messages << tr("No results. Try another search.");
     status_->setText(messages.join(QStringLiteral("  ")));
     status_->setAccessibleDescription(status_->text());
-    const char* state = !errorMessage_.isEmpty() ? "error"
-                        : loading_               ? "loading"
-                        : results_.isEmpty()     ? "empty"
-                                                 : "ready";
-    status_->setProperty("state", state);
+    status_->setProperty("state", failed_ ? "error" : "");
     status_->style()->unpolish(status_);
     status_->style()->polish(status_);
 }
@@ -252,8 +241,8 @@ void QuickSearchDialog::openSearch() {
     results_.clear();
     list_->clear();
     statusMessage_.clear();
-    errorMessage_.clear();
-    loading_ = false;
+    searchMessage_.clear();
+    failed_ = false;
     const bool changed = !input_->text().isEmpty();
     input_->clear();
     updateStatus();

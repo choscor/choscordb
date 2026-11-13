@@ -130,6 +130,7 @@ class QueryWorkspace final : public QObject {
     void refreshEditActions() { updateActions(); }
     bool resolvePendingEdits();
     bool navigationAllowed() const { return !workInFlight() && !stopping_; }
+    QueryState executionState() const { return executionState_; }
     void setGridShortcut(const QString& id, const QKeySequence& primary);
   signals:
     void connectionReady(quint64 connection);
@@ -138,7 +139,7 @@ class QueryWorkspace final : public QObject {
     void openQueryRequested(quint64 connection);
     void activityChanged(bool busy);
     void gridEditPlanningChanged(bool planning);
-    void executionStateChanged(const QString& state);
+    void executionStateChanged(QueryState state);
     void transactionStateChanged(quint64 connection, bool active);
     void foreignKeyRequested(quint64 connection, const QString& object, const QString& label,
                              const QString& filter);
@@ -223,12 +224,14 @@ class QueryWorkspace final : public QObject {
     bool workInFlight() const;
     const TransactionGuard& editTransactionGuard() const;
     void message(const QString& text);
-    void setExecutionState(const QString& state, const QString& detail = {},
+    void setExecutionState(QueryState state, const QString& detail = {},
                            const ExecutionMetrics& metrics = {});
-    void setDocumentStatus(SqlEditor* editor, const QString& state, const QString& detail,
+    void applyExecutionEvent(QueryEvent event, const QString& detail = {});
+    void setDocumentStatus(SqlEditor* editor, QueryState state, const QString& detail,
                            const QString& source);
-    void presentExecutionState(const QString& state, const QString& detail,
+    void presentExecutionState(QueryState state, const QString& detail,
                                const ExecutionMetrics& metrics, const QString& source);
+    QueryState documentState(const SqlEditor* editor) const;
     std::optional<quint64> selectedConnection() const;
     QString documentTarget(const SqlEditor* editor) const;
     Widgets widgets_;
@@ -329,6 +332,7 @@ class QueryWorkspace final : public QObject {
     quint64 pageBuild_ = 0;
     std::optional<quint64> buildingLease_;
     bool executionFinished_ = true;
+    QueryState executionState_ = QueryState::Disconnected;
     bool busy_ = false;
     bool fetching_ = false;
     bool hasMore_ = false;

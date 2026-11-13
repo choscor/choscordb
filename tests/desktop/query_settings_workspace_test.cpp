@@ -75,9 +75,7 @@ class QuerySettingsWorkspaceTest : public QObject {
                 if (kind == "query_failed")
                     failure = QString::fromUtf8(event.error_kind.data(),
                                                 qsizetype(event.error_kind.size()));
-                if (kind == "query_state" &&
-                    QString::fromUtf8(event.state.data(), qsizetype(event.state.size())) ==
-                        "queued")
+                if (kind == "query_state" && event.query_state == choscordb::QueryStateDto::Queued)
                     ++executions;
             },
             Qt::DirectConnection);
@@ -128,8 +126,7 @@ class QuerySettingsWorkspaceTest : public QObject {
                 [&](const choscordb::BridgeEvent& event) {
                     if (QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size())) ==
                             "query_state" &&
-                        QString::fromUtf8(event.state.data(), qsizetype(event.state.size())) ==
-                            "queued")
+                        event.query_state == choscordb::QueryStateDto::Queued)
                         ++executions;
                 },
                 Qt::DirectConnection);
@@ -197,8 +194,7 @@ class QuerySettingsWorkspaceTest : public QObject {
             [&](const choscordb::BridgeEvent& event) {
                 if (QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size())) ==
                         "query_state" &&
-                    QString::fromUtf8(event.state.data(), qsizetype(event.state.size())) ==
-                        "queued")
+                    event.query_state == choscordb::QueryStateDto::Queued)
                     ++executions;
             },
             Qt::DirectConnection);

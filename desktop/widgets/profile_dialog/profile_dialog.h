@@ -57,6 +57,7 @@ class ProfileDialog final : public DialogShell {
     SavedProfile draft() const;
     void setDraft(const SavedProfile& profile);
     void refresh();
+    void showTest(ProfileTestState state, const QString& detail = {});
     void setBusy(bool busy, const QString& message = {}, bool success = false,
                  bool warning = false);
     void updateDriver();
@@ -78,6 +79,7 @@ class ProfileDialog final : public DialogShell {
     bool preserveSshSecretOnRefresh_ = false;
     bool preserveTlsSecretOnRefresh_ = false;
     quint64 token_ = 0;
+    quint64 testToken_ = 0;
     quint64 revision_ = 0;
     bool busy_ = false;
     bool connecting_ = false;

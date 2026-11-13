@@ -10,6 +10,7 @@
 #include "design_system/table/table_style.h"
 #include "design_system/theme.h"
 #include "models/result_table_model.h"
+#include "screen_state_checks.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
@@ -349,7 +350,7 @@ class ResultViewWorkspaceTest : public QObject {
         QTest::mouseClick(grid->horizontalHeader()->viewport(), Qt::LeftButton, {}, QPoint(x, 5));
         QTRY_VERIFY(grid->horizontalHeader()->isSortIndicatorShown());
         QTRY_COMPARE(grid->horizontalHeader()->sortIndicatorOrder(), Qt::AscendingOrder);
-        QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+        QTRY_VERIFY(queryCompleted(summaryState(summary)));
         grid->selectionModel()->select(grid->model()->index(0, 0),
                                        QItemSelectionModel::ClearAndSelect);
         triggerTableAction(grid, "Copy selected rows");
@@ -362,11 +363,11 @@ class ResultViewWorkspaceTest : public QObject {
         QTRY_COMPARE(grid->model()->rowCount(), 1000);
         QTest::mouseClick(grid->horizontalHeader()->viewport(), Qt::LeftButton, {}, QPoint(x, 5));
         QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("1005"));
-        QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+        QTRY_VERIFY(queryCompleted(summaryState(summary)));
         clear->click();
         QTRY_COMPARE(grid->model()->rowCount(), 1000);
         QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("1005"));
-        QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+        QTRY_VERIFY(queryCompleted(summaryState(summary)));
         QTest::mouseClick(grid->horizontalHeader()->viewport(), Qt::LeftButton, {}, QPoint(x, 5));
         QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("1"));
         QVERIFY(!grid->horizontalHeader()->isSortIndicatorShown());
@@ -422,7 +423,7 @@ class ResultViewWorkspaceTest : public QObject {
         sqlFilter->setText("missing_backend_column = 1");
         apply->click();
         auto* summary = data.findChild<QLabel*>("objectDataSummary");
-        QTRY_COMPARE(summary->property("state").toString(), QString("failed"));
+        QTRY_COMPARE(summaryState(summary), choscordb::QueryState::Failed);
         QVERIFY(summary->toolTip().contains("Previous result view restored"));
         QVERIFY(summary->toolTip().contains("missing_backend_column"));
         QCOMPARE(data.footerWidget()->palette().color(QPalette::Window),
@@ -431,7 +432,7 @@ class ResultViewWorkspaceTest : public QObject {
         sqlFilter->setText("id = 1");
         apply->click();
         QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("1"));
-        QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+        QTRY_VERIFY(queryCompleted(summaryState(summary)));
         QCOMPARE(data.footerWidget()->palette().color(QPalette::Window),
                  choscordb::design::resolvedThemeForWidget(data).colors.successSurface);
         clear->click();
@@ -531,8 +532,7 @@ class ResultViewWorkspaceTest : public QObject {
         auto* parentGrid = parent->findChild<QTableView*>("objectDataResults");
         QVERIFY(filter && parentGrid);
         QTRY_COMPARE(filter->text(), QString("\"id\" = 9999"));
-        QTRY_COMPARE(parent->findChild<QLabel*>("objectDataSummary")->property("state").toString(),
-                     QString("completed"));
+        QTRY_VERIFY(queryCompleted(summaryState(parent->findChild<QLabel*>("objectDataSummary"))));
         QCOMPARE(parentGrid->model()->rowCount(), 0);
         QCOMPARE(linked.data().toString(), QString("9999"));
         QVERIFY(model->hasPendingEdits());
@@ -638,8 +638,8 @@ class ResultViewWorkspaceTest : public QObject {
         auto* filter = target->findChild<QLineEdit*>("resultFilterSql");
         auto* error = target->findChild<QLabel*>("resultFilterError");
         QVERIFY(targetGrid && next && filter && error);
-        QTRY_COMPARE(target->findChild<QLabel*>("objectDataSummary")->property("state").toString(),
-                     QString("failed"));
+        QTRY_COMPARE(summaryState(target->findChild<QLabel*>("objectDataSummary")),
+                     choscordb::QueryState::Failed);
         QCOMPARE(targetGrid->model()->rowCount(), 0);
         QVERIFY(!next->isEnabled());
         QVERIFY(filter->text().startsWith("\"id\" = '"));

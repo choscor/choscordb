@@ -193,7 +193,10 @@ void NavigatorSqlWorkspaceTest::startNewAfterRestoreFailureResolvesNotice() {
     QVERIFY(toolbar->isEnabled());
     QTRY_VERIFY(
         !toast->accessibleDescription().startsWith(QStringLiteral("Could not restore workspace.")));
-    QVERIFY(toast->accessibleDescription().contains(QStringLiteral("Independent notice")));
+    QTRY_VERIFY(toast->accessibleDescription().contains(
+        QStringLiteral("Could not load query history: Could not open local workspace storage.")));
+    toast->findChild<QAbstractButton*>("toastDismiss")->click();
+    QTRY_VERIFY(toast->accessibleDescription().contains(QStringLiteral("Independent notice")));
 }
 
 void NavigatorSqlWorkspaceTest::rejectedRecoverySubmissionShowsBackendDetail() {

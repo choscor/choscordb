@@ -22,6 +22,7 @@
 #include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
 #include "widgets/editor_completion/editor_completion.h"
+#include "widgets/screen_state/screen_state.h"
 #include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemModel>
@@ -195,7 +196,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto defaultDataBytes = applicationDataDirectory().toUtf8();
     const auto savedDirectory =
         fromRust(saved_sql_root(utf8View(storageBytes), utf8View(defaultDataBytes)));
-    auto filterSavedFiles = [savedFiles, savedSearch] {
+    auto filterSavedFiles = [savedFiles, savedSearch, savedStatus] {
         const TextFilter query(savedSearch->text());
         const auto filterItem = [&](const auto& self, QTreeWidgetItem* item,
                                     const QString& path) -> bool {
@@ -208,8 +209,12 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 item->setExpanded(true);
             return matches;
         };
+        bool anyMatch = false;
         for (int i = 0; i < savedFiles->topLevelItemCount(); ++i)
-            filterItem(filterItem, savedFiles->topLevelItem(i), {});
+            anyMatch = filterItem(filterItem, savedFiles->topLevelItem(i), {}) || anyMatch;
+        if (savedFiles->topLevelItemCount() > 0)
+            presentPanel(savedStatus, PanelKind::SavedSql,
+                         anyMatch ? PanelState::Ready : PanelState::NoMatch);
     };
     connect(savedSearch, &QLineEdit::textChanged, this, filterSavedFiles);
     const auto savedRefreshGeneration = std::make_shared<quint64>(0);
@@ -220,52 +225,50 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         savedStatus->hide();
         savedSection->setBusy(true, QObject::tr("Loading saved queries…"));
         auto* watcher = new QFutureWatcher<SavedSqlListing>(this);
-        connect(
-            watcher, &QFutureWatcher<SavedSqlListing>::finished, this,
-            [this, watcher, savedFiles, savedStatus, savedSection, savedDirectory, filterSavedFiles,
-             savedRefreshGeneration, generation] {
-                const auto result = watcher->result();
-                watcher->deleteLater();
-                if (generation != *savedRefreshGeneration)
-                    return;
-                savedSection->setBusy(false);
-                if (!result.error.isEmpty()) {
-                    reportNotice(
-                        QObject::tr("Saved SQL directory cannot be read: %1").arg(savedDirectory),
-                        ToastVariant::Danger);
-                    return;
-                }
-                QHash<QString, QTreeWidgetItem*> folders;
-                for (const auto& entry : result.entries) {
-                    const auto relative = QDir::fromNativeSeparators(entry.relativePath);
-                    const auto parts = relative.split('/');
-                    QTreeWidgetItem* parent = savedFiles->invisibleRootItem();
-                    QString folderPath;
-                    for (int i = 0; i + 1 < parts.size(); ++i) {
-                        folderPath += parts.at(i) + '/';
-                        auto* folder = folders.value(folderPath);
-                        if (!folder) {
-                            folder = new QTreeWidgetItem(parent, {parts.at(i)});
-                            folder->setData(0, NavigatorModel::KindRole, "folder");
-                            folders.insert(folderPath, folder);
-                        }
-                        parent = folder;
+        connect(watcher, &QFutureWatcher<SavedSqlListing>::finished, this,
+                [watcher, savedFiles, savedStatus, savedSection, savedDirectory, filterSavedFiles,
+                 savedRefreshGeneration, generation] {
+                    const auto result = watcher->result();
+                    watcher->deleteLater();
+                    if (generation != *savedRefreshGeneration)
+                        return;
+                    savedSection->setBusy(false);
+                    if (!result.error.isEmpty()) {
+                        presentPanel(savedStatus, PanelKind::SavedSql, PanelState::Failed,
+                                     savedDirectory);
+                        return;
                     }
-                    auto* item = new QTreeWidgetItem(parent, {parts.last()});
-                    item->setData(0, Qt::UserRole, entry.path);
-                    item->setToolTip(0, relative);
-                    item->setData(0, NavigatorModel::KindRole, "file");
-                }
-                savedFiles->sortItems(0, Qt::AscendingOrder);
-                savedStatus->setText(
-                    result.hasMore ? QObject::tr("Showing the first %1 files.").arg(result.limit)
-                    : result.entries.isEmpty()
-                        ? QObject::tr("No saved queries yet.\nSave a query as a SQL file "
-                                      "in the default folder to find it here.")
-                        : QString{});
-                savedStatus->setVisible(!savedStatus->text().isEmpty());
-                filterSavedFiles();
-            });
+                    QHash<QString, QTreeWidgetItem*> folders;
+                    for (const auto& entry : result.entries) {
+                        const auto relative = QDir::fromNativeSeparators(entry.relativePath);
+                        const auto parts = relative.split('/');
+                        QTreeWidgetItem* parent = savedFiles->invisibleRootItem();
+                        QString folderPath;
+                        for (int i = 0; i + 1 < parts.size(); ++i) {
+                            folderPath += parts.at(i) + '/';
+                            auto* folder = folders.value(folderPath);
+                            if (!folder) {
+                                folder = new QTreeWidgetItem(parent, {parts.at(i)});
+                                folder->setData(0, NavigatorModel::KindRole, "folder");
+                                folders.insert(folderPath, folder);
+                            }
+                            parent = folder;
+                        }
+                        auto* item = new QTreeWidgetItem(parent, {parts.last()});
+                        item->setData(0, Qt::UserRole, entry.path);
+                        item->setToolTip(0, relative);
+                        item->setData(0, NavigatorModel::KindRole, "file");
+                    }
+                    savedFiles->sortItems(0, Qt::AscendingOrder);
+                    presentPanel(savedStatus, PanelKind::SavedSql,
+                                 result.entries.isEmpty() ? PanelState::Empty : PanelState::Ready);
+                    filterSavedFiles();
+                    if (result.hasMore) {
+                        savedStatus->setText(
+                            QObject::tr("Showing the first %1 files.").arg(result.limit));
+                        savedStatus->show();
+                    }
+                });
         watcher->setFuture(
             QtConcurrent::run([savedDirectory] { return loadSavedSql(savedDirectory); }));
     };
@@ -464,16 +467,14 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         fitted = true;
     });
     connect(workspace_, &QueryWorkspace::executionStateChanged, results,
-            [results](const QString& state) {
-                if (state == "failed")
-                    results->setCurrentIndex(1);
-                else if (state == "completed" || state == "queued" || state == "running")
-                    results->setCurrentIndex(0);
+            [results](QueryState state) {
+                const auto pane = EngineAdapter::queryPresentation(state).pane;
+                if (pane != ResultPane::Unchanged)
+                    results->setCurrentIndex(pane == ResultPane::Messages ? 1 : 0);
             });
     connect(workspace_, &QueryWorkspace::executionStateChanged, this,
-            [this, cancelButton](const QString& state) {
-                const bool active =
-                    state == "queued" || state == "running" || state == "cancelling";
+            [this, cancelButton](QueryState state) {
+                const bool active = EngineAdapter::queryPresentation(state).busy;
                 const bool restoreFocus = !active && cancelButton->hasFocus();
                 if (restoreFocus && editors_->currentWidget())
                     editors_->currentWidget()->setFocus();

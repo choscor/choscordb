@@ -192,8 +192,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         commandError_ = error;
         if (fetching_) {
             busy_ = fetching_ = false;
-            setExecutionState(QStringLiteral("failed"),
-                              tr("Failed to load result page: %1").arg(error));
+            setExecutionState(QueryState::Failed, tr("Failed to load result page: %1").arg(error));
         }
         message(error);
         updateActions();
@@ -205,7 +204,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             return;
         if (query_ && viewBusy_) {
             if (adapter_->cancelResultView(*query_)) {
-                setExecutionState(QStringLiteral("cancelling"), tr("Cancelling result view…"));
+                setExecutionState(QueryState::Cancelling, tr("Cancelling result view…"));
                 updateActions();
             }
             return;
@@ -215,7 +214,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 return;
             cancellationPending_ = true;
             dropPageBuild();
-            setExecutionState(QStringLiteral("cancelling"), tr("Cancelling…"));
+            setExecutionState(QueryState::Cancelling);
             updateActions();
             widgets_.cancel->setEnabled(false);
         }
@@ -228,7 +227,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 return;
             fetching_ = true;
             busy_ = true;
-            setExecutionState(QStringLiteral("running"), tr("Loading result page…"));
+            setExecutionState(QueryState::Running, tr("Loading result page…"));
             updateActions();
             if (hasMore_) {
                 adapter_->fetchPageAt(*query_, currentPage_.value_or(0) + 1);
@@ -250,7 +249,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 if (!resolvePendingEdits())
                     return;
                 fetching_ = true;
-                setExecutionState(QStringLiteral("running"), tr("Loading result page…"));
+                setExecutionState(QueryState::Running, tr("Loading result page…"));
                 updateActions();
                 adapter_->fetchPageAt(*query_, *currentPage_ - 1);
             }
@@ -471,8 +470,8 @@ void QueryWorkspace::showProfiles(const QString& profileId) {
                         id, widgets_.currentEditor()
                                 ? widgets_.currentEditor()->property("resultStatus").toMap()
                                 : QVariantMap{});
-                    setDocumentStatus(widgets_.currentEditor(), QStringLiteral("queued"),
-                                      tr("Connecting…"), profile.name);
+                    setDocumentStatus(widgets_.currentEditor(), QueryState::Connecting, {},
+                                      profile.name);
                     connectionDrivers_.insert(id, profile.driver);
                     if (savedProfile)
                         connectionProfiles_.insert(id, profile.id);
@@ -562,7 +561,7 @@ bool QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
     }
     busy_ = query_.has_value();
     executionFinished_ = !busy_;
-    setExecutionState(busy_ ? QStringLiteral("queued") : QStringLiteral("failed"),
+    setExecutionState(busy_ ? QueryState::Queued : QueryState::Failed,
                       busy_ ? tr("Loading object data…")
                             : tr("Object read could not be submitted: %1").arg(commandError_));
     updateActions();
@@ -583,8 +582,9 @@ void QueryWorkspace::invalidateResult(bool connectionLost) {
             cancellationPending_ = adapter_->cancelQuery(*query_);
         if (cancellationPending_)
             dropPageBuild();
-        if (!connectionLost || widgets_.summary->property("state") != "failed")
-            setExecutionState(QStringLiteral("cancelling"), tr("Cancelling…"));
+        if (EngineAdapter::queryTransition(documentState(resultEditor_), QueryEvent::Cancel)
+                .allowed)
+            applyExecutionEvent(QueryEvent::Cancel);
         updateActions();
         return;
     }
@@ -601,12 +601,12 @@ void QueryWorkspace::invalidateResult(bool connectionLost) {
     hasMoreResults_ = false;
     resultOrigin_.clear();
     clearViewState();
-    if (!connectionLost || widgets_.summary->property("state") != "failed")
-        setExecutionState(
-            QStringLiteral("disconnected"),
-            connectionLost ? tr("Connection unavailable. %1")
-                                 .arg(EngineAdapter::recoveryHint(RecoveryHint::ReconnectManually))
-                           : tr("Open Data to read an object."));
+    if (connectionLost)
+        applyExecutionEvent(QueryEvent::Disconnect,
+                            tr("Connection unavailable. %1")
+                                .arg(EngineAdapter::recoveryHint(RecoveryHint::ReconnectManually)));
+    else
+        applyExecutionEvent(QueryEvent::Reset, tr("Open Data to read an object."));
     updateActions();
 }
 void QueryWorkspace::connectSqlite(const QString& path) {
@@ -617,8 +617,7 @@ void QueryWorkspace::connectSqlite(const QString& path) {
             *id, widgets_.currentEditor()
                      ? widgets_.currentEditor()->property("resultStatus").toMap()
                      : QVariantMap{});
-        setDocumentStatus(widgets_.currentEditor(), QStringLiteral("queued"), tr("Connecting…"),
-                          path);
+        setDocumentStatus(widgets_.currentEditor(), QueryState::Connecting, {}, path);
         connectionDrivers_.insert(*id, QStringLiteral("sqlite"));
     }
 }
@@ -635,8 +634,7 @@ std::optional<quint64> QueryWorkspace::connectSavedProfile(const SavedProfile& p
             *id, widgets_.currentEditor()
                      ? widgets_.currentEditor()->property("resultStatus").toMap()
                      : QVariantMap{});
-        setDocumentStatus(widgets_.currentEditor(), QStringLiteral("queued"), tr("Connecting…"),
-                          profile.name);
+        setDocumentStatus(widgets_.currentEditor(), QueryState::Connecting, {}, profile.name);
         connectionProfiles_.insert(*id, profile.id);
         connectionDrivers_.insert(*id, profile.driver);
     }
@@ -648,12 +646,10 @@ void QueryWorkspace::documentChanged() {
         const auto saved = editor ? editor->property("resultStatus").toMap() : QVariantMap{};
         const auto source = saved.value("source").toString();
         widgets_.messages->setPlainText(saved.value("messages").toString());
-        presentExecutionState(
-            saved.value("state", "disconnected").toString(),
-            saved.value("detail", tr("Connect and run a query to see results.")).toString(),
-            {saved.value("duration").toString(), saved.value("page").toString(),
-             saved.value("rows").toString(), saved.value("memory").toString()},
-            source.isEmpty() ? documentTarget(editor) : source);
+        presentExecutionState(documentState(editor), saved.value("detail").toString(),
+                              {saved.value("duration").toString(), saved.value("page").toString(),
+                               saved.value("rows").toString(), saved.value("memory").toString()},
+                              source.isEmpty() ? documentTarget(editor) : source);
     }
     updateActions();
     emit documentTargetChanged();
@@ -695,12 +691,13 @@ void QueryWorkspace::updateActions() {
     widgets_.grid->setVisible(displayedResult);
     widgets_.run->setEnabled(connected && !inFlight && querySettings_->isReady());
     widgets_.runAll->setEnabled(widgets_.run->isEnabled());
+    const bool cancelling = executionState_ == QueryState::Cancelling;
     widgets_.cancel->setEnabled(!cancellationPending_ && query_.has_value() &&
                                 (busy_ || viewBusy_ || executionModeToken_ != 0) &&
-                                queryAvailable() &&
-                                widgets_.summary->property("state") != "cancelling");
-    widgets_.cancel->setText(widgets_.summary->property("state") == "cancelling" ? tr("Cancelling…")
-                                                                                 : tr("Cancel"));
+                                queryAvailable() && !cancelling);
+    widgets_.cancel->setText(cancelling
+                                 ? EngineAdapter::queryPresentation(QueryState::Cancelling).message
+                                 : tr("Cancel"));
     if (widgets_.exportResult)
         widgets_.exportResult->setEnabled(displayedResult && query_ && currentPage_ && !inFlight &&
                                           queryAvailable());
@@ -811,7 +808,7 @@ void QueryWorkspace::execute(RunScope scope) {
     if (!connectionAvailable(*connection) || workInFlight() || widgets_.currentEditor() != editor)
         return;
     if (resultEditor_ && resultEditor_ != editor &&
-        resultEditor_->property("resultStatus").toMap().value("state") == "completed")
+        EngineAdapter::queryPresentation(documentState(resultEditor_)).tone == Tone::Success)
         resultEditor_->setProperty("resultStatus", QVariant{});
     if (query_ && queryAvailable())
         adapter_->releaseQuery(*query_);
@@ -841,8 +838,8 @@ void QueryWorkspace::execute(RunScope scope) {
     busy_ = query_.has_value();
     executionFinished_ = !query_.has_value();
     cancellationPending_ = false;
-    setExecutionState(busy_ ? QStringLiteral("queued") : QStringLiteral("failed"),
-                      busy_ ? tr("Queued") : tr("Submission failed: %1").arg(commandError_));
+    setExecutionState(busy_ ? QueryState::Queued : QueryState::Failed,
+                      busy_ ? QString{} : tr("Submission failed: %1").arg(commandError_));
     if (!busy_ && !commandError_.isEmpty())
         message(commandError_);
     updateActions();

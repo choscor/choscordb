@@ -14,6 +14,7 @@
 #include "models/navigator_model.h"
 #include "models/result_table_model.h"
 #include "navigator_sql_workspace_test.h"
+#include "screen_state_checks.h"
 #include "widgets/history_dock/history_dock.h"
 #include "widgets/object_erd_widget.h"
 #include "widgets/profile_dialog/profile_dialog.h"
@@ -662,7 +663,7 @@ void NavigatorSqlWorkspaceTest::documentsKeepTargetsAndImmutableResultOrigin() {
         [&](const choscordb::BridgeEvent& event) {
             if (QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size())) ==
                     "query_state" &&
-                QString::fromUtf8(event.state.data(), qsizetype(event.state.size())) == "queued")
+                event.query_state == choscordb::QueryStateDto::Queued)
                 ++queued;
         },
         Qt::DirectConnection);
@@ -777,8 +778,8 @@ void NavigatorSqlWorkspaceTest::activeExecutionKeepsDocumentAndCancelReachable()
     QVERIFY(!queryOverflow);
     cancel->trigger();
     QCOMPARE(cancel->text(), QString("Cancelling…"));
-    QCOMPARE(window.findChild<QLabel*>("executionSummary")->property("state").toString(),
-             QString("cancelling"));
+    QCOMPARE(summaryState(window.findChild<QLabel*>("executionSummary")),
+             choscordb::QueryState::Cancelling);
     QVERIFY(!run->isEnabled());
     QVERIFY(!cancel->isEnabled());
     QTRY_VERIFY(run->isEnabled());
@@ -878,8 +879,7 @@ void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWit
         adapter, &choscordb::EngineAdapter::eventReady, &window,
         [&](const choscordb::BridgeEvent& event) {
             const auto kind = QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
-            if (kind == "query_state" &&
-                QString::fromUtf8(event.state.data(), qsizetype(event.state.size())) == "queued")
+            if (kind == "query_state" && event.query_state == choscordb::QueryStateDto::Queued)
                 ++started;
             if (kind == "query_finished")
                 ++finished;

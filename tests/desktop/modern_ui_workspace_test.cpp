@@ -13,6 +13,7 @@
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "modern_ui_test.h"
+#include "screen_state_checks.h"
 #include "tools/preview/preview_window.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -167,7 +168,7 @@ void ModernUiTest::startListsRealSavedProfilesAndConnectsWithoutExecuting() {
         [&](const choscordb::BridgeEvent& event) {
             if (QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size())) ==
                     "query_state" &&
-                QString::fromUtf8(event.state.data(), qsizetype(event.state.size())) == "queued")
+                event.query_state == choscordb::QueryStateDto::Queued)
                 ++queued;
         },
         Qt::DirectConnection);
@@ -461,7 +462,7 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     QVERIFY(!addConnection->accessibleName().isEmpty());
     QVERIFY(!addConnection->toolTip().isEmpty());
     QVERIFY(summary);
-    QCOMPARE(summary->property("state").toString(), QString("disconnected"));
+    QCOMPARE(summaryState(summary), choscordb::QueryState::Disconnected);
     QVERIFY(!summary->accessibleName().isEmpty());
     QVERIFY(toast);
     QVERIFY(!toast->accessibleName().isEmpty());

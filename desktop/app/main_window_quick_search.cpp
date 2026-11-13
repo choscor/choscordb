@@ -13,6 +13,7 @@
 #include "design_system/quick_search/quick_search_dialog.h"
 #include "models/navigator_model.h"
 #include "widgets/history_dock/history_dock.h"
+#include "widgets/screen_state/screen_state.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QDateTime>
@@ -359,8 +360,17 @@ void MainWindow::renderQuickSearch() {
     results.append(quickEditorRows_.mid(0, plan.editorRows));
     results.append(quickHistoryRows_.mid(0, plan.historyRows));
     quickSearch_->setResults(results);
-    quickSearch_->setLoading(quickEditorPending_ || quickHistoryPending_);
-    quickSearch_->setError(quickHistoryError_);
+    const auto searchState = !quickHistoryError_.isEmpty()                 ? PanelState::Failed
+                             : quickEditorPending_ || quickHistoryPending_ ? PanelState::Loading
+                             : !results.isEmpty()                          ? PanelState::Ready
+                             : needle.isEmpty()                            ? PanelState::Empty
+                                                                           : PanelState::NoMatch;
+    const auto shown = EngineAdapter::panelPresentation(
+        PanelKind::QuickSearch, searchState,
+        searchState == PanelState::Failed ? quickHistoryError_ : QString{});
+    quickSearch_->setSearchState(shown.message, shown.tone == Tone::Error);
+    if (std::exchange(quickSearchToast_, quickHistoryError_) != quickHistoryError_)
+        showPresentationToast(this, shown);
     QStringList status;
     if (quickEditorIncomplete_)
         status << tr("Some SQL text was skipped. Refine the query to search again.");

@@ -15,6 +15,7 @@
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "widgets/object_erd_widget.h"
+#include "widgets/screen_state/screen_state.h"
 #include <QAction>
 #include <QEvent>
 #include <QHash>
@@ -330,8 +331,8 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         if (operationBusy_ && index != activePane_) {
             const QSignalBlocker blocker(tabs_);
             tabs_->setCurrentIndex(activePane_);
-            setStatus("busy",
-                      tr("Finish or cancel the active Data operation before changing panes."));
+            showOperationNotice(
+                tr("Finish or cancel the active Data operation before changing panes."));
             return;
         }
         activePane_ = index;
@@ -370,7 +371,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                     return;
                 requestToken_ = 0;
                 model_->clear();
-                setStatus("failed", tr("Metadata failed: %1").arg(error));
+                applyPanelEvent(PanelEvent::LoadFailed, error);
                 refresh_->setEnabled(!operationBusy_);
                 retry_->setEnabled(true);
             });
@@ -392,7 +393,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                     return;
                 requestToken_ = 0;
                 erd_->clearGraph();
-                setStatus("failed", tr("ERD failed: %1").arg(error));
+                applyPanelEvent(PanelEvent::LoadFailed, error);
                 refresh_->setEnabled(!operationBusy_);
                 retry_->setEnabled(true);
             });
@@ -400,8 +401,8 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
 void ObjectExplorer::openObject(quint64 connection, const QString& object, const QString& label,
                                 const QString& kind, const QVariantList& properties) {
     if (operationBusy_) {
-        setStatus("busy",
-                  tr("Finish or cancel the active Data operation before changing objects."));
+        showOperationNotice(
+            tr("Finish or cancel the active Data operation before changing objects."));
         return;
     }
     if (connection_ == connection && object_ == object && kind_ == kind) {
@@ -472,7 +473,7 @@ void ObjectExplorer::restoreObject(std::optional<quint64> connection, const QStr
     reconnect_->setEnabled(!connection_);
     updateActions();
     updateFooter();
-    setStatus(connection_ ? "restored" : "disconnected",
+    setStatus(connection_ ? PanelState::Idle : PanelState::Disconnected,
               connection_
                   ? tr("%1 · Select this tab to load fresh metadata.").arg(label_)
                   : tr("%1 · Connection unavailable. %2")
@@ -506,10 +507,9 @@ void ObjectExplorer::setDisconnected() {
     refresh_->setEnabled(false);
     updateActions();
     updateFooter();
-    if (status_->property("state") != "failed")
-        setStatus("disconnected",
-                  tr("%1 · Connection unavailable. %2")
-                      .arg(label_, EngineAdapter::recoveryHint(RecoveryHint::ReconnectManually)));
+    applyPanelEvent(PanelEvent::Disconnect,
+                    tr("%1 · Connection unavailable. %2")
+                        .arg(label_, EngineAdapter::recoveryHint(RecoveryHint::ReconnectManually)));
     emit objectChanged();
 }
 void ObjectExplorer::requestPane() {
@@ -560,12 +560,12 @@ void ObjectExplorer::requestPane() {
         // perf-ok: object metadata; precision limits the sample to 50 rows.
         table_->resizeColumnsToContents();
         refresh_->setEnabled(!operationBusy_);
-        setStatus("loaded", tr("%1 · Details loaded").arg(label_));
+        setStatus(PanelState::Ready, tr("%1 · Details loaded").arg(label_));
         return;
     }
     if (tabs_->currentIndex() == 5) {
         pages_->setCurrentIndex(3);
-        setStatus("ready", tr("%1 · Data").arg(label_));
+        setStatus(PanelState::Idle, tr("%1 · Data").arg(label_));
         emit dataRequested(*connection_, object_, label_,
                            NavigatorModel::relationSubtype(properties_));
         updateFooter();
@@ -574,20 +574,22 @@ void ObjectExplorer::requestPane() {
     if (tabs_->currentIndex() == 4) {
         pages_->setCurrentWidget(erd_);
         if (graphLoaded_) {
-            setStatus(graphState_, graphMessage_);
+            setStatus(PanelState::Loading);
+            applyPanelEvent(graphEvent_, graphMessage_);
             refresh_->setEnabled(!operationBusy_);
             return;
         }
         erd_->clearGraph();
         requestToken_ = nextRequestToken();
-        setStatus("loading", tr("%1 · Loading ERD…").arg(label_));
+        applyPanelEvent(PanelEvent::Load, tr("%1 · Loading ERD…").arg(label_));
         adapter_->loadObjectGraph(*connection_, object_, requestToken_);
         return;
     }
     pages_->setCurrentIndex(tabs_->currentIndex() == 3 ? 1 : 0);
     requestToken_ = nextRequestToken();
-    setStatus("loading",
-              tr("%1 · Loading %2…").arg(label_, tabs_->tabText(tabs_->currentIndex()).toLower()));
+    applyPanelEvent(
+        PanelEvent::Load,
+        tr("%1 · Loading %2…").arg(label_, tabs_->tabText(tabs_->currentIndex()).toLower()));
     adapter_->loadObjectInspection(*connection_, object_,
                                    static_cast<ObjectInspectionPane>(tabs_->currentIndex()),
                                    requestToken_);
@@ -596,17 +598,32 @@ void ObjectExplorer::showNotice(const QString& message, bool busy) {
     footer_->setBusy(busy || operationBusy_);
     footer_->showNotice(message, busy ? 0 : EngineAdapter::panelNoticeMs());
 }
-void ObjectExplorer::setStatus(const QString& state, const QString& text) {
-    auto* line = footer_;
-    line->setBusy(state == "loading" || operationBusy_);
-    status_->setProperty("state", state);
-    const auto semantic = state == "failed" ? design::StatusLine::State::Error
-                          : state == "loaded" || state == "empty"
-                              ? design::StatusLine::State::Success
-                              : design::StatusLine::State::Neutral;
-    footer_->setContent({{}, text, {}, {}, {}, {}}, semantic);
+void ObjectExplorer::setStatus(PanelState state, const QString& detail) {
+    panelState_ = state;
+    operationNotice_ = false;
+    const auto kind = tabs_->currentIndex() == 4 ? PanelKind::Diagram : PanelKind::ObjectDetails;
+    const auto shown = EngineAdapter::panelPresentation(kind, state, detail);
+    showStatus(shown.message, shown.tone, shown.busy);
+    showPresentationToast(this, shown);
+}
+void ObjectExplorer::applyPanelEvent(PanelEvent event, const QString& detail) {
+    const auto next = EngineAdapter::panelTransition(panelState_, event);
+    if (!next.allowed) {
+        showStatus(next.error, Tone::Error, false);
+        return;
+    }
+    if (next.state != panelState_ || event == PanelEvent::Load)
+        setStatus(next.state, detail);
+}
+void ObjectExplorer::showStatus(const QString& text, Tone tone, bool busy) {
+    footer_->setBusy(busy || operationBusy_);
+    footer_->setContent({{}, text, {}, {}, {}, {}}, statusLineState(tone));
     status_->setAccessibleName(tr("Object status: %1").arg(text));
-    if (dataFooter_ && tabs_->currentIndex() == 5 && state == "busy") {
+}
+void ObjectExplorer::showOperationNotice(const QString& text) {
+    showStatus(text, Tone::Neutral, false);
+    operationNotice_ = true;
+    if (dataFooter_ && tabs_->currentIndex() == 5) {
         if (auto* dataLine = qobject_cast<design::StatusLine*>(dataFooter_.data()))
             dataLine->setMessage(text);
         else
@@ -615,16 +632,17 @@ void ObjectExplorer::setStatus(const QString& state, const QString& text) {
 }
 void ObjectExplorer::render(const ObjectInspection& inspection) {
     if (inspection.availability != MetadataAvailability::Available) {
-        setStatus(inspection.availability == MetadataAvailability::Unsupported ? "unsupported"
-                                                                               : "unavailable",
-                  inspection.availability == MetadataAvailability::Unsupported
-                      ? tr("Unsupported: %1").arg(inspection.reason)
-                      : tr("Unavailable: %1").arg(inspection.reason));
+        if (inspection.availability == MetadataAvailability::Unsupported)
+            applyPanelEvent(PanelEvent::LoadUnsupported,
+                            tr("Unsupported: %1").arg(inspection.reason));
+        else
+            applyPanelEvent(PanelEvent::LoadedPartial,
+                            tr("Unavailable: %1").arg(inspection.reason));
         return;
     }
     if (inspection.pane == ObjectInspectionPane::Ddl) {
         ddl_->setPlainText(inspection.ddl);
-        setStatus("loaded", tr("%1 · DDL loaded").arg(label_));
+        applyPanelEvent(PanelEvent::LoadedRows, tr("%1 · DDL loaded").arg(label_));
         return;
     }
     table_->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::Row));
@@ -695,8 +713,8 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
         table_->setColumnWidth(column, qBound(80, table_->columnWidth(column), 320));
         model_->horizontalHeaderItem(column)->setToolTip(headers.at(column));
     }
-    setStatus(
-        inspection.rows.isEmpty() ? "empty" : "loaded",
+    applyPanelEvent(
+        inspection.rows.isEmpty() ? PanelEvent::LoadedNone : PanelEvent::LoadedRows,
         inspection.rows.isEmpty()
             ? tr("No %1 for this object.").arg(tabs_->tabText(tabs_->currentIndex()).toLower())
             : tr("%1 · %2 rows").arg(label_).arg(inspection.rows.size()));
@@ -704,39 +722,39 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
 void ObjectExplorer::renderGraph(const ObjectGraph& graph) {
     if (graph.availability == MetadataAvailability::Unsupported) {
         erd_->clearGraph();
-        graphState_ = "unsupported";
+        graphEvent_ = PanelEvent::LoadUnsupported;
         graphMessage_ = tr("Unsupported: %1").arg(graph.reason);
-        setStatus(graphState_, graphMessage_);
+        applyPanelEvent(graphEvent_, graphMessage_);
         return;
     }
     if (std::none_of(graph.tables.begin(), graph.tables.end(),
                      [this](const ObjectGraphTable& table) { return table.id == object_; })) {
         erd_->clearGraph();
-        graphState_ = "incomplete";
+        graphEvent_ = PanelEvent::LoadedPartial;
         graphMessage_ =
             tr("%1 · ERD incomplete: selected table metadata is unavailable").arg(label_);
-        setStatus(graphState_, graphMessage_);
+        applyPanelEvent(graphEvent_, graphMessage_);
         return;
     }
     erd_->setGraph(graph, object_);
     if (graph.availability == MetadataAvailability::Unavailable || !graph.warnings.isEmpty()) {
-        graphState_ = "incomplete";
+        graphEvent_ = PanelEvent::LoadedPartial;
         QStringList details;
         if (!graph.reason.isEmpty())
             details.append(graph.reason);
         details.append(graph.warnings);
         graphMessage_ = tr("%1 · ERD incomplete: %2").arg(label_, details.join("; "));
     } else if (graph.edges.isEmpty()) {
-        graphState_ = "empty";
+        graphEvent_ = PanelEvent::LoadedNone;
         graphMessage_ = tr("%1 · No foreign-key relationships").arg(label_);
     } else {
-        graphState_ = "loaded";
+        graphEvent_ = PanelEvent::LoadedRows;
         graphMessage_ = tr("%1 · %2 related tables, %3 foreign keys")
                             .arg(label_)
                             .arg(qMax(0, graph.tables.size() - 1))
                             .arg(graph.edges.size());
     }
-    setStatus(graphState_, graphMessage_);
+    applyPanelEvent(graphEvent_, graphMessage_);
 }
 void ObjectExplorer::installDataWidget(QWidget* widget) {
     auto* previous = pages_->widget(3);
@@ -785,15 +803,17 @@ void ObjectExplorer::updateFooter() {
 void ObjectExplorer::setOperationBusy(bool busy) {
     operationBusy_ = busy;
     auto* line = footer_;
-    line->setBusy(busy || status_->property("state") == "loading");
+    line->setBusy(busy ||
+                  EngineAdapter::panelPresentation(PanelKind::ObjectDetails, panelState_).busy);
     if (!busy)
         line->setMessage({});
     updateActions();
     refresh_->setEnabled(!busy && connection_.has_value() && !requestToken_);
     if (busy)
         activePane_ = tabs_->currentIndex();
-    else if (status_->property("state") == "busy")
-        setStatus("ready", tr("%1 · %2").arg(label_, tabs_->tabText(tabs_->currentIndex())));
+    else if (operationNotice_)
+        setStatus(PanelState::Idle,
+                  tr("%1 · %2").arg(label_, tabs_->tabText(tabs_->currentIndex())));
 }
 void ObjectExplorer::updateActions() {
     const bool ready = connection_.has_value() && !operationBusy_ && !basicObject(kind_);
@@ -818,12 +838,12 @@ void ObjectExplorer::generateSql(const QString& kind) {
     if (const auto reason =
             SqlTemplateService::unavailableReason(kind, columnsLoaded_, !columns_.isEmpty());
         !reason.isEmpty()) {
-        setStatus("unavailable", reason);
+        showStatus(reason, Tone::Neutral, false);
         return;
     }
     const auto result = SqlTemplateService::generate(kind, label_, columns_, columnsLoaded_);
     if (!result.valid) {
-        setStatus("failed", result.error);
+        showStatus(result.error, Tone::Error, false);
         return;
     }
     emit sqlGenerated(*connection_, result.sql);

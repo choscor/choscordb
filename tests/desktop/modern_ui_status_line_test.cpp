@@ -8,6 +8,7 @@
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "modern_ui_test.h"
+#include "screen_state_checks.h"
 #include "widgets/editor_completion/editor_completion.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -34,11 +35,11 @@ void ModernUiTest::executionStripKeepsVisibleAndAccessibleTerminalState() {
     auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
     editor->setText("SELECT missing FROM nowhere");
     run->trigger();
-    QTRY_COMPARE(summary->property("state").toString(), QString("failed"));
+    QTRY_COMPARE(summaryState(summary), choscordb::QueryState::Failed);
     QTRY_VERIFY(summary->accessibleName().contains("failed", Qt::CaseInsensitive));
     editor->setText("SELECT 1 AS value");
     run->trigger();
-    QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+    QTRY_VERIFY(queryCompleted(summaryState(summary)));
     QTRY_VERIFY(window.findChild<QLabel*>("executionDuration")->text().contains("ms"));
     QVERIFY(summary->accessibleName().contains("Completed"));
 }
@@ -86,7 +87,7 @@ void ModernUiTest::resultFooterTracksOperationOutcome() {
     QVERIFY(editor);
     editor->setText("SELECT missing FROM nowhere");
     run->trigger();
-    QTRY_COMPARE(summary->property("state").toString(), QString("failed"));
+    QTRY_COMPARE(summaryState(summary), choscordb::QueryState::Failed);
     QCOMPARE(footer->palette().color(QPalette::Window),
              theme->resolvedTheme().colors.dangerSurface);
     QTRY_VERIFY(summary->toolTip().contains("Failed:"));
@@ -102,7 +103,7 @@ void ModernUiTest::resultFooterTracksOperationOutcome() {
     QTRY_VERIFY(run->isEnabled());
     other->setText("SELECT 2");
     run->trigger();
-    QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+    QTRY_VERIFY(queryCompleted(summaryState(summary)));
     tabs->setCurrentWidget(editor);
     QTRY_COMPARE(footer->palette().color(QPalette::Window),
                  theme->resolvedTheme().colors.dangerSurface);
@@ -110,7 +111,7 @@ void ModernUiTest::resultFooterTracksOperationOutcome() {
     QTRY_VERIFY(run->isEnabled());
     editor->setText("SELECT 1");
     run->trigger();
-    QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+    QTRY_VERIFY(queryCompleted(summaryState(summary)));
     QCOMPARE(footer->palette().color(QPalette::Window),
              theme->resolvedTheme().colors.successSurface);
 }
@@ -166,7 +167,7 @@ void ModernUiTest::sqlDocumentSwitchKeepsFooterAndResultOwnershipTogether() {
     second->setText("SELECT 42");
     run->trigger();
     QTRY_COMPARE(grid->model()->rowCount(), 1);
-    QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+    QTRY_VERIFY(queryCompleted(summaryState(summary)));
     QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("42"));
     tabs->setCurrentWidget(first);
     QVERIFY(!grid->isVisible());
@@ -212,7 +213,7 @@ void ModernUiTest::completedResultFooterSeparatesAndClearsMetrics() {
     QVERIFY(editor);
     editor->setText("SELECT 1 AS value");
     run->trigger();
-    QTRY_COMPARE(source->property("state").toString(), QString("completed"));
+    QTRY_VERIFY(queryCompleted(summaryState(source)));
     QTRY_COMPARE(page->text(), QString("Page 1"));
     QCOMPARE(rows->text(), QString("1 rows"));
     QTRY_VERIFY(duration->text().endsWith(" ms"));
@@ -229,7 +230,7 @@ void ModernUiTest::completedResultFooterSeparatesAndClearsMetrics() {
     editor->setText("CREATE TABLE metric_reset(value INTEGER)");
     run->trigger();
     QTRY_VERIFY(page->text().isEmpty());
-    QTRY_COMPARE(source->property("state").toString(), QString("completed"));
+    QTRY_VERIFY(queryCompleted(summaryState(source)));
     QTRY_VERIFY(!duration->text().isEmpty());
     QVERIFY(page->text().isEmpty());
     QVERIFY(rows->text().contains("rows affected"));
@@ -272,7 +273,7 @@ void ModernUiTest::narrowResultFooterPreservesOutcomeNavigationAndDetails() {
     editor->setText("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<1101) "
                     "SELECT x FROM n");
     run->trigger();
-    QTRY_COMPARE(source->property("state").toString(), QString("completed"));
+    QTRY_VERIFY(queryCompleted(summaryState(source)));
     QTRY_VERIFY(next->isEnabled());
     QCoreApplication::processEvents();
     QVERIFY2(source->text().contains(QChar(0x2026)),
@@ -294,7 +295,7 @@ void ModernUiTest::narrowResultFooterPreservesOutcomeNavigationAndDetails() {
     QTRY_VERIFY(previous->isEnabled());
     workspace->adapter()->releaseQuery(*resultQuery);
     QTest::mouseClick(previous, Qt::LeftButton);
-    QTRY_COMPARE(source->property("state").toString(), QString("failed"));
+    QTRY_COMPARE(summaryState(source), choscordb::QueryState::Failed);
     QTRY_VERIFY(outcome->text().contains("Failed"));
 }
 
@@ -443,8 +444,7 @@ void ModernUiTest::embeddedDataFailureRemainsVisibleAfterDisconnectCleanup() {
     auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
     editor->setText("CREATE TABLE records(id INTEGER)");
     run->trigger();
-    QTRY_COMPARE(window.findChild<QLabel*>("executionSummary")->property("state").toString(),
-                 QString("completed"));
+    QTRY_VERIFY(queryCompleted(summaryState(window.findChild<QLabel*>("executionSummary"))));
     const auto connection = editor->connectionTarget().value_or(0);
     std::optional<quint64> queryId;
     connect(adapter, &choscordb::EngineAdapter::eventReady, &window,
@@ -456,7 +456,7 @@ void ModernUiTest::embeddedDataFailureRemainsVisibleAfterDisconnectCleanup() {
     auto* explorer = qobject_cast<choscordb::ObjectExplorer*>(tabs->currentWidget());
     QVERIFY(explorer);
     auto* summary = explorer->findChild<QLabel*>("objectDataSummary");
-    QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+    QTRY_VERIFY(queryCompleted(summaryState(summary)));
     QTRY_VERIFY(queryId.has_value());
     QTRY_VERIFY(explorer->findChild<QLabel*>("objectDataDuration")
                     ->accessibleName()

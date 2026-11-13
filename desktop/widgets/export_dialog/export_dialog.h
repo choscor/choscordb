@@ -1,4 +1,5 @@
 #pragma once
+#include "bridge/engine_adapter.h"
 #include "design_system/dialog_shell/dialog_shell.h"
 #include <QPointer>
 #include <QStringList>
@@ -34,19 +35,19 @@ class ExportDialog final : public DialogShell {
     void reject() override;
 
   private:
-    enum class Outcome { Success, Cancelled, Failed };
     void updateActions();
     void start();
     void cancel();
     void handleEvent(const BridgeEvent& event);
-    void finish(const QString& message, Outcome outcome);
+    bool apply(ExportEvent event, const QString& detail = {});
+    void showState(const QString& detail = {});
+    void settle(ExportEvent event, const QString& detail = {});
     QPointer<EngineAdapter> adapter_;
     std::optional<quint64> query_;
     std::optional<quint64> export_;
     std::optional<quint64> exportQuery_;
     quint64 submissionToken_ = 0;
-    bool submitting_ = false;
-    bool cancelling_ = false;
+    ExportState state_ = ExportState::Idle;
     bool closeAfter_ = false;
     QString submissionError_;
     QComboBox* format_;

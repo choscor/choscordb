@@ -2,6 +2,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/theme_manager.h"
+#include "screen_state_checks.h"
 #include "widgets/object_erd_widget.h"
 #include <QAction>
 #include <QFrame>
@@ -303,7 +304,7 @@ class ObjectExplorerTest final : public QObject {
         explorer.selectPane(4);
         QTRY_COMPARE(graphs.count(), 1);
         QCOMPARE(erd->findChild<QGraphicsView*>("objectErdView")->geometry().top(), 0);
-        QCOMPARE(status->property("state").toString(), QString("empty"));
+        QCOMPARE(objectPanelState(status), choscordb::PanelState::Empty);
         QVERIFY(status->text().contains("No foreign-key relationships"));
         QCOMPARE(erd->graph().tables.size(), 1);
         const auto oldToken = graphs.first().at(2).toULongLong();
@@ -320,13 +321,13 @@ class ObjectExplorerTest final : public QObject {
         QTRY_COMPARE(graphs.count(), 2);
         QCOMPARE(erd->graph().tables.size(), 2);
         QCOMPARE(erd->graph().edges.size(), 1);
-        QCOMPARE(status->property("state").toString(), QString("loaded"));
+        QCOMPARE(objectPanelState(status), choscordb::PanelState::Ready);
         ObjectGraph stale;
         stale.tables = {{R"(["main","parent"])", "stale", {}}};
         adapter.objectGraphReady(*connection, R"(["main","parent"])", oldToken, stale);
         QCOMPARE(erd->graph().tables.size(), 2);
         QVERIFY(adapter.disconnectConnection(*connection));
-        QTRY_COMPARE(status->property("state").toString(), QString("disconnected"));
+        QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Disconnected);
         QCOMPARE(erd->graph().tables.size(), 0);
     }
     void erdFailureCanRetryAfterTableAppears() {
@@ -348,14 +349,14 @@ class ObjectExplorerTest final : public QObject {
         explorer.selectPane(4);
         auto* status = explorer.findChild<QLabel*>("objectStatus");
         auto* retry = explorer.findChild<QAction*>("objectRetry");
-        QTRY_COMPARE(status->property("state").toString(), QString("failed"));
+        QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Failed);
         QVERIFY(retry->isEnabled());
         const auto create = adapter.execute(*connection, "CREATE TABLE later(id INTEGER)");
         QVERIFY(create);
         adapter.fetchPage(*create);
         QTRY_COMPARE(finished, 1);
         retry->trigger();
-        QTRY_COMPARE(status->property("state").toString(), QString("empty"));
+        QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Empty);
         QCOMPARE(explorer.findChild<ObjectErdWidget*>()->graph().tables.size(), 1);
     }
     void ddlHasEditorAlignedLineNumberGutter() {
@@ -582,7 +583,7 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(explorer.paneIndex(), 3);
         QCOMPARE(inspections.count(), 0);
         auto* status = explorer.findChild<QLabel*>("objectStatus");
-        QCOMPARE(status->property("state").toString(), QString("disconnected"));
+        QCOMPARE(objectPanelState(status), choscordb::PanelState::Disconnected);
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
         QCOMPARE(footer->palette().color(QPalette::Window),
                  design::resolvedThemeForWidget(*footer).colors.surfaceRaised);
@@ -823,7 +824,7 @@ class ObjectExplorerTest final : public QObject {
         QTRY_COMPARE(table->model()->rowCount(), 1);
         QSignalSpy invalidated(&explorer, &ObjectExplorer::objectChanged);
         QVERIFY(adapter.disconnectConnection(*connection));
-        QTRY_COMPARE(status->property("state").toString(), QString("disconnected"));
+        QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Disconnected);
         QCOMPARE(table->model()->rowCount(), 0);
         QCOMPARE(invalidated.count(), 1);
     }
@@ -864,19 +865,19 @@ class ObjectExplorerTest final : public QObject {
         QTRY_COMPARE(table->model()->rowCount(), 2);
         QCOMPARE(table->model()->index(1, 0).data().toString(), QString("extra"));
         tabs->setCurrentIndex(1);
-        QTRY_COMPARE(status->property("state").toString(), QString("empty"));
+        QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Empty);
         QCOMPARE(footer->palette().color(QPalette::Window), colors.successSurface);
         QCOMPARE(table->model()->rowCount(), 0);
         QVERIFY(status->text().contains("No indexes"));
         explorer.openObject(*connection, R"(["main"])", "main");
         tabs->setCurrentIndex(3);
-        QTRY_COMPARE(status->property("state").toString(), QString("unsupported"));
+        QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Unsupported);
         QVERIFY(status->text().size() > QString("Unsupported:").size());
         QCOMPARE(footer->palette().color(QPalette::Window), colors.surfaceRaised);
         QSignalSpy failed(&adapter, &EngineAdapter::objectInspectionFailed);
         explorer.openObject(*connection, R"(["main","later"])", "later");
         tabs->setCurrentIndex(3);
-        QTRY_COMPARE(status->property("state").toString(), QString("failed"));
+        QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Failed);
         QVERIFY(!failed.isEmpty());
         QCOMPARE(footer->palette().color(QPalette::Window), colors.dangerSurface);
         QVERIFY(footer->toolTip().contains(failed.last().at(3).toString()));
@@ -889,13 +890,13 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(retry);
         QVERIFY(retry->isEnabled());
         retry->trigger();
-        QTRY_COMPARE(status->property("state").toString(), QString("loaded"));
+        QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Ready);
         QCOMPARE(footer->palette().color(QPalette::Window), colors.successSurface);
         auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
         QVERIFY(ddl->toPlainText().contains("CREATE TABLE later"));
         adapter.objectInspectionFailed(*connection, R"(["main","later"])", failedToken,
                                        "Late obsolete failure");
-        QCOMPARE(status->property("state").toString(), QString("loaded"));
+        QCOMPARE(objectPanelState(status), choscordb::PanelState::Ready);
         QVERIFY(ddl->toPlainText().contains("CREATE TABLE later"));
     }
     void openAndGenerateSqlUseTheObjectAndNeverExecute() {
@@ -907,7 +908,7 @@ class ObjectExplorerTest final : public QObject {
                 connected = true;
             if (event.kind == "query_finished")
                 ++finished;
-            if (event.kind == "query_state" && event.state == "queued")
+            if (event.kind == "query_state" && event.query_state == QueryStateDto::Queued)
                 ++queued;
         });
         const auto connection = adapter.connectSqlite(":memory:");

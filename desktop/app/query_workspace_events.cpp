@@ -83,8 +83,7 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
         if (e.has_lease)
             adapter_->releasePageLease(e.lease_id);
         message(tr("Result page exceeds the grid memory budget."));
-        setExecutionState(QStringLiteral("failed"),
-                          tr("Result page exceeds the grid memory budget."));
+        setExecutionState(QueryState::Failed, tr("Result page exceeds the grid memory budget."));
         hasMore_ = false;
         hasMoreResults_ = false;
     } else {
@@ -105,7 +104,7 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
             hasMoreResults_ = false;
             busy_ = false;
             message(tr("Result page exceeds its transfer reservation."));
-            setExecutionState(QStringLiteral("failed"),
+            setExecutionState(QueryState::Failed,
                               tr("Result page exceeds its transfer reservation."));
             updateActions();
             return;
@@ -116,10 +115,11 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
         hasMore_ = e.has_more;
         const bool hasResultPage = !columns_.empty();
         setExecutionState(
-            QStringLiteral("completed"),
+            hasResultPage && e.row_count == 0 ? QueryState::CompletedEmpty
+                                              : QueryState::CompletedRows,
             e.row_count == 0 && !viewFilters_.isEmpty()
                 ? tr("No rows match the active filters · Clear filters to restore all rows")
-                : tr("Completed"),
+                : QString{},
             {completedDurationMs_ ? tr("Executed in %1 ms").arg(*completedDurationMs_) : QString{},
              hasResultPage ? tr("Page %1").arg(e.page_index + 1) : QString{},
              hasResultPage ? (completedAffectedRows_.isEmpty()
@@ -145,7 +145,7 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
                 hasMore_ = false;
                 hasMoreResults_ = false;
                 filterBar_->showValidationError(tr("Referenced row filter could not start."));
-                setExecutionState(QStringLiteral("failed"),
+                setExecutionState(QueryState::Failed,
                                   tr("Referenced row filter failed: %1").arg(commandError_));
             }
         } else if (deferredViewRequest_ && !model_->hasPendingEdits()) {
@@ -323,12 +323,19 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         if (connectionAttemptEditors_.contains(e.id)) {
             auto* editor = connectionAttemptEditors_.take(e.id).data();
             const auto previous = connectionAttemptStatus_.take(e.id);
-            if (editor && editor == resultEditor_ && previous.value("state") == "completed" &&
+            const auto previousState = previous.contains("state")
+                                           ? QueryState(previous.value("state").toInt())
+                                           : QueryState::Idle;
+            if (editor && editor == resultEditor_ &&
+                EngineAdapter::queryPresentation(previousState).tone == Tone::Success &&
                 previous.value("source").toString() == resultOrigin_)
                 editor->setProperty("resultStatus", previous);
+            else if (const auto next = EngineAdapter::queryTransition(documentState(editor),
+                                                                      QueryEvent::SessionReady);
+                     next.allowed)
+                setDocumentStatus(editor, next.state, {}, {});
             else
-                setDocumentStatus(editor, QStringLiteral("disconnected"),
-                                  tr("Connect and run a query to see results."), {});
+                message(next.error);
         }
         for (const auto& notice : e.warnings)
             emit connectionNotice(text(notice));
@@ -347,18 +354,16 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         const bool connectionFailure =
             eventKind == "connection_failed" && pendingConnections_.contains(e.id);
         const auto failure =
-            tr("Failed: %1")
-                .arg(text(e.error) + (e.vendor_code.empty()
-                                          ? QString{}
-                                          : tr(" [Code: %1]").arg(text(e.vendor_code))));
+            text(e.error) +
+            (e.vendor_code.empty() ? QString{} : tr(" [Code: %1]").arg(text(e.vendor_code)));
         if (connectionFailure)
-            setDocumentStatus(connectionAttemptEditors_.take(e.id).data(), QStringLiteral("failed"),
+            setDocumentStatus(connectionAttemptEditors_.take(e.id).data(), QueryState::Failed,
                               failure, pendingConnections_.value(e.id));
         else if (eventKind == "operation_failed" && !widgets_.objectReadOnly &&
                  selectedConnection() == e.id)
-            setDocumentStatus(widgets_.currentEditor(), QStringLiteral("failed"), failure, {});
+            setDocumentStatus(widgets_.currentEditor(), QueryState::Failed, failure, {});
         else if (eventKind == "bridge_failed" && workInFlight())
-            setExecutionState(QStringLiteral("failed"), failure);
+            setExecutionState(QueryState::Failed, failure);
         connectionAttemptStatus_.remove(e.id);
         pendingConnections_.remove(e.id);
         if (eventKind == "connection_failed") {
@@ -401,12 +406,10 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             queryConnection_.reset();
             currentPage_.reset();
             clearViewState();
-            const bool failed =
-                resultEditor_
-                    ? resultEditor_->property("resultStatus").toMap().value("state") == "failed"
-                    : widgets_.summary->property("state") == "failed";
-            if (!failed)
-                setExecutionState(QStringLiteral("disconnected"), tr("Disconnected"));
+            const auto current = documentState(resultEditor_);
+            const auto next = EngineAdapter::queryTransition(current, QueryEvent::Disconnect);
+            if (next.allowed && next.state != current)
+                setExecutionState(next.state);
         }
         updateActions();
         return;
@@ -415,7 +418,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         return;
     if (eventKind == "result_view_progress") {
         setExecutionState(
-            QStringLiteral("running"),
+            QueryState::Running,
             tr("Preparing result view · %1 rows scanned").arg(e.result_view_scanned_rows));
         updateActions();
         return;
@@ -434,7 +437,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         currentPage_.reset();
         hasMore_ = false;
         adapter_->fetchPageAt(*query_, 0);
-        setExecutionState(QStringLiteral("running"),
+        setExecutionState(QueryState::Running,
                           tr("Loading result view · %1 matching rows").arg(e.result_view_rows));
         updateActions();
         return;
@@ -457,7 +460,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                     tr("Referenced row filter failed: %1").arg(failureDetail));
             }
             message(tr("Referenced row filter failed: %1").arg(failureDetail));
-            setExecutionState(QStringLiteral("failed"),
+            setExecutionState(QueryState::Failed,
                               tr("Referenced row filter failed: %1").arg(failureDetail));
             updateActions();
             return;
@@ -467,24 +470,23 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         if (filterBar_)
             filterBar_->setBusy(false);
         message(tr("Result view was not changed: %1").arg(failureDetail));
-        setExecutionState(QStringLiteral("failed"),
+        setExecutionState(QueryState::Failed,
                           tr("Previous result view restored: %1").arg(failureDetail));
         updateActions();
         return;
     }
     if (eventKind == "query_state") {
-        const auto state = text(e.state);
-        if (cancellationPending_ && state != "cancelling")
+        const auto state = static_cast<QueryState>(e.query_state);
+        const bool busy = EngineAdapter::queryPresentation(state).busy;
+        if (cancellationPending_ && state != QueryState::Cancelling && busy)
             return;
-        if (state == "completed" || state == "failed" || state == "disconnected")
+        busy_ = busy;
+        if (!busy) {
             cancellationPending_ = false;
-        busy_ = state == "queued" || state == "running" || state == "cancelling";
-        if (state == "completed" || state == "failed" || state == "disconnected")
             executionFinished_ = true;
-        setExecutionState(state, state);
+        }
+        setExecutionState(state);
         updateActions();
-        if (state == "cancelling")
-            widgets_.cancel->setEnabled(false);
     } else if (eventKind == "schema") {
         if (cancellationPending_ || !queryAvailable())
             return;
@@ -518,7 +520,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             busy_ = false;
             fetching_ = false;
             message(tr("Result schema exceeds its transfer reservation."));
-            setExecutionState(QStringLiteral("failed"),
+            setExecutionState(QueryState::Failed,
                               tr("Result schema exceeds its transfer reservation."));
             updateActions();
             return;
@@ -533,8 +535,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         if (e.column_count != columns_.size() && e.row_count != 0) {
             fetching_ = false;
             message(tr("Result page has an invalid column count."));
-            setExecutionState(QStringLiteral("failed"),
-                              tr("Result page has an invalid column count."));
+            setExecutionState(QueryState::Failed, tr("Result page has an invalid column count."));
             busy_ = false;
             hasMore_ = false;
             hasMoreResults_ = false;
@@ -544,8 +545,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         if (static_cast<quint64>(e.row_count) * e.column_count != e.cells.size()) {
             fetching_ = false;
             message(tr("Result page has an invalid cell count."));
-            setExecutionState(QStringLiteral("failed"),
-                              tr("Result page has an invalid cell count."));
+            setExecutionState(QueryState::Failed, tr("Result page has an invalid cell count."));
             busy_ = false;
             hasMore_ = false;
             hasMoreResults_ = false;
@@ -559,7 +559,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             hasMore_ = false;
             hasMoreResults_ = false;
             message(tr("Result page is no longer available."));
-            setExecutionState(QStringLiteral("failed"), tr("Result page is no longer available."));
+            setExecutionState(QueryState::Failed, tr("Result page is no longer available."));
             updateActions();
             return;
         }
@@ -621,7 +621,9 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             rowMetric += (rowMetric.isEmpty() ? QString{} : QStringLiteral(" · ")) +
                          tr("%1 rows").arg(model_->rowCount());
         setExecutionState(
-            QStringLiteral("completed"), tr("Completed"),
+            hasResultPage && model_->rowCount() == 0 ? QueryState::CompletedEmpty
+                                                     : QueryState::CompletedRows,
+            {},
             {tr("Executed in %1 ms").arg(e.duration_ms),
              hasResultPage ? tr("Page %1").arg(*currentPage_ + 1) : QString{}, rowMetric,
              hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024) : QString{}});
@@ -643,16 +645,11 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         hasMoreResults_ = false;
         message(text(e.error) +
                 (e.vendor_code.empty() ? QString{} : tr(" [Code: %1]").arg(text(e.vendor_code))));
-        const auto errorKind = text(e.error_kind);
-        if (errorKind == "Cancelled")
-            setExecutionState(QStringLiteral("cancelled"), tr("Cancelled"));
-        else
-            setExecutionState(
-                QStringLiteral("failed"),
-                tr("Failed: %1")
-                    .arg(text(e.error) + (e.vendor_code.empty()
-                                              ? QString{}
-                                              : tr(" [Code: %1]").arg(text(e.vendor_code)))));
+        if (EngineAdapter::queryTransition(documentState(resultEditor_), QueryEvent::Fail).allowed)
+            setExecutionState(QueryState::Failed,
+                              text(e.error) + (e.vendor_code.empty()
+                                                   ? QString{}
+                                                   : tr(" [Code: %1]").arg(text(e.vendor_code))));
         updateActions();
     }
 }

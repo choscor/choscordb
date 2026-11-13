@@ -76,4 +76,6 @@ class StatusLine final : public QWidget {
     bool refreshing_ = false;
 };
 
+void setStatusTone(QWidget* label, StatusLine::State state);
+
 }

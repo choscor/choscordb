@@ -53,8 +53,7 @@ class QuickSearchDialog final : public QDialog {
     [[nodiscard]] QString selectedResultId() const;
     void setResults(const QList<QuickSearchResult>& results);
     void setStatus(const QString& message);
-    void setLoading(bool loading);
-    void setError(const QString& message);
+    void setSearchState(const QString& message, bool failed);
     void setReopenShortcut(const QKeySequence& shortcut);
 
   public slots:
@@ -82,9 +81,9 @@ class QuickSearchDialog final : public QDialog {
     QLabel* status_ = nullptr;
     QList<QuickSearchResult> results_;
     QString statusMessage_;
-    QString errorMessage_;
+    QString searchMessage_;
     QKeySequence reopenShortcut_;
-    bool loading_ = false;
+    bool failed_ = false;
 };
 
 }

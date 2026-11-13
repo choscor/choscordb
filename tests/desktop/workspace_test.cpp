@@ -343,9 +343,9 @@ void WorkspaceTest::aPageThatFinishesAfterANewerPageIsDropped() {
         if (invalidated && f.grid.model()->rowCount() > 0)
             shown << f.grid.model()->index(0, 0).data().toString();
     });
-    QStringList states;
+    QList<choscordb::QueryState> states;
     connect(&f.workspace, &choscordb::QueryWorkspace::executionStateChanged, &f.parent,
-            [&](const QString& state) {
+            [&](choscordb::QueryState state) {
                 if (invalidated)
                     states << state;
             });
@@ -355,7 +355,7 @@ void WorkspaceTest::aPageThatFinishesAfterANewerPageIsDropped() {
     QTRY_VERIFY(f.run.isEnabled());
     QTest::qWait(100);
     QCOMPARE(shown, QStringList{});
-    QVERIFY2(!states.contains("failed"), qPrintable(f.messages.toPlainText()));
+    QVERIFY2(!states.contains(choscordb::QueryState::Failed), qPrintable(f.messages.toPlainText()));
     QCOMPARE(f.grid.model()->rowCount(), 0);
     f.workspace.invalidateResult();
     QTRY_COMPARE(adapter->memoryUsage().used, quint64(0));
@@ -380,7 +380,7 @@ void WorkspaceTest::immediateCancellationDoesNotReenableCancelBeforeAcknowledgem
     QVERIFY(!f.cancel.isEnabled());
     QTRY_VERIFY(f.run.isEnabled());
     QVERIFY2(!reenabled, "Queued/running events must not undo a user's pending cancellation");
-    QCOMPARE(f.summary.property("state").toString(), QString("cancelled"));
+    QCOMPARE(f.workspace.executionState(), choscordb::QueryState::Cancelled);
 }
 
 void WorkspaceTest::connectionPanelRetainsFailedSaveConnectDraftAndRetries() {
@@ -715,8 +715,7 @@ void WorkspaceTest::cancelledUpdateDoesNotInstallOnLaterNormalClose() {
             [&](const choscordb::BridgeEvent& e) {
                 if (QString::fromUtf8(e.kind.data(), static_cast<qsizetype>(e.kind.size())) ==
                         "query_state" &&
-                    QString::fromUtf8(e.state.data(), static_cast<qsizetype>(e.state.size())) ==
-                        "running")
+                    e.query_state == choscordb::QueryStateDto::Running)
                     running = true;
             });
     const QString sql = "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE "
@@ -779,8 +778,7 @@ void WorkspaceTest::closingActiveQueryFlushesDisconnectedHistory() {
             [&](const choscordb::BridgeEvent& e) {
                 if (QString::fromUtf8(e.kind.data(), static_cast<qsizetype>(e.kind.size())) ==
                         "query_state" &&
-                    QString::fromUtf8(e.state.data(), static_cast<qsizetype>(e.state.size())) ==
-                        "running")
+                    e.query_state == choscordb::QueryStateDto::Running)
                     running = true;
             });
     const QString sql = "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE "

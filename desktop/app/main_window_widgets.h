@@ -32,16 +32,6 @@
 #include <utility>
 
 namespace choscordb::main_window_detail {
-inline design::Text* createEmptyStateText(const QString& text, QWidget* parent) {
-    auto* label = new design::Text(text, parent);
-    label->setWordWrap(true);
-    label->setForegroundRole(QPalette::PlaceholderText);
-    label->setAlignment(Qt::AlignCenter);
-    label->setMargin(design::spacing(design::Spacing::Three));
-    label->setTextFormat(Qt::PlainText);
-    return label;
-}
-
 static_assert(int(design::RowMark::None) == int(RowStatusKind::None) &&
               int(design::RowMark::Loading) == int(RowStatusKind::Loading) &&
               int(design::RowMark::Failed) == int(RowStatusKind::Failed) &&

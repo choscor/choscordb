@@ -22,6 +22,7 @@ preserved by the component extraction.
 | Switch | `switch/`: existing `designRole="switch"` track and thumb painting |
 | Tool button | `tool_button/`: QToolButton states and menu-indicator rules |
 | Toolbar | `toolbar/`: toolbar geometry, separators, and muted workspace variant |
+| Panel state | `panel_state/`: one centered placeholder `Text` for empty, no-match and failed panels; failed uses the `fieldError` role, the others the `description` role |
 | Status line | `status_line/`: shared single-row workspace layout, Body typography, paging, overflow, `<status>-surface` fills with status text (neutral uses `surface-raised`), loading icon, and complete Details |
 | Tabs | `tabs/`: segmented pane and document variants, left-aligned document labels, and tab-close painting |
 | Table | `table/`: table font, row styles, and interactive result headers |
@@ -120,6 +121,7 @@ owning modules.
 | Tabs with close and overflow | Tabs |
 | Workspace toolbar | Toolbar |
 | Result, object, and history status lines | Status line |
+| Empty, no-match and failed panel states | Panel state |
 | Scroll areas and scrollbars | Scrollbar |
 | Separators and splitters | Separator, splitter |
 | Table headers, cells and selection | Table, header, shared item view styles |

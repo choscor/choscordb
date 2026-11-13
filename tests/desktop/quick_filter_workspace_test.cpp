@@ -5,6 +5,7 @@
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/theme_manager.h"
 #include "models/result_table_model.h"
+#include "screen_state_checks.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QComboBox>
@@ -285,8 +286,8 @@ class QuickFilterWorkspaceTest : public QObject {
         choose(0, 1, 0);
         workspace->invalidateResult();
         QTRY_COMPARE(grid_->model()->rowCount(), 0);
-        QTRY_COMPARE(object_->findChild<QLabel*>("objectDataSummary")->property("state").toString(),
-                     QString("disconnected"));
+        QTRY_COMPARE(summaryState(object_->findChild<QLabel*>("objectDataSummary")),
+                     choscordb::QueryState::Idle);
         QVERIFY(filter_->text().isEmpty());
         QVERIFY(!object_->findChild<QPushButton*>("resultFilterApply")->isEnabled());
     }

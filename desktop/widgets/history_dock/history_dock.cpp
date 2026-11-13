@@ -9,6 +9,7 @@
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "models/history_model.h"
+#include "widgets/screen_state/screen_state.h"
 #include <QAction>
 #include <QComboBox>
 #include <QEvent>
@@ -339,9 +340,6 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
                 offset_ = pendingOffset_;
                 model_->setEntries(entries);
                 selectEntry();
-                if (!failed_)
-                    statusText_ =
-                        entries.isEmpty() ? tr("No query history on this page.") : QString{};
                 updateControls();
             });
     connect(adapter, &EngineAdapter::historyPolicyReady, this,
@@ -352,9 +350,6 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
                 havePolicy_ = true;
                 policy_ = policy;
                 record_->setChecked(policy.enabled);
-                if (!failed_ && !listToken_)
-                    statusText_ =
-                        model_->rowCount() == 0 ? tr("No query history on this page.") : QString{};
                 updateControls();
             });
     connect(adapter, &EngineAdapter::historyCleared, this, [this](quint64 id) {
@@ -378,6 +373,8 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
                 failed_ = true;
                 statusText_ = error;
                 updateControls();
+                showPresentationToast(this, EngineAdapter::panelPresentation(
+                                                PanelKind::History, PanelState::Failed, error));
             });
     connect(adapter, &EngineAdapter::profilesReady, this,
             [this](quint64 id, const QList<SavedProfile>& profiles) {
@@ -501,15 +498,18 @@ void HistoryDock::updateControls() {
             ? tr("Rows %1–%2").arg(quint64(offset_) + 1).arg(quint64(offset_) + model_->rowCount())
         : offset_ == 0 ? tr("No rows")
                        : tr("After row %1").arg(offset_);
-    const auto state = failed_ ? design::StatusLine::State::Error
-                       : listToken_ || clearToken_ || policyToken_ || !havePolicy_
-                           ? design::StatusLine::State::Neutral
-                           : design::StatusLine::State::Success;
-    const auto status = failed_        ? statusText_
-                        : clearToken_  ? tr("Clearing history…")
-                        : policyToken_ ? tr("Updating history preference…")
-                        : listToken_   ? tr("Loading history…")
-                                       : statusText_;
-    footer_->setContent({{}, status, {}, {}, {}, range}, state);
+    const auto panel = failed_                                     ? PanelState::Failed
+                       : clearToken_ || policyToken_ || listToken_ ? PanelState::Loading
+                       : !havePolicy_                              ? PanelState::Idle
+                       : model_->rowCount() == 0                   ? PanelState::Empty
+                                                                   : PanelState::Ready;
+    const auto detail = failed_                      ? statusText_
+                        : clearToken_                ? tr("Clearing history…")
+                        : policyToken_               ? tr("Updating history preference…")
+                        : listToken_                 ? tr("Loading history…")
+                        : panel == PanelState::Empty ? tr("No query history on this page.")
+                                                     : QString{};
+    const auto shown = EngineAdapter::panelPresentation(PanelKind::History, panel, detail);
+    footer_->setContent({{}, shown.message, {}, {}, {}, range}, statusLineState(shown.tone));
 }
 }

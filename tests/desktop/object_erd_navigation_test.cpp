@@ -2,6 +2,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/theme_manager.h"
+#include "screen_state_checks.h"
 #include "widgets/object_erd_widget.h"
 #include <QGraphicsPathItem>
 #include <QGraphicsRectItem>
@@ -48,7 +49,7 @@ class ObjectErdNavigationTest final : public QObject {
         explorer.selectPane(4);
         auto* status = explorer.findChild<QLabel*>("objectStatus");
         auto* erd = explorer.findChild<ObjectErdWidget*>("objectErd");
-        QTRY_COMPARE(status->property("state").toString(), QString("incomplete"));
+        QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Incomplete);
         QVERIFY(status->toolTip().contains("missing"));
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
         QCOMPARE(footer->palette().color(QPalette::Window),

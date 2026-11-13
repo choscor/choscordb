@@ -30,6 +30,7 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/quick_search/quick_search_dialog.cpp
   desktop/design_system/right_sheet/right_sheet.cpp
   desktop/design_system/select/select_popup.cpp
+  desktop/design_system/panel_state/panel_state.cpp
   desktop/design_system/status_line/status_line.cpp
   desktop/design_system/style/stylesheet.cpp
   desktop/design_system/switch/switch_indicator.cpp

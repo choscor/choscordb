@@ -14,6 +14,7 @@
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
+#include "screen_state_checks.h"
 #include "tools/preview/preview_window.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -316,15 +317,15 @@ void ModernUiTest::navigatorEmptyVariantsUseOneLineBreak() {
     QTest::mouseClick(profiles->viewport(), Qt::LeftButton, Qt::NoModifier,
                       profiles->visualItemRect(profiles->item(0)).center());
     QTRY_VERIFY(window.browsingConnection().has_value());
-    QTRY_COMPARE(objects->text(),
-                 QString("No objects to show.\nRefresh to check for schemas and objects."));
+    QTRY_VERIFY(objects->isHidden());
     for (auto* candidate : window.findChildren<QLineEdit*>())
         if (candidate->accessibleName() == "Filter database objects")
             filter = candidate;
     QVERIFY(filter);
     filter->setText("missing");
-    QCOMPARE(objects->text(),
-             QString("No matching objects.\nTry a different filter or clear the search."));
+    QTRY_COMPARE(objects->text(),
+                 QString("No matching objects.\nTry a different filter or clear the search."));
+    QVERIFY(objects->isVisible());
 }
 
 void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections() {
@@ -448,16 +449,14 @@ void ModernUiTest::completedResultsKeepContentWidthsAndDisableCancel() {
         window.findChild<QTabWidget*>("editorTabs")->currentWidget());
     editor->setText("CREATE TABLE previous_result(value INTEGER)");
     run->trigger();
-    QTRY_COMPARE(window.findChild<QLabel*>("executionSummary")->property("state").toString(),
-                 QString("completed"));
+    QTRY_VERIFY(queryCompleted(summaryState(window.findChild<QLabel*>("executionSummary"))));
     editor->setText(
         "SELECT 1 AS id, 'Olivia Rhye' AS name, 'olivia@acme.test' AS email, "
         "'Pro' AS plan, 'active' AS status, '2026-09-12' AS created_at, 128 AS total_spent");
     run->trigger();
     auto* grid = window.findChild<QTableView*>("queryResults");
     QTRY_COMPARE(grid->model()->rowCount(), 1);
-    QTRY_COMPARE(window.findChild<QLabel*>("executionSummary")->property("state").toString(),
-                 QString("completed"));
+    QTRY_VERIFY(queryCompleted(summaryState(window.findChild<QLabel*>("executionSummary"))));
     QCoreApplication::processEvents();
     QVERIFY(window.findChild<QPushButton*>("cancelQueryButton")->isHidden());
     QVERIFY(!window.findChild<QPushButton*>("cancelQueryButton")->isEnabled());
@@ -625,7 +624,7 @@ void ModernUiTest::captureScreenFixtures() {
                 "created_at DATE, total_spent NUMERIC, metadata TEXT DEFAULT '{}', avatar "
                 "BLOB)");
             run->trigger();
-            QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+            QTRY_VERIFY(queryCompleted(summaryState(summary)));
             editor->setText(
                 "INSERT INTO customers(id,name,email,plan,status,created_at,total_spent) "
                 "VALUES "
@@ -639,7 +638,7 @@ void ModernUiTest::captureScreenFixtures() {
                 "Diggs','orlando@acme.test','Starter','inactive','2026-09-09',NULL),"
                 "(8,'Andi Lane','andi@acme.test','Pro','active','2026-09-09',128.00)");
             run->trigger();
-            QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+            QTRY_VERIFY(queryCompleted(summaryState(summary)));
             editor->setText("-- A closer look at our newest customers\n"
                             "SELECT id, name, email, plan, status,\n"
                             "       created_at, total_spent\nFROM main.customers\n"
@@ -649,7 +648,7 @@ void ModernUiTest::captureScreenFixtures() {
             run->trigger();
             auto* grid = window.findChild<QTableView*>("queryResults");
             QTRY_COMPARE(grid->model()->rowCount(), 8);
-            QTRY_COMPARE(summary->property("state").toString(), QString("completed"));
+            QTRY_VERIFY(queryCompleted(summaryState(summary)));
             auto* tree = window.findChild<QTreeView*>("databaseNavigator");
             auto* proxy = qobject_cast<QSortFilterProxyModel*>(tree->model());
             auto* navigator = window.findChild<choscordb::NavigatorModel*>();
@@ -673,10 +672,10 @@ void ModernUiTest::captureScreenFixtures() {
             auto* panes = explorer->findChild<QTabBar*>("objectTabs");
             auto* objectStatus = explorer->findChild<QLabel*>("objectStatus");
             panes->setCurrentIndex(1);
-            QTRY_COMPARE(objectStatus->property("state").toString(), QString("loaded"));
+            QTRY_COMPARE(objectPanelState(objectStatus), choscordb::PanelState::Ready);
             capture("object-indexes");
             panes->setCurrentIndex(2);
-            QTRY_COMPARE(objectStatus->property("state").toString(), QString("loaded"));
+            QTRY_COMPARE(objectPanelState(objectStatus), choscordb::PanelState::Ready);
             capture("object-keys");
             panes->setCurrentIndex(3);
             QTRY_VERIFY(explorer->findChild<QPlainTextEdit*>("objectDdl")
@@ -715,13 +714,13 @@ void ModernUiTest::captureScreenFixtures() {
             profileDialog->reject();
             editor->setText("SELECT missing_column FROM customers");
             run->trigger();
-            QTRY_COMPARE(summary->property("state").toString(), QString("failed"));
+            QTRY_COMPARE(summaryState(summary), choscordb::QueryState::Failed);
             capture("sql-error");
             editor->setText("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n "
                             "WHERE x<100000000) SELECT sum(x) FROM n");
             run->trigger();
             window.findChild<QPushButton*>("cancelQueryButton")->click();
-            QCOMPARE(summary->property("state").toString(), QString("cancelling"));
+            QCOMPARE(summaryState(summary), choscordb::QueryState::Cancelling);
             capture("sql-cancelling", false);
             QTRY_VERIFY(workspace->navigationAllowed());
             editor->setModified(false);

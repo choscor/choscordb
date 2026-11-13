@@ -569,6 +569,10 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                 preservePasswordOnRefresh_ = false;
                 preserveTlsSecretOnRefresh_ = false;
                 connectAfterSave_ = false;
+                if (std::exchange(testToken_, 0) == token) {
+                    showTest(ProfileTestState::Failed, error);
+                    return;
+                }
                 setBusy(false, refreshNotice_.isEmpty()
                                    ? error
                                    : tr("%1 List refresh failed: %2").arg(refreshNotice_, error));
@@ -576,8 +580,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
             }
         });
     connect(adapter, &EngineAdapter::profileTested, this, [this](quint64 token) {
-        if (token == token_)
-            setBusy(false, tr("Connection test succeeded."), true);
+        if (token == token_ && std::exchange(testToken_, 0) == token)
+            showTest(ProfileTestState::Succeeded);
     });
     connect(adapter, &EngineAdapter::profileConnectFailed, this, [this](const QString& error) {
         if (connecting_)
@@ -653,6 +657,10 @@ void ProfileDialog::showFieldError(QWidget* field, const QString& message) {
         scroll->ensureWidgetVisible(field);
 }
 
+void ProfileDialog::showTest(ProfileTestState state, const QString& detail) {
+    const auto shown = EngineAdapter::profileTestPresentation(state, detail);
+    setBusy(shown.busy, shown.message, shown.tone == Tone::Success);
+}
 void ProfileDialog::setBusy(bool busy, const QString& message, bool success, bool warning) {
     if (busy) {
         progressMessage_->setText(message);
@@ -681,8 +689,8 @@ void ProfileDialog::setBusy(bool busy, const QString& message, bool success, boo
     }
     statusLine_->setMessage(message);
     statusLine_->setBusy(busy);
-    statusLine_->setAvailable(busy || success);
-    if (warning)
+    statusLine_->setAvailable(success);
+    if (warning || busy)
         statusLine_->setNeutral();
     statusLine_->setVisible(!message.isEmpty());
 }

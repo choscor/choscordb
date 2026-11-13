@@ -1,5 +1,6 @@
 #include "app/error_feedback.h"
 #include "app/main_window.h"
+#include "design_system/panel_state/panel_state.h"
 
 #include "app/editor_preferences.h"
 #include "app/main_window_ui.h"
@@ -294,7 +295,7 @@ MainWindow::Ui MainWindow::buildUi() {
     savedConnections->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     new SidebarConnectionListScroll(savedConnections, connectionsScroll);
     new SidebarWheelForwarder(connectionsScroll, savedConnections->viewport());
-    auto* connectionsEmpty = createEmptyStateText(
+    auto* connectionsEmpty = design::createPanelStateText(
         tr("No saved connections yet.\nUse + to add a database connection."), connectionSection);
     connectionsEmpty->setObjectName("sidebarConnectionsEmpty");
     connectionSection->contentLayout()->addWidget(connectionsEmpty);
@@ -337,7 +338,7 @@ MainWindow::Ui MainWindow::buildUi() {
     tree->setUniformRowHeights(true);
     new SidebarWheelForwarder(connectionsScroll, pinnedList->viewport());
     new SidebarWheelForwarder(connectionsScroll, tree->viewport());
-    auto* objectsEmpty = createEmptyStateText({}, objectSection);
+    auto* objectsEmpty = design::createPanelStateText({}, objectSection);
     objectsEmpty->setObjectName("sidebarObjectsEmpty");
     objectSection->contentLayout()->addWidget(objectsEmpty);
     objectSection->contentLayout()->addWidget(tree);
@@ -356,7 +357,7 @@ MainWindow::Ui MainWindow::buildUi() {
     savedSearch->setPlaceholderText(tr("Filter saved queries…"));
     savedSearch->setAccessibleName(tr("Filter saved SQL files"));
     savedSection->contentLayout()->addWidget(savedSearch);
-    auto* savedStatus = createEmptyStateText({}, savedSection);
+    auto* savedStatus = design::createPanelStateText({}, savedSection);
     savedStatus->setObjectName("sidebarSavedStatus");
     savedSection->contentLayout()->addWidget(savedStatus);
     auto* savedFiles = new QTreeWidget(savedSection);
@@ -385,7 +386,7 @@ MainWindow::Ui MainWindow::buildUi() {
     historySearch->setPlaceholderText(tr("Filter recent history…"));
     historySearch->setAccessibleName(tr("Filter recent query history"));
     historySection->contentLayout()->addWidget(historySearch);
-    auto* historyStatus = createEmptyStateText({}, historySection);
+    auto* historyStatus = design::createPanelStateText({}, historySection);
     historyStatus->setObjectName("sidebarHistoryStatus");
     historySection->contentLayout()->addWidget(historyStatus);
     auto* historyItems = new QListWidget(historySection);
@@ -680,9 +681,8 @@ MainWindow::Ui MainWindow::buildUi() {
     resultLayout->setSpacing(0);
     auto* empty = new design::Text;
     empty->setObjectName("executionSummary");
-    // ui-ok: workflow state read by QueryWorkspace; StatusLine owns presentation.
-    empty->setProperty("state", "disconnected");
-    empty->setAccessibleName(tr("Execution status: disconnected"));
+    empty->setAccessibleName(
+        tr("Execution status: %1").arg(EngineAdapter::queryPresentation(QueryState::Idle).message));
     auto* grid = new QTableView;
     grid->setObjectName("queryResults");
     grid->setHorizontalHeader(new ResultColumnHeader(grid));
@@ -840,7 +840,7 @@ MainWindow::Ui MainWindow::buildUi() {
     colorStartIcon();
     connect(theme_, &design::ThemeManager::themeChanged, startIcon, colorStartIcon);
     startLayout->addWidget(startIcon);
-    auto* startHint = createEmptyStateText(
+    auto* startHint = design::createPanelStateText(
         tr("Welcome to ChoscorDB\nSelect a connection in the sidebar or create a new one."), start);
     startHint->setObjectName("startHint");
     startLayout->addWidget(startHint);
@@ -857,8 +857,8 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* object = new QWidget;
     object->setObjectName("objectScreen");
     auto* objectLayout = new QVBoxLayout(object);
-    auto* objectHint =
-        createEmptyStateText(tr("Select a table or view in the sidebar to inspect it."), object);
+    auto* objectHint = design::createPanelStateText(
+        tr("Select a table or view in the sidebar to inspect it."), object);
     objectLayout->addWidget(objectHint);
     screens_->addWidget(object);
     auto* centralHost = new QWidget(this);

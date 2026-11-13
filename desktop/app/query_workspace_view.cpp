@@ -4,6 +4,7 @@
 #include "bridge/engine_adapter.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/table/table_style.h"
+#include "widgets/screen_state/screen_state.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QBoxLayout>
 #include <QFutureWatcher>
@@ -185,15 +186,15 @@ void QueryWorkspace::message(const QString& value) {
     }
 }
 
-void QueryWorkspace::setExecutionState(const QString& state, const QString& detail,
+void QueryWorkspace::setExecutionState(QueryState state, const QString& detail,
                                        const ExecutionMetrics& metrics) {
-    if (state == QLatin1String("queued")) {
+    if (state == QueryState::Queued) {
         completedDurationMs_.reset();
         completedAffectedRows_.clear();
     }
     if (auto* editor = resultEditor_.data()) {
         editor->setProperty("resultStatus",
-                            QVariantMap{{"state", state},
+                            QVariantMap{{"state", int(state)},
                                         {"detail", detail},
                                         {"source", resultOrigin_},
                                         {"duration", metrics.duration},
@@ -208,15 +209,34 @@ void QueryWorkspace::setExecutionState(const QString& state, const QString& deta
     presentExecutionState(state, detail, metrics, resultOrigin_);
 }
 
-void QueryWorkspace::setDocumentStatus(SqlEditor* editor, const QString& state,
-                                       const QString& detail, const QString& source) {
+void QueryWorkspace::applyExecutionEvent(QueryEvent event, const QString& detail) {
+    const auto current = documentState(resultEditor_);
+    const auto next = EngineAdapter::queryTransition(current, event);
+    if (!next.allowed) {
+        message(next.error);
+        return;
+    }
+    if (next.state != current)
+        setExecutionState(next.state, detail);
+}
+
+QueryState QueryWorkspace::documentState(const SqlEditor* editor) const {
+    if (!editor)
+        return executionState_;
+    const auto saved = editor->property("resultStatus").toMap();
+    return saved.contains("state") ? QueryState(saved.value("state").toInt())
+                                   : QueryState::Disconnected;
+}
+
+void QueryWorkspace::setDocumentStatus(SqlEditor* editor, QueryState state, const QString& detail,
+                                       const QString& source) {
     if (editor) {
         const auto messages =
             editor == widgets_.currentEditor()
                 ? widgets_.messages->toPlainText()
                 : editor->property("resultStatus").toMap().value("messages").toString();
         editor->setProperty("resultStatus",
-                            QVariantMap{{"state", state},
+                            QVariantMap{{"state", int(state)},
                                         {"detail", detail},
                                         {"source", source},
                                         {"messages", messages + QStringLiteral("\n") + detail}});
@@ -226,18 +246,18 @@ void QueryWorkspace::setDocumentStatus(SqlEditor* editor, const QString& state,
                               source.isEmpty() ? documentTarget(editor) : source);
 }
 
-void QueryWorkspace::presentExecutionState(const QString& state, const QString& detail,
+void QueryWorkspace::presentExecutionState(QueryState state, const QString& detail,
                                            const ExecutionMetrics& metrics, const QString& source) {
-    widgets_.summary->setProperty("state", state);
-    const auto status = detail.isEmpty() ? state : detail;
+    executionState_ = state;
+    const auto shown = detail.isEmpty() ? EngineAdapter::queryPresentation(state)
+                                        : EngineAdapter::queryPresentation(state, detail);
+    design::setStatusTone(widgets_.summary, statusLineState(shown.tone));
+    const auto& status = shown.message;
     if (auto* footer = qobject_cast<design::StatusLine*>(widgets_.summary->parentWidget())) {
-        const auto semantic = state == "failed"      ? design::StatusLine::State::Error
-                              : state == "completed" ? design::StatusLine::State::Success
-                                                     : design::StatusLine::State::Neutral;
-        footer->setBusy(state == "queued" || state == "running" || state == "cancelling");
+        footer->setBusy(shown.busy);
         footer->setContent(
             {source, status, metrics.duration, metrics.visibleSize, metrics.page, metrics.rows},
-            semantic);
+            statusLineState(shown.tone));
         widgets_.summary->setAccessibleName(tr("Execution status: %1").arg(footer->toolTip()));
         emit executionStateChanged(state);
         return;
@@ -272,8 +292,6 @@ void QueryWorkspace::presentExecutionState(const QString& state, const QString& 
     updateMetric(widgets_.pageMetric, metrics.page);
     updateMetric(widgets_.rowsMetric, metrics.rows);
     updateMetric(widgets_.visibleSizeMetric, metrics.visibleSize);
-    widgets_.summary->style()->unpolish(widgets_.summary);
-    widgets_.summary->style()->polish(widgets_.summary);
     emit executionStateChanged(state);
 }
 
@@ -349,14 +367,14 @@ void QueryWorkspace::submitResultView(const QList<ResultFilterCondition>& filter
         if (proposedFiltersFromDraft_)
             filterBar_->showValidationError(
                 tr("Filters could not be applied. See Messages for details."));
-        setExecutionState(QStringLiteral("failed"),
+        setExecutionState(QueryState::Failed,
                           tr("Previous result view restored: %1").arg(commandError_));
         updateActions();
         return;
     }
     viewBusy_ = true;
     filterBar_->setBusy(true);
-    setExecutionState(QStringLiteral("running"), tr("Preparing result view…"));
+    setExecutionState(QueryState::Running, tr("Preparing result view…"));
     updateActions();
 }
 

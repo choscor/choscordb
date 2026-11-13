@@ -14,6 +14,7 @@
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "widgets/editor_completion/editor_completion.h"
+#include "widgets/screen_state/screen_state.h"
 #include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemModel>
@@ -155,14 +156,11 @@ void MainWindow::connectNavigator(const Ui& ui) {
                     .arg(EngineAdapter::rowStatus(RowStatusCause::ChildrenFailed, error).message));
         });
     const auto updateObjectsEmpty = [this, tree, filter, objectsEmpty] {
-        objectsEmpty->setVisible(tree->model()->rowCount() == 0);
-        objectsEmpty->setText(
-            selectedProfileIds_.isEmpty()
-                ? tr("No database selected.\nSelect a connection to browse its "
-                     "schemas and objects.")
-            : !filter->text().isEmpty()
-                ? tr("No matching objects.\nTry a different filter or clear the search.")
-                : tr("No objects to show.\nRefresh to check for schemas and objects."));
+        presentPanel(objectsEmpty, PanelKind::Objects,
+                     tree->model()->rowCount() > 0   ? PanelState::Ready
+                     : selectedProfileIds_.isEmpty() ? PanelState::Disconnected
+                     : !filter->text().isEmpty()     ? PanelState::NoMatch
+                                                     : PanelState::Empty);
     };
     connect(tree->model(), &QAbstractItemModel::rowsInserted, objectsEmpty, updateObjectsEmpty);
     connect(tree->model(), &QAbstractItemModel::rowsRemoved, objectsEmpty, updateObjectsEmpty);

@@ -25,6 +25,7 @@ class PreviewTest final : public QObject {
     void modalSpecimenNamesTheDialogSurface();
     void workspaceToolbarSpecimenUsesSurfaceInBothThemes();
     void statusLineSpecimenUsesSharedSurfaceInBothThemes();
+    void panelStateSpecimenShowsEachPlaceholderInBothThemes();
     void richTextParagraphsHaveCompactSpacing();
     void showToastOpensTransientToastAtViewportCorner();
     void toastPortalIsPresentInBothThemes();

@@ -1,4 +1,5 @@
 #pragma once
+#include "bridge/engine_adapter.h"
 #include <QHash>
 #include <QPointer>
 #include <QStringList>
@@ -40,6 +41,7 @@ class ObjectExplorer final : public QWidget {
     void installDataWidget(QWidget* widget);
     void setOperationBusy(bool busy);
     void showNotice(const QString& message, bool busy = false);
+    PanelState panelState() const { return panelState_; }
   signals:
     void dataRequested(quint64 connection, const QString& object, const QString& label,
                        const QString& relationSubtype);
@@ -56,7 +58,10 @@ class ObjectExplorer final : public QWidget {
     void updateFooter();
     void render(const ObjectInspection& inspection);
     void renderGraph(const ObjectGraph& graph);
-    void setStatus(const QString& state, const QString& text);
+    void setStatus(PanelState state, const QString& detail = {});
+    void applyPanelEvent(PanelEvent event, const QString& detail = {});
+    void showStatus(const QString& text, Tone tone, bool busy);
+    void showOperationNotice(const QString& text);
     EngineAdapter* adapter_;
     QTabBar* tabs_;
     QTableView* table_;
@@ -77,7 +82,10 @@ class ObjectExplorer final : public QWidget {
     QStringList columns_;
     bool columnsLoaded_ = false;
     bool graphLoaded_ = false;
-    QString graphState_, graphMessage_;
+    PanelState panelState_ = PanelState::Idle;
+    PanelEvent graphEvent_ = PanelEvent::LoadedRows;
+    QString graphMessage_;
+    bool operationNotice_ = false;
     std::optional<quint64> connection_;
     QString object_, label_, kind_;
     QVariantList properties_;

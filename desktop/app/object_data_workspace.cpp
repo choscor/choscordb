@@ -217,7 +217,11 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     cancelButton->setEnabled(cancel->isEnabled());
     connect(cancelButton, &QPushButton::clicked, cancel, &QAction::trigger);
     connect(result_, &QueryWorkspace::executionStateChanged, messages,
-            [messages](const QString& state) { messages->setVisible(state == "failed"); });
+            [messages](QueryState state) {
+                const auto pane = EngineAdapter::queryPresentation(state).pane;
+                if (pane != ResultPane::Unchanged)
+                    messages->setVisible(pane == ResultPane::Messages);
+            });
     connect(result_, &QueryWorkspace::activityChanged, this, [this, cancelButton](bool busy) {
         if (sql_)
             sql_->setExternalWork(this, busy);

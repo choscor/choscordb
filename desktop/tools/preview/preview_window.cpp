@@ -137,6 +137,8 @@ QList<Specimen> specimens() {
          "desktop/design_system/quick_search/quick_search_dialog.cpp"},
         {"Components", "status-line", "Workspace status line with loading indicator",
          "desktop/design_system/status_line/status_line.cpp"},
+        {"Components", "panel-state", "Empty, no-match and failed panel states",
+         "desktop/design_system/panel_state/panel_state.cpp"},
         {"Components", "nonmodal", "Nonmodal content",
          "desktop/design_system/dialog_shell/dialog_shell.cpp"},
         {"Components", "confirmations", "Destructive confirmations",

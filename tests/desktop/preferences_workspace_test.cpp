@@ -338,10 +338,10 @@ class PreferencesWorkspaceTest : public QObject {
             connect(&writer, &EngineAdapter::eventReady, &writer, [&](const BridgeEvent& event) {
                 const auto kind =
                     QString::fromUtf8(event.kind.data(), qsizetype(event.kind.size()));
-                const auto state =
-                    QString::fromUtf8(event.state.data(), qsizetype(event.state.size()));
                 connected = connected || kind == "connected";
-                completed = completed || (kind == "query_state" && state == "completed");
+                completed = completed || (kind == "query_state" &&
+                                          (event.query_state == QueryStateDto::CompletedRows ||
+                                           event.query_state == QueryStateDto::CompletedEmpty));
             });
             const auto connection = writer.connectSqlite(path);
             QVERIFY(connection.has_value());

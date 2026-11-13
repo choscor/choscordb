@@ -1,6 +1,8 @@
 #include "app/main_window_ui_pins.h"
+#include "design_system/panel_state/panel_state.h"
 
 #include "app/main_window_widgets.h"
+#include "bridge/engine_adapter.h"
 #include "design_system/text/text.h"
 #include "design_system/tree/navigation_tree_view.h"
 #include "widgets/sidebar_section/sidebar_section.h"
@@ -17,8 +19,8 @@ PinnedSidebar buildPinnedSidebar(QWidget* parent, QVBoxLayout* layout) {
     section->setAccessibleName(label("Pinned shortcuts"));
     section->layout()->setSpacing(design::spacing(design::Spacing::Half));
     layout->addWidget(section);
-    auto* empty = main_window_detail::createEmptyStateText(
-        label("No pinned objects yet.\nPin a schema or object from its menu."), section);
+    auto* empty = design::createPanelStateText(
+        EngineAdapter::panelPresentation(PanelKind::Pins, PanelState::Empty).message, section);
     empty->setObjectName("pinnedEmpty");
     section->contentLayout()->addWidget(empty);
     auto* list = new design::NavigationTreeView(section);

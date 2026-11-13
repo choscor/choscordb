@@ -9,6 +9,7 @@
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
+#include "widgets/screen_state/screen_state.h"
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QFileDialog>
@@ -133,7 +134,7 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     connect(adapter, &EngineAdapter::eventReady, this, &ExportDialog::handleEvent);
     connect(adapter, &EngineAdapter::exportSubmissionFailed, this,
             [this](quint64 query, const QString& error) {
-                if (submitting_ && query_ == query)
+                if (state_ == ExportState::Submitting && query_ == query)
                     submissionError_ = error;
             });
     updateActions();
@@ -143,7 +144,7 @@ ExportDialog::~ExportDialog() {
         adapter_->cancelExport(*export_);
 }
 bool ExportDialog::isRunning() const {
-    return submitting_ || export_.has_value();
+    return EngineAdapter::exportPresentation(state_).busy;
 }
 void ExportDialog::setQuery(quint64 query) {
     if (query_ == query)
@@ -181,7 +182,7 @@ void ExportDialog::updateActions() {
     browse_->setEnabled(!running);
     start_->setEnabled(adapter_ && query_ && !running && !destination_->text().isEmpty() &&
                        (!sql || !table_->text().isEmpty()));
-    cancel_->setEnabled(running && !cancelling_);
+    cancel_->setEnabled(running && state_ != ExportState::Cancelling);
 }
 void ExportDialog::start() {
     QStringList table;
@@ -211,64 +212,65 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
     schema_->setText(table.size() == 2 ? table.first() : QString{});
     table_->setText(table.isEmpty() ? QString{} : table.last());
     dialect_->setCurrentIndex(dialect_->findData(dialect));
-    submitting_ = true;
     submissionError_.clear();
-    statusLine_->setMessage(tr("Checking destination…"));
-    statusLine_->setAvailable(true);
-    statusLine_->setBusy(true);
-    statusLine_->show();
+    apply(ExportEvent::Submit, tr("Checking destination…"));
+    if (state_ != ExportState::Submitting)
+        return;
     start_->setText(tr("&Export"));
     updateActions();
     emit exportRunningChanged(true);
-    if (!adapter_ || query_ != query || submissionToken_ != token || !submitting_)
+    if (!adapter_ || query_ != query || submissionToken_ != token)
         return;
     auto* watcher = new QFutureWatcher<DocumentPathStatusDto>(this);
-    connect(watcher, &QFutureWatcher<DocumentPathStatusDto>::finished, this,
-            [this, watcher, query, token, path, format, table, dialect] {
-                const auto result = watcher->result();
-                watcher->deleteLater();
-                if (!adapter_ || query_ != query || submissionToken_ != token || !submitting_)
+    connect(
+        watcher, &QFutureWatcher<DocumentPathStatusDto>::finished, this,
+        [this, watcher, query, token, path, format, table, dialect] {
+            const auto result = watcher->result();
+            watcher->deleteLater();
+            if (!adapter_ || query_ != query || submissionToken_ != token ||
+                state_ != ExportState::Submitting)
+                return;
+            if (!result.error.empty()) {
+                settle(ExportEvent::Fail,
+                       tr("Could not check destination: %1").arg(fromRust(result.error)));
+                return;
+            }
+            if (result.exists) {
+                ConfirmationDialog confirmation(
+                    QMessageBox::Question, tr("Replace destination?"),
+                    tr("Replace the existing file after export completes?\n%1").arg(path),
+                    QMessageBox::Yes | QMessageBox::No, this);
+                confirmation.setTextFormat(Qt::PlainText);
+                confirmation.setDefaultButton(QMessageBox::No);
+                const auto answer = confirmation.exec();
+                if (!adapter_ || query_ != query || submissionToken_ != token ||
+                    state_ != ExportState::Submitting)
                     return;
-                if (!result.error.empty()) {
-                    finish(tr("Could not check destination: %1").arg(fromRust(result.error)),
-                           Outcome::Failed);
-                    return;
-                }
-                if (result.exists) {
-                    ConfirmationDialog confirmation(
-                        QMessageBox::Question, tr("Replace destination?"),
-                        tr("Replace the existing file after export completes?\n%1").arg(path),
-                        QMessageBox::Yes | QMessageBox::No, this);
-                    confirmation.setTextFormat(Qt::PlainText);
-                    confirmation.setDefaultButton(QMessageBox::No);
-                    const auto answer = confirmation.exec();
-                    if (!adapter_ || query_ != query || submissionToken_ != token || !submitting_)
-                        return;
-                    if (answer != QMessageBox::Yes) {
-                        finish(tr("Export cancelled."), Outcome::Cancelled);
-                        return;
-                    }
-                }
-                submissionError_.clear();
-                statusLine_->setMessage(tr("Starting export…"));
-                const auto started =
-                    adapter_->startExportDialect(query, path, format, table, dialect);
-                if (query_ != query || submissionToken_ != token || !submitting_) {
-                    if (started && adapter_)
-                        adapter_->cancelExport(*started);
+                if (answer != QMessageBox::Yes) {
+                    apply(ExportEvent::Cancel);
+                    settle(ExportEvent::CancelSettled, tr("Export cancelled."));
                     return;
                 }
-                export_ = started;
-                exportQuery_ = started ? std::optional<quint64>(query) : std::nullopt;
-                submitting_ = false;
-                if (!export_) {
-                    finish(submissionError_.isEmpty() ? tr("Export could not be started.")
-                                                      : submissionError_,
-                           Outcome::Failed);
-                    return;
-                }
-                updateActions();
-            });
+            }
+            submissionError_.clear();
+            showState(tr("Starting export…"));
+            const auto started = adapter_->startExportDialect(query, path, format, table, dialect);
+            if (query_ != query || submissionToken_ != token || state_ != ExportState::Submitting) {
+                if (started && adapter_)
+                    adapter_->cancelExport(*started);
+                return;
+            }
+            export_ = started;
+            exportQuery_ = started ? std::optional<quint64>(query) : std::nullopt;
+            if (!export_) {
+                settle(ExportEvent::Fail, submissionError_.isEmpty()
+                                              ? tr("Export could not be started.")
+                                              : submissionError_);
+                return;
+            }
+            apply(ExportEvent::Start);
+            updateActions();
+        });
     watcher->setFuture(QtConcurrent::run([path] {
         const auto bytes = path.toUtf8();
         return document_path_status(bridge_detail::utf8View(bytes));
@@ -276,16 +278,16 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
 }
 
 void ExportDialog::cancel() {
-    if (submitting_) {
+    if (state_ == ExportState::Submitting) {
         ++submissionToken_;
-        finish(tr("Export cancelled."), Outcome::Cancelled);
+        apply(ExportEvent::Cancel);
+        settle(ExportEvent::CancelSettled, tr("Export cancelled."));
         return;
     }
-    if (!export_ || cancelling_ || !adapter_)
+    if (!export_ || state_ == ExportState::Cancelling || !adapter_)
         return;
-    cancelling_ = true;
     submissionError_.clear();
-    statusLine_->setMessage(tr("Cancelling…"));
+    apply(ExportEvent::Cancel);
     updateActions();
     adapter_->cancelExport(*export_);
 }
@@ -294,48 +296,62 @@ void ExportDialog::handleEvent(const BridgeEvent& value) {
         return;
     const auto kind = fromRust(value.kind);
     if (kind == "export_progress") {
-        if (!cancelling_)
-            statusLine_->setMessage(tr("Exporting: %1 rows · %2 bytes")
-                                        .arg(value.exported_rows)
-                                        .arg(value.exported_bytes));
+        if (state_ == ExportState::Running)
+            showState(tr("Exporting: %1 rows · %2 bytes")
+                          .arg(value.exported_rows)
+                          .arg(value.exported_bytes));
     } else if (kind == "export_finished") {
-        finish(tr("Export complete: %1 rows · %2 bytes\n%3")
-                   .arg(value.exported_rows)
-                   .arg(value.exported_bytes)
-                   .arg(destination_->text()),
-               Outcome::Success);
+        settle(ExportEvent::Finish, tr("Export complete: %1 rows · %2 bytes\n%3")
+                                        .arg(value.exported_rows)
+                                        .arg(value.exported_bytes)
+                                        .arg(destination_->text()));
     } else if (kind == "export_failed") {
-        if (fromRust(value.error_kind) == "Cancelled")
-            finish(tr("Export cancelled."), Outcome::Cancelled);
-        else
-            finish(fromRust(value.error), Outcome::Failed);
+        if (fromRust(value.error_kind) == "Cancelled") {
+            if (state_ != ExportState::Cancelling)
+                apply(ExportEvent::Cancel);
+            settle(ExportEvent::CancelSettled, tr("Export cancelled."));
+        } else {
+            settle(ExportEvent::Fail, fromRust(value.error));
+        }
     }
 }
-void ExportDialog::finish(const QString& message, Outcome outcome) {
+bool ExportDialog::apply(ExportEvent event, const QString& detail) {
+    const auto next = EngineAdapter::exportTransition(state_, event);
+    if (!next.allowed) {
+        statusLine_->setState(design::StatusLine::State::Error);
+        statusLine_->setMessage(next.error);
+        statusLine_->show();
+        return false;
+    }
+    state_ = next.state;
+    showState(detail);
+    return true;
+}
+void ExportDialog::showState(const QString& detail) {
+    const auto shown = EngineAdapter::exportPresentation(state_, detail);
+    statusLine_->setBusy(shown.busy);
+    statusLine_->setState(statusLineState(shown.tone));
+    statusLine_->setMessage(shown.message);
+    statusLine_->setVisible(!shown.message.isEmpty());
+}
+void ExportDialog::settle(ExportEvent event, const QString& detail) {
     export_.reset();
     exportQuery_.reset();
-    submitting_ = false;
-    cancelling_ = false;
-    statusLine_->setBusy(false);
-    auto* toast = outcome == Outcome::Success ? windowToast(this) : nullptr;
+    if (!apply(event, detail))
+        apply(ExportEvent::Fail, EngineAdapter::exportTransition(state_, event).error);
+    auto* toast = state_ == ExportState::Succeeded ? windowToast(this) : nullptr;
     if (toast) {
-        toast->showToast(tr("Success"), message, ToastVariant::Success);
+        toast->showToast(tr("Success"), EngineAdapter::exportPresentation(state_, detail).message,
+                         ToastVariant::Success);
         statusLine_->setMessage({});
         statusLine_->hide();
-    } else {
-        if (outcome == Outcome::Cancelled)
-            statusLine_->setNeutral();
-        else
-            statusLine_->setAvailable(outcome == Outcome::Success);
-        statusLine_->setMessage(message);
-        statusLine_->show();
     }
     submissionError_.clear();
-    start_->setText(outcome == Outcome::Failed ? tr("&Retry") : tr("&Export"));
+    start_->setText(state_ == ExportState::Failed ? tr("&Retry") : tr("&Export"));
     updateActions();
     if (closeAfter_) {
         closeAfter_ = false;
-        if (outcome != Outcome::Failed)
+        if (state_ != ExportState::Failed)
             hide();
     }
     emit exportRunningChanged(false);

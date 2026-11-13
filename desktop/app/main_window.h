@@ -215,6 +215,7 @@ class MainWindow final : public QMainWindow {
     bool quickHistoryRecordingEnabled_ = true;
     QString quickHistoryPolicyError_;
     QString quickHistoryError_;
+    QString quickSearchToast_;
     QString quickObjectStatus_;
     QList<design::QuickSearchResult> quickNameRows_, quickEditorRows_, quickHistoryRows_,
         quickObjectRows_;

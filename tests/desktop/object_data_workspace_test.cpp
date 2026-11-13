@@ -9,6 +9,7 @@
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/result_table_model.h"
+#include "screen_state_checks.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
@@ -68,7 +69,7 @@ class ObjectDataWorkspaceTest : public QObject {
         sql->adapter()->beginShutdown();
         data.openObject(1, R"(["main","records"])", "records");
         auto* summary = data.findChild<QLabel*>("objectDataSummary");
-        QTRY_COMPARE(summary->property("state").toString(), QString("failed"));
+        QTRY_COMPARE(summaryState(summary), choscordb::QueryState::Failed);
         QVERIFY(summary->toolTip().contains("Workspace is closing."));
         QCOMPARE(data.footerWidget()->palette().color(QPalette::Window),
                  choscordb::design::resolvedThemeForWidget(data).colors.dangerSurface);
@@ -613,8 +614,7 @@ class ObjectDataWorkspaceTest : public QObject {
         filterBar->findChild<QLineEdit*>("resultFilterSql")->setText("id > 0");
         filterBar->findChild<QPushButton*>("resultFilterApply")->click();
         QVERIFY(!filterBar->findChild<QListWidget*>("resultFilterConditions"));
-        QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
-                     QString("completed"));
+        QTRY_VERIFY(queryCompleted(summaryState(data.findChild<QLabel*>("objectDataSummary"))));
         QTRY_VERIFY(data.findChild<QPushButton*>("objectDataAddRow")->isEnabled());
         QCoreApplication::processEvents();
         triggerTableAction(grid, "Duplicate row");
@@ -645,8 +645,7 @@ class ObjectDataWorkspaceTest : public QObject {
         QTRY_VERIFY(!model->hasPendingEdits());
         QTRY_VERIFY(grid->horizontalHeader()->isSortIndicatorShown());
         QTRY_COMPARE(grid->horizontalHeader()->sortIndicatorOrder(), Qt::AscendingOrder);
-        QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
-                     QString("completed"));
+        QTRY_VERIFY(queryCompleted(summaryState(data.findChild<QLabel*>("objectDataSummary"))));
         QTRY_VERIFY(data.findChild<QPushButton*>("objectDataAddRow")->isEnabled());
         triggerTableAction(grid, "Duplicate row");
         QCOMPARE(model->rowCount(), 2);
@@ -701,8 +700,7 @@ class ObjectDataWorkspaceTest : public QObject {
         QTRY_COMPARE(model->rowCount(), 2);
         QTRY_VERIFY(grid->horizontalHeader()->isSortIndicatorShown());
         QTRY_COMPARE(grid->horizontalHeader()->sortIndicatorOrder(), Qt::DescendingOrder);
-        QTRY_COMPARE(data.findChild<QLabel*>("objectDataSummary")->property("state").toString(),
-                     QString("completed"));
+        QTRY_VERIFY(queryCompleted(summaryState(data.findChild<QLabel*>("objectDataSummary"))));
         QTRY_COMPARE(model->index(0, 0).data().toString(), QString("2"));
         QCOMPARE(model->index(0, 1).data().toString(), QString("copy"));
     }

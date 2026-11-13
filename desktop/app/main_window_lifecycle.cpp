@@ -18,6 +18,7 @@
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "widgets/history_dock/history_dock.h"
+#include "widgets/screen_state/screen_state.h"
 #include "widgets/search_panel/search_panel.h"
 #include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -208,14 +209,20 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
         recovery_->start();
     }
     history_ = new HistoryDock(workspace_->adapter(), this);
-    auto filterHistory = [historyItems, historySearch] {
+    auto filterHistory = [historyItems, historySearch, historyStatus] {
         const TextFilter query(historySearch->text());
+        bool anyMatch = false;
         for (int i = 0; i < historyItems->count(); ++i) {
             auto* item = historyItems->item(i);
             const auto entryData = item->data(Qt::UserRole);
             const auto entry = entryData.value<SavedHistoryEntry>();
-            item->setHidden(!query.matches(item->text() + '\n' + entry.sql));
+            const bool matches = query.matches(item->text() + '\n' + entry.sql);
+            item->setHidden(!matches);
+            anyMatch = anyMatch || matches;
         }
+        if (historyItems->count() > 0)
+            presentPanel(historyStatus, PanelKind::History,
+                         anyMatch ? PanelState::Ready : PanelState::NoMatch);
     };
     connect(historySearch, &QLineEdit::textChanged, this, filterHistory);
     auto refreshRecentHistory = [this, historyStatus, historyItems, historySection] {
@@ -225,7 +232,7 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
         historyStatus->hide();
         sidebarHistoryToken_ = nextRequestToken();
         if (!workspace_->adapter()->listHistory(50, 0, sidebarHistoryToken_)) {
-            reportNotice(tr("Could not request recent history."), ToastVariant::Danger);
+            presentPanel(historyStatus, PanelKind::History, PanelState::Failed);
             return;
         }
         historySection->setBusy(true, tr("Loading recent history…"));
@@ -271,19 +278,16 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                     item->setData(design::RecentHistoryRowDelegate::DriverRole, driver);
                     item->setToolTip(historyPreview(entry.sql, 2000, true));
                 }
+                presentPanel(historyStatus, PanelKind::History,
+                             entries.isEmpty() ? PanelState::Empty : PanelState::Ready);
                 filterHistory();
-                historyStatus->setVisible(entries.isEmpty());
-                historyStatus->setText(
-                    entries.isEmpty() ? tr("No query history yet.\nRun a query to see it here.")
-                                      : QString{});
             });
     connect(workspace_->adapter(), &EngineAdapter::recoveryFailed, this,
-            [this, historySection](quint64 token, const QString& error) {
+            [this, historySection, historyStatus](quint64 token, const QString& error) {
                 if (token != sidebarHistoryToken_)
                     return;
                 historySection->setBusy(false);
-                reportNotice(tr("Recent history could not be loaded: %1").arg(error),
-                             ToastVariant::Danger);
+                presentPanel(historyStatus, PanelKind::History, PanelState::Failed, error);
             });
     auto openHistoryItem = [this](QListWidgetItem* item) {
         const auto entryData = item->data(Qt::UserRole);

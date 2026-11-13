@@ -176,8 +176,9 @@ void ProfileDialog::testDraft(const SavedProfile& profile) {
         return;
     if (!validateConnectionDraft(profile))
         return;
-    setBusy(true, tr("Testing connection…"));
-    adapter_->testProfileDraft(profile, secretDrafts(), ++token_);
+    testToken_ = ++token_;
+    showTest(ProfileTestState::Testing, tr("Testing connection…"));
+    adapter_->testProfileDraft(profile, secretDrafts(), token_);
 }
 
 bool ProfileDialog::validateConnectionDraft(const SavedProfile& profile) {

@@ -458,26 +458,26 @@ class GridEditWorkspaceTest : public QObject {
         bool disconnectIgnored = false;
         bool cancelIgnored = false;
         bool changed = false;
-        connect(result, &choscordb::QueryWorkspace::gridEditPlanningChanged, &data,
-                [&](bool planning) {
-                    if (!planning)
-                        return;
-                    planningStarted = true;
-                    QTimer::singleShot(0, &data, [&] {
-                        result->disconnectConnection(connection);
-                        disconnectIgnored = result->selectedTargetAvailable();
-                        cancelAction->setEnabled(true);
-                        cancelAction->trigger();
-                        cancelIgnored = summary->property("state") != QStringLiteral("cancelling");
-                        changed = model->setData(model->index(0, 1), QString("second edit"));
-                        if (auto* dialog = qobject_cast<QDialog*>(
-                                choscordb::design::DialogPresentation::activeDialog());
-                            dialog && dialog->findChild<QPlainTextEdit*>("gridEditReview")) {
-                            reviewShown = true;
-                            dialog->reject();
-                        }
-                    });
+        connect(
+            result, &choscordb::QueryWorkspace::gridEditPlanningChanged, &data, [&](bool planning) {
+                if (!planning)
+                    return;
+                planningStarted = true;
+                QTimer::singleShot(0, &data, [&] {
+                    result->disconnectConnection(connection);
+                    disconnectIgnored = result->selectedTargetAvailable();
+                    cancelAction->setEnabled(true);
+                    cancelAction->trigger();
+                    cancelIgnored = result->executionState() != choscordb::QueryState::Cancelling;
+                    changed = model->setData(model->index(0, 1), QString("second edit"));
+                    if (auto* dialog = qobject_cast<QDialog*>(
+                            choscordb::design::DialogPresentation::activeDialog());
+                        dialog && dialog->findChild<QPlainTextEdit*>("gridEditReview")) {
+                        reviewShown = true;
+                        dialog->reject();
+                    }
                 });
+            });
         QTimer reviewGuard;
         connect(&reviewGuard, &QTimer::timeout, &data, [&] {
             if (auto* dialog =
