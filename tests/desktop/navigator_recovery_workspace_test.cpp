@@ -184,6 +184,9 @@ void NavigatorSqlWorkspaceTest::startNewAfterRestoreFailureResolvesNotice() {
     QTRY_VERIFY(startNew->isEnabled());
     QVERIFY(!recovery->isReady());
     QVERIFY(toast->isVisible());
+    auto* history = window.findChild<QLabel*>("historyPlaceholder");
+    QVERIFY(history);
+    QTRY_COMPARE(history->property("state").toString(), QString("error"));
     window.showToast(QStringLiteral("Independent notice"), choscordb::ToastVariant::Warning);
     QVERIFY(
         toast->accessibleDescription().startsWith(QStringLiteral("Could not restore workspace.")));

@@ -364,6 +364,7 @@ void NavigatorSqlWorkspaceTest::objectActionKeepsOtherSessionTabWithSameProfile(
     QCOMPARE(secondObject->property("objectProfileId").toString(),
              firstObject->property("objectProfileId").toString());
     QCOMPARE(secondObject->property("objectConnection").toULongLong(), *second);
+    QTRY_VERIFY(!secondObject->operationInFlight());
 
     QMenu menu;
     navigator->populateContextMenu(&menu, table);
