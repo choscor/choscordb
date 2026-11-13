@@ -23,10 +23,11 @@ pub use quick_filter::{quick_filter_compose_policy, quick_filter_options_policy}
 mod result_copy;
 mod screen_state;
 pub use screen_state::{
-    export_presentation, export_transition, grid_edit_presentation, grid_edit_transition,
-    panel_observation, panel_presentation, panel_transition, profile_test_presentation,
-    profile_test_transition, query_presentation, query_result_state, query_transition,
-    updater_presentation, updater_transition,
+    export_presentation, export_transition, grid_edit_note, grid_edit_presentation,
+    grid_edit_transition, panel_observation, panel_presentation, panel_transition,
+    profile_operation_presentation, profile_test_presentation, profile_test_transition,
+    query_presentation, query_result_state, query_transition, ssh_trust_note, updater_presentation,
+    updater_transition,
 };
 mod result_json;
 pub use completion::*;
@@ -703,6 +704,13 @@ pub mod ffi {
         message: String,
         has_toast: bool,
         toast: String,
+        toast_variant: ToastVariantDto,
+    }
+    #[derive(Debug)]
+    enum ToastVariantDto {
+        Error,
+        Success,
+        Warning,
     }
     #[derive(Debug)]
     enum QueryStateDto {
@@ -873,6 +881,38 @@ pub mod ffi {
     struct GridEditStateDto {
         edits: EditPhaseDto,
         transaction: TransactionPhaseDto,
+    }
+    #[derive(Debug)]
+    enum GridEditNoteDto {
+        PlanUnfinished,
+        SubmitFailed,
+        WorkspaceClosed,
+    }
+    #[derive(Debug)]
+    enum ProfileOperationDto {
+        Loading,
+        Saving,
+        Duplicating,
+        Deleting,
+        Connecting,
+        Listed,
+        Saved,
+        Deleted,
+        Connected,
+        Failed,
+        ConnectUnsubmitted,
+        ConnectionClosed,
+        ProfileMissing,
+        ListRefreshFailed,
+    }
+    #[derive(Debug)]
+    enum SshTrustNoteDto {
+        Inspecting,
+        SettingsChanged,
+        NoHostKeys,
+        KeysInspected,
+        ApprovalUnknown,
+        ApprovalStale,
     }
     #[derive(Debug)]
     enum GridEditEventDto {
@@ -1581,6 +1621,12 @@ pub mod ffi {
             event: UpdaterEventDto,
         ) -> UpdaterTransitionDto;
         fn grid_edit_presentation(state: GridEditStateDto, detail: &str) -> PresentationDto;
+        fn grid_edit_note(note: GridEditNoteDto) -> String;
+        fn ssh_trust_note(note: SshTrustNoteDto) -> String;
+        fn profile_operation_presentation(
+            operation: ProfileOperationDto,
+            detail: &str,
+        ) -> PresentationDto;
         fn grid_edit_transition(
             state: GridEditStateDto,
             event: GridEditEventDto,

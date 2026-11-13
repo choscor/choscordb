@@ -7,7 +7,9 @@ use choscordb_core::{
     query_machine::{self, QueryEvent, QueryState},
     updater_machine::{self, UpdaterEvent, UpdaterState},
 };
-use choscordb_driver_api::{Body, Pane, Presentation, RetryAction, Tone, TransitionError};
+use choscordb_driver_api::{
+    Body, Pane, Presentation, RetryAction, ToastVariant, Tone, TransitionError,
+};
 use std::fmt::Debug;
 
 impl Default for ffi::QueryStateDto {
@@ -21,9 +23,17 @@ fn unknown(what: &str, repr: u8) -> String {
 }
 
 fn presentation(shown: Presentation) -> ffi::PresentationDto {
-    let (has_toast, toast) = match shown.toast {
-        Some(toast) => (true, toast.text),
-        None => (false, String::new()),
+    let (has_toast, toast, toast_variant) = match shown.toast {
+        Some(toast) => (
+            true,
+            toast.text,
+            match toast.variant {
+                ToastVariant::Error => ffi::ToastVariantDto::Error,
+                ToastVariant::Success => ffi::ToastVariantDto::Success,
+                ToastVariant::Warning => ffi::ToastVariantDto::Warning,
+            },
+        ),
+        None => (false, String::new(), ffi::ToastVariantDto::Error),
     };
     ffi::PresentationDto {
         tone: match shown.tone {
@@ -51,6 +61,7 @@ fn presentation(shown: Presentation) -> ffi::PresentationDto {
         message: shown.message,
         has_toast,
         toast,
+        toast_variant,
     }
 }
 
@@ -570,4 +581,57 @@ pub fn updater_transition(
         state: updater_state_dto(next),
         error,
     }
+}
+
+pub fn grid_edit_note(note: ffi::GridEditNoteDto) -> String {
+    use choscordb_core::grid_edit_machine::GridEditNote as Note;
+    use ffi::GridEditNoteDto as Dto;
+    let note = match note {
+        Dto::PlanUnfinished => Note::PlanUnfinished,
+        Dto::SubmitFailed => Note::SubmitFailed,
+        Dto::WorkspaceClosed => Note::WorkspaceClosed,
+        _ => return format!("Unknown grid edit note {}.", note.repr),
+    };
+    grid_edit_machine::note(note).to_owned()
+}
+
+pub fn ssh_trust_note(note: ffi::SshTrustNoteDto) -> String {
+    use choscordb_core::profile_test_machine::SshTrustNote as Note;
+    use ffi::SshTrustNoteDto as Dto;
+    let note = match note {
+        Dto::Inspecting => Note::Inspecting,
+        Dto::SettingsChanged => Note::SettingsChanged,
+        Dto::NoHostKeys => Note::NoHostKeys,
+        Dto::KeysInspected => Note::KeysInspected,
+        Dto::ApprovalUnknown => Note::ApprovalUnknown,
+        Dto::ApprovalStale => Note::ApprovalStale,
+        _ => return format!("Unknown SSH trust note {}.", note.repr),
+    };
+    choscordb_core::profile_test_machine::ssh_trust_note(note)
+}
+
+pub fn profile_operation_presentation(
+    operation: ffi::ProfileOperationDto,
+    detail: &str,
+) -> ffi::PresentationDto {
+    use choscordb_core::profile_test_machine::{ProfileOperation as Operation, present_operation};
+    use ffi::ProfileOperationDto as Dto;
+    let operation = match operation {
+        Dto::Loading => Operation::Loading,
+        Dto::Saving => Operation::Saving,
+        Dto::Duplicating => Operation::Duplicating,
+        Dto::Deleting => Operation::Deleting,
+        Dto::Connecting => Operation::Connecting,
+        Dto::Listed => Operation::Listed,
+        Dto::Saved => Operation::Saved,
+        Dto::Deleted => Operation::Deleted,
+        Dto::Connected => Operation::Connected,
+        Dto::Failed => Operation::Failed,
+        Dto::ConnectUnsubmitted => Operation::ConnectUnsubmitted,
+        Dto::ConnectionClosed => Operation::ConnectionClosed,
+        Dto::ProfileMissing => Operation::ProfileMissing,
+        Dto::ListRefreshFailed => Operation::ListRefreshFailed,
+        _ => return invalid(format!("Unknown profile operation {}.", operation.repr)),
+    };
+    presentation(present_operation(operation, detail))
 }

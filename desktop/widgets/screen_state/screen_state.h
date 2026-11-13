@@ -35,9 +35,23 @@ inline auto panelStateKind(PanelBody body) -> design::PanelStateKind {
 inline void showPresentationToast(QWidget* context, const Presentation& shown) {
     if (!shown.toast)
         return;
-    if (auto* toast = windowToast(context))
+    auto* toast = windowToast(context);
+    if (!toast)
+        return;
+    switch (shown.toastTone) {
+    case ToastTone::Success:
+        toast->showToast(QCoreApplication::translate("ScreenState", "Success"), *shown.toast,
+                         ToastVariant::Success);
+        return;
+    case ToastTone::Warning:
+        toast->showToast(QCoreApplication::translate("ScreenState", "Warning"), *shown.toast,
+                         ToastVariant::Warning);
+        return;
+    case ToastTone::Error:
         toast->showToast(QCoreApplication::translate("ScreenState", "Error"), *shown.toast,
                          ToastVariant::Danger);
+        return;
+    }
 }
 
 inline void showPanelState(design::Text* label, const Presentation& shown) {

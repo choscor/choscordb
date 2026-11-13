@@ -444,8 +444,10 @@ Presentation fromDto(const PresentationDto& dto) {
                        static_cast<RowRetry>(dto.retry),
                        fromRust(dto.message),
                        std::nullopt};
-    if (dto.has_toast)
+    if (dto.has_toast) {
         shown.toast = fromRust(dto.toast);
+        shown.toastTone = static_cast<ToastTone>(dto.toast_variant);
+    }
     return shown;
 }
 template <typename State, typename Dto> Transition<State> fromDto(const Dto& dto) {
@@ -568,6 +570,18 @@ RowStatus EngineAdapter::rowStatus(RowStatusCause cause, const QString& detail) 
     if (const auto found = cache.constFind(cause); found != cache.cend())
         return *found;
     return *cache.insert(cause, load());
+}
+QString EngineAdapter::gridEditNote(GridEditNote note) {
+    return fromRust(grid_edit_note(static_cast<GridEditNoteDto>(note)));
+}
+Presentation EngineAdapter::profileOperationPresentation(ProfileOperation operation,
+                                                         const QString& detail) {
+    const auto bytes = detail.toUtf8();
+    return fromDto(profile_operation_presentation(static_cast<ProfileOperationDto>(operation),
+                                                  utf8View(bytes)));
+}
+QString EngineAdapter::sshTrustNote(SshTrustNote note) {
+    return fromRust(ssh_trust_note(static_cast<SshTrustNoteDto>(note)));
 }
 const QString& EngineAdapter::recoveryHint(RecoveryHint hint) {
     static const auto texts = [] {

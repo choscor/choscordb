@@ -262,6 +262,23 @@ struct RowStatus {
     QString message;
 };
 enum class Tone : uint8_t { Neutral, Success, Error };
+enum class ToastTone : uint8_t { Error, Success, Warning };
+enum class ProfileOperation : uint8_t {
+    Loading,
+    Saving,
+    Duplicating,
+    Deleting,
+    Connecting,
+    Listed,
+    Saved,
+    Deleted,
+    Connected,
+    Failed,
+    ConnectUnsubmitted,
+    ConnectionClosed,
+    ProfileMissing,
+    ListRefreshFailed
+};
 enum class PanelBody : uint8_t { Content, Empty, NoMatch, FailedPlaceholder, None };
 enum class ResultPane : uint8_t { Grid, Messages, Unchanged };
 struct Presentation {
@@ -272,6 +289,7 @@ struct Presentation {
     RowRetry retry = RowRetry::None;
     QString message;
     std::optional<QString> toast;
+    ToastTone toastTone = ToastTone::Error;
 };
 template <typename State> struct Transition {
     bool allowed = false;
@@ -392,6 +410,15 @@ struct GridEditState {
     EditPhase edits = EditPhase::Clean;
     TransactionPhase transaction = TransactionPhase::Inactive;
     bool operator==(const GridEditState&) const = default;
+};
+enum class GridEditNote : uint8_t { PlanUnfinished, SubmitFailed, WorkspaceClosed };
+enum class SshTrustNote : uint8_t {
+    Inspecting,
+    SettingsChanged,
+    NoHostKeys,
+    KeysInspected,
+    ApprovalUnknown,
+    ApprovalStale
 };
 enum class GridEditEvent : uint8_t {
     Edit,
@@ -626,6 +653,10 @@ class EngineAdapter final : public QObject {
     static Transition<ProfileTestState> profileTestTransition(ProfileTestState state,
                                                               ProfileTestEvent event);
     static const QString& recoveryHint(RecoveryHint hint);
+    static QString gridEditNote(GridEditNote note);
+    static QString sshTrustNote(SshTrustNote note);
+    static Presentation profileOperationPresentation(ProfileOperation operation,
+                                                     const QString& detail = {});
     static int panelNoticeMs();
     static bool sidebarChildVisible(const QString& parentKind, const QString& kind);
     static bool relationSubtypeHasHistory(const QString& subtype);
