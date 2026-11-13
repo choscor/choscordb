@@ -31,6 +31,22 @@ fn updater_step_and_presentation_match_the_spec() {
 }
 
 #[test]
+fn a_staged_update_stays_ready_after_another_check() {
+    use updater_machine::{UpdaterEvent as E, UpdaterState as S, step};
+    assert_eq!(step(&S::ReadyToInstall, &E::Check), Ok(S::Checking));
+    for state in [
+        S::Checking,
+        S::UpToDate,
+        S::Available,
+        S::Failed,
+        S::Cancelled,
+    ] {
+        assert_eq!(step(&state, &E::Staged), Ok(S::ReadyToInstall), "{state:?}");
+    }
+    assert!(step(&S::Downloading, &E::Staged).is_err());
+}
+
+#[test]
 fn a_failed_update_check_shows_a_toast_and_a_placeholder() {
     use updater_machine::{UpdaterState, present};
     let failed = present(&UpdaterState::Failed, "feed signature is invalid");

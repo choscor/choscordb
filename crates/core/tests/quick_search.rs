@@ -128,3 +128,41 @@ mod palette {
         );
     }
 }
+
+#[test]
+fn the_status_lists_each_note_in_one_order() {
+    use choscordb_core::quick_search::{QuickSearchStatus, status};
+    let everything = QuickSearchStatus {
+        editor_incomplete: true,
+        history_incomplete: true,
+        history_clearing: false,
+        history_empty: true,
+        filtered: true,
+        recording_off: true,
+        policy_error: "Policy failed.",
+        object_status: "Objects are loading.",
+        recent_status: "Recent items failed.",
+        more: true,
+    };
+    assert_eq!(
+        status(&everything),
+        "Some SQL text was skipped. Refine the query to search again.  \
+         History results are incomplete. Refine the query.  \
+         No saved history matches this search.  \
+         History recording is off. Saved history remains searchable.  \
+         Policy failed.  Objects are loading.  Recent items failed.  \
+         More results exist. Refine the query."
+    );
+    let clearing = QuickSearchStatus {
+        history_clearing: true,
+        history_empty: true,
+        ..QuickSearchStatus::default()
+    };
+    assert_eq!(status(&clearing), "History is being cleared.");
+    let unfiltered = QuickSearchStatus {
+        history_empty: true,
+        ..QuickSearchStatus::default()
+    };
+    assert_eq!(status(&unfiltered), "No saved history yet.");
+    assert_eq!(status(&QuickSearchStatus::default()), "");
+}

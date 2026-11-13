@@ -4,14 +4,16 @@ EXTENDS Naturals, TLC
 States == {"Idle", "Checking", "UpToDate", "Available", "Downloading", "ReadyToInstall",
            "Installing", "Cancelling", "Cancelled", "Failed"}
 Events == {"Check", "NoUpdate", "Found", "Download", "Downloaded", "Install", "Cancel",
-           "CancelSettled", "Fail", "Dismiss"}
+           "CancelSettled", "Fail", "Dismiss", "Staged"}
 Working == {"Checking", "Downloading", "Installing", "Cancelling"}
-Results == {"NoUpdate", "Found", "Downloaded", "CancelSettled", "Fail"}
+Results == {"NoUpdate", "Found", "Downloaded", "CancelSettled", "Fail", "Staged"}
 Restartable == {"Idle", "UpToDate", "Available", "Cancelled", "Failed"}
 
 Illegal == "Illegal"
 Step(s, e) ==
-    CASE e = "Check" /\ s \in Restartable -> "Checking"
+    CASE e = "Check" /\ s \in Restartable \cup {"ReadyToInstall"} -> "Checking"
+      [] e = "Staged" /\ s \in {"Checking", "UpToDate", "Available", "Failed", "Cancelled"}
+            -> "ReadyToInstall"
       [] e = "NoUpdate" /\ s = "Checking" -> "UpToDate"
       [] e = "Found" /\ s = "Checking" -> "Available"
       [] e = "Download" /\ s = "Available" -> "Downloading"
@@ -41,7 +43,7 @@ Fire(e) ==
     /\ Allowed(state, e)
     /\ state' = Step(state, e)
     /\ last' = e
-    /\ failing' = IF e \in {"Cancel", "Fail"} THEN TRUE ELSE IF e = "Check" THEN FALSE ELSE failing
+    /\ failing' = IF e \in {"Cancel", "Fail"} THEN TRUE ELSE IF e \in {"Check", "Staged"} THEN FALSE ELSE failing
 Next == \E e \in Events : Fire(e)
 Settle == Busy(state) /\ \E e \in Results : Fire(e)
 Spec == Init /\ [][Next]_vars /\ WF_vars(Settle)

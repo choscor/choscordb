@@ -26,6 +26,7 @@ pub enum UpdaterEvent {
     CancelSettled,
     Fail,
     Dismiss,
+    Staged,
 }
 
 impl UpdaterState {
@@ -44,7 +45,7 @@ impl UpdaterState {
 }
 
 impl UpdaterEvent {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Check,
         Self::NoUpdate,
         Self::Found,
@@ -55,6 +56,7 @@ impl UpdaterEvent {
         Self::CancelSettled,
         Self::Fail,
         Self::Dismiss,
+        Self::Staged,
     ];
 }
 
@@ -73,7 +75,10 @@ pub fn step(
         S::Checking | S::Downloading | S::Installing | S::Cancelling
     );
     match (*state, *event) {
-        (_, E::Check) if restartable => Ok(S::Checking),
+        (_, E::Check) if restartable || *state == S::ReadyToInstall => Ok(S::Checking),
+        (S::Checking | S::UpToDate | S::Available | S::Failed | S::Cancelled, E::Staged) => {
+            Ok(S::ReadyToInstall)
+        }
         (S::Checking, E::NoUpdate) => Ok(S::UpToDate),
         (S::Checking, E::Found) => Ok(S::Available),
         (S::Available, E::Download) => Ok(S::Downloading),

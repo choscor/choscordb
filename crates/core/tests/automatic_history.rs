@@ -244,3 +244,40 @@ fn history_storage_failure_is_redacted_and_does_not_fail_successful_query() {
         std::thread::sleep(Duration::from_millis(1));
     }
 }
+#[test]
+fn queued_history_is_final_before_the_connection_failure_event() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("history.sqlite");
+    let mut engine = Engine::new(
+        EngineConfig {
+            storage_path: Some(path.clone()),
+            ..Default::default()
+        },
+        vec![Arc::new(choscordb_driver_sqlite::SqliteDriver)],
+    )
+    .unwrap();
+    let connection = engine
+        .connect(
+            "sqlite",
+            ConnectionOptions::Sqlite {
+                path: dir.path().join("missing/db.sqlite"),
+                read_only: true,
+            },
+        )
+        .unwrap();
+    engine
+        .execute(connection, "SELECT 7".into(), QueryOptions::default())
+        .unwrap();
+    until(&mut engine, |e| matches!(e, Event::ConnectionFailed { .. }));
+    engine.history_flush(9).unwrap();
+    until(&mut engine, |e| {
+        matches!(e, Event::HistoryFlushed { request_token: 9 })
+    });
+    let entries = choscordb_storage::Storage::open(&path)
+        .unwrap()
+        .history(10, 0)
+        .unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].sql, "SELECT 7");
+    assert_eq!(entries[0].status, HistoryStatus::Disconnected);
+}

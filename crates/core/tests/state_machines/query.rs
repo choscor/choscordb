@@ -96,42 +96,53 @@ fn an_illegal_event_is_a_typed_error() {
 }
 
 #[test]
-fn each_failure_path_is_a_walk_of_the_machine_from_a_working_state() {
-    let event_for = |state: QueryState| match state {
-        QueryState::Cancelling => [QueryEvent::Cancel, QueryEvent::TimedOut],
-        QueryState::Cancelled => [QueryEvent::CancelSettled, QueryEvent::CancelSettled],
-        QueryState::Failed => [QueryEvent::Fail, QueryEvent::Fail],
-        other => panic!("{other:?} is not a failure state"),
-    };
-    for kind in [
+fn each_failure_path_is_a_walk_of_the_machine_from_every_state() {
+    let kinds = [
         ErrorKind::Cancelled,
         ErrorKind::Timeout,
         ErrorKind::Disconnected,
         ErrorKind::Query,
         ErrorKind::Connection,
-    ] {
-        for start in [QueryState::Queued, QueryState::Running] {
+    ];
+    for kind in kinds {
+        for start in QueryState::ALL {
             let mut state = start;
-            for target in failure_path(kind) {
+            for target in failure_path(&start, kind) {
                 assert!(
-                    event_for(*target)
+                    QueryEvent::ALL
                         .iter()
-                        .any(|event| step(&state, event) == Ok(*target)),
-                    "{kind:?}: {state:?} cannot reach {target:?}"
+                        .any(|event| step(&state, event) == Ok(target)),
+                    "{kind:?} from {start:?}: {state:?} cannot reach {target:?}"
                 );
-                state = *target;
+                assert_ne!(state, target, "{kind:?} from {start:?} repeats {state:?}");
+                state = target;
             }
         }
     }
+}
+
+#[test]
+fn a_failure_path_depends_on_the_state_of_the_query() {
+    use QueryState as S;
     assert_eq!(
-        failure_path(ErrorKind::Timeout),
-        [QueryState::Cancelling, QueryState::Failed]
+        failure_path(&S::Running, ErrorKind::Timeout),
+        [S::Cancelling, S::Failed]
     );
     assert_eq!(
-        failure_path(ErrorKind::Cancelled),
-        [QueryState::Cancelling, QueryState::Cancelled]
+        failure_path(&S::Queued, ErrorKind::Cancelled),
+        [S::Cancelling, S::Cancelled]
     );
-    assert_eq!(failure_path(ErrorKind::Disconnected), [QueryState::Failed]);
+    assert_eq!(
+        failure_path(&S::Running, ErrorKind::Disconnected),
+        [S::Failed]
+    );
+    let completed = S::Completed { empty: false };
+    assert_eq!(failure_path(&completed, ErrorKind::Cancelled), [S::Failed]);
+    assert_eq!(failure_path(&completed, ErrorKind::Timeout), [S::Failed]);
+    assert_eq!(failure_path(&S::Failed, ErrorKind::Query), []);
+    assert_eq!(failure_path(&S::Connecting, ErrorKind::Query), []);
+    assert_eq!(failure_path(&S::Cancelled, ErrorKind::Query), []);
+    assert_eq!(failure_path(&S::Cancelled, ErrorKind::Cancelled), []);
 }
 
 #[test]

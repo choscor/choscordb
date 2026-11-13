@@ -179,3 +179,54 @@ impl QuickSearchNeedle {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct QuickSearchStatus<'a> {
+    pub editor_incomplete: bool,
+    pub history_incomplete: bool,
+    pub history_clearing: bool,
+    pub history_empty: bool,
+    pub filtered: bool,
+    pub recording_off: bool,
+    pub policy_error: &'a str,
+    pub object_status: &'a str,
+    pub recent_status: &'a str,
+    pub more: bool,
+}
+
+pub fn status(facts: &QuickSearchStatus<'_>) -> String {
+    let history = if facts.history_clearing {
+        Some("History is being cleared.")
+    } else if facts.history_empty && facts.filtered {
+        Some("No saved history matches this search.")
+    } else if facts.history_empty {
+        Some("No saved history yet.")
+    } else {
+        None
+    };
+    let notes = [
+        facts
+            .editor_incomplete
+            .then_some("Some SQL text was skipped. Refine the query to search again."),
+        facts
+            .history_incomplete
+            .then_some("History results are incomplete. Refine the query."),
+        history,
+        facts
+            .recording_off
+            .then_some("History recording is off. Saved history remains searchable."),
+        Some(facts.policy_error),
+        Some(facts.object_status),
+        Some(facts.recent_status),
+        facts
+            .more
+            .then_some("More results exist. Refine the query."),
+    ];
+    notes
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .filter(|note| !note.is_empty())
+        .collect::<Vec<_>>()
+        .join("  ")
+}

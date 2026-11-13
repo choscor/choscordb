@@ -4,7 +4,7 @@ use crate::{
     operation::{Control, perform, wait_capacity},
 };
 use choscordb_driver_api::*;
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch},
     time::Instant,
@@ -121,8 +121,12 @@ struct Active {
     started: Instant,
     deadline: Option<Instant>,
 }
-async fn fail_queued_queries(commands: &mut mpsc::Receiver<Request>, events: &EventSink) {
+async fn end_queued_history(
+    commands: &mut mpsc::Receiver<Request>,
+    events: &EventSink,
+) -> Vec<QueryId> {
     commands.close();
+    let mut queued = Vec::new();
     while let Ok(command) = commands.try_recv() {
         if let Command::Execute {
             query, mut history, ..
@@ -132,19 +136,26 @@ async fn fail_queued_queries(commands: &mut mpsc::Receiver<Request>, events: &Ev
                 history.bind_events(events.clone());
                 history.fail(ErrorKind::Disconnected).await;
             }
-            failure(
-                events,
-                query,
-                DriverError::new(ErrorKind::Disconnected, "Connection closed"),
-            )
-            .await;
+            queued.push(query);
         }
+    }
+    queued
+}
+async fn fail_queued_queries(queued: Vec<QueryId>, events: &EventSink) {
+    for query in queued {
+        failure(
+            events,
+            query,
+            DriverError::new(ErrorKind::Disconnected, "Connection closed"),
+        )
+        .await;
     }
 }
 #[derive(Clone)]
 pub(crate) struct EventSink {
     sender: mpsc::Sender<Event>,
     shutdown: watch::Receiver<bool>,
+    query_states: Arc<std::sync::Mutex<HashMap<QueryId, QueryState>>>,
     diagnostics: Option<crate::DiagnosticsSlot>,
     diagnostic_driver: choscordb_diagnostics::Driver,
 }
@@ -154,6 +165,7 @@ impl EventSink {
         Self {
             sender,
             shutdown,
+            query_states: Arc::default(),
             diagnostics: None,
             diagnostic_driver: choscordb_diagnostics::Driver::Unknown,
         }
@@ -174,12 +186,27 @@ impl EventSink {
         Self {
             sender,
             shutdown,
+            query_states: Arc::default(),
             diagnostics: Some(diagnostics),
             diagnostic_driver,
         }
     }
     pub(crate) async fn send(&self, event: Event) {
         send(self, event).await;
+    }
+    fn query_states(&self) -> std::sync::MutexGuard<'_, HashMap<QueryId, QueryState>> {
+        self.query_states
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+    fn query_state(&self, query: QueryId) -> QueryState {
+        self.query_states()
+            .get(&query)
+            .copied()
+            .unwrap_or(QueryState::Queued)
+    }
+    fn forget_query(&self, query: QueryId) {
+        self.query_states().remove(&query);
     }
     fn record(&self, action: DiagnosticAction) {
         let Some(registry) = &self.diagnostics else {
@@ -230,6 +257,9 @@ fn diagnostic_action(event: &Event) -> Option<DiagnosticAction> {
     })
 }
 async fn send(events: &EventSink, event: Event) {
+    if let Event::QueryState { query, state } = &event {
+        events.query_states().insert(*query, *state);
+    }
     if let Some(action) = diagnostic_action(&event) {
         events.record(action);
     }
@@ -398,15 +428,8 @@ pub(crate) async fn catalog_read(
     error
 }
 async fn failure(events: &EventSink, query: QueryId, error: DriverError) {
-    for state in crate::query_machine::failure_path(error.kind) {
-        send(
-            events,
-            Event::QueryState {
-                query,
-                state: *state,
-            },
-        )
-        .await;
+    for state in crate::query_machine::failure_path(&events.query_state(query), error.kind) {
+        send(events, Event::QueryState { query, state }).await;
     }
     send(events, Event::QueryFailed { query, error }).await;
 }
@@ -578,8 +601,9 @@ pub(crate) async fn run(
         }
     };
     let connected = tokio::select! { biased; _ = stopped => {
+        let queued = end_queued_history(&mut commands, &events).await;
         send(&events, Event::Disconnected { connection: id }).await;
-        fail_queued_queries(&mut commands, &events).await;
+        fail_queued_queries(queued, &events).await;
         return;
     }, value = tokio::time::timeout_at(attempt_deadline, async {
         driver.connect(options).await
@@ -587,6 +611,7 @@ pub(crate) async fn run(
     let mut connection = match connected {
         Ok(connection) => connection,
         Err(error) => {
+            let queued = end_queued_history(&mut commands, &events).await;
             send(
                 &events,
                 Event::ConnectionFailed {
@@ -595,7 +620,7 @@ pub(crate) async fn run(
                 },
             )
             .await;
-            fail_queued_queries(&mut commands, &events).await;
+            fail_queued_queries(queued, &events).await;
             return;
         }
     };
@@ -621,6 +646,7 @@ pub(crate) async fn run(
             })
             .await;
             drop(connection);
+            let queued = end_queued_history(&mut commands, &events).await;
             send(
                 &events,
                 match failure {
@@ -633,7 +659,7 @@ pub(crate) async fn run(
                 },
             )
             .await;
-            fail_queued_queries(&mut commands, &events).await;
+            fail_queued_queries(queued, &events).await;
             return;
         }
     };
@@ -1902,6 +1928,7 @@ pub(crate) async fn run(
                 if active.as_ref().is_some_and(|a| a.id == query) {
                     close_active(active, &events).await;
                 }
+                events.forget_query(query);
             }
         }
         if statement && sql_active.as_ref().is_none_or(|a| a.completed) {
@@ -1947,7 +1974,8 @@ pub(crate) async fn run(
         )
         .await;
     }
-    fail_queued_queries(&mut commands, &events).await;
+    let queued = end_queued_history(&mut commands, &events).await;
+    fail_queued_queries(queued, &events).await;
     for query in stores.keys() {
         cache.remove(*query);
     }

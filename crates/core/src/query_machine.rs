@@ -109,11 +109,32 @@ pub fn result_state(has_columns: bool, rows: u64) -> QueryState {
     }
 }
 
-pub fn failure_path(kind: ErrorKind) -> &'static [QueryState] {
-    match kind {
-        ErrorKind::Cancelled => &[QueryState::Cancelling, QueryState::Cancelled],
-        ErrorKind::Timeout => &[QueryState::Cancelling, QueryState::Failed],
-        _ => &[QueryState::Failed],
+pub fn failure_path(state: &QueryState, kind: ErrorKind) -> Vec<QueryState> {
+    let events: &[QueryEvent] = match kind {
+        ErrorKind::Cancelled => &[QueryEvent::Cancel, QueryEvent::CancelSettled],
+        ErrorKind::Timeout => &[QueryEvent::TimedOut, QueryEvent::Fail],
+        _ => &[QueryEvent::Fail],
+    };
+    let mut current = *state;
+    let mut path = Vec::new();
+    for event in events {
+        match step(&current, event) {
+            Ok(next) => {
+                if next != current {
+                    path.push(next);
+                }
+                current = next;
+            }
+            Err(_) => return direct_failure(state),
+        }
+    }
+    path
+}
+
+fn direct_failure(state: &QueryState) -> Vec<QueryState> {
+    match step(state, &QueryEvent::Fail) {
+        Ok(next) if next != *state => vec![next],
+        Ok(_) | Err(_) => Vec::new(),
     }
 }
 
