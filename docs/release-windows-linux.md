@@ -256,6 +256,10 @@ On a clean standard Windows account:
 7. Test a canceled download, unsaved SQL, pending edits and active database work.
 8. Test a canceled close, then a retry.
 
+The NSIS installer runs `scripts/release/windows_wait_for_start.ps1` after it replaces the payload.
+The script ignores a failure to stop a locked child process.
+NSIS examines the rollback in that case and keeps the `.previous` directory.
+
 On Linux:
 
 1. Start the AppImage on a clean system and test SQLite, PostgreSQL and the credential store.

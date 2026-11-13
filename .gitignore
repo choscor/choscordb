@@ -4,7 +4,6 @@ target/
 .DS_Store
 *.user
 
-# Local Python environments and caches
 __pycache__/
 *.py[cod]
 .venv/
@@ -13,7 +12,6 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
-# Local configuration, credentials, logs, and databases
 .env
 .env.*
 *.[lL][oO][gG]
@@ -28,6 +26,5 @@ venv/
 *.sqlite3-*
 *.db-*
 
-# Local screenshots (all PNG files)
 *.[pP][nN][gG]
 

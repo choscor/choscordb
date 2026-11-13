@@ -15,7 +15,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - name: Install pinned Rust coverage tool
@@ -28,7 +28,7 @@ jobs:
           cargo llvm-cov --workspace --all-features --locked --lcov --output-path build/coverage/rust.lcov
           lcov2xml build/coverage/rust.lcov --output build/coverage/rust-validation.xml
           grep --extended-regexp --quiet '^SF:.*/crates/[^/]+/src/' build/coverage/rust.lcov
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rust-lcov
           path: build/coverage/rust.lcov
@@ -42,10 +42,10 @@ jobs:
       CMAKE_PREFIX_PATH: ${{ github.workspace }}/build/ci/qt/6.8.3/macos:${{ github.workspace }}/build/ci/qscintilla
       QT_QPA_PLATFORM: offscreen
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - name: Install LLVM 23 coverage tools
@@ -61,7 +61,7 @@ jobs:
           cmake --build --preset coverage --target choscordb-cpp-coverage
           lcov2xml build/coverage/cpp.lcov --output build/coverage/cpp-validation.xml
           grep --extended-regexp --quiet '^SF:.*/(desktop|tests)/' build/coverage/cpp.lcov
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cpp-lcov
           path: build/coverage/cpp.lcov

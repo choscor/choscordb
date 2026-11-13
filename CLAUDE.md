@@ -97,8 +97,10 @@ The code is the documentation. Names, types, tests and `docs/` give the meaning.
 
 - Do not write comments. This includes Rust `///` and `//!` doc comments and Python docstrings.
 - If a comment seems necessary, make the names, types or tests clearer.
-- Only these directives are permitted, because a tool reads them:
-  `// SAFETY:`, `// ui-ok:`, `// perf-ok:`, `// ui-budget:`, `// clang-format off` and `on`, and a shebang.
+- Only directives that a tool reads are permitted. These are the directives:
+  - `// SAFETY:`, `// ui-ok:`, `// perf-ok:` and `// ui-budget:`, each with a reason.
+  - `// clang-format off` and `// clang-format on`, and a shebang.
+  - The Dependabot `# vN` label on a workflow action that a SHA pins.
 - `scripts/ci/comment_policy.py` enforces this rule. Its `--fix` option deletes the rejected comments.
 - `docs/ci.md` gives the full list of directives and the scanned file types.
 
@@ -110,7 +112,8 @@ When you find an error, write a deterministic check so that the error cannot occ
 - First, find the gate or test that must find the error. If it found the error, fix the cause.
 - If no gate or test found the error, write a script or test that fails on the error (red).
 - Then fix the error and make sure that the check passes (green).
-- Add a new gate to `fast` in `scripts/ci/quality.py`. Give it a `test_*.py` suite with a failing fixture.
+- For an engine error, add a Rust test. For a UI or bridge error, add a C++ test.
+- For a source, build or process error, add a gate to `fast` in `scripts/ci/quality.py`. Give it a `test_*.py` suite with a failing fixture.
 - A check must give the same result each time. Do not use the network, the clock or random values.
 - Do not record an error only in a note, a memory or a comment. Write a check.
 - `docs/ci.md` gives the procedure. Report each new check in your summary.

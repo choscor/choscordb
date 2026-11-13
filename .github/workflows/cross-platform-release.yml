@@ -35,7 +35,7 @@ jobs:
       QT_QPA_FONTDIR: C:/Windows/Fonts
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.tag || github.sha }}
           persist-credentials: false
@@ -48,8 +48,8 @@ jobs:
           $head = (git rev-parse HEAD).Trim()
           $tagCommit = (git rev-parse "refs/tags/$tag^{commit}").Trim()
           if ($head -ne $tagCommit) { throw 'Checkout is not the selected exact tag' }
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - name: Verify production Pages feed
@@ -98,7 +98,7 @@ jobs:
           --qt-notices build/ci/qt-notices
           --output build/cross-platform/windows
       - name: Preserve unsigned Windows candidate
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-unsigned-${{ inputs.tag || github.sha }}
           path: |
@@ -117,7 +117,7 @@ jobs:
       QT_QPA_PLATFORM: offscreen
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.tag || github.sha }}
           persist-credentials: false
@@ -126,7 +126,7 @@ jobs:
         run: |
           [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - name: Verify production Pages feed
@@ -177,7 +177,7 @@ jobs:
           --qt-notices build/ci/qt-notices
           --output build/cross-platform/linux
       - name: Preserve Linux candidate
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-${{ inputs.tag || github.sha }}
           path: |
