@@ -2,6 +2,7 @@
 
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/icons.h"
+#include "design_system/panel_state/panel_state.h"
 
 #include <QDialog>
 #include <QKeySequence>
@@ -53,7 +54,7 @@ class QuickSearchDialog final : public QDialog {
     [[nodiscard]] QString selectedResultId() const;
     void setResults(const QList<QuickSearchResult>& results);
     void setStatus(const QString& message);
-    void setSearchState(const QString& message, bool failed);
+    void setSearchState(PanelStateKind kind, const QString& message);
     void setReopenShortcut(const QKeySequence& shortcut);
 
   public slots:
@@ -79,11 +80,11 @@ class QuickSearchDialog final : public QDialog {
     QLineEdit* input_ = nullptr;
     QListWidget* list_ = nullptr;
     QLabel* status_ = nullptr;
+    Text* placeholder_ = nullptr;
     QList<QuickSearchResult> results_;
     QString statusMessage_;
     QString searchMessage_;
     QKeySequence reopenShortcut_;
-    bool failed_ = false;
 };
 
 }

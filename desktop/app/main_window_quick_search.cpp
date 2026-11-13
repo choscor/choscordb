@@ -370,7 +370,7 @@ void MainWindow::renderQuickSearch() {
                             .filtered = !needle.isEmpty()},
                            quickHistoryError_)
                            .presentation;
-    quickSearch_->setSearchState(shown.message, shown.tone == Tone::Error);
+    quickSearch_->setSearchState(panelStateKind(shown.body), shown.message);
     if (std::exchange(quickSearchToast_, quickHistoryError_) != quickHistoryError_)
         showPresentationToast(this, shown);
     quickSearch_->setStatus(quickSearchStatus(

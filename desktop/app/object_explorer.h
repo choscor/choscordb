@@ -70,6 +70,7 @@ class ObjectExplorer final : public QWidget {
     QPlainTextEdit* ddl_;
     ObjectErdWidget* erd_;
     design::Text* status_;
+    design::Text* placeholder_;
     QAction* retry_;
     QAction* reconnect_;
     QPushButton* refresh_;

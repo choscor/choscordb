@@ -2,6 +2,7 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/theme_manager.h"
+#include "design_system/toast_region/toast_region.h"
 #include "screen_state_checks.h"
 #include "widgets/object_erd_widget.h"
 #include <QAction>
@@ -351,6 +352,10 @@ class ObjectExplorerTest final : public QObject {
         auto* retry = explorer.findChild<QAction*>("objectRetry");
         QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Failed);
         QVERIFY(retry->isEnabled());
+        auto* placeholder = explorer.findChild<QLabel*>("objectPlaceholder");
+        QVERIFY(placeholder->isVisible() && placeholder->text().startsWith("Could not load "));
+        QCOMPARE(placeholder->property("state").toString(), QString("error"));
+        QVERIFY(choscordb::windowToast(&explorer)->text().contains(placeholder->text()));
         const auto create = adapter.execute(*connection, "CREATE TABLE later(id INTEGER)");
         QVERIFY(create);
         adapter.fetchPage(*create);

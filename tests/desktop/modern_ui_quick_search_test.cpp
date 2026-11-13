@@ -416,9 +416,14 @@ void ModernUiTest::quickSearchShowsHistoryClearStartedBeforeFirstOpen() {
                 ->text()
                 .contains("History is being cleared"));
     emit secondAdapter->recoveryFailed(8847, QStringLiteral("simulated failure"));
-    QVERIFY(secondOverlay->findChild<QLabel*>("quickSearchStatus")
-                ->text()
-                .contains("History clear failed"));
+    auto* placeholder = secondOverlay->findChild<QLabel*>("quickSearchPlaceholder");
+    QVERIFY(placeholder && placeholder->isVisible());
+    QVERIFY2(placeholder->text().contains("History clear failed: simulated failure"),
+             qPrintable(placeholder->text()));
+    QCOMPARE(placeholder->property("state").toString(), QString("error"));
+    auto* toast = choscordb::windowToast(&secondWindow);
+    QVERIFY(toast && !toast->isHidden());
+    QVERIFY2(toast->text().contains("History clear failed"), qPrintable(toast->text()));
     QTRY_COMPARE(secondCleared.count(), 1);
 }
 

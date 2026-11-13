@@ -4,6 +4,7 @@
 #include "design_system/icons.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/style/style_resource.h"
+#include "design_system/text/text.h"
 #include "design_system/theme.h"
 
 #include <QEvent>
@@ -127,6 +128,9 @@ QuickSearchDialog::QuickSearchDialog(QWidget* parent)
     list_->installEventFilter(this);
     list_->setFixedHeight(8 * dimension(Dimension::QuickSearchRow));
     layout->addWidget(list_);
+    placeholder_ = createPanelStateText({}, this);
+    placeholder_->setObjectName("quickSearchPlaceholder");
+    layout->addWidget(placeholder_);
 
     status_ = new QLabel(this);
     status_->setObjectName("quickSearchStatus");
@@ -210,9 +214,9 @@ void QuickSearchDialog::setStatus(const QString& message) {
     statusMessage_ = message;
     updateStatus();
 }
-void QuickSearchDialog::setSearchState(const QString& message, bool failed) {
-    searchMessage_ = message;
-    failed_ = failed;
+void QuickSearchDialog::setSearchState(PanelStateKind kind, const QString& message) {
+    showPanelState(placeholder_, kind, message);
+    searchMessage_ = kind == PanelStateKind::Hidden ? message : QString();
     updateStatus();
 }
 void QuickSearchDialog::setReopenShortcut(const QKeySequence& shortcut) {
@@ -227,9 +231,6 @@ void QuickSearchDialog::updateStatus() {
         messages << statusMessage_;
     status_->setText(messages.join(QStringLiteral("  ")));
     status_->setAccessibleDescription(status_->text());
-    status_->setProperty("state", failed_ ? "error" : "");
-    status_->style()->unpolish(status_);
-    status_->style()->polish(status_);
 }
 
 void QuickSearchDialog::openSearch() {
@@ -242,7 +243,7 @@ void QuickSearchDialog::openSearch() {
     list_->clear();
     statusMessage_.clear();
     searchMessage_.clear();
-    failed_ = false;
+    showPanelState(placeholder_, PanelStateKind::Hidden, {});
     const bool changed = !input_->text().isEmpty();
     input_->clear();
     updateStatus();

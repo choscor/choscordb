@@ -9,6 +9,7 @@
 #include "bridge/template_service.h"
 #include "design_system/button/button.h"
 #include "design_system/menu/menu.h"
+#include "design_system/panel_state/panel_state.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
@@ -243,6 +244,9 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                 if (connection_ && !operationBusy_)
                     emit relatedTableActivated(*connection_, id, qualifiedName);
             });
+    placeholder_ = design::createPanelStateText({}, this);
+    placeholder_->setObjectName("objectPlaceholder");
+    layout->addWidget(placeholder_);
     layout->addWidget(pages_, 1);
     auto* headerBody = new QWidget(this);
     headerBody->setObjectName("objectHeader");
@@ -606,6 +610,7 @@ void ObjectExplorer::setStatus(PanelState state, const QString& detail) {
     const auto kind = tabs_->currentIndex() == 4 ? PanelKind::Diagram : PanelKind::ObjectDetails;
     const auto shown = EngineAdapter::panelPresentation(kind, state, detail);
     showStatus(shown.message, shown.tone, shown.busy);
+    showPanelState(placeholder_, shown);
     showPresentationToast(this, shown);
 }
 void ObjectExplorer::applyPanelEvent(PanelEvent event, const QString& detail) {
