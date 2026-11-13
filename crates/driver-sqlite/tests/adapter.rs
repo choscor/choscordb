@@ -1509,3 +1509,50 @@ async fn metadata_bounds_repeated_long_parent_names_and_retains_small_unicode_ob
         "'actual'"
     );
 }
+#[tokio::test]
+async fn cancel_interrupts_a_suspended_query_after_metadata_work() {
+    let mut c = connect().await;
+    let cancel = c.cancellation_handle();
+    let mut r = c
+        .execute(
+            "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<100000000) \
+             SELECT x FROM n WHERE x <= 150 OR x > 99999990",
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    let first = r.fetch_page(PageSize::new(100).unwrap()).await.unwrap();
+    assert_eq!(first.rows.len(), 100);
+    let roots = c.load_metadata(None).await;
+    assert!(roots.is_ok(), "{roots:?}");
+    let (page, ()) = tokio::join!(r.fetch_page(PageSize::new(100).unwrap()), async {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        cancel.cancel().await.unwrap();
+    });
+    assert_eq!(page.unwrap_err().kind, ErrorKind::Cancelled);
+}
+#[tokio::test]
+async fn timeout_interrupts_a_suspended_query_after_metadata_work() {
+    let mut c = connect().await;
+    let mut r = c
+        .execute(
+            "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<100000000) \
+             SELECT x FROM n WHERE x <= 150 OR x > 99999990",
+            QueryOptions {
+                timeout: Some(std::time::Duration::from_millis(200)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    r.fetch_page(PageSize::new(100).unwrap()).await.unwrap();
+    let roots = c.load_metadata(None).await;
+    assert!(roots.is_ok(), "{roots:?}");
+    assert_eq!(
+        r.fetch_page(PageSize::new(100).unwrap())
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Timeout
+    );
+}
